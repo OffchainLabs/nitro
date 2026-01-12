@@ -57,7 +57,7 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 replay_wasm=$(output_latest)/replay.wasm
 
-arb_brotli_files = $(wildcard arbitrator/brotli/src/*.* arbitrator/brotli/src/*/*.* arbitrator/brotli/*.toml arbitrator/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
+arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress user_host program_exec)
@@ -65,7 +65,7 @@ arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
 
-arbitrator_cases=arbitrator/prover/test-cases
+arbitrator_cases=crates/prover/test-cases
 
 arbitrator_tests_wat=$(wildcard $(arbitrator_cases)/*.wat)
 arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
@@ -82,13 +82,13 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/caller-env/src/*.* arbitrator/caller-env/src/*/*.* arbitrator/caller-env/*.toml) .make/cbrotli-lib
+rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* crates/arbutil/*.toml crates/caller-env/src/*.* crates/caller-env/src/*/*.* crates/caller-env/*.toml) .make/cbrotli-lib
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
-prover_dir = arbitrator/prover/
+prover_dir = crates/prover/
 rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
 
-wasm_lib = arbitrator/wasm-libraries
+wasm_lib = crates/wasm-libraries
 wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(wasm_lib_cargo) $(rust_arbutil_files) $(arb_brotli_files) .make/machines
 wasm_lib_go_abi = $(call wasm_lib_deps,go-abi)
@@ -100,21 +100,21 @@ forward_dir = $(wasm_lib)/forward
 
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(wasm_lib_user_host_trait) $(rust_prover_files)
 
-jit_dir = arbitrator/jit
+jit_dir = crates/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files)
 
 wasm32_wasi = target/wasm32-wasip1/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
 
-stylus_dir = arbitrator/stylus
-stylus_test_dir = arbitrator/stylus/tests
-stylus_cargo = arbitrator/stylus/tests/.cargo/config.toml
+stylus_dir = crates/stylus
+stylus_test_dir = crates/stylus/tests
+stylus_cargo = crates/stylus/tests/.cargo/config.toml
 
-rust_sdk = arbitrator/langs/rust
-c_sdk = arbitrator/langs/c
+rust_sdk = crates/langs/rust
+c_sdk = crates/langs/c
 stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(rust_sdk)/*/*.toml)
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
-stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
+stylus_lang_bf   = $(wildcard crates/langs/bf/src/*.* crates/langs/bf/src/*.toml)
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
@@ -277,18 +277,17 @@ clean:
 	go clean -testcache
 	rm -rf $(arbitrator_cases)/rust/target
 	rm -f $(arbitrator_cases)/*.wasm $(arbitrator_cases)/go/testcase.wasm
-	rm -rf arbitrator/wasm-testsuite/tests
+	rm -rf crates/wasm-testsuite/tests
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
-	rm -rf arbitrator/target
-	rm -rf arbitrator/wasm-libraries/target
-	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
-	rm -f arbitrator/wasm-libraries/soft-float/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
-	rm -f arbitrator/wasm-libraries/forward/*.wat
-	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
+	rm -rf crates/wasm-libraries/target
+	rm -f crates/wasm-libraries/soft-float/soft-float.wasm
+	rm -f crates/wasm-libraries/soft-float/*.o
+	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
+	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -f crates/wasm-libraries/forward/*.wat
+	rm -rf crates/stylus/tests/*/target/ crates/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
@@ -359,18 +358,18 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(prover_bin)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
-	install arbitrator/target/release/prover $@
+	cargo build --release --bin prover ${CARGOFLAGS}
+	install target/release/prover $@
 
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
-	install arbitrator/target/release/libstylus.a $@
+	cargo build --release --lib -p stylus ${CARGOFLAGS}
+	install target/release/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release -p jit ${CARGOFLAGS}
-	install arbitrator/target/release/jit $@
+	cargo build --release -p jit ${CARGOFLAGS}
+	install target/release/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
@@ -382,38 +381,38 @@ $(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
 $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
-	cd arbitrator/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
+	cd crates/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
 	@touch -c $@ # cargo might decide to not rebuild the header
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
-	install arbitrator/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
+	install crates/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
 	./scripts/remove_reference_types.sh $@
 
-arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/source/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
-	cd arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
+crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
+		crates/wasm-libraries/soft-float/SoftFloat/source/*.c \
+		crates/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
+		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
+		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
+	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
 
-arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings32.c
-	clang arbitrator/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
+crates/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings32.c
+	clang crates/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
 
-arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
-	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
+crates/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings64.c
+	clang crates/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
 
 $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
-		arbitrator/wasm-libraries/soft-float/bindings32.o \
-		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
+		crates/wasm-libraries/soft-float/bindings32.o \
+		crates/wasm-libraries/soft-float/bindings64.o \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
 		.make/wasm-lib .make/machines
 	wasm-ld \
-		arbitrator/wasm-libraries/soft-float/bindings32.o \
-		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
+		crates/wasm-libraries/soft-float/bindings32.o \
+		crates/wasm-libraries/soft-float/bindings64.o \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
 		--no-entry -o $@ \
 		$(patsubst %,--export wavm__f32_%, abs neg ceil floor trunc nearest sqrt add sub mul div min max) \
 		$(patsubst %,--export wavm__f32_%, copysign eq ne lt le gt ge) \
@@ -429,28 +428,28 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f64_promote_f32
 
 $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
+	install crates/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
+	install crates/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
+	install crates/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
+	install crates/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
+	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
@@ -469,7 +468,7 @@ $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
 $(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
-	cargo run --manifest-path arbitrator/langs/bf/Cargo.toml $< -o $@
+	cargo run --manifest-path crates/langs/bf/Cargo.toml $< -o $@
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	cargo build --manifest-path $< --release --config $(stylus_cargo)
@@ -588,8 +587,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint fmt
-	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
-	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
+	cargo fmt -p arbutil -p prover -p jit -p stylus -- --check
+	cargo fmt --all --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
 	@touch $@
 
@@ -598,7 +597,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
-	cargo test --manifest-path arbitrator/Cargo.toml --release
+	cargo test --release
 	@touch $@
 
 .make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
@@ -636,9 +635,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
 	@touch $@
 
-.make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
-	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t ..
-	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t ..
+.make/wasm-lib: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
+	test -f crates/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t ..
+	test -f crates/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t ..
 	@touch $@
 
 .make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make

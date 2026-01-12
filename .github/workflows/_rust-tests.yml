@@ -1,11 +1,11 @@
 ---
-name: nitro-arbitrator
+name: nitro-rust
 on:
   workflow_call:
 
 jobs:
-  arbitrator:
-    name: Run Arbitrator tests
+  rust:
+    name: Run Rust tests
     runs-on: arbitrator-ci
     env:
       RUST_BACKTRACE: 1
@@ -53,14 +53,13 @@ jobs:
         run: make -j wasm-ci-build
 
       - name: Clippy check
-        run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
+        run: cargo clippy --all -- -D warnings
 
       - name: Run rust tests
         id: run-rust-tests
         continue-on-error: true
         run: >-
           cargo nextest run -p arbutil -p prover -p jit -p stylus -p validator --release
-          --manifest-path arbitrator/prover/Cargo.toml
           --profile ci --config-file nextest.toml
 
       - name: Upload rust test results
@@ -68,7 +67,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: junit-reports-rust
-          path: ./arbitrator/target/nextest/ci/junit.xml
+          path: ./target/nextest/ci/junit.xml
 
       - name: Fail if rust tests failed
         if: steps.run-rust-tests.outcome == 'failure'
@@ -77,13 +76,13 @@ jobs:
           exit 1
 
       - name: Check stylus_bechmark
-        run: cargo check --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml
+        run: cargo check --manifest-path crates/tools/stylus_benchmark/Cargo.toml
 
       - name: Rustfmt
-        run: cargo fmt -p arbutil -p prover -p jit -p stylus -p validator --manifest-path arbitrator/Cargo.toml -- --check
+        run: cargo fmt -p arbutil -p prover -p jit -p stylus -p validator -- --check
 
       - name: Rustfmt - tools/stylus_benchmark
-        run: cargo fmt --all --manifest-path arbitrator/tools/stylus_benchmark/Cargo.toml -- --check
+        run: cargo fmt --all --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
