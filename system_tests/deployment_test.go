@@ -6,7 +6,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"math/big"
 	"strings"
 	"testing"
 
@@ -67,7 +66,7 @@ func testContractDeployment(t *testing.T, ctx context.Context, client *ethclient
 		ChainID:   chainId,
 		Nonce:     nonce,
 		GasTipCap: common.Big0,
-		GasFeeCap: new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2)),
+		GasFeeCap: latestHeader.BaseFee,
 		Gas:       deploymentGas,
 		To:        nil,
 		Value:     common.Big0,
