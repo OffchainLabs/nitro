@@ -561,7 +561,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
-	ArbOwnerPublic.methodsByName["GetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(precompilesgen.ArbWasmMetaData, ArbWasmImpl))
@@ -663,6 +662,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
+
+	ArbOwnerPublic.methodsByName["GetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_60
+	ArbOwnerPublic.methodsByName["IsTransactionFilterer"].arbosVersion = params.ArbosVersion_60
+	ArbOwnerPublic.methodsByName["GetAllTransactionFilterers"].arbosVersion = params.ArbosVersion_60
 
 	ArbNativeTokenManager := insert(MakePrecompile(precompilesgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41

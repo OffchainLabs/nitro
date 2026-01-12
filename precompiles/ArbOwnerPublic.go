@@ -58,6 +58,16 @@ func (con ArbOwnerPublic) GetTransactionFilteringFrom(c ctx, evm mech) (uint64, 
 	return c.State.TransactionFilteringFromTime()
 }
 
+// IsTransactionFilterer checks if the account is a transaction filterer
+func (con ArbOwnerPublic) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool, error) {
+	return c.State.TransactionFilterers().IsMember(filterer)
+}
+
+// GetAllTransactionFilterers retrieves the list of transaction filterers
+func (con ArbOwnerPublic) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionFilterers().AllMembers(65536)
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()

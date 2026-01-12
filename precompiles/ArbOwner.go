@@ -24,9 +24,16 @@ import (
 // which ensures only a chain owner can access these methods. For methods that
 // are safe for non-owners to call, see ArbOwnerOld
 type ArbOwner struct {
-	Address          addr // 0x70
+	Address addr // 0x70
+
 	OwnerActs        func(ctx, mech, bytes4, addr, []byte) error
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
+
+	TransactionFiltererAdded        func(ctx, mech, common.Address) error
+	TransactionFiltererAddedGasCost func(common.Address) (uint64, error)
+
+	TransactionFiltererRemoved        func(ctx, mech, common.Address) error
+	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
 }
 
 const NativeTokenEnableDelay = 7 * 24 * 60 * 60          // one week
@@ -179,7 +186,11 @@ func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error
 	if enabledTime == 0 || enabledTime > evm.Context.Time {
 		return errors.New("transaction filtering feature is not enabled yet")
 	}
-	return c.State.TransactionFilterers().Add(filterer)
+
+	if err := c.State.TransactionFilterers().Add(filterer); err != nil {
+		return err
+	}
+	return con.TransactionFiltererAdded(c, evm, filterer)
 }
 
 // RemoveTransactionFilterer removes account from the list of transaction filterers
@@ -191,7 +202,11 @@ func (con ArbOwner) RemoveTransactionFilterer(c ctx, _ mech, filterer addr) erro
 	if !member {
 		return errors.New("tried to remove non existing transaction filterer")
 	}
-	return c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion())
+
+	if err := c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	return con.TransactionFiltererRemoved(c, nil, filterer)
 }
 
 // IsTransactionFilterer checks if the account is a transaction filterer

@@ -192,7 +192,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		params.ArbosVersion_40: 3,
 		params.ArbosVersion_41: 10,
 		params.ArbosVersion_50: 9,
-		params.ArbosVersion_60: 12,
+		params.ArbosVersion_60: 15,
 	}
 
 	precompiles := Precompiles()
