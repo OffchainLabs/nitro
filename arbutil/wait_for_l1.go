@@ -71,15 +71,18 @@ func DetailTxError(ctx context.Context, client *ethclient.Client, tx *types.Tran
 	if err != nil {
 		return fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
 	}
-	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
-	if err == nil {
-		return fmt.Errorf("tx failed but call succeeded for tx hash %v", tx.Hash())
+
+	callMsg := ethereum.CallMsg{
+		From:       from,
+		To:         tx.To(),
+		Gas:        tx.Gas(),
+		GasFeeCap:  tx.GasFeeCap(),
+		GasTipCap:  tx.GasTipCap(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
 	}
-	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
-	if err == nil {
-		return fmt.Errorf("%w for tx hash %v", vm.ErrOutOfGas, tx.Hash())
-	}
-	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
+	return DetailTxErrorUsingCallMsg(ctx, client, tx.Hash(), txRes, callMsg)
 }
 
 func DetailTxErrorUsingCallMsg(ctx context.Context, client *ethclient.Client, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
