@@ -46,10 +46,15 @@ func TestManageTransactionFilterers(t *testing.T) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	require.NoError(t, err)
 
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	filtererAddedTopic := arbOwnerABI.Events["TransactionFiltererAdded"].ID
+	filtererDeletedTopic := arbOwnerABI.Events["TransactionFiltererRemoved"].ID
+
 	filteredTransactionsManagerABI, err := precompilesgen.ArbFilteredTransactionsManagerMetaData.GetAbi()
 	Require(t, err)
-	addedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionAdded"].ID
-	deletedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionDeleted"].ID
+	txAddedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionAdded"].ID
+	txDeletedTopic := filteredTransactionsManagerABI.Events["FilteredTransactionDeleted"].ID
 
 	arbFilteredTxs, err := precompilesgen.NewArbFilteredTransactionsManager(
 		types.ArbFilteredTransactionsManagerAddress,
@@ -92,8 +97,24 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// Owner grants user transaction filterer role
 	tx, err = arbOwner.AddTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.NoError(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
+
+	// Check that the TransactionFiltererAdded event was emitted
+	foundAdded := false
+	for _, lg := range receipt.Logs {
+		if lg.Topics[0] != filtererAddedTopic {
+			continue
+		}
+		ev, parseErr := arbOwner.ParseTransactionFiltererAdded(*lg)
+		if parseErr != nil {
+			continue
+		}
+		require.Equal(t, userTxOpts.From, ev.Filterer)
+		foundAdded = true
+		break
+	}
+	require.True(t, foundAdded)
 
 	isFilterer, err := arbOwner.IsTransactionFilterer(ownerCallOpts, userTxOpts.From)
 	require.NoError(t, err)
@@ -111,13 +132,13 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// User filters the tx
 	tx, err = arbFilteredTxs.AddFilteredTransaction(&userTxOpts, txHash)
 	require.NoError(t, err)
-	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
 	// Check that the FilteredTransactionAdded event was emitted
-	foundAdded := false
+	foundAdded = false
 	for _, lg := range receipt.Logs {
-		if lg.Topics[0] != addedTopic {
+		if lg.Topics[0] != txAddedTopic {
 			continue
 		}
 		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionAdded(*lg)
@@ -143,7 +164,7 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// Check that the FilteredTransactionDeleted event was emitted
 	foundDeleted := false
 	for _, lg := range receipt.Logs {
-		if lg.Topics[0] != deletedTopic {
+		if lg.Topics[0] != txDeletedTopic {
 			continue
 		}
 		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionDeleted(*lg)
@@ -163,7 +184,24 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// Owner revokes the role
 	tx, err = arbOwner.RemoveTransactionFilterer(&ownerTxOpts, userTxOpts.From)
 	require.NoError(t, err)
-	require.NotNil(t, tx)
+	receipt, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Check that the TransactionFiltererRemoved event was emitted
+	foundDeleted = false
+	for _, lg := range receipt.Logs {
+		if lg.Topics[0] != filtererDeletedTopic {
+			continue
+		}
+		ev, parseErr := arbOwner.ParseTransactionFiltererRemoved(*lg)
+		if parseErr != nil {
+			continue
+		}
+		require.Equal(t, userTxOpts.From, ev.Filterer)
+		foundDeleted = true
+		break
+	}
+	require.True(t, foundDeleted)
 
 	isFilterer, err = arbOwner.IsTransactionFilterer(ownerCallOpts, userTxOpts.From)
 	require.NoError(t, err)
