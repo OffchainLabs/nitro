@@ -945,10 +945,16 @@ func getExecutionParsedInitMessage(
 	if err != nil {
 		return nil, err
 	}
+
+	var deserializedChainConfig params.ChainConfig
+	if err = json.Unmarshal(serializedChainConfig, &deserializedChainConfig); err != nil {
+		return nil, err
+	}
+
 	return &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
+		ChainId:               deserializedChainConfig.ChainID,
 		InitialL1BaseFee:      initialL1BaseFee,
-		ChainConfig:           chainConfig,
+		ChainConfig:           &deserializedChainConfig,
 		SerializedChainConfig: serializedChainConfig,
 	}, err
 }
