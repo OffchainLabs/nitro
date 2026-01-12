@@ -1,7 +1,8 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::Bytes32;
+use std::collections::HashMap;
+use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -52,6 +53,9 @@ pub enum InputMode {
     },
     /// Use flag values and local files for inputs
     Local(LocalInput),
+    /// Use direct Rust objects
+    #[command(skip)]
+    Native(NativeInput),
     /// Continuously read new inputs from TCP connections
     Continuous,
 }
@@ -80,6 +84,20 @@ pub struct GlobalState {
     pub inbox_position: u64,
     #[clap(long, default_value = "0")]
     pub position_within_message: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct SequencerMessage {
+    number: u64,
+    data: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeInput {
+    pub old_state: GlobalState,
+    pub inbox: Vec<SequencerMessage>,
+    pub delayed_inbox: Vec<SequencerMessage>,
+    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
 }
 
 mod cli_parsing {

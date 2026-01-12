@@ -1,10 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
-};
+use crate::{arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket, stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts};
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
@@ -224,6 +221,7 @@ impl TryFrom<&Opts> for WasmEnv {
         match &opts.input_mode {
             InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
             InputMode::Local(local) => prepare_env_from_files(env, local),
+            InputMode::Native(native) => prepare_env_from_native(env, native),
             InputMode::Continuous => Ok(env),
         }
     }
@@ -270,6 +268,28 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
             hasher.update(&preimage);
             let hash = hasher.finalize().into();
             keccak_preimages.insert(hash, preimage);
+        }
+    }
+
+    env.small_globals = [input.old_state.inbox_position, input.old_state.position_within_message];
+    env.large_globals = [input.old_state.last_block_hash, input.old_state.last_send_root];
+    Ok(env)
+}
+
+fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+    env.process.already_has_input = true;
+
+    for msg in &input.inbox {
+        env.sequencer_messages.insert(msg.number, msg.data.clone());
+    }
+    for msg in &input.delayed_inbox {
+        env.delayed_messages.insert(msg.number, msg.data.clone());
+    }
+
+    for (preimage_type, preimages_map) in &input.preimages {
+        let type_map = env.preimages.entry(*preimage_type).or_default();
+        for (hash, preimage) in preimages_map {
+            type_map.insert(*hash, preimage.clone());
         }
     }
 
