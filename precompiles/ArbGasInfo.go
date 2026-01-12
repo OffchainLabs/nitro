@@ -374,3 +374,11 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 
 	return result, nil
 }
+
+// GetMultiGasBaseFee gets the current base fee for each resource type used by the Multi-Constraint Pricer
+func (con ArbGasInfo) GetMultiGasBaseFee(
+	c ctx,
+	evm mech,
+) ([]*big.Int, error) {
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource()
+}

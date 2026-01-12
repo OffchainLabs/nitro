@@ -57,7 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
