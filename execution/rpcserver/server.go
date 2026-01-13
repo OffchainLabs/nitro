@@ -15,8 +15,8 @@ type Server struct {
 	executionRecorder execution.ExecutionRecorder
 }
 
-func NewServer(executionClient execution.ExecutionClient) *Server {
-	return &Server{executionClient}
+func NewServer(executionClient execution.ExecutionClient, executionRecorder execution.ExecutionRecorder) *Server {
+	return &Server{executionClient, executionRecorder}
 }
 
 func (c *Server) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
