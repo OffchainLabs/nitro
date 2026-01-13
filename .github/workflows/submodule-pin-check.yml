@@ -43,7 +43,7 @@ jobs:
             [safe-smart-account]=origin/release/v1.5.0
             [crates/langs/bf]=origin/main
             [crates/langs/c]=origin/main
-            [crates/tools/wasmer]=origin/main
+            [crates/tools/wasmer]=origin/stylus
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
           divergent=0
