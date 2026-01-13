@@ -1431,6 +1431,7 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 		executionRecorder = rpcClient
 	} else {
 		executionClient = fullExecutionClient
+		executionRecorder = fullExecutionClient
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, executionRecorder, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
