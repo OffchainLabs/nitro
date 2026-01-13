@@ -204,7 +204,6 @@ COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
 COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
-COPY crates ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 COPY ./contracts-legacy ./contracts-legacy
