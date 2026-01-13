@@ -154,7 +154,10 @@ func (acc *MerkleAccumulator) Append(evm *vm.EVM, itemHash common.Hash) ([]Merkl
 	level := uint64(0)
 	soFar := crypto.Keccak256(itemHash.Bytes())
 	for {
-		levelSlot := acc.backingStorage.GetStorageSlot(util.UintToHash(2 + level))
+		levelSlot := common.Hash{}
+		if acc.backingStorage != nil {
+			levelSlot = acc.backingStorage.GetStorageSlot(util.UintToHash(2 + level))
+		}
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
 			maybeCaptureTrace(evm, levelSlot)
