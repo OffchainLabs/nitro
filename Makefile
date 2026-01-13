@@ -300,6 +300,10 @@ docker:
 	docker build -t nitro-node --target nitro-node .
 	docker build -t nitro-node-dev --target nitro-node-dev .
 
+.PHONY: check-license-headers
+check-license-headers:
+	go run ./scripts/licenser.go
+
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
