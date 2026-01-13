@@ -12,6 +12,9 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+use axum::extract::State;
+use crate::ServerState;
 
 pub async fn capacity() -> impl IntoResponse {
     "1" // TODO: Figure out max number of workers (optionally, make it configurable)
@@ -38,8 +41,8 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoRespon
         .map_err(|e| format!("Failed to serialize state: {e}",))
 }
 
-pub async fn wasm_module_roots() -> impl IntoResponse {
-    "[]" // TODO: Figure this out from local replay.wasm
+pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>,) -> impl IntoResponse {
+    format!("[{:?}]", state.module_root)
 }
 
 type Hash = Bytes32;

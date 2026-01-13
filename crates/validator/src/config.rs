@@ -88,6 +88,16 @@ mod tests {
         );
 
         assert!(
+            ServerConfig::try_parse_from([
+                "server",
+                "--module-root",
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            ])
+                .is_ok(),
+            "Valid module root (without 0x prefix) should parse correctly"
+        );
+
+        assert!(
             ServerConfig::try_parse_from(["server", "--module-root", "0xinvalidhex"]).is_err(),
             "Invalid module root should fail to parse"
         );

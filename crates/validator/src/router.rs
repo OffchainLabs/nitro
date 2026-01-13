@@ -1,13 +1,14 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::spawner_endpoints;
+use std::sync::Arc;
+use crate::{spawner_endpoints, ServerState};
 use axum::routing::{get, post};
 use axum::Router;
 
 const BASE_NAMESPACE: &str = "/validation";
 
-pub fn create_router() -> Router {
+pub fn create_router() -> Router<Arc<ServerState>> {
     Router::new()
         .route(
             &format!("{BASE_NAMESPACE}_capacity"),
