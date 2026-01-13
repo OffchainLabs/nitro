@@ -42,12 +42,12 @@ type HostioTraceInfo struct {
 
 	// Arguments of the HostIO encoded as binary.
 	// For details about the encoding check the HostIO implementation on
-	// arbitrator/wasm-libraries/user-host-trait.
+	// crates/wasm-libraries/user-host-trait.
 	Args hexutil.Bytes `json:"args"`
 
 	// Outputs of the HostIO encoded as binary.
 	// For details about the encoding check the HostIO implementation on
-	// arbitrator/wasm-libraries/user-host-trait.
+	// crates/wasm-libraries/user-host-trait.
 	Outs hexutil.Bytes `json:"outs"`
 
 	// Amount of Ink before executing the HostIO.
