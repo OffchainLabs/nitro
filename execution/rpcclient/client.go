@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -130,5 +131,20 @@ func (c *Client) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) contai
 		var res uint64
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_arbOSVersionForMessageIndex", msgIdx)
 		return res, convertError(err)
+	})
+}
+
+func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) containers.PromiseInterface[*execution.RecordResult] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.RecordResult, error) {
+		var res execution.RecordResult
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg, wasmTargets)
+		return &res, convertError(err)
+	})
+}
+
+func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_prepareForRecord", start, end)
+		return struct{}{}, convertError(err)
 	})
 }
