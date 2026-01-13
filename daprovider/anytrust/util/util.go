@@ -199,6 +199,10 @@ func recoverPayloadFromBatchInternal(
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)
 	}
+	if len(sequencerMsg) < 40 {
+		log.Error("AnyTrust sequencer message too short: expected at least 40 bytes", "length", len(sequencerMsg))
+		return nil, nil, nil
+	}
 	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
 		log.Error("Failed to deserialize AnyTrust message", "err", err)
