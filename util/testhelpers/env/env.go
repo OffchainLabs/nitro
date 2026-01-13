@@ -27,9 +27,11 @@ func GetTestDatabaseEngine() string {
 	engineFlag := *testflag.DatabaseEngineFlag
 	databaseEngine := MemoryDB
 
-	if engineFlag == rawdb.DBLeveldb || engineFlag == rawdb.DBPebble || engineFlag == MemoryDB {
+	switch engineFlag {
+	case rawdb.DBLeveldb, rawdb.DBPebble, MemoryDB:
 		databaseEngine = engineFlag
-	} else if engineFlag != "" {
+	case "":
+	default:
 		log.Warn("invalid test database engine flag; using default",
 			"provided", engineFlag,
 			"default", MemoryDB,
