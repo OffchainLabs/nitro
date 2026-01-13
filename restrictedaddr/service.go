@@ -1,0 +1,109 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package restrictedaddr
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+// Service manages the restricted address synchronization pipeline.
+// It periodically polls S3 for hash list updates and maintains an in-memory
+// copy for efficient address filtering.
+type Service struct {
+	stopwaiter.StopWaiter
+	config  *Config
+	store   *HashStore
+	syncer  *S3Syncer
+	checker *RestrictedAddressChecker
+}
+
+// NewService creates a new restricted address service.
+// Returns nil if the service is not enabled in the configuration.
+func NewService(ctx context.Context, config *Config) (*Service, error) {
+	if !config.Enable {
+		return nil, nil
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	store := NewHashStore()
+	syncer, err := NewS3Syncer(ctx, config, store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
+	}
+	checker := NewRestrictedAddressChecker(store)
+
+	return &Service{
+		config:  config,
+		store:   store,
+		syncer:  syncer,
+		checker: checker,
+	}, nil
+}
+
+// Initialize downloads the initial hash list from S3.
+// This method blocks until the hash list is successfully loaded.
+// If this fails, the node should not start.
+func (s *Service) Initialize(ctx context.Context) error {
+	log.Info("initializing restricted addr service, downloading initial hash list",
+		"bucket", s.config.S3Bucket,
+		"key", s.config.S3ObjectKey,
+	)
+
+	// Force download (ignore ETag check for initial load)
+	if err := s.syncer.DownloadAndLoad(ctx); err != nil {
+		return fmt.Errorf("failed to load initial hash list: %w", err)
+	}
+
+	log.Info("restricted addr service initialized",
+		"hash_count", s.store.Size(),
+		"etag-digest", s.store.Digest(),
+	)
+	return nil
+}
+
+// Start begins the background polling goroutine.
+// This should be called after Initialize() succeeds.
+func (s *Service) Start(ctx context.Context) {
+	s.StopWaiter.Start(ctx, s)
+
+	// Start periodic polling goroutine
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		if err := s.syncer.CheckAndSync(ctx); err != nil {
+			log.Error("failed to sync restricted addr list", "err", err)
+		}
+		return s.config.PollInterval
+	})
+
+	log.Info("restricted addr service started",
+		"poll_interval", s.config.PollInterval,
+	)
+}
+
+// GetAddressChecker returns the AddressChecker for use by the ExecutionEngine.
+func (s *Service) GetAddressChecker() state.AddressChecker {
+	return s.checker
+}
+
+func (s *Service) GetHashCount() int {
+	return s.store.Size()
+}
+
+// GetETag returns the S3 ETag Digest of the currently loaded hash list.
+func (s *Service) GetHashStoreDigest() string {
+	return s.store.Digest()
+}
+
+func (s *Service) GetLoadedAt() time.Time {
+	return s.store.LoadedAt()
+}
