@@ -102,8 +102,6 @@ func validateBlockRange(
 	if !success {
 		Fatal(t)
 	}
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func TestProgramEvmData(t *testing.T) {
@@ -209,4 +207,6 @@ func testEvmData(t *testing.T, jit bool) {
 	colors.PrintGrey("trace: ", string(trace))
 
 	validateBlocks(t, 1, jit, builder)
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }
