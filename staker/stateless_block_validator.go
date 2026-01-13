@@ -372,7 +372,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(wasmTargets) == 0 {
 			wasmTargets = v.wasmTargets
 		}
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg, wasmTargets).Await(ctx)
 		if err != nil {
 			return err
 		}

@@ -9,7 +9,7 @@ fn main() {
     if target_arch.contains("wasm32") {
         println!("cargo:rustc-link-search=../../target/lib-wasm/");
     } else {
-        println!("cargo:rustc-link-search=../target/lib/");
+        println!("cargo:rustc-link-search=target/lib/");
         println!("cargo:rustc-link-search=../../target/lib/");
     }
     println!("cargo:rustc-link-lib=static=brotlienc-static");
