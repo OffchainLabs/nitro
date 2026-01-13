@@ -28,12 +28,10 @@ pub struct ServerConfig {
 struct ModuleRootConfig {
     /// Supported module root.
     #[clap(long)]
-    #[arg(group = "module-root")]
     module_root: Option<Bytes32>,
 
     /// Path to the file containing the module root.
     #[clap(long)]
-    #[arg(group = "module-root")]
     module_root_path: Option<PathBuf>,
 }
 
