@@ -529,7 +529,7 @@ func TestArbNativeTokenManagerThroughSolidityContract(t *testing.T) {
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
 		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
-		SerializedChainConfig:              nil,
+		SerializedChainConfig:              "",
 	}
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)
 	cleanup := builder.Build(t)
@@ -592,7 +592,7 @@ func TestArbNativeTokenManager(t *testing.T) {
 	arbOSInit := &params.ArbOSInit{
 		NativeTokenSupplyManagementEnabled: true,
 		InitialL1BaseFee:                   arbostypes.DefaultInitialL1BaseFee,
-		SerializedChainConfig:              nil,
+		SerializedChainConfig:              "",
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSInit(arbOSInit).WithArbOSVersion(params.ArbosVersion_50)

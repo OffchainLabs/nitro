@@ -987,7 +987,7 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 func resolveSerializedChainConfig(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig, fallbackChainConfig *params.ChainConfig) ([]byte, error) {
 	var fromGenesisJSON, fromCLIFlag []byte
 	if genesisArbOSInit != nil && len(genesisArbOSInit.SerializedChainConfig) != 0 {
-		fromGenesisJSON = genesisArbOSInit.SerializedChainConfig
+		fromGenesisJSON = []byte(genesisArbOSInit.SerializedChainConfig)
 	}
 	if initConfig != nil && len(initConfig.SerializedChainConfig) != 0 {
 		fromCLIFlag = []byte(initConfig.SerializedChainConfig)

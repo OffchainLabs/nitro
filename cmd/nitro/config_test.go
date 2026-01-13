@@ -290,7 +290,7 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 	genesisConfig := &params.ArbOSInit{
 		InitialL1BaseFee:                   fee,
 		NativeTokenSupplyManagementEnabled: false,
-		SerializedChainConfig:              nil,
+		SerializedChainConfig:              "",
 	}
 
 	testCases := []struct {
@@ -360,7 +360,7 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 	genesisConfig := &params.ArbOSInit{
 		InitialL1BaseFee:                   nil,
 		NativeTokenSupplyManagementEnabled: false,
-		SerializedChainConfig:              chainConfigGenesisJSON,
+		SerializedChainConfig:              string(chainConfigGenesisJSON),
 	}
 
 	testCases := []struct {
