@@ -269,6 +269,15 @@ type BidValidatorAPI struct {
 func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	start := time.Now()
 	receivedBidsCounter.Inc(1)
+	if bid == nil {
+		return errors.Wrap(ErrMalformedData, "nil bid")
+	}
+	if bid.ChainId == nil {
+		return errors.Wrap(ErrMalformedData, "nil chain id")
+	}
+	if bid.Amount == nil {
+		return errors.Wrap(ErrMalformedData, "nil amount")
+	}
 	validatedBid, err := bv.validateBid(
 		&Bid{
 			ChainId:                bid.ChainId.ToInt(),
