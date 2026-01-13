@@ -163,39 +163,6 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestAddressChecker_Integration(t *testing.T) {
-	store := NewHashStore()
-	checker := NewRestrictedAddressChecker(store)
-
-	salt := []byte("test-salt")
-	restrictedAddr := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hash := sha256.Sum256(append(salt, restrictedAddr.Bytes()...))
-	store.Load(salt, [][32]byte{hash}, "etag")
-
-	// Test with restricted address
-	state1 := checker.NewTxState()
-	state1.TouchAddress(restrictedAddr)
-	if !state1.IsFiltered() {
-		t.Error("transaction touching restricted address should be filtered")
-	}
-
-	// Test with non-restricted address
-	nonRestrictedAddr := common.HexToAddress("0x2222222222222222222222222222222222222222")
-	state2 := checker.NewTxState()
-	state2.TouchAddress(nonRestrictedAddr)
-	if state2.IsFiltered() {
-		t.Error("transaction touching non-restricted address should not be filtered")
-	}
-
-	// Test multiple addresses - one restricted
-	state3 := checker.NewTxState()
-	state3.TouchAddress(nonRestrictedAddr)
-	state3.TouchAddress(restrictedAddr)
-	if !state3.IsFiltered() {
-		t.Error("transaction touching any restricted address should be filtered")
-	}
-}
-
 func TestParseHashListJSON(t *testing.T) {
 	hashed_addr1 := sha256.Sum256(common.BigToAddress(common.Big1).Bytes())
 	hashed_addr2 := sha256.Sum256(common.BigToAddress(common.Big2).Bytes())

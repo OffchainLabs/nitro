@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -19,10 +18,9 @@ import (
 // copy for efficient address filtering.
 type Service struct {
 	stopwaiter.StopWaiter
-	config  *Config
-	store   *HashStore
-	syncer  *S3Syncer
-	checker *RestrictedAddressChecker
+	config *Config
+	store  *HashStore
+	syncer *S3Syncer
 }
 
 // NewService creates a new restricted address service.
@@ -41,13 +39,11 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
 	}
-	checker := NewRestrictedAddressChecker(store)
 
 	return &Service{
-		config:  config,
-		store:   store,
-		syncer:  syncer,
-		checker: checker,
+		config: config,
+		store:  store,
+		syncer: syncer,
 	}, nil
 }
 
@@ -88,11 +84,6 @@ func (s *Service) Start(ctx context.Context) {
 	log.Info("restricted addr service started",
 		"poll_interval", s.config.PollInterval,
 	)
-}
-
-// GetAddressChecker returns the AddressChecker for use by the ExecutionEngine.
-func (s *Service) GetAddressChecker() state.AddressChecker {
-	return s.checker
 }
 
 func (s *Service) GetHashCount() int {
