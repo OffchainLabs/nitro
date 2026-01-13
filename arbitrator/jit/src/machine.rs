@@ -308,7 +308,7 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
     }
 
     for (hash, program) in &input.programs {
-        env.module_asms.insert(*hash, Arc::from(program.as_slice()));
+        env.module_asms.insert(*hash, program.as_slice().into());
     }
 
     env.small_globals = [
