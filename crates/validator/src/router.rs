@@ -1,10 +1,10 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::sync::Arc;
 use crate::{spawner_endpoints, ServerState};
 use axum::routing::{get, post};
 use axum::Router;
+use std::sync::Arc;
 
 const BASE_NAMESPACE: &str = "/validation";
 

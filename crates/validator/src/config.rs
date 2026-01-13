@@ -1,11 +1,11 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::fs::read_to_string;
 use anyhow::anyhow;
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
+use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -93,7 +93,7 @@ mod tests {
                 "--module-root",
                 "0000000000000000000000000000000000000000000000000000000000000000"
             ])
-                .is_ok(),
+            .is_ok(),
             "Valid module root (without 0x prefix) should parse correctly"
         );
 
