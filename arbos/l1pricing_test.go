@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -156,7 +157,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	}
 	firstPoster := posterAddrs[0]
 	firstPayTo := common.Address{1, 2}
-	poster, err := posterTable.OpenPoster(firstPoster, true)
+	poster, err := posterTable.OpenPoster(nil, firstPoster, true)
 	Require(t, err)
 	due, err := poster.FundsDue()
 	Require(t, err)
@@ -169,13 +170,13 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// add another poster
 	secondPoster := common.Address{3, 4, 5}
 	secondPayTo := common.Address{6, 7}
-	_, err = posterTable.AddPoster(secondPoster, secondPayTo)
+	_, err = posterTable.AddPoster(nil, secondPoster, secondPayTo)
 	Require(t, err)
 
 	// create some fake collection
 	balanceAdded := new(big.Int).SetUint64(testParams.fundsCollectedPerSecond * 3)
 	unitsAdded := testParams.unitsPerSecond * 3
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded), tracing.BalanceChangeUnspecified)
+	evm.StateDB.AddBalance(types.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded), tracing.BalanceChangeUnspecified)
 	err = l1p.SetL1FeesAvailable(balanceAdded)
 	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
@@ -203,7 +204,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	if !arbmath.BigEquals(fundsReceived.ToBig(), expectedResults.fundsReceived) {
 		Fail(t, fundsReceived, expectedResults.fundsReceived)
 	}
-	fundsStillHeld := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	fundsStillHeld := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	if !arbmath.BigEquals(fundsStillHeld.ToBig(), expectedResults.fundsStillHeld) {
 		Fail(t, fundsStillHeld, expectedResults.fundsStillHeld)
 	}
@@ -223,7 +224,7 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	l1p := arbosSt.L1PricingState()
 	amount := arbmath.UintToBig(10 * params.GWei)
 	poster := common.Address{3, 4, 5}
-	_, err = l1p.BatchPosterTable().AddPoster(poster, poster)
+	_, err = l1p.BatchPosterTable().AddPoster(evm.Config.Tracer, poster, poster)
 	Require(t, err)
 
 	// In the past this would have errored due to an invalid timestamp.
@@ -267,7 +268,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	Require(t, l1p.SetPricePerUnit(initialL1BasefeeEstimate))
 
 	bpAddr := common.Address{3, 4, 5, 6}
-	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
+	l1PoolAddress := types.L1PricerFundsPoolAddress
 	for i := 0; i < 10; i++ {
 		unitsToAdd := l1pricing.InitialEquilibrationUnitsV6.Uint64()
 		oldUnits, err := l1p.UnitsSinceUpdate()

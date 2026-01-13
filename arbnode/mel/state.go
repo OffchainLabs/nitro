@@ -141,7 +141,7 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		s.seenDelayedMsgsAcc = acc
 	}
 	msgHash := msg.Hash()
-	if _, err := s.seenDelayedMsgsAcc.Append(msgHash); err != nil {
+	if _, err := s.seenDelayedMsgsAcc.Append(nil, msgHash); err != nil {
 		return err
 	}
 	if s.delayedMessageBacklog != nil {

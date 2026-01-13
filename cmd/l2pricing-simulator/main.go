@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -21,9 +22,9 @@ import (
 
 var minBaseFee = big.NewInt(params.GWei)
 
-func newPricingState(arbosVersion uint64) (*l2pricing.L2PricingState, error) {
+func newPricingState(arbosVersion uint64, evm *vm.EVM) (*l2pricing.L2PricingState, error) {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := l2pricing.InitializeL2PricingState(storage)
+	err := l2pricing.InitializeL2PricingState(storage, evm)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func runLegacyModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState(params.ArbosVersion_40)
+	pricing, err := newPricingState(params.ArbosVersion_40, nil)
 	if err != nil {
 		return err
 	}
@@ -54,8 +55,8 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
-		pricing.UpdatePricingModel(1)
+		_ = pricing.GrowBacklog(nil, gas, multigas.ComputationGas(gas))
+		pricing.UpdatePricingModel(1, nil)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,
@@ -73,7 +74,7 @@ func runConstraintsModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix)
+	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix, nil)
 	if err != nil {
 		return err
 	}
@@ -88,7 +89,7 @@ func runConstraintsModel(args []string) error {
 		if i < len(config.Backlogs) {
 			backlog = arbmath.SaturatingUCast[uint64](config.Backlogs[i])
 		}
-		if err := pricing.AddGasConstraint(target, window, backlog); err != nil {
+		if err := pricing.AddGasConstraint(target, window, backlog, nil); err != nil {
 			return fmt.Errorf("failed to add constraint: %w", err)
 		}
 		if window > longTermWindow {
@@ -103,8 +104,8 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
-		pricing.UpdatePricingModel(1)
+		_ = pricing.GrowBacklog(nil, gas, multigas.ComputationGas(gas))
+		pricing.UpdatePricingModel(1, nil)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
 			baseFee:  baseFee,

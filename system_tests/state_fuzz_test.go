@@ -180,6 +180,7 @@ func FuzzStateTransition(f *testing.F) {
 			initMessage,
 			0,
 			0,
+			nil,
 		)
 		if err != nil {
 			panic(err)

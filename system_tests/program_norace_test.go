@@ -102,6 +102,8 @@ func validateBlockRange(
 	if !success {
 		Fatal(t)
 	}
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func TestProgramEvmData(t *testing.T) {

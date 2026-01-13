@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -142,7 +143,7 @@ func NewArbosMemoryBackedArbOSStateWithConfig(chainConfig *params.ChainConfig) (
 	}
 	burner := burn.NewSystemBurner(nil, false)
 	// #nosec G115
-	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage)
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, nil, arbostypes.TestInitMessage, nil)
 	if err != nil {
 		panic("failed to open the ArbOS state: " + err.Error())
 	}
@@ -191,7 +192,7 @@ var (
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, tracer *tracing.Hooks) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -224,6 +225,20 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		// lower than the timestamp of the first block of the chain.
 		nativeTokenEnabledFromTime = uint64(1)
 	}
+
+	if hooks := tracer; hooks != nil {
+		if hooks.CaptureArbitrumStorageGet != nil {
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(nativeTokenEnabledFromTimeOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(versionOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(upgradeVersionOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(upgradeTimestampOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(genesisBlockNumOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(brotliCompressionLevelOffset))), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(uint64(networkFeeAccountOffset))), 0, false)
+
+		}
+	}
+
 	err = sto.SetUint64ByUint64(uint64(nativeTokenEnabledFromTimeOffset), nativeTokenEnabledFromTime)
 	if err != nil {
 		return nil, err
@@ -276,11 +291,11 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	if desiredArbosVersion >= params.ArbosVersion_2 {
 		initialRewardsRecipient = initialChainOwner
 	}
-	err = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
+	err = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee, tracer)
 	if err != nil {
 		return nil, err
 	}
-	err = l2pricing.InitializeL2PricingState(sto.OpenCachedSubStorage(l2PricingSubspace))
+	err = l2pricing.InitializeL2PricingState(sto.OpenCachedSubStorage(l2PricingSubspace), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +328,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -322,13 +337,13 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(
-	currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+	currentTimestamp uint64, evm *vm.EVM,
 ) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		return state.UpgradeArbosVersion(upgradeTo, false, stateDB, chainConfig)
+		return state.UpgradeArbosVersion(upgradeTo, false, evm.StateDB, evm.ChainConfig(), evm)
 	}
 	return nil
 }
@@ -336,7 +351,7 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(
 var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
 func (state *ArbosState) UpgradeArbosVersion(
-	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig, evm *vm.EVM,
 ) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
@@ -370,7 +385,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// no state changes needed
 		case params.ArbosVersion_10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
-				l1pricing.L1PricerFundsPoolAddress,
+				types.L1PricerFundsPoolAddress,
 			).ToBig()))
 
 		case params.ArbosVersion_11:
@@ -395,19 +410,19 @@ func (state *ArbosState) UpgradeArbosVersion(
 
 		case params.ArbosVersion_20:
 			// Update Brotli compression level for fast compression from 0 to 1
-			ensure(state.SetBrotliCompressionLevel(1))
+			ensure(state.SetBrotliCompressionLevel(1, evm))
 
 		case 21, 22, 23, 24, 25, 26, 27, 28, 29:
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_30:
-			programs.Initialize(nextArbosVersion, state.backingStorage.OpenSubStorage(programsSubspace))
+			programs.Initialize(nextArbosVersion, state.backingStorage.OpenSubStorage(programsSubspace), evm)
 
 		case params.ArbosVersion_31:
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToVersion(2))
-			ensure(params.Save())
+			ensure(params.Save(evm))
 
 		case params.ArbosVersion_32:
 			// no change state needed
@@ -424,7 +439,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			params, err := state.Programs().Params()
 			ensure(err)
 			ensure(params.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(params.Save())
+			ensure(params.Save(evm))
 
 		case params.ArbosVersion_41:
 			// no change state needed
@@ -436,7 +451,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
-			ensure(p.Save())
+			ensure(p.Save(evm))
 			ensure(state.l2PricingState.SetMaxPerTxGasLimit(l2pricing.InitialPerTxGasLimitV50))
 
 		case params.ArbosVersion_51:
@@ -482,12 +497,23 @@ func (state *ArbosState) UpgradeArbosVersion(
 	return nil
 }
 
-func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint64) error {
+func (state *ArbosState) ScheduleArbOSUpgrade(evm *vm.EVM, newVersion uint64, timestamp uint64) error {
+	upgradeVersionSlot := state.upgradeVersion.GetCurrentSlot()
+	upgradeTimestampSlot := state.upgradeTimestamp.GetCurrentSlot()
+
+	if hooks := evm.Config.Tracer; hooks != nil {
+		if hooks.CaptureArbitrumStorageGet != nil {
+			hooks.CaptureArbitrumStorageGet(upgradeVersionSlot, 0, false)
+			hooks.CaptureArbitrumStorageGet(upgradeTimestampSlot, 0, false)
+		}
+	}
+
 	err := state.upgradeVersion.Set(newVersion)
 	if err != nil {
 		return err
 	}
-	return state.upgradeTimestamp.Set(timestamp)
+	err = state.upgradeTimestamp.Set(timestamp)
+	return err
 }
 
 func (state *ArbosState) GetScheduledUpgrade() (uint64, uint64, error) {
@@ -523,8 +549,15 @@ func (state *ArbosState) BrotliCompressionLevel() (uint64, error) {
 	return state.brotliCompressionLevel.Get()
 }
 
-func (state *ArbosState) SetBrotliCompressionLevel(val uint64) error {
+func (state *ArbosState) SetBrotliCompressionLevel(val uint64, evm *vm.EVM) error {
 	if val <= arbcompress.LEVEL_WELL {
+		if evm != nil {
+			if hooks := evm.Config.Tracer; hooks != nil {
+				if hooks.CaptureArbitrumStorageGet != nil {
+					hooks.CaptureArbitrumStorageGet(state.brotliCompressionLevel.StorageSlot.GetCurrentSlot(), 0, false)
+				}
+			}
+		}
 		return state.brotliCompressionLevel.Set(val)
 	}
 	return errors.New("invalid brotli compression level")

@@ -45,7 +45,7 @@ func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) e
 				if err != nil {
 					return err
 				}
-				_, err = acc.Append(delayed.Hash())
+				_, err = acc.Append(nil, delayed.Hash())
 				if err != nil {
 					return err
 				}
@@ -62,7 +62,7 @@ func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) e
 		if err != nil {
 			return err
 		}
-		_, err = acc.Append(delayed.Hash())
+		_, err = acc.Append(nil, delayed.Hash())
 		if err != nil {
 			return err
 		}

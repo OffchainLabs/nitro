@@ -163,6 +163,18 @@ func (as *AddressSet) Add(addr common.Address) error {
 	return err
 }
 
+func (as *AddressSet) GetByAddressStorage() *storage.Storage {
+	return as.byAddress
+}
+
+func (as *AddressSet) GetSizeSlot() storage.StorageBackedUint64 {
+	return as.size
+}
+
+func (as *AddressSet) GetBackingStorage() *storage.Storage {
+	return as.backingStorage
+}
+
 func (as *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	slot, err := as.byAddress.GetUint64(addrAsHash)

@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -54,7 +55,7 @@ func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	}
 }
 
-func (bpt *BatchPostersTable) OpenPoster(poster common.Address, createIfNotExist bool) (*BatchPosterState, error) {
+func (bpt *BatchPostersTable) OpenPoster(tracer *tracing.Hooks, poster common.Address, createIfNotExist bool) (*BatchPosterState, error) {
 	isBatchPoster, err := bpt.posterAddrs.IsMember(poster)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func (bpt *BatchPostersTable) OpenPoster(poster common.Address, createIfNotExist
 		if !createIfNotExist {
 			return nil, ErrNotExist
 		}
-		return bpt.AddPoster(poster, poster)
+		return bpt.AddPoster(tracer, poster, poster)
 	}
 	return bpt.internalOpen(poster), nil
 }
@@ -81,7 +82,7 @@ func (bpt *BatchPostersTable) ContainsPoster(poster common.Address) (bool, error
 	return bpt.posterAddrs.IsMember(poster)
 }
 
-func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo common.Address) (*BatchPosterState, error) {
+func (bpt *BatchPostersTable) AddPoster(tracer *tracing.Hooks, posterAddress common.Address, payTo common.Address) (*BatchPosterState, error) {
 	isBatchPoster, err := bpt.posterAddrs.IsMember(posterAddress)
 	if err != nil {
 		return nil, err
@@ -90,6 +91,26 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 		return nil, ErrAlreadyExists
 	}
 	bpState := bpt.internalOpen(posterAddress)
+
+	if hooks := tracer; hooks != nil {
+		if hooks.CaptureArbitrumStorageGet != nil {
+			slot := bpt.posterAddrs.GetByAddressStorage().GetStorageSlot(common.BytesToHash(posterAddress.Bytes()))
+			hooks.CaptureArbitrumStorageGet(slot, 0, false)
+
+			sizeSlot := bpt.posterAddrs.GetSizeSlot()
+			hooks.CaptureArbitrumStorageGet(sizeSlot.GetCurrentSlot(), 0, false)
+			size, err := sizeSlot.Get()
+			if err != nil {
+				return nil, err
+			}
+			sba := bpt.posterAddrs.GetBackingStorage().OpenStorageBackedAddress(1 + size)
+			hooks.CaptureArbitrumStorageGet(sba.StorageSlot.GetCurrentSlot(), 0, false)
+
+			hooks.CaptureArbitrumStorageGet(bpState.fundsDue.StorageSlot.GetCurrentSlot(), 0, false)
+			hooks.CaptureArbitrumStorageGet(bpState.payTo.StorageSlot.GetCurrentSlot(), 0, false)
+		}
+	}
+
 	if err := bpState.fundsDue.SetChecked(common.Big0); err != nil {
 		return nil, err
 	}
@@ -153,7 +174,7 @@ func (bpt *BatchPostersTable) GetFundsDueList() ([]FundsDueItem, error) {
 		return nil, err
 	}
 	for _, posterAddr := range allPosters {
-		poster, err := bpt.OpenPoster(posterAddr, false)
+		poster, err := bpt.OpenPoster(nil, posterAddr, false)
 		if err != nil {
 			return nil, err
 		}

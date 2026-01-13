@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -114,7 +115,7 @@ func (p Programs) Params() (*StylusParams, error) {
 }
 
 // Writes the params to permanent storage.
-func (p *StylusParams) Save() error {
+func (p *StylusParams) Save(evm *vm.EVM) error {
 	if p.backingStorage == nil {
 		log.Error("tried to Save invalid StylusParams")
 		return errors.New("invalid StylusParams")
@@ -148,6 +149,13 @@ func (p *StylusParams) Save() error {
 
 		word := common.Hash{}
 		copy(word[:], info) // right-pad with zeros
+		if evm != nil {
+			if hooks := evm.Config.Tracer; hooks != nil {
+				if hooks.CaptureArbitrumStorageGet != nil {
+					hooks.CaptureArbitrumStorageGet(p.backingStorage.GetStorageSlot(util.UintToHash(slot)), 0, false)
+				}
+			}
+		}
 		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
 			return err
 		}
@@ -214,5 +222,5 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 	if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
-	_ = stylusParams.Save()
+	_ = stylusParams.Save(nil)
 }

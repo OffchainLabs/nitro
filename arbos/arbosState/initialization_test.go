@@ -66,7 +66,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
 	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
-	stateroot, err := InitializeArbosInDatabase(raw, options, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0)
+	stateroot, err := InitializeArbosInDatabase(raw, options, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0, nil)
 	Require(t, err)
 	triedbConfig := options.TriedbConfig()
 	stateDB, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
@@ -261,7 +261,7 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 		isPoster, err := posterTable.ContainsPoster(addr)
 		Require(t, err)
 		if acct.AggregatorInfo != nil && isPoster {
-			posterInfo, err := posterTable.OpenPoster(addr, false)
+			posterInfo, err := posterTable.OpenPoster(nil, addr, false)
 			Require(t, err)
 			fc, err := posterInfo.PayTo()
 			Require(t, err)

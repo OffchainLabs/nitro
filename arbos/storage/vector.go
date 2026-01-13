@@ -34,6 +34,10 @@ func (v *SubStorageVector) Length() (uint64, error) {
 	return length, err
 }
 
+func (v *SubStorageVector) LengthStorage() StorageBackedUint64 {
+	return v.length
+}
+
 // Push adds a new sub-storage at the end of the vector and return it.
 func (v *SubStorageVector) Push() (*Storage, error) {
 	length, err := v.length.Get()

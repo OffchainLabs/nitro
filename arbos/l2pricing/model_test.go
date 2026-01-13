@@ -50,10 +50,10 @@ func TestCompareLegacyPricingModelWithSingleGasConstraints(t *testing.T) {
 			// Initialize with a single constraint based on the legacy model
 			_ = pricing.setGasConstraintsFromLegacy()
 
-			pricing.updatePricingModelLegacy(timePassed)
+			pricing.updatePricingModelLegacy(timePassed, nil)
 			legacyPrice, _ := pricing.baseFeeWei.Get()
 
-			pricing.updatePricingModelSingleConstraints(timePassed)
+			pricing.updatePricingModelSingleConstraints(timePassed, nil)
 			multiPrice, _ := pricing.baseFeeWei.Get()
 
 			if timePassed == 0 {
@@ -98,13 +98,13 @@ func TestCompareSingleGasConstraintsPricingModelWithMultiGasConstraints(t *testi
 
 			// Manually create a single-gas constraint:
 			// this is the "single-dimensional" model: one constraint with (target, inertia, backlog).
-			Require(t, pricing.AddGasConstraint(target, inertia, backlog))
+			Require(t, pricing.AddGasConstraint(target, inertia, backlog, nil))
 
 			// Transfer single-gas constraint to multi-gas constraint
 			Require(t, pricing.setMultiGasConstraintsFromSingleGasConstraints())
 
 			// Trigger single-constraint pricing update
-			pricing.updatePricingModelSingleConstraints(timePassed)
+			pricing.updatePricingModelSingleConstraints(timePassed, nil)
 			singlePrice, err := pricing.baseFeeWei.Get()
 			Require(t, err)
 
@@ -227,7 +227,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 500000},
 		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 1500000},
 	)
-	err = pricing.GrowBacklog(usedMultiGas.SingleGas(), usedMultiGas)
+	err = pricing.GrowBacklog(nil, usedMultiGas.SingleGas(), usedMultiGas)
 	Require(t, err)
 
 	pricing.updatePricingModelMultiConstraints(10)

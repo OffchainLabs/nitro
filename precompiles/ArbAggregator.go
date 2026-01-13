@@ -53,7 +53,7 @@ func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) er
 		return err
 	}
 	if !isBatchPoster {
-		_, err = batchPosterTable.AddPoster(newBatchPoster, newBatchPoster)
+		_, err = batchPosterTable.AddPoster(evm.Config.Tracer, newBatchPoster, newBatchPoster)
 		if err != nil {
 			return err
 		}
@@ -63,7 +63,7 @@ func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) er
 
 // GetFeeCollector gets a batch poster's fee collector
 func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (addr, error) {
-	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(evm.Config.Tracer, batchPoster, false)
 	if err != nil {
 		return addr{}, err
 	}
@@ -72,7 +72,7 @@ func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (add
 
 // SetFeeCollector sets a batch poster's fee collector (caller must be the batch poster, its fee collector, or an owner)
 func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newFeeCollector addr) error {
-	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(evm.Config.Tracer, batchPoster, false)
 	if err != nil {
 		return err
 	}

@@ -40,7 +40,7 @@ func TestProofForNext(t *testing.T) {
 		if !proof.IsCorrect() {
 			Fail(t, proof)
 		}
-		_, err = acc.Append(leaf)
+		_, err = acc.Append(nil, leaf)
 		Require(t, err)
 		root, err := acc.Root()
 		Require(t, err)
@@ -63,7 +63,7 @@ func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash com
 	if err != nil {
 		return nil, err
 	}
-	_, err = clone.Append(nextHash)
+	_, err = clone.Append(nil, nextHash)
 	if err != nil {
 		return nil, err
 	}

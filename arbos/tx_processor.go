@@ -471,6 +471,17 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
+			if p.evm != nil {
+				if hooks := p.evm.Config.Tracer; hooks != nil {
+					log.Info("1241 evm.Config.Tracer is non nil!!!!!")
+					if hooks.CaptureArbitrumStorageGet != nil {
+						log.Info("5482 evm.Config.Tracer is non ni CaptureArbitrumStorageSet!!!!!")
+						unitSlot := p.state.L1PricingState().UnitsSinceUpdateSlot().StorageSlot
+						// unitSlot.GetCurrentSlot().Hex()
+						hooks.CaptureArbitrumStorageGet(unitSlot.GetCurrentSlot(), 0, false)
+					}
+				}
+			}
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
 		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunContext, posterCost)
@@ -659,7 +670,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().GrowBacklog(gasUsed, usedMultiGas))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(p.evm, gasUsed, usedMultiGas))
 		return
 	}
 
@@ -696,7 +707,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	if arbmath.BigGreaterThan(computeCost, common.Big0) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, tracing.BalanceIncreaseNetworkFee)
 	}
-	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
+	posterFeeDestination := types.L1PricerFundsPoolAddress
 	if p.state.ArbOSVersion() < params.ArbosVersion_2 {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}
@@ -740,7 +751,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		}
 		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
 		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
-		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(p.evm, computeGas, usedMultiGas))
 	}
 }
 

@@ -153,7 +153,7 @@ func (c *CachingConfig) Validate() error {
 	return c.validateStateScheme()
 }
 
-func WriteOrTestGenblock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
+func WriteOrTestGenblock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint, tracer *tracing.Hooks) error {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -174,7 +174,7 @@ func WriteOrTestGenblock(executionDB ethdb.Database, cacheConfig *core.BlockChai
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync, tracer)
 	if err != nil {
 		return err
 	}
@@ -282,7 +282,7 @@ func WriteOrTestBlockChain(
 		return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig)
 	}
 
-	err := WriteOrTestGenblock(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
+	err := WriteOrTestGenblock(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync, tracer)
 	if err != nil {
 		return nil, err
 	}

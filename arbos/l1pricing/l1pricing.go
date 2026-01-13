@@ -49,10 +49,9 @@ type L1PricingState struct {
 }
 
 var (
-	BatchPosterTableKey      = []byte{0}
-	BatchPosterAddress       = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
-	BatchPosterPayToAddress  = BatchPosterAddress
-	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B00000000000000000000000000000000000f6")
+	BatchPosterTableKey     = []byte{0}
+	BatchPosterAddress      = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	BatchPosterPayToAddress = BatchPosterAddress
 
 	ErrInvalidTime = errors.New("invalid timestamp")
 )
@@ -84,33 +83,47 @@ const (
 var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
-func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int, tracer *tracing.Hooks) error {
 	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
+	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
+	fundsDueForRewards := sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset)
+	equilibrationUnits := sto.OpenStorageBackedBigUint(equilibrationUnitsOffset)
+
+	if hooks := tracer; hooks != nil {
+		if hooks.CaptureArbitrumStorageGet != nil {
+			totalFundsDue := bptStorage.OpenStorageBackedBigInt(totalFundsDueOffset)
+			hooks.CaptureArbitrumStorageGet(totalFundsDue.StorageSlot.GetCurrentSlot(), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(payRewardsToOffset)), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(inertiaOffset)), 0, false)
+			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(perUnitRewardOffset)), 0, false)
+			hooks.CaptureArbitrumStorageGet(pricePerUnit.StorageSlot.GetCurrentSlot(), 0, false)
+			hooks.CaptureArbitrumStorageGet(equilibrationUnits.StorageSlot.GetCurrentSlot(), 0, false)
+			hooks.CaptureArbitrumStorageGet(fundsDueForRewards.StorageSlot.GetCurrentSlot(), 0, false)
+		}
+	}
+
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
 	}
 	bpTable := OpenBatchPostersTable(bptStorage)
-	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
+	if _, err := bpTable.AddPoster(tracer, BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
 	}
 	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(initialRewardsRecipient)); err != nil {
 		return err
 	}
-	equilibrationUnits := sto.OpenStorageBackedBigUint(equilibrationUnitsOffset)
 	if err := equilibrationUnits.SetChecked(InitialEquilibrationUnitsV0); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(inertiaOffset, InitialInertia); err != nil {
 		return err
 	}
-	fundsDueForRewards := sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset)
 	if err := fundsDueForRewards.SetChecked(common.Big0); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(perUnitRewardOffset, InitialPerUnitReward); err != nil {
 		return err
 	}
-	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
 	if err := pricePerUnit.SetSaturatingWithWarning(initialL1BaseFee, "initial L1 base fee (storing in price per unit)"); err != nil {
 		return err
 	}
@@ -193,6 +206,10 @@ func (ps *L1PricingState) SetFundsDueForRewards(amt *big.Int) error {
 
 func (ps *L1PricingState) UnitsSinceUpdate() (uint64, error) {
 	return ps.unitsSinceUpdate.Get()
+}
+
+func (ps *L1PricingState) UnitsSinceUpdateSlot() storage.StorageBackedUint64 {
+	return ps.unitsSinceUpdate
 }
 
 func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
@@ -300,7 +317,7 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	scenario util.TracingScenario,
 	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
-	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
+	if err := util.TransferBalance(&types.L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
 		return nil, err
 	}
 	old, err := ps.L1FeesAvailable()
@@ -333,7 +350,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 
 	batchPosterTable := ps.BatchPosterTable()
-	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
+	posterState, err := batchPosterTable.OpenPoster(evm.Config.Tracer, batchPoster, true)
 	if err != nil {
 		return err
 	}
@@ -399,6 +416,17 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	dueToPoster, err := posterState.FundsDue()
 	if err != nil {
 		return err
+	}
+	if evm != nil {
+		if hooks := evm.Config.Tracer; hooks != nil {
+			if hooks.CaptureArbitrumStorageGet != nil {
+				hooks.CaptureArbitrumStorageGet(posterState.postersTable.totalFundsDue.StorageSlot.GetCurrentSlot(), 0, false)
+				hooks.CaptureArbitrumStorageGet(ps.fundsDueForRewards.StorageSlot.GetCurrentSlot(), 0, false)
+				hooks.CaptureArbitrumStorageGet(ps.lastSurplus.StorageSlot.GetCurrentSlot(), 0, false)
+				hooks.CaptureArbitrumStorageGet(ps.lastUpdateTime.StorageSlot.GetCurrentSlot(), 0, false)
+				hooks.CaptureArbitrumStorageGet(ps.pricePerUnit.StorageSlot.GetCurrentSlot(), 0, false)
+			}
+		}
 	}
 	err = posterState.SetFundsDue(arbmath.BigAdd(dueToPoster, weiSpent))
 	if err != nil {

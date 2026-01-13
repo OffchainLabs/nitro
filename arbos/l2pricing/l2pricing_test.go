@@ -19,7 +19,7 @@ import (
 
 func PricingForTest(t *testing.T) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL2PricingState(storage)
+	err := InitializeL2PricingState(storage, nil)
 	Require(t, err)
 	return OpenL2PricingState(storage, params.MaxDebugArbosVersionSupported)
 }
@@ -28,7 +28,7 @@ func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed uint64, time
 	t.Helper()
 
 	pricing.storage.Burner().Restrict(pricing.updateLegacyBacklog(Grow, gasUsed))
-	pricing.updatePricingModelLegacy(timePassed)
+	pricing.updatePricingModelLegacy(timePassed, nil)
 }
 
 func TestPricingModelExp(t *testing.T) {
@@ -125,7 +125,7 @@ func TestGasConstraints(t *testing.T) {
 	}
 	const n uint64 = 10
 	for i := range n {
-		Require(t, pricing.AddGasConstraint(100*i+1, 100*i+2, 100*i+3))
+		Require(t, pricing.AddGasConstraint(100*i+1, 100*i+2, 100*i+3, nil))
 	}
 	if got := getConstraintsLength(t, pricing); got != n {
 		t.Fatalf("wrong number of constraints: got %v want %v", got, n)

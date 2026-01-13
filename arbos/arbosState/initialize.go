@@ -58,7 +58,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint, tracer *tracing.Hooks) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabase(triedb.NewDatabase(db, triedbConfig), nil)
@@ -95,7 +95,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.BlockChainCo
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
-	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, genesisArbOSInit, initMessage)
+	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, genesisArbOSInit, initMessage, tracer)
 	if err != nil {
 		panic("failed to open the ArbOS state :" + err.Error())
 	}
@@ -243,7 +243,7 @@ func initializeArbosAccount(_ *state.StateDB, arbosState *ArbosState, account st
 		}
 		if isPoster {
 			// poster is already authorized, just set its fee collector
-			poster, err := posterTable.OpenPoster(account.Addr, false)
+			poster, err := posterTable.OpenPoster(nil, account.Addr, false)
 			if err != nil {
 				return err
 			}

@@ -128,7 +128,7 @@ func TestRetryableRedeemWithSingleGasConstraints(t *testing.T) {
 		// #nosec G115
 		backlog0 := uint64((i + 1) * 500000)
 
-		err := precompileCtx.State.L2PricingState().AddGasConstraint(target0, window0, backlog0)
+		err := precompileCtx.State.L2PricingState().AddGasConstraint(target0, window0, backlog0, nil)
 		Require(t, err)
 	}
 

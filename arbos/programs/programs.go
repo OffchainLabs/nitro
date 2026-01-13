@@ -63,9 +63,9 @@ var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
-func Initialize(arbosVersion uint64, sto *storage.Storage) {
+func Initialize(arbosVersion uint64, sto *storage.Storage, evm *vm.EVM) {
 	initStylusParams(arbosVersion, sto.OpenSubStorage(paramsKey))
-	initDataPricer(sto.OpenSubStorage(dataPricerKey))
+	initDataPricer(sto.OpenSubStorage(dataPricerKey), evm)
 	_ = addressSet.Initialize(sto.OpenCachedSubStorage(cacheManagersKey))
 }
 
@@ -136,6 +136,17 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runCtx, expired)
 	}
+	if evm != nil {
+		if hooks := evm.Config.Tracer; hooks != nil {
+			if hooks.CaptureArbitrumStorageGet != nil {
+				hooks.CaptureArbitrumStorageGet(p.programs.GetStorageSlot(codeHash), 0, false)
+				hooks.CaptureArbitrumStorageGet(p.moduleHashes.GetStorageSlot(codeHash), 0, false)
+				hooks.CaptureArbitrumStorageGet(p.dataPricer.demand.GetCurrentSlot(), 0, false)
+				hooks.CaptureArbitrumStorageGet(p.dataPricer.lastUpdateTime.GetCurrentSlot(), 0, false)
+			}
+		}
+	}
+
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -164,7 +175,6 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 		code := statedb.GetCode(address)
 		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runCtx)
 	}
-
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
 

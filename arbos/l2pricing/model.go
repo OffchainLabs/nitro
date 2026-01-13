@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -68,16 +69,16 @@ const (
 )
 
 // ShrinkBacklog reduces the backlog for the active pricing model.
-func (ps *L2PricingState) ShrinkBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	return ps.updateBacklog(Shrink, usedGas, usedMultiGas)
+func (ps *L2PricingState) ShrinkBacklog(evm *vm.EVM, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(evm, Shrink, usedGas, usedMultiGas)
 }
 
 // GrowBacklog increases the backlog for the active pricing model.
-func (ps *L2PricingState) GrowBacklog(usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	return ps.updateBacklog(Grow, usedGas, usedMultiGas)
+func (ps *L2PricingState) GrowBacklog(evm *vm.EVM, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(evm, Grow, usedGas, usedMultiGas)
 }
 
-func (ps *L2PricingState) updateBacklog(op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+func (ps *L2PricingState) updateBacklog(evm *vm.EVM, op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
@@ -86,7 +87,7 @@ func (ps *L2PricingState) updateBacklog(op BacklogOperation, usedGas uint64, use
 	case GasModelLegacy:
 		return ps.updateLegacyBacklog(op, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.updateSingleGasConstraintsBacklogs(op, usedGas)
+		return ps.updateSingleGasConstraintsBacklogs(evm, op, usedGas)
 	case GasModelMultiGasConstraints:
 		return ps.updateMultiGasConstraintsBacklogs(op, usedGas, usedMultiGas)
 	default:
@@ -103,7 +104,7 @@ func (ps *L2PricingState) updateLegacyBacklog(op BacklogOperation, usedGas uint6
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(op BacklogOperation, usedGas uint64) error {
+func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(evm *vm.EVM, op BacklogOperation, usedGas uint64) error {
 	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
 		return err
@@ -114,7 +115,15 @@ func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(op BacklogOperation
 		if err != nil {
 			return err
 		}
-		err = constraint.SetBacklog(applyGasDelta(op, backlog, usedGas))
+		gasDelta := applyGasDelta(op, backlog, usedGas)
+		if evm != nil {
+			if hooks := evm.Config.Tracer; hooks != nil {
+				if hooks.CaptureArbitrumStorageGet != nil {
+					hooks.CaptureArbitrumStorageGet(constraint.backlog.StorageSlot.GetCurrentSlot(), 0, false)
+				}
+			}
+		}
+		err = constraint.SetBacklog(gasDelta)
 		if err != nil {
 			return err
 		}
@@ -199,19 +208,19 @@ func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(timePassed uint64) {
+func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, evm *vm.EVM) {
 	gasModel, _ := ps.GasModelToUse()
 	switch gasModel {
 	case GasModelLegacy:
-		ps.updatePricingModelLegacy(timePassed)
+		ps.updatePricingModelLegacy(timePassed, evm)
 	case GasModelSingleGasConstraints:
-		ps.updatePricingModelSingleConstraints(timePassed)
+		ps.updatePricingModelSingleConstraints(timePassed, evm)
 	case GasModelMultiGasConstraints:
 		ps.updatePricingModelMultiConstraints(timePassed)
 	}
 }
 
-func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64, evm *vm.EVM) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
 	_ = ps.updateLegacyBacklog(Shrink, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
@@ -224,10 +233,17 @@ func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64) {
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](arbmath.SaturatingUMul(inertia, speedLimit))
 		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
+	if evm != nil {
+		if hooks := evm.Config.Tracer; hooks != nil {
+			if hooks.CaptureArbitrumStorageGet != nil {
+				hooks.CaptureArbitrumStorageGet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), 0, false)
+			}
+		}
+	}
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64) {
+func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64, evm *vm.EVM) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
 	constraintsLength, _ := ps.gasConstraints.Length()
@@ -247,6 +263,14 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64)
 			divisor := arbmath.SaturatingCastToBips(arbmath.SaturatingUMul(inertia, target))
 			exponent := arbmath.NaturalToBips(arbmath.SaturatingCast[int64](backlog)) / divisor
 			totalExponent = arbmath.SaturatingBipsAdd(totalExponent, exponent)
+		}
+	}
+
+	if evm != nil {
+		if hooks := evm.Config.Tracer; hooks != nil {
+			if hooks.CaptureArbitrumStorageGet != nil {
+				hooks.CaptureArbitrumStorageGet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), 0, false)
+			}
 		}
 	}
 

@@ -18,7 +18,7 @@ import (
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	initialPriceEstimate := big.NewInt(123 * params.GWei)
-	err := InitializeL1PricingState(sto, common.Address{}, initialPriceEstimate)
+	err := InitializeL1PricingState(sto, common.Address{}, initialPriceEstimate, nil)
 	Require(t, err)
 	ps := OpenL1PricingState(sto, params.MaxDebugArbosVersionSupported)
 

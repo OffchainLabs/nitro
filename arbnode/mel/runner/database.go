@@ -190,13 +190,13 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		if err != nil {
 			return false, err
 		}
-		_, err = acc.Append(delayed.Hash())
+		_, err = acc.Append(nil, delayed.Hash())
 		if err != nil {
 			return false, err
 		}
 	}
 	// Accumulate this message
-	_, err = acc.Append(msg.Hash())
+	_, err = acc.Append(nil, msg.Hash())
 	if err != nil {
 		return false, err
 	}
@@ -206,7 +206,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		if err != nil {
 			return false, err
 		}
-		_, err = acc.Append(backlogEntry.MsgHash)
+		_, err = acc.Append(nil, backlogEntry.MsgHash)
 		if err != nil {
 			return false, err
 		}

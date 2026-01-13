@@ -11,9 +11,10 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -39,6 +40,7 @@ var (
 
 // AddChainOwner adds account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
+	log.Info("-- EYECATCHER 000 -- 33 -- About to call SetState from SetStorage", "k", c.State.ChainOwners().GetByAddressStorage().GetStorageSlot(common.BytesToHash(newOwner.Bytes())).Hex())
 	return c.State.ChainOwners().Add(newOwner)
 }
 
@@ -196,7 +198,7 @@ func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newInfraFeeAccount addr)
 
 // ScheduleArbOSUpgrade to the requested version at the requested timestamp
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
-	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
+	return c.State.ScheduleArbOSUpgrade(evm, newVersion, timestamp)
 }
 
 // Sets equilibration units parameter for L1 price adjustment algorithm
@@ -242,12 +244,12 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 // Sets the Brotli compression level used for fast compression
 // Available starting in ArbOS version 20, which also raises the default to level 1
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
-	return c.State.SetBrotliCompressionLevel(level)
+	return c.State.SetBrotliCompressionLevel(level, evm)
 }
 
 // Releases surplus funds from L1PricerFundsPoolAddress for use
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
-	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	balance := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
 	recognized, err := l1p.L1FeesAvailable()
 	if err != nil {
@@ -277,7 +279,7 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 		return errors.New("ink price must be a positive uint24")
 	}
 	params.InkPrice = ink
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
@@ -287,7 +289,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 		return err
 	}
 	params.MaxStackDepth = depth
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the number of free wasm pages a tx receives
@@ -297,7 +299,7 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 		return err
 	}
 	params.FreePages = pages
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the base cost of each additional wasm page
@@ -307,7 +309,7 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 		return err
 	}
 	params.PageGas = gas
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the initial number of pages a wasm may allocate
@@ -317,69 +319,69 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 		return err
 	}
 	params.PageLimit = limit
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the minimum costs to invoke a program
-func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
+func (con ArbOwner) SetWasmMinInitGas(c ctx, evm mech, gas, cached uint64) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.MinInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(gas, programs.MinInitGasUnits))
 	params.MinCachedInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(cached, programs.MinCachedGasUnits))
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the linear adjustment made to program init costs
-func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
+func (con ArbOwner) SetWasmInitCostScalar(c ctx, evm mech, percent uint64) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.InitCostScalar = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(percent, programs.CostScalarPercent))
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the number of days after which programs deactivate
-func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
+func (con ArbOwner) SetWasmExpiryDays(c ctx, evm mech, days uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.ExpiryDays = days
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the age a program must be to perform a keepalive
-func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
+func (con ArbOwner) SetWasmKeepaliveDays(c ctx, evm mech, days uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.KeepaliveDays = days
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Sets the number of extra programs ArbOS caches during a given block
-func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
+func (con ArbOwner) SetWasmBlockCacheSize(c ctx, evm mech, count uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.BlockCacheSize = count
-	return params.Save()
+	return params.Save(evm)
 }
 
 // SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
 // decompression.
-func (con ArbOwner) SetWasmMaxSize(c ctx, _ mech, maxWasmSize uint32) error {
+func (con ArbOwner) SetWasmMaxSize(c ctx, evm mech, maxWasmSize uint32) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.MaxWasmSize = maxWasmSize
-	return params.Save()
+	return params.Save(evm)
 }
 
 // Adds account as a wasm cache manager
@@ -483,7 +485,7 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
 		}
 
-		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
+		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue, evm)
 		if err != nil {
 			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
 		}

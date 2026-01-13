@@ -38,7 +38,7 @@ func TestBatchPosterTable(t *testing.T) {
 		t.Fatal()
 	}
 
-	bp1, err := bpTable.AddPoster(addr1, pay1)
+	bp1, err := bpTable.AddPoster(nil, addr1, pay1)
 	Require(t, err)
 	getPay1, err := bp1.PayTo()
 	Require(t, err)
@@ -56,7 +56,7 @@ func TestBatchPosterTable(t *testing.T) {
 		t.Fatal()
 	}
 
-	bp2, err := bpTable.AddPoster(addr2, pay2)
+	bp2, err := bpTable.AddPoster(nil, addr2, pay2)
 	Require(t, err)
 	_ = bp2
 	getPay2, err := bp2.PayTo()
@@ -82,7 +82,7 @@ func TestBatchPosterTable(t *testing.T) {
 	}
 
 	// test get/set of BP fields
-	bp1, err = bpTable.OpenPoster(addr1, false)
+	bp1, err = bpTable.OpenPoster(nil, addr1, false)
 	Require(t, err)
 	err = bp1.SetPayTo(addr2)
 	Require(t, err)

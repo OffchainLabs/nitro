@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -98,6 +99,7 @@ func mainImpl() error {
 		genesisArbOSInit,
 		parsedInitMessage,
 		config.AccountsPerSync,
+		nil,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to generate genesis hash: %w", err)
@@ -115,7 +117,7 @@ func mainImpl() error {
 	return nil
 }
 
-func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
+func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint, tracer *tracing.Hooks) (*types.Block, error) {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -134,7 +136,7 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync, tracer)
 	if err != nil {
 		return nil, err
 	}

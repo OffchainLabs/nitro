@@ -400,6 +400,10 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 	return nil
 }
 
+func (ss *StorageSlot) GetCurrentSlot() common.Hash {
+	return ss.slot
+}
+
 // StorageBackedInt64 is an int64 stored inside the StateDB.
 // Implementation note: Conversions between big.Int and common.Hash give weird results
 // for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
@@ -552,6 +556,10 @@ func (sbu *StorageBackedUint64) Set(value uint64) error {
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
+func (sbu *StorageBackedUint64) GetCurrentSlot() common.Hash {
+	return sbu.StorageSlot.slot
+}
+
 func (sbu *StorageBackedUint64) Clear() error {
 	return sbu.Set(0)
 }
@@ -586,6 +594,10 @@ func (mbu *MemoryBackedUint64) Get() (uint64, error) {
 	return mbu.contents, nil
 }
 
+func (mbu *MemoryBackedUint64) GetCurrentSlot() common.Hash {
+	return common.Hash{}
+}
+
 func (mbu *MemoryBackedUint64) Set(val uint64) error {
 	mbu.contents = val
 	return nil
@@ -612,6 +624,7 @@ type WrappedUint64 interface {
 	Set(uint64) error
 	Increment() (uint64, error)
 	Decrement() (uint64, error)
+	GetCurrentSlot() common.Hash
 }
 
 var twoToThe256 = new(big.Int).Lsh(common.Big1, 256)
