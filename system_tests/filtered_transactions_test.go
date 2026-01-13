@@ -84,8 +84,9 @@ func TestManageTransactionFilterers(t *testing.T) {
 
 	// Initially neither owner nor user can modify filtered transactions,
 	// but both can read (get) filtered status
-	_, err = arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
+	isFiltered, err := arbFilteredTxs.IsTransactionFiltered(ownerCallOpts, txHash)
 	require.NoError(t, err)
+	require.False(t, isFiltered)
 	_, err = arbFilteredTxs.AddFilteredTransaction(&ownerTxOpts, txHash)
 	require.Error(t, err)
 
@@ -106,10 +107,8 @@ func TestManageTransactionFilterers(t *testing.T) {
 		if lg.Topics[0] != filtererAddedTopic {
 			continue
 		}
-		ev, parseErr := arbOwner.ParseTransactionFiltererAdded(*lg)
-		if parseErr != nil {
-			continue
-		}
+		ev, err := arbOwner.ParseTransactionFiltererAdded(*lg)
+		require.NoError(t, err)
 		require.Equal(t, userTxOpts.From, ev.Filterer)
 		foundAdded = true
 		break
@@ -141,10 +140,8 @@ func TestManageTransactionFilterers(t *testing.T) {
 		if lg.Topics[0] != txAddedTopic {
 			continue
 		}
-		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionAdded(*lg)
-		if parseErr != nil {
-			continue
-		}
+		ev, err := arbFilteredTxs.ParseFilteredTransactionAdded(*lg)
+		require.NoError(t, err)
 		require.Equal(t, txHash, common.BytesToHash(ev.TxHash[:]))
 		foundAdded = true
 		break
@@ -167,10 +164,8 @@ func TestManageTransactionFilterers(t *testing.T) {
 		if lg.Topics[0] != txDeletedTopic {
 			continue
 		}
-		ev, parseErr := arbFilteredTxs.ParseFilteredTransactionDeleted(*lg)
-		if parseErr != nil {
-			continue
-		}
+		ev, err := arbFilteredTxs.ParseFilteredTransactionDeleted(*lg)
+		require.NoError(t, err)
 		require.Equal(t, txHash, common.BytesToHash(ev.TxHash[:]))
 		foundDeleted = true
 		break
@@ -193,10 +188,8 @@ func TestManageTransactionFilterers(t *testing.T) {
 		if lg.Topics[0] != filtererDeletedTopic {
 			continue
 		}
-		ev, parseErr := arbOwner.ParseTransactionFiltererRemoved(*lg)
-		if parseErr != nil {
-			continue
-		}
+		ev, err := arbOwner.ParseTransactionFiltererRemoved(*lg)
+		require.NoError(t, err)
 		require.Equal(t, userTxOpts.From, ev.Filterer)
 		foundDeleted = true
 		break
@@ -235,11 +228,12 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	defer cleanup()
 
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	ownerTxOpts.GasLimit = 32000000
 
 	filtererName := "Filterer"
 	builder.L2Info.GenerateAccount(filtererName)
-
 	builder.L2.TransferBalance(t, "Owner", filtererName, big.NewInt(1e16), builder.L2Info)
+
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
 	filtererTxOpts.GasLimit = 32000000
 
@@ -254,26 +248,26 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Owner grants filterer transaction filterer role
+	// Non-filterer call should fail
+	_, err = arbFilteredTxs.AddFilteredTransaction(&ownerTxOpts, txHash)
+	require.Error(t, err)
+
+	// Owner grants filterer role
 	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, filtererTxOpts.From)
 	require.NoError(t, err)
-	require.NotNil(t, tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
 
-	// Filterer filters the tx
+	// Filterer acts (should be free for StorageAccess)
 	tx, err = arbFilteredTxs.AddFilteredTransaction(&filtererTxOpts, txHash)
 	require.NoError(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-
-	// AddFilteredTransaction use storage set, but it should be free for filterers
 	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 
-	// Filterer unfilters the tx
 	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&filtererTxOpts, txHash)
 	require.NoError(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-
-	// DeleteFilteredTransaction use storage clear, but it should be free for filterers
 	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
 }

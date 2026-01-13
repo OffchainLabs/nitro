@@ -113,6 +113,5 @@ func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, er
 }
 
 func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint16, error) {
-	// NOTE: waits https://github.com/OffchainLabs/nitro/pull/4193
-	return 0, errors.New("GetMaxStylusContractFragments is not yet implemented")
+	return 0, errors.New("GetMaxStylusContractFragments is not implemented yet")
 }

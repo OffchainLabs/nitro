@@ -134,7 +134,7 @@ func (wrapper *OwnerPrecompile) Name() string {
 }
 
 // TransactionFilterPrecompile wraps ArbFilteredTransactionsManager to preserve free storage access for filterers.
-// Access control is NOT enforced here.
+// Call forwards the call and decides whether storage access is free based on caller role.
 type TransactionFilterPrecompile struct {
 	precompile ArbosPrecompile
 }
@@ -184,15 +184,10 @@ func (wrapper *TransactionFilterPrecompile) Call(
 		gasSupplied,
 		evm,
 	)
-	if err != nil {
+	if isFilterer {
 		return output, gasSupplied, multigas.ZeroGas(), err
 	}
-
-	// Gas charging decision
-	if isFilterer {
-		return output, gasSupplied, multigas.ZeroGas(), nil
-	}
-	return output, burner.GasLeft(), burner.gasUsed, nil
+	return output, burner.GasLeft(), burner.gasUsed, err
 }
 
 func (wrapper *TransactionFilterPrecompile) Precompile() *Precompile {
