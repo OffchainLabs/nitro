@@ -128,6 +128,7 @@ func getGitHistoryYears(path string) (created, lastModified string, err error) {
 
 func extractClaimedYear(content string) string {
 	matches := yearRegex.FindStringSubmatch(content)
+	// matches[0] is the full match, matches[1] is the first capturing group (the first year)
 	if len(matches) > 1 {
 		return matches[1]
 	}
