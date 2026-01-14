@@ -155,7 +155,7 @@ func applyFix(path, content, birthYear string) error {
 	startIdx := 0
 	// Skip existing copyright/comment block to avoid duplicates
 	if len(lines) > 0 && strings.HasPrefix(lines[0], "// Copyright") {
-		for startIdx < len(lines) && (strings.HasPrefix(lines[startIdx], "//") || lines[startIdx] == "") {
+		for startIdx < len(lines) && (strings.HasPrefix(lines[startIdx], "//")) {
 			startIdx++
 		}
 	}
