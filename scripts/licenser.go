@@ -6,18 +6,20 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
 const (
-	currentYear = "2026"
-	company     = "Offchain Labs, Inc."
-	licenseURL  = "https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md"
+	company    = "Offchain Labs, Inc."
+	licenseURL = "https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md"
 )
 
 var (
+	currentYear         = strconv.Itoa(time.Now().Year())
 	supportedExtensions = []string{".go", ".rs"}
 	yearRegex           = regexp.MustCompile(`Copyright\s+(\d{4})(?:-(\d{4}))?`)
 	fixFlag             = flag.Bool("fix", false, "Update files with the correct license header")
