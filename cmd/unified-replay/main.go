@@ -8,28 +8,26 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
-// Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
-// block hash, this program will extract all block header hashes in that range, and then run the
-// message extraction algorithm over those block headers, starting from a starting MEL state and processing
-// block headers one-by-one. At the end, a final MEL state is produced, and its hash is set into the
-// machine using a wavmio method.
 func main() {
 	melwavmio.StubInit()
 
@@ -43,49 +41,54 @@ func main() {
 	melMsgHash := melwavmio.GetMELMsgHash()
 	startMELStateHash := melwavmio.GetStartMELRoot()
 	melState := readMELState(startMELStateHash)
+	chainId := new(big.Int).SetUint64(melState.ParentChainId)
+	chainConfig, err := chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
+	if err != nil {
+		panic(fmt.Errorf("could not read default chain config: %w", err))
+	}
+
 	if melMsgHash != (common.Hash{}) {
 		msgBytes := readPreimage(melMsgHash)
 		var currentBlock *types.Block
 		nextBlock := produceBlock(currentBlock, msgBytes)
-		// Increase global state message index
-		// Set global state block hash
+		melwavmio.IncreasePositionInMEL()
 		wavmio.SetLastBlockHash(nextBlock.Hash())
 	} else {
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
-		melState = extractMessagesUpTo(melState, targetBlockHash)
+		melState = extractMessagesUpTo(chainConfig, melState, targetBlockHash)
 	}
 
 	positionInMEL := melwavmio.GetPositionInMEL()
 	if melState.MsgCount > positionInMEL {
-		nextMsg := melState.ReadMessage(positionInMEL)
-		melwavmio.SetMELMsgHash(nextMsg.Hash())
+		nextMsg, err := melState.ReadMessage(positionInMEL)
+		if err != nil {
+			panic(fmt.Errorf("error reading message idx %d: %w", positionInMEL, err))
+		}
+		msgHash, err := mel.MessageHash(nextMsg)
+		if err != nil {
+			panic(fmt.Errorf("error hashing message idx %d: %w", positionInMEL, err))
+		}
+		melwavmio.SetMELMsgHash(msgHash)
 	} else {
 		melwavmio.SetMELMsgHash(common.Hash{})
 	}
 }
 
 func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
+	// TODO: Implement.
 	return nil
 }
 
-func readPreimage(hash common.Hash) []byte {
-	preimage, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
-	if err != nil {
-		panic(fmt.Errorf("error resolving preimage: %w", err))
-	}
-	return preimage
-}
-
-func readMELState(hash common.Hash) *mel.State {
-	startStateBytes := readPreimage(hash)
-	state := new(mel.State)
-	if err := rlp.Decode(bytes.NewBuffer(startStateBytes), &state); err != nil {
-		panic(fmt.Errorf("error decoding MEL state: %w", err))
-	}
-	return state
-}
-
-func extractMessagesUpTo(startState *mel.State, targetBlockHash common.Hash) *mel.State {
+// Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
+// block hash, this program will extract all block header hashes in that range, and then run the
+// message extraction algorithm over those block headers, starting from a starting MEL state and processing
+// block headers one-by-one. At the end, a final MEL state is produced, and its hash is set into the
+// machine using a wavmio method.
+func extractMessagesUpTo(
+	chainConfig *params.ChainConfig,
+	startState *mel.State,
+	targetBlockHash common.Hash,
+) *mel.State {
 	resolver := &wavmPreimageResolver{}
 	dapReader := daprovider.NewDAProviderRegistry()
 	blobReader := &BlobPreimageReader{}
@@ -105,9 +108,7 @@ func extractMessagesUpTo(startState *mel.State, targetBlockHash common.Hash) *me
 	currentState := startState
 
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
-	delayedMsgDatabase := &delayedMessageDatabase{
-		preimageResolver: resolver,
-	}
+	delayedMsgDatabase := melreplay.NewDelayedMessageDatabase(resolver)
 	ctx := context.Background()
 	for i := len(blockHeaderHashes) - 1; i >= 0; i-- {
 		headerHash := blockHeaderHashes[i]
@@ -123,7 +124,7 @@ func extractMessagesUpTo(startState *mel.State, targetBlockHash common.Hash) *me
 			delayedMsgDatabase,
 			txsFetcher,
 			logsFetcher,
-			nil, // Chain config
+			chainConfig,
 		)
 		if err != nil {
 			panic(fmt.Errorf("error extracting messages from block %s: %w", header.Hash().Hex(), err))
@@ -173,4 +174,21 @@ func getHeaderByHash(hash common.Hash) *types.Header {
 		panic(fmt.Errorf("error parsing resolved block header: %w", err))
 	}
 	return header
+}
+
+func readMELState(hash common.Hash) *mel.State {
+	startStateBytes := readPreimage(hash)
+	state := new(mel.State)
+	if err := rlp.Decode(bytes.NewBuffer(startStateBytes), &state); err != nil {
+		panic(fmt.Errorf("error decoding MEL state: %w", err))
+	}
+	return state
+}
+
+func readPreimage(hash common.Hash) []byte {
+	preimage, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	if err != nil {
+		panic(fmt.Errorf("error resolving preimage: %w", err))
+	}
+	return preimage
 }

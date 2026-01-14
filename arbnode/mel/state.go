@@ -2,6 +2,7 @@ package mel
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -146,6 +147,11 @@ func (s *State) Clone() *State {
 	}
 }
 
+func (s *State) ReadMessage(msgIdx uint64) (*arbostypes.MessageWithMetadata, error) {
+	// TODO: Unimplemented.
+	return &arbostypes.MessageWithMetadata{}, nil
+}
+
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	// TODO: Unimplemented.
 	return nil
@@ -224,6 +230,14 @@ func (s *State) ReorgTo(newState *State) error {
 	// Reset the pre-read delayed messages count since they havent been verified against latest state's merkle root
 	newState.readCountFromBacklog = 0
 	return nil
+}
+
+func MessageHash(msg *arbostypes.MessageWithMetadata) (common.Hash, error) {
+	serialized, err := msg.Message.Serialize()
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("error serializing message: %w", err)
+	}
+	return crypto.Keccak256Hash(serialized), nil
 }
 
 func ToPtrSlice[T any](list []T) []*T {

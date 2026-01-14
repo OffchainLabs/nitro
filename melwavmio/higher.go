@@ -50,6 +50,11 @@ func GetMELMsgHash() (hash common.Hash) {
 	return
 }
 
+func SetMELMsgHash(hash common.Hash) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_MEL_MSG_HASH, hashUnsafe)
+}
+
 func GetStartMELRoot() (hash common.Hash) {
 	hashUnsafe := unsafe.Pointer(&hash[0])
 	getGlobalStateBytes32(IDX_MEL_ROOT, hashUnsafe)
@@ -58,6 +63,11 @@ func GetStartMELRoot() (hash common.Hash) {
 
 func GetPositionInMEL() uint64 {
 	return getGlobalStateUint64(IDX_POS_IN_MEL)
+}
+
+func IncreasePositionInMEL() {
+	pos := GetPositionInMEL()
+	setGlobalStateU64(IDX_POS_IN_MEL, pos+1)
 }
 
 func GetEndParentChainBlockHash() (hash common.Hash) {

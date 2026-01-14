@@ -51,6 +51,10 @@ func GetMELMsgHash() (hash common.Hash) {
 	return
 }
 
+func SetMELMsgHash(hash common.Hash) {
+	melMsgHash = hash
+}
+
 func GetStartMELRoot() (hash common.Hash) {
 	hash = startMelStateHash
 	return
@@ -67,6 +71,9 @@ func SetEndMELRoot(hash common.Hash) {
 
 func GetPositionInMEL() uint64 {
 	return 0
+}
+
+func IncreasePositionInMEL() {
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
