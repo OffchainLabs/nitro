@@ -164,7 +164,7 @@ func applyFix(path, content, birthYear string) error {
 	}
 
 	newContent := header + strings.Join(lines[startIdx:], "\n")
-	return os.WriteFile(path, []byte(newContent), 0644)
+	return os.WriteFile(path, []byte(newContent), 0644) // #nosec G306
 }
 
 func printSummary(s *stats) {
