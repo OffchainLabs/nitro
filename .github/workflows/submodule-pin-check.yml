@@ -41,7 +41,8 @@ jobs:
             [nitro-testnode]=origin/master
             [bold]=origin/main
             [safe-smart-account]=origin/release/v1.5.0
-            [crates/langs/c]=origin/vm-storage-cache
+            [crates/langs/bf]=origin/main
+            [crates/langs/c]=origin/main
             [crates/tools/wasmer]=origin/stylus
             [contracts-local/lib/openzeppelin-contracts]=origin/release-v4.7
           )
