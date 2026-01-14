@@ -93,10 +93,17 @@ func processFile(path string, stats *stats) error {
 	}
 
 	// 4. Validate existing header
-	if isHeaderValid(content, birthYear, lastYear) {
+	switch validateHeader(content, birthYear, lastYear) {
+	case validHeader:
 		colors.PrintGrey(fmt.Sprintf("[✓] %-60s | License years: %s-%s", path, birthYear, lastYear))
 		stats.Valid++
 		return nil
+	case missingURL:
+		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Missing license URL", path))
+	case missingCopyright:
+		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Missing copyright line", path))
+	case incorrectYears:
+		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Incorrect year range (Expected %s-%s)", path, birthYear, lastYear))
 	}
 
 	// 5. Handle inconsistency
@@ -104,10 +111,8 @@ func processFile(path string, stats *stats) error {
 		if err := applyFix(path, content, birthYear); err != nil {
 			return fmt.Errorf("failed to apply fix: %w", err)
 		}
-		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Fixed to %s-%s", path, birthYear, currentYear))
+		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Set license to %s-%s range", path, birthYear, currentYear))
 		stats.Fixed++
-	} else {
-		colors.PrintRed(fmt.Sprintf("[X] %-60s | Invalid or missing header", path))
 	}
 	return nil
 }
@@ -135,19 +140,33 @@ func extractClaimedYear(content string) string {
 	return ""
 }
 
-func isHeaderValid(content string, birth, update string) bool {
+type validationResult int
+
+const (
+	validHeader validationResult = iota
+	missingCopyright
+	missingURL
+	incorrectYears
+)
+
+func validateHeader(content string, birth, update string) validationResult {
 	// Only check the first 500 characters to ensure the header is at the top
 	searchArea := content
 	if len(content) > 500 {
 		searchArea = content[:500]
 	}
 
+	if !strings.Contains(strings.ToLower(searchArea), strings.ToLower(licenseURL)) {
+		return missingURL
+	}
+	if match := yearRegex.FindStringSubmatch(searchArea); match == nil {
+		return missingCopyright
+	}
 	expectedCopyright := fmt.Sprintf("Copyright %s-%s, %s", birth, update, company)
-
-	hasCopyright := strings.Contains(searchArea, expectedCopyright)
-	hasURL := strings.Contains(strings.ToLower(searchArea), strings.ToLower(licenseURL))
-
-	return hasCopyright && hasURL
+	if !strings.Contains(searchArea, expectedCopyright) {
+		return incorrectYears
+	}
+	return validHeader
 }
 
 func applyFix(path, content, birthYear string) error {
