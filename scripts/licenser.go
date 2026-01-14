@@ -10,6 +10,8 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
+const currentYear = "2026"
+
 var supportedExtensions = []string{".go", ".rs"}
 
 func main() {
@@ -50,43 +52,28 @@ func exitWithError(format string, args ...interface{}) {
 }
 
 func processFile(path string) error {
-	gitBirth, err := getGitBirthYear(path)
+	gitBirth, gitLast, err := getGitHistoryYears(path)
 	if err != nil {
-		return fmt.Errorf("could not get birth year: %v", err)
+		return fmt.Errorf("could not get git years: %v", err)
 	}
-	gitLast, err := getGitLastUpdateYear(path)
-	if err != nil {
-		return fmt.Errorf("could not get last update year: %v", err)
-	}
-
 	colors.PrintGrey(fmt.Sprintf("[X] %-60s | Years: %s-%s", path, gitBirth, gitLast))
 	return nil
 }
 
-func getGitBirthYear(path string) (string, error) {
-	cmd := exec.Command("git", "log", "--follow", "--diff-filter=A", "--format=%ad", "--date=format:%Y", "--", path)
-	output, err := cmd.Output()
+func getGitHistoryYears(path string) (string, string, error) {
+	// Get all years for this file, following renames, in chronological order
+	// %ad = author date, --reverse puts the oldest commit first
+	cmd := exec.Command("git", "log", "--follow", "--reverse", "--format=%ad", "--date=format:%Y", "--", path)
+	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", "", fmt.Errorf("could not run git log: %v", err)
 	}
-	years := strings.Fields(string(output))
-	if len(years) > 0 {
-		return years[len(years)-1], nil
-	}
-	// Fallback to current year if no commits found
-	return "2026", nil
-}
+	years := strings.Fields(string(out))
 
-func getGitLastUpdateYear(path string) (string, error) {
-	cmd := exec.Command("git", "log", "-1", "--format=%ad", "--date=format:%Y", "--", path)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
+	if len(years) == 0 {
+		return currentYear, currentYear, nil
+	} else if len(years) == 1 {
+		return years[0], years[0], nil
 	}
-	last := strings.TrimSpace(string(output))
-	if last == "" {
-		// Fallback to current year if no commits found
-		return "2026", nil
-	}
-	return last, nil
+	return years[0], years[len(years)-1], nil
 }
