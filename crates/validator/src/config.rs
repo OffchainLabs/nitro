@@ -1,7 +1,6 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use anyhow::anyhow;
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -44,7 +43,7 @@ impl ServerConfig {
             (Some(root), None) => Ok(root),
             (None, Some(ref path)) => {
                 let content = read_to_string(path)?;
-                let root = content.trim().parse::<Bytes32>().map_err(|e| anyhow!(e))?;
+                let root = content.trim().parse::<Bytes32>().map_err(|e| anyhow::anyhow!(e))?;
                 Ok(root)
             }
             _ => Err(anyhow::anyhow!(
