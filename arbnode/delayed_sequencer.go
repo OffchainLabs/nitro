@@ -24,6 +24,15 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+// FilteredTxWaitState tracks when we're halted waiting for a filtered tx
+// to be added to the on-chain filter
+type FilteredTxWaitState struct {
+	TxHash        common.Hash
+	DelayedMsgIdx uint64
+	FirstSeen     time.Time
+	LastLogTime   time.Time
+}
+
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
 	l1Reader                 *headerreader.HeaderReader
@@ -33,6 +42,7 @@ type DelayedSequencer struct {
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
+	waitingForFilteredTx     *FilteredTxWaitState
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
@@ -106,6 +116,18 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	config := d.config()
 	if !config.Enable {
 		return nil
+	}
+
+	// Periodic logging if halted waiting for filtered tx to be added to on-chain filter
+	if d.waitingForFilteredTx != nil {
+		if time.Since(d.waitingForFilteredTx.LastLogTime) > 5*time.Minute {
+			log.Error("DelayedSequencer halted on filtered tx - waiting for tx hash to be added to on-chain filter",
+				"txHash", d.waitingForFilteredTx.TxHash,
+				"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
+				"waitingSince", d.waitingForFilteredTx.FirstSeen)
+			d.waitingForFilteredTx.LastLogTime = time.Now()
+		}
+		// Fall through to retry sequencing - will succeed if tx hash was added to filter
 	}
 
 	var finalized uint64
@@ -199,7 +221,32 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// #nosec G115
 			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
 			if err != nil {
+				var filteredErr *gethexec.ErrFilteredDelayedMessage
+				if errors.As(err, &filteredErr) {
+					if d.waitingForFilteredTx == nil {
+						// First time hitting this filtered tx - log and set waiting state
+						log.Error("Delayed message filtered - HALTING delayed sequencer",
+							"txHash", filteredErr.TxHash,
+							"delayedMsgIdx", filteredErr.DelayedMsgIdx)
+						d.waitingForFilteredTx = &FilteredTxWaitState{
+							TxHash:        filteredErr.TxHash,
+							DelayedMsgIdx: filteredErr.DelayedMsgIdx,
+							FirstSeen:     time.Now(),
+							LastLogTime:   time.Now(),
+						}
+					}
+					// Return nil to halt without propagating error up - will retry on next RescanInterval
+					return nil
+				}
 				return err
+			}
+			// Success - clear waiting state if we were waiting
+			if d.waitingForFilteredTx != nil {
+				log.Info("Filtered tx resolved - resuming delayed sequencer",
+					"txHash", d.waitingForFilteredTx.TxHash,
+					"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
+					"waitedFor", time.Since(d.waitingForFilteredTx.FirstSeen))
+				d.waitingForFilteredTx = nil
 			}
 		}
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
@@ -265,4 +312,16 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn, d)
 	d.LaunchThread(d.run)
+}
+
+// WaitingForFilteredTx returns the tx hash being waited on, or nil if not halted.
+// This is primarily for testing the halt-and-wait behavior.
+func (d *DelayedSequencer) WaitingForFilteredTx() *common.Hash {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if d.waitingForFilteredTx == nil {
+		return nil
+	}
+	hash := d.waitingForFilteredTx.TxHash
+	return &hash
 }
