@@ -112,7 +112,7 @@ func processFile(path string, stats *stats) error {
 	return nil
 }
 
-func getGitHistoryYears(path string) (string, string, error) {
+func getGitHistoryYears(path string) (created, lastModified string, err error) {
 	cmd := exec.Command("git", "log", "--follow", "--format=%ad", "--date=format:%Y", "--", path)
 	out, err := cmd.Output()
 	if err != nil {
