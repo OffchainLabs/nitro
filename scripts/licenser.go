@@ -5,14 +5,29 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
-const currentYear = "2026"
+const (
+	currentYear = "2026"
+	company     = "Offchain Labs, Inc."
+	licenseURL  = "https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md"
+)
 
-var supportedExtensions = []string{".go", ".rs"}
+var (
+	supportedExtensions = []string{".go", ".rs"}
+	yearRegex           = regexp.MustCompile(`Copyright\s+(\d{4})(?:-(\d{4}))?`)
+	fixFlag             = flag.Bool("fix", false, "Update files with the correct license header")
+)
+
+type Stats struct {
+	Total int
+	Valid int
+	Fixed int
+}
 
 func main() {
 	flag.Parse()
@@ -21,13 +36,14 @@ func main() {
 	if err != nil {
 		exitWithError("could not list files: %v", err)
 	}
-	colors.PrintGrey(fmt.Sprintf("Found %d files", len(files)))
 
+	stats := &Stats{Total: len(files)}
 	for _, file := range files {
-		if err = processFile(file); err != nil {
+		if err = processFile(file, stats); err != nil {
 			exitWithError("could not process file %s: %v", file, err)
 		}
 	}
+	printSummary(stats)
 }
 
 func getFiles() ([]string, error) {
@@ -40,6 +56,7 @@ func getFiles() ([]string, error) {
 		for _, extension := range supportedExtensions {
 			if strings.HasSuffix(line, extension) {
 				filtered = append(filtered, line)
+				break
 			}
 		}
 	}
@@ -51,29 +68,37 @@ func exitWithError(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func processFile(path string) error {
+func processFile(path string, stats *Stats) error {
 	gitBirth, gitLast, err := getGitHistoryYears(path)
 	if err != nil {
-		return fmt.Errorf("could not get git years: %v", err)
+		return err
 	}
 	colors.PrintGrey(fmt.Sprintf("[X] %-60s | Years: %s-%s", path, gitBirth, gitLast))
 	return nil
 }
 
 func getGitHistoryYears(path string) (string, string, error) {
-	// Get all years for this file, following renames, in chronological order
-	// %ad = author date, --reverse puts the oldest commit first
 	cmd := exec.Command("git", "log", "--follow", "--reverse", "--format=%ad", "--date=format:%Y", "--", path)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", "", fmt.Errorf("could not run git log: %v", err)
+		return "", "", err
 	}
 	years := strings.Fields(string(out))
 
 	if len(years) == 0 {
 		return currentYear, currentYear, nil
-	} else if len(years) == 1 {
-		return years[0], years[0], nil
 	}
 	return years[0], years[len(years)-1], nil
+}
+
+func printSummary(s *Stats) {
+	fmt.Println(strings.Repeat("-", 70))
+	colors.PrintGrey(fmt.Sprintf("Total Files:    %d", s.Total))
+	colors.PrintMint(fmt.Sprintf("Valid:          %d", s.Valid))
+	if s.Fixed > 0 {
+		colors.PrintYellow(fmt.Sprintf("Fixed:          %d", s.Fixed))
+	} else if s.Valid < s.Total {
+		colors.PrintRed(fmt.Sprintf("Invalid:        %d (Run with --fix to resolve)", s.Total-s.Valid))
+	}
+	fmt.Println(strings.Repeat("-", 70))
 }
