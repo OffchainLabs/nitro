@@ -132,32 +132,19 @@ func extractClaimedYear(content string) string {
 	return ""
 }
 
-func isHeaderValid(content string, birthYear, lastUpdateYear string) bool {
-	lines := strings.SplitN(content, "\n", 5)
-	if len(lines) < 2 {
-		return false
+func isHeaderValid(content string, birth, update string) bool {
+	// We only check the first 500 characters to ensure the header is at the top
+	searchArea := content
+	if len(content) > 500 {
+		searchArea = content[:500]
 	}
 
-	expectedFirstLine := fmt.Sprintf("// Copyright %s-%s, %s", birthYear, lastUpdateYear, company)
-	line1 := strings.TrimSpace(lines[0])
+	expectedCopyright := fmt.Sprintf("Copyright %s-%s, %s", birth, update, company)
 
-	// Format 1: 2-line standard
-	link1 := fmt.Sprintf("// For license information, see %s", licenseURL)
-	if line1 == expectedFirstLine && strings.TrimSpace(lines[1]) == link1 {
-		return true
-	}
+	hasCopyright := strings.Contains(searchArea, expectedCopyright)
+	hasURL := strings.Contains(strings.ToLower(searchArea), strings.ToLower(licenseURL))
 
-	// Format 2: 3-line standard (newline before link)
-	if len(lines) >= 3 {
-		link2a := "// For license information, see:"
-		link2b := fmt.Sprintf("// %s", licenseURL)
-		if line1 == expectedFirstLine &&
-			strings.TrimSpace(lines[1]) == link2a &&
-			strings.TrimSpace(lines[2]) == link2b {
-			return true
-		}
-	}
-	return false
+	return hasCopyright && hasURL
 }
 
 func applyFix(path, content, birthYear string) error {
