@@ -4,12 +4,24 @@
 package txfilter
 
 import (
+	"crypto/sha256"
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/restrictedaddr"
 )
+
+func mustState(t *testing.T, s any) *HashedAddressCheckerState {
+	t.Helper()
+	state, ok := s.(*HashedAddressCheckerState)
+	require.Truef(t, ok, "unexpected AddressCheckerState type %T", s)
+	return state
+}
 
 func TestHashedAddressCheckerSimple(t *testing.T) {
 	salt := []byte("test-salt")
@@ -17,70 +29,54 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	addrFiltered := common.HexToAddress("0x000000000000000000000000000000000000dead")
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 
-	filteredHash := crypto.Keccak256Hash(addrFiltered.Bytes(), salt)
+	store := restrictedaddr.NewHashStore()
+
+	filteredHash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
+	store.Load(salt, [][32]byte{filteredHash}, "test")
 
 	checker := NewHashedAddressChecker(
-		[]common.Hash{filteredHash},
-		salt,
-		/* hashCacheSize */ 16,
+		store,
 		/* workerCount */ 2,
 		/* queueSize */ 8,
 	)
 
 	// Tx 1: filtered address
-	//nolint:errcheck
-	state1 := checker.NewTxState().(*HashedAddressCheckerState)
+	state1 := mustState(t, checker.NewTxState())
 	state1.TouchAddress(addrFiltered)
-
-	if !state1.IsFiltered() {
-		t.Fatalf("expected transaction to be filtered")
-	}
+	assert.True(t, state1.IsFiltered(), "expected transaction to be filtered")
 
 	// Tx 2: allowed address
-	//nolint:errcheck
-	state2 := checker.NewTxState().(*HashedAddressCheckerState)
+	state2 := mustState(t, checker.NewTxState())
 	state2.TouchAddress(addrAllowed)
-
-	if state2.IsFiltered() {
-		t.Fatalf("expected transaction NOT to be filtered")
-	}
+	assert.False(t, state2.IsFiltered(), "expected transaction NOT to be filtered")
 
 	// Tx 3: mixed addresses
-	//nolint:errcheck
-	state3 := checker.NewTxState().(*HashedAddressCheckerState)
+	state3 := mustState(t, checker.NewTxState())
 	state3.TouchAddress(addrAllowed)
 	state3.TouchAddress(addrFiltered)
+	assert.True(t, state3.IsFiltered(), "expected transaction with mixed addresses to be filtered")
 
-	if !state3.IsFiltered() {
-		t.Fatalf("expected transaction with mixed addresses to be filtered")
-	}
-
-	// Tx 4: reuse hash cache across txs
-	// Touch the same filtered address again; this must hit the hash cache
-	//nolint:errcheck
-	state4 := checker.NewTxState().(*HashedAddressCheckerState)
+	// Tx 4: reuse HashStore cache across txs
+	state4 := mustState(t, checker.NewTxState())
 	state4.TouchAddress(addrFiltered)
-
-	if !state4.IsFiltered() {
-		t.Fatalf("expected cached filtered address to still be filtered")
-	}
+	assert.True(t, state4.IsFiltered(), "expected cached filtered address to still be filtered")
 
 	// Tx 5: queue overflow should not panic and must be conservative
-	// Create a checker with zero queue size to force drops
 	overflowChecker := NewHashedAddressChecker(
-		[]common.Hash{filteredHash},
-		salt,
-		/* hashCacheSize */ 16,
+		store,
 		/* workerCount */ 1,
 		/* queueSize */ 0,
 	)
 
-	//nolint:errcheck
-	overflowState := overflowChecker.NewTxState().(*HashedAddressCheckerState)
+	overflowState := mustState(t, overflowChecker.NewTxState())
 	overflowState.TouchAddress(addrFiltered)
 
-	// Queue is full, work is dropped; result may be false, but must not panic
-	_ = overflowState.IsFiltered()
+	// false negative allowed
+	assert.False(
+		t,
+		overflowState.IsFiltered(),
+		"expected overflowed check to be unfiltered (false negative allowed)",
+	)
 }
 
 func TestHashedAddressCheckerHeavy(t *testing.T) {
@@ -88,18 +84,19 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 
 	const filteredCount = 500
 	filteredAddrs := make([]common.Address, filteredCount)
-	filteredHashes := make([]common.Hash, filteredCount)
+	filteredHashes := make([][32]byte, filteredCount)
 
 	for i := range filteredAddrs {
 		addr := common.BytesToAddress([]byte{byte(i + 1)})
 		filteredAddrs[i] = addr
-		filteredHashes[i] = crypto.Keccak256Hash(addr.Bytes(), salt)
+		filteredHashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
 	}
 
+	store := restrictedaddr.NewHashStore()
+	store.Load(salt, filteredHashes, "heavy")
+
 	checker := NewHashedAddressChecker(
-		filteredHashes,
-		salt,
-		/* hashCacheSize */ 256,
+		store,
 		/* workerCount */ 4,
 		/* queueSize */ 32,
 	)
@@ -116,14 +113,13 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 		go func(tx int) {
 			defer wg.Done()
 
-			//nolint:errcheck
-			state := checker.NewTxState().(*HashedAddressCheckerState)
+			state := mustState(t, checker.NewTxState())
 
 			for i := range touchesPerTx {
 				if i%10 == 0 {
 					state.TouchAddress(filteredAddrs[i%filteredCount])
 				} else {
-					addr := common.BytesToAddress([]byte{byte(200 + i)})
+					addr := common.BytesToAddress([]byte{byte(200 + i*tx)})
 					state.TouchAddress(addr)
 				}
 			}
@@ -135,7 +131,6 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	wg.Wait()
 	close(results)
 
-	// Post-conditions
 	filteredTxs := 0
 	for r := range results {
 		if r {
@@ -143,7 +138,10 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 		}
 	}
 
-	if filteredTxs == 0 {
-		t.Fatalf("expected at least some transactions to be filtered under load")
-	}
+	assert.Greater(
+		t,
+		filteredTxs,
+		0,
+		"expected at least some transactions to be filtered under load",
+	)
 }
