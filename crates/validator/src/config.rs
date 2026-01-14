@@ -43,7 +43,10 @@ impl ServerConfig {
             (Some(root), None) => Ok(root),
             (None, Some(ref path)) => {
                 let content = read_to_string(path)?;
-                let root = content.trim().parse::<Bytes32>().map_err(|e| anyhow::anyhow!(e))?;
+                let root = content
+                    .trim()
+                    .parse::<Bytes32>()
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 Ok(root)
             }
             _ => Err(anyhow::anyhow!(
