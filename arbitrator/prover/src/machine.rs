@@ -800,9 +800,11 @@ impl From<Function> for FunctionSerdeAll {
 // Globalstate holds:
 // bytes32 - last_block_hash
 // bytes32 - send_root
+// bytes32 - mel_state_hash
+// bytes32 - mel_message_hash
 // uint64 - inbox_position
 // uint64 - position_within_message
-pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 4;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -816,8 +818,9 @@ impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        for item in self.bytes32_vals {
-            h.update(item)
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
+            h.update(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
             h.update(item.to_be_bytes())
@@ -827,13 +830,32 @@ impl GlobalState {
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        for item in self.bytes32_vals {
-            data.extend(item)
+        let end_idx = self.bytes32_last_non_zero_index();
+        for i in 0..=end_idx {
+            data.extend(self.bytes32_vals[i]);
         }
         for item in self.u64_vals {
             data.extend(item.to_be_bytes())
         }
         data
+    }
+    /// Finds the last non-zero index in the bytes32 values and returns
+    /// the max of it and 1. This is used to determine how many
+    /// bytes32 values to include in the hash and serialization of a global state,
+    /// and at least the first two values must be included for backwards compatibility.
+    fn bytes32_last_non_zero_index(&self) -> usize {
+        let last_non_zero_idx = self
+            .bytes32_vals
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, &val)| val != Bytes32::default())
+            .map(|(i, _)| i);
+
+        match last_non_zero_idx {
+            Some(idx) => std::cmp::max(1, idx),
+            None => 1,
+        }
     }
 }
 
@@ -988,6 +1010,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    end_parent_chain_block_hash: Bytes32, // Used for MEL proving.
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
@@ -1560,6 +1583,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info,
         };
@@ -1593,6 +1617,7 @@ impl Machine {
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
             context: Default::default(),
+            end_parent_chain_block_hash: Default::default(),
             debug_info: Default::default(),
         }
     }
@@ -1646,6 +1671,7 @@ impl Machine {
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
+            end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
         };
@@ -2467,6 +2493,15 @@ impl Machine {
                         self.global_state.u64_vals[idx] = val
                     }
                 }
+                Opcode::GetEndParentChainBlockHash => {
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    if !module
+                        .memory
+                        .store_slice_aligned(ptr.into(), &*self.end_parent_chain_block_hash)
+                    {
+                        error!();
+                    }
+                }
                 Opcode::ValidateCertificate => {
                     let preimage_type = value_stack.pop().unwrap().assume_u32();
                     let hash_ptr = value_stack.pop().unwrap().assume_u32();
@@ -3277,6 +3312,10 @@ impl Machine {
 
     pub fn set_global_state(&mut self, gs: GlobalState) {
         self.global_state = gs;
+    }
+
+    pub fn set_end_parent_chain_block_hash(&mut self, hash: Bytes32) {
+        self.end_parent_chain_block_hash = hash;
     }
 
     pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
