@@ -5,6 +5,7 @@ use crate::{spawner_endpoints, ServerState};
 use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
+use tower_http::trace::TraceLayer;
 
 const BASE_NAMESPACE: &str = "/validation";
 
@@ -30,4 +31,5 @@ pub fn create_router() -> Router<Arc<ServerState>> {
             &format!("{BASE_NAMESPACE}_wasmModuleRoots"),
             get(spawner_endpoints::wasm_module_roots),
         )
+        .layer(TraceLayer::new_for_http())
 }
