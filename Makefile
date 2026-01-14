@@ -302,7 +302,7 @@ docker:
 
 .PHONY: check-license-headers
 check-license-headers:
-	go run ./scripts/licenser.go
+	@go run ./scripts/licenser.go
 
 # regular build rules
 
