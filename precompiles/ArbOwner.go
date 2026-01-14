@@ -198,7 +198,7 @@ func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newInfraFeeAccount addr)
 
 // ScheduleArbOSUpgrade to the requested version at the requested timestamp
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
-	return c.State.ScheduleArbOSUpgrade(evm, newVersion, timestamp)
+	return c.State.ScheduleArbOSUpgrade(evm.Config.Tracer, newVersion, timestamp)
 }
 
 // Sets equilibration units parameter for L1 price adjustment algorithm
@@ -244,7 +244,7 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 // Sets the Brotli compression level used for fast compression
 // Available starting in ArbOS version 20, which also raises the default to level 1
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
-	return c.State.SetBrotliCompressionLevel(level, evm)
+	return c.State.SetBrotliCompressionLevel(level, evm.Config.Tracer)
 }
 
 // Releases surplus funds from L1PricerFundsPoolAddress for use
@@ -279,7 +279,7 @@ func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
 		return errors.New("ink price must be a positive uint24")
 	}
 	params.InkPrice = ink
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
@@ -289,7 +289,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 		return err
 	}
 	params.MaxStackDepth = depth
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the number of free wasm pages a tx receives
@@ -299,7 +299,7 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 		return err
 	}
 	params.FreePages = pages
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the base cost of each additional wasm page
@@ -309,7 +309,7 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 		return err
 	}
 	params.PageGas = gas
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the initial number of pages a wasm may allocate
@@ -319,7 +319,7 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 		return err
 	}
 	params.PageLimit = limit
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the minimum costs to invoke a program
@@ -330,7 +330,7 @@ func (con ArbOwner) SetWasmMinInitGas(c ctx, evm mech, gas, cached uint64) error
 	}
 	params.MinInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(gas, programs.MinInitGasUnits))
 	params.MinCachedInitGas = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(cached, programs.MinCachedGasUnits))
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the linear adjustment made to program init costs
@@ -340,7 +340,7 @@ func (con ArbOwner) SetWasmInitCostScalar(c ctx, evm mech, percent uint64) error
 		return err
 	}
 	params.InitCostScalar = arbmath.SaturatingUUCast[uint8](arbmath.DivCeil(percent, programs.CostScalarPercent))
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the number of days after which programs deactivate
@@ -350,7 +350,7 @@ func (con ArbOwner) SetWasmExpiryDays(c ctx, evm mech, days uint16) error {
 		return err
 	}
 	params.ExpiryDays = days
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the age a program must be to perform a keepalive
@@ -360,7 +360,7 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, evm mech, days uint16) error {
 		return err
 	}
 	params.KeepaliveDays = days
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Sets the number of extra programs ArbOS caches during a given block
@@ -370,7 +370,7 @@ func (con ArbOwner) SetWasmBlockCacheSize(c ctx, evm mech, count uint16) error {
 		return err
 	}
 	params.BlockCacheSize = count
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // SetMaxWasmSize sets the maximum size the wasm code can be in bytes after
@@ -381,7 +381,7 @@ func (con ArbOwner) SetWasmMaxSize(c ctx, evm mech, maxWasmSize uint32) error {
 		return err
 	}
 	params.MaxWasmSize = maxWasmSize
-	return params.Save(evm)
+	return params.Save(evm.Config.Tracer)
 }
 
 // Adds account as a wasm cache manager
@@ -485,7 +485,7 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
 		}
 
-		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue, evm)
+		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue, evm.Config.Tracer)
 		if err != nil {
 			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
 		}

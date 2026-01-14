@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -22,9 +21,9 @@ import (
 
 var minBaseFee = big.NewInt(params.GWei)
 
-func newPricingState(arbosVersion uint64, evm *vm.EVM) (*l2pricing.L2PricingState, error) {
+func newPricingState(arbosVersion uint64) (*l2pricing.L2PricingState, error) {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := l2pricing.InitializeL2PricingState(storage, evm)
+	err := l2pricing.InitializeL2PricingState(storage)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +39,7 @@ func runLegacyModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState(params.ArbosVersion_40, nil)
+	pricing, err := newPricingState(params.ArbosVersion_40)
 	if err != nil {
 		return err
 	}
@@ -74,7 +73,7 @@ func runConstraintsModel(args []string) error {
 		return err
 	}
 
-	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix, nil)
+	pricing, err := newPricingState(params.ArbosVersion_MultiConstraintFix)
 	if err != nil {
 		return err
 	}

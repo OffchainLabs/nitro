@@ -801,3 +801,149 @@ func (sbb *StorageBackedBytes) Clear() error {
 func (sbb *StorageBackedBytes) Size() (uint64, error) {
 	return sbb.Storage.GetBytesSize()
 }
+
+type StorageBacked[T any] interface {
+	Get() (T, error)
+	GetCurrentSlot() common.Hash
+}
+
+func CaptureStorageOffsetGeneric[T any, S StorageBacked[T]](
+	tracer *tracing.Hooks,
+	storage S,
+	useDefault bool,
+	defaultValue T,
+	toHash func(T) common.Hash,
+) {
+	if tracer == nil || tracer.CaptureArbitrumStorageSet == nil {
+		return
+	}
+
+	var oldVal common.Hash
+
+	// Getting storage updates the storage as well, so in some cases we need to be
+	// careful when to call Get() hence the flag useDefault
+	if !useDefault {
+		val, err := storage.Get()
+		if err != nil {
+			val = defaultValue
+		}
+		oldVal = toHash(val)
+	}
+
+	tracer.CaptureArbitrumStorageSet(storage.GetCurrentSlot(), oldVal, 0, false)
+}
+
+func CaptureStorageOffsetAddr(tracer *tracing.Hooks, storage StorageBackedAddress, useDefault bool) {
+	CaptureStorageOffsetGeneric(
+		tracer,
+		&storage,
+		useDefault,
+		common.Address{},
+		util.AddressToHash,
+	)
+}
+
+func CaptureStorageOffsetBigUint(tracer *tracing.Hooks, storage StorageBackedBigUint, useDefault bool) {
+	CaptureStorageOffsetGeneric(
+		tracer,
+		&storage,
+		useDefault,
+		big.NewInt(0),
+		common.BigToHash,
+	)
+}
+
+func CaptureStorageOffsetBigInt(tracer *tracing.Hooks, storage StorageBackedBigInt, useDefault bool) {
+	CaptureStorageOffsetGeneric(
+		tracer,
+		&storage,
+		useDefault,
+		big.NewInt(0),
+		common.BigToHash,
+	)
+}
+
+func CaptureStorageOffset32(tracer *tracing.Hooks, storage StorageBackedUint32, useDefault bool) {
+	CaptureStorageOffsetGeneric(
+		tracer,
+		&storage,
+		useDefault,
+		0,
+		uint32ToHash,
+	)
+}
+
+func uint32ToHash(v uint32) common.Hash {
+	return common.BigToHash(big.NewInt(int64(v)))
+}
+
+func CaptureStorageOffset(tracer *tracing.Hooks, storage WrappedUint64, useDefault bool) {
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			var oldVal common.Hash
+			// Getting storage updates the storage as well, so in some cases we need to be
+			// careful when to call Get() hence the flag useDefault
+			if !useDefault {
+				val, err := storage.Get()
+				if err != nil {
+					val = 0
+				}
+				// #nosec G115
+				oldVal = common.BigToHash(big.NewInt(int64(val)))
+			}
+
+			tracer.CaptureArbitrumStorageSet(storage.GetCurrentSlot(), oldVal, 0, false)
+		}
+	}
+}
+
+func CaptureStorageForAddress(tracer *tracing.Hooks, storage *Storage, addr common.Address, offset uint64, useDefault bool) {
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			slot := storage.GetStorageSlot(common.BytesToHash(addr.Bytes()))
+			handleCaptureArbitrumStorageSet(tracer, storage, slot, offset, useDefault)
+		}
+	}
+}
+
+func CaptureStorageWithOffset(tracer *tracing.Hooks, storage *Storage, offset uint64, useDefault bool) {
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			handleCaptureArbitrumStorageSet(tracer, storage, storage.GetStorageSlot(util.UintToHash(offset)), offset, useDefault)
+		}
+	}
+}
+
+func handleCaptureArbitrumStorageSet(tracer *tracing.Hooks, storage *Storage, slot common.Hash, offset uint64, useDefault bool) {
+	// Getting storage updates the storage as well, so in some cases we need to be
+	// careful when to call Get() hence the flag useDefault
+	var oldVal common.Hash
+	if !useDefault {
+		val, err := storage.GetByUint64(offset)
+		if err != nil {
+			val = common.Hash{}
+		}
+		oldVal = val
+	}
+
+	tracer.CaptureArbitrumStorageSet(slot, oldVal, 0, false)
+}
+
+func CaptureStorageOffsets(tracer *tracing.Hooks, storage *Storage, offsets []uint64) {
+	if tracer == nil || tracer.CaptureArbitrumStorageSet == nil {
+		return
+	}
+
+	for _, offset := range offsets {
+		val, err := storage.GetUint64ByUint64(offset)
+		if err != nil {
+			val = 0
+		}
+
+		// #nosec G115
+		oldVal := common.BigToHash(big.NewInt(int64(val)))
+		slotHash := util.UintToHash(offset)
+
+		tracer.CaptureArbitrumStorageSet(storage.GetStorageSlot(slotHash), oldVal, 0, false)
+	}
+}

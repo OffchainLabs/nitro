@@ -8,11 +8,10 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type Blockhashes struct {
@@ -43,7 +42,7 @@ func (bh *Blockhashes) BlockHash(number uint64) (common.Hash, error) {
 	return bh.backingStorage.GetByUint64(1 + (number % 256))
 }
 
-func (bh *Blockhashes) RecordNewL1Block(evm *vm.EVM, number uint64, blockHash common.Hash, arbosVersion uint64) error {
+func (bh *Blockhashes) RecordNewL1Block(tracer *tracing.Hooks, number uint64, blockHash common.Hash, arbosVersion uint64) error {
 	nextNumber, err := bh.l1BlockNumber.Get()
 	if err != nil {
 		return err
@@ -69,30 +68,18 @@ func (bh *Blockhashes) RecordNewL1Block(evm *vm.EVM, number uint64, blockHash co
 		}
 
 		numSlot := 1 + (nextNumber % 256)
-		storageSlot := bh.backingStorage.GetStorageSlot(util.UintToHash(numSlot))
-		maybeCaptureTrace(evm, storageSlot)
+		storage.CaptureStorageWithOffset(tracer, bh.backingStorage, numSlot, false)
 		err = bh.backingStorage.SetByUint64(numSlot, fill)
 		if err != nil {
 			return err
 		}
 	}
 
-	storageSlot := bh.backingStorage.GetStorageSlot(util.UintToHash(1 + (number % 256)))
-	maybeCaptureTrace(evm, storageSlot)
+	storage.CaptureStorageWithOffset(tracer, bh.backingStorage, 1+(number%256), false)
 	err = bh.backingStorage.SetByUint64(1+(number%256), blockHash)
 	if err != nil {
 		return err
 	}
-	maybeCaptureTrace(evm, bh.l1BlockNumber.StorageSlot.GetCurrentSlot())
+	storage.CaptureStorageOffset(tracer, &bh.l1BlockNumber, false)
 	return bh.l1BlockNumber.Set(number + 1)
-}
-
-func maybeCaptureTrace(evm *vm.EVM, targetSlot common.Hash) {
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(targetSlot, 0, false)
-			}
-		}
-	}
 }

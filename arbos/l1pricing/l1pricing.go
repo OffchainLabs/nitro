@@ -88,19 +88,15 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
 	fundsDueForRewards := sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset)
 	equilibrationUnits := sto.OpenStorageBackedBigUint(equilibrationUnitsOffset)
+	totalFundsDue := bptStorage.OpenStorageBackedBigInt(totalFundsDueOffset)
 
-	if hooks := tracer; hooks != nil {
-		if hooks.CaptureArbitrumStorageGet != nil {
-			totalFundsDue := bptStorage.OpenStorageBackedBigInt(totalFundsDueOffset)
-			hooks.CaptureArbitrumStorageGet(totalFundsDue.StorageSlot.GetCurrentSlot(), 0, false)
-			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(payRewardsToOffset)), 0, false)
-			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(inertiaOffset)), 0, false)
-			hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(perUnitRewardOffset)), 0, false)
-			hooks.CaptureArbitrumStorageGet(pricePerUnit.StorageSlot.GetCurrentSlot(), 0, false)
-			hooks.CaptureArbitrumStorageGet(equilibrationUnits.StorageSlot.GetCurrentSlot(), 0, false)
-			hooks.CaptureArbitrumStorageGet(fundsDueForRewards.StorageSlot.GetCurrentSlot(), 0, false)
-		}
-	}
+	storage.CaptureStorageOffsetBigInt(tracer, totalFundsDue, false)
+	storage.CaptureStorageOffsetBigInt(tracer, pricePerUnit, false)
+	storage.CaptureStorageOffsetBigUint(tracer, equilibrationUnits, false)
+	storage.CaptureStorageOffsetBigInt(tracer, fundsDueForRewards, false)
+	storage.CaptureStorageWithOffset(tracer, sto, payRewardsToOffset, false)
+	storage.CaptureStorageWithOffset(tracer, sto, inertiaOffset, false)
+	storage.CaptureStorageWithOffset(tracer, sto, perUnitRewardOffset, false)
 
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err

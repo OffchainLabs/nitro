@@ -5,11 +5,10 @@ package merkleAccumulator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -132,19 +131,9 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
 	return nil
 }
 
-func maybeCaptureTrace(evm *vm.EVM, targetSlot common.Hash) {
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(targetSlot, 0, false)
-			}
-		}
-	}
-}
-
 // Note: itemHash is hashed before being included in the tree, to prevent confusing leafs with branches.
-func (acc *MerkleAccumulator) Append(evm *vm.EVM, itemHash common.Hash) ([]MerkleTreeNodeEvent, error) {
-	maybeCaptureTrace(evm, acc.size.GetCurrentSlot())
+func (acc *MerkleAccumulator) Append(tracer *tracing.Hooks, itemHash common.Hash) ([]MerkleTreeNodeEvent, error) {
+	storage.CaptureStorageOffset(tracer, acc.size, true)
 	size, err := acc.size.Increment()
 	if err != nil {
 		return nil, err
@@ -154,13 +143,13 @@ func (acc *MerkleAccumulator) Append(evm *vm.EVM, itemHash common.Hash) ([]Merkl
 	level := uint64(0)
 	soFar := crypto.Keccak256(itemHash.Bytes())
 	for {
-		levelSlot := common.Hash{}
+		keyLevel := level
 		if acc.backingStorage != nil {
-			levelSlot = acc.backingStorage.GetStorageSlot(util.UintToHash(2 + level))
+			keyLevel = 2 + level
 		}
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
-			maybeCaptureTrace(evm, levelSlot)
+			storage.CaptureStorageWithOffset(tracer, acc.backingStorage, keyLevel, true)
 			err := acc.setPartial(level, &h)
 			return events, err
 		}
@@ -170,7 +159,7 @@ func (acc *MerkleAccumulator) Append(evm *vm.EVM, itemHash common.Hash) ([]Merkl
 		}
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
-			maybeCaptureTrace(evm, levelSlot)
+			storage.CaptureStorageWithOffset(tracer, acc.backingStorage, keyLevel, true)
 			err := acc.setPartial(level, &h)
 			return events, err
 		}
@@ -186,7 +175,7 @@ func (acc *MerkleAccumulator) Append(evm *vm.EVM, itemHash common.Hash) ([]Merkl
 			acc.recordPreimages(common.BytesToHash(soFar), val)
 		}
 		h := common.Hash{}
-		maybeCaptureTrace(evm, levelSlot)
+		storage.CaptureStorageWithOffset(tracer, acc.backingStorage, keyLevel, true)
 		err = acc.setPartial(level, &h)
 		if err != nil {
 			return nil, err

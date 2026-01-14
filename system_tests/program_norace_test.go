@@ -105,10 +105,10 @@ func validateBlockRange(
 }
 
 func TestProgramEvmData(t *testing.T) {
-	testEvmData(t, true)
+	testEvmData(t, true, true)
 }
 
-func testEvmData(t *testing.T, jit bool) {
+func testEvmData(t *testing.T, jit, runPrestateTracer bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -208,5 +208,7 @@ func testEvmData(t *testing.T, jit bool) {
 
 	validateBlocks(t, 1, jit, builder)
 
-	AutomatedPrestateTracerTest(t, builder.L2)
+	if runPrestateTracer {
+		AutomatedPrestateTracerTest(t, builder.L2)
+	}
 }

@@ -8,7 +8,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -69,16 +70,16 @@ const (
 )
 
 // ShrinkBacklog reduces the backlog for the active pricing model.
-func (ps *L2PricingState) ShrinkBacklog(evm *vm.EVM, usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	return ps.updateBacklog(evm, Shrink, usedGas, usedMultiGas)
+func (ps *L2PricingState) ShrinkBacklog(tracer *tracing.Hooks, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(tracer, Shrink, usedGas, usedMultiGas)
 }
 
 // GrowBacklog increases the backlog for the active pricing model.
-func (ps *L2PricingState) GrowBacklog(evm *vm.EVM, usedGas uint64, usedMultiGas multigas.MultiGas) error {
-	return ps.updateBacklog(evm, Grow, usedGas, usedMultiGas)
+func (ps *L2PricingState) GrowBacklog(tracer *tracing.Hooks, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+	return ps.updateBacklog(tracer, Grow, usedGas, usedMultiGas)
 }
 
-func (ps *L2PricingState) updateBacklog(evm *vm.EVM, op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
+func (ps *L2PricingState) updateBacklog(tracer *tracing.Hooks, op BacklogOperation, usedGas uint64, usedMultiGas multigas.MultiGas) error {
 	gasModel, err := ps.GasModelToUse()
 	if err != nil {
 		return err
@@ -87,7 +88,7 @@ func (ps *L2PricingState) updateBacklog(evm *vm.EVM, op BacklogOperation, usedGa
 	case GasModelLegacy:
 		return ps.updateLegacyBacklog(op, usedGas)
 	case GasModelSingleGasConstraints:
-		return ps.updateSingleGasConstraintsBacklogs(evm, op, usedGas)
+		return ps.updateSingleGasConstraintsBacklogs(tracer, op, usedGas)
 	case GasModelMultiGasConstraints:
 		return ps.updateMultiGasConstraintsBacklogs(op, usedGas, usedMultiGas)
 	default:
@@ -104,7 +105,7 @@ func (ps *L2PricingState) updateLegacyBacklog(op BacklogOperation, usedGas uint6
 	return ps.SetGasBacklog(backlog)
 }
 
-func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(evm *vm.EVM, op BacklogOperation, usedGas uint64) error {
+func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(tracer *tracing.Hooks, op BacklogOperation, usedGas uint64) error {
 	constraintsLength, err := ps.gasConstraints.Length()
 	if err != nil {
 		return err
@@ -116,13 +117,8 @@ func (ps *L2PricingState) updateSingleGasConstraintsBacklogs(evm *vm.EVM, op Bac
 			return err
 		}
 		gasDelta := applyGasDelta(op, backlog, usedGas)
-		if evm != nil {
-			if hooks := evm.Config.Tracer; hooks != nil {
-				if hooks.CaptureArbitrumStorageGet != nil {
-					hooks.CaptureArbitrumStorageGet(constraint.backlog.StorageSlot.GetCurrentSlot(), 0, false)
-				}
-			}
-		}
+		storage.CaptureStorageOffset(tracer, &constraint.backlog, false)
+
 		err = constraint.SetBacklog(gasDelta)
 		if err != nil {
 			return err
@@ -208,19 +204,19 @@ func (ps *L2PricingState) BacklogUpdateCost() uint64 {
 }
 
 // UpdatePricingModel updates the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, evm *vm.EVM) {
+func (ps *L2PricingState) UpdatePricingModel(timePassed uint64, tracer *tracing.Hooks) {
 	gasModel, _ := ps.GasModelToUse()
 	switch gasModel {
 	case GasModelLegacy:
-		ps.updatePricingModelLegacy(timePassed, evm)
+		ps.updatePricingModelLegacy(timePassed, tracer)
 	case GasModelSingleGasConstraints:
-		ps.updatePricingModelSingleConstraints(timePassed, evm)
+		ps.updatePricingModelSingleConstraints(timePassed, tracer)
 	case GasModelMultiGasConstraints:
 		ps.updatePricingModelMultiConstraints(timePassed)
 	}
 }
 
-func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64, evm *vm.EVM) {
+func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64, tracer *tracing.Hooks) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
 	_ = ps.updateLegacyBacklog(Shrink, arbmath.SaturatingUMul(timePassed, speedLimit))
 	inertia, _ := ps.PricingInertia()
@@ -233,17 +229,16 @@ func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64, evm *vm.EV
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](arbmath.SaturatingUMul(inertia, speedLimit))
 		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), 0, false)
-			}
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			tracer.CaptureArbitrumStorageSet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), common.Hash{}, 0, false)
 		}
 	}
+
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 
-func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64, evm *vm.EVM) {
+func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64, tracer *tracing.Hooks) {
 	// Compute exponent used in the basefee formula
 	totalExponent := arbmath.Bips(0)
 	constraintsLength, _ := ps.gasConstraints.Length()
@@ -266,11 +261,9 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64,
 		}
 	}
 
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), 0, false)
-			}
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			tracer.CaptureArbitrumStorageSet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), common.Hash{}, 0, false)
 		}
 	}
 

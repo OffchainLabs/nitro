@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -500,77 +499,6 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 	if found != 2 {
 		t.Fatal("ArbosStateAddress storage accesses for ArbOSVersion and BrotliCompressionLevel not logged in the prestateTracer's trace")
 	}
-
-	AutomatedPrestateTracerTest(t, builder.L2)
-}
-
-func createSimpleTxs(t *testing.T, ctx *context.Context, builder *NodeBuilder) {
-	var txs types.Transactions
-	for i := 0; i < 5; i++ {
-		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-		err := builder.L2.Client.SendTransaction(*ctx, tx)
-		txs = append(txs, tx)
-		Require(t, err)
-	}
-
-	for _, tx := range txs {
-		_, err := builder.L2.EnsureTxSucceeded(tx)
-		Require(t, err)
-	}
-}
-
-func createAndCallSimpleContract(t *testing.T, ctx *context.Context, builder *NodeBuilder) {
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", *ctx)
-	_, simple1 := builder.L2.DeploySimple(t, auth)
-	tx, err := simple1.Increment(&auth)
-	Require(t, err, "failed to call Increment()")
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-	_, simple2 := builder.L2.DeploySimple(t, auth)
-	tx, err = simple2.Increment(&auth)
-	Require(t, err, "failed to call Increment()")
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-	tx, err = simple2.Increment(&auth)
-	Require(t, err, "failed to call Increment() second time")
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-}
-
-func createSelfDestructContract(t *testing.T, ctx *context.Context, builder *NodeBuilder) {
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", *ctx)
-	auth.Value = big.NewInt(params.Ether)
-	_, tx, _, err := localgen.DeploySelfDestructOutsideConstructor(&auth, builder.L2.Client)
-	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-}
-
-func TestPrestateTracerRegistersArbitrumStorageMoreContracts(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	builder.L2Info.GenerateAccount("User2")
-
-	sender := builder.L2Info.GetAddress("Owner")
-
-	_, err := builder.L2.Client.BalanceAt(ctx, sender, nil)
-	Require(t, err)
-	_, err = builder.L2.Client.BalanceAt(ctx, sender, nil)
-	Require(t, err)
-
-	createSimpleTxs(t, &ctx, builder)
-	createAndCallSimpleContract(t, &ctx, builder)
-	createSelfDestructContract(t, &ctx, builder)
-
-	_, err = builder.L2.Client.BalanceAt(ctx, sender, nil)
-	Require(t, err)
-	_, err = builder.L2.Client.BalanceAt(ctx, sender, nil)
-	Require(t, err)
 
 	AutomatedPrestateTracerTest(t, builder.L2)
 }

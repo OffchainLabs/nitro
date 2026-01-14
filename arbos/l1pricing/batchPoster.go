@@ -92,24 +92,21 @@ func (bpt *BatchPostersTable) AddPoster(tracer *tracing.Hooks, posterAddress com
 	}
 	bpState := bpt.internalOpen(posterAddress)
 
-	if hooks := tracer; hooks != nil {
-		if hooks.CaptureArbitrumStorageGet != nil {
-			slot := bpt.posterAddrs.GetByAddressStorage().GetStorageSlot(common.BytesToHash(posterAddress.Bytes()))
-			hooks.CaptureArbitrumStorageGet(slot, 0, false)
-
-			sizeSlot := bpt.posterAddrs.GetSizeSlot()
-			hooks.CaptureArbitrumStorageGet(sizeSlot.GetCurrentSlot(), 0, false)
-			size, err := sizeSlot.Get()
-			if err != nil {
-				return nil, err
-			}
-			sba := bpt.posterAddrs.GetBackingStorage().OpenStorageBackedAddress(1 + size)
-			hooks.CaptureArbitrumStorageGet(sba.StorageSlot.GetCurrentSlot(), 0, false)
-
-			hooks.CaptureArbitrumStorageGet(bpState.fundsDue.StorageSlot.GetCurrentSlot(), 0, false)
-			hooks.CaptureArbitrumStorageGet(bpState.payTo.StorageSlot.GetCurrentSlot(), 0, false)
-		}
+	sizeSlot := bpt.posterAddrs.GetSizeSlot()
+	size, err := sizeSlot.Get()
+	if err != nil {
+		return nil, err
 	}
+
+	posterAddrsStorage := bpt.posterAddrs.GetByAddressStorage()
+	storage.CaptureStorageForAddress(tracer, posterAddrsStorage, posterAddress, 1+size, false)
+
+	sba := bpt.posterAddrs.GetBackingStorage().OpenStorageBackedAddress(1 + size)
+
+	storage.CaptureStorageOffset(tracer, &sizeSlot, false)
+	storage.CaptureStorageOffsetBigInt(tracer, bpState.fundsDue, false)
+	storage.CaptureStorageOffsetAddr(tracer, bpState.payTo, false)
+	storage.CaptureStorageOffsetAddr(tracer, sba, false)
 
 	if err := bpState.fundsDue.SetChecked(common.Big0); err != nil {
 		return nil, err

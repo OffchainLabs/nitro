@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -63,9 +64,9 @@ var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
-func Initialize(arbosVersion uint64, sto *storage.Storage, evm *vm.EVM) {
+func Initialize(arbosVersion uint64, sto *storage.Storage, tracer *tracing.Hooks) {
 	initStylusParams(arbosVersion, sto.OpenSubStorage(paramsKey))
-	initDataPricer(sto.OpenSubStorage(dataPricerKey), evm)
+	initDataPricer(sto.OpenSubStorage(dataPricerKey), tracer)
 	_ = addressSet.Initialize(sto.OpenCachedSubStorage(cacheManagersKey))
 }
 

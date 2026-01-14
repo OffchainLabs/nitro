@@ -6,7 +6,7 @@ package programs
 import (
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/tracing"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -38,23 +38,18 @@ const initialLastUpdateTime = ArbitrumStartTime
 const initialMinPrice = 82928201 // 5Mb = $1
 const initialInertia = 21360419  // expensive at 1Tb
 
-func initDataPricer(sto *storage.Storage, evm *vm.EVM) {
+func initDataPricer(sto *storage.Storage, tracer *tracing.Hooks) {
 	demand := sto.OpenStorageBackedUint32(demandOffset)
 	bytesPerSecond := sto.OpenStorageBackedUint32(bytesPerSecondOffset)
 	lastUpdateTime := sto.OpenStorageBackedUint64(lastUpdateTimeOffset)
 	minPrice := sto.OpenStorageBackedUint32(minPriceOffset)
 	inertia := sto.OpenStorageBackedUint32(inertiaOffset)
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(demand.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(bytesPerSecond.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(lastUpdateTime.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(minPrice.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(inertia.GetCurrentSlot(), 0, false)
-			}
-		}
-	}
+
+	storage.CaptureStorageOffset32(tracer, demand, false)
+	storage.CaptureStorageOffset32(tracer, bytesPerSecond, false)
+	storage.CaptureStorageOffset(tracer, &lastUpdateTime, false)
+	storage.CaptureStorageOffset32(tracer, minPrice, false)
+	storage.CaptureStorageOffset32(tracer, inertia, false)
 
 	_ = demand.Set(initialDemand)
 	_ = bytesPerSecond.Set(initialBytesPerSecond)

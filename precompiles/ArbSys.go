@@ -157,7 +157,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		return nil, err
 	}
 	merkleAcc := arbosState.SendMerkleAccumulator()
-	merkleUpdateEvents, err := merkleAcc.Append(evm, sendHash)
+	merkleUpdateEvents, err := merkleAcc.Append(evm.Config.Tracer, sendHash)
 	if err != nil {
 		return nil, err
 	}

@@ -9,10 +9,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/tracing"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -58,23 +57,7 @@ const MultiGasConstraintsMaxNum = 15
 const MaxPricingExponentBips = arbmath.Bips(85_000)
 
 // TODO: Maybe update from EVM to tracer?
-func InitializeL2PricingState(sto *storage.Storage, evm *vm.EVM) error {
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(speedLimitPerSecondOffset)), 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(perBlockGasLimitOffset)), 0, false)
-				// TODO: need to get state object from
-				// baseFeeWeiOffsetSlot := sto.GetFree(util.UintToHash(baseFeeWeiOffset))
-				// hooks.CaptureArbitrumStorageGet(baseFeeWeiOffsetSlot, 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(baseFeeWeiOffset)), 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(gasBacklogOffset)), 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(pricingInertiaOffset)), 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(backlogToleranceOffset)), 0, false)
-				hooks.CaptureArbitrumStorageGet(sto.GetStorageSlot(util.UintToHash(minBaseFeeWeiOffset)), 0, false)
-			}
-		}
-	}
+func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecondV0)
 	_ = sto.SetUint64ByUint64(perBlockGasLimitOffset, InitialPerBlockGasLimitV0)
 	_ = sto.SetUint64ByUint64(baseFeeWeiOffset, InitialBaseFeeWei)
@@ -252,35 +235,24 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 	return nil
 }
 
-func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint64, backlog uint64, evm *vm.EVM) error {
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				lenghtStorage := ps.gasConstraints.LengthStorage()
-				hooks.CaptureArbitrumStorageGet((&lenghtStorage).GetCurrentSlot(), 0, false)
-			}
-		}
-	}
+func (ps *L2PricingState) AddGasConstraint(target uint64, adjustmentWindow uint64, backlog uint64, tracer *tracing.Hooks) error {
+	lenghtStorage := ps.gasConstraints.LengthStorage()
+	storage.CaptureStorageOffset(tracer, &lenghtStorage, false)
+
 	subStorage, err := ps.gasConstraints.Push()
 	if err != nil {
 		return fmt.Errorf("failed to push constraint: %w", err)
 	}
 	constraint := OpenGasConstraint(subStorage)
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(constraint.adjustmentWindow.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(constraint.backlog.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(constraint.target.GetCurrentSlot(), 0, false)
-			}
-		}
-	}
+	storage.CaptureStorageOffset(tracer, &constraint.target, false)
 	if err := constraint.SetTarget(target); err != nil {
 		return fmt.Errorf("failed to set target: %w", err)
 	}
+	storage.CaptureStorageOffset(tracer, &constraint.adjustmentWindow, false)
 	if err := constraint.SetAdjustmentWindow(adjustmentWindow); err != nil {
 		return fmt.Errorf("failed to set adjustment window: %w", err)
 	}
+	storage.CaptureStorageOffset(tracer, &constraint.backlog, false)
 	if err := constraint.SetBacklog(backlog); err != nil {
 		return fmt.Errorf("failed to set backlog: %w", err)
 	}
