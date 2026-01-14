@@ -136,7 +136,7 @@ func extractClaimedYear(content string) string {
 }
 
 func isHeaderValid(content string, birth, update string) bool {
-	// We only check the first 500 characters to ensure the header is at the top
+	// Only check the first 500 characters to ensure the header is at the top
 	searchArea := content
 	if len(content) > 500 {
 		searchArea = content[:500]
