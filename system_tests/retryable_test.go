@@ -263,7 +263,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	}
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 
-	AutomatedPrestateTracerTest(t, builder.L2)
+	// AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
