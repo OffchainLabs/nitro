@@ -15,19 +15,20 @@ import (
 func TestFIFOSequentialLocking(t *testing.T) {
 	f := NewFIFO(10)
 	var output []int
+	var outputMutex sync.Mutex
 	var wg sync.WaitGroup
 	wg.Add(10)
 	for i := 0; i < 10; i++ {
 		a := i
 		go func() {
-			f.Lock()
+			defer wg.Done()
+			success := f.Lock()
+			require.True(t, success, "Lock acquisition should succeed")
+			outputMutex.Lock()
 			output = append(output, a)
-			wg.Done()
+			outputMutex.Unlock()
+			f.Unlock()
 		}()
-		time.Sleep(time.Millisecond)
-	}
-	for i := 0; i < 10; i++ {
-		f.Unlock()
 		time.Sleep(time.Millisecond)
 	}
 	wg.Wait()
