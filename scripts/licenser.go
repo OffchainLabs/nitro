@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 var supportedExtensions = []string{".go", ".rs"}
@@ -14,10 +17,10 @@ func main() {
 
 	files, err := getFiles()
 	if err != nil {
-		fmt.Printf("Fatal: could not list files: %v\n", err)
-		return
+		colors.PrintRed("Fatal: could not list files: ", err)
+		os.Exit(1)
 	}
-	fmt.Printf("Found %d files\n", len(files))
+	colors.PrintGrey(fmt.Sprintf("Found %d files", len(files)))
 }
 
 func getFiles() ([]string, error) {
