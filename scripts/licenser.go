@@ -99,10 +99,10 @@ func processFile(path string, stats *Stats) error {
 
 	// 5. Handle inconsistency
 	if *fixFlag {
-		if err := applyFix(path, content, birthYear, lastYear); err != nil {
+		if err := applyFix(path, content, birthYear); err != nil {
 			return fmt.Errorf("failed to apply fix: %w", err)
 		}
-		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Fixed to %s-%s", path, birthYear, lastYear))
+		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Fixed to %s-%s", path, birthYear, currentYear))
 		stats.Fixed++
 	} else {
 		colors.PrintRed(fmt.Sprintf("[X] %-60s | Invalid or missing header", path))
@@ -160,9 +160,9 @@ func isHeaderValid(content string, birthYear, lastUpdateYear string) bool {
 	return false
 }
 
-func applyFix(path, content, birthYear, lastUpdateYear string) error {
+func applyFix(path, content, birthYear string) error {
 	header := fmt.Sprintf("// Copyright %s-%s, %s\n// For license information, see %s\n",
-		birthYear, lastUpdateYear, company, licenseURL)
+		birthYear, currentYear, company, licenseURL)
 
 	lines := strings.Split(content, "\n")
 	startIdx := 0
