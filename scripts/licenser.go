@@ -25,7 +25,7 @@ var (
 	fixFlag             = flag.Bool("fix", false, "Update files with the correct license header")
 )
 
-type Stats struct {
+type stats struct {
 	Total int
 	Valid int
 	Fixed int
@@ -39,7 +39,7 @@ func main() {
 		exitWithError("could not list files: %v", err)
 	}
 
-	stats := &Stats{Total: len(files)}
+	stats := &stats{Total: len(files)}
 	for _, file := range files {
 		if err = processFile(file, stats); err != nil {
 			exitWithError("could not process file %s: %v", file, err)
@@ -70,7 +70,7 @@ func exitWithError(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func processFile(path string, stats *Stats) error {
+func processFile(path string, stats *stats) error {
 	// 1. Get Git history years
 	gitBirth, lastYear, err := getGitHistoryYears(path)
 	if err != nil {
@@ -166,7 +166,7 @@ func applyFix(path, content, birthYear string) error {
 	return os.WriteFile(path, []byte(newContent), 0644)
 }
 
-func printSummary(s *Stats) {
+func printSummary(s *stats) {
 	fmt.Println(strings.Repeat("-", 70))
 	colors.PrintGrey(fmt.Sprintf("Total Files:    %d", s.Total))
 	colors.PrintMint(fmt.Sprintf("Valid:          %d", s.Valid))
