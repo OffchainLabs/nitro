@@ -10,15 +10,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
-	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func setupFilteredTransactionsHandles(
@@ -33,10 +29,6 @@ func setupFilteredTransactionsHandles(
 
 	evm := newMockEVMForTesting()
 	caller := common.BytesToAddress(crypto.Keccak256([]byte("caller"))[:20])
-
-	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
-	_, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
-	require.NoError(t, err)
 
 	callCtx := testContext(caller, evm)
 	callCtx.gasSupplied = 100000
