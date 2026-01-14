@@ -98,11 +98,11 @@ func (bpt *BatchPostersTable) AddPoster(tracer *tracing.Hooks, posterAddress com
 		return nil, err
 	}
 
+	storageOffset := 1 + size
+	sba := bpt.posterAddrs.GetBackingStorage().OpenStorageBackedAddress(storageOffset)
 	posterAddrsStorage := bpt.posterAddrs.GetByAddressStorage()
-	storage.CaptureStorageForAddress(tracer, posterAddrsStorage, posterAddress, 1+size, false)
 
-	sba := bpt.posterAddrs.GetBackingStorage().OpenStorageBackedAddress(1 + size)
-
+	storage.CaptureStorageForAddress(tracer, posterAddrsStorage, posterAddress, storageOffset, false)
 	storage.CaptureStorageOffset(tracer, &sizeSlot, false)
 	storage.CaptureStorageOffsetBigInt(tracer, bpState.fundsDue, false)
 	storage.CaptureStorageOffsetAddr(tracer, bpState.payTo, false)

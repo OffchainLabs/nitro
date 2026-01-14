@@ -8,7 +8,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -229,11 +228,8 @@ func (ps *L2PricingState) updatePricingModelLegacy(timePassed uint64, tracer *tr
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.SaturatingCast[arbmath.Bips](arbmath.SaturatingUMul(inertia, speedLimit))
 		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
-	if tracer != nil {
-		if tracer.CaptureArbitrumStorageSet != nil {
-			tracer.CaptureArbitrumStorageSet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), common.Hash{}, 0, false)
-		}
-	}
+
+	storage.CaptureStorageOffsetBigUint(tracer, ps.baseFeeWei, false)
 
 	_ = ps.SetBaseFeeWei(baseFee)
 }
@@ -261,11 +257,7 @@ func (ps *L2PricingState) updatePricingModelSingleConstraints(timePassed uint64,
 		}
 	}
 
-	if tracer != nil {
-		if tracer.CaptureArbitrumStorageSet != nil {
-			tracer.CaptureArbitrumStorageSet(ps.baseFeeWei.StorageSlot.GetCurrentSlot(), common.Hash{}, 0, false)
-		}
-	}
+	storage.CaptureStorageOffsetBigUint(tracer, ps.baseFeeWei, false)
 
 	// Compute base fee
 	baseFee, _ := ps.calcBaseFeeFromExponent(totalExponent)

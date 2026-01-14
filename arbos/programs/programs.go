@@ -137,16 +137,11 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runCtx, expired)
 	}
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(p.programs.GetStorageSlot(codeHash), 0, false)
-				hooks.CaptureArbitrumStorageGet(p.moduleHashes.GetStorageSlot(codeHash), 0, false)
-				hooks.CaptureArbitrumStorageGet(p.dataPricer.demand.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(p.dataPricer.lastUpdateTime.GetCurrentSlot(), 0, false)
-			}
-		}
-	}
+
+	storage.CaptureStorageWithHash(evm.Config.Tracer, p.programs, codeHash, false)
+	storage.CaptureStorageWithHash(evm.Config.Tracer, p.moduleHashes, codeHash, false)
+	storage.CaptureStorageOffset32(evm.Config.Tracer, p.dataPricer.demand, true)
+	storage.CaptureStorageOffset(evm.Config.Tracer, &p.dataPricer.lastUpdateTime, true)
 
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err

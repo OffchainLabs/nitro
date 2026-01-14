@@ -807,7 +807,7 @@ type StorageBacked[T any] interface {
 	GetCurrentSlot() common.Hash
 }
 
-func CaptureStorageOffsetGeneric[T any, S StorageBacked[T]](
+func captureStorageOffsetGeneric[T any, S StorageBacked[T]](
 	tracer *tracing.Hooks,
 	storage S,
 	useDefault bool,
@@ -834,7 +834,7 @@ func CaptureStorageOffsetGeneric[T any, S StorageBacked[T]](
 }
 
 func CaptureStorageOffsetAddr(tracer *tracing.Hooks, storage StorageBackedAddress, useDefault bool) {
-	CaptureStorageOffsetGeneric(
+	captureStorageOffsetGeneric(
 		tracer,
 		&storage,
 		useDefault,
@@ -844,7 +844,7 @@ func CaptureStorageOffsetAddr(tracer *tracing.Hooks, storage StorageBackedAddres
 }
 
 func CaptureStorageOffsetBigUint(tracer *tracing.Hooks, storage StorageBackedBigUint, useDefault bool) {
-	CaptureStorageOffsetGeneric(
+	captureStorageOffsetGeneric(
 		tracer,
 		&storage,
 		useDefault,
@@ -854,7 +854,7 @@ func CaptureStorageOffsetBigUint(tracer *tracing.Hooks, storage StorageBackedBig
 }
 
 func CaptureStorageOffsetBigInt(tracer *tracing.Hooks, storage StorageBackedBigInt, useDefault bool) {
-	CaptureStorageOffsetGeneric(
+	captureStorageOffsetGeneric(
 		tracer,
 		&storage,
 		useDefault,
@@ -864,7 +864,7 @@ func CaptureStorageOffsetBigInt(tracer *tracing.Hooks, storage StorageBackedBigI
 }
 
 func CaptureStorageOffset32(tracer *tracing.Hooks, storage StorageBackedUint32, useDefault bool) {
-	CaptureStorageOffsetGeneric(
+	captureStorageOffsetGeneric(
 		tracer,
 		&storage,
 		useDefault,
@@ -902,6 +902,19 @@ func CaptureStorageForAddress(tracer *tracing.Hooks, storage *Storage, addr comm
 		if tracer.CaptureArbitrumStorageSet != nil {
 			slot := storage.GetStorageSlot(common.BytesToHash(addr.Bytes()))
 			handleCaptureArbitrumStorageSet(tracer, storage, slot, offset, useDefault)
+		}
+	}
+}
+
+func CaptureStorageWithHash(tracer *tracing.Hooks, storage *Storage, key common.Hash, useDefault bool) {
+	if tracer != nil {
+		if tracer.CaptureArbitrumStorageSet != nil {
+			var oldVal common.Hash
+			if !useDefault {
+				oldVal = storage.GetFree(key)
+			}
+
+			tracer.CaptureArbitrumStorageSet(storage.GetStorageSlot(key), oldVal, 0, false)
 		}
 	}
 }

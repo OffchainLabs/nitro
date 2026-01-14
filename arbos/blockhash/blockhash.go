@@ -67,16 +67,17 @@ func (bh *Blockhashes) RecordNewL1Block(tracer *tracing.Hooks, number uint64, bl
 			return err
 		}
 
-		numSlot := 1 + (nextNumber % 256)
-		storage.CaptureStorageWithOffset(tracer, bh.backingStorage, numSlot, false)
-		err = bh.backingStorage.SetByUint64(numSlot, fill)
+		backingKey := 1 + (nextNumber % 256)
+		storage.CaptureStorageWithOffset(tracer, bh.backingStorage, backingKey, false)
+		err = bh.backingStorage.SetByUint64(backingKey, fill)
 		if err != nil {
 			return err
 		}
 	}
 
-	storage.CaptureStorageWithOffset(tracer, bh.backingStorage, 1+(number%256), false)
-	err = bh.backingStorage.SetByUint64(1+(number%256), blockHash)
+	backingKey := 1 + (number % 256)
+	storage.CaptureStorageWithOffset(tracer, bh.backingStorage, backingKey, false)
+	err = bh.backingStorage.SetByUint64(backingKey, blockHash)
 	if err != nil {
 		return err
 	}

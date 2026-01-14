@@ -89,7 +89,6 @@ func (rs *RetryableState) CreateRetryable(
 		timeout:            sto.OpenStorageBackedUint64(timeoutOffset),
 		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}
-	// TODO Would anything change if we addded something here?
 	_ = ret.numTries.Set(0)
 	_ = ret.from.Set(from)
 	_ = ret.to.Set(to)

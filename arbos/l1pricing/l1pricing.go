@@ -90,10 +90,10 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	equilibrationUnits := sto.OpenStorageBackedBigUint(equilibrationUnitsOffset)
 	totalFundsDue := bptStorage.OpenStorageBackedBigInt(totalFundsDueOffset)
 
-	storage.CaptureStorageOffsetBigInt(tracer, totalFundsDue, false)
 	storage.CaptureStorageOffsetBigInt(tracer, pricePerUnit, false)
-	storage.CaptureStorageOffsetBigUint(tracer, equilibrationUnits, false)
 	storage.CaptureStorageOffsetBigInt(tracer, fundsDueForRewards, false)
+	storage.CaptureStorageOffsetBigUint(tracer, equilibrationUnits, false)
+	storage.CaptureStorageOffsetBigInt(tracer, totalFundsDue, false)
 	storage.CaptureStorageWithOffset(tracer, sto, payRewardsToOffset, false)
 	storage.CaptureStorageWithOffset(tracer, sto, inertiaOffset, false)
 	storage.CaptureStorageWithOffset(tracer, sto, perUnitRewardOffset, false)
@@ -413,17 +413,13 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	if evm != nil {
-		if hooks := evm.Config.Tracer; hooks != nil {
-			if hooks.CaptureArbitrumStorageGet != nil {
-				hooks.CaptureArbitrumStorageGet(posterState.postersTable.totalFundsDue.StorageSlot.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(ps.fundsDueForRewards.StorageSlot.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(ps.lastSurplus.StorageSlot.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(ps.lastUpdateTime.StorageSlot.GetCurrentSlot(), 0, false)
-				hooks.CaptureArbitrumStorageGet(ps.pricePerUnit.StorageSlot.GetCurrentSlot(), 0, false)
-			}
-		}
-	}
+
+	storage.CaptureStorageOffsetBigInt(evm.Config.Tracer, posterState.postersTable.totalFundsDue, false)
+	storage.CaptureStorageOffsetBigInt(evm.Config.Tracer, ps.fundsDueForRewards, false)
+	storage.CaptureStorageOffsetBigInt(evm.Config.Tracer, ps.lastSurplus, false)
+	storage.CaptureStorageOffset(evm.Config.Tracer, &ps.lastUpdateTime, false)
+	storage.CaptureStorageOffsetBigUint(evm.Config.Tracer, ps.pricePerUnit, true)
+
 	err = posterState.SetFundsDue(arbmath.BigAdd(dueToPoster, weiSpent))
 	if err != nil {
 		return err

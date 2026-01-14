@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -471,12 +472,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		}
 		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, brotliCompressionLevel)
 		if calldataUnits > 0 {
-			if hooks := p.evm.Config.Tracer; hooks != nil {
-				if hooks.CaptureArbitrumStorageGet != nil {
-					unitSlot := p.state.L1PricingState().UnitsSinceUpdateSlot().StorageSlot
-					hooks.CaptureArbitrumStorageGet(unitSlot.GetCurrentSlot(), 0, false)
-				}
-			}
+			unitSlot := p.state.L1PricingState().UnitsSinceUpdateSlot()
+			storage.CaptureStorageOffset(p.evm.Config.Tracer, &unitSlot, false)
 
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
