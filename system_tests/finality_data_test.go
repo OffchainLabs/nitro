@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
@@ -174,20 +175,52 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 		BlockHash: validatedMsgResult.BlockHash,
 	}
 
-	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
+
+	// Make sure finalized and validated blocks in executionDB match the expected ones for builder.L2
+	data, err := builder.L2.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
+	Require(t, err)
+	validatedBlockHash := common.BytesToHash(data)
+	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
+
+	if validatedBlockHash != validatedMsgResult.BlockHash {
+		t.Fatalf("validatedBlockHash: %s does not match expected validatedBlockHash: %s", validatedBlockHash.Hex(), validatedMsgResult.BlockHash.Hex())
+	}
+
+	// We compare finalizedBlockHash against validated block hash because FinalizedBlockWaitForBlockValidator is
+	// set to true therefore we should expect finalized block hash to match the validated block hash
+	if finalizedBlockHash != validatedMsgResult.BlockHash {
+		t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash.Hex(), validatedMsgResult.BlockHash.Hex())
+	}
 
 	// wait for block validator is set to true in second node
 	checksFinalityData(t, "first node", ctx, builder.L2, validatedMsgIdx, validatedMsgIdx)
 
-	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
+	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(testClient2ndNode.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
+
+	// Make sure finalized and validated blocks in executionDB match the expected ones for second node
+	data, err = testClient2ndNode.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
+	Require(t, err)
+	validatedBlockHash2ndNode := common.BytesToHash(data)
+	finalizedBlockHash2ndNode := rawdb.ReadFinalizedBlockHash(testClient2ndNode.ExecNode.ExecutionDB)
+
+	if validatedBlockHash2ndNode != validatedMsgResult.BlockHash {
+		t.Fatalf("validatedBlockHash: %s does not match expected validatedBlockHash: %s", validatedBlockHash2ndNode.Hex(), validatedMsgResult.BlockHash.Hex())
+	}
+
+	// Since FinalizedBlockWaitForBlockValidator is set to true for the second node we can
+	// compare finalizedBlockHash with expected finalized block hash
+	if finalizedBlockHash2ndNode != finalizedMsgResult.BlockHash {
+		t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash2ndNode.Hex(), finalizedMsgResult.BlockHash.Hex())
+	}
 
 	// wait for block validator is no set to true in second node
 	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, finalizedMsgIdx, safeMsgIdx)
 
 	// if validatedFinalityData is nil, error should be returned if waitForBlockValidator is set to true
-	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, nil)
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, nil)
 	if err == nil {
 		t.Fatalf("err should not be nil")
 	}

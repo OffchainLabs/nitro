@@ -84,7 +84,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(executionDB)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -164,7 +164,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, stack *
 	} else {
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
-	if initConfig.Prune != "minimal" && l1Client != nil {
+	if initConfig.Prune != "minimal" {
 		// in pruning modes other than "minimal", get the latest finalized block and add it as a pruning target
 		finalizedBlockHash := rawdb.ReadFinalizedBlockHash(executionDB)
 		finalizedBlockNumber, ok := rawdb.ReadHeaderNumber(executionDB, finalizedBlockHash)
@@ -245,7 +245,7 @@ func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *no
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), executionDB, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, executionDB, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled)
+	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}

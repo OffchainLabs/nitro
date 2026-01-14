@@ -48,8 +48,8 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.RequireScheme(t, rawdb.HashScheme)
 
-	// Needed to create safe blocks; hence forcing SetFinalityData call
 	builder.nodeConfig.ParentChainReader.UseFinalityData = true
+	builder.nodeConfig.BlockValidator.Enable = true
 
 	_ = builder.Build(t)
 	l2cleanupDone := false
@@ -78,8 +78,8 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	// add to the new executionDB below
 	data, err := builder.L2.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
 	Require(t, err)
-	validatedBlockHash := common.BytesToHash(data)
-	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
+	expectedValidatedBlockHash := common.BytesToHash(data)
+	expectedFinalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
 
 	l2cleanupDone = true
 	builder.L2.cleanup()
@@ -94,11 +94,18 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		defer executionDB.Close()
 		executionDBEntriesBeforePruning := countStateEntries(executionDB)
 
-		// Since we're dealing with a new executionDB we store both validatedBlockHash and
-		// finalized blocks back into this new executionDB.
-		err = executionDB.Put(gethexec.ValidatedBlockHashKey, validatedBlockHash.Bytes())
+		data, err := executionDB.Get(gethexec.ValidatedBlockHashKey)
 		Require(t, err)
-		rawdb.WriteFinalizedBlockHash(executionDB, finalizedBlockHash)
+		validatedBlockHash := common.BytesToHash(data)
+		finalizedBlockHash := rawdb.ReadFinalizedBlockHash(executionDB)
+
+		if validatedBlockHash != expectedValidatedBlockHash {
+			t.Fatalf("validatedBlockHash: %s does not match expected ValidatedBlockHash: %s", validatedBlockHash.Hex(), expectedValidatedBlockHash.Hex())
+		}
+
+		if finalizedBlockHash != expectedFinalizedBlockHash {
+			t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash.Hex(), expectedFinalizedBlockHash.Hex())
+		}
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
