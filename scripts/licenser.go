@@ -87,7 +87,7 @@ func processFile(path string, stats *Stats) error {
 	claimedBirth := extractClaimedYear(content)
 	//birthYear := gitBirth
 	if claimedBirth != "" && claimedBirth < gitBirth { // lexicographical comparison works for years
-		panic(fmt.Sprint("	[!] Using claimed year ", claimedBirth, " over git year ", gitBirth, " for file ", path))
+		colors.PrintGrey("[!] Using claimed year ", claimedBirth, " over git year ", gitBirth, " for file ", path)
 		//birthYear = claimedBirth
 	}
 
@@ -95,7 +95,7 @@ func processFile(path string, stats *Stats) error {
 }
 
 func getGitHistoryYears(path string) (string, string, error) {
-	cmd := exec.Command("git", "log", "--follow", "--reverse", "--format=%ad", "--date=format:%Y", "--", path)
+	cmd := exec.Command("git", "log", "--follow", "--format=%ad", "--date=format:%Y", "--", path)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", "", err
@@ -105,7 +105,7 @@ func getGitHistoryYears(path string) (string, string, error) {
 	if len(years) == 0 {
 		return currentYear, currentYear, nil
 	}
-	return years[0], years[len(years)-1], nil
+	return years[len(years)-1], years[0], nil
 }
 
 func extractClaimedYear(content string) string {
