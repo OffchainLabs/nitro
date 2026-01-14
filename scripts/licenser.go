@@ -69,11 +69,28 @@ func exitWithError(format string, args ...interface{}) {
 }
 
 func processFile(path string, stats *Stats) error {
+	// 1. Get Git history years
 	gitBirth, gitLast, err := getGitHistoryYears(path)
 	if err != nil {
 		return err
 	}
 	colors.PrintGrey(fmt.Sprintf("[X] %-60s | Years: %s-%s", path, gitBirth, gitLast))
+
+	// 2. Read file content
+	byteContent, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(byteContent)
+
+	// 3. Defensive check: Extract first year from file; use it if it's older than Git's record
+	claimedBirth := extractClaimedYear(content)
+	//birthYear := gitBirth
+	if claimedBirth != "" && claimedBirth < gitBirth { // lexicographical comparison works for years
+		panic(fmt.Sprint("	[!] Using claimed year ", claimedBirth, " over git year ", gitBirth, " for file ", path))
+		//birthYear = claimedBirth
+	}
+
 	return nil
 }
 
@@ -89,6 +106,14 @@ func getGitHistoryYears(path string) (string, string, error) {
 		return currentYear, currentYear, nil
 	}
 	return years[0], years[len(years)-1], nil
+}
+
+func extractClaimedYear(content string) string {
+	matches := yearRegex.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return ""
 }
 
 func printSummary(s *Stats) {
