@@ -80,10 +80,10 @@ type MessageConsumer interface {
 
 func (s *State) Hash() common.Hash {
 	var delayedMerklePartialsBytes []byte
-	for _, partials := range s.DelayedMessageMerklePartials {
-		delayedMerklePartialsBytes = append(delayedMerklePartialsBytes, partials.Bytes()...)
+	for _, partial := range s.DelayedMessageMerklePartials {
+		delayedMerklePartialsBytes = append(delayedMerklePartialsBytes, partial.Bytes()...)
 	}
-	hash := crypto.Keccak256(
+	return crypto.Keccak256Hash(
 		arbmath.Uint16ToBytes(s.Version),
 		arbmath.UintToBytes(s.ParentChainId),
 		arbmath.UintToBytes(s.ParentChainBlockNumber),
@@ -97,8 +97,8 @@ func (s *State) Hash() common.Hash {
 		arbmath.UintToBytes(s.BatchCount),
 		arbmath.UintToBytes(s.DelayedMessagesRead),
 		arbmath.UintToBytes(s.DelayedMessagesSeen),
+		delayedMerklePartialsBytes,
 	)
-	return crypto.Keccak256Hash(hash, delayedMerklePartialsBytes)
 }
 
 // Performs a deep clone of the state struct to prevent any unintended

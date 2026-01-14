@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -70,6 +71,10 @@ type TransactionStreamerInterface interface {
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
+}
+
+type MELValidatorInterface interface {
+	LatestValidatedMELState(context.Context) (*mel.State, error)
 }
 
 type InboxReaderInterface interface {
@@ -132,18 +137,20 @@ type FullBatchInfo struct {
 type validationEntry struct {
 	Stage ValidationEntryStage
 	// Valid since ReadyforRecord:
-	Pos           arbutil.MessageIndex
-	Start         validator.GoGlobalState
-	End           validator.GoGlobalState
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	ChainConfig   *params.ChainConfig
+	Pos                         arbutil.MessageIndex
+	HasDelayedMsg               bool
+	DelayedMsgNr                uint64
+	ChainConfig                 *params.ChainConfig
+	EndGSParentChainBlockNumber uint64                  // MEL relevant field
+	Start                       validator.GoGlobalState // MEL relevant field
+	End                         validator.GoGlobalState // MEL relevant field
+
 	// valid when created, removed after recording
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  daprovider.PreimagesMap
+	Preimages  daprovider.PreimagesMap // MEL relevant field
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }

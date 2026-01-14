@@ -58,7 +58,10 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 	// MEL Validator: create validation entry
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
-	melValidator := staker.NewMELValidator(builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry)
+	config := func() *staker.MELValidatorConfig { return &staker.DefaultMELValidatorConfig }
+	Require(t, config().Validate())
+	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, common.MaxHash)
+	Require(t, err)
 	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 	entry, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))

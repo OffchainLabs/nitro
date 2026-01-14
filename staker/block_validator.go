@@ -88,6 +88,7 @@ func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *Throttl
 type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
+	melValidator MELValidatorInterface
 
 	reorgMutex sync.RWMutex
 
@@ -636,13 +637,23 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
+	streamerMsgCount, err := v.streamer.GetProcessedMessageCount() // Ask MEL validator LatestValidatedMELState().MsgCount
 	if err != nil {
 		return false, err
 	}
 	if pos >= streamerMsgCount {
 		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
 		return false, nil
+	}
+	if v.melValidator != nil {
+		latestValidatedState, err := v.melValidator.LatestValidatedMELState(ctx)
+		if err != nil {
+			return false, err
+		}
+		if pos >= arbutil.MessageIndex(latestValidatedState.MsgCount) {
+			log.Trace("create validation entry: nothing to do", "pos", pos, "latestMELValidatedMsgCount", latestValidatedState.MsgCount)
+			return false, nil
+		}
 	}
 	msg, err := v.streamer.GetMessage(pos)
 	if err != nil {

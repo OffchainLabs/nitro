@@ -21,6 +21,7 @@ type GlobalStateValidatedInfo struct {
 }
 
 var (
-	lastGlobalStateValidatedInfoKey = []byte("_lastGlobalStateValidatedInfo") // contains a rlp encoded lastBlockValidatedDbInfo
-	legacyLastBlockValidatedInfoKey = []byte("_lastBlockValidatedInfo")       // LEGACY - contains a rlp encoded lastBlockValidatedDbInfo
+	lastMELGlobalStateValidatedInfoKey = []byte("_lastMELGlobalStateValidatedInfo") // contains a rlp encoded GlobalStateValidatedInfo of the last validated MEL state
+	lastGlobalStateValidatedInfoKey    = []byte("_lastGlobalStateValidatedInfo")    // contains a rlp encoded lastBlockValidatedDbInfo
+	legacyLastBlockValidatedInfoKey    = []byte("_lastBlockValidatedInfo")          // LEGACY - contains a rlp encoded lastBlockValidatedDbInfo
 )
