@@ -1419,9 +1419,6 @@ func CreateConsensusNode(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if fullExecutionClient == nil {
-		return nil, errors.New("full execution client must be non-nil")
-	}
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
