@@ -14,6 +14,7 @@
 
 ## About Arbitrum Nitro
 
+
 <img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
 
 Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
