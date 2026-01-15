@@ -547,50 +547,29 @@ func mainImpl() int {
 			log.Error("failed to create execution node", "err", err)
 			return 1
 		}
-		consensusNode, err = arbnode.CreateConsensusNode(
-			ctx,
-			stack,
-			execNode,
-			consensusDB,
-			&ConsensusNodeConfigFetcher{liveNodeConfig},
-			l2BlockChain.Config(),
-			l1Client,
-			&rollupAddrs,
-			l1TransactionOptsValidator,
-			l1TransactionOptsBatchPoster,
-			dataSigner,
-			fatalErrChan,
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-			blobReader,
-			wasmModuleRoot,
-		)
-		if err != nil {
-			log.Error("failed to create consensus node", "err", err)
-			return 1
-		}
-	} else {
-		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(
-			ctx,
-			stack,
-			nil,
-			consensusDB,
-			&ConsensusNodeConfigFetcher{liveNodeConfig},
-			l2BlockChain.Config(),
-			l1Client,
-			&rollupAddrs,
-			l1TransactionOptsValidator,
-			l1TransactionOptsBatchPoster,
-			dataSigner,
-			fatalErrChan,
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-			blobReader,
-			wasmModuleRoot,
-		)
-		if err != nil {
-			log.Error("failed to create consensus node", "err", err)
-			return 1
-		}
 	}
+	consensusNode, err = arbnode.CreateConsensusNode(
+		ctx,
+		stack,
+		execNode,
+		consensusDB,
+		&ConsensusNodeConfigFetcher{liveNodeConfig},
+		l2BlockChain.Config(),
+		l1Client,
+		&rollupAddrs,
+		l1TransactionOptsValidator,
+		l1TransactionOptsBatchPoster,
+		dataSigner,
+		fatalErrChan,
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+		blobReader,
+		wasmModuleRoot,
+	)
+	if err != nil {
+		log.Error("failed to create consensus node", "err", err)
+		return 1
+	}
+
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
