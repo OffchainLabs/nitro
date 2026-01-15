@@ -547,7 +547,7 @@ func mainImpl() int {
 			log.Error("failed to create execution node", "err", err)
 			return 1
 		}
-		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+		consensusNode, err = arbnode.CreateConsensusNode(
 			ctx,
 			stack,
 			execNode,

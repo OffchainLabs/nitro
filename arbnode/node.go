@@ -1402,7 +1402,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	return currentNode, nil
 }
 
-func CreateConsensusNodeConnectedWithFullExecutionClient(
+func CreateConsensusNode(
 	ctx context.Context,
 	stack *node.Node,
 	fullExecutionClient execution.FullExecutionClient,
