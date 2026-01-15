@@ -239,11 +239,6 @@ test-go-redis: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
-.PHONY: test-go-gas-dimensions
-test-go-gas-dimensions: test-go-deps
-	.github/workflows/gotestsum.sh --timeout 120m --run "TestDim(Log|TxOp)" --tags gasdimensionstest --nolog
-	@printf $(done)
-
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -605,7 +600,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol contracts-local/gas-dimensions/src/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	npm --prefix safe-smart-account run build
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
