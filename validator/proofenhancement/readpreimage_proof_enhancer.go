@@ -64,16 +64,6 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
 	}
 
-	// Validate certificate format
-	if len(certificate) < MinCertificateSize {
-		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
-	}
-
-	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
-		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
-			daprovider.DACertificateMessageHeaderFlag, certificate[0])
-	}
-
 	// Verify the certificate hash matches what's in the proof
 	certHash := crypto.Keccak256Hash(certificate)
 	if !bytes.Equal(certHash[:], certKeccak256[:]) {
@@ -81,9 +71,6 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Get validator for this certificate type
-	if len(certificate) == 0 {
-		return nil, fmt.Errorf("empty certificate")
-	}
 	validator := e.dapRegistry.GetValidator(certificate[0])
 	if validator == nil {
 		return nil, fmt.Errorf("no validator registered for certificate type 0x%02x", certificate[0])

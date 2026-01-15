@@ -151,5 +151,17 @@ func retrieveCertificateFromInboxMessage(
 	}
 
 	// Extract certificate (skip sequencer message header)
-	return sequencerMessage[SequencerMessageHeaderSize:], nil
+	certificate := sequencerMessage[SequencerMessageHeaderSize:]
+
+	// Validate certificate format
+	if len(certificate) < MinCertificateSize {
+		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
+	}
+
+	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
+		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
+			daprovider.DACertificateMessageHeaderFlag, certificate[0])
+	}
+
+	return certificate, nil
 }

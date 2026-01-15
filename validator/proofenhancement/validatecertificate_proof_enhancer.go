@@ -65,9 +65,6 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	}
 
 	// Get validator for this certificate type
-	if len(certificate) == 0 {
-		return nil, fmt.Errorf("empty certificate")
-	}
 	validator := e.dapRegistry.GetValidator(certificate[0])
 	if validator == nil {
 		return nil, fmt.Errorf("no validator registered for certificate type 0x%02x", certificate[0])
