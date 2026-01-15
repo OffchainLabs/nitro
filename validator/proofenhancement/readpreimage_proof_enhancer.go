@@ -37,21 +37,6 @@ func NewReadPreimageProofEnhancer(
 
 // EnhanceProof implements ProofEnhancer for CustomDA
 func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
-	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
-	}
-
-	// Validate certificate format
-	if len(certificate) < MinCertificateSize {
-		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
-	}
-
-	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
-		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
-			daprovider.DACertificateMessageHeaderFlag, certificate[0])
-	}
-
 	// Extract keccak256 of the certificate and offset from end of proof
 	// Format: [...proof..., certKeccak256(32), offset(8), marker(1)]
 	minProofSize := CertificateHashSize + OffsetSize + MarkerSize
@@ -73,7 +58,21 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	// Extract certKeccak256 and offset
 	var certKeccak256 [32]byte
 	copy(certKeccak256[:], proof[certKeccak256Pos:offsetPos])
-	offset := binary.BigEndian.Uint64(proof[offsetPos:markerPos])
+
+	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
+	}
+
+	// Validate certificate format
+	if len(certificate) < MinCertificateSize {
+		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
+	}
+
+	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
+		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
+			daprovider.DACertificateMessageHeaderFlag, certificate[0])
+	}
 
 	// Verify the certificate hash matches what's in the proof
 	certHash := crypto.Keccak256Hash(certificate)
@@ -91,6 +90,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	}
 
 	// Generate custom proof with certificate
+	offset := binary.BigEndian.Uint64(proof[offsetPos:markerPos])
 	promise := validator.GenerateReadPreimageProof(offset, certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
