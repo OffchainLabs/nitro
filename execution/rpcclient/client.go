@@ -135,7 +135,6 @@ func (c *Client) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) contai
 }
 
 func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) containers.PromiseInterface[*execution.RecordResult] {
-	panic("RecordBlockCreation")
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.RecordResult, error) {
 		var res execution.RecordResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg, wasmTargets)
@@ -144,7 +143,6 @@ func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.M
 }
 
 func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	panic("PrepareForRecord")
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_prepareForRecord", start, end)
 		return struct{}{}, convertError(err)
