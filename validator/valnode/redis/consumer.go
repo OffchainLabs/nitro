@@ -171,7 +171,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				} else {
 					log.Debug("done work", "thread", i, "workid", work.req.ID)
 					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
-					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
+					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will allow other consumers to autoclaim
 					work.req.Ack()
 					if err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)

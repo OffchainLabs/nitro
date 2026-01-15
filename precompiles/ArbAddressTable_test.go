@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -178,13 +179,17 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 	if version != nil {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = *version
 	}
-	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
+	return newMockEVMForTestingWithConfigs(chaininfo.ArbitrumDevTestChainConfig(), chainConfig)
+}
+
+func newMockEVMForTestingWithConfigs(stateChainConfig, evmChainConfig *params.ChainConfig) *vm.EVM {
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(stateChainConfig)
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),
 		Time:        0,
 	}
-	evm := vm.NewEVM(context, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, statedb, evmChainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}
 	return evm
 }

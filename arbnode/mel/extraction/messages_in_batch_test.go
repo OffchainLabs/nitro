@@ -1,3 +1,6 @@
+// Copyright 2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package melextraction
 
 import (
@@ -29,11 +32,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_simple(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerMessage{
-		Segments:     segments,
-		MinTimestamp: 10,
-		MaxTimestamp: 20,
-	}
+	seqMsg := sequencerMessageWithTimestampRange(segments, 10, 20)
 	mockDB := &mockDelayedMessageDB{}
 	msgs, err := messagesFromBatchSegments(
 		ctx,
@@ -61,11 +60,7 @@ func Test_messagesFromBatchSegments_expectedFieldBounds_complex(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerMessage{
-		Segments:     segments,
-		MinTimestamp: 10,
-		MaxTimestamp: 20,
-	}
+	seqMsg := sequencerMessageWithTimestampRange(segments, 10, 20)
 	mockDB := &mockDelayedMessageDB{}
 	msgs, err := messagesFromBatchSegments(
 		ctx,
@@ -86,11 +81,8 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
 	}
-	seqMsg := &arbstate.SequencerMessage{
-		AfterDelayedMessages: 2,
-		Segments:             [][]byte{}, // No segments, but the
-		// sequencer message says that we must read 2 delayed messages.
-	}
+	// No segments, but the sequencer message says that we must read 2 delayed messages.
+	seqMsg := sequencerMessageWithSegments(2, [][]byte{})
 	mockDB := &mockDelayedMessageDB{
 		DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 			0: {
@@ -142,11 +134,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				return &mel.State{}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					Segments:     segments,
-					MinTimestamp: 0,
-					MaxTimestamp: 1_000_000,
-				}
+				return sequencerMessageWithTimestampRange(segments, 0, 1_000_000)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return nil
@@ -172,10 +160,12 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
 				return &arbstate.SequencerMessage{
-					Segments:     segments,
-					MinTimestamp: 0,
-					MaxTimestamp: 1_000_000,
-					MaxL1Block:   1_000_000,
+					MinTimestamp:         0,
+					MaxTimestamp:         1_000_000,
+					MinL1Block:           0,
+					MaxL1Block:           1_000_000,
+					AfterDelayedMessages: 0,
+					Segments:             segments,
 				}
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
@@ -202,11 +192,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				return &mel.State{}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					Segments:     segments,
-					MinTimestamp: 0,
-					MaxTimestamp: 1_000_000,
-				}
+				return sequencerMessageWithTimestampRange(segments, 0, 1_000_000)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return nil
@@ -229,10 +215,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return nil
@@ -253,10 +236,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -277,10 +257,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -301,10 +278,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {
-				return &arbstate.SequencerMessage{
-					AfterDelayedMessages: 1,
-					Segments:             segments,
-				}
+				return sequencerMessageWithSegments(1, segments)
 			},
 			setupMockDB: func() *mockDelayedMessageDB {
 				return &mockDelayedMessageDB{
@@ -371,4 +345,26 @@ func (m *mockDelayedMessageDB) ReadDelayedMessage(
 		return delayedMsg, nil
 	}
 	return nil, nil
+}
+
+func sequencerMessageWithSegments(afterDelayedMessages uint64, segments [][]byte) *arbstate.SequencerMessage {
+	return &arbstate.SequencerMessage{
+		MinTimestamp:         0,
+		MaxTimestamp:         0,
+		MinL1Block:           0,
+		MaxL1Block:           0,
+		AfterDelayedMessages: afterDelayedMessages,
+		Segments:             segments,
+	}
+}
+
+func sequencerMessageWithTimestampRange(segments [][]byte, minTimestamp, maxTimestamp uint64) *arbstate.SequencerMessage {
+	return &arbstate.SequencerMessage{
+		MinTimestamp:         minTimestamp,
+		MaxTimestamp:         maxTimestamp,
+		MinL1Block:           0,
+		MaxL1Block:           0,
+		AfterDelayedMessages: 0,
+		Segments:             segments,
+	}
 }

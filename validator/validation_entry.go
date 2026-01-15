@@ -12,6 +12,7 @@ type BatchInfo struct {
 	Data   []byte
 }
 
+// lint:require-exhaustive-initialization
 type ValidationInput struct {
 	Id            uint64
 	HasDelayedMsg bool
@@ -22,4 +23,15 @@ type ValidationInput struct {
 	DelayedMsg    []byte
 	StartState    GoGlobalState
 	DebugChain    bool
+}
+
+func CopyPreimagesInto(dest, source daprovider.PreimagesMap) {
+	for piType, piMap := range source {
+		if dest[piType] == nil {
+			dest[piType] = make(map[common.Hash][]byte, len(piMap))
+		}
+		for hash, preimage := range piMap {
+			dest[piType][hash] = preimage
+		}
+	}
 }

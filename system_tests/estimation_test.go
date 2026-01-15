@@ -330,7 +330,7 @@ func TestGasEstimationWithRPCGasLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment()
 	cleanup := builder.Build(t)
 	defer cleanup()
 

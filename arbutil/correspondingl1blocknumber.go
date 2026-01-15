@@ -27,7 +27,7 @@ func CorrespondingL1BlockNumber(ctx context.Context, client ParentHeaderFetcher,
 	// #nosec G115
 	header, err := client.HeaderByNumber(ctx, big.NewInt(int64(parentBlockNumber)))
 	if err != nil {
-		return 0, fmt.Errorf("error getting L1 block number %d header : %w", parentBlockNumber, err)
+		return 0, fmt.Errorf("error getting parent block header %d: %w", parentBlockNumber, err)
 	}
 	return ParentHeaderToL1BlockNumber(header), nil
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -44,7 +44,13 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(
+		inbox,
+		delayedMessagesRead,
+		nil,
+		daprovider.KeysetValidate,
+		getChainConfig(),
+	)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -58,7 +64,7 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
-	err = l1Message.FillInBatchGasCost(batchFetcher)
+	err = l1Message.FillInBatchGasFields(batchFetcher)
 	if err != nil {
 		// skip malformed batch posting report
 		// nolint:nilerr
@@ -66,7 +72,7 @@ func BuildBlock(
 	}
 
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err
 }
@@ -123,6 +129,18 @@ type noopChainContext struct {
 	chainConfig *params.ChainConfig
 }
 
+func (c noopChainContext) CurrentHeader() *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return nil
+}
+
+func (c noopChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return nil
+}
+
 func (c noopChainContext) Config() *params.ChainConfig {
 	return c.chainConfig
 }
@@ -140,7 +158,7 @@ func FuzzStateTransition(f *testing.F) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
-		chainDb := rawdb.NewMemoryDatabase()
+		executionDB := rawdb.NewMemoryDatabase()
 		chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		if err != nil {
@@ -152,10 +170,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
-		cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+		options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
-			chainDb,
-			cacheConfig,
+			executionDB,
+			options,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			nil,
@@ -166,8 +184,8 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		trieDBConfig := cacheConfig.TriedbConfig()
-		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(chainDb, trieDBConfig), nil))
+		trieDBConfig := options.TriedbConfig()
+		statedb, err := state.New(stateRoot, state.NewDatabase(triedb.NewDatabase(executionDB, trieDBConfig), nil))
 		if err != nil {
 			panic(err)
 		}
@@ -231,11 +249,15 @@ func FuzzStateTransition(f *testing.F) {
 			runCtx = core.NewMessageGasEstimationContext()
 		}
 
-		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: chaininfo.ArbitrumDevTestChainConfig()}, inbox, seqBatch, runCtx)
+		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: getChainConfig()}, inbox, seqBatch, runCtx)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.
 			panic(err)
 		}
 	})
+}
+
+func getChainConfig() *params.ChainConfig {
+	return chaininfo.ArbitrumDevTestChainConfig()
 }

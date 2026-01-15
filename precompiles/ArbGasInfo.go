@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -44,7 +45,6 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
@@ -82,7 +82,6 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
@@ -119,7 +118,6 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, AssumedSimpleTxSize)
 	gasForL1Calldata := common.Big0
@@ -144,7 +142,6 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 		l2GasPrice = evm.Context.BaseFee
 	}
 
-	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 	gasForL1Calldata := common.Big0
 	if l2GasPrice.Sign() > 0 {
@@ -160,12 +157,19 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
-// GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
+// GetGasAccountingParams gets the rollup's speed limit, pool size, and block gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
-	maxTxGasLimit, err := l2pricing.PerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
+	maxBlockGasLimit, err := l2pricing.PerBlockGasLimit()
+	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxBlockGasLimit), arbmath.UintToBig(maxBlockGasLimit), err
+}
+
+// GetMaxTxGasLimit gets the max tx gas limit
+func (con ArbGasInfo) GetMaxTxGasLimit(c ctx, evm mech) (huge, error) {
+	l2pricing := c.State.L2PricingState()
+	maxTxGasLimit, err := l2pricing.PerTxGasLimit()
+	return arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed
@@ -280,4 +284,101 @@ func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, err
 // GetLastL1PricingSurplus gets the L1 pricing surplus as of the last update (may be negative)
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
+}
+
+// GetMaxBlockGasLimit gets the maximum block gas limit
+func (con ArbGasInfo) GetMaxBlockGasLimit(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().PerBlockGasLimit()
+}
+
+// GetGasPricingConstraints gets the current gas pricing constraints used by the Multi-Constraint Pricer.
+func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, error) {
+	len, err := c.State.L2PricingState().GasConstraintsLength()
+	if err != nil {
+		return nil, err
+	}
+
+	constraints := make([][3]uint64, 0, len)
+	for i := range len {
+		constraint := c.State.L2PricingState().OpenGasConstraintAt(i)
+		gasTargetPerSecond, err := constraint.Target()
+		if err != nil {
+			return nil, err
+		}
+		adjustmentWindowSeconds, err := constraint.AdjustmentWindow()
+		if err != nil {
+			return nil, err
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return nil, err
+		}
+
+		constraints = append(constraints, [3]uint64{
+			gasTargetPerSecond,
+			adjustmentWindowSeconds,
+			backlog,
+		})
+	}
+	return constraints, nil
+}
+
+// GetMultiGasPricingConstraints returns the current configuration of multi-gas pricing constraints
+func (con ArbGasInfo) GetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+) ([]MultiGasConstraint, error) {
+	length, err := c.State.L2PricingState().MultiGasConstraintsLength()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get multi-gas constraint count: %w", err)
+	}
+
+	result := make([]MultiGasConstraint, 0, length)
+
+	for i := range length {
+		constraint := c.State.L2PricingState().OpenMultiGasConstraintAt(i)
+
+		target, err := constraint.Target()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read target for constraint %d: %w", i, err)
+		}
+		window, err := constraint.AdjustmentWindow()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read adjustment window for constraint %d: %w", i, err)
+		}
+		backlog, err := constraint.Backlog()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read backlog for constraint %d: %w", i, err)
+		}
+
+		resourceMap, err := constraint.ResourcesWithWeights()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
+		}
+
+		resources := make([]WeightedResource, 0, len(resourceMap))
+		for kind, weight := range resourceMap {
+			resources = append(resources, WeightedResource{
+				Resource: uint8(kind),
+				Weight:   weight,
+			})
+		}
+
+		result = append(result, MultiGasConstraint{
+			Resources:            resources,
+			AdjustmentWindowSecs: window,
+			TargetPerSec:         target,
+			Backlog:              backlog,
+		})
+	}
+
+	return result, nil
+}
+
+// GetMultiGasBaseFee gets the current base fee for each resource type used by the Multi-Constraint Pricer
+func (con ArbGasInfo) GetMultiGasBaseFee(
+	c ctx,
+	evm mech,
+) ([]*big.Int, error) {
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource()
 }

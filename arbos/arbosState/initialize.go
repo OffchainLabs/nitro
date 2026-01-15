@@ -58,7 +58,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
 	triedbConfig := cacheConfig.TriedbConfig()
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabase(triedb.NewDatabase(db, triedbConfig), nil)
@@ -177,7 +177,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance), tracing.BalanceChangeUnspecified)
 		statedb.SetNonce(account.Addr, account.Nonce, tracing.NonceChangeUnspecified)
 		if account.ContractInfo != nil {
-			statedb.SetCode(account.Addr, account.ContractInfo.Code)
+			statedb.SetCode(account.Addr, account.ContractInfo.Code, tracing.CodeChangeUnspecified)
 			for k, v := range account.ContractInfo.ContractStorage {
 				statedb.SetState(account.Addr, k, v)
 			}

@@ -5,7 +5,6 @@
 // Test randomly fails with L1 gas price estimate should tend toward the basefee
 // so skipping locally, but running on CI
 //go:build !race && cionly
-// +build !race,cionly
 
 package arbtest
 
@@ -19,12 +18,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -34,7 +34,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -136,7 +136,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 	cleanup := builder.Build(t)
 	defer cleanup()

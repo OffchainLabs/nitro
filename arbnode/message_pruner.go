@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -48,7 +48,7 @@ var DefaultMessagePrunerConfig = MessagePrunerConfig{
 	MinBatchesLeft: 1000,
 }
 
-func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func MessagePrunerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
 	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.PruneInterval, "interval for running message pruner")
 	f.Uint64(prefix+".min-batches-left", DefaultMessagePrunerConfig.MinBatchesLeft, "min number of batches not pruned")

@@ -141,7 +141,7 @@ func BigToUintOrPanic(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// UfracToBigFloat casts an rational to a big float
+// UfracToBigFloat casts a rational to a big float
 func UfracToBigFloat(numerator, denominator uint64) *big.Float {
 	float := new(big.Float)
 	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
@@ -242,7 +242,7 @@ func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 	return new(big.Int).Mul(multiplicand, big.NewInt(multiplier))
 }
 
-// BigMulByUint multiply a huge by a unsigned integer
+// BigMulByUint multiply a huge by an unsigned integer
 func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }
@@ -402,7 +402,7 @@ func DivCeil[T Unsigned](value, divisor T) T {
 
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where
 // x is denominated in basis points.
-// The 4th degreee Maclaurin series (for example) is:
+// The 4th degree Maclaurin series (for example) is:
 // b*(1 + (x/b) +(x/b)^2 / 2! + (x/b)^3 / 6! + (x/b)^4/4!)
 // The quartic polynomial (accuracy = 4) will underestimate e^x by about 5% as
 // x approaches 20000 bips.

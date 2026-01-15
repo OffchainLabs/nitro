@@ -65,18 +65,18 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
-	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0)
+	options := core.DefaultConfig().WithStateScheme(env.GetTestStateScheme())
+	stateroot, err := InitializeArbosInDatabase(raw, options, initReader, chainConfig, nil, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
-	triedbConfig := cacheConfig.TriedbConfig()
-	stateDb, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
+	triedbConfig := options.TriedbConfig()
+	stateDB, err := state.New(stateroot, state.NewDatabase(triedb.NewDatabase(raw, triedbConfig), nil))
 	Require(t, err)
 
-	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
+	arbState, err := OpenArbosState(stateDB, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkRetryables(arbState, input.RetryableData, t)
-	checkAccounts(stateDb, arbState, input.Accounts, t)
+	checkAccounts(stateDB, arbState, input.Accounts, t)
 	checkFeatures(t, arbState)
 }
 

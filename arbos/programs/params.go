@@ -7,13 +7,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
-	am "github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const initialMaxWasmSize = 128 * 1024 // max decompressed wasm size (programs are also bounded by compressed size)
@@ -36,6 +37,8 @@ const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be
 const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
+
+const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -65,7 +68,7 @@ func (p Programs) Params() (*StylusParams, error) {
 	sto := p.backingStorage.OpenCachedSubStorage(paramsKey)
 
 	// assume reads are warm due to the frequency of access
-	if err := sto.Burner().Burn(1 * params.WarmStorageReadCostEIP2929); err != nil {
+	if err := sto.Burner().Burn(multigas.ResourceKindComputation, params.WarmStorageReadCostEIP2929); err != nil {
 		return &StylusParams{}, err
 	}
 
@@ -87,23 +90,23 @@ func (p Programs) Params() (*StylusParams, error) {
 	stylusParams := &StylusParams{
 		backingStorage:   sto,
 		arbosVersion:     p.ArbosVersion,
-		Version:          am.BytesToUint16(take(2)),
-		InkPrice:         am.BytesToUint24(take(3)),
-		MaxStackDepth:    am.BytesToUint32(take(4)),
-		FreePages:        am.BytesToUint16(take(2)),
-		PageGas:          am.BytesToUint16(take(2)),
+		Version:          arbmath.BytesToUint16(take(2)),
+		InkPrice:         arbmath.BytesToUint24(take(3)),
+		MaxStackDepth:    arbmath.BytesToUint32(take(4)),
+		FreePages:        arbmath.BytesToUint16(take(2)),
+		PageGas:          arbmath.BytesToUint16(take(2)),
 		PageRamp:         initialPageRamp,
-		PageLimit:        am.BytesToUint16(take(2)),
-		MinInitGas:       am.BytesToUint8(take(1)),
-		MinCachedInitGas: am.BytesToUint8(take(1)),
-		InitCostScalar:   am.BytesToUint8(take(1)),
-		CachedCostScalar: am.BytesToUint8(take(1)),
-		ExpiryDays:       am.BytesToUint16(take(2)),
-		KeepaliveDays:    am.BytesToUint16(take(2)),
-		BlockCacheSize:   am.BytesToUint16(take(2)),
+		PageLimit:        arbmath.BytesToUint16(take(2)),
+		MinInitGas:       arbmath.BytesToUint8(take(1)),
+		MinCachedInitGas: arbmath.BytesToUint8(take(1)),
+		InitCostScalar:   arbmath.BytesToUint8(take(1)),
+		CachedCostScalar: arbmath.BytesToUint8(take(1)),
+		ExpiryDays:       arbmath.BytesToUint16(take(2)),
+		KeepaliveDays:    arbmath.BytesToUint16(take(2)),
+		BlockCacheSize:   arbmath.BytesToUint16(take(2)),
 	}
 	if p.ArbosVersion >= params.ArbosVersion_40 {
-		stylusParams.MaxWasmSize = am.BytesToUint32(take(4))
+		stylusParams.MaxWasmSize = arbmath.BytesToUint32(take(4))
 	} else {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
@@ -118,28 +121,28 @@ func (p *StylusParams) Save() error {
 	}
 
 	// order matters!
-	data := am.ConcatByteSlices(
-		am.Uint16ToBytes(p.Version),
-		am.Uint24ToBytes(p.InkPrice),
-		am.Uint32ToBytes(p.MaxStackDepth),
-		am.Uint16ToBytes(p.FreePages),
-		am.Uint16ToBytes(p.PageGas),
-		am.Uint16ToBytes(p.PageLimit),
-		am.Uint8ToBytes(p.MinInitGas),
-		am.Uint8ToBytes(p.MinCachedInitGas),
-		am.Uint8ToBytes(p.InitCostScalar),
-		am.Uint8ToBytes(p.CachedCostScalar),
-		am.Uint16ToBytes(p.ExpiryDays),
-		am.Uint16ToBytes(p.KeepaliveDays),
-		am.Uint16ToBytes(p.BlockCacheSize),
+	data := arbmath.ConcatByteSlices(
+		arbmath.Uint16ToBytes(p.Version),
+		arbmath.Uint24ToBytes(p.InkPrice),
+		arbmath.Uint32ToBytes(p.MaxStackDepth),
+		arbmath.Uint16ToBytes(p.FreePages),
+		arbmath.Uint16ToBytes(p.PageGas),
+		arbmath.Uint16ToBytes(p.PageLimit),
+		arbmath.Uint8ToBytes(p.MinInitGas),
+		arbmath.Uint8ToBytes(p.MinCachedInitGas),
+		arbmath.Uint8ToBytes(p.InitCostScalar),
+		arbmath.Uint8ToBytes(p.CachedCostScalar),
+		arbmath.Uint16ToBytes(p.ExpiryDays),
+		arbmath.Uint16ToBytes(p.KeepaliveDays),
+		arbmath.Uint16ToBytes(p.BlockCacheSize),
 	)
 	if p.arbosVersion >= params.ArbosVersion_40 {
-		data = append(data, am.Uint32ToBytes(p.MaxWasmSize)...)
+		data = append(data, arbmath.Uint32ToBytes(p.MaxWasmSize)...)
 	}
 
 	slot := uint64(0)
 	for len(data) != 0 {
-		next := am.MinInt(32, len(data))
+		next := arbmath.MinInt(32, len(data))
 		info := data[:next]
 		data = data[next:]
 
@@ -168,6 +171,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 }
 
 func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
+	if newArbosVersion == params.ArbosVersion_50 {
+		if p.arbosVersion >= params.ArbosVersion_50 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		if p.MaxStackDepth > arbOS50MaxWasmSize {
+			p.MaxStackDepth = arbOS50MaxWasmSize
+		}
+	}
 	if newArbosVersion == params.ArbosVersion_40 {
 		if p.arbosVersion >= params.ArbosVersion_40 {
 			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)

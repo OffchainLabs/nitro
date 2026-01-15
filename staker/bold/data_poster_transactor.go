@@ -9,19 +9,19 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
 )
 
 // DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.
 type DataPosterTransactor struct {
-	fifo *solimpl.FIFO
+	fifo *sol.FIFO
 	*dataposter.DataPoster
 }
 
 func NewDataPosterTransactor(dataPoster *dataposter.DataPoster) *DataPosterTransactor {
 	return &DataPosterTransactor{
-		fifo:       solimpl.NewFIFO(1000),
+		fifo:       sol.NewFIFO(1000),
 		DataPoster: dataPoster,
 	}
 }

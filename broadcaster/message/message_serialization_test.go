@@ -45,7 +45,7 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithBlockHashAndBlockMetadata()
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"blockHash":"0xff00000000000000000000000000000000000000000000000000000000000000","signature":null,"blockMetadata":"AAI="}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"blockHash":"0xff00000000000000000000000000000000000000000000000000000000000000","signatureV2":null,"blockMetadata":"AAI="}]}
 }
 
 func ExampleBroadcastMessage_broadcastfeedmessageWithoutBlockHashAndBlockMetadata() {
@@ -78,7 +78,7 @@ func ExampleBroadcastMessage_broadcastfeedmessageWithoutBlockHashAndBlockMetadat
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"signature":null}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"signatureV2":null}]}
 }
 
 func ExampleBroadcastMessage_emptymessage() {

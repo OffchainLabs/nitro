@@ -75,7 +75,7 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) (*S3StorageService, error) {
-	client, err := s3client.NewS3FullClient(config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClient(context.Background(), config.AccessKey, config.SecretKey, config.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 			log.Error("error deleting s3-persisted bids from sql db", "round", deletRound, "err", err)
 			s.lastFailedDeleteRound = deletRound
 		} else {
-			// Previously failed deletes dont matter anymore as the recent one (larger round number) succeeded
+			// Previously failed deletes don't matter anymore as the recent one (larger round number) succeeded
 			s.lastFailedDeleteRound = 0
 		}
 		return nil

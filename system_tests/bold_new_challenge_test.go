@@ -18,19 +18,19 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	protocol "github.com/offchainlabs/bold/chain-abstraction"
-	solimpl "github.com/offchainlabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/bold/challenge-manager"
-	modes "github.com/offchainlabs/bold/challenge-manager/types"
-	"github.com/offchainlabs/bold/containers/option"
-	l2stateprovider "github.com/offchainlabs/bold/layer2-state-provider"
-	"github.com/offchainlabs/bold/solgen/go/challengeV2gen"
-	"github.com/offchainlabs/bold/solgen/go/mocksgen"
-	"github.com/offchainlabs/bold/solgen/go/rollupgen"
-	"github.com/offchainlabs/bold/state-commitments/history"
-	butil "github.com/offchainlabs/bold/util"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	modes "github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/commitment/history"
+	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 )
 
@@ -53,7 +53,7 @@ func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, l2stateprovider.Batch(maxInboxCount), option.Some(l2stateprovider.Height(maxNumberOfBlocks)))
+	evilStates, err := s.L2MessageStatesUpTo(ctx, previousGlobalState, state.Batch(maxInboxCount), option.Some(state.Height(maxNumberOfBlocks)))
 	if err != nil {
 		return nil, err
 	}
@@ -68,8 +68,8 @@ func (s *incorrectBlockStateProvider) ExecutionStateAfterPreviousState(
 func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
-	batchLimit l2stateprovider.Batch,
-	toHeight option.Option[l2stateprovider.Height],
+	batchLimit state.Batch,
+	toHeight option.Option[state.Height],
 ) ([]common.Hash, error) {
 	states, err := s.honest.L2MessageStatesUpTo(ctx, fromState, batchLimit, toHeight)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *incorrectBlockStateProvider) L2MessageStatesUpTo(
 }
 
 func (s *incorrectBlockStateProvider) CollectMachineHashes(
-	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
+	ctx context.Context, cfg *state.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	honestHashes, err := s.honest.CollectMachineHashes(ctx, cfg)
 	if err != nil {
@@ -122,9 +122,9 @@ func (s *incorrectBlockStateProvider) CollectMachineHashes(
 
 func (s *incorrectBlockStateProvider) CollectProof(
 	ctx context.Context,
-	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
-	blockChallengeHeight l2stateprovider.Height,
-	machineIndex l2stateprovider.OpcodeIndex,
+	assertionMetadata *state.AssociatedAssertionMetadata,
+	blockChallengeHeight state.Height,
+	machineIndex state.OpcodeIndex,
 ) ([]byte, error) {
 	return s.honest.CollectProof(ctx, assertionMetadata, blockChallengeHeight, machineIndex)
 }
@@ -133,7 +133,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithBoldDeployment()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	// Block validation requires db hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)
@@ -268,13 +268,13 @@ func TestChallengeProtocolBOLDFirstVirtualBlock(t *testing.T) {
 }
 
 type BoldStateProviderInterface interface {
-	l2stateprovider.L2MessageStateCollector
-	l2stateprovider.MachineHashCollector
-	l2stateprovider.ProofCollector
-	l2stateprovider.ExecutionProvider
+	state.L2MessageStateCollector
+	state.MachineHashCollector
+	state.ProofCollector
+	state.ExecutionProvider
 }
 
-func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimpl.AssertionChain, func()) {
+func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*sol.AssertionChain, func()) {
 	if !builder.deployBold {
 		t.Fatal("bold deployment not enabled")
 	}
@@ -285,7 +285,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		state.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
 			MachineLeavesCachePath: cacheDir,
@@ -295,6 +295,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		node.ConsensusNode.InboxTracker,
 		node.ConsensusNode.TxStreamer,
 		node.ConsensusNode.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -302,16 +303,16 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		stateManager = mockStateProvider(stateManager)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]state.Height{
+			state.Height(blockChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
@@ -326,36 +327,36 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
-		NewFetcherFromConfig(builder.nodeConfig),
+		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
 		builder.L1Info.Signer.ChainID(),
 	)
 	Require(t, err)
 
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := sol.NewAssertionChain(
 		ctx,
 		builder.addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		butil.NewBackendWrapper(builder.L1.Client, rpc.LatestBlockNumber),
+		builder.L1.Client,
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName(addressName),
-		challengemanager.StackWithMode(modes.MakeMode),
-		challengemanager.StackWithPostingInterval(time.Second * 3),
-		challengemanager.StackWithPollingInterval(time.Second),
-		challengemanager.StackWithAverageBlockCreationTime(time.Second),
-		challengemanager.StackWithMinimumGapToParentAssertion(0),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName(addressName),
+		challenge.StackWithMode(modes.MakeMode),
+		challenge.StackWithPostingInterval(time.Second * 3),
+		challenge.StackWithPollingInterval(time.Second),
+		challenge.StackWithAverageBlockCreationTime(time.Second),
+		challenge.StackWithMinimumGapToParentAssertion(0),
 	}
 
-	challengeManager, err := challengemanager.NewChallengeStack(
+	challengeManager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,

@@ -97,7 +97,7 @@ func (rc *RedisCoordinator) trackSequenceCountUpdates(ctx context.Context) {
 				continue
 			}
 			roundSeqUpdate = update
-			// Attempt to pull upto next 5 updates from the channel (batching logic)
+			// Attempt to pull up to next 5 updates from the channel (batching logic)
 			for i := 0; i < 5; i++ {
 				select {
 				case update := <-rc.roundSeqUpdateChan:

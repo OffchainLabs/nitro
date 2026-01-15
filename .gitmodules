@@ -1,11 +1,8 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
 	url = https://github.com/OffchainLabs/go-ethereum.git
-[submodule "fastcache"]
-	path = fastcache
-	url = https://github.com/OffchainLabs/fastcache.git
-[submodule "arbitrator/wasm-libraries/soft-float/SoftFloat"]
-	path = arbitrator/wasm-libraries/soft-float/SoftFloat
+[submodule "crates/wasm-libraries/soft-float/SoftFloat"]
+	path = crates/wasm-libraries/soft-float/SoftFloat
 	url = https://github.com/OffchainLabs/SoftFloat.git
 [submodule "brotli"]
 	path = brotli
@@ -14,26 +11,23 @@
 	path = contracts
 	url = https://github.com/OffchainLabs/nitro-contracts.git
 	branch = develop
-[submodule "arbitrator/wasm-testsuite/testsuite"]
-	path = arbitrator/wasm-testsuite/testsuite
+[submodule "crates/wasm-testsuite/testsuite"]
+	path = crates/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
-[submodule "arbitrator/tools/wasmer"]
-	path = arbitrator/tools/wasmer
+[submodule "crates/tools/wasmer"]
+	path = crates/tools/wasmer
 	url = https://github.com/OffchainLabs/wasmer.git
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
-[submodule "bold"]
-	path = bold
-	url = https://github.com/OffchainLabs/bold.git
-[submodule "arbitrator/langs/rust"]
-	path = arbitrator/langs/rust
+[submodule "crates/langs/rust"]
+	path = crates/langs/rust
 	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
-[submodule "arbitrator/langs/c"]
-	path = arbitrator/langs/c
+[submodule "crates/langs/c"]
+	path = crates/langs/c
 	url = https://github.com/OffchainLabs/stylus-sdk-c.git
-[submodule "arbitrator/langs/bf"]
-	path = arbitrator/langs/bf
+[submodule "crates/langs/bf"]
+	path = crates/langs/bf
 	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
 [submodule "safe-smart-account"]
 	path = safe-smart-account

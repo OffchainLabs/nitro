@@ -22,6 +22,12 @@ var Orange = "\033[38;5;202;1m"
 
 var Clear = "\033[0;0m"
 
+// Pre-compiled regular expressions for better performance
+var (
+	uncolorRegex = regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
+	unwhiteRegex = regexp.MustCompile(`\s+`)
+)
+
 func PrintBlue(args ...interface{}) {
 	print(Blue)
 	fmt.Print(args...)
@@ -59,9 +65,6 @@ func PrintPink(args ...interface{}) {
 }
 
 func Uncolor(text string) string {
-	uncolor := regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
-	unwhite := regexp.MustCompile(`\s+`)
-
-	text = uncolor.ReplaceAllString(text, "")
-	return unwhite.ReplaceAllString(text, " ")
+	text = uncolorRegex.ReplaceAllString(text, "")
+	return unwhiteRegex.ReplaceAllString(text, " ")
 }

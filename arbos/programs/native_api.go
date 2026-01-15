@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package programs
 
@@ -45,12 +44,12 @@ type NativeApi struct {
 }
 
 func newApi(
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
 ) NativeApi {
-	handler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
+	handler := newApiClosures(evm, tracingInfo, scope, memoryModel)
 	apiId := apiIds.Add(1)
 	id := usize(apiId)
 	api := NativeApi{

@@ -35,10 +35,11 @@ type JitMachine struct {
 }
 
 func createJitMachine(jitBinary string, binaryPath string, cranelift bool, wasmMemoryUsageLimit int, maxExecutionTime time.Duration, _ common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	invocation := []string{"--binary", binaryPath, "--forks"}
+	invocation := []string{"--binary", binaryPath}
 	if cranelift {
 		invocation = append(invocation, "--cranelift")
 	}
+	invocation = append(invocation, "continuous")
 	process := exec.Command(jitBinary, invocation...)
 	stdin, err := process.StdinPipe()
 	if err != nil {

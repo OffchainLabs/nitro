@@ -28,7 +28,7 @@ func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCou
 			return
 		}
 		if _, ok := deviceMetrics[stat.DeviceName]; !ok {
-			// Register metrics for a maximum of maxDeviceCount (fail safe incase iostat command returns incorrect names indefinitely)
+			// Register metrics for a maximum of maxDeviceCount (fail safe in case iostat command returns incorrect names indefinitely)
 			if len(deviceMetrics) < maxDeviceCount {
 				// Replace hyphens with underscores to avoid metric name issues
 				sanitizedDeviceName := strings.ReplaceAll(stat.DeviceName, "-", "_")

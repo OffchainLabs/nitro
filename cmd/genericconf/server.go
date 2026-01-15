@@ -6,7 +6,7 @@ package genericconf
 import (
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 )
@@ -56,13 +56,12 @@ func (c HTTPConfig) Apply(stackConf *node.Config) {
 	stackConf.HTTPCors = c.CORSDomain
 	stackConf.HTTPVirtualHosts = c.VHosts
 	stackConf.HTTPTimeouts.ReadTimeout = c.ServerTimeouts.ReadTimeout
-	// TODO ReadHeaderTimeout pending on https://github.com/ethereum/go-ethereum/pull/25338
-	// stackConf.HTTPTimeouts.ReadHeaderTimeout = c.ServerTimeouts.ReadHeaderTimeout
+	stackConf.HTTPTimeouts.ReadHeaderTimeout = c.ServerTimeouts.ReadHeaderTimeout
 	stackConf.HTTPTimeouts.WriteTimeout = c.ServerTimeouts.WriteTimeout
 	stackConf.HTTPTimeouts.IdleTimeout = c.ServerTimeouts.IdleTimeout
 }
 
-func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
+func HTTPConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", HTTPConfigDefault.Addr, "HTTP-RPC server listening interface")
 	f.Int(prefix+".port", HTTPConfigDefault.Port, "HTTP-RPC server listening port")
 	f.StringSlice(prefix+".api", HTTPConfigDefault.API, "APIs offered over the HTTP-RPC interface")
@@ -72,7 +71,7 @@ func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
 	HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
 
-func HTTPServerTimeoutConfigAddOptions(prefix string, f *flag.FlagSet) {
+func HTTPServerTimeoutConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".read-timeout", HTTPServerTimeoutConfigDefault.ReadTimeout, "the maximum duration for reading the entire request (http.Server.ReadTimeout)")
 	f.Duration(prefix+".read-header-timeout", HTTPServerTimeoutConfigDefault.ReadHeaderTimeout, "the amount of time allowed to read the request headers (http.Server.ReadHeaderTimeout)")
 	f.Duration(prefix+".write-timeout", HTTPServerTimeoutConfigDefault.WriteTimeout, "the maximum duration before timing out writes of the response (http.Server.WriteTimeout)")
@@ -106,7 +105,7 @@ func (c WSConfig) Apply(stackConf *node.Config) {
 	stackConf.WSExposeAll = c.ExposeAll
 }
 
-func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
+func WSConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", WSConfigDefault.Addr, "WS-RPC server listening interface")
 	f.Int(prefix+".port", WSConfigDefault.Port, "WS-RPC server listening port")
 	f.StringSlice(prefix+".api", WSConfigDefault.API, "APIs offered over the WS-RPC interface")
@@ -127,7 +126,7 @@ func (c *IPCConfig) Apply(stackConf *node.Config) {
 	stackConf.IPCPath = c.Path
 }
 
-func IPCConfigAddOptions(prefix string, f *flag.FlagSet) {
+func IPCConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".path", IPCConfigDefault.Path, "Requested location to place the IPC endpoint. An empty path disables IPC.")
 }
 
@@ -148,7 +147,7 @@ func (c GraphQLConfig) Apply(stackConf *node.Config) {
 	stackConf.GraphQLVirtualHosts = c.VHosts
 }
 
-func GraphQLConfigAddOptions(prefix string, f *flag.FlagSet) {
+func GraphQLConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", GraphQLConfigDefault.Enable, "Enable graphql endpoint on the rpc endpoint")
 	f.StringSlice(prefix+".corsdomain", GraphQLConfigDefault.CORSDomain, "Comma separated list of domains from which to accept cross origin requests (browser enforced)")
 	f.StringSlice(prefix+".vhosts", GraphQLConfigDefault.VHosts, "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard")
@@ -179,7 +178,7 @@ var AuthRPCConfigDefault = AuthRPCConfig{
 	JwtSecret: "",
 }
 
-func AuthRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
+func AuthRPCConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", AuthRPCConfigDefault.Addr, "AUTH-RPC server listening interface")
 	f.String(prefix+".jwtsecret", AuthRPCConfigDefault.JwtSecret, "Path to file holding JWT secret (32B hex)")
 	f.Int(prefix+".port", AuthRPCConfigDefault.Port, "AUTH-RPC server listening port")
@@ -209,13 +208,13 @@ var PProfDefault = PProf{
 	Port: 6071,
 }
 
-func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
+func MetricsServerAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
 	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
 	f.Duration(prefix+".update-interval", MetricsServerConfigDefault.UpdateInterval, "metrics server update interval")
 }
 
-func PProfAddOptions(prefix string, f *flag.FlagSet) {
+func PProfAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", PProfDefault.Addr, "pprof server address")
 	f.Int(prefix+".port", PProfDefault.Port, "pprof server port")
 }

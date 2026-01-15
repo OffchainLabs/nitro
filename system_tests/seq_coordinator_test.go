@@ -44,7 +44,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 	redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 }
 
-func TestRedisSeqCoordinatorPriorities(t *testing.T) {
+func TestRedisSeqCoordinatorPrioritiesFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,6 +52,8 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	builder.takeOwnership = false
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = 10 * time.Millisecond
+	builder.execConfig.SyncMonitor.MsgLag = 10 * time.Millisecond
 
 	l2Info := builder.L2Info
 
@@ -392,6 +394,9 @@ func TestRedisSwitchover(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	if redisutil.IsSharedTestRedisInstance() {
+		builder.DontParalellise()
+	}
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	builder.nodeConfig.SeqCoordinator.NewRedisUrl = redisutil.CreateTestRedis(ctx, t)

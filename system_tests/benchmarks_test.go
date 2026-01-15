@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build benchmarks
-// +build benchmarks
 
 package arbtest
 
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
 

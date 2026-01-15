@@ -51,8 +51,8 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 	return nil
 }
 
-// RebuildWasmStore function runs a loop looking at every codehash in diskDb, checking if its an activated stylus contract and
-// saving it to wasm store if it doesnt already exists. When errored it logs them and silently returns
+// RebuildWasmStore function runs a loop looking at every codehash in diskDB, checking if its an activated stylus contract and
+// saving it to wasm store if it doesn't already exists. When errored it logs them and silently returns
 //
 // It stores the status of rebuilding to wasm store by updating the codehash (of the latest successfully checked contract) in
 // RebuildingPositionKey after every second of work.
@@ -60,9 +60,9 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
 // time of the latest block when rebuilding was first called, this is used to avoid recomputing of assembly and module of
 // contracts that were created after rebuilding commenced since they would anyway already be added during sync.
-func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainDb ethdb.Database, maxRecreateStateDepth int64, targetConfig *StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
+func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, executionDB ethdb.Database, maxRecreateStateDepth int64, targetConfig *StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
-	var stateDb *state.StateDB
+	var stateDB *state.StateDB
 
 	if err := PopulateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
@@ -72,21 +72,21 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
+	stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
 	if err != nil {
 		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
+		stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}
 	}
-	diskDb := stateDb.Database().DiskDB()
-	arbState, err := arbosState.OpenSystemArbosState(stateDb, nil, true)
+	diskDB := stateDB.Database().DiskDB()
+	arbState, err := arbosState.OpenSystemArbosState(stateDB, nil, true)
 	if err != nil {
 		return fmt.Errorf("error getting arbos state, aborting rebuilding: %w", err)
 	}
 	programs := arbState.Programs()
-	iter := diskDb.NewIterator(rawdb.CodePrefix, position[:])
+	iter := diskDB.NewIterator(rawdb.CodePrefix, position[:])
 	defer iter.Release()
 	lastStatusUpdate := time.Now()
 	for iter.Next() {
@@ -94,7 +94,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainD
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
 		if state.IsStylusProgram(code) {
-			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
+			if err := programs.SaveActiveProgramToWasmStore(stateDB, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}
 		}

@@ -411,34 +411,35 @@ func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig
 	return &targetConfig
 }
 
-func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
+func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
-	nodeConfig.Execution.RPC.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.DevInit = true
 	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -447,16 +448,16 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	chainDb, blockchain, err = openInitializeChainDb(
+	executionDB, blockchain, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -465,18 +466,17 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	nodeConfig.Execution.RPC.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeChainDb(
+	_, _, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -536,7 +536,7 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -617,7 +617,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -679,32 +679,33 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, otherKeys, true)
 }
 
-func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
 
 	nodeConfig := NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
-	nodeConfig.Execution.RPC.StateScheme = env.GetTestStateScheme()
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	nodeConfig.Init.Empty = true
+	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
-		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
@@ -713,7 +714,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 }
 
@@ -858,7 +859,7 @@ func TestIsWasmDb(t *testing.T) {
 	for _, testCase := range testCases {
 		name := fmt.Sprintf("%q", testCase.path)
 		t.Run(name, func(t *testing.T) {
-			got := isWasmDb(testCase.path)
+			got := isWasmDB(testCase.path)
 			if testCase.want != got {
 				t.Fatalf("want %v, but got %v", testCase.want, got)
 			}

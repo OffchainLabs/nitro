@@ -9,6 +9,7 @@ import (
 var (
 	fs                                            = flag.NewFlagSet("test", flag.ExitOnError)
 	StateSchemeFlag                               = fs.String("test_state_scheme", "", "State scheme to use for tests")
+	DatabaseEngineFlag                            = fs.String("test_database_engine", "", "Database engine to use for tests")
 	RedisFlag                                     = fs.String("test_redis", "", "Redis URL for testing")
 	RecordBlockInputsEnable                       = fs.Bool("recordBlockInputs.enable", false, "Whether to record block inputs as a json file")
 	RecordBlockInputsWithSlug                     = fs.String("recordBlockInputs.WithSlug", "", "Slug directory for validationInputsWriter")
@@ -20,11 +21,12 @@ var (
 	RunsFlag                                      = fs.String("runs", "", "Number of runs for test")
 	LoggingFlag                                   = fs.String("logging", "", "Enable logging")
 	CompileFlag                                   = fs.String("test_compile", "", "[STORE|LOAD] to allow store/load in compile test")
+	ConsensusExecutionInSameProcessUseRPC         = fs.Bool("consensus_execution_in_same_process_use_rpc", false, "Whether to enable communication between consensus and execution side of a node via json rpc")
 )
 
 // This is a workaround for the fact that we can only pass flags to the package in which they are defined.
 // So to avoid doing that we pass the flags after adding a delimiter "--" to the command line.
-// We then parse the argument only after the delimiter to the flagset.
+// We then parse the arguments only after the delimiter to the flagset.
 func init() {
 	var args []string
 	foundDelimiter := false

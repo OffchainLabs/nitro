@@ -1,6 +1,6 @@
 # Contribution Guidelines
 
-Note: The latest and most up-to-date documentation can be found on our [docs portal](https://docs.arbitrum.io/welcome/arbitrum-gentle-introduction).
+Note: The latest and most up-to-date documentation can be found on our [docs portal](https://docs.arbitrum.io/launch-arbitrum-chain/a-gentle-introduction).
 
 Excited by our work want to get more involved in making Arbitrum more successful? Or maybe you want to learn more about Layer 2 technologies and want to contribute as a first step?
 
@@ -8,7 +8,13 @@ You can explore our [Open Issues](https://github.com/offchainlabs/nitro/issues) 
 
 <!-- start-trivial-prs -->
 > [!IMPORTANT] 
-> Please, **do not send pull requests for trivial changes**, such as typos, these will be rejected. These types of pull requests incur a cost to reviewers and do not provide much value to the project. If you are unsure, please open an issue first to discuss the change.
+> Please, **do not send pull requests for trivial changes**; these will be rejected.
+> These types of pull requests incur a cost to reviewers and do not provide much value to the project.
+> If you are unsure, please open an issue first to discuss the change.
+> Here are some examples of trivial PRs that will most-likely be rejected:
+> * Fixing typos
+> * AI-generated code
+> * Refactors that don't improve usability
 <!-- end-trivial-prs -->
 
 ## Contribution Steps
@@ -56,7 +62,11 @@ $ git checkout feature-in-progress-branch
 
 Write unit tests or write a [system test](https://github.com/OffchainLabs/nitro/tree/master/system_tests) for your feature before shipping it.
 
-**9. Stage the file or files that you want to commit.**
+**9. Add a changelog fragment.**
+
+Add a new markdown file to the `changelog/` directory that briefly describes your change for release notes purpose. The filename and content should follow the format in the existing files in that directory and best practices from https://keepachangelog.com/. In case the change is not considered as release-note-worthy (e.g., CI changes), you should use the `### Ignored` section in the changelog fragment.
+
+**10. Stage the file or files that you want to commit.**
 
 ```
 $ git add --all
@@ -64,7 +74,7 @@ $ git add --all
 
 This command stages all the files that you have changed. You can add individual files by specifying the file name or names and eliminating the “-- all”.
 
-**10. Commit the file or files.**
+**11. Commit the file or files.**
 
 ```
 $ git commit  -m “Message to explain what the commit covers”
@@ -72,13 +82,13 @@ $ git commit  -m “Message to explain what the commit covers”
 
 You can use the –amend flag to include previous commits that have not yet been pushed to an upstream repo to the current commit. Ensure commit messages are informative and provide sufficient context about your edits.
 
-**11. Fetch any changes that have occurred in the upstream Nitro repo since you started work.**
+**12. Fetch any changes that have occurred in the upstream Nitro repo since you started work.**
 
 ```
 $ git fetch upstream
 ```
 
-**12. Push your changes to your fork of the Nitro repo.**
+**13. Push your changes to your fork of the Nitro repo.**
 
 Use git push to move your changes to your fork of the repo.
 
@@ -86,15 +96,15 @@ Use git push to move your changes to your fork of the repo.
 $ git push mynitrorepo feature-in-progress-branch
 ```
 
-**13. Create a pull request.**
+**14. Create a pull request.**
 
 Navigate your browser to https://github.com/offchainlabs/nitro and click on the new pull request button. In the “base” box on the left, leave the default selection “base master”, the branch that you want your changes to be applied to. In the “compare” box on the right, select feature-in-progress-branch, the branch containing the changes you want to apply. 
 
-**14. Respond to comments by Core Contributors.**
+**15. Respond to comments by Core Contributors.**
 
 Core Contributors may ask questions and request that you make edits. If you set notifications at the top of the page to “not watching,” you will still be notified by email whenever someone comments on the page of a pull request you have created. If you are asked to modify your pull request, repeat steps 8 through 15, then leave a comment to notify the Core Contributors that the pull request is ready for further review.
 
-**15. If the number of commits becomes excessive, you may be asked to squash your commits.**
+**16. If the number of commits becomes excessive, you may be asked to squash your commits.**
 
  You can do this with an interactive rebase. Start by running the following command to determine the commit that is the base of your branch...
 
@@ -102,7 +112,7 @@ Core Contributors may ask questions and request that you make edits. If you set 
 $ git merge-base feature-in-progress-branch nitro/master
 ```
 
-**16. The previous command will return a commit-hash that you should use in the following command.**
+**17. The previous command will return a commit-hash that you should use in the following command.**
 
 ```
 $ git rebase -i commit-hash
@@ -126,13 +136,13 @@ squash  hash 	add a feature
 
 Save and close the file, then a commit command will appear in the terminal that squashes the smaller commits into one. Check to be sure the commit message accurately reflects your changes and then hit enter to execute it.
 
-**17. Update your pull request with the following command.**
+**18. Update your pull request with the following command.**
 
 ```
 $ git push mynitrorepo feature-in-progress-branch
 ```
 
-**18.  Finally, again leave a comment to the Core Contributors on the pull request to let them know that the pull request has been updated.**
+**19.  Finally, again leave a comment to the Core Contributors on the pull request to let them know that the pull request has been updated.**
 
 We love working with people that are autonomous, bring new experience to the team, and are excited for their work. 
 

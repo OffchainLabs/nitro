@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -37,6 +38,37 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
+// DapReaderSource provides read access to DA providers by header byte.
+// Both *daprovider.DAProviderRegistry and wrappers like blobReaderOverride satisfy this.
+type DapReaderSource interface {
+	GetReader(headerByte byte) daprovider.Reader
+}
+
+// blobReaderOverride wraps a DapReaderSource and overrides blob reads
+// with a custom reader. This is used for batch correctness checking where
+// we need to use a simulated blob reader for not-yet-posted blobs.
+type blobReaderOverride struct {
+	base       DapReaderSource
+	blobReader daprovider.Reader
+}
+
+func (r *blobReaderOverride) GetReader(headerByte byte) daprovider.Reader {
+	if headerByte == daprovider.BlobHashesHeaderFlag && r.blobReader != nil {
+		return r.blobReader
+	}
+	if r.base == nil {
+		return nil
+	}
+	return r.base.GetReader(headerByte)
+}
+
+// NewBlobReaderOverride returns a DapReaderSource that delegates all reads
+// to base except for blob reads, which use the provided blobReader instead.
+func NewBlobReaderOverride(base DapReaderSource, blobReader daprovider.Reader) DapReaderSource {
+	return &blobReaderOverride{base: base, blobReader: blobReader}
+}
+
+// lint:require-exhaustive-initialization
 type SequencerMessage struct {
 	MinTimestamp         uint64
 	MaxTimestamp         uint64
@@ -46,11 +78,9 @@ type SequencerMessage struct {
 	Segments             [][]byte
 }
 
-const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*SequencerMessage, error) {
+func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig) (*SequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -73,51 +103,61 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 
 	// Stage 1: Extract the payload from any data availability header.
-	// It's important that multiple DAS strategies can't both be invoked in the same batch,
-	// as these headers are validated by the sequencer inbox and not other DASs.
-	// We try to extract payload from the first occurring valid DA reader in the dapReaders list
-	if len(payload) > 0 {
-		foundDA := false
-		var err error
-		for _, dapReader := range dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, payload[0]) {
-				payload, _, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode != daprovider.KeysetDontValidate)
-				if err != nil {
-					// Matches the way keyset validation was done inside DAS readers i.e logging the error
-					//  But other daproviders might just want to return the error
-					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(payload[0]) {
-						if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
-							panic(err.Error())
-						} else {
-							log.Error(err.Error())
-						}
+	// It's important that multiple DA strategies can't both be invoked in the same batch,
+	// as these headers are validated by the sequencer inbox and not other DA providers.
+	// Use the registry to find the appropriate reader for the header byte
+	if len(payload) > 0 && dapReaders != nil {
+		dapReader := dapReaders.GetReader(payload[0])
+		if dapReader != nil {
+			promise := dapReader.RecoverPayload(batchNum, batchBlockHash, data)
+			result, err := promise.Await(ctx)
+			if err != nil {
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
+				//  But other daproviders might just want to return the error
+				if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
+					if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
+						panic(err.Error())
 					} else {
-						return nil, err
+						log.Error(err.Error())
 					}
+				} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) && daprovider.IsCertificateValidationError(err) {
+					log.Error("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
+					payload = nil
+				} else {
+					return nil, err
 				}
-				if payload == nil {
-					return parsedMsg, nil
-				}
-				foundDA = true
-				break
+			} else {
+				payload = result.Payload
 			}
-		}
-
-		if !foundDA {
-			if daprovider.IsDASMessageHeaderByte(payload[0]) {
-				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
+			if payload == nil {
+				return parsedMsg, nil
+			}
+		} else {
+			// No reader found for this header byte - check if it's a known type
+			if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) {
+				return nil, fmt.Errorf("no AnyTrust reader configured for AnyTrust message (header byte 0x%02x)", payload[0])
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
 				return nil, daprovider.ErrNoBlobReader
+			} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) {
+				return nil, fmt.Errorf("no DACertificate reader configured for certificate message (header byte 0x%02x)", payload[0])
 			}
+			// Otherwise it's not a DA message, continue processing
 		}
 	}
 
 	// At this point, `payload` has not been validated by the sequencer inbox at all.
 	// It's not safe to trust any part of the payload from this point onwards.
+	var uncompressedBatchSizeLimit uint64
+	if chainConfig != nil {
+		uncompressedBatchSizeLimit = chainConfig.MaxUncompressedBatchSize()
+	} else { // In case chainConfig is nil, fall back to params default (e.g. in tests or for the genesis block)
+		uncompressedBatchSizeLimit = params.DefaultMaxUncompressedBatchSize
+	}
 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && daprovider.IsZeroheavyEncodedHeaderByte(payload[0]) {
-		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
+		maxZeroheavyDecompressedLen := 101*uncompressedBatchSizeLimit/100 + 64
+		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen))) // #nosec G115
 		if err != nil {
 			log.Warn("error reading from zeroheavy decoder", err.Error())
 			return parsedMsg, nil
@@ -127,10 +167,10 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 
 	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && daprovider.IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], int(uncompressedBatchSizeLimit)) // #nosec G115
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
+			stream := rlp.NewStream(reader, 0)
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
@@ -162,25 +202,38 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	return parsedMsg, nil
 }
 
+// lint:require-exhaustive-initialization
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	dapReaders                []daprovider.Reader
+	chainConfig               *params.ChainConfig
+	dapReaders                DapReaderSource
 	cachedSequencerMessage    *SequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
 	cachedSegmentTimestamp    uint64
 	cachedSegmentBlockNumber  uint64
 	cachedSubMessageNumber    uint64
-	keysetValidationMode      daprovider.KeysetValidationMode
+	// keysetValidationMode is used for error handling in ParseSequencerMessage.
+	// Note: DAS readers now handle validation internally based on their construction-time mode,
+	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
+	// In replay mode, this allows proper error handling based on the position within the message.
+	keysetValidationMode daprovider.KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders DapReaderSource, keysetValidationMode daprovider.KeysetValidationMode, chainConfig *params.ChainConfig) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
-		backend:              backend,
-		delayedMessagesRead:  delayedMessagesRead,
-		dapReaders:           dapReaders,
-		keysetValidationMode: keysetValidationMode,
+		backend:                   backend,
+		delayedMessagesRead:       delayedMessagesRead,
+		chainConfig:               chainConfig,
+		dapReaders:                dapReaders,
+		cachedSequencerMessage:    nil,
+		cachedSequencerMessageNum: 0,
+		cachedSegmentNum:          0,
+		cachedSegmentTimestamp:    0,
+		cachedSegmentBlockNumber:  0,
+		cachedSubMessageNumber:    0,
+		keysetValidationMode:      keysetValidationMode,
 	}
 }
 
@@ -200,8 +253,9 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
+
 		var err error
-		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = ParseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode, r.chainConfig)
 		if err != nil {
 			return nil, err
 		}

@@ -5,10 +5,11 @@ package arbutil
 
 type PreimageType uint8
 
-// These values must be kept in sync with `arbitrator/arbutil/src/types.rs`,
+// These values must be kept in sync with `crates/arbutil/src/types.rs`,
 // and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").
 const (
 	Keccak256PreimageType PreimageType = iota
 	Sha2_256PreimageType
 	EthVersionedHashPreimageType
+	DACertificatePreimageType
 )

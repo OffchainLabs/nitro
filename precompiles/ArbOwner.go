@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -147,8 +148,16 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-// SetMaxTxGasLimit sets the maximum size a tx (and block) can be
+// SetMaxTxGasLimit sets the maximum size a tx can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
+	if c.State.ArbOSVersion() < params.ArbosVersion_50 {
+		return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
+	}
+	return c.State.L2PricingState().SetMaxPerTxGasLimit(limit)
+}
+
+// SetMaxBlockGasLimit sets the maximum size a block can be
+func (con ArbOwner) SetMaxBlockGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
@@ -180,9 +189,9 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 	return c.State.SetNetworkFeeAccount(newNetworkFeeAccount)
 }
 
-// SetInfraFeeAccount sets the infra fee collector to the new network fee account
-func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
-	return c.State.SetInfraFeeAccount(newNetworkFeeAccount)
+// SetInfraFeeAccount sets the infrastructure fee collector address
+func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newInfraFeeAccount addr) error {
+	return c.State.SetInfraFeeAccount(newInfraFeeAccount)
 }
 
 // ScheduleArbOSUpgrade to the requested version at the requested timestamp
@@ -215,6 +224,11 @@ func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) er
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
 }
 
+// Set how much L1 charges per non-zero byte of calldata
+func (con ArbOwner) SetParentGasFloorPerToken(c ctx, evm mech, gasFloorPerToken uint64) error {
+	return c.State.L1PricingState().SetParentGasFloorPerToken(gasFloorPerToken)
+}
+
 // Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
 func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)
@@ -226,7 +240,7 @@ func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 }
 
 // Sets the Brotli compression level used for fast compression
-// Available in ArbOS version 12 with default level as 1
+// Available starting in ArbOS version 20, which also raises the default to level 1
 func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) error {
 	return c.State.SetBrotliCompressionLevel(level)
 }
@@ -276,7 +290,7 @@ func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
 	return params.Save()
 }
 
-// Gets the number of free wasm pages a tx gets
+// Sets the number of free wasm pages a tx receives
 func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
@@ -439,4 +453,93 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 // (EIP-7623)
 func (con ArbOwner) SetCalldataPriceIncrease(c ctx, _ mech, enable bool) error {
 	return c.State.Features().SetCalldataPriceIncrease(enable)
+}
+
+// SetGasBacklog sets the L2 gas backlog directly (used by single-constraint pricing model only)
+func (con ArbOwner) SetGasBacklog(c ctx, evm mech, backlog uint64) error {
+	return c.State.L2PricingState().SetGasBacklog(backlog)
+}
+
+// SetGasPricingConstraints sets the gas pricing constraints used by the multi-constraint pricing model
+func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]uint64) error {
+	err := c.State.L2PricingState().ClearGasConstraints()
+	if err != nil {
+		return fmt.Errorf("failed to clear existing constraints: %w", err)
+	}
+
+	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+		limit := l2pricing.GasConstraintsMaxNum
+		if len(constraints) > limit {
+			return fmt.Errorf("too many constraints. Max: %d", limit)
+		}
+	}
+
+	for _, constraint := range constraints {
+		gasTargetPerSecond := constraint[0]
+		adjustmentWindowSeconds := constraint[1]
+		startingBacklogValue := constraint[2]
+
+		if gasTargetPerSecond == 0 || adjustmentWindowSeconds == 0 {
+			return fmt.Errorf("invalid constraint with target %d and adjustment window %d", gasTargetPerSecond, adjustmentWindowSeconds)
+		}
+
+		err := c.State.L2PricingState().AddGasConstraint(gasTargetPerSecond, adjustmentWindowSeconds, startingBacklogValue)
+		if err != nil {
+			return fmt.Errorf("failed to add constraint (target: %d, adjustment window: %d): %w", gasTargetPerSecond, adjustmentWindowSeconds, err)
+		}
+	}
+	return nil
+}
+
+// SetMultiGasPricingConstraints configures the multi-dimensional gas pricing model
+func (con ArbOwner) SetMultiGasPricingConstraints(
+	c ctx,
+	evm mech,
+	constraints []MultiGasConstraint,
+) error {
+	limit := l2pricing.MultiGasConstraintsMaxNum
+	if len(constraints) > limit {
+		return fmt.Errorf("too many constraints. Max: %d", limit)
+	}
+
+	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
+		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
+	}
+
+	for _, constraint := range constraints {
+		if constraint.TargetPerSec == 0 || constraint.AdjustmentWindowSecs == 0 {
+			return fmt.Errorf(
+				"invalid constraint: target=%d adjustmentWindow=%d",
+				constraint.TargetPerSec, constraint.AdjustmentWindowSecs,
+			)
+		}
+
+		// Build map of resource weights
+		weights := make(map[uint8]uint64, len(constraint.Resources))
+		for _, r := range constraint.Resources {
+			weights[r.Resource] = r.Weight
+		}
+
+		if err := c.State.L2PricingState().AddMultiGasConstraint(
+			constraint.TargetPerSec,
+			constraint.AdjustmentWindowSecs,
+			constraint.Backlog,
+			weights,
+		); err != nil {
+			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
+		}
+
+		exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
+		if err != nil {
+			return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
+		}
+
+		// Ensure no exponent exceeds the maximum allowed value
+		for _, exp := range exps {
+			if exp > l2pricing.MaxPricingExponentBips {
+				return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
+			}
+		}
+	}
+	return nil
 }

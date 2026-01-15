@@ -6,9 +6,11 @@ package precompiles
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -27,33 +29,33 @@ type ctx = *Context
 type Context struct {
 	caller      addr
 	gasSupplied uint64
-	gasLeft     uint64
+	gasUsed     multigas.MultiGas
 	txProcessor *arbos.TxProcessor
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
 
-func (c *Context) Burn(amount uint64) error {
-	if c.gasLeft < amount {
+func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
+	if c.GasLeft() < amount {
 		return c.BurnOut()
 	}
-	c.gasLeft -= amount
+	c.gasUsed.SaturatingIncrementInto(kind, amount)
 	return nil
 }
 
 //nolint:unused
 func (c *Context) Burned() uint64 {
-	return c.gasSupplied - c.gasLeft
+	return c.gasUsed.SingleGas()
 }
 
 func (c *Context) BurnOut() error {
-	c.gasLeft = 0
+	c.gasUsed.SaturatingIncrementInto(multigas.ResourceKindComputation, c.GasLeft())
 	return vm.ErrOutOfGas
 }
 
-func (c *Context) GasLeft() *uint64 {
-	return &c.gasLeft
+func (c *Context) GasLeft() uint64 {
+	return c.gasSupplied - c.gasUsed.SingleGas()
 }
 
 func (c *Context) Restrict(err error) {
@@ -81,7 +83,7 @@ func testContext(caller addr, evm mech) *Context {
 	ctx := &Context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
-		gasLeft:     ^uint64(0),
+		gasUsed:     multigas.ZeroGas(),
 		tracingInfo: tracingInfo,
 		readOnly:    false,
 	}
@@ -96,4 +98,44 @@ func testContext(caller addr, evm mech) *Context {
 		panic("must have tx processor")
 	}
 	return ctx
+}
+
+func makeContext(p *Precompile, method *PrecompileMethod, caller common.Address, gas uint64, evm *vm.EVM) (*Context, error) {
+	txProcessor, ok := evm.ProcessingHook.(*arbos.TxProcessor)
+	if !ok {
+		log.Error("processing hook not set")
+		return nil, vm.ErrExecutionReverted
+	}
+
+	readOnly := method.purity <= view
+
+	callerCtx := &Context{
+		caller:      caller,
+		gasSupplied: gas,
+		gasUsed:     multigas.ZeroGas(),
+		readOnly:    readOnly,
+		txProcessor: txProcessor,
+		tracingInfo: util.NewTracingInfo(evm, caller, p.address, util.TracingDuringEVM),
+	}
+
+	if method.purity != pure {
+		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
+		if err != nil {
+			return nil, err
+		}
+		callerCtx.State = state
+	}
+
+	if method.purity >= write && evm.ReadOnly() {
+		toBurn, err := callerCtx.State.L2PricingState().PerTxGasLimit()
+		if err != nil {
+			return nil, err
+		}
+		err = callerCtx.Burn(multigas.ResourceKindComputation, toBurn)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return callerCtx, nil
 }

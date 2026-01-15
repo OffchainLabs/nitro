@@ -1,0 +1,23 @@
+[package]
+name = "arbutil"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+digest = { workspace = true }
+eyre = { workspace = true }
+fnv = { workspace = true }
+hex = { workspace = true }
+num_enum = { workspace = true, default-features = true }
+num-traits = { workspace = true }
+ruint2 = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"] }
+siphasher = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
+wasmparser = { workspace = true }

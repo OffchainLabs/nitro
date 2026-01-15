@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func TestAliasing(t *testing.T) {
+func TestAliasingFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

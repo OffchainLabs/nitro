@@ -6,7 +6,7 @@ package conf
 import (
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -42,7 +42,7 @@ var DefaultL1WalletConfig = genericconf.WalletConfig{
 	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
-func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func L1ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".id", L1ConfigDefault.ID, "if set other than 0, will be used to validate database and L1 connection")
 	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
 	headerreader.BlobClientAddOptions(prefix+".blob-client", f)
@@ -68,7 +68,7 @@ var L2ConfigDefault = L2Config{
 	DevWallet: genericconf.WalletConfigDefault,
 }
 
-func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
+func L2ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".id", L2ConfigDefault.ID, "L2 chain ID (determines Arbitrum network)")
 	f.String(prefix+".name", L2ConfigDefault.Name, "L2 chain name (determines Arbitrum network)")
 	f.StringSlice(prefix+".info-files", L2ConfigDefault.InfoFiles, "L2 chain info json files")

@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build wasm
-// +build wasm
 
 package programs
 
@@ -10,11 +9,13 @@ import (
 	"errors"
 	"unsafe"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -70,7 +71,8 @@ func activateProgram(
 	errBuf := make([]byte, 1024)
 	debugMode := arbmath.BoolToUint32(debug)
 	moduleHash := common.Hash{}
-	gasPtr := burner.GasLeft()
+	gasSupplied := burner.GasLeft()
+	gasLeft := burner.GasLeft()
 	asmEstimate := uint32(0)
 	initGas := uint16(0)
 	cachedInitGas := uint16(0)
@@ -88,10 +90,11 @@ func activateProgram(
 		debugMode,
 		arbutil.SliceToUnsafePointer(codehash[:]),
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
-		unsafe.Pointer(gasPtr),
+		unsafe.Pointer(&gasLeft),
 		arbutil.SliceToUnsafePointer(errBuf),
 		uint32(len(errBuf)),
 	)
+	burner.Burn(multigas.ResourceKindComputation, gasSupplied-gasLeft)
 	if errLen != 0 {
 		err := errors.New(string(errBuf[:errLen]))
 		return nil, err
@@ -135,7 +138,7 @@ func sendResponse(req_id uint32) uint32
 
 func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	// we need to return asm map with an entry for local target to make checks for local target work
-	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): []byte{}}, nil
+	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
 }
 
 func callProgram(
@@ -143,7 +146,7 @@ func callProgram(
 	moduleHash common.Hash,
 	_localAsm []byte,
 	scope *vm.ScopeContext,
-	interpreter *vm.EVMInterpreter,
+	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
@@ -151,7 +154,7 @@ func callProgram(
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 ) ([]byte, error) {
-	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
+	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
 	scope.Contract.Gas = gasLeft
 	return retData, err
