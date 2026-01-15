@@ -333,6 +333,7 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(
 	return nil
 }
 
+// another dummy comment
 var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
 func (state *ArbosState) UpgradeArbosVersion(

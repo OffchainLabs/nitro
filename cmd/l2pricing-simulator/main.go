@@ -63,6 +63,7 @@ func runLegacyModel(args []string) error {
 		})
 	}
 
+	// dummy comment
 	printOutput(&config, results)
 	return nil
 }

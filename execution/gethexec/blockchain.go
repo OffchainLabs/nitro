@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
+// yet another comment
 type CachingConfig struct {
 	Archive                             bool          `koanf:"archive"`
 	BlockCount                          uint64        `koanf:"block-count"`

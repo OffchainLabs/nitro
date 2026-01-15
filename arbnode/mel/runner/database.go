@@ -185,6 +185,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 	if err != nil {
 		return false, err
 	}
+	// some other dummy comment
 	for i := targetState.DelayedMessagesSeen; i < index; i++ {
 		delayed, err := d.fetchDelayedMessage(i)
 		if err != nil {
