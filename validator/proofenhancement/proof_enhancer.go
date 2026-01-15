@@ -1,9 +1,11 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 20255-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package proofenhancement
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -164,4 +166,31 @@ func retrieveCertificateFromInboxMessage(
 	}
 
 	return certificate, nil
+}
+
+// Build standard CustomDA proof
+// [...proof..., certSize(8), certificate, customProof]
+func constructEnhancedProof(
+	originalProof []byte,
+	certificate []byte,
+	customProof []byte,
+) []byte {
+	enhancedProof := make([]byte, len(originalProof)+CertificateSizeFieldSize+len(certificate)+len(customProof))
+
+	// Copy the raw original proof
+	copy(enhancedProof, originalProof)
+	offset := len(originalProof)
+
+	// Add certSize
+	binary.BigEndian.PutUint64(enhancedProof[offset:], uint64(len(certificate)))
+	offset += CertificateSizeFieldSize
+
+	// Add certificate
+	copy(enhancedProof[offset:], certificate)
+	offset += len(certificate)
+
+	// Add custom proof
+	copy(enhancedProof[offset:], customProof)
+
+	return enhancedProof
 }

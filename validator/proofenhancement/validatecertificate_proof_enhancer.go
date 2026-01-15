@@ -1,10 +1,10 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 20255-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package proofenhancement
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -76,28 +76,8 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)
 	}
-	validityProof := result.Proof
 
-	// Build enhanced proof: [...originalProof..., certSize(8), certificate, validityProof]
 	// Remove the marker data (hash + marker) from original proof
 	originalProofLen := hashPos
-	certSize := uint64(len(certificate))
-	enhancedProof := make([]byte, originalProofLen+CertificateSizeFieldSize+len(certificate)+len(validityProof))
-
-	// Copy original proof (without marker data)
-	copy(enhancedProof, proof[:originalProofLen])
-
-	// Add certSize
-	offset := originalProofLen
-	binary.BigEndian.PutUint64(enhancedProof[offset:], certSize)
-	offset += CertificateSizeFieldSize
-
-	// Add certificate
-	copy(enhancedProof[offset:], certificate)
-	offset += len(certificate)
-
-	// Add validity proof
-	copy(enhancedProof[offset:], validityProof)
-
-	return enhancedProof, nil
+	return constructEnhancedProof(proof[:originalProofLen], certificate, result.Proof), nil
 }

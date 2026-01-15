@@ -1,5 +1,6 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package proofenhancement
 
 import (
@@ -83,28 +84,10 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate custom DA proof: %w", err)
 	}
-	customProof := result.Proof
 
-	// Build standard CustomDA proof preamble:
-	// [...proof..., certSize(8), certificate, customProof]
 	// We're dropping the CustomDA marker data (certKeccak256, offset, marker byte) from the original proof.
 	// It was only needed here to call GenerateReadPreimageProof above, the same information is
 	// available to the OSP in the instruction arguments.
-	certSize := uint64(len(certificate))
 	markerDataStart := certKeccak256Pos // Start of CustomDA marker data that we'll drop
-	enhancedProof := make([]byte, markerDataStart+CertificateSizeFieldSize+len(certificate)+len(customProof))
-
-	// Copy original proof up to the CustomDA marker data
-	copy(enhancedProof, proof[:markerDataStart])
-
-	// Add certSize
-	binary.BigEndian.PutUint64(enhancedProof[markerDataStart:], certSize)
-
-	// Add certificate
-	copy(enhancedProof[markerDataStart+CertificateSizeFieldSize:], certificate)
-
-	// Add custom proof
-	copy(enhancedProof[markerDataStart+CertificateSizeFieldSize+len(certificate):], customProof)
-
-	return enhancedProof, nil
+	return constructEnhancedProof(proof[:markerDataStart], certificate, result.Proof), nil
 }
