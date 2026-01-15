@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/restrictedaddr"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/txfilter"
 )
@@ -21,6 +23,19 @@ func isFilteredError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "internal error")
+}
+
+func newHashedChecker(addrs []common.Address) *txfilter.HashedAddressChecker {
+	store := restrictedaddr.NewHashStore()
+	if len(addrs) > 0 {
+		salt := []byte("test-salt")
+		hashes := make([][32]byte, len(addrs))
+		for i, addr := range addrs {
+			hashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
+		}
+		store.Load(salt, hashes, "test")
+	}
+	return txfilter.NewDefaultHashedAddressChecker(store)
 }
 
 func TestAddressFilterDirectTransfer(t *testing.T) {
@@ -42,7 +57,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test 1: Transaction TO a filtered address should fail
@@ -105,7 +120,7 @@ func TestAddressFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CALL to filtered address should fail
@@ -143,7 +158,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: STATICCALL to filtered address within a transaction should fail
@@ -180,7 +195,7 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
 	// Set up an empty filter (disabled)
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{})
+	filter := newHashedChecker([]common.Address{})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// All transactions should succeed when filter is disabled
@@ -215,7 +230,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 	Require(t, err)
 
 	// Set up filter to block the computed address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{create2Addr})
+	filter := newHashedChecker([]common.Address{create2Addr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CREATE2 to filtered address should fail
@@ -257,7 +272,7 @@ func TestAddressFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{createAddr})
+	filter := newHashedChecker([]common.Address{createAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CREATE to filtered address should fail
@@ -272,7 +287,7 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
 	// Clear the filter to allow the next CREATE
-	emptyChecker := txfilter.NewStaticAsyncChecker([]common.Address{})
+	emptyChecker := newHashedChecker([]common.Address{})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(emptyChecker)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -299,7 +314,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
 
 	// Set up filter to block the beneficiary
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: SELFDESTRUCT to filtered beneficiary should fail

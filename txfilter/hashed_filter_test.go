@@ -34,11 +34,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	filteredHash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
 	store.Load(salt, [][32]byte{filteredHash}, "test")
 
-	checker := NewHashedAddressChecker(
-		store,
-		/* workerCount */ 2,
-		/* queueSize */ 8,
-	)
+	checker := NewDefaultHashedAddressChecker(store)
 
 	// Tx 1: filtered address
 	state1 := mustState(t, checker.NewTxState())
@@ -95,11 +91,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	store := restrictedaddr.NewHashStore()
 	store.Load(salt, filteredHashes, "heavy")
 
-	checker := NewHashedAddressChecker(
-		store,
-		/* workerCount */ 4,
-		/* queueSize */ 32,
-	)
+	checker := NewDefaultHashedAddressChecker(store)
 
 	const txCount = 100
 	const touchesPerTx = 100

@@ -13,6 +13,12 @@ import (
 	"github.com/offchainlabs/nitro/restrictedaddr"
 )
 
+// Default parameters for HashedAddressChecker, used in NewDefaultHashedAddressChecker
+const (
+	restrictedAddrWorkerCount = 4
+	restrictedAddrQueueSize   = 1024
+)
+
 // HashedAddressChecker is a global, shared address checker that filters
 // transactions using a HashStore. Hashing and caching are delegated to
 // the HashStore; this checker only manages async execution and per-tx
@@ -47,11 +53,19 @@ func NewHashedAddressChecker(
 		workChan: make(chan workItem, queueSize),
 	}
 
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		go c.worker()
 	}
 
 	return c
+}
+
+func NewDefaultHashedAddressChecker(store *restrictedaddr.HashStore) *HashedAddressChecker {
+	return NewHashedAddressChecker(
+		store,
+		restrictedAddrWorkerCount,
+		restrictedAddrQueueSize,
+	)
 }
 
 func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
