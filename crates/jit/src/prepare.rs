@@ -26,8 +26,8 @@ pub fn local_target() -> String {
 }
 
 pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<WasmEnv> {
-    let file = File::open(json_inputs)?;
-    let reader = BufReader::new(file);
+    let file_read = File::open(json_inputs)?;
+    let reader = BufReader::new(file_read);
 
     let data = FileData::from_reader(reader)?;
 

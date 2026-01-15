@@ -21,7 +21,7 @@ pub struct Opts {
     /// General validator configuration
     #[command(flatten)]
     pub validator: ValidatorOpts,
-    /// How the validation inputs are provided
+    /// How the validation inputs are provided.
     #[command(subcommand)]
     pub input_mode: InputMode,
 }
