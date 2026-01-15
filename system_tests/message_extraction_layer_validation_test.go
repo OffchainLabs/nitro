@@ -11,12 +11,88 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
+
+func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.BatchPoster.Post4844Blobs = true
+	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Post a blob batch with a bunch of txs
+	startBlock, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+	initialBatchCount := GetBatchCount(t, builder)
+	var txs types.Transactions
+	for i := 0; i < 20; i++ {
+		tx, _ := builder.L2.TransferBalance(t, "Faucet", "User2", big.NewInt(1e12), builder.L2Info)
+		txs = append(txs, tx)
+	}
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	for _, tx := range txs {
+		_, err := testClientB.EnsureTxSucceeded(tx)
+		Require(t, err, "tx not found on second node")
+	}
+	CheckBatchCount(t, builder, initialBatchCount+1)
+
+	// Post delayed messages
+	forceDelayedBatchPosting(t, ctx, builder, testClientB, 10, 0)
+
+	// MEL Validator: create validation entry
+	blobReaderRegistry := daprovider.NewDAProviderRegistry()
+	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
+	melValidator := staker.NewMELValidator(builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry)
+	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	entry, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
+	Require(t, err)
+	t.Log(entry.Preimages)
+
+	locator, err := server_common.NewMachineLocator("target/machines")
+	Require(t, err)
+	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
+		return &server_arb.DefaultArbitratorSpawnerConfig
+	}
+	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
+	Require(t, err)
+	Require(t, arbSpawner.Start(ctx))
+	wasmModuleRoot := common.HexToHash("0x9f969e4744426987174fd41743ca33a2e51a1233cb6df24812be8380f16849a2")
+	execRunPromise := arbSpawner.CreateExecutionRun(
+		wasmModuleRoot,
+		&validator.ValidationInput{
+			Preimages:               entry.Preimages,
+			StartState:              entry.Start,
+			EndParentChainBlockHash: entry.EndParentChainBlockHash,
+		},
+		true, /* use bold machine */
+	)
+	result, err := execRunPromise.Await(ctx)
+	Require(t, err)
+	finalResult, err := result.GetLastStep().Await(ctx)
+	Require(t, err)
+	t.Logf("%+v", finalResult)
+	t.Fatal("Failed")
+}
 
 func TestMELValidator_Recording_Preimages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

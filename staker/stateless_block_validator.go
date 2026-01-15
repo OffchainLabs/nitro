@@ -143,9 +143,10 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  daprovider.PreimagesMap
-	UserWasms  state.UserWasms
-	DelayedMsg []byte
+	Preimages               daprovider.PreimagesMap
+	UserWasms               state.UserWasms
+	DelayedMsg              []byte
+	EndParentChainBlockHash common.Hash
 }
 
 func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.ValidationInput, error) {

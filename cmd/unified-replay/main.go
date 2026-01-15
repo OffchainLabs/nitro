@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -21,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
@@ -41,11 +39,6 @@ func main() {
 	melMsgHash := melwavmio.GetMELMsgHash()
 	startMELStateHash := melwavmio.GetStartMELRoot()
 	melState := readMELState(startMELStateHash)
-	chainId := new(big.Int).SetUint64(melState.ParentChainId)
-	chainConfig, err := chaininfo.GetChainConfig(chainId, "", 0, []string{}, "")
-	if err != nil {
-		panic(fmt.Errorf("could not read default chain config: %w", err))
-	}
 
 	if melMsgHash != (common.Hash{}) {
 		msgBytes := readPreimage(melMsgHash)
@@ -55,7 +48,8 @@ func main() {
 		wavmio.SetLastBlockHash(nextBlock.Hash())
 	} else {
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
-		melState = extractMessagesUpTo(chainConfig, melState, targetBlockHash)
+		// TODO: Read the real chain config.
+		melState = extractMessagesUpTo(nil /* nil chain config */, melState, targetBlockHash)
 	}
 
 	positionInMEL := melwavmio.GetPositionInMEL()

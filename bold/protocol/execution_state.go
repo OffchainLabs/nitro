@@ -18,10 +18,12 @@ import (
 )
 
 type GoGlobalState struct {
-	BlockHash  common.Hash `json:"blockHash"`
-	SendRoot   common.Hash `json:"sendRoot"`
-	Batch      uint64      `json:"batch"`
-	PosInBatch uint64      `json:"positionInBatch"`
+	BlockHash    common.Hash `json:"blockHash"`
+	SendRoot     common.Hash `json:"sendRoot"`
+	MELStateHash common.Hash `json:"melStateHash"`
+	MELMsgHash   common.Hash `json:"melMsgHash"`
+	Batch        uint64      `json:"batch"`
+	PosInBatch   uint64      `json:"positionInBatch"`
 }
 
 func GoGlobalStateFromSolidity(globalState rollupgen.GlobalState) GoGlobalState {

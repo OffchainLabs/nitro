@@ -64,7 +64,7 @@ func GetStartMELRoot() (hash common.Hash) {
 }
 
 func GetPositionInMEL() uint64 {
-	return getGlobalStateUint64(IDX_POS_IN_MEL)
+	return getGlobalStateU64(IDX_POS_IN_MEL)
 }
 
 func IncreasePositionInMEL() {

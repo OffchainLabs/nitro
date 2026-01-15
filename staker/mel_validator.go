@@ -12,14 +12,17 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
-	"github.com/offchainlabs/nitro/arbnode/mel/recording"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type MELValidator struct {
@@ -95,7 +98,14 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if preState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, nil
 	}
+	initialState := preState.Clone()
+	encodedInitialState, err := rlp.EncodeToBytes(initialState)
+	if err != nil {
+		return nil, err
+	}
 	preimages := make(daprovider.PreimagesMap)
+	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	preimages[arbutil.Keccak256PreimageType][initialState.Hash()] = encodedInitialState
 	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
 	if err != nil {
 		return nil, err
@@ -104,6 +114,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if err != nil {
 		return nil, err
 	}
+	var endParentChainBlockHash common.Hash
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
@@ -138,12 +149,22 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			return nil, err
 		}
 		if state.MsgCount >= toValidateMsgExtractionCount {
+			endParentChainBlockHash = header.Hash()
 			break
 		}
 		preState = state
 	}
+	fmt.Printf("Initial state hash: %#x\n", initialState.Hash())
 	return &validationEntry{
 		Preimages: preimages,
+		Start: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: initialState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   0,
+		},
+		EndParentChainBlockHash: endParentChainBlockHash,
 	}, nil
 }
 

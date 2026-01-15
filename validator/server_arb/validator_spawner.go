@@ -121,6 +121,9 @@ func (v *ArbitratorSpawner) loadEntryToMachine(_ context.Context, entry *validat
 	if err := mach.SetPreimageResolver(resolver); err != nil {
 		return err
 	}
+	if err := mach.SetEndParentChainBlockHash(entry.EndParentChainBlockHash); err != nil {
+		return err
+	}
 	err := mach.SetGlobalState(entry.StartState)
 	if err != nil {
 		log.Error("error while setting global state for proving", "err", err, "gsStart", entry.StartState)
