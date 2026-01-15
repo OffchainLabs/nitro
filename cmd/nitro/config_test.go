@@ -353,7 +353,8 @@ func initConfigWithFee(feeStr string) *conf.InitConfig {
 
 func TestSerializedChainConfigResolution(t *testing.T) {
 	chainConfig := &params.ChainConfig{ChainID: big.NewInt(0)}
-	chainConfigSerialized, _ := json.Marshal(chainConfig)
+	chainConfigSerialized, err := json.Marshal(chainConfig)
+	Require(t, err)
 	chainConfigGenesisJSON := []byte(`{"chainId":1}`)
 	chainConfigInitFlag := []byte(`{"chainId":2}`)
 
@@ -418,6 +419,68 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 func initConfigWithChainConfig(configStr string) *conf.InitConfig {
 	return &conf.InitConfig{
 		SerializedChainConfig: configStr,
+	}
+}
+
+func TestGetExecutionParsedInitMessage(t *testing.T) {
+	chainConfigGenesisJSON := []byte(`{"chainId":1}`)
+	genesisConfig := &params.ArbOSInit{
+		InitialL1BaseFee:                   nil,
+		NativeTokenSupplyManagementEnabled: false,
+		SerializedChainConfig:              string(chainConfigGenesisJSON),
+	}
+	chainConfigInitFlag := []byte(`{"chainId":2}`)
+	initConfig := &conf.InitConfig{SerializedChainConfig: string(chainConfigInitFlag)}
+
+	fallbackChainConfig := &params.ChainConfig{ChainID: big.NewInt(3)}
+	serializedFallbackChainConfig, err := json.Marshal(fallbackChainConfig)
+	Require(t, err)
+
+	testCases := []struct {
+		name                          string
+		genesisConfig                 *params.ArbOSInit
+		initConfig                    *conf.InitConfig
+		genesisChainConfig            *params.ArbOSInit
+		expectedSerializedChainConfig []byte
+		shouldErr                     bool
+	}{
+		{
+			name:                          "Uses serializedChainConfig from genesisConfig",
+			genesisConfig:                 genesisConfig,
+			expectedSerializedChainConfig: chainConfigGenesisJSON,
+		},
+		{
+			name:                          "Uses serializedChainConfig from initConfig",
+			initConfig:                    initConfig,
+			expectedSerializedChainConfig: chainConfigInitFlag,
+		},
+		{
+			name:                          "Uses serializedChainConfig from fallback",
+			expectedSerializedChainConfig: serializedFallbackChainConfig,
+		},
+		{
+			name:          "Error on conflicting serializedChainConfig",
+			genesisConfig: genesisConfig,
+			initConfig:    initConfig,
+			shouldErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsedInitMessage, err := getExecutionParsedInitMessage(tc.genesisConfig, tc.initConfig, fallbackChainConfig)
+			if tc.shouldErr && err == nil {
+				Fail(t, "expected error but got none")
+			}
+			if !tc.shouldErr && err != nil {
+				Fail(t, "unexpected error:", err)
+			}
+			if err == nil {
+				if !bytes.Equal(parsedInitMessage.SerializedChainConfig, tc.expectedSerializedChainConfig) {
+					Fail(t, "expected config", string(tc.expectedSerializedChainConfig), "but resolved to", string(parsedInitMessage.SerializedChainConfig))
+				}
+			}
+		})
 	}
 }
 

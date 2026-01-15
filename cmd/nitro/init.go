@@ -964,7 +964,7 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 	if genesisArbOSInit != nil && genesisArbOSInit.InitialL1BaseFee != nil {
 		fromGenesisJSON = genesisArbOSInit.InitialL1BaseFee
 	}
-	if initConfig.InitialL1BaseFee != "" {
+	if initConfig != nil && initConfig.InitialL1BaseFee != "" {
 		var err error
 		fromCLIFlag, err = initConfig.InitialL1BaseFeeParsed()
 		if err != nil {
