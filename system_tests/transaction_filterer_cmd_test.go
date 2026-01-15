@@ -39,6 +39,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 	transactionFiltererRPCClient := rpcclient.NewRpcClient(transactionFiltererRPCClientConfigFetcher, nil)
 	err = transactionFiltererRPCClient.Start(ctx)
 	Require(t, err)
+	defer transactionFiltererRPCClient.Close()
 
 	txHash := common.Hash{}
 	err = transactionFiltererRPCClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
