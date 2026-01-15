@@ -51,14 +51,15 @@ func (f *FIFO) Unlock() {
 	select {
 	// If the queue is not empty, we unlock and signal the next waiter
 	case <-f.queue:
-		// If there are waiters, we signal the next one
-		if len(f.waitQueue) > 0 {
-			// We pop the next waiter from the queue
-			nextWaitCh := <-f.waitQueue
+		// Try to get the next waiter from the queue
+		select {
+		case nextWaitCh := <-f.waitQueue:
 			// We acquire the lock for the next waiter
 			f.queue <- struct{}{}
 			// We signal the next waiter
 			close(nextWaitCh)
+		default:
+			// No waiters, lock is now available
 		}
 	default:
 		panic("attempt to unlock unlocked mutex")
