@@ -23,7 +23,7 @@ const (
 
 var (
 	currentYear         = strconv.Itoa(time.Now().Year())
-	supportedExtensions = []string{".go", ".rs"}
+	supportedExtensions = []string{".go", ".rs", "Makefile"}
 	yearRegex           = regexp.MustCompile(`Copyright\s+(\d{4})(?:-(\d{4}))?`)
 	fixFlag             = flag.Bool("fix", false, "Update files with the correct license header")
 )
@@ -173,20 +173,28 @@ func validateHeader(content string, birth, update string) validationResult {
 }
 
 func applyFix(path, content, birthYear string) error {
-	header := fmt.Sprintf("// Copyright %s-%s, %s\n// For license information, see %s\n",
-		birthYear, currentYear, company, licenseURL)
+	comment := getCommentStyle(path)
+	header := fmt.Sprintf("%s Copyright %s-%s, %s\n%s For license information, see %s\n",
+		comment, birthYear, currentYear, company, comment, licenseURL)
 
 	lines := strings.Split(content, "\n")
 	startIdx := 0
 	// Skip existing copyright/comment block to avoid duplicates
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "// Copyright") {
-		for startIdx < len(lines) && (strings.HasPrefix(lines[startIdx], "//")) {
+	if len(lines) > 0 && strings.HasPrefix(lines[0], fmt.Sprintf("%s Copyright", comment)) {
+		for startIdx < len(lines) && (strings.HasPrefix(lines[startIdx], comment)) {
 			startIdx++
 		}
 	}
 
 	newContent := header + strings.Join(lines[startIdx:], "\n")
 	return os.WriteFile(path, []byte(newContent), 0644) // #nosec G306
+}
+
+func getCommentStyle(path string) string {
+	if strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".rs") {
+		return "//"
+	}
+	return "#"
 }
 
 func printSummary(s *stats) {
