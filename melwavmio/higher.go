@@ -20,7 +20,9 @@ const QUERY_SIZE = 32
 // bytes32
 const IDX_MEL_ROOT = 2
 const IDX_MEL_MSG_HASH = 3
-const IDX_POS_IN_MEL = 4
+
+// u64
+const IDX_POS_IN_MEL = 1
 
 func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
