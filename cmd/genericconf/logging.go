@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -90,22 +89,6 @@ func (l *fileLoggerFactory) close() error {
 		l.writer = nil
 	}
 	return nil
-}
-
-func DefaultPathResolver(workdir string) func(string) string {
-	if workdir == "" {
-		var err error
-		workdir, err = os.Getwd()
-		if err != nil {
-			log.Warn("Failed to get workdir", "err", err)
-		}
-	}
-	return func(path string) string {
-		if filepath.IsAbs(path) {
-			return path
-		}
-		return filepath.Join(workdir, path)
-	}
 }
 
 // InitLog is not threadsafe
