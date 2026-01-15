@@ -397,8 +397,8 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("err should not be nil")
 	}
-	if !strings.HasPrefix(err.Error(), "finality block hash mismatch") {
-		t.Fatalf("err is not correct")
+	if !strings.HasPrefix(err.Error(), "block hash mismatch,finalityDataType=finalized") {
+		t.Fatalf("err is not correct: %s", err)
 	}
 }
 
