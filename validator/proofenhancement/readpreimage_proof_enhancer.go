@@ -42,7 +42,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("Couldn't find batch for message #%d to enhance proof", messageNum)
+		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
 	}
 
 	sequencerMessage, _, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
@@ -72,7 +72,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 	// Format: [...proof..., certKeccak256(32), offset(8), marker(1)]
 	minProofSize := CertificateHashSize + OffsetSize + MarkerSize
 	if len(proof) < minProofSize {
-		return nil, fmt.Errorf("proof too short for CustomDA enhancement: expected at least %d bytes, got %d", minProofSize, len(proof))
+		return nil, fmt.Errorf("proof too short for ReadPreimage enhancement: expected at least %d bytes, got %d", minProofSize, len(proof))
 	}
 
 	// The entire proof is of variable length, so we work backwards from
@@ -83,7 +83,7 @@ func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum
 
 	// Verify marker
 	if proof[markerPos] != MarkerCustomDAReadPreimage {
-		return nil, fmt.Errorf("invalid marker for CustomDA enhancer: 0x%02x", proof[markerPos])
+		return nil, fmt.Errorf("invalid marker for ReadPreimage enhancer: 0x%02x", proof[markerPos])
 	}
 
 	// Extract certKeccak256 and offset
