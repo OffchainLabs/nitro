@@ -74,13 +74,13 @@ func TestManageTransactionFilterers(t *testing.T) {
 	require.Error(t, err)
 
 	// Enable transaction filtering feature 7 days in the future and warp time forward
-	enableAt := hdr.Time + precompiles.TransactionFilteringEnableDelay
+	enableAt := hdr.Time + precompiles.FeatureEnableDelay
 	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
 	require.NoError(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	warpL1Time(t, builder, ctx, hdr.Time, precompiles.TransactionFilteringEnableDelay+1)
+	warpL1Time(t, builder, ctx, hdr.Time, precompiles.FeatureEnableDelay+1)
 
 	// Initially neither owner nor user can modify filtered transactions,
 	// but both can read (get) filtered status

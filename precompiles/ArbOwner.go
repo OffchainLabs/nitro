@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -36,8 +37,7 @@ type ArbOwner struct {
 	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
 }
 
-const NativeTokenEnableDelay = 7 * 24 * 60 * 60          // one week
-const TransactionFilteringEnableDelay = 7 * 24 * 60 * 60 // one week
+const FeatureEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
 	ErrOutOfBounds = errors.New("value out of bounds")
@@ -69,81 +69,45 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers(65536)
 }
 
-// validateFeatureFromTimeUpdate enforces the scheduling rules used by
-// SetNativeTokenManagementFrom and SetTransactionFilteringFrom
-func validateFeatureFromTimeUpdate(
-	stored uint64,
-	now uint64,
-	timestamp uint64,
-	delay uint64,
-) error {
-	// If the feature is disabled, then the time must be at least 7 days in the
+// setFeatureFromTime sets a time in epoch seconds when a feature becomes enabled.
+// Setting it to 0 disables the feature.
+// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the future.
+func setFeatureFromTime(field storage.StorageBackedUint64, now, timestamp uint64) error {
+	if timestamp == 0 {
+		return field.Set(0)
+	}
+	stored, err := field.Get()
+	if err != nil {
+		return err
+	}
+
+	// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the
 	// future.
 	// If the feature is scheduled to be enabled more than 7 days in the future,
 	// and the new time is also in the future, then it must be at least 7 days
 	// in the future.
-	if (stored == 0 && timestamp < now+delay) ||
-		(stored > now+delay && timestamp < now+delay) {
+	if (stored == 0 && timestamp < now+FeatureEnableDelay) ||
+		(stored > now+FeatureEnableDelay && timestamp < now+FeatureEnableDelay) {
 		return ErrDelay
 	}
+
 	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
-	if stored > now && stored <= now+delay && timestamp < stored {
+	if stored > now && stored <= now+FeatureEnableDelay && timestamp < stored {
 		return ErrBackward
 	}
-	return nil
+
+	return field.Set(timestamp)
 }
 
-// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
-// management becomes enabled. Setting it to 0 disables the feature.
-// If the feature is disabled, then the time must be at least 7 days in the
-// future.
+// SetNativeTokenManagementFrom sets native token management enabled-from time.
 func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
-	if timestamp == 0 {
-		return c.State.SetNativeTokenManagementFromTime(0)
-	}
-	stored, err := c.State.NativeTokenManagementFromTime()
-	if err != nil {
-		return err
-	}
-	now := evm.Context.Time
-
-	if err := validateFeatureFromTimeUpdate(
-		stored,
-		now,
-		timestamp,
-		NativeTokenEnableDelay,
-	); err != nil {
-		return err
-	}
-
-	return c.State.SetNativeTokenManagementFromTime(timestamp)
+	return setFeatureFromTime(c.State.NativeTokenEnabledTimeHandle(), evm.Context.Time, timestamp)
 }
 
-// SetTransactionFilteringFrom sets a time in epoch seconds when the transaction filterering
-// feature becomes enabled. Setting it to 0 disables the feature.
-// If the feature is disabled, then the time must be at least 7 days in the
-// future.
+// SetTransactionFilteringFrom sets transaction filtering enabled-from time.
 func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint64) error {
-	if timestamp == 0 {
-		return c.State.SetTransactionFilteringFromTime(0)
-	}
-	stored, err := c.State.TransactionFilteringFromTime()
-	if err != nil {
-		return err
-	}
-	now := evm.Context.Time
-
-	if err := validateFeatureFromTimeUpdate(
-		stored,
-		now,
-		timestamp,
-		TransactionFilteringEnableDelay,
-	); err != nil {
-		return err
-	}
-
-	return c.State.SetTransactionFilteringFromTime(timestamp)
+	return setFeatureFromTime(c.State.TransactionFilteringEnabledTimeHandle(), evm.Context.Time, timestamp)
 }
 
 // AddNativeTokenOwner adds account as a native token owner

@@ -324,12 +324,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 
-	transactionFiltererStorage := sto.OpenCachedSubStorage(transactionFiltererSubspace)
-	err = addressSet.Initialize(transactionFiltererStorage)
-	if err != nil {
-		return nil, err
-	}
-
 	aState, err := OpenArbosState(stateDB, burner)
 	if err != nil {
 		return nil, err
@@ -468,7 +462,8 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_60:
-			// no change state needed
+			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -653,4 +648,12 @@ func (state *ArbosState) SetChainConfig(serializedChainConfig []byte) error {
 
 func (state *ArbosState) GenesisBlockNum() (uint64, error) {
 	return state.genesisBlockNum.Get()
+}
+
+func (state *ArbosState) NativeTokenEnabledTimeHandle() storage.StorageBackedUint64 {
+	return state.nativeTokenEnabledTime
+}
+
+func (state *ArbosState) TransactionFilteringEnabledTimeHandle() storage.StorageBackedUint64 {
+	return state.transactionFilteringEnabledTime
 }
