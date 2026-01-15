@@ -125,3 +125,31 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum a
 	// Let specific enhancer handle the proof
 	return enhancer.EnhanceProof(ctx, messageNum, enhancedProof)
 }
+
+func retrieveCertificateFromInboxMessage(
+	ctx context.Context,
+	messageNum arbutil.MessageIndex,
+	tracker staker.InboxTrackerInterface,
+	reader staker.InboxReaderInterface,
+) ([]byte, error) {
+	batchContainingMessage, found, err := tracker.FindInboxBatchContainingMessage(messageNum)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
+	}
+
+	sequencerMessage, _, err := reader.GetSequencerMessageBytes(ctx, batchContainingMessage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
+	}
+
+	// Extract and validate certificate from sequencer message
+	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
+		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
+	}
+
+	// Extract certificate (skip sequencer message header)
+	return sequencerMessage[SequencerMessageHeaderSize:], nil
+}

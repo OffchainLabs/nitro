@@ -53,26 +53,10 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	var certHash [32]byte
 	copy(certHash[:], proof[hashPos:markerPos])
 
-	// Find the batch containing this message
-	batchContainingMessage, found, err := e.inboxTracker.FindInboxBatchContainingMessage(messageNum)
+	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
 	}
-	if !found {
-		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
-	}
-
-	// Get the sequencer message
-	sequencerMessage, _, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
-	}
-
-	// Extract certificate from sequencer message (skip sequencer message header)
-	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
-		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
-	}
-	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Verify the certificate hash matches what's requested
 	actualHash := crypto.Keccak256Hash(certificate)

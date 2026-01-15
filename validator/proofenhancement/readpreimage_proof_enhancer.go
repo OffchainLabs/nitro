@@ -37,26 +37,10 @@ func NewReadPreimageProofEnhancer(
 
 // EnhanceProof implements ProofEnhancer for CustomDA
 func (e *ReadPreimageProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
-	batchContainingMessage, found, err := e.inboxTracker.FindInboxBatchContainingMessage(messageNum)
+	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
 	}
-	if !found {
-		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
-	}
-
-	sequencerMessage, _, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
-	}
-
-	// Extract and validate certificate from sequencer message
-	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
-		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
-	}
-
-	// Extract certificate (skip sequencer message header)
-	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Validate certificate format
 	if len(certificate) < MinCertificateSize {
