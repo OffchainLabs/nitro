@@ -93,7 +93,6 @@ COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
-COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
 COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
