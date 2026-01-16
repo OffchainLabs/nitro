@@ -25,7 +25,9 @@ func TestTransactionFiltererCmd(t *testing.T) {
 	transactionFiltererStackConf.WSPort = 0
 	transactionFiltererStackConf.AuthPort = 0
 
-	transactionFiltererStack, err := api.NewStack(ctx, &transactionFiltererStackConf, builder.L2.Client)
+	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	transactionFiltererStack, err := api.NewStack(ctx, &transactionFiltererStackConf, &filtererTxOpts, builder.L2.Client)
 	Require(t, err)
 	err = transactionFiltererStack.Start()
 	Require(t, err)

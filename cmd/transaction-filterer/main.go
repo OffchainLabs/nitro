@@ -43,8 +43,8 @@ type TransactionFiltererConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	Wallet    genericconf.WalletConfig `koanf:"wallet"`
-	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
+	FiltererWallet genericconf.WalletConfig `koanf:"filterer-wallet"`
+	Sequencer      rpcclient.ClientConfig   `koanf:"sequencer"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -191,7 +191,12 @@ func startup() error {
 	sequencerClient := ethclient.NewClient(sequencerRPCClient)
 	defer sequencerClient.Close()
 
-	stack, err := api.NewStack(ctx, &stackConf, sequencerClient)
+	txOpts, _, err := util.OpenWallet("transaction-filterer", &config.FiltererWallet, nil)
+	if err != nil {
+		return fmt.Errorf("failed to open filterer wallet: %w", err)
+	}
+
+	stack, err := api.NewStack(ctx, &stackConf, txOpts, sequencerClient)
 	if err != nil {
 		return err
 	}
