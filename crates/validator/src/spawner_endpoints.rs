@@ -42,8 +42,6 @@ pub async fn wasm_module_roots() -> impl IntoResponse {
     "[]" // TODO: Figure this out from local replay.wasm
 }
 
-type Hash = Bytes32;
-
 /// Counterpart for Go struct `validator.ValidationInput`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -52,8 +50,8 @@ pub struct ValidationRequest {
     has_delayed_msg: bool,
     #[serde(rename = "DelayedMsgNr")]
     delayed_msg_number: u64,
-    preimages: HashMap<PreimageType, Hash>,
-    user_wasms: HashMap<String, HashMap<Hash, Vec<u8>>>,
+    preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
     batch_info: Vec<BatchInfo>,
     delayed_msg: Vec<u8>,
     start_state: GlobalState,
@@ -72,8 +70,8 @@ pub struct BatchInfo {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GlobalState {
-    block_hash: Hash,
-    send_root: Hash,
+    block_hash: Bytes32,
+    send_root: Bytes32,
     batch: u64,
     pos_in_batch: u64,
 }

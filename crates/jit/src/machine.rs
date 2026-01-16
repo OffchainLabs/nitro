@@ -3,7 +3,8 @@
 
 use crate::{
     arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
+    SequencerMessage,
 };
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
@@ -226,27 +227,40 @@ impl TryFrom<&Opts> for WasmEnv {
         match &opts.input_mode {
             InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
             InputMode::Local(local) => prepare_env_from_files(env, local),
+            InputMode::Native(native) => prepare_env_from_native(env, native),
             InputMode::Continuous => Ok(env),
         }
     }
 }
 
-fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    env.process.already_has_input = true;
+fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+    let mut native = NativeInput {
+        old_state: input.old_state.clone(),
+        inbox: vec![],
+        delayed_inbox: vec![],
+        preimages: HashMap::new(),
+        programs: HashMap::new(),
+    };
 
-    let mut inbox_position = input.inbox_position;
+    let mut inbox_position = input.old_state.inbox_position;
     let mut delayed_position = input.delayed_inbox_position;
 
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.sequencer_messages.insert(inbox_position, msg);
+        native.inbox.push(SequencerMessage {
+            number: inbox_position,
+            data: msg,
+        });
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.delayed_messages.insert(delayed_position, msg);
+        native.delayed_inbox.push(SequencerMessage {
+            number: delayed_position,
+            data: msg,
+        });
         delayed_position += 1;
     }
 
@@ -266,7 +280,7 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -275,8 +289,38 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
         }
     }
 
-    env.small_globals = [input.inbox_position, input.position_within_message];
-    env.large_globals = [input.last_block_hash, input.last_send_root];
+    prepare_env_from_native(env, &native)
+}
+
+fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+    env.process.already_has_input = true;
+
+    for msg in &input.inbox {
+        env.sequencer_messages.insert(msg.number, msg.data.clone());
+    }
+    for msg in &input.delayed_inbox {
+        env.delayed_messages.insert(msg.number, msg.data.clone());
+    }
+
+    for (preimage_type, preimages_map) in &input.preimages {
+        let type_map = env.preimages.entry(*preimage_type).or_default();
+        for (hash, preimage) in preimages_map {
+            type_map.insert(*hash, preimage.clone());
+        }
+    }
+
+    for (hash, program) in &input.programs {
+        env.module_asms.insert(*hash, program[..].into());
+    }
+
+    env.small_globals = [
+        input.old_state.inbox_position,
+        input.old_state.position_within_message,
+    ];
+    env.large_globals = [
+        input.old_state.last_block_hash,
+        input.old_state.last_send_root,
+    ];
     Ok(env)
 }
 

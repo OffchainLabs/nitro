@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::Bytes32;
+use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod arbcompress;
@@ -32,7 +33,7 @@ pub struct ValidatorOpts {
     #[clap(short, long)]
     pub binary: PathBuf,
     /// Use Cranelift backend
-    #[clap(long)]
+    #[clap(long, default_value_t = true)]
     pub cranelift: bool,
     /// Enable debug output
     #[clap(long)]
@@ -52,28 +53,52 @@ pub enum InputMode {
     },
     /// Use flag values and local files for inputs
     Local(LocalInput),
+    /// Use direct Rust objects
+    #[command(skip)]
+    Native(NativeInput),
     /// Continuously read new inputs from TCP connections
     Continuous,
 }
 
 #[derive(Clone, Debug, Args)]
 pub struct LocalInput {
+    #[clap(flatten)]
+    pub old_state: GlobalState,
     #[clap(long, default_value = "0")]
-    inbox_position: u64,
-    #[clap(long, default_value = "0")]
-    delayed_inbox_position: u64,
-    #[clap(long, default_value = "0")]
-    position_within_message: u64,
+    pub delayed_inbox_position: u64,
+    #[clap(long)]
+    pub inbox: Vec<PathBuf>,
+    #[clap(long)]
+    pub delayed_inbox: Vec<PathBuf>,
+    #[clap(long)]
+    pub preimages: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Args)]
+pub struct GlobalState {
     #[clap(long, value_parser = cli_parsing::parse_hex)]
-    last_block_hash: Bytes32,
+    pub last_block_hash: Bytes32,
     #[clap(long, value_parser = cli_parsing::parse_hex)]
-    last_send_root: Bytes32,
-    #[clap(long)]
-    inbox: Vec<PathBuf>,
-    #[clap(long)]
-    delayed_inbox: Vec<PathBuf>,
-    #[clap(long)]
-    preimages: Option<PathBuf>,
+    pub last_send_root: Bytes32,
+    #[clap(long, default_value = "0")]
+    pub inbox_position: u64,
+    #[clap(long, default_value = "0")]
+    pub position_within_message: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct SequencerMessage {
+    pub number: u64,
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeInput {
+    pub old_state: GlobalState,
+    pub inbox: Vec<SequencerMessage>,
+    pub delayed_inbox: Vec<SequencerMessage>,
+    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    pub programs: HashMap<Bytes32, Vec<u8>>,
 }
 
 mod cli_parsing {
