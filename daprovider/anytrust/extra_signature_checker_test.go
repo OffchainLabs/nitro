@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -17,7 +17,7 @@ import (
 )
 
 func checkSig(keyDir string, message []byte, timeout uint64, sig []byte) (*anytrustutil.DataAvailabilityCertificate, error) {
-	pubkeyEncoded, err := ioutil.ReadFile(keyDir + "/ecdsa.pub")
+	pubkeyEncoded, err := os.ReadFile(keyDir + "/ecdsa.pub")
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func TestSimpleSignatureCheck(t *testing.T) {
 	sig, err := crypto.Sign(dataHash, privateKey)
 	Require(t, err)
 
-	pubkeyEncoded, err := ioutil.ReadFile(keyDir + "/ecdsa.pub")
+	pubkeyEncoded, err := os.ReadFile(keyDir + "/ecdsa.pub")
 	Require(t, err)
 
 	pubkey, err := hex.DecodeString(string(pubkeyEncoded))
