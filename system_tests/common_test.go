@@ -65,7 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -127,6 +127,7 @@ type TestClient struct {
 	ClientWrapper          *ClientWrapper
 	ConsensusConfigFetcher ConfigFetcher[arbnode.Config]
 	ExecutionConfigFetcher ConfigFetcher[gethexec.Config]
+	Blockchain             *core.BlockChain
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
@@ -805,6 +806,7 @@ func buildOnParentChain(
 
 	chainTestClient.ExecNode = execNode
 	chainTestClient.cleanup = cleanup
+	chainTestClient.Blockchain = blockchain
 
 	chainTestClient.L1BlobReader = parentChainTestClient.L1BlobReader
 

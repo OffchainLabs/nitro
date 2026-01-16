@@ -28,6 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/cmd/nitro/config"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -36,8 +38,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -139,6 +142,12 @@ func TestFastConfirmationWithdrawal(t *testing.T) {
 	if builder.L2.GetBalance(t, authL2.From).Cmp(new(big.Int).Sub(intialL2Balance, l2FundsSpent)) != 0 {
 		Fatal(t, "Withdrawal failed")
 	}
+
+	initDataReader := statetransfer.NewMemoryInitDataReader(&builder.L2Info.ArbInitData)
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Init.ValidateGenesisAssertion = true
+	err = nitroinit.GetAndValidateGenesisAssertion(ctx, &nodeConfig, builder.L2.Blockchain, initDataReader, builder.addresses, builder.L1.Client)
+	Require(t, err)
 }
 func TestFastConfirmation(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
