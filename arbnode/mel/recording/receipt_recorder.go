@@ -22,7 +22,7 @@ import (
 
 // ReceiptRecorder records preimages corresponding to the receipts of a parent chain block
 // needed during the message extraction. These preimages are needed for MEL validation and
-// is used in creation of the validation entries by the MEL validator
+// are used in creation of the validation entries by the MEL validator
 type ReceiptRecorder struct {
 	parentChainReader      BlockReader
 	parentChainBlockHash   common.Hash
@@ -169,7 +169,6 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 
 // CollectTxIndicesPreimage adds the array of relevant tx indexes to the preimages map as a value
 // to the key represented by parentChainBlockHash.
-// TODO: If we use parentChainBlockHash as the key for header- then we need to modify this implementation
 func (rr *ReceiptRecorder) CollectTxIndicesPreimage() error {
 	var relevantLogsTxIndexes []uint
 	for k := range rr.relevantLogsTxIndexes {
