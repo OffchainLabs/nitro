@@ -27,6 +27,13 @@ jobs:
       - name: Run licensing script
         run: go run ./scripts/licenser.go --fix
 
+      - name: Check for changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No license changes detected. Ending workflow."
+            exit 0
+          fi
+
       - name: Add changelog fragment
         run: |
           FILENAME="changelog/license-update-$(date +%Y-%m).md"
