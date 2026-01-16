@@ -1129,6 +1129,7 @@ func GetAndValidateGenesisAssertion(ctx context.Context, config *config.NodeConf
 	return nil
 }
 
+// Equivalent to validateGenesisAssertion in master branch
 func OldValidateGenesisAssertion(ctx context.Context, genesis *types.Block, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
 	accountsReader, err := initDataReader.GetAccountDataReader()
 	if err != nil {
