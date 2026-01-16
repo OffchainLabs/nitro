@@ -404,7 +404,8 @@ func ProduceBlockAdvanced(
 			}
 			if isFiltered {
 				statedb.SetTxFilterBypassed(true)
-				// TODO: execute the tx differently when bypassed (e.g., replace with no-op or burn)
+				// handleRevertedTx in state_transition.go will skip EVM execution,
+				// consume all gas, and increment nonce
 			}
 
 			gasPool := gethGas
