@@ -1,6 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+package genericconf
+
 func DefaultPathResolver(workdir string) func(string) string {
 	if workdir == "" {
 		var err error
