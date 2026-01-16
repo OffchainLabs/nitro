@@ -45,7 +45,7 @@ gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
 lazy_static = { version = "1.4.0" }
 libc = { version = "0.2.132" }
-lru = { version = "0.12.3" }
+lru = { version = "0.16.3" }
 nom = { version = "7.0.0" }
 num = { version = "0.4" }
 num-bigint = { version = "0.4.4" }
