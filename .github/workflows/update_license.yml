@@ -1,0 +1,45 @@
+name: Update license headers
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 1 * *' # At 00:00 on the 1st day of every month
+
+jobs:
+  update-licenses:
+    runs-on: ubuntu-4
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          # Fetch all history so the git-log logic in the script works correctly
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Run licensing script
+        run: go run ./scripts/licenser.go --fix
+
+      - name: Add changelog fragment
+        run: |
+          FILENAME="changelog/license-update-$(date +%Y-%m).md"
+          echo "### Ignored" > "$FILENAME"
+          echo "- Update license headers" >> "$FILENAME"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: automation/update-licenses
+          commit-message: "Update license headers for ${{ github.event.schedule || 'manual trigger' }}"
+          title: "License header update"
+          body: |
+            Automated license header update.
+            
+            This PR was triggered by a scheduled task to ensure source files have the correct copyright years based on Git history.
