@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -39,16 +40,18 @@ func ConsensusExecutionSyncerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultConsensusExecutionSyncerConfig.SyncInterval, "Interval in which finality and sync data is pushed from consensus to execution")
 }
 
+// lint:require-exhaustive-initialization
 type ConsensusExecutionSyncer struct {
 	stopwaiter.StopWaiter
 
 	config func() *ConsensusExecutionSyncerConfig
 
-	inboxReader    *InboxReader
-	execClient     execution.ExecutionClient
-	blockValidator *staker.BlockValidator
-	txStreamer     *TransactionStreamer
-	syncMonitor    *SyncMonitor
+	inboxReader          *InboxReader
+	execClient           execution.ExecutionClient
+	blockValidator       *staker.BlockValidator
+	txStreamer           *TransactionStreamer
+	syncMonitor          *SyncMonitor
+	msgCountErrorHandler *util.EphemeralErrorHandler
 }
 
 func NewConsensusExecutionSyncer(
@@ -66,6 +69,8 @@ func NewConsensusExecutionSyncer(
 		blockValidator: blockValidator,
 		txStreamer:     txStreamer,
 		syncMonitor:    syncMonitor,
+		// For the first 2 minutes, log msg count error as WARN, then as ERROR.
+		msgCountErrorHandler: util.NewEphemeralErrorHandler(2*time.Minute, "", 0),
 	}
 }
 
@@ -86,9 +91,10 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 		log.Debug("Finality not supported, not pushing finality data to execution")
 		return nil, errMsgCount
 	} else if errMsgCount != nil {
-		log.Error("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
+		c.msgCountErrorHandler.LogLevel(errMsgCount, log.Error)("Error getting finality msg count", "scenario", scenario, "err", errMsgCount)
 		return nil, errMsgCount
 	}
+	c.msgCountErrorHandler.Reset()
 
 	if msgCount == 0 {
 		return nil, nil
