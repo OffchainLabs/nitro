@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package assertions contains testing utilities for posting and scanning for
 // assertions on chain, which are useful for simulating the responsibilities of

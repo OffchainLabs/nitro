@@ -1,3 +1,5 @@
+# Copyright 2025-2026, Offchain Labs, Inc.
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 .PHONY: build build-forge build-forge-sol
 
 # Prevent parallel execution of targets, if the same compiler is used at the same time race conditions may occur
