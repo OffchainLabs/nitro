@@ -187,7 +187,9 @@ func startup() error {
 	if err != nil {
 		return fmt.Errorf("failed to start sequencer rpc client: %w", err)
 	}
+	defer sequencerRPCClient.Close()
 	sequencerClient := ethclient.NewClient(sequencerRPCClient)
+	defer sequencerClient.Close()
 
 	stack, err := api.NewStack(ctx, &stackConf, sequencerClient)
 	if err != nil {
