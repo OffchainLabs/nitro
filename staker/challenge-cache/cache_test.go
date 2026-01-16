@@ -406,7 +406,6 @@ func Test_determineFilePath(t *testing.T) {
 }
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
-	b.StopTimer()
 	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		b.Fatal(err)
@@ -428,8 +427,7 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	if err := cache.Put(key, hashes); err != nil {
 		b.Fatal(err)
 	}
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		readUpTo := uint64(1 << 20)
 		hashes, err := cache.Get(key, readUpTo)
 		if err != nil {

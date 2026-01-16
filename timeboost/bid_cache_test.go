@@ -144,7 +144,6 @@ func TestTopTwoBids(t *testing.T) {
 }
 
 func BenchmarkBidValidation(b *testing.B) {
-	b.StopTimer()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	redisURL := redisutil.CreateTestRedis(ctx, b)
@@ -157,8 +156,7 @@ func BenchmarkBidValidation(b *testing.B) {
 	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
 	require.NoError(b, err)
 
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err = bv.validateBid(newBid, bv.auctionContract.BalanceOf)
 		require.NoError(b, err)
 	}
