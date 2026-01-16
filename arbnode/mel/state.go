@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -22,12 +23,13 @@ type State struct {
 	DelayedMessagePostingTargetAddress common.Address
 	ParentChainBlockHash               common.Hash
 	ParentChainPreviousBlockHash       common.Hash
-	MessageAccumulator                 common.Hash
-	DelayedMessagesSeenRoot            common.Hash
-	MsgCount                           uint64
 	BatchCount                         uint64
+	MsgCount                           uint64
+	MsgRoot                            common.Hash
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
+	DelayedMessagesSeenRoot            common.Hash
+	MessageMerklePartials              []common.Hash `rlp:"optional"`
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
 	delayedMessageBacklog *DelayedMessageBacklog // delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
@@ -37,6 +39,10 @@ type State struct {
 	// from parent chain. It resets after the current melstate is finished generating
 	// and is reinitialized using appropriate DelayedMessageMerklePartials of the state
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
+	// msgsAcc is MerkleAccumulator that accumulates all the L2 messages extracted. It
+	// resets after the current melstate is finished generating and is reinitialized using
+	// appropriate MessageMerklePartials of the state
+	msgsAcc *merkleAccumulator.MerkleAccumulator
 }
 
 // DelayedMessageDatabase can read delayed messages by their global index.
@@ -87,13 +93,13 @@ func (s *State) Clone() *State {
 	delayedMessageTarget := common.Address{}
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
-	msgAcc := common.Hash{}
+	msgAccRoot := common.Hash{}
 	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(msgAcc[:], s.MessageAccumulator[:])
+	copy(msgAccRoot[:], s.MsgRoot[:])
 	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
 	var delayedMessageMerklePartials []common.Hash
 	for _, partial := range s.DelayedMessageMerklePartials {
@@ -113,7 +119,7 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		MessageAccumulator:                 msgAcc,
+		MsgRoot:                            msgAccRoot,
 		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
@@ -126,7 +132,23 @@ func (s *State) Clone() *State {
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
-	// TODO: Unimplemented.
+	if s.msgsAcc == nil {
+		log.Debug("Initializing MelState's msgsAcc")
+		// This is very low cost hence better to reconstruct msgsAcc from fresh partals instead of risking using a dirty acc
+		acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(ToPtrSlice(s.MessageMerklePartials))
+		if err != nil {
+			return err
+		}
+		s.msgsAcc = acc
+	}
+	msgBytes, err := rlp.EncodeToBytes(msg)
+	if err != nil {
+		return err
+	}
+	// In recording mode this would also record the message preimages needed for MEL validation
+	if _, err := s.msgsAcc.Append(msg.Hash(), msgBytes...); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,18 +183,33 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	return nil
 }
 
+func (s *State) GenerateMessageMerklePartialsAndRoot() error {
+	var err error
+	s.MessageMerklePartials, s.MsgRoot, err = getPartialsAndRoot(s.msgsAcc)
+	return err
+}
+
 func (s *State) GenerateDelayedMessagesSeenMerklePartialsAndRoot() error {
-	partialsPtrs, err := s.seenDelayedMsgsAcc.GetPartials()
+	var err error
+	s.DelayedMessageMerklePartials, s.DelayedMessagesSeenRoot, err = getPartialsAndRoot(s.seenDelayedMsgsAcc)
+	return err
+}
+
+func getPartialsAndRoot(acc *merkleAccumulator.MerkleAccumulator) ([]common.Hash, common.Hash, error) {
+	partialsPtrs, err := acc.GetPartials()
 	if err != nil {
-		return err
+		return nil, common.Hash{}, err
 	}
-	s.DelayedMessageMerklePartials = FromPtrSlice(partialsPtrs)
-	root, err := s.seenDelayedMsgsAcc.Root()
+	partials := FromPtrSlice(partialsPtrs)
+	root, err := acc.Root()
 	if err != nil {
-		return err
+		return nil, common.Hash{}, err
 	}
-	s.DelayedMessagesSeenRoot = root
-	return nil
+	return partials, root, err
+}
+
+func (s *State) SetMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) {
+	s.msgsAcc = acc
 }
 
 func (s *State) GetSeenDelayedMsgsAcc() *merkleAccumulator.MerkleAccumulator {

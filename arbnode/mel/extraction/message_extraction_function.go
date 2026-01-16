@@ -243,5 +243,11 @@ func extractMessagesImpl(
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
 	}
+	if len(messages) > 0 {
+		// Only need to calculate partials once, after all the messages are extracted
+		if err := state.GenerateMessageMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
 	return state, messages, delayedMessages, batchMetas, nil
 }
