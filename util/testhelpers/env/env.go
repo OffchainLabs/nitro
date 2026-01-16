@@ -30,6 +30,7 @@ func GetTestDatabaseEngine() string {
 	switch engineFlag {
 	case rawdb.DBLeveldb, rawdb.DBPebble, MemoryDB:
 		databaseEngine = engineFlag
+	case "":
 	default:
 		log.Warn("invalid test database engine flag; using default",
 			"provided", engineFlag,
