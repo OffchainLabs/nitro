@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/log/ephemeral"
+	"github.com/offchainlabs/nitro/util"
 )
 
 const defaultSleepTime = time.Second * 30
@@ -50,7 +50,7 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 	// or the function has a some chance of failing even if it's not expected to fail, based on this assumption,
 	// we use a commonEphemeralErrorHandler to log the errors at warn level for the first 10 minutes
 	// and only after that we log the errors at error level.
-	commonEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(time.Minute*10, "", 0)
+	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute*10, "", 0)
 	for {
 		if ctx.Err() != nil {
 			return zeroVal[T](), zeroVal[U](), ctx.Err()

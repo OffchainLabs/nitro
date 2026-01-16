@@ -28,12 +28,12 @@ import (
 	"github.com/offchainlabs/nitro/bold/challenge/tree"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
-	"github.com/offchainlabs/nitro/bold/log/ephemeral"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -885,8 +885,8 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		challengeGracePeriodBlocks,
 	)
 
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	// Compute the number of blocks until we reach the assertion's
 	// deadline for confirmation.
