@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::{Bytes32, PreimageType};
 use std::collections::HashMap;
 use std::fs::File;

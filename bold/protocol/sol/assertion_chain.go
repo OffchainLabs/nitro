@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package sol includes an easy-to-use abstraction around the challenge protocol
 // contracts using their Go bindings and exposes minimal details of Ethereum's
