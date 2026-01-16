@@ -78,7 +78,6 @@ func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 }
 
 func (c *ConsensusExecutionSyncer) getFinalityData(
-	ctx context.Context,
 	msgCount arbutil.MessageIndex,
 	errMsgCount error,
 	scenario string,
@@ -113,13 +112,13 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 
 func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx context.Context) time.Duration {
 	safeMsgCount, err := c.inboxReader.GetSafeMsgCount(ctx)
-	safeFinalityData, err := c.getFinalityData(ctx, safeMsgCount, err, "safe")
+	safeFinalityData, err := c.getFinalityData(safeMsgCount, err, "safe")
 	if err != nil {
 		return c.config().SyncInterval
 	}
 
 	finalizedMsgCount, err := c.inboxReader.GetFinalizedMsgCount(ctx)
-	finalizedFinalityData, err := c.getFinalityData(ctx, finalizedMsgCount, err, "finalized")
+	finalizedFinalityData, err := c.getFinalityData(finalizedMsgCount, err, "finalized")
 	if err != nil {
 		return c.config().SyncInterval
 	}
@@ -128,7 +127,7 @@ func (c *ConsensusExecutionSyncer) pushFinalityDataFromConsensusToExecution(ctx 
 	var validatedMsgCount arbutil.MessageIndex
 	if c.blockValidator != nil {
 		validatedMsgCount = c.blockValidator.GetValidated()
-		validatedFinalityData, err = c.getFinalityData(ctx, validatedMsgCount, nil, "validated")
+		validatedFinalityData, err = c.getFinalityData(validatedMsgCount, nil, "validated")
 		if err != nil {
 			return c.config().SyncInterval
 		}
