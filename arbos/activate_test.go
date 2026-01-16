@@ -18,7 +18,6 @@ import (
 )
 
 func TestActivationDataFee(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
 	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
 	pricer := state.Programs().DataPricer()
 	// #nosec G115

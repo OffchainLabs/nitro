@@ -33,7 +33,6 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestRetryableLifecycle(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
 	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	retryableState := state.RetryableState()
 
@@ -156,7 +155,6 @@ func TestRetryableLifecycle(t *testing.T) {
 }
 
 func TestRetryableCleanup(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
 	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	retryableState := state.RetryableState()
 

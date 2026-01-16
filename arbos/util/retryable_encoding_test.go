@@ -22,7 +22,6 @@ import (
 )
 
 func TestRetryableEncoding(t *testing.T) {
-	rand.Seed(time.Now().UnixMilli())
 	fakeAddr := testhelpers.RandomAddress()
 	key, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)

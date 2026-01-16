@@ -246,7 +246,7 @@ func initTest(t *testing.T) int {
 		Require(t, err, "Failed to parse string")
 		seed = int64(intSeed)
 	}
-	rand.Seed(seed)
+	rand.Seed(seed) //nolint:staticcheck // used for test reproducibility via -seed flag
 
 	runs := 2 ^ 32
 	if len(*testflag.RunsFlag) > 0 {

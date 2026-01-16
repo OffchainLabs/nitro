@@ -63,8 +63,6 @@ func l1Cost(data []byte) int {
 }
 
 func TestZeroHeavyRandomDataRandom(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	trials := 1024
 	avg := 0.0
 	best := 0.0
@@ -103,8 +101,6 @@ func TestZeroHeavyRandomDataRandom(t *testing.T) {
 }
 
 func TestZeroHeavyRandomDataBrotli(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
-
 	trials := 256
 	avg := 0.0
 	best := 0.0

@@ -99,7 +99,6 @@ func TestSignatureAggregationAnyOrder(t *testing.T) {
 		sigs = append(sigs, sig)
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(NumSignaturesToAggregate, func(i, j int) { sigs[i], sigs[j] = sigs[j], sigs[i] })
 	rand.Shuffle(NumSignaturesToAggregate, func(i, j int) { pubKeys[i], pubKeys[j] = pubKeys[j], pubKeys[i] })
 
