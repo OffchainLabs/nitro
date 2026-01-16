@@ -26,6 +26,11 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
+const (
+	DefaultArchiveNodeStateHistory = 0
+	UninitializedStateHistory      = ^uint64(0)
+)
+
 type CachingConfig struct {
 	Archive                             bool          `koanf:"archive"`
 	BlockCount                          uint64        `koanf:"block-count"`
@@ -80,7 +85,7 @@ func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".state-size-tracking", DefaultCachingConfig.StateSizeTracking, "enable tracking of state size over time")
 }
 
-func getStateHistory(maxBlockSpeed time.Duration) uint64 {
+func GetStateHistory(maxBlockSpeed time.Duration) uint64 {
 	// #nosec G115
 	return uint64(24 * time.Hour / maxBlockSpeed)
 }
@@ -105,7 +110,7 @@ var DefaultCachingConfig = CachingConfig{
 	MaxAmountOfGasToSkipStateSaving:     0,
 	StylusLRUCacheCapacity:              256,
 	StateScheme:                         rawdb.HashScheme,
-	StateHistory:                        getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
+	StateHistory:                        UninitializedStateHistory,
 	EnablePreimages:                     false,
 	PathdbMaxDiffLayers:                 128,
 	StateSizeTracking:                   false,
