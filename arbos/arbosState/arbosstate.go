@@ -461,7 +461,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 52, 53, 54, 55, 56, 57, 58, 59:
 			// these versions are left to Orbit chains for custom upgrades.
 
-		case params.ArbosVersion_60:
+		case params.ArbosVersion_TransactionFiltering:
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
 
 		default:

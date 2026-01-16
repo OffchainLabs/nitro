@@ -26,7 +26,7 @@ func TestManageTransactionFilterers(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithArbOSVersion(params.ArbosVersion_60)
+		WithArbOSVersion(params.ArbosVersion_TransactionFiltering)
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -221,7 +221,7 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithArbOSVersion(params.ArbosVersion_60).
+		WithArbOSVersion(params.ArbosVersion_TransactionFiltering).
 		WithArbOSInit(arbOSInit)
 
 	cleanup := builder.Build(t)
