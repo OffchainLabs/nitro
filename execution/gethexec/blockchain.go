@@ -36,6 +36,8 @@ type CachingConfig struct {
 	TrieDirtyCache                      int           `koanf:"trie-dirty-cache"`
 	TrieCleanCache                      int           `koanf:"trie-clean-cache"`
 	TrieCapLimit                        uint32        `koanf:"trie-cap-limit"`
+	TrieCapBatchSize                    uint32        `koanf:"trie-cap-batch-size"`
+	TrieCommitBatchSize                 uint32        `koanf:"trie-commit-batch-size"`
 	SnapshotCache                       int           `koanf:"snapshot-cache"`
 	DatabaseCache                       int           `koanf:"database-cache"`
 	SnapshotRestoreGasLimit             uint64        `koanf:"snapshot-restore-gas-limit"`
@@ -63,6 +65,8 @@ func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
 	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint32(prefix+".trie-cap-limit", DefaultCachingConfig.TrieCapLimit, "amount of memory in megabytes to be used in the TrieDB Cap operation during maintenance")
+	f.Uint32(prefix+".trie-cap-batch-size", DefaultCachingConfig.TrieCapBatchSize, "batch size in bytes used in the TrieDB Cap operation (0 = use geth default)")
+	f.Uint32(prefix+".trie-commit-batch-size", DefaultCachingConfig.TrieCommitBatchSize, "batch size in bytes used in the TrieDB Commit operation (0 = use geth default)")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreGasLimit, "maximum gas rolled back to recover snapshot")
 	f.Uint64(prefix+".head-rewind-blocks-limit", DefaultCachingConfig.HeadRewindBlocksLimit, "maximum number of blocks rolled back to recover chain head (0 = use geth default limit)")
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
@@ -91,6 +95,8 @@ var DefaultCachingConfig = CachingConfig{
 	TrieDirtyCache:                      1024,
 	TrieCleanCache:                      600,
 	TrieCapLimit:                        100,
+	TrieCapBatchSize:                    0, // 0 = use geth default
+	TrieCommitBatchSize:                 0, // 0 = use geth default
 	SnapshotCache:                       400,
 	DatabaseCache:                       2048,
 	SnapshotRestoreGasLimit:             300_000_000_000,
@@ -124,6 +130,8 @@ func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncF
 		TrieTimeLimitRandomOffset:          cachingConfig.TrieTimeLimitRandomOffset,
 		TriesInMemory:                      cachingConfig.BlockCount,
 		TrieRetention:                      cachingConfig.BlockAge,
+		TrieCapBatchSize:                   cachingConfig.TrieCapBatchSize,
+		TrieCommitBatchSize:                cachingConfig.TrieCommitBatchSize,
 		SnapshotLimit:                      cachingConfig.SnapshotCache,
 		Preimages:                          baseConf.Preimages || cachingConfig.EnablePreimages,
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
