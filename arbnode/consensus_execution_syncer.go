@@ -63,6 +63,7 @@ func NewConsensusExecutionSyncer(
 	syncMonitor *SyncMonitor,
 ) *ConsensusExecutionSyncer {
 	return &ConsensusExecutionSyncer{
+		StopWaiter:     stopwaiter.StopWaiter{},
 		config:         config,
 		inboxReader:    inboxReader,
 		execClient:     execClient,
