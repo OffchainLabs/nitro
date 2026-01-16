@@ -43,7 +43,6 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcclient "github.com/offchainlabs/nitro/execution/rpcclient"
-	"github.com/offchainlabs/nitro/restrictedaddr"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"

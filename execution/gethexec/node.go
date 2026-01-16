@@ -516,7 +516,9 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 
-	n.RestrictedAddrService.Start(ctx)
+	if n.RestrictedAddrService != nil {
+		n.RestrictedAddrService.Start(ctx)
+	}
 	return nil
 }
 
