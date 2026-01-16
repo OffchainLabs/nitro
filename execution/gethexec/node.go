@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	"github.com/offchainlabs/nitro/restrictedaddr"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -137,6 +138,7 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
+	RestrictedAddr              restrictedaddr.Config  `koanf:"restricted-addr" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -168,6 +170,9 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
+	if err := c.RestrictedAddr.Validate(); err != nil {
+		return fmt.Errorf("error validating RestrictedAddr config: %w", err)
+	}
 	return nil
 }
 
@@ -191,6 +196,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
+	restrictedaddr.ConfigAddOptions(prefix+".restricted-addr", f)
 }
 
 type LiveTracingConfig struct {
@@ -237,6 +243,8 @@ var ConfigDefault = Config{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
+
+	RestrictedAddr: restrictedaddr.DefaultConfig,
 }
 
 type ConfigFetcher interface {
@@ -262,6 +270,7 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
+	RestrictedAddrService    *restrictedaddr.Service
 }
 
 func CreateExecutionNode(
@@ -356,6 +365,11 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
+	restrictedAddrService, err := restrictedaddr.NewService(ctx, &config.RestrictedAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
+	}
+
 	execNode := &ExecutionNode{
 		ExecutionDB:              executionDB,
 		Backend:                  backend,
@@ -371,6 +385,7 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		RestrictedAddrService:    restrictedAddrService,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -462,7 +477,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
-
+	if n.RestrictedAddrService != nil {
+		if err = n.RestrictedAddrService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing restricted addr service: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -496,6 +515,8 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
+
+	n.RestrictedAddrService.Start(ctx)
 	return nil
 }
 
@@ -525,6 +546,10 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
+
+	if n.RestrictedAddrService != nil && n.RestrictedAddrService.Started() {
+		n.RestrictedAddrService.StopAndWait()
+	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
