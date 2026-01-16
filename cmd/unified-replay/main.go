@@ -12,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -50,6 +49,7 @@ func main() {
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
 		// TODO: Read the real chain config.
 		melState = extractMessagesUpTo(nil /* nil chain config */, melState, targetBlockHash)
+		melwavmio.SetEndMELRoot(melState.Hash())
 	}
 
 	positionInMEL := melwavmio.GetPositionInMEL()
@@ -125,16 +125,6 @@ func extractMessagesUpTo(
 		}
 		currentState = postState
 	}
-
-	// In the end, we set the global state's MEL root to the hash of the post MEL state
-	// that is created by running extract messages over the blocks we processed.
-	encodedFinalState, err := rlp.EncodeToBytes(currentState)
-	if err != nil {
-		panic(fmt.Errorf("error encoding final MEL state: %w", err))
-	}
-	computedEndMelRoot := crypto.Keccak256Hash(encodedFinalState)
-	melwavmio.SetEndMELRoot(computedEndMelRoot)
-	melwavmio.StubFinal()
 	return currentState
 }
 

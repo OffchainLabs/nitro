@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/melwavmio"
-	"github.com/offchainlabs/nitro/wavmio"
 )
 
 type preimageResolver interface {
@@ -36,7 +35,7 @@ func (r *BlobPreimageReader) GetBlobs(
 	var blobs []kzg4844.Blob
 	for _, h := range versionedHashes {
 		var blob kzg4844.Blob
-		preimage, err := wavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
+		preimage, err := melwavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
 		if err != nil {
 			return nil, err
 		}

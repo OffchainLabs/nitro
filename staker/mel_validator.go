@@ -89,16 +89,16 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		// ending position- bold staker latest posted assertion on chain that it agrees with (l1blockhash)-
 		return nil, errors.New("trying to create validation entry for zero block number")
 	}
-	preState, err := mv.messageExtractor.GetState(ctx, lastValidatedParentChainBlock)
+	currentState, err := mv.messageExtractor.GetState(ctx, lastValidatedParentChainBlock)
 	if err != nil {
 		return nil, err
 	}
 	// We have already validated message extraction of messages till count toValidateMsgExtractionCount, so can return early
 	// and wait for block validator to progress the toValidateMsgExtractionCount
-	if preState.MsgCount >= toValidateMsgExtractionCount {
+	if currentState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, nil
 	}
-	initialState := preState.Clone()
+	initialState := currentState.Clone()
 	encodedInitialState, err := rlp.EncodeToBytes(initialState)
 	if err != nil {
 		return nil, err
@@ -120,6 +120,11 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err != nil {
 			return nil, err
 		}
+		encodedHeader, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			return nil, err
+		}
+		preimages[arbutil.Keccak256PreimageType][header.Hash()] = encodedHeader
 		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
 			return nil, err
@@ -134,7 +139,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err := receiptsRecorder.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		state, _, _, _, err := melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
+		state, _, _, _, err := melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
 		if err != nil {
 			return nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
@@ -152,7 +157,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			endParentChainBlockHash = header.Hash()
 			break
 		}
-		preState = state
+		currentState = state
 	}
 	fmt.Printf("Initial state hash: %#x\n", initialState.Hash())
 	return &validationEntry{
@@ -160,6 +165,13 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		Start: validator.GoGlobalState{
 			BlockHash:    common.Hash{},
 			MELStateHash: initialState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   0,
+		},
+		End: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: currentState.Hash(),
 			MELMsgHash:   common.Hash{},
 			Batch:        0,
 			PosInBatch:   0,

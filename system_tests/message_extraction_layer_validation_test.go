@@ -76,7 +76,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0x9f969e4744426987174fd41743ca33a2e51a1233cb6df24812be8380f16849a2")
+	wasmModuleRoot := common.HexToHash("0x5bb0a3fcc8a1f7cabda7489b005d04291ab30603551976b528c365a025d24092")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{
@@ -90,8 +90,11 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	finalResult, err := result.GetLastStep().Await(ctx)
 	Require(t, err)
-	t.Logf("%+v", finalResult)
-	t.Fatal("Failed")
+	if finalResult.GlobalState.MELStateHash != entry.End.MELStateHash {
+		t.Fatalf("Expected final mel state hash %s, got %s", entry.End.MELStateHash, finalResult.GlobalState.MELStateHash)
+	}
+	t.Log("Passed")
+	// t.Fatal("Failed")
 }
 
 func TestMELValidator_Recording_Preimages(t *testing.T) {

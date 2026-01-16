@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	preimages               = make(map[common.Hash][]byte)
+	preimages               = make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	startMelStateHash       = common.Hash{}
 	melMsgHash              = common.Hash{}
 	endMelStateHash         = common.Hash{} // This is set by the stubbed SetEndMELStateHash function
@@ -28,7 +28,7 @@ var (
 
 func StubInit() {
 	endParentChainBlockHashFlag := flag.String("end-parent-chain-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "endParentChainBlockHash")
-	startMelRootFlag := flag.String("start-mel-root", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
+	startMelRootFlag := flag.String("start-mel-state-hash", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	flag.Parse()
 	endParentChainBlockHash = common.HexToHash(*endParentChainBlockHashFlag)
@@ -77,7 +77,7 @@ func IncreasePositionInMEL() {
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	val, ok := preimages[hash]
+	val, ok := preimages[ty][hash]
 	if !ok {
 		return []byte{}, errors.New("preimage not found")
 	}
