@@ -11,9 +11,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -247,7 +247,7 @@ func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) err
 
 // Releases surplus funds from L1PricerFundsPoolAddress for use
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
-	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	balance := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
 	recognized, err := l1p.L1FeesAvailable()
 	if err != nil {

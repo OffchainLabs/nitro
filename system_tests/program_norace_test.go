@@ -209,4 +209,6 @@ func testEvmData(t *testing.T, jit bool) {
 	colors.PrintGrey("trace: ", string(trace))
 
 	validateBlocks(t, 1, jit, builder)
+
+	AutomatedPrestateTracerTest(t, builder.L2)
 }

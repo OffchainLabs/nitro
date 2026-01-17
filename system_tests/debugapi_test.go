@@ -1,8 +1,7 @@
-// Copyright 2022-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,17 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -200,8 +204,8 @@ func TestDebugAPI(t *testing.T) {
 
 type account struct {
 	Balance *hexutil.Big                `json:"balance,omitempty"`
-	Code    []byte                      `json:"code,omitempty"`
-	Nonce   uint64                      `json:"nonce,omitempty"`
+	Code    hexutil.Bytes               `json:"code,omitempty"`
+	Nonce   *uint64                     `json:"nonce,omitempty"`
 	Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
 }
 type prestateTrace struct {
@@ -260,7 +264,7 @@ func TestPrestateTracingSimple(t *testing.T) {
 	if !arbmath.BigEquals(result.Post[receiver].Balance.ToInt(), value) {
 		Fatal(t, "Unexpected final balance of receiver")
 	}
-	if result.Post[sender].Nonce != result.Pre[sender].Nonce+1 {
+	if *result.Post[sender].Nonce != *result.Pre[sender].Nonce+1 {
 		Fatal(t, "sender nonce increment wasn't registered")
 	}
 }
@@ -310,8 +314,8 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	if _, ok := result.Pre[faucetAddr]; !ok {
 		Fatal(t, "Faucet account not found in the result of prestate tracer")
 	}
-	// Nonce shouldn't exist (in this case defaults to 0) in the Post map of the trace in DiffMode
-	if l2Tx.SkipNonceChecks() && result.Post[faucetAddr].Nonce != 0 {
+	// Nonce shouldn't exist in the Post map of the trace in DiffMode
+	if l2Tx.SkipNonceChecks() && result.Post[faucetAddr].Nonce != nil {
 		Fatal(t, "Faucet account's nonce should remain unchanged ")
 	}
 	if !arbmath.BigEquals(result.Pre[faucetAddr].Balance.ToInt(), oldBalance) {
@@ -494,5 +498,210 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 	}
 	if found != 2 {
 		t.Fatal("ArbosStateAddress storage accesses for ArbOSVersion and BrotliCompressionLevel not logged in the prestateTracer's trace")
+	}
+
+	AutomatedPrestateTracerTest(t, builder.L2)
+}
+
+type accountDump struct {
+	Balance       *big.Int
+	Nonce         uint64
+	Code          []byte
+	HashedStorage map[common.Hash]common.Hash
+}
+
+type stateDump struct {
+	HashedAccounts map[common.Hash]*accountDump
+}
+
+// This uses the trie iterator to dump the state at a given block number.
+// Ideally we'd use debug_dumpBlock, but it has a limit of 256 accounts,
+// and we don't support configuring preimage storage which is necessary for it.
+func dumpState(t *testing.T, client *TestClient, blockNumber uint64) *stateDump {
+	bc := client.ExecNode.Backend.BlockChain()
+	block := bc.GetBlockByNumber(blockNumber)
+	sdb, err := bc.StateAt(block.Root())
+	Require(t, err)
+	trieId := trie.TrieID(block.Root())
+	tr, err := trie.New(trieId, sdb.Database().TrieDB())
+	Require(t, err)
+
+	trieIt, err := tr.NodeIterator(nil)
+	Require(t, err)
+	it := trie.NewIterator(trieIt)
+	dump := &stateDump{
+		HashedAccounts: make(map[common.Hash]*accountDump),
+	}
+	for it.Next() {
+		var data types.StateAccount
+		err = rlp.DecodeBytes(it.Value, &data)
+		Require(t, err)
+		account := &accountDump{
+			Balance:       data.Balance.ToBig(),
+			Nonce:         data.Nonce,
+			HashedStorage: make(map[common.Hash]common.Hash),
+		}
+		addrHash := common.BytesToHash(it.Key)
+
+		dump.HashedAccounts[addrHash] = account
+		if len(data.CodeHash) > 0 {
+			codeHash := common.BytesToHash(data.CodeHash)
+			if codeHash != types.EmptyCodeHash {
+				account.Code, err = sdb.Reader().Code(common.Address{}, codeHash)
+				Require(t, err)
+			}
+		}
+
+		if data.Root != types.EmptyRootHash {
+			storageTrie, err := trie.NewStateTrie(trie.StorageTrieID(block.Root(), addrHash, data.Root), sdb.Database().TrieDB())
+			Require(t, err)
+			storageIt, err := storageTrie.NodeIterator(nil)
+			Require(t, err)
+			storageIterator := trie.NewIterator(storageIt)
+			for storageIterator.Next() {
+				key := common.BytesToHash(storageIterator.Key)
+				_, value, _, err := rlp.Split(storageIterator.Value)
+				Require(t, err)
+				account.HashedStorage[key] = common.BytesToHash(value)
+			}
+		}
+	}
+
+	return dump
+}
+
+type PrePostStateMap struct {
+	Post stateMap `json:"post"`
+	Pre  stateMap `json:"pre"`
+}
+
+type stateMap = map[common.Address]*account
+
+type blockTraceResult struct {
+	Result PrePostStateMap `json:"result"`
+	TxHash common.Hash     `json:"txHash"`
+	Error  string          `json:"error"`
+}
+
+func AutomatedPrestateTracerTest(t *testing.T, client *TestClient) {
+	blockHeight, err := client.Client.BlockNumber(client.ctx)
+	Require(t, err)
+	runningState := dumpState(t, client, 1)
+
+	for block := uint64(2); block <= blockHeight; block++ {
+		var traces []blockTraceResult
+		traceConfig := map[string]interface{}{
+			"tracer": "prestateTracer",
+			"tracerConfig": map[string]interface{}{
+				"diffMode": true,
+			},
+		}
+
+		// #nosec G115
+		err = client.Client.Client().CallContext(client.ctx, &traces, "debug_traceBlockByNumber", rpc.BlockNumber(block), traceConfig)
+		Require(t, err)
+
+		for i, trace := range traces {
+			if trace.Error != "" {
+				Fatal(t, "Tracer returned error for tx ", trace.TxHash, ": ", trace.Error)
+			}
+			for addr, contents := range trace.Result.Pre {
+				hashedAddr := crypto.Keccak256Hash(addr.Bytes())
+				runningAccount := runningState.HashedAccounts[hashedAddr]
+				if runningAccount == nil {
+					Fatal(t, "Account ", addr, " not found in previous state for prestate tracer test")
+				}
+				if contents.Balance == nil {
+					Fatal(t, "Balance of account ", addr, " was nil in prestate tracer")
+				}
+				if !arbmath.BigEquals(contents.Balance.ToInt(), runningAccount.Balance) {
+					Fatal(t, "Balance of account ", addr, " was ", runningAccount.Balance, " but tracer shows ", contents.Balance.ToInt())
+				}
+
+				// That just means zero nonce has been serialized to nil
+				if contents.Nonce == nil && runningAccount.Nonce != 0 {
+					Fatal(t, "Nonce of account ", addr, " was nil in prestate tracer")
+				}
+
+				if (contents.Nonce == nil && runningAccount.Nonce != 0) ||
+					(contents.Nonce != nil && *contents.Nonce != runningAccount.Nonce) {
+					Fatal(t, "Nonce of account ", addr, " was ", runningAccount.Nonce, " but tracer shows ", contents.Nonce)
+				}
+				if (len(contents.Code) != 0) != (len(runningAccount.Code) != 0) {
+					Fatal(t, "Code presence of account ", addr, " was ", len(runningAccount.Code) != 0, " but tracer shows ", len(contents.Code) != 0)
+				}
+				if !bytes.Equal(contents.Code, runningAccount.Code) {
+					Fatal(t, "Code of account ", addr, " was incorrect in prestate tracer")
+				}
+				accountPostTrace, accountInPost := trace.Result.Post[addr]
+
+				for key, val := range contents.Storage {
+					hashedKey := crypto.Keccak256Hash(key.Bytes())
+					previousVal := runningAccount.HashedStorage[hashedKey]
+					if i > 2 && val != previousVal {
+						Fatal(t, "Account ", addr, " storage key ", key, " was ", previousVal, " but tracer shows ", val)
+					}
+
+					if accountInPost {
+						_, storageInPost := accountPostTrace.Storage[key]
+						if !storageInPost {
+							// This slot was deleted
+							delete(runningAccount.HashedStorage, hashedKey)
+						}
+					}
+				}
+				if !accountInPost {
+					// This account was deleted
+					delete(runningState.HashedAccounts, hashedAddr)
+				}
+			}
+
+			for addr, contents := range trace.Result.Post {
+				hashedAddr := crypto.Keccak256Hash(addr.Bytes())
+				runningAccount, hadAccount := runningState.HashedAccounts[hashedAddr]
+				preTrace, inPre := trace.Result.Pre[addr]
+
+				if !hadAccount {
+					runningAccount = &accountDump{
+						HashedStorage: make(map[common.Hash]common.Hash),
+					}
+					runningState.HashedAccounts[hashedAddr] = runningAccount
+				} else if !inPre {
+					Fatal(t, "Account ", addr, " was not in tracer prestate but was in state")
+				}
+				if contents.Balance != nil {
+					runningAccount.Balance = contents.Balance.ToInt()
+				} else {
+					runningAccount.Balance = new(big.Int).SetUint64(0)
+				}
+				if contents.Nonce != nil {
+					runningAccount.Nonce = *contents.Nonce
+				}
+				if len(contents.Code) != 0 {
+					runningAccount.Code = contents.Code
+				}
+
+				for key, val := range contents.Storage {
+					hashedKey := crypto.Keccak256Hash(key.Bytes())
+					if inPre {
+						_, hadPreStorage := preTrace.Storage[key]
+						if !hadPreStorage && runningAccount.HashedStorage[hashedKey] != (common.Hash{}) {
+							Fatal(t, "Account ", addr, " storage key ", key, " was in state but not in prestate tracer")
+						}
+					}
+
+					runningAccount.HashedStorage[hashedKey] = val
+				}
+			}
+		}
+
+		expectedState := dumpState(t, client, block)
+
+		diff := cmp.Diff(expectedState, runningState, cmp.Comparer(func(x, y *big.Int) bool {
+			return x.Cmp(y) == 0
+		}))
+		if diff != "" {
+			Fatal(t, "State mismatch at block ", block, ":\n", diff)
+		}
 	}
 }
