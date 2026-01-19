@@ -50,6 +50,9 @@ wat = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true }
 
+[build-dependencies]
+forward = { path = "../wasm-libraries/forward" }
+
 [[bench]]
 name = "merkle_bench"
 harness = false

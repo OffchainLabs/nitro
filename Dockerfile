@@ -156,6 +156,7 @@ COPY crates/jit/Cargo.toml crates/jit/
 COPY crates/stylus/Cargo.toml crates/stylus/
 COPY crates/validator/Cargo.toml crates/validator/
 COPY crates/tools/wasmer crates/tools/wasmer
+COPY crates/wasm-libraries/forward crates/wasm-libraries/forward
 COPY crates/wasm-libraries/user-host-trait/Cargo.toml crates/wasm-libraries/user-host-trait/Cargo.toml
 RUN bash -c 'mkdir crates/{prover,jit,stylus,validator}/src crates/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
