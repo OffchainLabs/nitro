@@ -136,7 +136,9 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Starting from ArbosVersion_MultiGasConstraintsVersion, don't charge gas for the ShrinkBacklog call.
 	stopChargingGas := c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion
 	if stopChargingGas {
-		c.Burn(multigas.ResourceKindComputation, l2pricing.MultiConstraintStaticBacklogUpdateCost)
+		if err := c.Burn(multigas.ResourceKindComputation, l2pricing.MultiConstraintStaticBacklogUpdateCost); err != nil {
+			return hash{}, err
+		}
 
 		c.SetUnmeteredGasAccounting(true)
 		defer c.SetUnmeteredGasAccounting(false)
