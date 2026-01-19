@@ -41,7 +41,7 @@ func TestGetCurrentRedeemer(t *testing.T) {
 	}
 }
 
-func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
+func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context, expectedLegacyGas bool) {
 	t.Helper()
 
 	id := common.BigToHash(big.NewInt(978645611142))
@@ -82,7 +82,11 @@ func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context) {
 	)
 	Require(t, err)
 
-	expected := storage.StorageWriteCost - storage.StorageWriteZeroCost
+	expected := uint64(0)
+	if expectedLegacyGas {
+		expected = storage.StorageWriteCost - storage.StorageWriteZeroCost
+	}
+
 	if gasLeft != expected {
 		// We expect to have some gas left over, because in this test we write a zero, but in other
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
@@ -113,7 +117,7 @@ func TestRetryableRedeemLegacy(t *testing.T) {
 		Fail(t, "should use legacy model")
 	}
 
-	testRetryableRedeem(t, evm, precompileCtx)
+	testRetryableRedeem(t, evm, precompileCtx, true)
 }
 
 func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
@@ -128,7 +132,7 @@ func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
 		Fail(t, "should use legacy model")
 	}
 
-	testRetryableRedeem(t, evm, precompileCtx)
+	testRetryableRedeem(t, evm, precompileCtx, true)
 }
 
 func TestRetryableRedeemWithGasConstraints(t *testing.T) {
@@ -151,7 +155,7 @@ func TestRetryableRedeemWithGasConstraints(t *testing.T) {
 		Fail(t, "should use single-gas constraints model")
 	}
 
-	testRetryableRedeem(t, evm, precompileCtx)
+	testRetryableRedeem(t, evm, precompileCtx, true)
 }
 
 func TestRetryableRedeemWithGasConstraintsArbOSMultiGasConstraintsVersion(t *testing.T) {
@@ -176,7 +180,7 @@ func TestRetryableRedeemWithGasConstraintsArbOSMultiGasConstraintsVersion(t *tes
 		Fail(t, "should use single-gas constraints model")
 	}
 
-	testRetryableRedeem(t, evm, precompileCtx)
+	testRetryableRedeem(t, evm, precompileCtx, false)
 }
 
 func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
@@ -213,5 +217,5 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 		Fail(t, "should use multi-gas constraints model")
 	}
 
-	testRetryableRedeem(t, evm, precompileCtx)
+	testRetryableRedeem(t, evm, precompileCtx, false)
 }
