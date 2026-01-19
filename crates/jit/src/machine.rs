@@ -26,38 +26,52 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
-    let wasm = std::fs::read(&opts.validator.binary)?;
-
     let mut store = match opts.validator.cranelift {
-        true => {
-            let mut compiler = Cranelift::new();
-            compiler.canonicalize_nans(true);
-            compiler.enable_verifier();
-            Store::new(compiler)
-        }
-        false => {
-            #[cfg(not(feature = "llvm"))]
-            panic!("Please rebuild with the \"llvm\" feature for LLVM support");
-            #[cfg(feature = "llvm")]
-            {
-                let mut compiler = wasmer_compiler_llvm::LLVM::new();
-                compiler.canonicalize_nans(true);
-                compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-                compiler.enable_verifier();
-                Store::new(compiler)
-            }
-        }
+        true => get_store_with_cranelift_compiler(),
+        false => get_store_with_llvm_compiler(),
     };
 
-    let module = Module::new(&store, wasm)?;
     let env = WasmEnv::try_from(opts)?;
     let func_env = FunctionEnv::new(&mut store, env);
+
+    let wasm = std::fs::read(&opts.validator.binary)?;
+    let module = Module::new(&store, wasm)?;
+    let imports = imports(&mut store, &func_env);
+    let instance = Instance::new(&mut store, &module, &imports)?;
+
+    let memory = instance.exports.get_memory("memory")?.clone();
+    func_env.as_mut(&mut store).memory = Some(memory);
+
+    Ok((instance, func_env, store))
+}
+
+fn get_store_with_cranelift_compiler() -> Store {
+    let mut compiler = Cranelift::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
+    Store::new(compiler)
+}
+
+#[cfg(not(feature = "llvm"))]
+fn get_store_with_llvm_compiler() -> Store {
+    panic!("Please rebuild with the \"llvm\" feature for LLVM support");
+}
+#[cfg(feature = "llvm")]
+fn get_store_with_llvm_compiler() -> Store {
+    let mut compiler = wasmer_compiler_llvm::LLVM::new();
+    compiler.canonicalize_nans(true);
+    compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+    compiler.enable_verifier();
+    Store::new(compiler)
+}
+
+fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Imports {
     macro_rules! func {
         ($func:expr) => {
-            Function::new_typed_with_env(&mut store, &func_env, $func)
+            Function::new_typed_with_env(store, func_env, $func)
         };
     }
-    let imports = imports! {
+    imports! {
         "arbcompress" => {
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
@@ -129,12 +143,7 @@ pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
             "activate" => func!(program::activate),
             "activate_v2" => func!(program::activate_v2),
         },
-    };
-
-    let instance = Instance::new(&mut store, &module, &imports)?;
-    let memory = instance.exports.get_memory("memory")?.clone();
-    func_env.as_mut(&mut store).memory = Some(memory);
-    Ok((instance, func_env, store))
+    }
 }
 
 #[derive(Error, Debug)]
