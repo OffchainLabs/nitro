@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -240,6 +240,18 @@ func (r *DACertificatePreimageReader) CollectPreimages(
 		// to gather preimages before replay. In replay context, preimages have already been
 		// collected and injected into the execution environment.
 		return daprovider.PreimagesResult{Preimages: make(daprovider.PreimagesMap)}, nil
+	})
+}
+
+func (r *DACertificatePreimageReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		// Stub implementation: RecoverPayloadAndPreimages is only called
+		// by the MEL validator to gather preimages before validation
+		return daprovider.PayloadAndPreimagesResult{Preimages: make(daprovider.PreimagesMap), Payload: nil}, nil
 	})
 }
 
