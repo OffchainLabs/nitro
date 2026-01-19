@@ -25,7 +25,7 @@ use wasmer::{
 };
 use wasmer_compiler_cranelift::Cranelift;
 
-pub fn create(opts: &Opts, env: WasmEnv) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
+pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let wasm = std::fs::read(&opts.validator.binary)?;
 
     let mut store = match opts.validator.cranelift {
@@ -50,6 +50,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> Result<(Instance, FunctionEnv<WasmEn
     };
 
     let module = Module::new(&store, wasm)?;
+    let env = WasmEnv::try_from(opts)?;
     let func_env = FunctionEnv::new(&mut store, env);
     macro_rules! func {
         ($func:expr) => {
