@@ -1,3 +1,5 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use hex_literal::hex;
 use num_bigint::BigUint;
 use sha2::{Digest, Sha512};
