@@ -12,10 +12,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+// Keep the same pricing overhead for constraint-based pricing models as for the single-gas model.
+const RedeemZeroWriteRefundDelta = storage.StorageWriteCost - storage.StorageWriteZeroCost
 
 type ArbRetryableTx struct {
 	Address                 addr
@@ -135,6 +140,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Starting from ArbosVersion_MultiGasConstraintsVersion, don't charge gas for the ShrinkBacklog call.
 	stopChargingGas := c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion
 	if stopChargingGas {
+		c.Burn(multigas.ResourceKindComputation, l2pricing.MultiConstraintStaticBacklogUpdateCost-RedeemZeroWriteRefundDelta)
+
 		c.SetUnmeteredGasAccounting(true)
 		defer c.SetUnmeteredGasAccounting(false)
 	}

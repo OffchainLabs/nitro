@@ -24,7 +24,8 @@ const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
 
-const MultiConstraintStaticBacklogUpdateCost = 15000
+// Static price equivalent to the single gas backlog update cost
+const MultiConstraintStaticBacklogUpdateCost = storage.StorageReadCost + storage.StorageWriteCost
 
 type GasModel int
 
