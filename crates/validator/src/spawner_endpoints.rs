@@ -24,7 +24,7 @@ pub async fn name() -> impl IntoResponse {
     "Rust JIT validator"
 }
 
-pub async fn stylus_archs() -> impl IntoResponse {
+pub async fn stylus_archs() -> &'static str {
     if cfg!(target_os = "linux") {
         if cfg!(target_arch = "aarch64") {
             return "arm64";
@@ -36,9 +36,31 @@ pub async fn stylus_archs() -> impl IntoResponse {
 }
 
 pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
-    // TODO: Implement actual validation logic
-    serde_json::to_string(&request.start_state)
-        .map_err(|e| format!("Failed to serialize state: {e}",))
+    let delayed_inbox = match request.has_delayed_msg {
+        true => vec![jit::SequencerMessage {
+            number: request.delayed_msg_number,
+            data: request.delayed_msg,
+        }],
+        false => vec![],
+    };
+
+    let opts = jit::Opts {
+        validator: jit::ValidatorOpts {
+            binary: Default::default(),
+            cranelift: true, // The default for JIT binary, no need for LLVM right now
+            debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
+            require_success: false, // Relevant for JIT binary only.
+        },
+        input_mode: jit::InputMode::Native(jit::NativeInput {
+            old_state: request.start_state.into(),
+            inbox: request.batch_info.into_iter().map(Into::into).collect(),
+            delayed_inbox,
+            preimages: request.preimages,
+            programs: request.user_wasms[stylus_archs().await].clone(),
+        }),
+    };
+
+
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
@@ -69,6 +91,15 @@ pub struct BatchInfo {
     data: Vec<u8>,
 }
 
+impl From<BatchInfo> for jit::SequencerMessage {
+    fn from(batch: BatchInfo) -> Self {
+        Self {
+            number: batch.number,
+            data: batch.data,
+        }
+    }
+}
+
 /// Counterpart for Go struct `validator.GoGlobalState`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -77,4 +108,15 @@ pub struct GlobalState {
     send_root: Bytes32,
     batch: u64,
     pos_in_batch: u64,
+}
+
+impl From<GlobalState> for jit::GlobalState {
+    fn from(state: GlobalState) -> Self {
+        Self {
+            last_block_hash: state.block_hash,
+            last_send_root: state.send_root,
+            inbox_position: state.batch,
+            position_within_message: state.pos_in_batch,
+        }
+    }
 }

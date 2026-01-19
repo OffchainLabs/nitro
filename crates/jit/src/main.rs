@@ -3,68 +3,61 @@
 
 use arbutil::{color, Color};
 use clap::Parser;
-use eyre::Result;
-use jit::machine;
+use eyre::{eyre, Result};
 use jit::machine::{Escape, WasmEnv};
-use jit::Opts;
+use jit::{machine, run, GlobalState, RunError};
+use jit::{report_error, report_success, Opts};
+use sha2::digest::typenum::op;
+use wasmer::RuntimeError;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    let (instance, env, mut store) = machine::create(&opts)?;
+    let result = run(&opts)?;
 
-    let main = instance.exports.get_function("_start")?;
-    let outcome = main.call(&mut store, &[]);
-    let escape = match outcome {
-        Ok(outcome) => {
-            println!("Go returned values {outcome:?}");
-            None
+    let runtime = format!("{}ms", result.stats.runtime.as_millis());
+
+    if let Some(state) = result.new_state {
+        if opts.validator.debug {
+            println!(
+                "Completed in {runtime} with hash {}.",
+                state.last_block_hash
+            )
         }
-        Err(outcome) => {
-            let trace = outcome.trace();
-            if !trace.is_empty() {
-                println!("backtrace:");
-            }
-            for frame in trace {
-                let module = frame.module_name();
-                let name = frame.function_name().unwrap_or("??");
-                println!("  in {} of {}", name.red(), module.red());
-            }
-            Some(Escape::from(outcome))
+        if let Some(mut socket) = result.socket {
+            report_success(&mut socket, &state, &result.stats.memory_used);
         }
-    };
-
-    let memory_used = instance.exports.get_memory("memory")?.view(&store).size();
-
-    let env = env.as_mut(&mut store);
-    let user = env.process.socket.is_none();
-    let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-    let time = color::when(user, time, color::PINK);
-    let hash = color::when(user, hex::encode(env.large_globals[0]), color::PINK);
-    let (success, message) = match escape {
-        Some(Escape::Exit(0)) => (true, format!("Completed in {time} with hash {hash}.")),
-        Some(Escape::Exit(x)) => (false, format!("Failed in {time} with exit code {x}.")),
-        Some(Escape::Failure(err)) => (false, format!("Jit failed with {err} in {time}.")),
-        Some(Escape::HostIO(err)) => (false, format!("Hostio failed with {err} in {time}.")),
-        Some(Escape::Child(err)) => (false, format!("Child failed with {err} in {time}.")),
-        Some(Escape::SocketError(err)) => (false, format!("Socket failed with {err} in {time}.")),
-        None => (false, "Machine exited prematurely".to_owned()),
-    };
-
-    if opts.validator.debug || !success {
-        println!("{message}");
-    }
-
-    let error = match success {
-        true => None,
-        false => Some(message),
-    };
-
-    env.send_results(error, memory_used);
-
-    if !success && opts.validator.require_success {
-        std::process::exit(1);
+    } else if let Some(error) = result.error {
+        print_trace(&error);
+        let message = match Escape::from(error) {
+            Escape::Exit(x) => format!("Failed in {runtime} with exit code {x}."),
+            Escape::Failure(err) => format!("Jit failed with {err} in {runtime}."),
+            Escape::HostIO(err) => format!("Hostio failed with {err} in {runtime}."),
+            Escape::Child(err) => format!("Child failed with {err} in {runtime}."),
+            Escape::SocketError(err) => format!("Socket failed with {err} in {runtime}."),
+        };
+        if opts.validator.debug {
+            println!("{message}")
+        }
+        if let Some(mut socket) = result.socket {
+            report_error(&mut socket, message);
+        }
+        if opts.validator.require_success {
+            std::process::exit(1);
+        }
     }
     Ok(())
+}
+
+fn print_trace(error: &RuntimeError) {
+    let trace = error.trace();
+    if !trace.is_empty() {
+        println!("backtrace:");
+    }
+    for frame in trace {
+        let module = frame.module_name();
+        let name = frame.function_name().unwrap_or("??");
+        println!("  in {} of {}", name.red(), module.red());
+    }
 }
 
 // require an usize be at least 32 bits wide

@@ -317,39 +317,6 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
     Ok(env)
 }
 
-impl WasmEnv {
-    pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
-        let writer = match &mut self.process.socket {
-            Some((writer, _)) => writer,
-            None => return,
-        };
-
-        macro_rules! check {
-            ($expr:expr) => {{
-                if let Err(comms_error) = $expr {
-                    eprintln!("Failed to send results to Go: {comms_error}");
-                    panic!("Communication failure");
-                }
-            }};
-        }
-
-        if let Some(error) = error {
-            check!(socket::write_u8(writer, socket::FAILURE));
-            check!(socket::write_bytes(writer, &error.into_bytes()));
-            check!(writer.flush());
-            return;
-        }
-
-        check!(socket::write_u8(writer, socket::SUCCESS));
-        check!(socket::write_u64(writer, self.small_globals[0]));
-        check!(socket::write_u64(writer, self.small_globals[1]));
-        check!(socket::write_bytes32(writer, &self.large_globals[0]));
-        check!(socket::write_bytes32(writer, &self.large_globals[1]));
-        check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
-        check!(writer.flush());
-    }
-}
-
 pub struct ProcessEnv {
     /// Whether the validation input is already available or do we have to fork and read it
     pub already_has_input: bool,
