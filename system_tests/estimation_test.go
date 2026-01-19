@@ -7,6 +7,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -25,14 +25,35 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestDeploy(t *testing.T) {
+// waitForReplicaBlock waits for replica to reach a specific block number
+func waitForReplicaBlock(ctx context.Context, t *testing.T, replicaClient *TestClient, targetBlock uint64, timeoutSecs int) {
+	t.Helper()
+	for i := 0; i < timeoutSecs; i++ {
+		replicaBlock, err := replicaClient.Client.BlockNumber(ctx)
+		Require(t, err)
+		if replicaBlock >= targetBlock {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	replicaBlock, _ := replicaClient.Client.BlockNumber(ctx)
+	Fatal(t, "Replica failed to sync: target block", targetBlock, "replica at block", replicaBlock)
+}
+
+func testDeploy(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Run test on primary
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
@@ -49,16 +70,39 @@ func TestDeploy(t *testing.T) {
 	if counter != 1 {
 		Fatal(t, "Unexpected counter value", counter)
 	}
+
+	// Wait for replica to catch up
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
 }
 
-func TestEstimate(t *testing.T) {
+func TestDeployInternal(t *testing.T) {
+	testDeploy(t, ExecutionClientModeInternal)
+}
+
+func TestDeployExternal(t *testing.T) {
+	testDeploy(t, ExecutionClientModeExternal)
+}
+
+func TestDeployComparison(t *testing.T) {
+	testDeploy(t, ExecutionClientModeComparison)
+}
+
+func testEstimate(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Run test on primary
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
@@ -130,16 +174,39 @@ func TestEstimate(t *testing.T) {
 	if counter != 1 {
 		Fatal(t, "Unexpected counter value", counter)
 	}
+
+	// Wait for replica to catch up
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
 }
 
-func TestDifficultyForLatestArbOS(t *testing.T) {
+func TestEstimateInternal(t *testing.T) {
+	testEstimate(t, ExecutionClientModeInternal)
+}
+
+func TestEstimateExternal(t *testing.T) {
+	testEstimate(t, ExecutionClientModeExternal)
+}
+
+func TestEstimateComparison(t *testing.T) {
+	testEstimate(t, ExecutionClientModeComparison)
+}
+
+func testDifficultyForLatestArbOS(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Run test on primary
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
@@ -155,17 +222,40 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	if !arbmath.BigEquals(difficulty, common.Big1) {
 		Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
 	}
+
+	// Wait for replica to catch up
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
 }
 
-func TestDifficultyForArbOSTen(t *testing.T) {
+func TestDifficultyForLatestArbOSInternal(t *testing.T) {
+	testDifficultyForLatestArbOS(t, ExecutionClientModeInternal)
+}
+
+func TestDifficultyForLatestArbOSExternal(t *testing.T) {
+	testDifficultyForLatestArbOS(t, ExecutionClientModeExternal)
+}
+
+func TestDifficultyForLatestArbOSComparison(t *testing.T) {
+	testDifficultyForLatestArbOS(t, ExecutionClientModeComparison)
+}
+
+func testDifficultyForArbOSTen(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_10
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Run test on primary
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
@@ -181,33 +271,85 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	if !arbmath.BigEquals(difficulty, common.Big1) {
 		Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
 	}
+
+	// Wait for replica to catch up
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
 }
 
-func TestBlobBasefeeReverts(t *testing.T) {
+func TestDifficultyForArbOSTenInternal(t *testing.T) {
+	testDifficultyForArbOSTen(t, ExecutionClientModeInternal)
+}
+
+func TestDifficultyForArbOSTenExternal(t *testing.T) {
+	testDifficultyForArbOSTen(t, ExecutionClientModeExternal)
+}
+
+func TestDifficultyForArbOSTenComparison(t *testing.T) {
+	testDifficultyForArbOSTen(t, ExecutionClientModeComparison)
+}
+
+func testBlobBasefeeReverts(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode - but don't need to sync for this test
+	_, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Run test on primary - this is a read-only test
 	_, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
 		Data: []byte{byte(vm.BLOBBASEFEE)},
 	}, nil)
 	if err == nil {
 		t.Error("Expected BLOBBASEFEE to revert")
 	}
+
+	// No need to sync - no transactions were sent
 }
 
-func TestComponentEstimate(t *testing.T) {
+func TestBlobBasefeeRevertsInternal(t *testing.T) {
+	testBlobBasefeeReverts(t, ExecutionClientModeInternal)
+}
+
+func TestBlobBasefeeRevertsExternal(t *testing.T) {
+	testBlobBasefeeReverts(t, ExecutionClientModeExternal)
+}
+
+func TestBlobBasefeeRevertsComparison(t *testing.T) {
+	testBlobBasefeeReverts(t, ExecutionClientModeComparison)
+}
+
+func testComponentEstimate(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Primary always built with L1 (for replica sync)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	l1BaseFee := new(big.Int).Set(arbostypes.DefaultInitialL1BaseFee)
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Wait for initialization to stabilize
+	time.Sleep(time.Second * 2)
+
+	// Run test on primary
+	// Query actual L1 base fee from the chain instead of using constant
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
+	Require(t, err, "could not connect to ArbGasInfo")
+
+	l1BaseFee, err := arbGasInfo.GetL1BaseFeeEstimate(&bind.CallOpts{})
+	Require(t, err, "could not get L1 base fee estimate")
+
 	l2BaseFee := builder.L2.GetBaseFee(t)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
@@ -290,15 +432,34 @@ func TestComponentEstimate(t *testing.T) {
 	if float64(l2Estimate-l2Used) > float64(gasEstimateForL1+l2Used)*gasestimator.EstimateGasErrorRatio {
 		Fatal(t, l2Estimate, l2Used)
 	}
+
+	// Wait for replica to catch up
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
 }
 
-func TestDisableL1Charging(t *testing.T) {
+func TestComponentEstimateInternal(t *testing.T) {
+	testComponentEstimate(t, ExecutionClientModeInternal)
+}
+
+func TestComponentEstimateExternal(t *testing.T) {
+	testComponentEstimate(t, ExecutionClientModeExternal)
+}
+
+func TestComponentEstimateComparison(t *testing.T) {
+	testComponentEstimate(t, ExecutionClientModeComparison)
+}
+
+func testDisableL1Charging(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// For this test, we don't need replica sync as it's all read-only operations
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithExecutionClientMode(executionClientMode)
 	cleanup := builder.Build(t)
 	defer cleanup()
+
 	addr := common.HexToAddress("0x12345678")
 
 	gasWithL1Charging, err := builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
@@ -326,19 +487,45 @@ func TestDisableL1Charging(t *testing.T) {
 	Require(t, err)
 }
 
-func TestGasEstimationWithRPCGasLimit(t *testing.T) {
+func TestDisableL1ChargingInternal(t *testing.T) {
+	testDisableL1Charging(t, ExecutionClientModeInternal)
+}
+
+func TestDisableL1ChargingExternal(t *testing.T) {
+	testDisableL1Charging(t, ExecutionClientModeExternal)
+}
+
+func TestDisableL1ChargingComparison(t *testing.T) {
+	testDisableL1Charging(t, ExecutionClientModeComparison)
+}
+
+func testGasEstimationWithRPCGasLimit(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Primary always built with L1 (for replica sync)
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment()
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Build replica with specified execution mode
+	replica, replicaCleanup := BuildReplicaWithExecutionMode(t, builder, executionClientMode)
+	defer replicaCleanup()
+
+	// Wait for initial sync
+	time.Sleep(time.Second * 2)
+
+	addr := common.HexToAddress("0x12345678")
+
+	// Test with RPCGasCap set to TxGas
 	execConfigA := builder.execConfig
 	execConfigA.RPC.RPCGasCap = params.TxGas
-	testClientA, cleanupA := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigA})
+	testClientA, cleanupA := builder.Build2ndNode(t, &SecondNodeParams{
+		execConfig:          execConfigA,
+		executionClientMode: executionClientMode,
+	})
 	defer cleanupA()
-	addr := common.HexToAddress("0x12345678")
+
 	estimateGas, err := testClientA.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
 	Require(t, err)
 	if estimateGas <= params.TxGas {
@@ -348,12 +535,34 @@ func TestGasEstimationWithRPCGasLimit(t *testing.T) {
 	_, err = testClientA.Client.CallContract(ctx, ethereum.CallMsg{To: &addr}, nil)
 	Require(t, err)
 
+	// Test with RPCGasCap set to TxGas - 1 (should fail)
 	execConfigB := builder.execConfig
 	execConfigB.RPC.RPCGasCap = params.TxGas - 1
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigB})
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		execConfig:          execConfigB,
+		executionClientMode: executionClientMode,
+	})
 	defer cleanupB()
+
 	_, err = testClientB.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
 	if err == nil {
 		Fatal(t, "EstimateGas passed with insufficient gas")
 	}
+
+	// Wait for replica to catch up to current block
+	block, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	waitForReplicaBlock(ctx, t, replica, block, 60)
+}
+
+func TestGasEstimationWithRPCGasLimitInternal(t *testing.T) {
+	testGasEstimationWithRPCGasLimit(t, ExecutionClientModeInternal)
+}
+
+func TestGasEstimationWithRPCGasLimitExternal(t *testing.T) {
+	testGasEstimationWithRPCGasLimit(t, ExecutionClientModeExternal)
+}
+
+func TestGasEstimationWithRPCGasLimitComparison(t *testing.T) {
+	testGasEstimationWithRPCGasLimit(t, ExecutionClientModeComparison)
 }
