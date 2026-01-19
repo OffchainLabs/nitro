@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts

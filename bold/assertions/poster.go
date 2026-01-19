@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package assertions
 
@@ -18,10 +17,10 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/log/ephemeral"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util"
 )
 
 var (
@@ -36,8 +35,8 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		return
 	}
 
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	log.Info("Ready to post")
 	ticker := time.NewTicker(m.times.postInterval)

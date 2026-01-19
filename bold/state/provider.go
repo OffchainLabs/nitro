@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package state defines a dependency which provides L2 states and
 // proofs needed for the challenge manager to interact with an Arbitrum chain's

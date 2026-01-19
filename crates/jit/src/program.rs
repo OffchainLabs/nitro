@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 #![allow(clippy::too_many_arguments)]
@@ -175,6 +175,33 @@ pub fn launch_program_thread(
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
     let (_, exec) = env.jit_env();
     start_program_with_wasm_env(exec, module)
+}
+
+/// program_requires_prepare
+pub fn program_requires_prepare(
+    mut _env: WasmEnvMut,
+    _module_hash_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    Ok(0)
+}
+
+/// program_prepare
+pub fn program_prepare(
+    mut _env: WasmEnvMut,
+    _state_ptr: GuestPtr,
+    _module_hash_ptr: GuestPtr,
+    _address_for_logging_ptr: GuestPtr,
+    _code_ptr: GuestPtr,
+    _code_size: u64,
+    _code_hash_ptr: GuestPtr,
+    _max_wasm_size: u32,
+    _page_limit: u32,
+    _time: u64,
+    _debug_mode: u32,
+    _program_ptr: GuestPtr,
+    _run_ctx_ptr: GuestPtr,
+) -> MaybeEscape {
+    Ok(())
 }
 
 pub fn start_program_with_wasm_env(exec: &mut WasmEnv, module: u32) -> Result<u32, Escape> {
