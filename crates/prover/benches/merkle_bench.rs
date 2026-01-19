@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::Bytes32;
 use criterion::{criterion_group, criterion_main, Criterion};
 use prover::merkle::{Merkle, MerkleType};
