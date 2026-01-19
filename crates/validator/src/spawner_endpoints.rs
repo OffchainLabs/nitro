@@ -16,35 +16,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub async fn capacity() -> impl IntoResponse {
-    "1" // TODO: Figure out max number of workers (optionally, make it configurable)
-}
-
-pub async fn name() -> impl IntoResponse {
-    "Rust JIT validator"
-}
-
-pub async fn stylus_archs() -> impl IntoResponse {
-    if cfg!(target_os = "linux") {
-        if cfg!(target_arch = "aarch64") {
-            return "arm64";
-        } else if cfg!(target_arch = "x86_64") {
-            return "amd64";
-        }
-    }
-    "host"
-}
-
-pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
-    // TODO: Implement actual validation logic
-    serde_json::to_string(&request.start_state)
-        .map_err(|e| format!("Failed to serialize state: {e}",))
-}
-
-pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("[{:?}]", state.module_root)
-}
-
 /// Counterpart for Go struct `validator.ValidationInput`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -77,4 +48,60 @@ pub struct GlobalState {
     send_root: Bytes32,
     batch: u64,
     pos_in_batch: u64,
+}
+
+#[derive(Serialize)]
+struct CapacityResponse {
+    capacity: usize,
+}
+
+#[derive(Serialize)]
+struct StylusArchResponse<'a> {
+    stylus_arch: &'a str,
+}
+
+#[derive(Serialize)]
+struct ModuleRootResponse {
+    module_root: String,
+}
+
+pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let response = CapacityResponse {
+        capacity: state.available_workers,
+    };
+
+    Json(response)
+}
+
+pub async fn name() -> impl IntoResponse {
+    "Rust JIT validator"
+}
+
+pub async fn stylus_archs() -> impl IntoResponse {
+    let mut response = StylusArchResponse {
+        stylus_arch: "host",
+    };
+
+    if cfg!(target_os = "linux") {
+        if cfg!(target_arch = "aarch64") {
+            response.stylus_arch = "arm64";
+        } else if cfg!(target_arch = "x86_64") {
+            response.stylus_arch = "amd64";
+        }
+    }
+    Json(response)
+}
+
+pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
+    // TODO: Implement actual validation logic
+    serde_json::to_string(&request.start_state)
+        .map_err(|e| format!("Failed to serialize state: {e}",))
+}
+
+pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let response = ModuleRootResponse {
+        module_root: state.module_root.to_string(),
+    };
+
+    Json(response)
 }
