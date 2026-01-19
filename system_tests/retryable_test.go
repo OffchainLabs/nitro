@@ -262,8 +262,6 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
-
-	// AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {

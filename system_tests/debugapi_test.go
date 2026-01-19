@@ -455,6 +455,8 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithPrestateTracerChecks = true
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -499,8 +501,6 @@ func TestPrestateTracerRegistersArbitrumStorage(t *testing.T) {
 	if found != 2 {
 		t.Fatal("ArbosStateAddress storage accesses for ArbOSVersion and BrotliCompressionLevel not logged in the prestateTracer's trace")
 	}
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 type accountDump struct {

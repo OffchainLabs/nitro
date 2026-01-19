@@ -112,6 +112,7 @@ func TestProgramEvmData(t *testing.T) {
 
 func testEvmData(t *testing.T, jit bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder.WithPrestateTracerChecks = true
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -209,6 +210,4 @@ func testEvmData(t *testing.T, jit bool) {
 	colors.PrintGrey("trace: ", string(trace))
 
 	validateBlocks(t, 1, jit, builder)
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }

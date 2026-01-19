@@ -28,6 +28,7 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithPrestateTracerChecks = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -82,8 +83,6 @@ func TestScheduleArbosUpgrade(t *testing.T) {
 	if scheduled.ArbosVersion != testVersion || scheduled.ScheduledForTimestamp != testTimestamp {
 		t.Errorf("expected upgrade to be scheduled for version %v timestamp %v, got version %v timestamp %v", testVersion, testTimestamp, scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
 	}
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func checkArbOSVersion(t *testing.T, testClient *TestClient, expectedVersion uint64, scenario string) {
@@ -107,6 +106,7 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
 		WithArbOSVersion(initialVersion)
+	builder.WithPrestateTracerChecks = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 	seqTestClient := builder.L2
@@ -197,8 +197,6 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 	if blockSeq.Hash() != blockReplica.Hash() {
 		t.Errorf("expected sequencer and replica to have same block hash, got %v and %v", blockSeq.Hash(), blockReplica.Hash())
 	}
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }
 
 func TestArbNativeTokenManagerInArbos32To41Upgrade(t *testing.T) {

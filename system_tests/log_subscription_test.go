@@ -21,6 +21,8 @@ func TestLogSubscription(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithPrestateTracerChecks = true
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -56,6 +58,4 @@ func TestLogSubscription(t *testing.T) {
 	}
 	_, err = builder.L2.Client.BlockByHash(ctx, subscriptionLog.BlockHash)
 	Require(t, err)
-
-	AutomatedPrestateTracerTest(t, builder.L2)
 }
