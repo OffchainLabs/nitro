@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package history defines the primitive HistoryCommitment type in the BoLD
 // protocol.

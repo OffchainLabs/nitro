@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package proofenhancement
 
 import (
@@ -521,7 +523,7 @@ func TestProofEnhancerErrorCases(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error when batch not found")
 		}
-		if !strings.Contains(err.Error(), "Couldn't find batch") {
+		if !strings.Contains(err.Error(), "couldn't find batch") {
 			t.Errorf("Wrong error message: %v", err)
 		}
 	})
