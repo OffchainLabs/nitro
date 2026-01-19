@@ -25,13 +25,8 @@ use wasmer::{
 };
 use wasmer_compiler_cranelift::Cranelift;
 
-pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
-    let file = &opts.validator.binary;
-
-    let wasm = match std::fs::read(file) {
-        Ok(wasm) => wasm,
-        Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
-    };
+pub fn create(opts: &Opts, env: WasmEnv) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
+    let wasm = std::fs::read(&opts.validator.binary)?;
 
     let mut store = match opts.validator.cranelift {
         true => {
@@ -54,11 +49,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         }
     };
 
-    let module = match Module::new(&store, wasm) {
-        Ok(module) => module,
-        Err(err) => panic!("{}", err),
-    };
-
+    let module = Module::new(&store, wasm)?;
     let func_env = FunctionEnv::new(&mut store, env);
     macro_rules! func {
         ($func:expr) => {
@@ -139,18 +130,10 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         },
     };
 
-    let instance = match Instance::new(&mut store, &module, &imports) {
-        Ok(instance) => instance,
-        Err(err) => panic!("Failed to create instance: {}", err.red()),
-    };
-    let memory = match instance.exports.get_memory("memory") {
-        Ok(memory) => memory.clone(),
-        Err(err) => panic!("Failed to get memory: {}", err.red()),
-    };
-
-    let env = func_env.as_mut(&mut store);
-    env.memory = Some(memory);
-    (instance, func_env, store)
+    let instance = Instance::new(&mut store, &module, &imports)?;
+    let memory = instance.exports.get_memory("memory")?.clone();
+    func_env.as_mut(&mut store).memory = Some(memory);
+    Ok((instance, func_env, store))
 }
 
 #[derive(Error, Debug)]

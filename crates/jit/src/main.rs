@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     let opts = Opts::parse();
     let env = WasmEnv::try_from(&opts)?;
 
-    let (instance, env, mut store) = machine::create(&opts, env);
+    let (instance, env, mut store) = machine::create(&opts, env)?;
 
     let main = instance.exports.get_function("_start")?;
     let outcome = main.call(&mut store, &[]);
