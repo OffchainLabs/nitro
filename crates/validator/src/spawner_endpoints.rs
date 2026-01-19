@@ -35,7 +35,7 @@ pub async fn stylus_archs() -> &'static str {
     "host"
 }
 
-pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
+pub async fn validate(Json(request): Json<ValidationRequest>) -> Result<Json<GlobalState>, String> {
     let delayed_inbox = match request.has_delayed_msg {
         true => vec![jit::SequencerMessage {
             number: request.delayed_msg_number,
@@ -60,7 +60,12 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoRespon
         }),
     };
 
-
+    let result = jit::run(&opts).map_err(|error| format!("{error}"))?;
+    match (result.new_state, result.error) {
+        (Some(state), None) => Ok(Json(GlobalState::from(state))),
+        (None, Some(error)) => Err(format!("{error}")),
+        _ => unreachable!("Either new_state or error must be set"),
+    }
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
@@ -117,6 +122,17 @@ impl From<GlobalState> for jit::GlobalState {
             last_send_root: state.send_root,
             inbox_position: state.batch,
             position_within_message: state.pos_in_batch,
+        }
+    }
+}
+
+impl From<jit::GlobalState> for GlobalState {
+    fn from(state: jit::GlobalState) -> Self {
+        Self {
+            block_hash: state.last_block_hash,
+            send_root: state.last_send_root,
+            batch: state.inbox_position,
+            pos_in_batch: state.position_within_message,
         }
     }
 }
