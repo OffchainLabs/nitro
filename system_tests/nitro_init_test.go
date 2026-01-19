@@ -45,7 +45,7 @@ func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Node.ParentChainReader.Enable = false
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, nil, chaininfo.RollupAddresses{}, builder.chainConfig)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, nil, &chaininfo.RollupAddresses{}, builder.chainConfig)
 	Require(t, err)
 
 	reflect.DeepEqual(initMessage, builder.initMessage)
@@ -61,7 +61,7 @@ func TestGetConsensusParsedInitMsg(t *testing.T) {
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Node.ParentChainReader.Enable = true
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, builder.L1.Client, *builder.addresses, builder.chainConfig)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
 	Require(t, err)
 
 	reflect.DeepEqual(initMessage, builder.initMessage)

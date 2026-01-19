@@ -47,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -634,7 +635,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return executionDB, nil, nil, err
 		}
 
-		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, rollupAddrs, chainConfig)
+		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
@@ -643,10 +644,6 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
-	}
-
-	if chainConfig == nil {
-		return executionDB, nil, nil, fmt.Errorf("chainConfig should not have been nil")
 	}
 
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
@@ -973,19 +970,18 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 				return executionDB, wasmDB, l2BlockChain, chainConfig, nil
 			}
 			readOnlyDb.Close()
-			return nil, nil, nil, nil, fmt.Errorf("failed to read stored chain config")
 		} else if !dbutil.IsNotExistError(err) {
 			// we only want to continue if the database does not exist
 			return nil, nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
 		} else {
-			log.Warn("failed to open l2chaindata", "err", err)
+			log.Debug("failed to open l2chaindata", "err", err)
 		}
 	}
 
 	return nil, nil, nil, nil, nil
 }
 
-func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
 	var parsedInitMessage *arbostypes.ParsedInitMessage
 	if parentChainReaderEnabled {
 		delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
@@ -1037,7 +1033,7 @@ func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled boo
 	return parsedInitMessage, nil
 }
 
-func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block) (*protocol.AssertionCreatedInfo, [32]byte, error) {
+func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisMsgResult *execution.MessageResult) (*protocol.AssertionCreatedInfo, [32]byte, error) {
 	var assertionHash [32]byte
 
 	if l1Client == nil {
@@ -1057,22 +1053,7 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 		return nil, assertionHash, nil
 	}
 
-	genesisGlobalState := protocol.GoGlobalState{
-		BlockHash:  genesis.Hash(),
-		SendRoot:   types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot,
-		Batch:      1,
-		PosInBatch: 0,
-	}
-	genesisAssertionState := rollupgen.AssertionState{
-		GlobalState: rollupgen.GlobalState{
-			Bytes32Vals: genesisGlobalState.AsSolidityStruct().Bytes32Vals,
-			U64Vals:     genesisGlobalState.AsSolidityStruct().U64Vals,
-		},
-		MachineStatus:  1,
-		EndHistoryRoot: [32]byte{},
-	}
-
-	assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
+	assertionHash, err = userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
 	if err != nil {
 		return nil, assertionHash, err
 	}
@@ -1080,7 +1061,23 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
 
 	if err != nil {
-		assertionHash, err = userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
+		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
+		genesisGlobalState := protocol.GoGlobalState{
+			BlockHash:  genesisMsgResult.BlockHash,
+			SendRoot:   genesisMsgResult.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+		genesisAssertionState := rollupgen.AssertionState{
+			GlobalState: rollupgen.GlobalState{
+				Bytes32Vals: genesisGlobalState.AsSolidityStruct().Bytes32Vals,
+				U64Vals:     genesisGlobalState.AsSolidityStruct().U64Vals,
+			},
+			MachineStatus:  1,
+			EndHistoryRoot: [32]byte{},
+		}
+
+		assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
 		if err != nil {
 			return nil, assertionHash, err
 		}
@@ -1092,8 +1089,13 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 }
 
 func GetAndValidateGenesisAssertion(ctx context.Context, config *config.NodeConfig, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
+	genesisBlock := l2BlockChain.Genesis()
+	genesisMsgResult := execution.MessageResult{
+		BlockHash: genesisBlock.Hash(),
+		SendRoot:  types.DeserializeHeaderExtraInformation(genesisBlock.Header()).SendRoot,
+	}
 	if config.Init.ValidateGenesisAssertion {
-		genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, l2BlockChain.Genesis())
+		genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, &genesisMsgResult)
 		if err != nil {
 			return err
 		}
@@ -1103,7 +1105,7 @@ func GetAndValidateGenesisAssertion(ctx context.Context, config *config.NodeConf
 			return err
 		}
 
-		if err := validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, l2BlockChain.Genesis(), accountsReader.More()); err != nil {
+		if err := validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, &genesisMsgResult, accountsReader.More()); err != nil {
 			if !config.Init.Force {
 				return fmt.Errorf("error testing genesis assertion: %w", err)
 			}
@@ -1114,17 +1116,17 @@ func GetAndValidateGenesisAssertion(ctx context.Context, config *config.NodeConf
 	return nil
 }
 
-func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesis *types.Block, initDataReaderHasAccounts bool) error {
+func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesisMsgResult *execution.MessageResult, initDataReaderHasAccounts bool) error {
 	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
 	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
 	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
 	if isNullAssertion && initDataReaderHasAccounts {
 		return errors.New("genesis assertion is null but there are accounts in the init data")
 	}
-	if !isNullAssertion && afterGlobalState.BlockHash != genesis.Hash() {
+	if !isNullAssertion && afterGlobalState.BlockHash != genesisMsgResult.BlockHash {
 		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
 	}
-	log.Info("Genesis assertion validated", "genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesis.Hash(), "genesisSendRoot", types.DeserializeHeaderExtraInformation(genesis.Header()).SendRoot)
+	log.Info("Genesis assertion validated", "genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesisMsgResult.BlockHash, "genesisSendRoot", genesisMsgResult.SendRoot)
 	return nil
 }
 
