@@ -1399,7 +1399,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	return currentNode, nil
 }
 
-func CreateConsensusNodeConnectedWithFullExecutionClient(
+func CreateConsensusNode(
 	ctx context.Context,
 	stack *node.Node,
 	fullExecutionClient execution.FullExecutionClient,
@@ -1416,17 +1416,18 @@ func CreateConsensusNodeConnectedWithFullExecutionClient(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	if fullExecutionClient == nil {
-		return nil, errors.New("full execution client must be non-nil")
-	}
 	var executionClient execution.ExecutionClient
+	var executionRecorder execution.ExecutionRecorder
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		executionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
+		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
+		executionClient = rpcClient
+		executionRecorder = rpcClient
 	} else {
 		executionClient = fullExecutionClient
+		executionRecorder = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, executionRecorder, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
