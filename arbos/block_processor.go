@@ -167,7 +167,7 @@ var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 // DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
 // for delayed message processing. When a delayed message touches a filtered address,
 // it returns ErrDelayedTxFiltered which propagates up to halt the delayed sequencer.
-// Respects the bypass flag set when a tx hash is in the on-chain filter.
+// Respects IsTxOnchainFiltered flag set when a tx hash is in the onchain filter.
 type DelayedFilteringSequencingHooks struct {
 	NoopSequencingHooks
 	FilteredTxHash common.Hash
@@ -178,7 +178,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions) *DelayedFilteri
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Returns ErrDelayedTxFiltered if any address is filtered (unless bypass flag is set).
+// Returns ErrDelayedTxFiltered if any address is filtered (unless tx is onchain filtered).
 // This error propagates up to halt the delayed sequencer.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	db.TouchAddress(sender)
@@ -186,7 +186,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		db.TouchAddress(*tx.To())
 	}
 
-	if db.IsAddressFiltered() && !db.IsTxFilterBypassed() {
+	if db.IsAddressFiltered() && !db.IsTxOnchainFiltered() {
 		f.FilteredTxHash = tx.Hash()
 		return ErrDelayedTxFiltered
 	}
@@ -394,17 +394,17 @@ func ProduceBlockAdvanced(
 			snap := statedb.Snapshot()
 			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
-			// Check on-chain tx hash filter - if tx hash is in filter, set bypass flag
+			// Check onchain tx hash filter - if tx hash is in filter, mark tx as onchain filtered.
 			// This allows consensus-safe filtering: sequencer halts on filtered tx,
-			// out-of-band the tx hash is added to on-chain filter, then tx proceeds with bypass
+			// out-of-band the tx hash is added to onchain filter, then tx proceeds as onchain filtered.
 			filteredState := filteredTransactions.Open(statedb, arbState.Burner)
 			isFiltered, err := filteredState.IsFiltered(tx.Hash())
 			if err != nil {
 				return nil, nil, err
 			}
 			if isFiltered {
-				statedb.SetTxFilterBypassed(true)
-				// TODO: execute the tx differently when bypassed (e.g., replace with no-op or burn)
+				statedb.SetTxOnchainFiltered(true)
+				// TODO: execute the tx differently when onchain filtered (e.g., replace with no-op or burn)
 			}
 
 			gasPool := gethGas

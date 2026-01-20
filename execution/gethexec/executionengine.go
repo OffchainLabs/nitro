@@ -72,7 +72,7 @@ var ResultNotFound = errors.New("result not found")
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains a transaction
 // that touches a filtered address. The sequencer should halt and wait for the tx hash
-// to be added to the on-chain filter before retrying.
+// to be added to the onchain filter before retrying.
 type ErrFilteredDelayedMessage struct {
 	TxHash        common.Hash
 	DelayedMsgIdx uint64

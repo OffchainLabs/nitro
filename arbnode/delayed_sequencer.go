@@ -29,7 +29,7 @@ var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
 	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
 // FilteredTxWaitState tracks a halt while waiting for a filtered transaction
-// to be added to the on-chain filter
+// to be added to the onchain filter
 type FilteredTxWaitState struct {
 	TxHash        common.Hash
 	DelayedMsgIdx uint64
@@ -126,7 +126,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		return nil
 	}
 
-	// Periodic logging if halted waiting for filtered tx to be added to on-chain filter
+	// Periodic logging if halted waiting for filtered tx to be added to onchain filter
 	if d.waitingForFilteredTx != nil {
 		now := time.Now()
 		waitDuration := now.Sub(d.waitingForFilteredTx.FirstSeen)
@@ -136,7 +136,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			if waitDuration > 1*time.Hour {
 				logLevel = log.Error
 			}
-			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hash to be added to on-chain filter",
+			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hash to be added to onchain filter",
 				"txHash", d.waitingForFilteredTx.TxHash,
 				"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
 				"waitingSince", d.waitingForFilteredTx.FirstSeen)
