@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 var _ preimageResolver = (*mockPreimageResolver)(nil)
@@ -72,7 +73,9 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
 	require.NoError(t, melDB.SaveState(ctx, state))
 
-	recordingDB := melrecording.NewDelayedMsgDatabase(db)
+	preimages := make(daprovider.PreimagesMap)
+	recordingDB, err := melrecording.NewDelayedMsgDatabase(db, preimages)
+	require.NoError(t, err)
 	for i := startBlockNum; i < numMsgs; i++ {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 		state.DelayedMessagesSeen++
@@ -90,7 +93,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	// Test reading in wasm mode
 	delayedDB := &delayedMessageDatabase{
 		&testPreimageResolver{
-			preimages: recordingDB.Preimages(),
+			preimages: preimages[arbutil.Keccak256PreimageType],
 		},
 	}
 	for i := startBlockNum; i < numMsgsToRead; i++ {
