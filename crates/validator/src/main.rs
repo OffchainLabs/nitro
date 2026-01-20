@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use arbutil::Bytes32;
+use config::ServerConfig;
 use logging::init_logging;
 use router::create_router;
 use std::sync::Arc;
@@ -21,10 +22,10 @@ pub struct ServerState {
 }
 
 fn main() -> Result<()> {
-    let config = config::ServerConfig::load()?;
-    init_logging(config.logging_format)?;
+    let server_config = ServerConfig::load()?;
+    init_logging(server_config.logging_format)?;
 
-    let workers = config.get_workers();
+    let workers = server_config.get_workers();
 
     let runtime = Builder::new_multi_thread()
         .worker_threads(workers)
@@ -32,20 +33,23 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
 
-    runtime.block_on(async_main(config))?;
+    runtime.block_on(async_main(server_config))?;
 
     Ok(())
 }
 
-async fn async_main(config: config::ServerConfig) -> Result<()> {
-    info!("Starting validator server with config: {:#?}", config);
+async fn async_main(server_config: ServerConfig) -> Result<()> {
+    info!(
+        "Starting validator server with config: {:#?}",
+        server_config
+    );
 
     let state = Arc::new(ServerState {
-        module_root: config.get_module_root()?,
-        available_workers: config.get_workers(),
+        module_root: server_config.get_module_root()?,
+        available_workers: server_config.get_workers(),
     });
 
-    let listener = TcpListener::bind(config.address).await?;
+    let listener = TcpListener::bind(server_config.address).await?;
     axum::serve(listener, create_router().with_state(state))
         .await
         .map_err(Into::into)

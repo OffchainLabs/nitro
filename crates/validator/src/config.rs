@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::warn;
 
-pub(crate) const DEFAULT_NUM_WORKERS: usize = 4;
+const DEFAULT_NUM_WORKERS: usize = 4;
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
@@ -47,7 +47,7 @@ impl ServerConfig {
             let workers = match std::thread::available_parallelism() {
                 Ok(count) => count.get(),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    warn!("Warning: Could not determine available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
                     DEFAULT_NUM_WORKERS
                 }
                 Err(e) => return Err(e.into()),
@@ -196,5 +196,27 @@ mod tests {
             .is_err(),
             "negative num of workers should fail"
         );
+
+        assert!(
+            ServerConfig::load_from([
+                "server",
+                "--module-root",
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "--workers",
+                "abc"
+            ])
+            .is_err(),
+            "non numeric value for workers should fail"
+        );
+
+        let server_config = ServerConfig::load_from([
+            "server",
+            "--module-root",
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+        ])
+        .unwrap();
+
+        assert!(server_config.workers.is_some());
+        assert!(server_config.workers.unwrap() > 0);
     }
 }
