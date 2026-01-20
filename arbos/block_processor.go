@@ -449,7 +449,7 @@ func ProduceBlockAdvanced(
 
 		if err != nil {
 			// ErrDelayedTxFiltered must propagate up for delayed message filtering to halt.
-			// There is one block created per delayed message so this doesn't affert messages
+			// There is one block created per delayed message so this doesn't affect messages
 			// prior to the filtered one.
 			if errors.Is(err, ErrDelayedTxFiltered) {
 				return nil, nil, err
