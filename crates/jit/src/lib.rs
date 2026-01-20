@@ -149,7 +149,12 @@ pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
         }
         Err(err) => {
             result.trace = err.trace().to_vec();
-            result.error = Some(Escape::from(err));
+            match Escape::from(err) {
+                Escape::Exit(0) => {}
+                escape => {
+                    result.error = Some(escape);
+                }
+            }
         }
     }
 
