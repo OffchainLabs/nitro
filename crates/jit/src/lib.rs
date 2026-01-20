@@ -6,12 +6,11 @@ use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
 use eyre::Report;
 use std::collections::HashMap;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::result;
 use std::time::Duration;
-use wasmer::{ExportError, Pages, RuntimeError};
+use wasmer::{ExportError, FrameInfo, Pages, RuntimeError};
 
 mod arbcompress;
 mod caller_env;
@@ -108,24 +107,15 @@ pub struct NativeInput {
     pub programs: HashMap<Bytes32, Vec<u8>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct RunStats {
+pub struct RunResult {
     pub memory_used: Pages,
     pub runtime: Duration,
-}
 
-#[derive(Debug)]
-pub enum RunError {
-    Preparation(Report),
-    ModuleInterface(ExportError),
-    Execution(RuntimeError, RunStats),
-}
+    pub new_state: GlobalState,
 
-pub struct RunResult {
+    pub error: Option<Escape>,
+    pub trace: Vec<FrameInfo>,
     pub socket: Option<BufWriter<TcpStream>>,
-    pub stats: RunStats,
-    pub new_state: Option<GlobalState>,
-    pub error: Option<RuntimeError>,
 }
 
 pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
@@ -139,35 +129,28 @@ pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
     let env = env.as_mut(&mut store);
 
     let mut result = RunResult {
-        // It is okay to take the socket ownership here because `env` will be dropped after this function returns.
-        socket: env.process.socket.take().map(|(w, r)| w),
-        stats: RunStats {
-            memory_used,
-            runtime: env.process.timestamp.elapsed(),
+        memory_used,
+        runtime: env.process.timestamp.elapsed(),
+        new_state: GlobalState {
+            last_block_hash: env.large_globals[0],
+            last_send_root: env.large_globals[1],
+            inbox_position: env.small_globals[0],
+            position_within_message: env.small_globals[1],
         },
-        new_state: None,
         error: None,
+        trace: vec![],
+        // It is okay to take the socket ownership here because `env` will be dropped after this function returns.
+        socket: env.process.socket.take().map(|(w, _)| w),
     };
 
     match outcome {
         Ok(value) => {
-            // The proper way `_start` returns successfully is by trapping with an exit code `0`, not by
-            // returning a value.
-            result.error = Some(RuntimeError::new(format!(
-                "JIT _start returned a value {value:?} unexpectedly",
-            )));
+            // The proper way `_start` returns successfully is by trapping with an exit code `0`, not by returning a value.
+            result.error = Some(Escape::UnexpectedReturn(value.to_vec()));
         }
         Err(err) => {
-            if let Escape::Exit(0) = Escape::from(err.clone()) {
-                result.new_state = Some(GlobalState {
-                    last_block_hash: env.large_globals[0],
-                    last_send_root: env.large_globals[1],
-                    inbox_position: env.small_globals[0],
-                    position_within_message: env.small_globals[1],
-                });
-            } else {
-                result.error = Some(err);
-            }
+            result.trace = err.trace().to_vec();
+            result.error = Some(Escape::from(err));
         }
     }
 

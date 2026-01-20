@@ -1,39 +1,31 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::{color, Color};
+use arbutil::Color;
 use clap::Parser;
-use eyre::{eyre, Result};
-use jit::machine::{Escape, WasmEnv};
-use jit::{machine, run, GlobalState, RunError};
+use eyre::Result;
+use jit::machine::Escape;
+use jit::run;
 use jit::{report_error, report_success, Opts};
-use sha2::digest::typenum::op;
-use wasmer::RuntimeError;
+use wasmer::{FrameInfo, RuntimeError};
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
     let result = run(&opts)?;
 
-    let runtime = format!("{}ms", result.stats.runtime.as_millis());
+    let runtime = format!("{}ms", result.runtime.as_millis());
 
-    if let Some(state) = result.new_state {
-        if opts.validator.debug {
-            println!(
-                "Completed in {runtime} with hash {}.",
-                state.last_block_hash
-            )
-        }
-        if let Some(mut socket) = result.socket {
-            report_success(&mut socket, &state, &result.stats.memory_used);
-        }
-    } else if let Some(error) = result.error {
-        print_trace(&error);
+    if let Some(error) = result.error {
+        print_trace(&result.trace);
         let message = match Escape::from(error) {
             Escape::Exit(x) => format!("Failed in {runtime} with exit code {x}."),
             Escape::Failure(err) => format!("Jit failed with {err} in {runtime}."),
             Escape::HostIO(err) => format!("Hostio failed with {err} in {runtime}."),
             Escape::Child(err) => format!("Child failed with {err} in {runtime}."),
             Escape::SocketError(err) => format!("Socket failed with {err} in {runtime}."),
+            Escape::UnexpectedReturn(values) => {
+                format!("Jit unexpectedly returned values {values:?} in {runtime}.")
+            }
         };
         if opts.validator.debug {
             println!("{message}")
@@ -44,12 +36,21 @@ fn main() -> Result<()> {
         if opts.validator.require_success {
             std::process::exit(1);
         }
+    } else {
+        if opts.validator.debug {
+            println!(
+                "Completed in {runtime} with hash {}.",
+                result.new_state.last_block_hash
+            )
+        }
+        if let Some(mut socket) = result.socket {
+            report_success(&mut socket, &result.new_state, &result.memory_used);
+        }
     }
     Ok(())
 }
 
-fn print_trace(error: &RuntimeError) {
-    let trace = error.trace();
+fn print_trace(trace: &[FrameInfo]) {
     if !trace.is_empty() {
         println!("backtrace:");
     }

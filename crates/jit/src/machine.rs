@@ -6,14 +6,14 @@ use crate::{
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
     SequencerMessage,
 };
-use arbutil::{Bytes32, Color, PreimageType};
+use arbutil::{Bytes32, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
+    collections::HashMap,
     fs::File,
-    io::{self, Write},
-    io::{BufReader, BufWriter, ErrorKind, Read},
+    io::{self, BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
     sync::Arc,
     time::Instant,
@@ -21,7 +21,7 @@ use std::{
 use thiserror::Error;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    Pages, RuntimeError, Store,
+    RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -158,6 +158,8 @@ pub enum Escape {
     Child(ErrReport),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
+    #[error("unexpected return from _start `{0:?}`")]
+    UnexpectedReturn(Vec<wasmer::Value>),
 }
 
 pub type MaybeEscape = Result<(), Escape>;
@@ -174,10 +176,9 @@ impl Escape {
 
 impl From<RuntimeError> for Escape {
     fn from(outcome: RuntimeError) -> Self {
-        match outcome.downcast() {
-            Ok(escape) => escape,
-            Err(outcome) => Escape::Failure(format!("unknown runtime error: {outcome}")),
-        }
+        outcome
+            .downcast()
+            .unwrap_or_else(|outcome| Escape::Failure(format!("unknown runtime error: {outcome}")))
     }
 }
 
