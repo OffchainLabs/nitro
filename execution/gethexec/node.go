@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/address-filter"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -29,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	addressfilter "github.com/offchainlabs/nitro/address-filter"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -138,7 +138,7 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
-	addressfilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
+	AddressFilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -170,7 +170,7 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
-	if err := c.addressfilter.Validate(); err != nil {
+	if err := c.AddressFilter.Validate(); err != nil {
 		return fmt.Errorf("error validating addressfilter config: %w", err)
 	}
 	return nil
@@ -244,7 +244,7 @@ var ConfigDefault = Config{
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
 
-	addressfilter: addressfilter.DefaultConfig,
+	AddressFilter: addressfilter.DefaultConfig,
 }
 
 type ConfigFetcher interface {
@@ -270,7 +270,7 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	addressfilterService     *addressfilter.Service
+	addressFilterService     *addressfilter.Service
 }
 
 func CreateExecutionNode(
@@ -365,7 +365,7 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	addressfilterService, err := addressfilter.NewService(ctx, &config.addressfilter)
+	addressFilterService, err := addressfilter.NewService(ctx, &config.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
@@ -385,7 +385,7 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-		addressfilterService:     addressfilterService,
+		addressFilterService:     addressFilterService,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -477,8 +477,8 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
-	if n.addressfilterService != nil {
-		if err = n.addressfilterService.Initialize(ctx); err != nil {
+	if n.addressFilterService != nil {
+		if err = n.addressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing restricted addr service: %w", err)
 		}
 	}
@@ -516,8 +516,8 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 
-	if n.addressfilterService != nil {
-		n.addressfilterService.Start(ctx)
+	if n.addressFilterService != nil {
+		n.addressFilterService.Start(ctx)
 	}
 	return nil
 }
@@ -549,8 +549,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 	n.StopWaiter.StopAndWait()
 
-	if n.addressfilterService != nil && n.addressfilterService.Started() {
-		n.addressfilterService.StopAndWait()
+	if n.addressFilterService != nil && n.addressFilterService.Started() {
+		n.addressFilterService.StopAndWait()
 	}
 }
 

@@ -26,7 +26,6 @@ type Syncer struct {
 	config         *Config
 	downloadConfig DownloadConfig
 	handleData     DataHandler
-	tempFilePrefix string
 	digestETag     string
 	mutex          sync.Mutex
 }
