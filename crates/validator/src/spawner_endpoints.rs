@@ -7,11 +7,14 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
+use crate::ServerState;
 use arbutil::{Bytes32, PreimageType};
+use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub async fn capacity() -> impl IntoResponse {
     "1" // TODO: Figure out max number of workers (optionally, make it configurable)
@@ -38,11 +41,9 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoRespon
         .map_err(|e| format!("Failed to serialize state: {e}",))
 }
 
-pub async fn wasm_module_roots() -> impl IntoResponse {
-    "[]" // TODO: Figure this out from local replay.wasm
+pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    format!("[{:?}]", state.module_root)
 }
-
-type Hash = Bytes32;
 
 /// Counterpart for Go struct `validator.ValidationInput`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,8 +53,8 @@ pub struct ValidationRequest {
     has_delayed_msg: bool,
     #[serde(rename = "DelayedMsgNr")]
     delayed_msg_number: u64,
-    preimages: HashMap<PreimageType, Hash>,
-    user_wasms: HashMap<String, HashMap<Hash, Vec<u8>>>,
+    preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
     batch_info: Vec<BatchInfo>,
     delayed_msg: Vec<u8>,
     start_state: GlobalState,
@@ -72,8 +73,8 @@ pub struct BatchInfo {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GlobalState {
-    block_hash: Hash,
-    send_root: Hash,
+    block_hash: Bytes32,
+    send_root: Bytes32,
     batch: u64,
     pos_in_batch: u64,
 }

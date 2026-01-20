@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::program::Program;
@@ -134,6 +134,32 @@ pub unsafe extern "C" fn programs__new_program(
     // provide arguments
     Program::push_new(calldata, evm_data, module, config);
     module
+}
+
+/// consumes module hash
+/// returns true if we should call into program_prepare, false otherwise
+#[no_mangle]
+pub unsafe extern "C" fn programs__program_requires_prepare(_module_hash_ptr: GuestPtr) -> u32 {
+    0
+}
+
+/// prepares program by recompiling wasm for all targets if not already compiled
+/// consumes activated program module hash and wasm code
+#[no_mangle]
+pub unsafe extern "C" fn programs__program_prepare(
+    _state_ptr: GuestPtr,
+    _module_hash_ptr: GuestPtr,
+    _address_for_logging_ptr: GuestPtr,
+    _code_ptr: GuestPtr,
+    _code_size: u64,
+    _code_hash_ptr: GuestPtr,
+    _max_wasm_size: u32,
+    _page_limit: u32,
+    _time: u64,
+    _debug_mode: u32,
+    _program_ptr: GuestPtr,
+    _run_ctx_ptr: GuestPtr,
+) {
 }
 
 /// Gets information about request according to id.
