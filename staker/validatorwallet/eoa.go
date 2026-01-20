@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
@@ -36,6 +36,10 @@ func NewEOA(dataPoster *dataposter.DataPoster, l1Client *ethclient.Client, getEx
 }
 
 func (w *EOA) Initialize(ctx context.Context) error {
+	return nil
+}
+
+func (w *EOA) InitializeAndCreateSCW(ctx context.Context) error {
 	return nil
 }
 

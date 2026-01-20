@@ -6,6 +6,7 @@ package timeboost
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -17,11 +18,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -44,6 +45,9 @@ const (
 
 	// Auctioneer coordination key for failover
 	AUCTIONEER_CHOSEN_KEY = "auctioneer.chosen"
+
+	// Default buffer size for bids receiver channel
+	DefaultBidsReceiverBufferSize = 100_000
 )
 
 var (
@@ -54,9 +58,7 @@ var (
 )
 
 func init() {
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write([]byte("TIMEBOOST_BID"))
-	domainValue = hash.Sum(nil)
+	domainValue = crypto.Keccak256([]byte("TIMEBOOST_BID"))
 }
 
 type AuctioneerServerConfigFetcher func() *AuctioneerServerConfig
@@ -75,14 +77,16 @@ type AuctioneerServerConfig struct {
 	AuctionContractAddress    string                   `koanf:"auction-contract-address"`
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
+	BidsReceiverBufferSize    uint64                   `koanf:"bids-receiver-buffer-size"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
+	ResponseEntryTimeout: time.Minute * 5,
 	// Messages with no heartbeat for over 1s will be reclaimed by the auctioneer
 	IdletimeToAutoclaim: time.Second,
-
-	ResponseEntryTimeout: time.Minute * 5,
+	Retry:               true,
+	MaxRetryCount:       -1,
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -91,6 +95,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             10 * time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    DefaultBidsReceiverBufferSize,
 	S3Storage:                 DefaultS3StorageServiceConfig,
 }
 
@@ -100,6 +105,7 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	ConsumerConfig:            DefaultAuctioneerConsumerConfig,
 	StreamTimeout:             time.Minute,
 	AuctionResolutionWaitTime: 2 * time.Second,
+	BidsReceiverBufferSize:    1_000,
 }
 
 func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -115,6 +121,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
+	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, fmt.Sprintf("buffer size for the bids receiver channel (0 = use default of %d)", DefaultBidsReceiverBufferSize))
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -228,6 +235,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, err
 	}
 
+	bufferSize := cfg.BidsReceiverBufferSize
+	if bufferSize == 0 {
+		bufferSize = DefaultBidsReceiverBufferSize
+	}
+	if bufferSize > uint64(math.MaxInt) {
+		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
+	}
+
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
 		uuid.New().String()[:8], // Short UUID
@@ -245,7 +260,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContract:                auctionContract,
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
-		bidsReceiver:                   make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidsReceiver:                   make(chan *JsonValidatedBid, int(bufferSize)),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,

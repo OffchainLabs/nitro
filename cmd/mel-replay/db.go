@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -85,6 +87,10 @@ func (d *DB) Ancient(kind string, number uint64) ([]byte, error) {
 }
 
 func (d *DB) AncientRange(kind string, start, count, maxBytes uint64) ([][]byte, error) {
+	return nil, errors.New("unimplemented")
+}
+
+func (d *DB) AncientBytes(kind string, id, offset, length uint64) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 

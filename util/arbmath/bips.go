@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbmath
@@ -67,4 +67,8 @@ func BigDivToBips(dividend, divisor *big.Int) Bips {
 	value := BigMulByInt(dividend, int64(OneInBips))
 	value.Div(value, divisor)
 	return Bips(BigToIntSaturating(value))
+}
+
+func SaturatingBipsAdd(a, b Bips) Bips {
+	return Bips(SaturatingAdd(int64(a), int64(b)))
 }

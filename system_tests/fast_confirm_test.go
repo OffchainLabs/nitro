@@ -1,9 +1,8 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 
@@ -225,9 +224,9 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 	}
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2node.ConsensusDB, storage.StakerPrefix),
 		l2node.L1Reader,
-		&l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -271,7 +270,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		execNode,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -419,9 +418,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	dpA, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeA.L1Reader,
-		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
 		parentChainID,
 	)
@@ -466,7 +465,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		execNodeA,
-		l2nodeA.ArbDB,
+		l2nodeA.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -504,9 +503,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
 	dpB, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
-		&l1authB, NewFetcherFromConfig(cfg),
+		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
 		parentChainID,
 	)
@@ -523,7 +522,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		execNodeB,
-		l2nodeB.ArbDB,
+		l2nodeB.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,

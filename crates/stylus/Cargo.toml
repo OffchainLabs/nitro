@@ -1,0 +1,46 @@
+[package]
+name = "stylus"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arbutil = { workspace = true }
+brotli = { workspace = true }
+caller-env = { workspace = true, features = ["wasmer_traits"] }
+clru = { workspace = true }
+derivative = { workspace = true }
+eyre = { workspace = true }
+hex = { workspace = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+prover = { workspace = true, features = ["native"] }
+rand = { workspace = true }
+thiserror = { workspace = true }
+user-host-trait = { workspace = true }
+wasmer = { workspace = true }
+wasmer-compiler-cranelift = { workspace = true }
+wasmer-compiler-llvm = { workspace = true, optional = true }
+wasmer-compiler-singlepass = { workspace = true, features = ["std", "unwind", "avx"] }
+wasmer-types = { workspace = true }
+wasmer-vm = { workspace = true }
+
+[dev-dependencies]
+num-bigint = { workspace = true }
+rand = { workspace = true, default-features = true }
+
+[features]
+default = ["rayon", "singlepass_rayon"]
+llvm = ["dep:wasmer-compiler-llvm"]
+benchmark = []
+timings = []
+singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
+rayon = ["prover/rayon"]
+
+[lib]
+crate-type = ["lib", "staticlib"]

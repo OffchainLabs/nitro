@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package dapserver
@@ -20,10 +20,21 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
+func TestInteractionBetweenClientAndProviderServer_SimpleStoreSucceeds(t *testing.T) {
 	ctx := context.Background()
 	server := setupProviderServer(ctx, t)
-	client := setupClient(ctx, t, server.Addr)
+	client := setupClient(ctx, t, server.Addr, false)
+
+	message := testhelpers.RandomizeSlice(make([]byte, 10)) // fits into the body limit
+
+	_, err := client.Store(message, 0).Await(ctx)
+	testhelpers.RequireImpl(t, err)
+}
+
+func TestInteractionBetweenClientAndProviderServer_StreamingStoreSucceeds(t *testing.T) {
+	ctx := context.Background()
+	server := setupProviderServer(ctx, t)
+	client := setupClient(ctx, t, server.Addr, true)
 
 	message := testhelpers.RandomizeSlice(make([]byte, 10)) // fits into the body limit
 
@@ -34,7 +45,7 @@ func TestInteractionBetweenClientAndProviderServer_StoreSucceeds(t *testing.T) {
 func TestInteractionBetweenClientAndProviderServer_StoreLongMessageSucceeds(t *testing.T) {
 	ctx := context.Background()
 	server := setupProviderServer(ctx, t)
-	client := setupClient(ctx, t, server.Addr)
+	client := setupClient(ctx, t, server.Addr, true)
 
 	message := testhelpers.RandomizeSlice(make([]byte, data_streaming.TestHttpBodyLimit+1))
 
@@ -60,7 +71,7 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	dummyAddress := common.HexToAddress("0x0")
 	storage := referenceda.GetInMemoryStorage()
 	reader := referenceda.NewReader(storage, nil, dummyAddress)
-	writer := referenceda.NewWriter(dataSigner)
+	writer := referenceda.NewWriter(dataSigner, referenceda.DefaultConfig.MaxBatchSize)
 	validator := referenceda.NewValidator(nil, dummyAddress)
 	headerBytes := []byte{daprovider.DACertificateMessageHeaderFlag}
 
@@ -70,8 +81,12 @@ func setupProviderServer(ctx context.Context, t *testing.T) *http.Server {
 	return providerServer
 }
 
-func setupClient(ctx context.Context, t *testing.T, providerServerAddress string) *daclient.Client {
-	client, err := daclient.NewClient(ctx, daclient.TestClientConfig(providerServerAddress), data_streaming.PayloadCommiter())
+func setupClient(ctx context.Context, t *testing.T, providerServerAddress string, useDataStream bool) *daclient.Client {
+	clientConfig := daclient.TestClientConfig(providerServerAddress)
+	clientConfig.UseDataStreaming = useDataStream
+
+	client, err := daclient.NewClient(ctx, clientConfig, data_streaming.PayloadCommiter())
 	testhelpers.RequireImpl(t, err)
+
 	return client
 }

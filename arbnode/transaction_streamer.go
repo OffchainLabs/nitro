@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -37,6 +38,10 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	messageTimer = metrics.NewRegisteredHistogram("arb/txstreamer/message/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
@@ -74,29 +79,32 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcasterQueueSize int           `koanf:"max-broadcaster-queue-size"`
-	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
-	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
-	SyncTillBlock           uint64        `koanf:"sync-till-block"`
-	TrackBlockMetadataFrom  uint64        `koanf:"track-block-metadata-from"`
+	MaxBroadcasterQueueSize     int           `koanf:"max-broadcaster-queue-size"`
+	MaxReorgResequenceDepth     int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
+	ExecuteMessageLoopDelay     time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
+	SyncTillBlock               uint64        `koanf:"sync-till-block"`
+	TrackBlockMetadataFrom      uint64        `koanf:"track-block-metadata-from"`
+	ShutdownOnBlockhashMismatch bool          `koanf:"shutdown-on-blockhash-mismatch"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 50_000,
-	MaxReorgResequenceDepth: 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:     50_000,
+	MaxReorgResequenceDepth:     1024,
+	ExecuteMessageLoopDelay:     time.Millisecond * 100,
+	SyncTillBlock:               0,
+	TrackBlockMetadataFrom:      0,
+	ShutdownOnBlockhashMismatch: false,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 10_000,
-	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond,
-	SyncTillBlock:           0,
-	TrackBlockMetadataFrom:  0,
+	MaxBroadcasterQueueSize:     10_000,
+	MaxReorgResequenceDepth:     128 * 1024,
+	ExecuteMessageLoopDelay:     time.Millisecond,
+	SyncTillBlock:               0,
+	TrackBlockMetadataFrom:      0,
+	ShutdownOnBlockhashMismatch: false,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -105,6 +113,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
+	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "if set the node gracefully shuts down upon detecting mismatch in feed and locally computed blockhash. This is turned off by default")
 }
 
 func NewTransactionStreamer(
@@ -130,24 +139,6 @@ func NewTransactionStreamer(
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
-	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
 	}
 	return streamer, nil
 }
@@ -401,18 +392,10 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
-		// #nosec G115 -- message index arithmetic is safe within valid range
-		msgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
-		arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
-		if err != nil {
-			log.Warn("error getting arbOS version for message", "msgIdx", msgIdx, "err", err)
-		}
-
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: newMessages[i].MessageWithMeta,
 			BlockHash:       &messagesResults[i].BlockHash,
 			BlockMetadata:   nil,
-			ArbOSVersion:    arbOSVersion,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, msgIdxOfFirstMsgToAdd)
@@ -491,12 +474,37 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return nil, err
+	}
+
+	var parentChainBlockNumber *uint64
+	if message.DelayedMessagesRead != 0 && s.inboxReader != nil && s.inboxReader.tracker != nil {
+		_, _, localParentChainBlockNumber, err := s.inboxReader.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, message.DelayedMessagesRead-1)
+		if err != nil {
+			log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
+		} else {
+			parentChainBlockNumber = &localParentChainBlockNumber
+		}
+	}
+
 	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err
 		}
-		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+
+		var data []byte
+		if parentChainBlockNumber != nil {
+			data, _, err = s.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+		} else {
+			data, _, err = s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		return data, err
 	})
 	if err != nil {
@@ -534,16 +542,10 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.
 		return nil, err
 	}
 
-	arbOSVersion, err := s.exec.ArbOSVersionForMessageIndex(msgIdx).Await(s.GetContext())
-	if err != nil {
-		log.Warn("Failed to get ArbOS version for message", "msgIdx", msgIdx, "err", err)
-	}
-
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: *msg,
 		BlockHash:       blockHash,
 		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    arbOSVersion,
 	}
 	return &msgWithBlockInfo, nil
 }
@@ -625,7 +627,6 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 			MessageWithMeta: feedMessage.Message,
 			BlockHash:       feedMessage.BlockHash,
 			BlockMetadata:   feedMessage.BlockMetadata,
-			ArbOSVersion:    feedMessage.ArbOSVersion,
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
@@ -754,7 +755,6 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 			MessageWithMeta: message,
 			BlockHash:       nil,
 			BlockMetadata:   nil,
-			ArbOSVersion:    0,
 		})
 	}
 
@@ -1051,7 +1051,9 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 
 func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgIdx arbutil.MessageIndex,
-	msgWithInfo arbostypes.MessageWithMetadataAndBlockInfo,
+	msgWithMeta arbostypes.MessageWithMetadata,
+	msgResult execution.MessageResult,
+	blockMetadata common.BlockMetadata,
 ) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
@@ -1118,18 +1120,24 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithInfo.MessageWithMeta, msgWithInfo.BlockMetadata); err != nil {
+		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithMeta, blockMetadata); err != nil {
 			return err
 		}
 	}
 
-	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, nil); err != nil {
+	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: msgWithMeta,
+		BlockHash:       &msgResult.BlockHash,
+		BlockMetadata:   blockMetadata,
+	}
+
+	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
 		return err
 	}
 	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
-		msgWithInfo.BlockMetadata = nil
+		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithInfo}, msgIdx)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
 
 	return nil
 }
@@ -1147,7 +1155,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog() error {
 	if s.broadcastServer == nil || s.inboxReader == nil {
 		return nil
 	}
-	return s.inboxReader.tracker.PopulateFeedBacklog(s.GetContext(), s.broadcastServer)
+	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
 }
 
 func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
@@ -1204,7 +1212,19 @@ func (s *TransactionStreamer) broadcastMessages(
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
+
+	feedMsgs := make([]*message.BroadcastFeedMessage, 0, len(msgs))
+	for i, msg := range msgs {
+		idx := firstMsgIdx + arbutil.MessageIndex(i) // #nosec G115
+		feedMsg, err := s.broadcastServer.NewBroadcastFeedMessage(msg, idx)
+		if err != nil {
+			log.Error("failed creating broadcast feed message", "msgIdx", idx, "err", err)
+			return
+		}
+		feedMsgs = append(feedMsgs, feedMsg)
+	}
+
+	if err := s.broadcastServer.BroadcastFeedMessages(feedMsgs); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
 	}
 }
@@ -1308,7 +1328,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
-		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
+		// Try deleting the existing blockMetadata for this block in consensusDB and set it as missing
 		if msgAndBlockInfo.BlockMetadata != nil &&
 			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 			batch := s.db.NewBatch()
@@ -1317,12 +1337,15 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 				return
 			}
 			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+				log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
 			if err := batch.Write(); err != nil {
 				log.Error("error writing batch that deletes blockMetadata of the block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 			}
+		}
+		if s.config().ShutdownOnBlockhashMismatch {
+			s.fatalErrChan <- fmt.Errorf("%s: msgIdx: %d, expectedHash: %v actualHash: %v", BlockHashMismatchLogMsg, msgIdx, msgAndBlockInfo.BlockHash, msgResult.BlockHash)
 		}
 	}
 }
@@ -1350,6 +1373,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 	defer s.reorgMutex.RUnlock()
+	start := time.Now()
 
 	prevHeadMsgIdx := s.prevHeadMsgIdx
 	consensusHeadMsgIdx, err := s.GetHeadMessageIndex()
@@ -1411,7 +1435,14 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{*msgAndBlockInfo}, msgIdxToExecute)
+	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
+		BlockHash:       &msgResult.BlockHash,
+		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
+	}
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
+
+	messageTimer.Update(time.Since(start).Nanoseconds())
 
 	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
@@ -1432,7 +1463,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 	}
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
-		log.Error("Error getting message count from arbDB", "err", err)
+		log.Error("Error getting message count from consensusDB", "err", err)
 		return
 	}
 	if s.trackBlockMetadataFrom >= msgCount {
@@ -1447,7 +1478,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 				return true
 			}
 			if !rawdb.IsDbErrNotFound(err) {
-				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+				log.Error("Error reading key in consensusDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false
 		}
@@ -1492,6 +1523,24 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := arbutil.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := arbutil.BlockNumberToMessageIndex(s.config().SyncTillBlock, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

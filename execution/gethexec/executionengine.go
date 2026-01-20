@@ -1,8 +1,7 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package gethexec
 
@@ -16,7 +15,6 @@ import "C"
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -48,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -87,7 +86,7 @@ type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
+	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
@@ -115,6 +114,8 @@ type ExecutionEngine struct {
 	exposeMultiGas bool
 
 	runningMaintenance atomic.Bool
+
+	addressChecker state.AddressChecker
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -264,7 +265,7 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
+func (s *ExecutionEngine) SetConsensus(consensus consensus.FullConsensusClient) {
 	if s.Started() {
 		panic("trying to set transaction consensus after start")
 	}
@@ -281,7 +282,7 @@ func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgId
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
 
-func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 
@@ -387,49 +388,6 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks) (*arbostypes.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(hooks.TxErrors) == 1 && hooks.TxErrors[0] == nil {
-		tx, err := hooks.SequencedTx(0)
-		if err != nil {
-			return nil, err
-		}
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(hooks.TxErrors); i++ {
-			if hooks.TxErrors[i] != nil {
-				continue
-			}
-			tx, err := hooks.SequencedTx(i)
-			if err != nil {
-				return nil, err
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
-	}
-	if len(l2Message) > arbostypes.MaxL2MessageSize {
-		return nil, errors.New("l2message too long")
-	}
-	return &arbostypes.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
-}
-
 // The caller must hold the createBlocksMutex
 func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
 	if !s.reorgSequencing {
@@ -475,8 +433,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := arbos.NoopSequencingHooks(txes)
-		hooks.DiscardInvalidTxsEarly = true
+		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -517,9 +474,8 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	return s.sequencerWrapper(func() (*types.Block, error) {
-		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
 	})
 }
@@ -527,7 +483,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -562,7 +518,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *arbos.SequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
@@ -571,6 +527,9 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return nil, err
+	}
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
@@ -614,7 +573,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	allTxsErrored := true
-	for _, err := range hooks.TxErrors {
+	for _, err := range hooks.txErrors {
 		if err == nil {
 			allTxsErrored = false
 			break
@@ -624,7 +583,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil
 	}
 
-	msg, err := MessageFromTxes(header, hooks)
+	msg, err := hooks.MessageFromTxes(header)
 	if err != nil {
 		return nil, err
 	}
@@ -644,15 +603,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-
-	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: msgWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   blockMetadata,
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
-	}
-
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -731,14 +682,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	msgWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: messageWithMeta,
-		BlockHash:       &msgResult.BlockHash,
-		BlockMetadata:   s.blockMetadataFromBlock(block, nil),
-		ArbOSVersion:    types.DeserializeHeaderExtraInformation(block.Header()).ArbOSFormatVersion,
-	}
-
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithInfo).Await(s.GetContext())
+	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -1189,4 +1133,8 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	return &execution.MaintenanceStatus{
 		IsRunning: s.runningMaintenance.Load(),
 	}
+}
+
+func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
+	s.addressChecker = checker
 }

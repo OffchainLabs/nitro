@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package relay
@@ -95,7 +95,9 @@ func (r *Relay) Start(ctx context.Context) error {
 				return
 			case msg := <-r.messageChan:
 				sharedmetrics.UpdateSequenceNumberGauge(msg.SequenceNumber)
-				r.broadcaster.BroadcastSingleFeedMessage(&msg)
+				if err = r.broadcaster.BroadcastFeedMessages([]*message.BroadcastFeedMessage{&msg}); err != nil {
+					return
+				}
 			case cs := <-r.confirmedSequenceNumberChan:
 				r.broadcaster.Confirm(cs)
 			}

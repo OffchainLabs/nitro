@@ -1,5 +1,6 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //go:build toxiproxy
-// +build toxiproxy
 
 package rpcclient
 
@@ -20,7 +21,11 @@ func TestToxiRpcClient(t *testing.T) {
 	toxiprox := toxiproxy.NewClient("localhost:8474")
 	proxy, err := toxiprox.CreateProxy("testRpc", "", server1.WSEndpoint()[5:])
 	Require(t, err)
-	defer proxy.Delete()
+	defer func() {
+		if err := proxy.Delete(); err != nil {
+			t.Logf("failed to delete proxy: %v", err)
+		}
+	}()
 
 	config := DefaultClientConfig
 	config.URL = "ws://" + proxy.Listen

@@ -68,7 +68,7 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
-	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
+	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the DA server supports daprovider's writer interface")
 	f.Int(prefix+".rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
@@ -181,7 +181,7 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 
 func (s *ReaderServer) GetSupportedHeaderBytes(ctx context.Context) (*server_api.SupportedHeaderBytesResult, error) {
 	return &server_api.SupportedHeaderBytesResult{
-		HeaderBytes: s.headerBytes,
+		HeaderBytes: hexutil.Bytes(s.headerBytes),
 	}, nil
 }
 
@@ -213,11 +213,25 @@ func (s *ReaderServer) CollectPreimages(
 	return &result, nil
 }
 
+func (s *ReaderServer) RecoverPayloadAndPreimages(
+	ctx context.Context,
+	batchNum hexutil.Uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg hexutil.Bytes,
+) (*daprovider.PayloadAndPreimagesResult, error) {
+	promise := s.reader.RecoverPayloadAndPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // ValidatorServer methods
 
-func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, certHash common.Hash, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
+func (s *ValidatorServer) GenerateReadPreimageProof(ctx context.Context, offset hexutil.Uint64, certificate hexutil.Bytes) (*server_api.GenerateReadPreimageProofResult, error) {
 	// #nosec G115
-	promise := s.validator.GenerateReadPreimageProof(certHash, uint64(offset), certificate)
+	promise := s.validator.GenerateReadPreimageProof(uint64(offset), certificate)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err
@@ -235,7 +249,9 @@ func (s *ValidatorServer) GenerateCertificateValidityProof(ctx context.Context, 
 	return &server_api.GenerateCertificateValidityProofResult{Proof: hexutil.Bytes(result.Proof)}, nil
 }
 
-// WriterServer methods (Data Stream API)
+// WriterServer methods (Storing API)
+
+// Storing API: Data Stream methods
 
 func (s *WriterServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
@@ -251,6 +267,20 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 		return nil, err
 	}
 
-	serializedDACert, err := s.writer.Store(message, timeout).Await(ctx)
+	return s.Store(ctx, message, hexutil.Uint64(timeout))
+}
+
+// Storing API: Single-call Store method
+
+func (s *WriterServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64) (*server_api.StoreResult, error) {
+	serializedDACert, err := s.writer.Store(message, uint64(timeout)).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err
+}
+
+func (s *WriterServer) GetMaxMessageSize(ctx context.Context) (*server_api.MaxMessageSizeResult, error) {
+	maxSize, err := s.writer.GetMaxMessageSize().Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &server_api.MaxMessageSizeResult{MaxSize: maxSize}, nil
 }

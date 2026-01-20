@@ -1,3 +1,5 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package redisutil
 
 import (
@@ -68,7 +70,7 @@ func parseFailoverRedisUrl(redisUrl string) (*redis.FailoverOptions, error) {
 		o.MasterName = f[0]
 		var err error
 		if o.DB, err = strconv.Atoi(f[1]); err != nil {
-			return nil, fmt.Errorf("redis: invalid database number: %q", f[0])
+			return nil, fmt.Errorf("redis: invalid database number: %q", f[1])
 		}
 	default:
 		return nil, fmt.Errorf("redis: invalid URL path: %s", u.Path)

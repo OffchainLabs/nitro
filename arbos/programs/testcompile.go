@@ -1,8 +1,7 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package programs
 
@@ -75,7 +74,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	source, err := os.ReadFile("../../arbitrator/stylus/tests/add.wat")
+	source, err := os.ReadFile("../../crates/stylus/tests/add.wat")
 	if err != nil {
 		return fmt.Errorf("failed reading stylus contract: %w", err)
 	}

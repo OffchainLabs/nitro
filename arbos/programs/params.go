@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
@@ -37,6 +37,8 @@ const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be
 const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
+
+const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -169,6 +171,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 }
 
 func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
+	if newArbosVersion == params.ArbosVersion_50 {
+		if p.arbosVersion >= params.ArbosVersion_50 {
+			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)
+		}
+		if p.MaxStackDepth > arbOS50MaxWasmSize {
+			p.MaxStackDepth = arbOS50MaxWasmSize
+		}
+	}
 	if newArbosVersion == params.ArbosVersion_40 {
 		if p.arbosVersion >= params.ArbosVersion_40 {
 			return fmt.Errorf("unexpected arbosVersion upgrade to %d from %d", newArbosVersion, p.arbosVersion)

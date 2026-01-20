@@ -1,0 +1,66 @@
+[package]
+name = "prover"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arbutil = { workspace = true }
+bincode = { workspace = true }
+bitvec = { workspace = true, features = ["serde"] }
+brotli = { workspace = true }
+c-kzg = { workspace = true, optional = true }
+derivative = { workspace = true }
+digest = { workspace = true }
+enum-iterator = { workspace = true }
+eyre = { workspace = true }
+fnv = { workspace = true }
+hex = { workspace = true }
+lazy_static = { workspace = true }
+libc = { workspace = true }
+lru = { workspace = true }
+nom = { workspace = true }
+num = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+once_cell = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true, optional = true }
+rustc-demangle = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json = { workspace = true }
+serde_with = { workspace = true, features = ["base64"] }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+smallvec = { workspace = true, features = ["serde"] }
+static_assertions = { workspace = true }
+structopt = { workspace = true }
+wasmer = { workspace = true, optional = true }
+wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
+wasmer-types = { workspace = true }
+wasmparser = { workspace = true }
+wat = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+rand = { workspace = true }
+
+[[bench]]
+name = "merkle_bench"
+harness = false
+
+[lib]
+name = "prover"
+crate-type = ["staticlib", "lib"]
+
+[features]
+default = ["native", "rayon", "singlepass_rayon"]
+counters = []
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
+singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
+rayon = ["dep:rayon"]

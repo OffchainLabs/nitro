@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package gethexec
 
 import (
@@ -15,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -103,7 +106,7 @@ func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type SyncMonitor struct {
 	config    *SyncMonitorConfig
-	consensus execution.ConsensusInfo
+	consensus consensus.ConsensusInfo
 	exec      *ExecutionEngine
 
 	consensusSyncData atomic.Pointer[execution.ConsensusSyncData]
@@ -216,7 +219,7 @@ func (s *SyncMonitor) Synced(ctx context.Context) bool {
 	return built+1 >= syncTarget
 }
 
-func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
+func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) {
 	s.consensus = consensus
 }
 
@@ -273,14 +276,10 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 }
 
 func (s *SyncMonitor) SetFinalityData(
-	ctx context.Context,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) error {
-	s.exec.createBlocksMutex.Lock()
-	defer s.exec.createBlocksMutex.Unlock()
-
 	finalizedBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		validatedFinalityData,

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcaster
@@ -12,7 +12,6 @@ import (
 	"github.com/gobwas/ws"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -21,6 +20,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+const SupportedBroadcastVersion = m.V1
 
 type Broadcaster struct {
 	server     *wsbroadcastserver.WSBroadcastServer
@@ -40,99 +41,55 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 }
 
 func (b *Broadcaster) NewBroadcastFeedMessage(
-	messageWithInfo arbostypes.MessageWithMetadataAndBlockInfo,
+	message arbostypes.MessageWithMetadataAndBlockInfo,
 	sequenceNumber arbutil.MessageIndex,
 ) (*m.BroadcastFeedMessage, error) {
-	message := messageWithInfo.MessageWithMeta
-	if messageWithInfo.ArbOSVersion < params.ArbosVersion_50 && message.Message != nil {
-		message.Message.BatchDataStats = nil
-	}
-
-	var messageSignature []byte
-	if b.dataSigner != nil {
-		hash, err := message.Hash(sequenceNumber, b.chainId)
-		if err != nil {
-			return nil, err
-		}
-		messageSignature, err = b.dataSigner(hash.Bytes())
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &m.BroadcastFeedMessage{
+	feedMessage := m.BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
-		Message:        message,
-		BlockHash:      messageWithInfo.BlockHash,
-		Signature:      messageSignature,
-		BlockMetadata:  messageWithInfo.BlockMetadata,
-		ArbOSVersion:   messageWithInfo.ArbOSVersion,
-	}, nil
+		Message:        message.MessageWithMeta,
+		BlockHash:      message.BlockHash,
+		Signature:      []byte{},
+		BlockMetadata:  message.BlockMetadata,
+	}
+	if b.dataSigner != nil {
+		hash := feedMessage.SignatureHash(b.chainId)
+		var err error
+		feedMessage.Signature, err = b.dataSigner(hash.Bytes())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &feedMessage, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(
-	msg arbostypes.MessageWithMetadataAndBlockInfo,
-	msgIdx arbutil.MessageIndex,
-) (err error) {
+func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastSingle", "recover", r, "backtrace", string(debug.Stack()))
+			log.Error("recovered error in BroadcastFeedMessages", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, msgIdx)
-	if err != nil {
-		return err
-	}
 
-	b.BroadcastSingleFeedMessage(bfm)
-	return nil
-}
-
-func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
-	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
-
-	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
-
-	b.BroadcastFeedMessages(broadcastFeedMessages)
-}
-
-func (b *Broadcaster) BroadcastMessages(
-	messagesWithBlockInfo []arbostypes.MessageWithMetadataAndBlockInfo,
-	firstMsgIdx arbutil.MessageIndex,
-) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
-			err = errors.New("panic in BroadcastMessages")
-		}
-	}()
-	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messagesWithBlockInfo {
-		bfm, err := b.NewBroadcastFeedMessage(msg, firstMsgIdx+arbutil.MessageIndex(i)) // #nosec G115
-		if err != nil {
-			return err
-		}
-		feedMessages = append(feedMessages, bfm)
-	}
-
-	b.BroadcastFeedMessages(feedMessages)
-
-	return nil
-}
-
-func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 	bm := &m.BroadcastMessage{
-		Version:  1,
+		Version:  SupportedBroadcastVersion,
 		Messages: messages,
 	}
 	b.server.Broadcast(bm)
+	return
+}
+
+func (b *Broadcaster) PopulateFeedBacklog(messages []*m.BroadcastFeedMessage) error {
+	bm := &m.BroadcastMessage{
+		Version:  SupportedBroadcastVersion,
+		Messages: messages,
+	}
+	return b.server.PopulateFeedBacklog(bm)
 }
 
 func (b *Broadcaster) Confirm(msgIdx arbutil.MessageIndex) {
 	log.Debug("confirming msgIdx", "msgIdx", msgIdx)
 	b.server.Broadcast(&m.BroadcastMessage{
-		Version: 1,
+		Version: SupportedBroadcastVersion,
 		ConfirmedSequenceNumberMessage: &m.ConfirmedSequenceNumberMessage{
 			SequenceNumber: msgIdx,
 		},

@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package backend handles the business logic for API data fetching
 // for BOLD challenge information. It is meant to be fairly abstract and
@@ -20,10 +19,10 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/chain-watcher"
-	"github.com/offchainlabs/nitro/bold/challenge-manager/edge-tracker"
+	"github.com/offchainlabs/nitro/bold/challenge/chain"
+	"github.com/offchainlabs/nitro/bold/challenge/tracker"
 	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/protocol"
 )
 
 type BusinessLogicProvider interface {
@@ -35,20 +34,20 @@ type BusinessLogicProvider interface {
 }
 
 type EdgeTrackerFetcher interface {
-	GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*edgetracker.Tracker]
+	GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*tracker.Tracker]
 }
 
 type Backend struct {
 	db               db.ReadUpdateDatabase
 	chainDataFetcher protocol.AssertionChain
-	chainWatcher     *watcher.Watcher
+	chainWatcher     *chain.Watcher
 	trackerFetcher   EdgeTrackerFetcher
 }
 
 func NewBackend(
 	db db.ReadUpdateDatabase,
 	chainDataFetcher protocol.AssertionChain,
-	chainWatcher *watcher.Watcher,
+	chainWatcher *chain.Watcher,
 ) *Backend {
 	return &Backend{
 		db:               db,

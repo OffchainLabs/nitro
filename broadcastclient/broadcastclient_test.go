@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package broadcastclient
@@ -29,6 +29,17 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
+	}
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
+}
+
 func TestReceiveMessages(t *testing.T) {
 	t.Parallel()
 	t.Run("withoutCompression", func(t *testing.T) {
@@ -49,15 +60,6 @@ func TestReceiveMessages(t *testing.T) {
 	t.Run("withRequiredCompressionButClientDisabled", func(t *testing.T) {
 		testReceiveMessages(t, false, true, true, true)
 	})
-}
-
-func testMessage() arbostypes.MessageWithMetadataAndBlockInfo {
-	return arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.TestMessageWithMetadataAndRequestId,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
-		ArbOSVersion:    0,
-	}
 }
 
 func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool, expectNoMessagesReceived bool) {
@@ -100,8 +102,8 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			// #nosec G115
-			Require(t, b.BroadcastSingle(testMessage(), arbutil.MessageIndex(i)))
+			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			Require(t, err)
 		}
 	}()
 
@@ -115,7 +117,7 @@ type dummyTransactionStreamer struct {
 	sequencerAddr   *common.Address
 }
 
-func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
+func newDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
 		messageReceiver: make(chan message.BroadcastFeedMessage),
 		chainId:         chainId,
@@ -144,7 +146,7 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
-	ts := NewDummyTransactionStreamer(chainId, sequencerAddr)
+	ts := newDummyTransactionStreamer(chainId, sequencerAddr)
 	feedErrChan := make(chan error, 10)
 	broadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -234,7 +236,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		b.ListenerAddr(),
@@ -250,7 +252,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(testMessage(), 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -306,7 +309,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	defer b.StopAndWait()
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		b.ListenerAddr(),
@@ -322,7 +325,8 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(testMessage(), 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -378,7 +382,7 @@ func TestServerIncorrectChainId(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
@@ -438,7 +442,7 @@ func TestServerMissingChainId(t *testing.T) {
 	clientConfig := DefaultTestConfig
 	clientConfig.RequireChainId = true
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -496,7 +500,7 @@ func TestServerIncorrectFeedServerVersion(t *testing.T) {
 	Require(t, b.StartWithHeader(ctx, header))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
@@ -556,7 +560,7 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 	clientConfig := DefaultTestConfig
 	clientConfig.RequireFeedVersion = true
 
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient, err := newTestBroadcastClient(
 		clientConfig,
@@ -664,8 +668,10 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	Require(t, b.BroadcastSingle(testMessage(), 0))
-	Require(t, b.BroadcastSingle(testMessage(), 1))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	Require(t, err)
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	Require(t, err)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -722,7 +728,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 }
 
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, feedErrChan chan error, sequencerAddr *common.Address, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer(chainId, nil)
+	ts := newDummyTransactionStreamer(chainId, nil)
 	broadcastClient, err := newTestBroadcastClient(
 		DefaultTestConfig,
 		addr,

@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -73,6 +73,10 @@ func TestVersion40(t *testing.T) {
 
 func TestArbOSVersion50(t *testing.T) {
 	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
+}
+
+func TestArbOSVersion60(t *testing.T) {
+	testPrecompiles(t, params.ArbosVersion_60, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
 }
 
 func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {

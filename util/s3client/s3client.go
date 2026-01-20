@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package s3client
 
 import (
@@ -30,8 +32,8 @@ type s3Client struct {
 	downloader Downloader
 }
 
-func NewS3FullClient(accessKey, secretKey, region string) (FullClient, error) {
-	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
+func NewS3FullClient(ctx context.Context, accessKey, secretKey, region string) (FullClient, error) {
+	cfg, err := awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
 		// remain backward compatible with accessKey and secretKey credentials provided via cli flags
 		if accessKey != "" && secretKey != "" {
 			options.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")

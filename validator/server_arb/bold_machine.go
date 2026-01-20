@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
@@ -53,8 +55,8 @@ func (m *BoldMachine) GetStepCount() uint64 {
 	return m.inner.GetStepCount() + 1
 }
 
-// Hash returns the hash of the inner machine if the machine has not stepped,
-// otherwise it returns the hash of the zeroth step machine.
+// Hash returns the hash of the zeroth step machine if the machine has not stepped,
+// otherwise it returns the hash of the inner machine.
 func (m *BoldMachine) Hash() common.Hash {
 	if !m.hasStepped {
 		return m.zeroMachine.Hash()
@@ -74,8 +76,8 @@ func (m *BoldMachine) Freeze() {
 	m.zeroMachine.Freeze()
 }
 
-// Status returns the status of the inner machine if the machine has not
-// stepped, otherwise it returns the status of the zeroth step machine.
+// Status returns the status of the zeroth step machine if the machine has not
+// stepped, otherwise it returns the status of the inner machine.
 func (m *BoldMachine) Status() uint8 {
 	if !m.hasStepped {
 		return m.zeroMachine.Status()
@@ -101,8 +103,8 @@ func (m *BoldMachine) IsErrored() bool {
 	return m.inner.IsErrored()
 }
 
-// Step steps the inner machine if the machine has not stepped, otherwise it
-// steps the zeroth step machine.
+// Step steps the inner machine. If the machine has not yet stepped, the first
+// step is consumed to transition from the zeroth step, and remaining steps are applied.
 func (m *BoldMachine) Step(ctx context.Context, steps uint64) error {
 	if !m.hasStepped {
 		if steps == 0 {

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package wsbroadcastserver
@@ -149,6 +149,31 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 		return
 	}
 	cm.broadcastChan <- bm
+}
+
+// populateFeedBacklog adds the given BroadcastMessage to backlog, and also broadcasts it to feed if the ClientManager is started
+func (cm *ClientManager) populateFeedBacklog(bm *m.BroadcastMessage) error {
+	if cm.Started() {
+		cm.Broadcast(bm)
+		return nil
+	}
+	if len(bm.Messages) == 0 {
+		return cm.backlog.Append(bm)
+	}
+	for i, msg := range bm.Messages {
+		m := &m.BroadcastMessage{
+			Version:  bm.Version,
+			Messages: []*m.BroadcastFeedMessage{msg},
+		}
+		// This ensures that only one message is added to backlog with the confirmed sequence number
+		if i == 0 {
+			m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
+		}
+		if err := cm.backlog.Append(m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnection, error) {

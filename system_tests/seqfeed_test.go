@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	dbschema "github.com/offchainlabs/nitro/arbnode/db-schema"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -190,17 +190,17 @@ func compareAllMsgResultsFromConsensusAndExecution(
 	return lastResult
 }
 
-func testLyingSequencer(t *testing.T, dasModeStr string) {
+func testLyingSequencer(t *testing.T, daModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	chainConfig, nodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig = nodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -209,13 +209,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	l2clientA := builder.L2.Client
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, builder.L1Info, builder.L1.Client)
+	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
-	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigC.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigC.DA.AnyTrust.RPCAggregator.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	testClientC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigC})
 	defer cleanupC()
@@ -227,8 +227,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
-	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigB.DataAvailability.RPCAggregator.Enable = false
+	nodeConfigB.DA.AnyTrust = nodeConfigA.DA.AnyTrust
+	nodeConfigB.DA.AnyTrust.RPCAggregator.Enable = false
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigB})
 	defer cleanupB()
 	l2clientB := testClientB.Client
@@ -332,7 +332,7 @@ func TestLyingSequencer(t *testing.T) {
 	testLyingSequencer(t, "onchain")
 }
 
-func TestLyingSequencerLocalDAS(t *testing.T) {
+func TestLyingSequencerLocalAnyTrust(t *testing.T) {
 	testLyingSequencer(t, "files")
 }
 
@@ -365,7 +365,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 
 	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -382,14 +382,11 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NoopSequencingHooks(types.Transactions{tx})
-	_, err = hooks.NextTxToSequence()
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
-	hooks.TxErrors = []error{nil}
-	l1IncomingMsg, err := gethexec.MessageFromTxes(
-		&l1IncomingMsgHeader,
-		hooks,
-	)
+	hooks.InsertLastTxError(nil)
+	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
 	Require(t, err)
 
 	broadcastMessage := message.BroadcastMessage{
@@ -443,7 +440,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	builder.BuildL1(t)
 
 	userAccount := "User2"
@@ -545,12 +542,12 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("error getting tx streamer message count: %v", err))
 	}
-	key := dbKey(dbschema.MessagePrefix, uint64(messageCount-1))
+	key := dbKey(schema.MessagePrefix, uint64(messageCount-1))
 	msgBytes, err := rlp.EncodeToBytes(dummyMessage)
 	if err != nil {
 		panic(fmt.Sprintf("error encoding dummy message: %v", err))
 	}
-	batch := builder.L2.ConsensusNode.ArbDB.NewBatch()
+	batch := builder.L2.ConsensusNode.ConsensusDB.NewBatch()
 	if err := batch.Put(key, msgBytes); err != nil {
 		panic(fmt.Sprintf("error putting dummy message to db: %v", err))
 	}

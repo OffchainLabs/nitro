@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethhook
@@ -26,6 +26,18 @@ import (
 
 type TestChainContext struct {
 	chainConfig *params.ChainConfig
+}
+
+func (r *TestChainContext) CurrentHeader() *types.Header {
+	return &types.Header{}
+}
+
+func (r *TestChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	return &types.Header{}
+}
+
+func (r *TestChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return &types.Header{}
 }
 
 func (r *TestChainContext) Engine() consensus.Engine {

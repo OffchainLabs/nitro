@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package wsbroadcastserver
@@ -82,7 +82,7 @@ type BroadcasterConfigFetcher func() *BroadcasterConfig
 
 func BroadcasterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
-	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
+	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages with the batch poster wallet")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
 	f.Duration(prefix+".read-timeout", DefaultBroadcasterConfig.ReadTimeout, "duration to wait before timing out reading data (i.e. pings) from clients")
 	f.Duration(prefix+".write-timeout", DefaultBroadcasterConfig.WriteTimeout, "duration to wait before timing out writing data to clients")
@@ -534,6 +534,10 @@ func (s *WSBroadcastServer) Started() bool {
 // Broadcast sends batch item to all clients.
 func (s *WSBroadcastServer) Broadcast(bm *m.BroadcastMessage) {
 	s.clientManager.Broadcast(bm)
+}
+
+func (s *WSBroadcastServer) PopulateFeedBacklog(bm *m.BroadcastMessage) error {
+	return s.clientManager.populateFeedBacklog(bm)
 }
 
 func (s *WSBroadcastServer) ClientCount() int32 {

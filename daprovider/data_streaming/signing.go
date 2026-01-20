@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package data_streaming
 
 import (
@@ -61,6 +63,12 @@ func PayloadCommitmentVerifier() *PayloadVerifier {
 		} else {
 			return errors.New("signature does not match")
 		}
+	})
+}
+
+func NoopPayloadVerifier() *PayloadVerifier {
+	return CustomPayloadVerifier(func(ctx context.Context, signature []byte, data []byte, extras ...uint64) error {
+		return nil
 	})
 }
 

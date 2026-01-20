@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -20,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -57,17 +59,20 @@ func mainImpl() int {
 	stackConf.Version = strippedRevision
 
 	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
+		resolvedWorkdir := workdir
+		if resolvedWorkdir == "" {
+			var err error
+			resolvedWorkdir, err = os.Getwd()
 			if err != nil {
 				log.Warn("Failed to get workdir", "err", err)
+				resolvedWorkdir = "."
 			}
 		}
 		return func(path string) string {
 			if filepath.IsAbs(path) {
 				return path
 			}
-			return filepath.Join(workdir, path)
+			return filepath.Join(resolvedWorkdir, path)
 		}
 	}
 
@@ -89,7 +94,6 @@ func mainImpl() int {
 
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
-
 		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
 

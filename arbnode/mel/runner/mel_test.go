@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -34,15 +37,16 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB := NewDatabase(consensusDB)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
+		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
-		melDb,
+		melDB,
 		messageConsumer,
-		daprovider.NewReaderRegistry(),
+		daprovider.NewDAProviderRegistry(),
 		common.Hash{},
 		0,
 	)
@@ -68,7 +72,7 @@ func TestMessageExtractor(t *testing.T) {
 			Version:                42,
 			ParentChainBlockNumber: 0,
 		}
-		require.NoError(t, melDb.SaveState(ctx, melState))
+		require.NoError(t, melDB.SaveState(ctx, melState))
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 
@@ -114,7 +118,16 @@ func (m *mockMessageConsumer) PushMessages(ctx context.Context, firstMsgIdx uint
 type mockParentChainReader struct {
 	blocks    map[common.Hash]*types.Block
 	headers   map[common.Hash]*types.Header
+	logs      []*types.Log
 	returnErr error
+}
+
+func (m *mockParentChainReader) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	blk, err := m.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return blk.Header(), err
 }
 
 func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
@@ -172,3 +185,18 @@ func (m *mockParentChainReader) TransactionReceipt(ctx context.Context, txHash c
 	// Mock implementation, return a dummy receipt
 	return &types.Receipt{}, nil
 }
+
+func (m *mockParentChainReader) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
+	return nil, false, nil
+}
+
+func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	filteredLogs := types.FilterLogs(m.logs, nil, nil, q.Addresses, q.Topics)
+	var result []types.Log
+	for _, log := range filteredLogs {
+		result = append(result, *log)
+	}
+	return result, nil
+}
+
+func (m *mockParentChainReader) Client() rpc.ClientInterface { return nil }

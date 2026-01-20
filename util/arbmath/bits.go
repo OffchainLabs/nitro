@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbmath
@@ -21,7 +21,11 @@ func FlipBit(data bytes32, bit byte) bytes32 {
 
 // ConcatByteSlices unrolls a series of slices into a singular, concatenated slice
 func ConcatByteSlices(slices ...[]byte) []byte {
-	unrolled := []byte{}
+	totalLen := 0
+	for _, slice := range slices {
+		totalLen += len(slice)
+	}
+	unrolled := make([]byte, 0, totalLen)
 	for _, slice := range slices {
 		unrolled = append(unrolled, slice...)
 	}
