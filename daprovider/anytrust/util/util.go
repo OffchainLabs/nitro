@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package util
 
@@ -198,6 +198,10 @@ func recoverPayloadFromBatchInternal(
 	if needPreimages {
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)
+	}
+	if len(sequencerMsg) < 40 {
+		log.Error("AnyTrust sequencer message too short: expected at least 40 bytes", "length", len(sequencerMsg))
+		return nil, nil, nil
 	}
 	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
