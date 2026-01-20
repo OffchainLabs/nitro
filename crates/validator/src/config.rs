@@ -6,7 +6,6 @@ use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
-use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::warn;
@@ -28,40 +27,6 @@ pub struct ServerConfig {
 
     #[clap(long)]
     workers: Option<usize>,
-}
-
-impl ServerConfig {
-    pub fn load() -> Result<Self> {
-        Self::load_from(std::env::args_os())
-    }
-
-    fn load_from<I, T>(args: I) -> Result<Self>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<std::ffi::OsString> + Clone,
-    {
-        let mut config = Self::try_parse_from(args)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-
-        if config.workers.is_none() {
-            let workers = match std::thread::available_parallelism() {
-                Ok(count) => count.get(),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
-                    DEFAULT_NUM_WORKERS
-                }
-                Err(e) => return Err(e.into()),
-            };
-            config.workers = Some(workers);
-        };
-
-        Ok(config)
-    }
-
-    pub(crate) fn get_workers(&self) -> usize {
-        self.workers
-            .expect("Workers should have been set during ServerConfig::load()")
-    }
 }
 
 #[derive(Clone, Debug, Args)]
@@ -96,6 +61,24 @@ impl ServerConfig {
             )),
         }
     }
+
+    pub fn get_workers(&self) -> Result<usize> {
+        let workers = if let Some(workers) = self.workers {
+            workers
+        } else {
+            let workers = match std::thread::available_parallelism() {
+                Ok(count) => count.get(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    DEFAULT_NUM_WORKERS
+                }
+                Err(e) => return Err(e.into()),
+            };
+            workers
+        };
+
+        Ok(workers)
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
@@ -108,6 +91,8 @@ pub enum LoggingFormat {
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser;
+
     use crate::config::ServerConfig;
 
     #[test]
@@ -119,7 +104,7 @@ mod tests {
     #[test]
     fn module_root_parsing() {
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0x0000000000000000000000000000000000000000000000000000000000000000"
@@ -129,7 +114,7 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0000000000000000000000000000000000000000000000000000000000000000"
@@ -139,12 +124,12 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from(["server", "--module-root", "0xinvalidhex"]).is_err(),
+            ServerConfig::try_parse_from(["server", "--module-root", "0xinvalidhex"]).is_err(),
             "Invalid module root should fail to parse"
         );
 
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root-path",
                 "/some/path/to/module/root.txt"
@@ -154,7 +139,7 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -166,7 +151,7 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from(["server"]).is_err(),
+            ServerConfig::try_parse_from(["server"]).is_err(),
             "Not specifying either module root or module root path should fail"
         );
     }
@@ -174,7 +159,7 @@ mod tests {
     #[test]
     fn capacity_parsing() {
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -186,7 +171,7 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -198,7 +183,7 @@ mod tests {
         );
 
         assert!(
-            ServerConfig::load_from([
+            ServerConfig::try_parse_from([
                 "server",
                 "--module-root",
                 "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -209,7 +194,7 @@ mod tests {
             "non numeric value for workers should fail"
         );
 
-        let server_config = ServerConfig::load_from([
+        let server_config = ServerConfig::try_parse_from([
             "server",
             "--module-root",
             "0x0000000000000000000000000000000000000000000000000000000000000000",

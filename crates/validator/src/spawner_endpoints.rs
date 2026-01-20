@@ -50,27 +50,8 @@ pub struct GlobalState {
     pos_in_batch: u64,
 }
 
-#[derive(Serialize)]
-struct CapacityResponse {
-    capacity: usize,
-}
-
-#[derive(Serialize)]
-struct StylusArchResponse<'a> {
-    stylus_arch: &'a str,
-}
-
-#[derive(Serialize)]
-struct ModuleRootResponse {
-    module_root: String,
-}
-
 pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    let response = CapacityResponse {
-        capacity: state.available_workers,
-    };
-
-    Json(response)
+    format!("{:?}", state.available_workers)
 }
 
 pub async fn name() -> impl IntoResponse {
@@ -78,18 +59,14 @@ pub async fn name() -> impl IntoResponse {
 }
 
 pub async fn stylus_archs() -> impl IntoResponse {
-    let mut response = StylusArchResponse {
-        stylus_arch: "host",
-    };
-
     if cfg!(target_os = "linux") {
         if cfg!(target_arch = "aarch64") {
-            response.stylus_arch = "arm64";
+            return "arm64";
         } else if cfg!(target_arch = "x86_64") {
-            response.stylus_arch = "amd64";
+            return "amd64";
         }
     }
-    Json(response)
+    "host"
 }
 
 pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoResponse {
@@ -99,9 +76,5 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> impl IntoRespon
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    let response = ModuleRootResponse {
-        module_root: state.module_root.to_string(),
-    };
-
-    Json(response)
+    format!("[{:?}]", state.module_root)
 }
