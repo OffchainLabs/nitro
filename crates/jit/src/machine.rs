@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
+    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
     SequencerMessage,
 };

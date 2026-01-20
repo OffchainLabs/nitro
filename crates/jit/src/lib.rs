@@ -4,13 +4,12 @@
 use crate::machine::Escape;
 use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
-use eyre::Report;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
-use wasmer::{ExportError, FrameInfo, Pages, RuntimeError};
+use wasmer::{FrameInfo, Pages};
 
 mod arbcompress;
 mod caller_env;
@@ -119,7 +118,7 @@ pub struct RunResult {
 }
 
 pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
-    let (instance, env, mut store) = machine::create(&opts)?;
+    let (instance, env, mut store) = machine::create(opts)?;
     let outcome = instance
         .exports
         .get_function("_start")?

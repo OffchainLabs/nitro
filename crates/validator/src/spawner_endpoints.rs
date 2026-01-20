@@ -61,10 +61,10 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> Result<Json<Glo
     };
 
     let result = jit::run(&opts).map_err(|error| format!("{error}"))?;
-    match (result.new_state, result.error) {
-        (Some(state), None) => Ok(Json(GlobalState::from(state))),
-        (None, Some(error)) => Err(format!("{error}")),
-        _ => unreachable!("Either new_state or error must be set"),
+    if let Some(err) = result.error {
+        Err(format!("{err}"))
+    } else {
+        Ok(Json(GlobalState::from(result.new_state)))
     }
 }
 

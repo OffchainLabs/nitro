@@ -7,7 +7,7 @@ use eyre::Result;
 use jit::machine::Escape;
 use jit::run;
 use jit::{report_error, report_success, Opts};
-use wasmer::{FrameInfo, RuntimeError};
+use wasmer::FrameInfo;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
@@ -17,7 +17,7 @@ fn main() -> Result<()> {
 
     if let Some(error) = result.error {
         print_trace(&result.trace);
-        let message = match Escape::from(error) {
+        let message = match error {
             Escape::Exit(x) => format!("Failed in {runtime} with exit code {x}."),
             Escape::Failure(err) => format!("Jit failed with {err} in {runtime}."),
             Escape::HostIO(err) => format!("Hostio failed with {err} in {runtime}."),
