@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package daprovider
@@ -87,6 +87,9 @@ func (b *readerForBlobReader) recoverInternal(
 	needPayload bool,
 	needPreimages bool,
 ) ([]byte, PreimagesMap, error) {
+	if len(sequencerMsg) < 41 {
+		return nil, nil, fmt.Errorf("sequencerMsg too short: expected at least 41 bytes, got %d", len(sequencerMsg))
+	}
 	blobHashes := sequencerMsg[41:]
 	if len(blobHashes)%len(common.Hash{}) != 0 {
 		return nil, nil, ErrInvalidBlobDataFormat
