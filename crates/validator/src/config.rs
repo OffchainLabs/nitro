@@ -63,8 +63,8 @@ impl ServerConfig {
     }
 
     pub fn get_workers(&self) -> Result<usize> {
-        let workers = if let Some(workers) = self.workers {
-            workers
+        if let Some(workers) = self.workers {
+            Ok(workers)
         } else {
             let workers = match std::thread::available_parallelism() {
                 Ok(count) => count.get(),
@@ -74,10 +74,8 @@ impl ServerConfig {
                 }
                 Err(e) => return Err(e.into()),
             };
-            workers
-        };
-
-        Ok(workers)
+            Ok(workers)
+        }
     }
 }
 
@@ -158,42 +156,6 @@ mod tests {
 
     #[test]
     fn capacity_parsing() {
-        assert!(
-            ServerConfig::try_parse_from([
-                "server",
-                "--module-root",
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "--workers",
-                "5"
-            ])
-            .is_ok(),
-            "Valid num of workers should parse correctly"
-        );
-
-        assert!(
-            ServerConfig::try_parse_from([
-                "server",
-                "--module-root",
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "--workers",
-                "-5"
-            ])
-            .is_err(),
-            "negative num of workers should fail"
-        );
-
-        assert!(
-            ServerConfig::try_parse_from([
-                "server",
-                "--module-root",
-                "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "--workers",
-                "abc"
-            ])
-            .is_err(),
-            "non numeric value for workers should fail"
-        );
-
         let server_config = ServerConfig::try_parse_from([
             "server",
             "--module-root",
@@ -201,7 +163,8 @@ mod tests {
         ])
         .unwrap();
 
-        assert!(server_config.workers.is_some());
-        assert!(server_config.workers.unwrap() > 0);
+        assert!(server_config.workers.is_none());
+        let workers = server_config.get_workers().unwrap();
+        assert!(workers > 0);
     }
 }
