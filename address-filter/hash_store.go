@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package restrictedaddr
+package addressfilter
 
 import (
 	"crypto/sha256"
@@ -17,7 +17,7 @@ import (
 // The cache is included here so it gets swapped atomically with the hash data.
 type hashData struct {
 	salt     []byte
-	hashes   map[[32]byte]struct{}
+	hashes   map[common.Hash]struct{}
 	digest   string
 	loadedAt time.Time
 	cache    *lru.Cache[common.Address, bool] // LRU cache for address lookup results
@@ -43,7 +43,7 @@ func NewHashStoreWithCacheSize(cacheSize int) *HashStore {
 		cacheSize: cacheSize,
 	}
 	h.data.Store(&hashData{
-		hashes: make(map[[32]byte]struct{}),
+		hashes: make(map[common.Hash]struct{}),
 		cache:  lru.NewCache[common.Address, bool](cacheSize),
 	})
 	return h
@@ -52,10 +52,10 @@ func NewHashStoreWithCacheSize(cacheSize int) *HashStore {
 // Load atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
 // A new LRU cache is created for the new data, ensuring atomic consistency.
-func (h *HashStore) Load(salt []byte, hashes [][32]byte, digest string) {
+func (h *HashStore) Load(salt []byte, hashes []common.Hash, digest string) {
 	newData := &hashData{
 		salt:     salt,
-		hashes:   make(map[[32]byte]struct{}, len(hashes)),
+		hashes:   make(map[common.Hash]struct{}, len(hashes)),
 		digest:   digest,
 		loadedAt: time.Now(),
 		cache:    lru.NewCache[common.Address, bool](h.cacheSize),
@@ -86,58 +86,6 @@ func (h *HashStore) IsRestricted(addr common.Address) bool {
 	// Cache the result
 	data.cache.Add(addr, restricted)
 	return restricted
-}
-
-// IsAllRestricted checks if all provided addresses are in the restricted list
-// from same hash-store snapshot. Results are cached in the LRU cache.
-func (h *HashStore) IsAllRestricted(addrs []common.Address) bool {
-	data := h.data.Load() // Atomic load - no lock needed
-	if len(data.salt) == 0 {
-		return false // Not initialized
-	}
-	for _, addr := range addrs {
-		// Check cache first (cache is per-data snapshot)
-		if restricted, ok := data.cache.Get(addr); ok {
-			if !restricted {
-				return false
-			}
-			continue
-		}
-
-		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
-		_, restricted := data.hashes[hash]
-		data.cache.Add(addr, restricted)
-		if !restricted {
-			return false
-		}
-	}
-	return true
-}
-
-// IsAnyRestricted checks if any of the provided addresses are in the restricted list
-// from same hash-store snapshot. Results are cached in the LRU cache.
-func (h *HashStore) IsAnyRestricted(addrs []common.Address) bool {
-	data := h.data.Load() // Atomic load - no lock needed
-	if len(data.salt) == 0 {
-		return false // Not initialized
-	}
-	for _, addr := range addrs {
-		// Check cache first (cache is per-data snapshot)
-		if restricted, ok := data.cache.Get(addr); ok {
-			if restricted {
-				return true
-			}
-			continue
-		}
-
-		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
-		_, restricted := data.hashes[hash]
-		data.cache.Add(addr, restricted)
-		if restricted {
-			return true
-		}
-	}
-	return false
 }
 
 // Digest Return the digest of the current loaded hashstore.

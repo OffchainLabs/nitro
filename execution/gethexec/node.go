@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/address-filter"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -35,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
-	"github.com/offchainlabs/nitro/restrictedaddr"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -138,7 +138,7 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
-	RestrictedAddr              restrictedaddr.Config  `koanf:"restricted-addr" reload:"hot"`
+	addressfilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -170,8 +170,8 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
-	if err := c.RestrictedAddr.Validate(); err != nil {
-		return fmt.Errorf("error validating RestrictedAddr config: %w", err)
+	if err := c.addressfilter.Validate(); err != nil {
+		return fmt.Errorf("error validating addressfilter config: %w", err)
 	}
 	return nil
 }
@@ -196,7 +196,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
-	restrictedaddr.ConfigAddOptions(prefix+".restricted-addr", f)
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 }
 
 type LiveTracingConfig struct {
@@ -244,7 +244,7 @@ var ConfigDefault = Config{
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
 
-	RestrictedAddr: restrictedaddr.DefaultConfig,
+	addressfilter: addressfilter.DefaultConfig,
 }
 
 type ConfigFetcher interface {
@@ -270,7 +270,7 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	RestrictedAddrService    *restrictedaddr.Service
+	addressfilterService     *addressfilter.Service
 }
 
 func CreateExecutionNode(
@@ -365,7 +365,7 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	restrictedAddrService, err := restrictedaddr.NewService(ctx, &config.RestrictedAddr)
+	addressfilterService, err := addressfilter.NewService(ctx, &config.addressfilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
@@ -385,7 +385,7 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-		RestrictedAddrService:    restrictedAddrService,
+		addressfilterService:     addressfilterService,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -477,8 +477,8 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
-	if n.RestrictedAddrService != nil {
-		if err = n.RestrictedAddrService.Initialize(ctx); err != nil {
+	if n.addressfilterService != nil {
+		if err = n.addressfilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing restricted addr service: %w", err)
 		}
 	}
@@ -516,8 +516,8 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 
-	if n.RestrictedAddrService != nil {
-		n.RestrictedAddrService.Start(ctx)
+	if n.addressfilterService != nil {
+		n.addressfilterService.Start(ctx)
 	}
 	return nil
 }
@@ -549,8 +549,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 	n.StopWaiter.StopAndWait()
 
-	if n.RestrictedAddrService != nil && n.RestrictedAddrService.Started() {
-		n.RestrictedAddrService.StopAndWait()
+	if n.addressfilterService != nil && n.addressfilterService.Started() {
+		n.addressfilterService.StopAndWait()
 	}
 }
 

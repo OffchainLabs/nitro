@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package restrictedaddr
+package addressfilter
 
 import (
 	"context"
@@ -18,9 +18,9 @@ import (
 // copy for efficient address filtering.
 type Service struct {
 	stopwaiter.StopWaiter
-	config *Config
-	store  *HashStore
-	syncer *S3Syncer
+	config  *Config
+	store   *HashStore
+	syncMgr *S3SyncManager
 }
 
 // NewService creates a new restricted address service.
@@ -35,15 +35,15 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 	}
 
 	store := NewHashStore()
-	syncer, err := NewS3Syncer(ctx, config, store)
+	syncMgr, err := NewS3SyncManager(ctx, config, store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
 	}
 
 	return &Service{
-		config: config,
-		store:  store,
-		syncer: syncer,
+		config:  config,
+		store:   store,
+		syncMgr: syncMgr,
 	}, nil
 }
 
@@ -52,12 +52,12 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 // If this fails, the node should not start.
 func (s *Service) Initialize(ctx context.Context) error {
 	log.Info("initializing restricted addr service, downloading initial hash list",
-		"bucket", s.config.S3Bucket,
-		"key", s.config.S3ObjectKey,
+		"bucket", s.config.S3.Bucket,
+		"key", s.config.S3.ObjectKey,
 	)
 
 	// Force download (ignore ETag check for initial load)
-	if err := s.syncer.DownloadAndLoad(ctx); err != nil {
+	if err := s.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
 		return fmt.Errorf("failed to load initial hash list: %w", err)
 	}
 
@@ -75,7 +75,7 @@ func (s *Service) Start(ctx context.Context) {
 
 	// Start periodic polling goroutine
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		if err := s.syncer.CheckAndSync(ctx); err != nil {
+		if err := s.syncMgr.Syncer.CheckAndSync(ctx); err != nil {
 			log.Error("failed to sync restricted addr list", "err", err)
 		}
 		return s.config.PollInterval
@@ -90,7 +90,7 @@ func (s *Service) GetHashCount() int {
 	return s.store.Size()
 }
 
-// GetETag returns the S3 ETag Digest of the currently loaded hash list.
+// GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
 func (s *Service) GetHashStoreDigest() string {
 	return s.store.Digest()
 }

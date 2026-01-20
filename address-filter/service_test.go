@@ -1,7 +1,7 @@
 // Copyright 2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package restrictedaddr
+package addressfilter
 
 import (
 	"crypto/sha256"
@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
 func TestHashStore_IsRestricted(t *testing.T) {
@@ -32,7 +34,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Pre-compute hashes
-	var hashes [][32]byte
+	var hashes []common.Hash
 	for _, addr := range addresses {
 		hash := sha256.Sum256(append(salt, addr.Bytes()...))
 		hashes = append(hashes, hash)
@@ -71,7 +73,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	hash1 := sha256.Sum256(append(salt1, addr1.Bytes()...))
 
 	// Load first set
-	store.Load(salt1, [][32]byte{hash1}, "etag1")
+	store.Load(salt1, []common.Hash{hash1}, "etag1")
 	if !store.IsRestricted(addr1) {
 		t.Error("addr1 should be restricted after first load")
 	}
@@ -81,7 +83,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 	hash2 := sha256.Sum256(append(salt2, addr2.Bytes()...))
 
-	store.Load(salt2, [][32]byte{hash2}, "etag2")
+	store.Load(salt2, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
 	if store.IsRestricted(addr1) {
@@ -101,7 +103,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 
 	salt1 := []byte("test-salt")
 	var addresses []common.Address
-	var hashes1 [][32]byte
+	var hashes1 []common.Hash
 	for i := 0; i < 100; i++ {
 		addr := common.BigToAddress(common.Big1)
 		addr[18] = byte(i)
@@ -114,7 +116,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 	// prepare second set for swapping
 	salt2 := []byte("new-salt")
 	var addresses2 []common.Address
-	var hashes2 [][32]byte
+	var hashes2 []common.Hash
 	for i := 0; i < 100; i++ {
 		addr := common.BigToAddress(common.Big2)
 		addr[18] = byte(i)
@@ -134,8 +136,8 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 					addr1 := addresses[i]
 					addr2 := addresses2[i]
 
-					if store.IsAllRestricted([]common.Address{addr1, addr2}) ||
-						!store.IsAnyRestricted([]common.Address{addr1, addr2}) {
+					if store.isAllRestricted([]common.Address{addr1, addr2}) ||
+						!store.isAnyRestricted([]common.Address{addr1, addr2}) {
 						// One should be restricted, the other not, atomic swap should ensure consistency
 						t.Log("addr1:", addr1.Hex(), "restricted:", store.IsRestricted(addr1))
 						t.Log("addr2:", addr2.Hex(), "restricted:", store.IsRestricted(addr2))
@@ -249,10 +251,12 @@ func TestConfig_Validate(t *testing.T) {
 
 	// Test valid enabled config
 	validConfig := Config{
-		Enable:       true,
-		S3Bucket:     "test-bucket",
-		S3Region:     "us-east-1",
-		S3ObjectKey:  "hashlists/current.json",
+		Enable: true,
+		S3: s3syncer.Config{
+			Bucket:    "test-bucket",
+			Region:    "us-east-1",
+			ObjectKey: "hashlists/current.json",
+		},
 		PollInterval: 5 * time.Minute,
 	}
 	if err := validConfig.Validate(); err != nil {
@@ -284,4 +288,56 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	if loadedAt.Before(before) || loadedAt.After(after) {
 		t.Errorf("LoadedAt should be between %v and %v, got %v", before, after, loadedAt)
 	}
+}
+
+// IsAllRestricted checks if all provided addresses are in the restricted list
+// from same hash-store snapshot. Results are cached in the LRU cache.
+func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
+	data := h.data.Load() // Atomic load - no lock needed
+	if len(data.salt) == 0 {
+		return false // Not initialized
+	}
+	for _, addr := range addrs {
+		// Check cache first (cache is per-data snapshot)
+		if restricted, ok := data.cache.Get(addr); ok {
+			if !restricted {
+				return false
+			}
+			continue
+		}
+
+		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
+		_, restricted := data.hashes[hash]
+		data.cache.Add(addr, restricted)
+		if !restricted {
+			return false
+		}
+	}
+	return true
+}
+
+// IsAnyRestricted checks if any of the provided addresses are in the restricted list
+// from same hash-store snapshot. Results are cached in the LRU cache.
+func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
+	data := h.data.Load() // Atomic load - no lock needed
+	if len(data.salt) == 0 {
+		return false // Not initialized
+	}
+	for _, addr := range addrs {
+		// Check cache first (cache is per-data snapshot)
+		if restricted, ok := data.cache.Get(addr); ok {
+			if restricted {
+				return true
+			}
+			continue
+		}
+
+		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
+		_, restricted := data.hashes[hash]
+		data.cache.Add(addr, restricted)
+		if restricted {
+			return true
+		}
+	}
+	return false
 }
