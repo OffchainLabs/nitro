@@ -64,7 +64,7 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 	Require(t, err)
 	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
-	entry, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
+	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
 	Require(t, err)
 
 	// Represents running of MEL validation using preimages in wasm mode. TODO: remove this once we have validation wired

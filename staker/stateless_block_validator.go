@@ -137,22 +137,21 @@ type FullBatchInfo struct {
 type validationEntry struct {
 	Stage ValidationEntryStage
 	// Valid since ReadyforRecord:
-	Pos                         arbutil.MessageIndex
-	HasDelayedMsg               bool
-	DelayedMsgNr                uint64
-	ChainConfig                 *params.ChainConfig
-	EndGSParentChainBlockNumber uint64                  // MEL relevant field
-	Start                       validator.GoGlobalState // MEL relevant field
-	End                         validator.GoGlobalState // MEL relevant field
-
+	Pos           arbutil.MessageIndex
+	Start         validator.GoGlobalState
+	End           validator.GoGlobalState
+	HasDelayedMsg bool
+	DelayedMsgNr  uint64
+	ChainConfig   *params.ChainConfig
 	// valid when created, removed after recording
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  daprovider.PreimagesMap // MEL relevant field
-	UserWasms  state.UserWasms
-	DelayedMsg []byte
+	Preimages               daprovider.PreimagesMap
+	UserWasms               state.UserWasms
+	DelayedMsg              []byte
+	EndParentChainBlockHash common.Hash
 }
 
 func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.ValidationInput, error) {

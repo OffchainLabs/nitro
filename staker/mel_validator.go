@@ -253,7 +253,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		}
 
 		// Create validation entry
-		entry, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), latestStakedAssertion.InboxMaxCount.Uint64())
+		entry, endGSParentChainBlockNumber, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), latestStakedAssertion.InboxMaxCount.Uint64())
 		if err != nil {
 			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock.Load(), "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
 			return 0
@@ -273,7 +273,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		if err := mv.AdvanceValidations(ctx, doneEntry); err != nil {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
 		}
-		mv.latestValidatedParentChainBlock.Store(entry.EndGSParentChainBlockNumber)
+		mv.latestValidatedParentChainBlock.Store(endGSParentChainBlockNumber)
 		mv.latestValidatedGS = doneEntry.End
 		return 0
 	})
@@ -322,62 +322,62 @@ func (mv *MELValidator) GetModuleRootsToValidate() []common.Hash {
 	return validatingModuleRoots
 }
 
-func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, error) {
+func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, uint64, error) {
 	if latestValidatedParentChainBlock == 0 { // TODO: last validated.
 		// ending position- bold staker latest posted assertion on chain that it agrees with (l1blockhash)-
-		return nil, errors.New("trying to create validation entry for zero block number")
+		return nil, 0, errors.New("trying to create validation entry for zero block number")
 	}
 	preState, err := mv.messageExtractor.GetState(ctx, latestValidatedParentChainBlock)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// We have already validated message extraction of messages till count toValidateMsgExtractionCount, so can return early
 	// and wait for block validator to progress the toValidateMsgExtractionCount
 	if preState.MsgCount >= toValidateMsgExtractionCount {
-		return nil, nil
+		return nil, 0, nil
 	}
 	preimages := make(daprovider.PreimagesMap)
 	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	recordingDAPReaders, err := melrecording.NewDAPReaderSource(ctx, mv.dapReaders, preimages)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var state *mel.State // to be used in endGS
 	for i := latestValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if err := txsRecorder.Initialize(ctx); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		receiptsRecorder, err := melrecording.NewReceiptRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if err := receiptsRecorder.Initialize(ctx); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		state, _, _, _, err = melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
 		if err != nil {
-			return nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
+			return nil, 0, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
 		wantState, err := mv.messageExtractor.GetState(ctx, i)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if state.Hash() != wantState.Hash() {
-			return nil, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
+			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
 		if err := receiptsRecorder.CollectTxIndicesPreimage(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if state.MsgCount >= toValidateMsgExtractionCount {
 			break
@@ -390,11 +390,11 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestVal
 		// PositionInMEL: preState.MsgCount - 1,
 	}
 	return &validationEntry{
-		EndGSParentChainBlockNumber: state.ParentChainBlockNumber,
-		Start:                       mv.latestValidatedGS,
-		End:                         endGs,
-		Preimages:                   preimages,
-	}, nil
+		Start:                   mv.latestValidatedGS,
+		End:                     endGs,
+		Preimages:               preimages,
+		EndParentChainBlockHash: state.ParentChainBlockHash,
+	}, state.ParentChainBlockNumber, nil
 }
 
 func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validationEntry) (*validationDoneEntry, error) {
