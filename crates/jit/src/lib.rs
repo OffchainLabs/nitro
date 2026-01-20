@@ -106,14 +106,21 @@ pub struct NativeInput {
     pub programs: HashMap<Bytes32, Vec<u8>>,
 }
 
+/// Result of running the JIT validation.
 pub struct RunResult {
+    /// Amount of memory used by the Wasm instance.
     pub memory_used: Pages,
+    /// Total runtime of the Wasm instance (measured from the first wavmio instruction to finish).
     pub runtime: Duration,
 
+    /// New global state after running the Wasm instance. May be invalid, if `self.error` is `Some`.
     pub new_state: GlobalState,
 
+    /// Error encountered during execution, if any.
     pub error: Option<Escape>,
+    /// Stack trace of the error, if any.
     pub trace: Vec<FrameInfo>,
+    /// Optional socket to report results back to the spawner, if `InputMode` was `Continuous`.
     pub socket: Option<BufWriter<TcpStream>>,
 }
 
