@@ -30,3 +30,4 @@ wasmer-compiler-llvm = { workspace = true, optional = true }
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]
+cc_brotli = ["brotli/cc_brotli"]
