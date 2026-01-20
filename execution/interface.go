@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -117,4 +118,20 @@ type FullConsensusClient interface {
 	BatchFetcher
 	ConsensusInfo
 	ConsensusSequencer
+}
+
+// ExecutionDebugger provides debug/tracing operations on execution client
+type ExecutionDebugger interface {
+	// DebugTraceTransaction traces a transaction using txGasDimensionLogger tracer
+	DebugTraceTransaction(
+		ctx context.Context,
+		txHash common.Hash,
+		tracerConfig map[string]interface{},
+	) (native.ExecutionResult, error)
+	// DebugTraceTransactionByOpcode traces a transaction using txGasDimensionByOpcode tracer
+	DebugTraceTransactionByOpcode(
+		ctx context.Context,
+		txHash common.Hash,
+		tracerConfig map[string]interface{},
+	) (native.TxGasDimensionByOpcodeExecutionResult, error)
 }

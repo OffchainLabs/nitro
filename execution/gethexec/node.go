@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -263,6 +264,7 @@ type ExecutionNode struct {
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	rpcClient                *rpc.Client // for debug tracing operations
 }
 
 func CreateExecutionNode(
@@ -448,6 +450,9 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 
+	// Initialize RPC client for debug tracing
+	n.rpcClient = n.Backend.Stack().Attach()
+
 	return nil
 }
 
@@ -493,6 +498,9 @@ func (n *ExecutionNode) StopAndWait() {
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
+	}
+	if n.rpcClient != nil {
+		n.rpcClient.Close()
 	}
 	// TODO after separation
 	// if err := n.Stack.Close(); err != nil {
@@ -612,6 +620,26 @@ func (n *ExecutionNode) SetFinalityData(
 func (n *ExecutionNode) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
 	n.SyncMonitor.SetConsensusSyncData(syncData)
 	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+// DebugTraceTransaction calls debug_traceTransaction on the Geth node's RPC API
+func (n *ExecutionNode) DebugTraceTransaction(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.ExecutionResult, error) {
+	if n.rpcClient == nil {
+		return native.ExecutionResult{}, errors.New("RPC client not initialized")
+	}
+	var result native.ExecutionResult
+	err := n.rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, tracerConfig)
+	return result, err
+}
+
+// DebugTraceTransactionByOpcode calls debug_traceTransaction with txGasDimensionByOpcode tracer on the Geth node's RPC API
+func (n *ExecutionNode) DebugTraceTransactionByOpcode(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.TxGasDimensionByOpcodeExecutionResult, error) {
+	if n.rpcClient == nil {
+		return native.TxGasDimensionByOpcodeExecutionResult{}, errors.New("RPC client not initialized")
+	}
+	var result native.TxGasDimensionByOpcodeExecutionResult
+	err := n.rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, tracerConfig)
+	return result, err
 }
 
 func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *params.ChainConfig) error {

@@ -48,7 +48,7 @@ func TestDimTxOpCallColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -64,7 +64,7 @@ func TestDimTxOpCallColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -83,7 +83,7 @@ func TestDimTxOpCallColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -102,7 +102,7 @@ func TestDimTxOpCallColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -118,7 +118,7 @@ func TestDimTxOpCallColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -134,7 +134,7 @@ func TestDimTxOpCallColdNoTransferContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -152,7 +152,7 @@ func TestDimTxOpCallColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -170,7 +170,7 @@ func TestDimTxOpCallColdPayingNoCodeVirginMemExpansion(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -188,7 +188,7 @@ func TestDimTxOpCallColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -206,7 +206,7 @@ func TestDimTxOpCallColdPayingNoCodeFundedMemExpansion(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -227,7 +227,7 @@ func TestDimTxOpCallColdPayingContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -248,7 +248,7 @@ func TestDimTxOpCallColdPayingContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -264,7 +264,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -280,7 +280,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -299,7 +299,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -318,7 +318,7 @@ func TestDimTxOpCallWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -334,7 +334,7 @@ func TestDimTxOpCallWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -353,7 +353,7 @@ func TestDimTxOpCallWarmNoTransferContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -373,7 +373,7 @@ func TestDimTxOpCallWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -393,7 +393,7 @@ func TestDimTxOpCallWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -414,7 +414,7 @@ func TestDimTxOpCallWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -435,7 +435,7 @@ func TestDimTxOpCallWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -456,7 +456,7 @@ func TestDimTxOpCallWarmPayingContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -477,7 +477,7 @@ func TestDimTxOpCallWarmPayingContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // #########################################################################################################
@@ -507,7 +507,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -523,7 +523,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -542,7 +542,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -561,7 +561,7 @@ func TestDimTxOpCallCodeColdNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -577,7 +577,7 @@ func TestDimTxOpCallCodeColdNoTransferContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -593,7 +593,7 @@ func TestDimTxOpCallCodeColdNoTransferContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -611,7 +611,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeVirginMemUnchanged(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -629,7 +629,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeVirginMemExpansion(t *testing.T) {
 	noCodeVirginAddress := common.HexToAddress("0x00000000000000000000000000000000DeaDBeef")
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -647,7 +647,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeFundedMemUnchanged(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -665,7 +665,7 @@ func TestDimTxOpCallCodeColdPayingNoCodeFundedMemExpansion(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Owner", noCodeFundedAddress, big.NewInt(1e17), builder.L2Info)
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -686,7 +686,7 @@ func TestDimTxOpCallCodeColdPayingContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -707,7 +707,7 @@ func TestDimTxOpCallCodeColdPayingContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.ColdPayableMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -723,7 +723,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -739,7 +739,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeVirginMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -758,7 +758,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -777,7 +777,7 @@ func TestDimTxOpCallCodeWarmNoTransferNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -793,7 +793,7 @@ func TestDimTxOpCallCodeWarmNoTransferContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -812,7 +812,7 @@ func TestDimTxOpCallCodeWarmNoTransferContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmNoTransferMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -832,7 +832,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -852,7 +852,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeVirginMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeVirginAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -873,7 +873,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -894,7 +894,7 @@ func TestDimTxOpCallCodeWarmPayingNoCodeFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, noCodeFundedAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -915,7 +915,7 @@ func TestDimTxOpCallCodeWarmPayingContractFundedMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemUnchanged, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -936,7 +936,7 @@ func TestDimTxOpCallCodeWarmPayingContractFundedMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.WarmPayableMemExpansion, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // This tests a call that does another call,
@@ -951,5 +951,5 @@ func TestDimTxOpCallNestedCall(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, caller.Entrypoint, calleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

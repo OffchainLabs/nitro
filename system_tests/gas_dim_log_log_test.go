@@ -56,7 +56,7 @@ func TestDimLogLog0TopicsOnlyMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicEmptyData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	expected := ExpectedGasCosts{
@@ -89,7 +89,7 @@ func TestDimLogLog0ExtraDataMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	var numBytesWritten uint64 = 7
@@ -126,7 +126,7 @@ func TestDimLogLog1TopicsOnlyMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicEmptyData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 	var numTopics uint64 = 1
 
@@ -162,7 +162,7 @@ func TestDimLogLog1ExtraDataMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 
 	var numBytesWritten uint64 = 9
@@ -198,7 +198,7 @@ func TestDimLogLog2TopicsOnlyMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopics)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
 	var numTopics uint64 = 2
@@ -236,7 +236,7 @@ func TestDimLogLog2ExtraDataMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
 	var numBytesWritten uint64 = 32 // address is 20 bytes, but encoded as a uint256 so 32 bytes
@@ -272,7 +272,7 @@ func TestDimLogLog3TopicsOnlyMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopics)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
 	var numTopics uint64 = 3
@@ -310,7 +310,7 @@ func TestDimLogLog3ExtraDataMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
 	var numBytesWritten uint64 = 32
@@ -346,7 +346,7 @@ func TestDimLogLog4TopicsOnlyMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopics)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
 	var numTopics uint64 = 4
@@ -384,7 +384,7 @@ func TestDimLogLog4ExtraDataMemUnchanged(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraData)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
 	var numBytesWritten uint64 = 32
@@ -441,7 +441,7 @@ func TestDimLogLog0ExtraDataMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitZeroTopicNonEmptyDataAndMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log0Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG0")
 
 	var numBytesWritten uint64 = 64
@@ -481,7 +481,7 @@ func TestDimLogLog1ExtraDataMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitOneTopicNonEmptyDataAndMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log1Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG1")
 
 	var numBytesWritten uint64 = 64
@@ -522,7 +522,7 @@ func TestDimLogLog2ExtraDataMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitTwoTopicsExtraDataAndMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log2Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG2")
 
 	var numBytesWritten uint64 = 64
@@ -563,7 +563,7 @@ func TestDimLogLog3ExtraDataMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitThreeTopicsExtraDataAndMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log3Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG3")
 
 	var numBytesWritten uint64 = 64
@@ -604,7 +604,7 @@ func TestDimLogLog4ExtraDataMemExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployLogEmitter)
 	_, receipt := callOnContract(t, builder, auth, contract.EmitFourTopicsExtraDataAndMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	log4Log := getSpecificDimensionLog(t, traceResult.DimensionLogs, "LOG4")
 
 	var numBytesWritten uint64 = 64

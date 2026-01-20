@@ -3,12 +3,15 @@ package nethexec
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -116,11 +119,21 @@ func compare[T any](op string, intRes T, intErr error, extRes T, extErr error) e
 	case intErr == nil && extErr != nil:
 		return fmt.Errorf("external operation failed: %w", extErr)
 	default:
-		if !cmp.Equal(intRes, extRes) {
-			opts := cmp.Options{
-				cmp.Transformer("HashHex", func(h common.Hash) string { return h.Hex() }),
-			}
-			diff := cmp.Diff(intRes, extRes, opts)
+		opts := cmp.Options{
+			cmp.Transformer("HashHex", func(h common.Hash) string { return h.Hex() }),
+			cmp.Comparer(func(x, y *big.Int) bool {
+				if x == nil && y == nil {
+					return true
+				}
+				if x == nil || y == nil {
+					return false
+				}
+				return x.Cmp(y) == 0
+			}),
+			cmpopts.EquateEmpty(),
+		}
+		if !cmp.Equal(intRes, extRes, opts...) {
+			diff := cmp.Diff(intRes, extRes, opts...)
 			// Log the detailed diff using fmt.Printf to avoid escaping
 			fmt.Printf("ERROR: Execution mismatch detected in operation: %s\n", op)
 			fmt.Printf("Diff details:\n%s\n", diff)
@@ -399,4 +412,60 @@ func (w *compareExecutionClient) SetConsensusClient(consensus execution.FullCons
 
 func (w *compareExecutionClient) Initialize(ctx context.Context) error {
 	return w.gethExecutionClient.Initialize(ctx)
+}
+
+// DebugTraceTransaction calls debug_traceTransaction on both Geth and Nethermind and compares results.
+func (w *compareExecutionClient) DebugTraceTransaction(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.ExecutionResult, error) {
+	start := time.Now()
+	tracer := tracerConfig["tracer"]
+	log.Info("CompareExecutionClient: DebugTraceTransaction", "txHash", txHash, "tracer", tracer)
+
+	gethResult, gethErr := w.gethExecutionClient.DebugTraceTransaction(ctx, txHash, tracerConfig)
+	nethResult, nethErr := w.nethermindExecutionClient.DebugTraceTransaction(ctx, txHash, tracerConfig)
+
+	log.Info("CompareExecutionClient: DebugTraceTransaction completed",
+		"txHash", txHash,
+		"tracer", tracer,
+		"gethErr", gethErr,
+		"nethErr", nethErr,
+		"elapsed", time.Since(start))
+
+	if err := compare("DebugTraceTransaction", gethResult, gethErr, nethResult, nethErr); err != nil {
+		select {
+		case w.fatalErrChan <- fmt.Errorf("compareExecutionClient DebugTraceTransaction: %s", err.Error()):
+		default:
+			log.Error("Non-fatal trace comparison error", "txHash", txHash, "err", err)
+		}
+		return gethResult, err
+	}
+
+	return gethResult, gethErr
+}
+
+// DebugTraceTransactionByOpcode calls debug_traceTransaction with txGasDimensionByOpcode tracer on both Geth and Nethermind and compares results.
+func (w *compareExecutionClient) DebugTraceTransactionByOpcode(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.TxGasDimensionByOpcodeExecutionResult, error) {
+	start := time.Now()
+	tracer := tracerConfig["tracer"]
+	log.Info("CompareExecutionClient: DebugTraceTransactionByOpcode", "txHash", txHash, "tracer", tracer)
+
+	gethResult, gethErr := w.gethExecutionClient.DebugTraceTransactionByOpcode(ctx, txHash, tracerConfig)
+	nethResult, nethErr := w.nethermindExecutionClient.DebugTraceTransactionByOpcode(ctx, txHash, tracerConfig)
+
+	log.Info("CompareExecutionClient: DebugTraceTransactionByOpcode completed",
+		"txHash", txHash,
+		"tracer", tracer,
+		"gethErr", gethErr,
+		"nethErr", nethErr,
+		"elapsed", time.Since(start))
+
+	if err := compare("DebugTraceTransactionByOpcode", gethResult, gethErr, nethResult, nethErr); err != nil {
+		select {
+		case w.fatalErrChan <- fmt.Errorf("compareExecutionClient DebugTraceTransactionByOpcode: %s", err.Error()):
+		default:
+			log.Error("Non-fatal trace comparison error", "txHash", txHash, "err", err)
+		}
+		return gethResult, err
+	}
+
+	return gethResult, gethErr
 }

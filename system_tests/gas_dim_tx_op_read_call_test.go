@@ -42,7 +42,7 @@ func TestDimTxOpDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyCold, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -58,7 +58,7 @@ func TestDimTxOpDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarm, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -74,7 +74,7 @@ func TestDimTxOpDelegateCallColdContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyCold, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -90,7 +90,7 @@ func TestDimTxOpDelegateCallWarmContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarm, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 
 }
 
@@ -107,7 +107,7 @@ func TestDimTxOpDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -123,7 +123,7 @@ func TestDimTxOpDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -139,7 +139,7 @@ func TestDimTxOpDelegateCallColdContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyColdMemExpansion, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -155,7 +155,7 @@ func TestDimTxOpDelegateCallWarmContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarmMemExpansion, delegateCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -171,7 +171,7 @@ func TestDimTxOpStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyCold, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -187,7 +187,7 @@ func TestDimTxOpStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarm, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -202,7 +202,7 @@ func TestDimTxOpStaticCallColdContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyCold, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -217,7 +217,7 @@ func TestDimTxOpStaticCallWarmContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarm, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -233,7 +233,7 @@ func TestDimTxOpStaticCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -249,7 +249,7 @@ func TestDimTxOpStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -264,7 +264,7 @@ func TestDimTxOpStaticCallColdContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyColdMemExpansion, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -279,5 +279,5 @@ func TestDimTxOpStaticCallWarmContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarmMemExpansion, staticCalleeAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

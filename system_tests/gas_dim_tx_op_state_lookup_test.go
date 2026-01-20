@@ -33,7 +33,7 @@ func TestDimTxOpBalanceCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -47,7 +47,7 @@ func TestDimTxOpBalanceWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // ############################################################
@@ -65,7 +65,7 @@ func TestDimTxOpExtCodeSizeCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -79,7 +79,7 @@ func TestDimTxOpExtCodeSizeWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // ############################################################
@@ -97,7 +97,7 @@ func TestDimTxOpExtCodeHashCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -111,7 +111,7 @@ func TestDimTxOpExtCodeHashWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // ############################################################
@@ -131,7 +131,7 @@ func TestDimTxOpSloadCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -145,5 +145,5 @@ func TestDimTxOpSloadWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

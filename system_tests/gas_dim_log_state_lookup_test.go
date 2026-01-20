@@ -40,7 +40,7 @@ func TestDimLogBalanceCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceCold)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
@@ -72,7 +72,7 @@ func TestDimLogBalanceWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployBalance)
 	_, receipt := callOnContract(t, builder, auth, contract.CallBalanceWarm)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	balanceLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "BALANCE")
 
 	expected := ExpectedGasCosts{
@@ -109,7 +109,7 @@ func TestDimLogExtCodeSizeCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeCold)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
@@ -141,7 +141,7 @@ func TestDimLogExtCodeSizeWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeSize)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeSizeWarm)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	extCodeSizeLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODESIZE")
 
 	expected := ExpectedGasCosts{
@@ -178,7 +178,7 @@ func TestDimLogExtCodeHashCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashCold)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
@@ -210,7 +210,7 @@ func TestDimLogExtCodeHashWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployExtCodeHash)
 	_, receipt := callOnContract(t, builder, auth, contract.GetExtCodeHashWarm)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	extCodeHashLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "EXTCODEHASH")
 
 	expected := ExpectedGasCosts{
@@ -250,7 +250,7 @@ func TestDimLogSloadCold(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.ColdSload)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{
@@ -283,7 +283,7 @@ func TestDimLogSloadWarm(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeploySload)
 	_, receipt := callOnContract(t, builder, auth, contract.WarmSload)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	sloadLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SLOAD")
 
 	expected := ExpectedGasCosts{

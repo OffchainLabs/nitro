@@ -23,7 +23,7 @@ func TestDimTxOpArbSysBlockNumberForSload(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, precompileTestContract.TestArbSysArbBlockNumber)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test calls a testActivateProgram function on a test contract
@@ -51,7 +51,7 @@ func TestDimTxOpArbWasmActivateProgramForSstoreAndCallFromProxy(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test calls the ActivateProgram function on the ArbWasm precompile
@@ -76,7 +76,7 @@ func TestDimTxOpActivateProgramForSstoreAndCall(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // ******************************************************

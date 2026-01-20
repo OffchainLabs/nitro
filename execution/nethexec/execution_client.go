@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -300,4 +301,14 @@ func (p *nethermindExecutionClient) BlockNumber(ctx context.Context) (uint64, er
 
 func (p *nethermindExecutionClient) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
 	return p.rpcClient.BalanceAt(ctx, account, blockNumber)
+}
+
+// DebugTraceTransaction calls debug_traceTransaction on Nethermind
+func (p *nethermindExecutionClient) DebugTraceTransaction(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.ExecutionResult, error) {
+	return p.rpcClient.DebugTraceTransaction(ctx, txHash, tracerConfig)
+}
+
+// DebugTraceTransactionByOpcode calls debug_traceTransaction with txGasDimensionByOpcode tracer on Nethermind
+func (p *nethermindExecutionClient) DebugTraceTransactionByOpcode(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.TxGasDimensionByOpcodeExecutionResult, error) {
+	return p.rpcClient.DebugTraceTransactionByOpcode(ctx, txHash, tracerConfig)
 }

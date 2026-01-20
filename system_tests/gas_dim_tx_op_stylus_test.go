@@ -25,7 +25,7 @@ func TestDimTxOpStylus(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // This test calls the Keccak wasm program indirectly via
@@ -46,5 +46,5 @@ func TestDimTxOpStylusKeccakForSloadFromProxy(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

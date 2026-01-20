@@ -54,7 +54,7 @@ func TestDimLogSelfdestructColdNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -93,7 +93,7 @@ func TestDimLogSelfdestructColdNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, payableCounterAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -132,7 +132,7 @@ func TestDimLogSelfdestructColdPayingVirgin(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -172,7 +172,7 @@ func TestDimLogSelfdestructColdPayingFunded(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccount)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -207,7 +207,7 @@ func TestDimLogSelfdestructWarmNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -246,7 +246,7 @@ func TestDimLogSelfdestructWarmNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -285,7 +285,7 @@ func TestDimLogSelfdestructWarmPayingVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{
@@ -323,7 +323,7 @@ func TestDimLogSelfdestructWarmPayingFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	selfDestructLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "SELFDESTRUCT")
 
 	expected := ExpectedGasCosts{

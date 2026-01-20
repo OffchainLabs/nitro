@@ -46,7 +46,7 @@ func TestDimTxOpSelfdestructColdNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -67,7 +67,7 @@ func TestDimTxOpSelfdestructColdNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -87,7 +87,7 @@ func TestDimTxOpSelfdestructColdPayingVirgin(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -108,7 +108,7 @@ func TestDimTxOpSelfdestructColdPayingFunded(t *testing.T) {
 	// call selfDestructor.SelfDestruct(emptyAccountAddress) - which is cold
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.SelfDestruct, emptyAccount)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -125,7 +125,7 @@ func TestDimTxOpSelfdestructWarmNoTransferVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -146,7 +146,7 @@ func TestDimTxOpSelfdestructWarmNoTransferFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -166,7 +166,7 @@ func TestDimTxOpSelfdestructWarmPayingVirgin(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(0xdeadbeef)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmEmptySelfDestructor, emptyAccountAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -188,5 +188,5 @@ func TestDimTxOpSelfdestructWarmPayingFunded(t *testing.T) {
 	// call selfDestructor.warmSelfDestructor(payableCounterAddress)
 	receipt := callOnContractWithOneArg(t, builder, auth, selfDestructor.WarmSelfDestructor, payableCounterAddress)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

@@ -25,7 +25,7 @@ func TestDimLogArbSysBlockNumberForSload(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, precompileTestContract.TestArbSysArbBlockNumber)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 
 	// We expect an SLOAD with 0 gas, which is the SLOAD fired inside the precompile
 
@@ -76,7 +76,7 @@ func TestDimLogActivateProgramForSstoreAndCall(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 
 	// We expect an SSTORE with 0 gas, which is the SSTORE fired inside the precompile
 	sstoreLog := getSpecificDimensionLogAtIndex(t, traceResult.DimensionLogs, "SSTORE", 4, 1)

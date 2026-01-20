@@ -50,7 +50,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
-	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -74,6 +74,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/das/dastree"
 	"github.com/offchainlabs/nitro/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/deploy"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -219,6 +220,32 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 		return nil, err
 	}
 	return arbmath.BigSub(newBalance, prevBalance), nil
+}
+
+// DebugTraceTransaction calls debug_traceTransaction on the execution client.
+// Routes through geth, nethermind, or comparison client based on ExecutionClientMode.
+func (tc *TestClient) DebugTraceTransaction(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.ExecutionResult, error) {
+	if tc.ConsensusNode == nil {
+		return native.ExecutionResult{}, fmt.Errorf("consensus node is nil")
+	}
+	debugger, ok := tc.ConsensusNode.ExecutionClient.(execution.ExecutionDebugger)
+	if !ok {
+		return native.ExecutionResult{}, fmt.Errorf("execution client does not implement ExecutionDebugger")
+	}
+	return debugger.DebugTraceTransaction(ctx, txHash, tracerConfig)
+}
+
+// DebugTraceTransactionByOpcode calls debug_traceTransaction with txGasDimensionByOpcode tracer on the execution client.
+// Routes through geth, nethermind, or comparison client based on ExecutionClientMode.
+func (tc *TestClient) DebugTraceTransactionByOpcode(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.TxGasDimensionByOpcodeExecutionResult, error) {
+	if tc.ConsensusNode == nil {
+		return native.TxGasDimensionByOpcodeExecutionResult{}, fmt.Errorf("consensus node is nil")
+	}
+	debugger, ok := tc.ConsensusNode.ExecutionClient.(execution.ExecutionDebugger)
+	if !ok {
+		return native.TxGasDimensionByOpcodeExecutionResult{}, fmt.Errorf("execution client does not implement ExecutionDebugger")
+	}
+	return debugger.DebugTraceTransactionByOpcode(ctx, txHash, tracerConfig)
 }
 
 // GetCodeHash retrieves the code hash for a contract address via RPC.

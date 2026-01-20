@@ -5,8 +5,8 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
@@ -31,21 +32,38 @@ const (
 // #########################################################################################################
 // #########################################################################################################
 
-// Run a test where we set up an L2, then send a transaction
+// Core test function for computation-only opcodes.
+// Runs a test where we set up an L2, then send a transaction
 // that only has computation-only opcodes. Then call debug_traceTransaction
-// with the txGasDimensionLogger tracer.
+// with the txGasDimensionLogger tracer on a replica node.
 //
-// we expect in this case to get back a json response, with the gas dimension logs
+// We expect in this case to get back a json response, with the gas dimension logs
 // containing only the computation-only opcodes and that the gas in the computation
 // only opcodes is equal to the OneDimensionalGasCost.
-func TestDimLogComputationOnlyOpcodes(t *testing.T) {
+func testDimLogComputationOnlyOpcodes(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
 
+	// Build replica node with specified execution client mode
+	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaParams := &SecondNodeParams{
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
+	}
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+	defer replicaCleanup()
+
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+
+	// Wait for replica to sync the transaction
+	_, err := WaitForTx(ctx, replicaTestClient.Client, receipt.TxHash, time.Second*15)
+	Require(t, err)
+
+	// Call debug_traceTransaction on the replica
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, replicaTestClient, receipt.TxHash)
 
 	// Validate each log entry
 	for i, log := range traceResult.DimensionLogs {
@@ -71,6 +89,26 @@ func TestDimLogComputationOnlyOpcodes(t *testing.T) {
 		// Validate error field
 		Require(t, log.Err, "Log entry %d: Unexpected error: %v", i, log.Err)
 	}
+}
+
+// TestDimLogComputationOnlyOpcodesInternal tests with internal geth execution client on a replica node
+func TestDimLogComputationOnlyOpcodesInternal(t *testing.T) {
+	testDimLogComputationOnlyOpcodes(t, ExecutionClientModeInternal)
+}
+
+// TestDimLogComputationOnlyOpcodesExternal tests with external Nethermind execution client on a replica node
+// Requires Nethermind to be running with environment variables:
+// - PR_NETH_RPC_CLIENT_URL (default: http://localhost:20545)
+// - PR_NETH_WS_CLIENT_URL (default: ws://localhost:28551)
+func TestDimLogComputationOnlyOpcodesExternal(t *testing.T) {
+	testDimLogComputationOnlyOpcodes(t, ExecutionClientModeExternal)
+}
+
+// TestDimLogComputationOnlyOpcodesComparison tests comparing internal geth and external Nethermind on a replica node
+// Runs both execution clients in parallel and compares all results for correctness
+// Requires Nethermind to be running (same as TestDimLogComputationOnlyOpcodesExternal)
+func TestDimLogComputationOnlyOpcodesComparison(t *testing.T) {
+	testDimLogComputationOnlyOpcodes(t, ExecutionClientModeComparison)
 }
 
 // #########################################################################################################
@@ -161,26 +199,20 @@ func callOnContractWithOneArg[A any, F func(auth *bind.TransactOpts, arg1 A) (*t
 func callDebugTraceTransactionWithLogger(
 	t *testing.T,
 	ctx context.Context,
-	builder *NodeBuilder,
+	testClient *TestClient,
 	txHash common.Hash,
 ) TraceResult {
 	t.Helper()
-	// Call debug_traceTransaction with txGasDimensionLogger tracer
-	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
-	var result json.RawMessage
-	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, map[string]interface{}{
+
+	// Call debug_traceTransaction via the execution client (geth, nethermind, or comparison)
+	tracerConfig := map[string]interface{}{
 		"tracer": "txGasDimensionLogger",
 		"tracerConfig": map[string]interface{}{
 			"debug": true,
 		},
-	})
-	Require(t, err)
-
-	// Parse the result
-	var traceResult TraceResult
-	if err := json.Unmarshal(result, &traceResult); err != nil {
-		Fatal(t, err)
 	}
+	traceResult, err := testClient.DebugTraceTransaction(ctx, txHash, tracerConfig)
+	Require(t, err)
 
 	// Validate basic structure
 	if traceResult.GasUsed == 0 {

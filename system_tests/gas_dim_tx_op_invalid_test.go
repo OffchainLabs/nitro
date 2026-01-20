@@ -51,7 +51,7 @@ func TestDimTxOpInvalid(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test tests a transaction that has a revert
@@ -65,7 +65,7 @@ func TestDimTxOpRevertInTryCatch(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatch)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test tests a transaction that has a revert
@@ -80,7 +80,7 @@ func TestDimTxOpRevertInTryCatchWithMemoryExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatchWithMemoryExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test should force the revert opcode to be used
@@ -117,7 +117,7 @@ func TestDimTxOpRevert(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test should force the revert opcode to be used
@@ -154,7 +154,7 @@ func TestDimTxOpRevertWithMessage(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
@@ -187,7 +187,7 @@ func TestDimTxOpRevertWithMemoryExpansion(t *testing.T) {
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
 	// Check the trace result
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // this test will cause an invalid jump destination error
@@ -214,5 +214,5 @@ func TestDimTxOpInvalidJump(t *testing.T) {
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

@@ -57,7 +57,7 @@ func TestDimLogDelegateCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyCold, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -93,7 +93,7 @@ func TestDimLogDelegateCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarm, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -131,7 +131,7 @@ func TestDimLogDelegateCallColdContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyCold, delegateCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -169,7 +169,7 @@ func TestDimLogDelegateCallWarmContractMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarm, delegateCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -208,7 +208,7 @@ func TestDimLogDelegateCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -245,7 +245,7 @@ func TestDimLogDelegateCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -284,7 +284,7 @@ func TestDimLogDelegateCallColdContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyColdMemExpansion, delegateCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -323,7 +323,7 @@ func TestDimLogDelegateCallWarmContractMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, delegateCaller.TestDelegateCallNonEmptyWarmMemExpansion, delegateCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	delegateCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "DELEGATECALL")
 
 	expected := ExpectedGasCosts{
@@ -357,7 +357,7 @@ func TestDimLogStaticCallColdNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyCold, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -391,7 +391,7 @@ func TestDimLogStaticCallWarmNoCodeMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarm, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -424,7 +424,7 @@ func TestDimLogStaticCallColdContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyCold, staticCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -457,7 +457,7 @@ func TestDimLogStaticCallWarmContractMemUnchanged(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarm, staticCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -492,7 +492,7 @@ func TestDimLogStaticCallColdNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyColdMemExpansion, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -527,7 +527,7 @@ func TestDimLogStaticCallWarmNoCodeMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallEmptyWarmMemExpansion, emptyAccountAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -562,7 +562,7 @@ func TestDimLogStaticCallColdContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyColdMemExpansion, staticCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{
@@ -597,7 +597,7 @@ func TestDimLogStaticCallWarmContractMemExpansion(t *testing.T) {
 	staticCalleeAddress, _ := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployStaticCallee)
 	receipt := callOnContractWithOneArg(t, builder, auth, staticCaller.TestStaticCallNonEmptyWarmMemExpansion, staticCalleeAddress)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	staticCallLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "STATICCALL")
 
 	expected := ExpectedGasCosts{

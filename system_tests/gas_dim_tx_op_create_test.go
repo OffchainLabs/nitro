@@ -35,7 +35,7 @@ func TestDimTxOpCreateNoTransferMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -50,7 +50,7 @@ func TestDimTxOpCreateNoTransferMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -67,7 +67,7 @@ func TestDimTxOpCreatePayingMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -84,7 +84,7 @@ func TestDimTxOpCreatePayingMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // #########################################################################################################
@@ -103,7 +103,7 @@ func TestDimTxOpCreate2NoTransferMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -118,7 +118,7 @@ func TestDimTxOpCreate2NoTransferMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemExpansion, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -133,7 +133,7 @@ func TestDimTxOpCreate2PayingMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }
 
 // Tests that the total gas used by the transaction matches the expected value in the receipt,
@@ -150,5 +150,5 @@ func TestDimTxOpCreate2PayingMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoPayableMemExpansion, [32]byte{0x13, 0x37})
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	TxOpTraceAndCheck(t, ctx, builder.L2, receipt)
 }

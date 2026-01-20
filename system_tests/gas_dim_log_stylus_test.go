@@ -25,7 +25,7 @@ func TestDimLogStylusKeccakForSload(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 
 	// We expect an SLOAD with 0 gas, which is the SLOAD fired inside the precompile
 
@@ -63,7 +63,7 @@ func TestDimLogStylusKeccakForSloadFromProxy(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 
 	// We expect an SLOAD with 0 gas, which is the SLOAD fired inside the precompile
 	sloadLog := getLastOfTwoDimensionLogs(t, traceResult.DimensionLogs, "SLOAD")

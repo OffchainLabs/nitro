@@ -48,7 +48,7 @@ func TestDimLogInvalid(t *testing.T) {
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	invalidLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "INVALID")
 
 	// the invalid log should be the absolute last log in the trace result
@@ -103,7 +103,7 @@ func TestDimLogInvalidInTryCatch(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatch)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	revertLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "REVERT")
 
 	// revert has memory expansion cost but it has 0 base cost
@@ -129,7 +129,7 @@ func TestDimLogInvalidInTryCatchWithMemoryExpansion(t *testing.T) {
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployInvalid)
 	_, receipt := callOnContract(t, builder, auth, contract.RevertInTryCatchWithMemoryExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	revertLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "REVERT")
 
 	// the memory expansion cost is 12
@@ -174,7 +174,7 @@ func TestDimLogRevert(t *testing.T) {
 
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	revertLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "REVERT")
 
 	// revert has memory expansion cost but it has 0 base cost
@@ -216,7 +216,7 @@ func TestDimLogRevertWithMessage(t *testing.T) {
 
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	revertLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "REVERT")
 
 	// revert has memory expansion cost but it has 0 base cost
@@ -261,7 +261,7 @@ func TestDimLogRevertWithMemoryExpansion(t *testing.T) {
 	// Check the receipt status
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	revertLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "REVERT")
 
 	// the memory expansion cost is 12
@@ -304,7 +304,7 @@ func TestDimLogInvalidJump(t *testing.T) {
 	receipt := EnsureTxFailed(t, ctx, builder.L2.Client, tx)
 	CheckEqual(t, receipt.Status, types.ReceiptStatusFailed)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	// the invalid log should be the absolute last log in the trace result
 	lastLog := traceResult.DimensionLogs[len(traceResult.DimensionLogs)-1]
 	if lastLog.Op != "JUMP" {

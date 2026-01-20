@@ -5,14 +5,15 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/native"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/gas_dimensionsgen"
 )
 
@@ -24,18 +25,53 @@ type OpcodeSumTraceResult = native.TxGasDimensionByOpcodeExecutionResult
 // #########################################################################################################
 // #########################################################################################################
 
-// this test tests if the tracer calculates the same gas
-// used for a transaction as the TX receipt, for
-// computation-only opcodes.
-func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
+// Core test function that tests if the tracer calculates the same gas
+// used for a transaction as the TX receipt, for computation-only opcodes.
+// Runs on a replica node with the specified execution client mode.
+func testDimTxOpComputationOnlyOpcodes(t *testing.T, executionClientMode ExecutionClientMode) {
 	ctx, cancel, builder, auth, cleanup := gasDimensionTestSetup(t, false)
 	defer cancel()
 	defer cleanup()
 
+	// Build replica node with specified execution client mode
+	replicaConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	replicaParams := &SecondNodeParams{
+		nodeConfig:             replicaConfig,
+		useExecutionClientOnly: true,
+		executionClientMode:    executionClientMode,
+	}
+	replicaTestClient, replicaCleanup := builder.Build2ndNode(t, replicaParams)
+	defer replicaCleanup()
+
 	_, contract := deployGasDimensionTestContract(t, builder, auth, gas_dimensionsgen.DeployCounter)
 	_, receipt := callOnContract(t, builder, auth, contract.NoSpecials)
 
-	TxOpTraceAndCheck(t, ctx, builder, receipt)
+	// Wait for replica to sync the transaction
+	_, err := WaitForTx(ctx, replicaTestClient.Client, receipt.TxHash, time.Second*15)
+	Require(t, err)
+
+	// Call trace and check on the replica
+	TxOpTraceAndCheck(t, ctx, replicaTestClient, receipt)
+}
+
+// TestDimTxOpComputationOnlyOpcodesInternal tests with internal geth execution client on a replica node
+func TestDimTxOpComputationOnlyOpcodesInternal(t *testing.T) {
+	testDimTxOpComputationOnlyOpcodes(t, ExecutionClientModeInternal)
+}
+
+// TestDimTxOpComputationOnlyOpcodesExternal tests with external Nethermind execution client on a replica node
+// Requires Nethermind to be running with environment variables:
+// - PR_NETH_RPC_CLIENT_URL (default: http://localhost:20545)
+// - PR_NETH_WS_CLIENT_URL (default: ws://localhost:28551)
+func TestDimTxOpComputationOnlyOpcodesExternal(t *testing.T) {
+	testDimTxOpComputationOnlyOpcodes(t, ExecutionClientModeExternal)
+}
+
+// TestDimTxOpComputationOnlyOpcodesComparison tests comparing internal geth and external Nethermind on a replica node
+// Runs both execution clients in parallel and compares all results for correctness
+// Requires Nethermind to be running (same as TestDimTxOpComputationOnlyOpcodesExternal)
+func TestDimTxOpComputationOnlyOpcodesComparison(t *testing.T) {
+	testDimTxOpComputationOnlyOpcodes(t, ExecutionClientModeComparison)
 }
 
 // #########################################################################################################
@@ -49,26 +85,20 @@ func TestDimTxOpComputationOnlyOpcodes(t *testing.T) {
 func callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(
 	t *testing.T,
 	ctx context.Context,
-	builder *NodeBuilder,
+	testClient *TestClient,
 	txHash common.Hash,
 ) OpcodeSumTraceResult {
 	t.Helper()
-	// Call debug_traceTransaction with txGasDimensionLogger tracer
-	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
-	var result json.RawMessage
-	err := rpcClient.CallContext(ctx, &result, "debug_traceTransaction", txHash, map[string]interface{}{
+
+	// Call debug_traceTransaction via the execution client (geth, nethermind, or comparison)
+	tracerConfig := map[string]interface{}{
 		"tracer": "txGasDimensionByOpcode",
 		"tracerConfig": map[string]interface{}{
 			"debug": true,
 		},
-	})
-	Require(t, err)
-
-	// Parse the result
-	var traceResult OpcodeSumTraceResult
-	if err := json.Unmarshal(result, &traceResult); err != nil {
-		Fatal(t, err)
 	}
+	traceResult, err := testClient.DebugTraceTransactionByOpcode(ctx, txHash, tracerConfig)
+	Require(t, err)
 
 	// Validate basic structure
 	if traceResult.GasUsed == 0 {
@@ -123,8 +153,8 @@ func sumUpDimensionalGasCosts(
 }
 
 // basically all of the TxOp tests do the same checks, the only difference is the setup.
-func TxOpTraceAndCheck(t *testing.T, ctx context.Context, builder *NodeBuilder, receipt *types.Receipt) {
-	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, builder, receipt.TxHash)
+func TxOpTraceAndCheck(t *testing.T, ctx context.Context, testClient *TestClient, receipt *types.Receipt) {
+	traceResult := callDebugTraceTransactionWithTxGasDimensionByOpcodeTracer(t, ctx, testClient, receipt.TxHash)
 
 	if receipt.Status != traceResult.Status {
 		Fatal(t, "Transaction success/failure status mismatch", receipt.Status, traceResult.Status)

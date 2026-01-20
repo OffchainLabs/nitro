@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -368,6 +369,29 @@ func (c *nethRpcClient) FullSyncProgressMap(ctx context.Context) (map[string]int
 	if err := c.client.CallContext(ctx, &result, "FullSyncProgressMap"); err != nil {
 		log.Error("Failed to call FullSyncProgressMap", "error", err)
 		return nil, fmt.Errorf("failed to call FullSyncProgressMap: %w", err)
+	}
+	return result, nil
+}
+
+// DebugTraceTransaction calls debug_traceTransaction on the Nethermind node
+// tracerConfig should include "tracer" key specifying the tracer name
+func (c *nethRpcClient) DebugTraceTransaction(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.ExecutionResult, error) {
+	log.Debug("Making JSON-RPC call to debug_traceTransaction", "url", c.url, "txHash", txHash, "tracer", tracerConfig["tracer"])
+	var result native.ExecutionResult
+	if err := c.client.CallContext(ctx, &result, "debug_traceTransaction", txHash, tracerConfig); err != nil {
+		log.Error("Failed to call debug_traceTransaction", "error", err, "txHash", txHash)
+		return native.ExecutionResult{}, fmt.Errorf("failed to call debug_traceTransaction: %w", err)
+	}
+	return result, nil
+}
+
+// DebugTraceTransactionByOpcode calls debug_traceTransaction with txGasDimensionByOpcode tracer on the Nethermind node
+func (c *nethRpcClient) DebugTraceTransactionByOpcode(ctx context.Context, txHash common.Hash, tracerConfig map[string]interface{}) (native.TxGasDimensionByOpcodeExecutionResult, error) {
+	log.Debug("Making JSON-RPC call to debug_traceTransaction (byOpcode)", "url", c.url, "txHash", txHash, "tracer", tracerConfig["tracer"])
+	var result native.TxGasDimensionByOpcodeExecutionResult
+	if err := c.client.CallContext(ctx, &result, "debug_traceTransaction", txHash, tracerConfig); err != nil {
+		log.Error("Failed to call debug_traceTransaction (byOpcode)", "error", err, "txHash", txHash)
+		return native.TxGasDimensionByOpcodeExecutionResult{}, fmt.Errorf("failed to call debug_traceTransaction: %w", err)
 	}
 	return result, nil
 }

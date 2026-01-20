@@ -81,7 +81,7 @@ func TestDimLogCreateNoTransferMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemUnchanged)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
 	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
@@ -110,7 +110,7 @@ func TestDimLogCreateNoTransferMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreateNoTransferMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
 	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
@@ -144,7 +144,7 @@ func TestDimLogCreatePayingMemUnchanged(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemUnchanged)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
 	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
@@ -175,7 +175,7 @@ func TestDimLogCreatePayingMemExpansion(t *testing.T) {
 
 	_, receipt := callOnContract(t, builder, auth, creator.CreatePayableMemExpansion)
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE")
 
 	_, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
@@ -233,7 +233,7 @@ func TestDimLogCreate2NoTransferMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
 	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
@@ -264,7 +264,7 @@ func TestDimLogCreate2NoTransferMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemExpansion, [32]byte{0x13, 0x37})
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
 	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
@@ -298,7 +298,7 @@ func TestDimLogCreate2PayingMemUnchanged(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoNoTransferMemUnchanged, [32]byte{0x13, 0x37})
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
 	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memUnchangedContractInitCodeSize, memUnchangedContractDeployedCodeSize)
@@ -331,7 +331,7 @@ func TestDimLogCreate2PayingMemExpansion(t *testing.T) {
 
 	receipt := callOnContractWithOneArg(t, builder, auth, creator.CreateTwoPayableMemExpansion, [32]byte{0x13, 0x37})
 
-	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder, receipt.TxHash)
+	traceResult := callDebugTraceTransactionWithLogger(t, ctx, builder.L2, receipt.TxHash)
 	createLog := getSpecificDimensionLog(t, traceResult.DimensionLogs, "CREATE2")
 
 	minimumWordSize, expectedInitCodeCost, expectedCodeDepositCost := getCodeInitAndDepositCosts(memExpansionContractInitCodeSize, memExpansionContractDeployedCodeSize)
