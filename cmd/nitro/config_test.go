@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -19,7 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -29,7 +29,9 @@ func TestEmptyCliConfig(t *testing.T) {
 	NodeConfigAddOptions(f)
 	k, err := confighelpers.BeginCommonParse(f, []string{})
 	Require(t, err)
-	err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
+	err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
+	Require(t, err)
+	err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k)
 	Require(t, err)
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
@@ -70,8 +72,37 @@ func TestInvalidCachingStateSchemeForValidator(t *testing.T) {
 	}
 }
 
+// TestAggregatorConfig tests the deprecated --node.data-availability.* flags
+// to ensure backward compatibility. These flags are deprecated in favor of
+// --node.da.anytrust.* but must continue to work.
 func TestAggregatorConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}] --node.transaction-streamer.track-block-metadata-from=10", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	// Verify migration copied config to new location
+	if !nodeConfig.Node.DA.AnyTrust.Enable {
+		Fail(t, "deprecated --node.data-availability.enable should migrate to Node.DA.AnyTrust.Enable")
+	}
+	if len(nodeConfig.Node.DA.AnyTrust.RPCAggregator.Backends) != 1 {
+		Fail(t, "deprecated --node.data-availability.rpc-aggregator.backends should migrate to Node.DA.AnyTrust.RPCAggregator.Backends")
+	}
+}
+
+// TestAggregatorConfigNewFlags tests the new --node.da.anytrust.* flags
+func TestAggregatorConfigNewFlags(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.da.anytrust.enable --node.da.anytrust.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}] --node.transaction-streamer.track-block-metadata-from=10", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Node.DA.AnyTrust.Enable {
+		Fail(t, "--node.da.anytrust.enable should set Node.DA.AnyTrust.Enable")
+	}
+	if len(nodeConfig.Node.DA.AnyTrust.RPCAggregator.Backends) != 1 {
+		Fail(t, "--node.da.anytrust.rpc-aggregator.backends should set Node.DA.AnyTrust.RPCAggregator.Backends")
+	}
+}
+
+func TestExternalProviderSingularConfig(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.da.external-provider.rpc.url http://localhost:8547 --node.da.external-provider.with-writer=true --node.transaction-streamer.track-block-metadata-from=10", " ")
 	_, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
@@ -102,7 +133,7 @@ func TestReloads(t *testing.T) {
 
 	config := NodeConfigDefault
 	update := NodeConfigDefault
-	update.Node.BatchPoster.MaxSize++
+	update.Node.BatchPoster.MaxCalldataBatchSize++
 
 	check(reflect.ValueOf(config), false, "config")
 	Require(t, config.CanReload(&config))
@@ -147,8 +178,8 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check updating the config
 	update := config.ShallowClone()
 	expected := config.ShallowClone()
-	update.Node.BatchPoster.MaxSize += 100
-	expected.Node.BatchPoster.MaxSize += 100
+	update.Node.BatchPoster.MaxCalldataBatchSize += 100
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
 	Require(t, liveConfig.Set(update))
 	if !reflect.DeepEqual(liveConfig.Get(), expected) {
 		Fail(t, "failed to set config")
@@ -183,19 +214,19 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// change the config file
 	expected = config.ShallowClone()
-	expected.Node.BatchPoster.MaxSize += 100
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxSize)
+	expected.Node.BatchPoster.MaxCalldataBatchSize += 100
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421613}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	if !PollLiveConfigUntilEqual(liveConfig, expected) {
-		Fail(t, "failed to update config", config.Node.BatchPoster.MaxSize, update.Node.BatchPoster.MaxSize)
+		Fail(t, "failed to update config", config.Node.BatchPoster.MaxCalldataBatchSize, update.Node.BatchPoster.MaxCalldataBatchSize)
 	}
 
 	// change chain.id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxSize)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"batch-poster\":{\"max-calldata-batch-size\":\"%d\"}}, \"chain\":{\"id\":421703}}", expected.Node.BatchPoster.MaxCalldataBatchSize)
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload

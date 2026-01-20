@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package mocks includes simple mocks for unit testing BOLD.
 // nolint:errcheck
@@ -18,10 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
 
@@ -29,7 +28,7 @@ var (
 	_ = protocol.SpecChallengeManager(&MockSpecChallengeManager{})
 	_ = protocol.SpecEdge(&MockSpecEdge{})
 	_ = protocol.AssertionChain(&MockProtocol{})
-	_ = l2stateprovider.Provider(&MockStateManager{})
+	_ = state.Provider(&MockStateManager{})
 )
 
 type MockAssertion struct {
@@ -92,7 +91,7 @@ type MockStateManager struct {
 
 func (m *MockStateManager) HistoryCommitment(
 	ctx context.Context,
-	req *l2stateprovider.HistoryCommitmentRequest,
+	req *state.HistoryCommitmentRequest,
 ) (history.History, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(history.History), args.Error(1)
@@ -104,8 +103,8 @@ func (m *MockStateManager) UpdateAPIDatabase(apiDB db.Database) {
 
 func (m *MockStateManager) PrefixProof(
 	ctx context.Context,
-	req *l2stateprovider.HistoryCommitmentRequest,
-	prefixHeight l2stateprovider.Height,
+	req *state.HistoryCommitmentRequest,
+	prefixHeight state.Height,
 ) ([]byte, error) {
 	args := m.Called(ctx, req, prefixHeight)
 	return args.Get(0).([]byte), args.Error(1)
@@ -114,8 +113,8 @@ func (m *MockStateManager) PrefixProof(
 func (m *MockStateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	challengeLevel protocol.ChallengeLevel,
-	historyCommitMetadata *l2stateprovider.HistoryCommitmentRequest,
-	commit l2stateprovider.History,
+	historyCommitMetadata *state.HistoryCommitmentRequest,
+	commit state.History,
 ) (bool, error) {
 	args := m.Called(ctx, challengeLevel, historyCommitMetadata, commit)
 	return args.Get(0).(bool), args.Error(1)
@@ -128,9 +127,9 @@ func (m *MockStateManager) ExecutionStateAfterPreviousState(ctx context.Context,
 
 func (m *MockStateManager) OneStepProofData(
 	ctx context.Context,
-	assertionMetadata *l2stateprovider.AssociatedAssertionMetadata,
-	startHeights []l2stateprovider.Height,
-	upToHeight l2stateprovider.Height,
+	assertionMetadata *state.AssociatedAssertionMetadata,
+	startHeights []state.Height,
+	upToHeight state.Height,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
 	args := m.Called(ctx, assertionMetadata.WasmModuleRoot, startHeights, assertionMetadata.FromState.PosInBatch, upToHeight)
 	return args.Get(0).(*protocol.OneStepData), args.Get(1).([]common.Hash), args.Get(2).([]common.Hash), args.Error(3)

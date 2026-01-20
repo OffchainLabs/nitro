@@ -1,10 +1,12 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package testhelpers
 
 import (
 	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func CreateStackConfigForTest(dataDir string) *node.Config {
@@ -26,6 +28,6 @@ func CreateStackConfigForTest(dataDir string) *node.Config {
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NAT = nil
-	stackConf.DBEngine = "leveldb"
+	stackConf.DBEngine = env.GetTestDatabaseEngine()
 	return &stackConf
 }

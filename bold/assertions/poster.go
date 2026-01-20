@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package assertions
 
@@ -16,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/logs/ephemeral"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util"
 )
 
 var (
@@ -36,8 +35,8 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		return
 	}
 
-	exceedsMaxMempoolSizeEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
-	gasEstimationEphemeralErrorHandler := ephemeral.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
+	exceedsMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "posting this transaction will exceed max mempool size", 0)
+	gasEstimationEphemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "gas estimation errored for tx with hash", 0)
 
 	log.Info("Ready to post")
 	ticker := time.NewTicker(m.times.postInterval)
@@ -46,8 +45,8 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		_, err := m.PostAssertion(ctx)
 		if err != nil {
 			switch {
-			case errors.Is(err, solimpl.ErrAlreadyExists):
-			case errors.Is(err, solimpl.ErrBatchNotYetFound):
+			case errors.Is(err, sol.ErrAlreadyExists):
+			case errors.Is(err, sol.ErrBatchNotYetFound):
 				log.Info("Waiting for more batches to post assertions about them onchain")
 			default:
 				logLevel := log.Error
@@ -151,7 +150,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 	parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
 	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
 	if err != nil {
-		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+		if errors.Is(err, state.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
 			log.Info(
 				"Waiting for more batches to post next assertion",

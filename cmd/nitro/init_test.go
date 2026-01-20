@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -411,13 +411,14 @@ func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig
 	return &targetConfig
 }
 
-func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
+func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
@@ -433,7 +434,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -447,11 +448,11 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	chainDb, blockchain, err = openInitializeChainDb(
+	executionDB, blockchain, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -465,12 +466,12 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeChainDb(
+	_, _, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -678,13 +679,14 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, otherKeys, true)
 }
 
-func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
 	stack, err := node.New(stackConfig)
 	Require(t, err)
 	defer stack.Close()
@@ -698,7 +700,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -712,7 +714,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 }
 
@@ -857,7 +859,7 @@ func TestIsWasmDb(t *testing.T) {
 	for _, testCase := range testCases {
 		name := fmt.Sprintf("%q", testCase.path)
 		t.Run(name, func(t *testing.T) {
-			got := isWasmDb(testCase.path)
+			got := isWasmDB(testCase.path)
 			if testCase.want != got {
 				t.Fatalf("want %v, but got %v", testCase.want, got)
 			}

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -175,7 +175,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		lastDelayedAcc = acc
 		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-			data, _, err := d.reader.GetSequencerMessageBytes(ctx, batchNum)
+			data, _, err := d.reader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 			return data, err
 		})
 		if err != nil {

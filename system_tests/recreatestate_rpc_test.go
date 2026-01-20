@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -96,7 +98,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -134,7 +136,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	defer cancel()
 	// #nosec G115
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -170,7 +172,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = int64(200)
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -206,7 +208,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -252,7 +254,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -289,7 +291,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -335,7 +337,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
@@ -484,7 +486,7 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	// This test is HashScheme specific, it shouldn't be run with Pathdb
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig = execConfig

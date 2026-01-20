@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -66,9 +68,14 @@ func TestEthSyncing(t *testing.T) {
 	}
 	for testClientB.ConsensusNode.TxStreamer.ExecuteNextMsg(ctx) {
 	}
-	time.Sleep(time.Second * 2)
-	progress, err = testClientB.Client.SyncProgress(ctx)
-	Require(t, err)
+	for range 10 {
+		progress, err = testClientB.Client.SyncProgress(ctx)
+		Require(t, err)
+		if progress == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 	if progress != nil {
 		Fatal(t, "eth_syncing did not return nil but should have")
 	}

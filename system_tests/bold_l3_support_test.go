@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -21,11 +21,10 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	solimpl "github.com/offchainlabs/nitro/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/offchainlabs/nitro/bold/challenge-manager"
-	modes "github.com/offchainlabs/nitro/bold/challenge-manager/types"
-	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/util"
+	"github.com/offchainlabs/nitro/bold/challenge"
+	modes "github.com/offchainlabs/nitro/bold/challenge/types"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -194,7 +193,7 @@ func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Cli
 	Require(t, err)
 }
 
-func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*solimpl.AssertionChain, func()) {
+func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*sol.AssertionChain, func()) {
 	if !builder.deployBold {
 		t.Fatal("bold deployment not enabled")
 	}
@@ -205,7 +204,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
-		l2stateprovider.Height(blockChallengeLeafHeight),
+		state.Height(blockChallengeLeafHeight),
 		&bold.StateProviderConfig{
 			ValidatorName:          addressName,
 			MachineLeavesCachePath: cacheDir,
@@ -215,6 +214,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		node.ConsensusNode.InboxTracker,
 		node.ConsensusNode.TxStreamer,
 		node.ConsensusNode.InboxReader,
+		nil,
 	)
 	Require(t, err)
 
@@ -222,16 +222,16 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		stateManager = mockStateProvider(stateManager)
 	}
 
-	provider := l2stateprovider.NewHistoryCommitmentProvider(
+	provider := state.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		[]state.Height{
+			state.Height(blockChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(bigStepChallengeLeafHeight),
+			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
 		nil, // Api db
@@ -246,7 +246,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
 		builder.L3.ConsensusNode.L1Reader,
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),
@@ -255,27 +255,27 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 	)
 	Require(t, err)
 
-	assertionChain, err := solimpl.NewAssertionChain(
+	assertionChain, err := sol.NewAssertionChain(
 		ctx,
 		builder.l3Addresses.Rollup,
 		chalManagerAddr,
 		&txOpts,
-		util.NewBackendWrapper(builder.L2.Client, rpc.LatestBlockNumber),
+		builder.L2.Client,
 		bold.NewDataPosterTransactor(dp),
-		solimpl.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
 	)
 	Require(t, err)
 
-	stackOpts := []challengemanager.StackOpt{
-		challengemanager.StackWithName(addressName),
-		challengemanager.StackWithMode(modes.MakeMode),
-		challengemanager.StackWithPostingInterval(time.Second * 3),
-		challengemanager.StackWithPollingInterval(time.Second),
-		challengemanager.StackWithAverageBlockCreationTime(time.Second),
-		challengemanager.StackWithMinimumGapToParentAssertion(0),
+	stackOpts := []challenge.StackOpt{
+		challenge.StackWithName(addressName),
+		challenge.StackWithMode(modes.MakeMode),
+		challenge.StackWithPostingInterval(time.Second * 3),
+		challenge.StackWithPollingInterval(time.Second),
+		challenge.StackWithAverageBlockCreationTime(time.Second),
+		challenge.StackWithMinimumGapToParentAssertion(0),
 	}
 
-	challengeManager, err := challengemanager.NewChallengeStack(
+	challengeManager, err := challenge.NewChallengeStack(
 		assertionChain,
 		provider,
 		stackOpts...,

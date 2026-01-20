@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package storage
@@ -525,6 +525,10 @@ func (sbu *StorageBackedUint32) Get() (uint32, error) {
 func (sbu *StorageBackedUint32) Set(value uint32) error {
 	bigValue := new(big.Int).SetUint64(uint64(value))
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
+}
+
+func (sbu *StorageBackedUint32) Clear() error {
+	return sbu.Set(0)
 }
 
 type StorageBackedUint64 struct {

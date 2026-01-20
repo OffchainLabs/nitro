@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package programs
@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -207,7 +206,12 @@ func (p Programs) CallProgram(
 	callCost := model.GasCost(program.footprint, open, ever)
 
 	// pay for program init
-	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
+
+	recentWasmsCacheHit := false
+	if p.ArbosVersion >= gethParams.ArbosVersion_60 {
+		recentWasmsCacheHit = statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
+	}
+	cached := program.cached || recentWasmsCacheHit
 	if cached || program.version > 1 { // in version 1 cached cost is part of init cost
 		callCost = arbmath.SaturatingUAdd(callCost, program.cachedGas(params))
 	}
@@ -220,15 +224,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	asmMap, err := getCompiledProgram(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
-	var ok bool
-	var localAsm []byte
-	if asmMap != nil {
-		localAsm, ok = asmMap[rawdb.LocalTarget()]
-	}
-	if err != nil || !ok {
-		panic(fmt.Sprintf("failed to get compiled program for activated program, program: %v, local target missing: %v, err: %v", contract.Address().Hex(), !ok, err))
-	}
+	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
 		arbosVersion:    evm.Context.ArbOSVersion,
@@ -463,6 +459,9 @@ func (p Programs) SetProgramCached(
 		code, err := db.Reader().Code(common.Address{}, codeHash)
 		if err != nil {
 			return err
+		}
+		if len(code) == 0 {
+			return fmt.Errorf("code not found for codeHash: %x", codeHash)
 		}
 		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runCtx)
 	} else {

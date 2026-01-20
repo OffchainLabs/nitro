@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -139,24 +139,6 @@ func NewTransactionStreamer(
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
-	}
-	if config().TrackBlockMetadataFrom != 0 {
-		trackBlockMetadataFrom, err := exec.BlockNumberToMessageIndex(config().TrackBlockMetadataFrom).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.trackBlockMetadataFrom = trackBlockMetadataFrom
-	}
-	if config().SyncTillBlock != 0 {
-		syncTillMessage, err := exec.BlockNumberToMessageIndex(config().SyncTillBlock).Await(ctx)
-		if err != nil {
-			return nil, err
-		}
-		streamer.syncTillMessage = syncTillMessage
-		msgCount, err := streamer.GetMessageCount()
-		if err == nil && msgCount >= streamer.syncTillMessage {
-			log.Info("Node has all messages", "sync-till-block", config().SyncTillBlock)
-		}
 	}
 	return streamer, nil
 }
@@ -492,12 +474,37 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return nil, err
+	}
+
+	var parentChainBlockNumber *uint64
+	if message.DelayedMessagesRead != 0 && s.inboxReader != nil && s.inboxReader.tracker != nil {
+		_, _, localParentChainBlockNumber, err := s.inboxReader.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, message.DelayedMessagesRead-1)
+		if err != nil {
+			log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
+		} else {
+			parentChainBlockNumber = &localParentChainBlockNumber
+		}
+	}
+
 	err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
 		ctx, err := s.GetContextSafe()
 		if err != nil {
 			return nil, err
 		}
-		data, _, err := s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+
+		var data []byte
+		if parentChainBlockNumber != nil {
+			data, _, err = s.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
+		} else {
+			data, _, err = s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		return data, err
 	})
 	if err != nil {
@@ -1205,7 +1212,19 @@ func (s *TransactionStreamer) broadcastMessages(
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
+
+	feedMsgs := make([]*message.BroadcastFeedMessage, 0, len(msgs))
+	for i, msg := range msgs {
+		idx := firstMsgIdx + arbutil.MessageIndex(i) // #nosec G115
+		feedMsg, err := s.broadcastServer.NewBroadcastFeedMessage(msg, idx)
+		if err != nil {
+			log.Error("failed creating broadcast feed message", "msgIdx", idx, "err", err)
+			return
+		}
+		feedMsgs = append(feedMsgs, feedMsg)
+	}
+
+	if err := s.broadcastServer.BroadcastFeedMessages(feedMsgs); err != nil {
 		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
 	}
 }
@@ -1309,7 +1328,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 			"expected", msgAndBlockInfo.BlockHash,
 			"actual", msgResult.BlockHash,
 		)
-		// Try deleting the existing blockMetadata for this block in arbDB and set it as missing
+		// Try deleting the existing blockMetadata for this block in consensusDB and set it as missing
 		if msgAndBlockInfo.BlockMetadata != nil &&
 			s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 			batch := s.db.NewBatch()
@@ -1318,7 +1337,7 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 				return
 			}
 			if err := batch.Put(dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx)), nil); err != nil {
-				log.Error("error marking deleted blockMetadata as missing in arbDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
+				log.Error("error marking deleted blockMetadata as missing in consensusDB for a block whose BlockHash from feed doesn't match locally computed hash", "msgIdx", msgIdx, "err", err)
 				return
 			}
 			if err := batch.Write(); err != nil {
@@ -1444,7 +1463,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 	}
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
-		log.Error("Error getting message count from arbDB", "err", err)
+		log.Error("Error getting message count from consensusDB", "err", err)
 		return
 	}
 	if s.trackBlockMetadataFrom >= msgCount {
@@ -1459,7 +1478,7 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 				return true
 			}
 			if !rawdb.IsDbErrNotFound(err) {
-				log.Error("Error reading key in arbDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
+				log.Error("Error reading key in consensusDB while back-filling trackers for missing blockMetadata", "key", key, "err", err)
 			}
 			return false
 		}
@@ -1504,6 +1523,24 @@ func (s *TransactionStreamer) backfillTrackersForMissingBlockMetadata(ctx contex
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+	if s.config().TrackBlockMetadataFrom != 0 {
+		trackBlockMetadataFrom, err := arbutil.BlockNumberToMessageIndex(s.config().TrackBlockMetadataFrom, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.trackBlockMetadataFrom = trackBlockMetadataFrom
+	}
+	if s.config().SyncTillBlock != 0 {
+		syncTillMessage, err := arbutil.BlockNumberToMessageIndex(s.config().SyncTillBlock, s.chainConfig.ArbitrumChainParams.GenesisBlockNum)
+		if err != nil {
+			return err
+		}
+		s.syncTillMessage = syncTillMessage
+		msgCount, err := s.GetMessageCount()
+		if err == nil && msgCount >= s.syncTillMessage {
+			log.Info("Node has all messages", "sync-till-block", s.config().SyncTillBlock)
+		}
+	}
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }

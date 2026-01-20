@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
@@ -49,7 +49,7 @@ func TestEthConfig(t *testing.T) {
 			ActivationTime: 0,
 			BlobSchedule:   nil,
 			ChainId:        (*hexutil.Big)(hexutil.MustDecodeBig("0x64aba")),
-			ForkId:         (hexutil.Bytes)(hexutil.MustDecode("0x93dd2fec")),
+			ForkId:         (hexutil.Bytes)(hexutil.MustDecode("0x9aa9b1b0")),
 			Precompiles: map[string]common.Address{
 				"ArbAddressTable":       common.HexToAddress("0x0000000000000000000000000000000000000066"),
 				"ArbAggregator":         common.HexToAddress("0x000000000000000000000000000000000000006d"),
