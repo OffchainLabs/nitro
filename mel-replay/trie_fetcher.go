@@ -1,4 +1,4 @@
-package main
+package melreplay
 
 import (
 	"bytes"
@@ -14,7 +14,7 @@ import (
 // Fetches a specific object at index from a block's Receipt/Tx trie by navigating its
 // Merkle Patricia Trie structure. It uses the preimage resolver to fetch preimages
 // of trie nodes as needed, and determines how to navigate depending on the structure of the trie nodes.
-func fetchObjectFromTrie[T any](root common.Hash, index uint, preimageResolver preimageResolver) (*T, error) {
+func fetchObjectFromTrie[T any](root common.Hash, index uint, preimageResolver PreimageResolver) (*T, error) {
 	var empty *T
 	currentNodeHash := root
 	currentPath := []byte{} // Track nibbles consumed so far.

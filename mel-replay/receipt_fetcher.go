@@ -1,7 +1,7 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package melreplay
 
 import (
 	"context"
@@ -15,13 +15,17 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
 
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 type receiptFetcherForBlock struct {
 	header           *types.Header
-	preimageResolver preimageResolver
+	preimageResolver PreimageResolver
+}
+
+func NewLogsFetcher(header *types.Header, preimageResolver PreimageResolver) melextraction.LogsFetcher {
+	return &receiptFetcherForBlock{header, preimageResolver}
 }
 
 // LogsForTxIndex fetches logs for a specific transaction index by walking
@@ -50,7 +54,7 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
 	}
-	relevantTxIndicesKey := melreplay.RelevantTxIndexesKey(rf.header.Hash())
+	relevantTxIndicesKey := RelevantTxIndexesKey(rf.header.Hash())
 	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, relevantTxIndicesKey)
 	if err != nil {
 		return nil, err

@@ -1,6 +1,4 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package main
+package melreplay
 
 import (
 	"bytes"
@@ -16,7 +14,11 @@ import (
 )
 
 type delayedMessageDatabase struct {
-	preimageResolver preimageResolver
+	preimageResolver PreimageResolver
+}
+
+func NewDelayedMessageDatabase(preimageResolver PreimageResolver) mel.DelayedMessageDatabase {
+	return &delayedMessageDatabase{preimageResolver}
 }
 
 func (d *delayedMessageDatabase) ReadDelayedMessage(
@@ -29,7 +31,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	if msgIndex >= totalMsgsSeen {
 		return nil, fmt.Errorf("index %d out of range, total delayed messages seen: %d", msgIndex, totalMsgsSeen)
 	}
-	treeSize := nextPowerOfTwo(totalMsgsSeen)
+	treeSize := NextPowerOfTwo(totalMsgsSeen)
 	merkleDepth := bits.TrailingZeros64(treeSize)
 
 	// Start traversal from root, which is the delayed messages seen root.
@@ -76,7 +78,7 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	return delayedMessage, nil
 }
 
-func nextPowerOfTwo(n uint64) uint64 {
+func NextPowerOfTwo(n uint64) uint64 {
 	if n == 0 {
 		return 1
 	}

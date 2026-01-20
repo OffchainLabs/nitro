@@ -1,4 +1,4 @@
-package main
+package melreplay_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 type mockBlockReader struct {
@@ -83,12 +84,13 @@ func TestRecordingOfTxPreimagesAndFetchingTxsFromPreimages(t *testing.T) {
 	}
 
 	// Test reading of txs from the recorded preimages
-	txsFetcher := &txFetcherForBlock{
-		header: block.Header(),
-		preimageResolver: &testPreimageResolver{
-			preimages: preimages[arbutil.Keccak256PreimageType],
-		},
-	}
+	txsFetcher := melreplay.NewTransactionFetcher(
+		block.Header(),
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
+	)
 	for i := recordStart; i <= recordEnd; i++ {
 		tx, err := txsFetcher.TransactionByLog(ctx, &types.Log{TxIndex: i})
 		require.NoError(t, err)

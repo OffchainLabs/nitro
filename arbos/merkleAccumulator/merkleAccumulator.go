@@ -131,7 +131,9 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
 }
 
 // Note: itemHash is hashed before being included in the tree, to prevent confusing leafs with branches.
-func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEvent, error) {
+// itemBytesToRecord is an optional argument that when provided, the MerkleAccumulator records it as value
+// for itemHash in the underlying preimages map
+func (acc *MerkleAccumulator) Append(itemHash common.Hash, itemBytesToRecord ...byte) ([]MerkleTreeNodeEvent, error) {
 	size, err := acc.size.Increment()
 	if err != nil {
 		return nil, err
@@ -143,8 +145,10 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 	for {
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
-			err := acc.setPartial(level, &h)
-			return events, err
+			if err := acc.setPartial(level, &h); err != nil {
+				return nil, err
+			}
+			break
 		}
 		thisLevel, err := acc.getPartial(level)
 		if err != nil {
@@ -152,8 +156,10 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 		}
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
-			err := acc.setPartial(level, &h)
-			return events, err
+			if err := acc.setPartial(level, &h); err != nil {
+				return nil, err
+			}
+			break
 		}
 		var val []byte
 		if acc.recordPreimages != nil {
@@ -167,13 +173,18 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 			acc.recordPreimages(common.BytesToHash(soFar), val)
 		}
 		h := common.Hash{}
-		err = acc.setPartial(level, &h)
-		if err != nil {
+		if err = acc.setPartial(level, &h); err != nil {
 			return nil, err
 		}
 		level += 1
 		events = append(events, MerkleTreeNodeEvent{level, size - 1, common.BytesToHash(soFar)})
 	}
+	if acc.recordPreimages != nil && itemBytesToRecord != nil {
+		keyBytes := crypto.Keccak256(itemHash.Bytes())
+		key := common.BytesToHash(keyBytes)
+		acc.recordPreimages(key, itemBytesToRecord)
+	}
+	return events, nil
 }
 
 func (acc *MerkleAccumulator) Size() (uint64, error) {
