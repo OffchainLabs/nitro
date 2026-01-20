@@ -4,9 +4,12 @@
 use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
-use jit::machine::Escape;
-use jit::run;
-use jit::{report_error, report_success, Opts};
+use jit::{
+    machine::Escape,
+    run,
+    socket::{report_error, report_success},
+    Opts,
+};
 use wasmer::FrameInfo;
 
 fn main() -> Result<()> {

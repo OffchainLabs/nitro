@@ -5,7 +5,7 @@ use crate::machine::Escape;
 use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashMap;
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -16,7 +16,7 @@ mod caller_env;
 pub mod machine;
 mod prepare;
 pub mod program;
-mod socket;
+pub mod socket;
 pub mod stylus_backend;
 mod test;
 mod wasip1_stub;
@@ -159,35 +159,6 @@ pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
     }
 
     Ok(result)
-}
-
-macro_rules! check {
-    ($expr:expr) => {{
-        if let Err(comms_error) = $expr {
-            eprintln!("Failed to send results to Go: {comms_error}");
-            panic!("Communication failure");
-        }
-    }};
-}
-
-pub fn report_success(
-    writer: &mut BufWriter<TcpStream>,
-    new_state: &GlobalState,
-    memory_used: &Pages,
-) {
-    check!(socket::write_u8(writer, socket::SUCCESS));
-    check!(socket::write_u64(writer, new_state.inbox_position));
-    check!(socket::write_u64(writer, new_state.position_within_message));
-    check!(socket::write_bytes32(writer, &new_state.last_block_hash));
-    check!(socket::write_bytes32(writer, &new_state.last_send_root));
-    check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
-    check!(writer.flush());
-}
-
-pub fn report_error(writer: &mut BufWriter<TcpStream>, error: String) {
-    check!(socket::write_u8(writer, socket::FAILURE));
-    check!(socket::write_bytes(writer, &error.into_bytes()));
-    check!(writer.flush());
 }
 
 mod cli_parsing {
