@@ -452,8 +452,8 @@ $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli)
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbkeccak.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbkeccak
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/arbkeccak.wasm $@
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbkeccak
+	install crates/wasm-libraries/$(wasm32_wasi)/arbkeccak.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
