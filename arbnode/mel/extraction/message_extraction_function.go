@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
@@ -242,6 +244,12 @@ func extractMessagesImpl(
 			DelayedMessageCount: state.DelayedMessagesRead,
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
+	}
+	if len(messages) > 0 {
+		// Only need to calculate partials once, after all the messages are extracted
+		if err := state.GenerateMessageMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }

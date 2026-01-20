@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -373,4 +373,12 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 	}
 
 	return result, nil
+}
+
+// GetMultiGasBaseFee gets the current base fee for each resource type used by the Multi-Constraint Pricer
+func (con ArbGasInfo) GetMultiGasBaseFee(
+	c ctx,
+	evm mech,
+) ([]*big.Int, error) {
+	return c.State.L2PricingState().GetMultiGasBaseFeePerResource()
 }

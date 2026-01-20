@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -161,6 +161,9 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	require.NoError(t, err)
 
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
+	require.NoError(t, err)
+
 	// Set multi-gas constraints with heavy-constrained storage growth
 	constraint := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
 		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
@@ -216,10 +219,29 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 		receipt.EffectiveGasPrice,
 	)
 
-	// Expect positive refund
+	// Multi-gas cost: calculated using multi-gas base fees
+	mgFees, err := arbGasInfo.GetMultiGasBaseFee(&bind.CallOpts{Context: ctx})
+	require.NoError(t, err)
+
+	mgPrice := uint64(0)
+	for i, baseFee := range mgFees {
+		// #nosec G115 safe: NumResourceKind < 2^32
+		kind := multigas.ResourceKind(i)
+		amount := receipt.MultiGasUsed.Get(kind)
+		part := new(big.Int).Mul(
+			new(big.Int).SetUint64(amount),
+			baseFee,
+		)
+		mgPrice += part.Uint64()
+	}
+
+	// Expect actualCost equal to multi-gas cost
 	actualCost := new(big.Int).Sub(balanceBefore, balanceAfter)
 	require.Less(t, actualCost.Cmp(singleCost), 0, "expected actual cost < single cost")
 
+	require.Equal(t, mgPrice, actualCost.Uint64(), "multi-gas price mismatch")
+
+	// Expect positive refund
 	refund := new(big.Int).Sub(singleCost, actualCost)
 	require.True(t, refund.Sign() > 0, "expected positive refund, got %v", refund)
 }

@@ -1,9 +1,12 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package mel
 
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -57,16 +60,11 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 
 // Hash will replace AfterInboxAcc
 func (m *DelayedInboxMessage) Hash() common.Hash {
-	hash := crypto.Keccak256(
-		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Poster.Bytes(),
-		arbmath.UintToBytes(m.Message.Header.BlockNumber),
-		arbmath.UintToBytes(m.Message.Header.Timestamp),
-		m.Message.Header.RequestId.Bytes(),
-		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
-		crypto.Keccak256(m.Message.L2msg),
-	)
-	return crypto.Keccak256Hash(hash)
+	encoded, err := rlp.EncodeToBytes(m)
+	if err != nil {
+		panic(err)
+	}
+	return crypto.Keccak256Hash(encoded)
 }
 
 type BatchMetadata struct {
