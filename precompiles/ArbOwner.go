@@ -37,6 +37,7 @@ type ArbOwner struct {
 	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
 }
 
+const maxGetAllMembers = 65536
 const FeatureEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
@@ -66,7 +67,7 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers(65536)
+	return c.State.ChainOwners().AllMembers(maxGetAllMembers)
 }
 
 // setFeatureFromTime sets a time in epoch seconds when a feature becomes enabled.
@@ -138,7 +139,7 @@ func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error)
 
 // GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.NativeTokenOwners().AllMembers(65536)
+	return c.State.NativeTokenOwners().AllMembers(maxGetAllMembers)
 }
 
 // AddTransactionFilterer adds account as a transaction filterer (authorized to use ArbFilteredTransactionsManager)
@@ -180,7 +181,7 @@ func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool,
 
 // GetAllTransactionFilterers retrieves the list of transaction filterers
 func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.TransactionFilterers().AllMembers(65536)
+	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee

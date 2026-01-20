@@ -19,7 +19,7 @@ func (con ArbWasmCache) IsCacheManager(c ctx, _ mech, addr addr) (bool, error) {
 
 // Retrieve all authorized address managers.
 func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
-	return c.State.Programs().CacheManagers().AllMembers(65536)
+	return c.State.Programs().CacheManagers().AllMembers(maxGetAllMembers)
 }
 
 // Deprecated: replaced with CacheProgram.
