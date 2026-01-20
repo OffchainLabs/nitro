@@ -1,11 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
-    SequencerMessage,
-};
+use crate::{arbcompress, arbkeccak, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket, stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts, SequencerMessage};
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};

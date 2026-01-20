@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod arbcompress;
+mod arbkeccak;
 mod caller_env;
 pub mod machine;
 mod prepare;
