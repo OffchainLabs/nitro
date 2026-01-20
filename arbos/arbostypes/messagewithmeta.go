@@ -5,8 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-
-	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type MessageWithMetadata struct {
@@ -15,16 +14,11 @@ type MessageWithMetadata struct {
 }
 
 func (m *MessageWithMetadata) Hash() common.Hash {
-	hash := crypto.Keccak256(
-		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Poster.Bytes(),
-		arbmath.UintToBytes(m.Message.Header.BlockNumber),
-		arbmath.UintToBytes(m.Message.Header.Timestamp),
-		m.Message.Header.RequestId.Bytes(),
-		arbmath.U256Bytes(m.Message.Header.L1BaseFee),
-		crypto.Keccak256(m.Message.L2msg),
-	)
-	return crypto.Keccak256Hash(hash)
+	encoded, err := rlp.EncodeToBytes(m)
+	if err != nil {
+		panic(err)
+	}
+	return crypto.Keccak256Hash(encoded)
 }
 
 // lint:require-exhaustive-initialization
