@@ -68,6 +68,9 @@ type L1IncomingMessage struct {
 	// Only used for `L1MessageType_BatchPostingReport`
 	// note: the legacy field is used in json to support older clients
 	// in rlp it's used to distinguish old from new (old will load into first arg)
+	//
+	// NOTE: These fields are not included when storing a L1MessageType_BatchPostingReport
+	// type delayed message into the preimages map for MEL validation
 	LegacyBatchGasCost *uint64         `json:"batchGasCost,omitempty" rlp:"optional"`
 	BatchDataStats     *BatchDataStats `json:"batchDataTokens,omitempty" rlp:"optional"`
 }
