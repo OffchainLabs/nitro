@@ -3,7 +3,7 @@
 
 use crate::machine::WasmEnv;
 use eyre::Ok;
-use nitro_api::validator;
+use nitro_api::validator::ValidationInput;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
@@ -28,7 +28,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
     let file = File::open(json_inputs)?;
     let reader = BufReader::new(file);
 
-    let data = validator::ValidationInput::from_reader(reader)?;
+    let data = ValidationInput::from_reader(reader)?;
 
     let mut env = WasmEnv::default();
     env.process.already_has_input = true;
