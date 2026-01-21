@@ -143,13 +143,8 @@ jobs:
         if: inputs.run-defaults-a
         run: |
           make build-jit
-          if [ -n "$(target/bin/jit \
-              --binary target/machines/latest/replay.wasm \
-              --cranelift \
-              --json-inputs='${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')" ]; then
-            echo "Error: Command produced output."
-            exit 1
-          fi
+          target/bin/jit --binary target/machines/latest/replay.wasm --require-success \
+          json --inputs '${{ github.workspace }}/target/TestProgramStorage/block_inputs.json'
 
       # --------------------- FLAKY MODE --------------------------
 
