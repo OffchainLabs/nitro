@@ -80,6 +80,7 @@ wat = { version = "1.0.56" }
 arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
 caller-env = { path = "crates/caller-env" }
+jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }

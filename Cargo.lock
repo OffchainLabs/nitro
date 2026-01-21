@@ -2812,6 +2812,7 @@ dependencies = [
  "arbutil",
  "axum",
  "clap 4.5.53",
+ "jit",
  "serde",
  "serde_json",
  "tokio",

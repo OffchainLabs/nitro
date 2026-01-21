@@ -4,6 +4,8 @@
 package precompiles
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -19,7 +21,7 @@ type ArbOwnerPublic struct {
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers(65536)
+	return c.State.ChainOwners().AllMembers(maxGetAllMembers)
 }
 
 // RectifyChainOwner checks if the account is a chain owner
@@ -43,13 +45,29 @@ func (con ArbOwnerPublic) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, 
 
 // GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwnerPublic) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.NativeTokenOwners().AllMembers(65536)
+	return c.State.NativeTokenOwners().AllMembers(maxGetAllMembers)
 }
 
 // GetNativeTokenMangementFrom returns the time in epoch seconds when the
 // native token management becomes enabled
 func (con ArbOwnerPublic) GetNativeTokenManagementFrom(c ctx, evm mech) (uint64, error) {
 	return c.State.NativeTokenManagementFromTime()
+}
+
+// TransactionFilteringFrom returns the time in epoch seconds when the
+// transaction filtering feature becomes enabled
+func (con ArbOwnerPublic) GetTransactionFilteringFrom(c ctx, evm mech) (uint64, error) {
+	return c.State.TransactionFilteringFromTime()
+}
+
+// IsTransactionFilterer checks if the account is a transaction filterer
+func (con ArbOwnerPublic) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool, error) {
+	return c.State.TransactionFilterers().IsMember(filterer)
+}
+
+// GetAllTransactionFilterers retrieves the list of transaction filterers
+func (con ArbOwnerPublic) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
 // GetNetworkFeeAccount gets the network fee collector
@@ -92,4 +110,8 @@ func (con ArbOwnerPublic) IsCalldataPriceIncreaseEnabled(c ctx, _ mech) (bool, e
 // Get how much L1 charges per non-zero byte of calldata
 func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().ParentGasFloorPerToken()
+}
+
+func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint16, error) {
+	return 0, errors.New("GetMaxStylusContractFragments is not implemented yet")
 }
