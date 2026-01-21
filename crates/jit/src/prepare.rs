@@ -4,7 +4,7 @@
 use crate::machine::WasmEnv;
 use arbutil::{Bytes32, PreimageType};
 use eyre::Ok;
-use prover::parse_input::FileData;
+use nitro_api::validator;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
@@ -29,7 +29,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
     let file = File::open(json_inputs)?;
     let reader = BufReader::new(file);
 
-    let data = FileData::from_reader(reader)?;
+    let data = validator::ValidationInput::from_reader(reader)?;
 
     let mut env = WasmEnv::default();
     env.process.already_has_input = true;

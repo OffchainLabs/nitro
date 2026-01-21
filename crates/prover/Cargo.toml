@@ -24,6 +24,7 @@ hex = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
 lru = { workspace = true }
+nitro-api = { workspace = true }
 nom = { workspace = true }
 num = { workspace = true }
 num-derive = { workspace = true }

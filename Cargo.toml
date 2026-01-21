@@ -4,7 +4,7 @@ members = [
     "crates/bench",
     "crates/brotli",
     "crates/caller-env",
-    "crates/jit",
+    "crates/jit", "crates/nitro-api",
     "crates/prover",
     "crates/stylus",
     "crates/validator",
@@ -81,6 +81,7 @@ arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
 caller-env = { path = "crates/caller-env" }
 jit = { path = "crates/jit" }
+nitro-api = { path = "crates/nitro-api" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }

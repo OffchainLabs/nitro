@@ -17,6 +17,7 @@ clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
 libc = { workspace = true }
+nitro-api = { workspace = true }
 prover = { workspace = true, features = ["native"] }
 rand = { workspace = true }
 rand_pcg = { workspace = true }

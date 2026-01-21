@@ -1,21 +1,20 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
+use crate::utils::CBytes;
 use arbutil::{Bytes32, PreimageType};
+use nitro_api::validator;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
-use crate::parse_input::*;
-use crate::utils::CBytes;
-
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;
     let reader = BufReader::new(file);
 
-    let data = FileData::from_reader(reader)?;
+    let data = validator::ValidationInput::from_reader(reader)?;
     let preimages = data
         .preimages_b64
         .into_iter()
