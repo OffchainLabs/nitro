@@ -789,12 +789,16 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
 	synced := c.sequencer.Synced(ctx)
 	if !synced {
-		syncProgress := c.sequencer.FullSyncProgressMap(ctx)
-		var detailsList []interface{}
-		for key, value := range syncProgress {
-			detailsList = append(detailsList, key, value)
+		syncProgress, err := c.sequencer.FullSyncProgressMap().Await(ctx)
+		if err != nil {
+			log.Warn("sequencer is not synced and it failed to get progress map", "err", err)
+		} else {
+			var detailsList []interface{}
+			for key, value := range syncProgress {
+				detailsList = append(detailsList, key, value)
+			}
+			log.Warn("sequencer is not synced", detailsList...)
 		}
-		log.Warn("sequencer is not synced", detailsList...)
 	}
 
 	// can take over as main sequencer?

@@ -136,7 +136,7 @@ func (s *SyncMonitor) SetConsensusSyncData(syncData *execution.ConsensusSyncData
 	}
 }
 
-func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	data := s.consensusSyncData.Load()
 	if data == nil {
 		return map[string]interface{}{"error": "no consensus sync data available"}
@@ -181,7 +181,7 @@ func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{
 	if s.Synced(ctx) {
 		return make(map[string]interface{})
 	}
-	return s.FullSyncProgressMap(ctx)
+	return s.FullSyncProgressMap()
 }
 
 func (s *SyncMonitor) Synced(ctx context.Context) bool {
