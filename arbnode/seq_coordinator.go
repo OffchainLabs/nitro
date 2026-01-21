@@ -824,7 +824,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 		if processedMessages >= localMsgCount {
 			// we're here because we don't currently hold the lock
 			// sequencer is already either paused or forwarding
-			c.sequencer.Pause()
+			if _, err := c.sequencer.Pause().Await(ctx); err != nil {
+				log.Warn("coordinator failed to pause sequencer", "processedMessages", processedMessages, "localMsgCount", localMsgCount, "err", err)
+			}
 			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 			if err != nil {
 				// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -849,8 +851,12 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			if err != nil {
 				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
 			}
-			c.sequencer.Activate()
-			c.prevChosenSequencer = c.config.Url()
+			if _, err := c.sequencer.Activate().Await(ctx); err != nil {
+				log.Warn("sequencer failed to activate after becoming chosen", "err", err)
+				c.prevChosenSequencer = ""
+			} else {
+				c.prevChosenSequencer = c.config.Url()
+			}
 			return c.noRedisError(), nil
 		}
 	}

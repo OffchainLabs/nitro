@@ -37,9 +37,15 @@ type execClientWrapper struct {
 	t               *testing.T
 }
 
-func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
+func (w *execClientWrapper) Pause() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
 
-func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
+func (w *execClientWrapper) Activate() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
 
 func (w *execClientWrapper) ForwardTo(url string) containers.PromiseInterface[struct{}] {
 	w.t.Error("not supported")

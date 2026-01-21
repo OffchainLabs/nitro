@@ -565,16 +565,18 @@ func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) contai
 	})
 }
 
-func (n *ExecutionNode) Pause() {
+func (n *ExecutionNode) Pause() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
 		n.Sequencer.Pause()
 	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) Activate() {
+func (n *ExecutionNode) Activate() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
 		n.Sequencer.Activate()
 	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
 func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct{}] {

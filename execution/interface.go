@@ -78,8 +78,8 @@ type ExecutionRecorder interface {
 // needed for sequencer
 type ExecutionSequencer interface {
 	ExecutionClient
-	Pause()
-	Activate()
+	Pause() containers.PromiseInterface[struct{}]
+	Activate() containers.PromiseInterface[struct{}]
 	ForwardTo(url string) containers.PromiseInterface[struct{}]
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}]
 	NextDelayedMessageNumber() containers.PromiseInterface[uint64]

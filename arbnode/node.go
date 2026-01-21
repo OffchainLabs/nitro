@@ -1503,7 +1503,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else if n.ExecutionSequencer != nil {
-		n.ExecutionSequencer.Activate()
+		if _, err := n.ExecutionSequencer.Activate().Await(ctx); err != nil {
+			return fmt.Errorf("error activating execution sequencer: %w", err)
+		}
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)
