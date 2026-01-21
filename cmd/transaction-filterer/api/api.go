@@ -25,11 +25,13 @@ type TransactionFiltererAPI struct {
 	txOpts                         *bind.TransactOpts
 }
 
-func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHash common.Hash) error {
-	log.Info("Received call to filter transaction", "txHash", txHash.Hex())
-	_, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(t.txOpts, txHash)
+func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
+	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(t.txOpts, txHashToFilter)
 	if err != nil {
-		log.Warn("Failed to filter transaction", "txHash", txHash.Hex(), "err", err)
+		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
+	} else {
+		log.Info("Successfuly called sequencer", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 	}
 	return err
 }
