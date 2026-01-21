@@ -216,6 +216,6 @@ func startup() error {
 
 func main() {
 	if err := startup(); err != nil {
-		log.Error("Error running TransactionFilterer", "err", err)
+		log.Error("Error running cmd", "err", err)
 	}
 }
