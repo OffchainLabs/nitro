@@ -10,13 +10,17 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
+use crate::config::InputMode;
+
 mod config;
+mod engine;
 mod logging;
 mod router;
 mod spawner_endpoints;
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
+    mode: InputMode,
     module_root: Bytes32,
 }
 
@@ -27,6 +31,7 @@ async fn main() -> Result<()> {
     info!("Starting validator server with config: {:#?}", config);
 
     let state = Arc::new(ServerState {
+        mode: config.mode,
         module_root: config.get_module_root()?,
     });
 

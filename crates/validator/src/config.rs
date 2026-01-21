@@ -8,6 +8,12 @@ use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum InputMode {
+    Native,
+    Continuous,
+}
+
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
     /// Socket address where the server should be run.
@@ -17,6 +23,9 @@ pub struct ServerConfig {
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
+
+    #[clap(long, value_enum, default_value_t = InputMode::Native)]
+    pub mode: InputMode,
 
     #[clap(flatten)]
     module_root_config: ModuleRootConfig,
