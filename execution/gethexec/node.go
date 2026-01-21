@@ -614,8 +614,8 @@ func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) Synced(ctx context.Context) bool {
-	return n.SyncMonitor.Synced(ctx)
+func (n *ExecutionNode) Synced() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
 func (n *ExecutionNode) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {

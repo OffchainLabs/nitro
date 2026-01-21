@@ -178,13 +178,13 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 }
 
 func (s *SyncMonitor) SyncProgressMap(ctx context.Context) map[string]interface{} {
-	if s.Synced(ctx) {
+	if s.Synced() {
 		return make(map[string]interface{})
 	}
 	return s.FullSyncProgressMap()
 }
 
-func (s *SyncMonitor) Synced(ctx context.Context) bool {
+func (s *SyncMonitor) Synced() bool {
 	data := s.consensusSyncData.Load()
 	if data == nil {
 		return false

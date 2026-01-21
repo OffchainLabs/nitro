@@ -71,9 +71,9 @@ func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[str
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced(ctx context.Context) bool {
+func (w *execClientWrapper) Synced() containers.PromiseInterface[bool] {
 	w.t.Error("not supported")
-	return false
+	return containers.NewReadyPromise(false, nil)
 }
 func (w *execClientWrapper) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
 	w.t.Error("not supported")
