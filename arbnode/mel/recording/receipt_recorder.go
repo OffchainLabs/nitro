@@ -1,6 +1,7 @@
 package melrecording
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,19 +17,22 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 // ReceiptRecorder records preimages corresponding to the receipts of a parent chain block
 // needed during the message extraction. These preimages are needed for MEL validation and
 // are used in creation of the validation entries by the MEL validator
 type ReceiptRecorder struct {
-	parentChainReader    BlockReader
-	parentChainBlockHash common.Hash
-	recordPreimages      daprovider.PreimageRecorder
-	receipts             []*types.Receipt
-	logs                 []*types.Log
-	trieDB               *triedb.Database
-	blockReceiptHash     common.Hash
+	parentChainReader      BlockReader
+	parentChainBlockHash   common.Hash
+	parentChainBlockNumber uint64
+	recordPreimages        daprovider.PreimageRecorder
+	receipts               []*types.Receipt
+	logs                   []*types.Log
+	relevantLogsTxIndexes  map[uint]struct{}
+	trieDB                 *triedb.Database
+	blockReceiptHash       common.Hash
 }
 
 // NewReceiptRecorder returns ReceiptRecorder that records
@@ -42,9 +46,10 @@ func NewReceiptRecorder(
 		return nil, errors.New("preimages recording destination cannot be nil")
 	}
 	return &ReceiptRecorder{
-		parentChainReader:    parentChainReader,
-		parentChainBlockHash: parentChainBlockHash,
-		recordPreimages:      daprovider.RecordPreimagesTo(preimages),
+		parentChainReader:     parentChainReader,
+		parentChainBlockHash:  parentChainBlockHash,
+		recordPreimages:       daprovider.RecordPreimagesTo(preimages),
+		relevantLogsTxIndexes: make(map[uint]struct{}),
 	}, nil
 }
 
@@ -98,6 +103,7 @@ func (rr *ReceiptRecorder) Initialize(ctx context.Context) error {
 	rr.receipts = receipts
 	rr.trieDB = tdb
 	rr.blockReceiptHash = root
+	rr.parentChainBlockNumber = block.NumberU64()
 	return nil
 }
 
@@ -107,6 +113,9 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	}
 	if rr.parentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
+	}
+	if _, recorded := rr.relevantLogsTxIndexes[txIndex]; recorded {
+		return rr.receipts[txIndex].Logs, nil
 	}
 	// #nosec G115
 	if int(txIndex) >= len(rr.receipts) {
@@ -141,7 +150,10 @@ func (rr *ReceiptRecorder) LogsForTxIndex(ctx context.Context, parentChainBlockH
 	// We use this same trick in validation as well in order to link a tx with its logs
 	for _, log := range receipt.Logs {
 		log.TxIndex = txIndex
+		log.BlockHash = parentChainBlockHash
+		log.BlockNumber = rr.parentChainBlockNumber
 	}
+	rr.relevantLogsTxIndexes[txIndex] = struct{}{}
 	return receipt.Logs, nil
 }
 
@@ -153,4 +165,20 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
 	}
 	return rr.logs, nil
+}
+
+// CollectTxIndicesPreimage adds the array of relevant tx indexes to the preimages map as a value
+// to the key represented by parentChainBlockHash.
+func (rr *ReceiptRecorder) CollectTxIndicesPreimage() error {
+	var relevantLogsTxIndexes []uint
+	for k := range rr.relevantLogsTxIndexes {
+		relevantLogsTxIndexes = append(relevantLogsTxIndexes, k)
+	}
+	var buf bytes.Buffer
+	if err := rlp.Encode(&buf, relevantLogsTxIndexes); err != nil {
+		return err
+	}
+	relevantTxIndicesKey := melreplay.RelevantTxIndexesKey(rr.parentChainBlockHash)
+	rr.recordPreimages(relevantTxIndicesKey, buf.Bytes(), arbutil.Keccak256PreimageType)
+	return nil
 }
