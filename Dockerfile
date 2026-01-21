@@ -154,7 +154,6 @@ COPY crates/prover/Cargo.toml crates/prover/
 COPY crates/prover/benches crates/prover/benches
 COPY crates/bench/Cargo.toml crates/bench/
 COPY crates/jit/Cargo.toml crates/jit/
-COPY crates/nitro-api/Cargo.toml crates/nitro-api/
 COPY crates/stylus/Cargo.toml crates/stylus/
 COPY crates/validator/Cargo.toml crates/validator/
 COPY crates/tools/wasmer crates/tools/wasmer
@@ -169,12 +168,13 @@ RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
     echo "fn test() {}" > crates/validator/src/lib.rs && \
     echo "fn test() {}" > crates/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --release --lib && \
-    rm crates/prover/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
+    rm crates/prover/src/lib.rs crates/nitro-api/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
     rm crates/wasm-libraries/user-host-trait/src/lib.rs && \
     rm crates/prover/benches/merkle_bench.rs && \
     rm crates/bench/src/lib.rs
 COPY ./Makefile ./
 COPY crates/prover crates/prover
+COPY crates/nitro-api crates/nitro-api
 COPY crates/wasm-libraries crates/wasm-libraries
 COPY crates/jit crates/jit
 COPY crates/stylus crates/stylus
