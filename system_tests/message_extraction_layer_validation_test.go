@@ -2,8 +2,10 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -11,10 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
+	"github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -71,7 +73,28 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	t.Log(entry.Preimages)
 
-	locator, err := server_common.NewMachineLocator("target/machines")
+	jsonPreimages, err := json.Marshal(entry.Preimages)
+	Require(t, err)
+	Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
+	t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
+	t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
+
+	msgReader := melreplay.NewMessageReader(
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			entry.Preimages,
+		),
+	)
+
+	finalState, err := builder.L2.ConsensusNode.MessageExtractor.GetHeadState(ctx)
+	Require(t, err)
+	for i := range uint64(extractedMsgCount) {
+		_, err = msgReader.Read(ctx, finalState, i)
+		Require(t, err)
+	}
+
+	panic("asdf")
+	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		return &server_arb.DefaultArbitratorSpawnerConfig
@@ -79,7 +102,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0x5bb0a3fcc8a1f7cabda7489b005d04291ab30603551976b528c365a025d24092")
+	wasmModuleRoot := common.HexToHash("0x4989357468172d1c920d90ef58216fe6d92173e14a3e632d6225c19570999668")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{

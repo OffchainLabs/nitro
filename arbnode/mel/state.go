@@ -4,7 +4,7 @@ package mel
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 // State defines the main struct describing the results of processing a single parent
@@ -46,7 +48,8 @@ type State struct {
 	// msgsAcc is MerkleAccumulator that accumulates all the L2 messages extracted. It
 	// resets after the current melstate is finished generating and is reinitialized using
 	// appropriate MessageMerklePartials of the state
-	msgsAcc *merkleAccumulator.MerkleAccumulator
+	msgsAcc          *merkleAccumulator.MerkleAccumulator
+	msgPreimagesDest daprovider.PreimagesMap
 }
 
 // DelayedMessageDatabase can read delayed messages by their global index.
@@ -136,12 +139,9 @@ func (s *State) Clone() *State {
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
 		delayedMessageBacklog:              delayedMessageBacklog,
 		readCountFromBacklog:               s.readCountFromBacklog,
+		// we copy msgPreimagesDest as is to continue recordng of msg preimages
+		msgPreimagesDest: s.msgPreimagesDest,
 	}
-}
-
-func (s *State) ReadMessage(msgIdx uint64) (*arbostypes.MessageWithMetadata, error) {
-	// TODO: Unimplemented.
-	return &arbostypes.MessageWithMetadata{}, nil
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
@@ -154,11 +154,15 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 		}
 		s.msgsAcc = acc
 	}
+	if s.msgPreimagesDest != nil {
+		s.msgsAcc.RecordPreimagesTo(s.msgPreimagesDest[arbutil.Keccak256PreimageType])
+	}
 	msgBytes, err := rlp.EncodeToBytes(msg.WithMELRelevantFields())
 	if err != nil {
 		return err
 	}
 	// In recording mode this would also record the message preimages needed for MEL validation
+
 	if _, err := s.msgsAcc.Append(msg.Hash(), msgBytes...); err != nil {
 		return err
 	}
@@ -255,12 +259,18 @@ func (s *State) ReorgTo(newState *State) error {
 	return nil
 }
 
-func MessageHash(msg *arbostypes.MessageWithMetadata) (common.Hash, error) {
-	serialized, err := msg.Message.Serialize()
-	if err != nil {
-		return common.Hash{}, fmt.Errorf("error serializing message: %w", err)
+// RecordMsgPreimagesTo initializes the given state's msgPreimagesDest to record preimages
+// related to the extracted messages needed for MEL validation into the given preimages map,
+// this will be used to initialize msgsAcc when accumulating messages
+func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
+	if preimagesMap == nil {
+		return errors.New("msg preimages recording destination cannot be nil")
 	}
-	return crypto.Keccak256Hash(serialized), nil
+	if _, ok := preimagesMap[arbutil.Keccak256PreimageType]; !ok {
+		preimagesMap[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	}
+	s.msgPreimagesDest = preimagesMap
+	return nil
 }
 
 func ToPtrSlice[T any](list []T) []*T {
