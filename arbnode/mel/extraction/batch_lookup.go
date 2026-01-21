@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
@@ -56,6 +58,12 @@ func ParseBatchesFromBlock(
 		tx, err := txFetcher.TransactionByLog(ctx, log)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in ParseBatchesFromBlock: %w ", log.TxHash, err)
+		}
+
+		// Record this log for MEL validation. This is a very cheap operation in native mode
+		// and is optimized for recording mode as well.
+		if _, err := logsFetcher.LogsForTxIndex(ctx, parentChainHeader.Hash(), log.TxIndex); err != nil {
+			return nil, nil, fmt.Errorf("error recording relevant logs: %w", err)
 		}
 
 		batch := &mel.SequencerInboxBatch{
