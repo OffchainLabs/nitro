@@ -57,6 +57,7 @@ COPY crates/arbutil crates/arbutil
 COPY crates/brotli crates/brotli
 COPY crates/caller-env crates/caller-env
 COPY crates/prover crates/prover
+COPY crates/nitro-api crates/nitro-api
 COPY crates/wasm-libraries crates/wasm-libraries
 COPY crates/tools/wasmer crates/tools/wasmer
 COPY brotli brotli
