@@ -7,11 +7,12 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/stretchr/testify/require"
 
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -78,7 +79,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 
 	// Add filterer
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	Require(t, err)
+	require.NoError(t, err)
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, filtererTxOpts.From)
 	require.NoError(t, err)
