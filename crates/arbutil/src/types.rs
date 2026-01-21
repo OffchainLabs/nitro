@@ -3,8 +3,7 @@
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use ruint2::Uint;
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
@@ -37,7 +36,7 @@ pub enum PreimageType {
 }
 
 /// cbindgen:field-names=[bytes]
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
@@ -180,13 +179,6 @@ impl From<Bytes32> for U256 {
 impl From<U256> for Bytes32 {
     fn from(value: U256) -> Self {
         Self(value.to_be_bytes())
-    }
-}
-
-impl<'de> Deserialize<'de> for Bytes32 {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        Self::from_str(&s).map_err(D::Error::custom)
     }
 }
 

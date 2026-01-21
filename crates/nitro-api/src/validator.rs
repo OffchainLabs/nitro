@@ -12,7 +12,9 @@ use std::{
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
+    #[serde(with = "As::<DisplayFromStr>")]
     pub block_hash: Bytes32,
+    #[serde(with = "As::<DisplayFromStr>")]
     pub send_root: Bytes32,
     pub batch: u64,
     pub pos_in_batch: u64,
