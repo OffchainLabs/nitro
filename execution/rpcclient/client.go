@@ -150,3 +150,55 @@ func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.Pr
 		return struct{}{}, convertError(err)
 	})
 }
+
+func (c *Client) Pause() containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_pause")
+		return struct{}{}, convertError(err)
+	})
+}
+
+func (c *Client) Activate() containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_activate")
+		return struct{}{}, convertError(err)
+	})
+}
+
+func (c *Client) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_forwardTo", url)
+		return struct{}{}, convertError(err)
+	})
+}
+
+func (c *Client) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_sequenceDelayedMessage", message, delayedSeqNum)
+		return struct{}{}, convertError(err)
+	})
+}
+
+func (c *Client) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_nextDelayedMessageNumber")
+		return res, convertError(err)
+	})
+}
+
+func (c *Client) Synced() containers.PromiseInterface[bool] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (bool, error) {
+		var res bool
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_synced")
+		return res, convertError(err)
+	})
+}
+
+func (c *Client) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (map[string]interface{}, error) {
+		var res map[string]interface{}
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_fullSyncProgressMap")
+		return res, convertError(err)
+	})
+}
