@@ -23,7 +23,8 @@ jobs:
       run-challenge: ${{ matrix.test-mode == 'challenge' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
-      run-pebble: ${{ matrix.test-mode == 'pebble' }}
+      run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}
+      run-pebble-b: ${{ matrix.test-mode == 'pebble-b' }}
 
   notify-on-failure:
     name: Notify Slack on failure
