@@ -155,6 +155,7 @@ COPY crates/prover/benches crates/prover/benches
 COPY crates/bench/Cargo.toml crates/bench/
 COPY crates/jit/Cargo.toml crates/jit/
 COPY crates/stylus/Cargo.toml crates/stylus/
+COPY crates/nitro-api/Cargo.toml crates/stylus/
 COPY crates/validator/Cargo.toml crates/validator/
 COPY crates/tools/wasmer crates/tools/wasmer
 COPY crates/wasm-libraries/user-host-trait/Cargo.toml crates/wasm-libraries/user-host-trait/Cargo.toml
