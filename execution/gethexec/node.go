@@ -536,8 +536,8 @@ func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
 }
-func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
-	return n.ExecEngine.NextDelayedMessageNumber()
+func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(n.ExecEngine.NextDelayedMessageNumber())
 }
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)

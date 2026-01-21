@@ -763,7 +763,7 @@ func getInboxTrackerAndReader(
 		}
 
 		batchCount := config.SnapSyncTest.BatchCount
-		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
+		delayedMessageNumber, err := exec.NextDelayedMessageNumber().Await(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -47,8 +47,8 @@ func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1Incomin
 	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
 
-func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
-	return w.ExecutionEngine.NextDelayedMessageNumber()
+func (w *execClientWrapper) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecutionEngine.NextDelayedMessageNumber())
 }
 
 func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {

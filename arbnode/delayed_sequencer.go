@@ -88,7 +88,11 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	return d.exec.NextDelayedMessageNumber()
+	ctx, err := d.GetContextSafe()
+	if err != nil {
+		return 0, err
+	}
+	return d.exec.NextDelayedMessageNumber().Await(ctx)
 }
 
 func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
