@@ -16,11 +16,21 @@ type MessageWithMetadata struct {
 }
 
 func (m *MessageWithMetadata) Hash() common.Hash {
-	encoded, err := rlp.EncodeToBytes(m)
+	encoded, err := rlp.EncodeToBytes(m.WithMELRelevantFields())
 	if err != nil {
 		panic(err)
 	}
 	return crypto.Keccak256Hash(encoded)
+}
+
+func (m *MessageWithMetadata) WithMELRelevantFields() *MessageWithMetadata {
+	return &MessageWithMetadata{
+		Message: &L1IncomingMessage{
+			Header: m.Message.Header,
+			L2msg:  m.Message.L2msg,
+		},
+		DelayedMessagesRead: m.DelayedMessagesRead,
+	}
 }
 
 // lint:require-exhaustive-initialization
