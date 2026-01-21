@@ -16,7 +16,7 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
 
     let data = validator::ValidationInput::from_reader(reader)?;
     let preimages = data
-        .preimages_b64
+        .preimages
         .into_iter()
         .flat_map(|preimage| preimage.1.into_iter())
         .collect::<HashMap<Bytes32, Vec<u8>>>();
@@ -50,11 +50,11 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
 
     let identifier = argument_data_to_inbox(0).unwrap();
     for batch_info in data.batch_info.iter() {
-        mach.add_inbox_msg(identifier, batch_info.number, batch_info.data_b64.clone());
+        mach.add_inbox_msg(identifier, batch_info.number, batch_info.data.clone());
     }
 
     let identifier = argument_data_to_inbox(1).unwrap();
-    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg_b64);
+    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg);
 
     Ok(mach)
 }

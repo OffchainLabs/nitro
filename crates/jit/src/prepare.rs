@@ -40,15 +40,15 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
 
     for batch_info in data.batch_info.iter() {
         env.sequencer_messages
-            .insert(batch_info.number, batch_info.data_b64.clone());
+            .insert(batch_info.number, batch_info.data.clone());
     }
 
-    if data.delayed_msg_nr != 0 && !data.delayed_msg_b64.is_empty() {
+    if data.delayed_msg_nr != 0 && !data.delayed_msg.is_empty() {
         env.delayed_messages
-            .insert(data.delayed_msg_nr, data.delayed_msg_b64.clone());
+            .insert(data.delayed_msg_nr, data.delayed_msg.clone());
     }
 
-    for (ty, inner_map) in data.preimages_b64 {
+    for (ty, inner_map) in data.preimages {
         let preimage_ty = PreimageType::try_from(ty as u8)?;
         let map = env.preimages.entry(preimage_ty).or_default();
         for (hash, preimage) in inner_map {

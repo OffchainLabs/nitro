@@ -24,8 +24,8 @@ pub struct GoGlobalState {
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
-    #[serde(with = "As::<Base64>")]
-    pub data_b64: Vec<u8>,
+    #[serde(rename = "DataB64", with = "As::<Base64>")]
+    pub data: Vec<u8>,
 }
 
 /// `UserWasm` is a wrapper around `Vec<u8>`
@@ -64,11 +64,11 @@ pub struct ValidationInput {
     pub id: u64,
     pub has_delayed_msg: bool,
     pub delayed_msg_nr: u64,
-    #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>")]
-    pub preimages_b64: HashMap<u32, HashMap<Bytes32, Vec<u8>>>,
+    #[serde(rename = "PreimagesB64", with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>")]
+    pub preimages: HashMap<u32, HashMap<Bytes32, Vec<u8>>>,
     pub batch_info: Vec<BatchInfo>,
-    #[serde(with = "As::<Base64>")]
-    pub delayed_msg_b64: Vec<u8>,
+    #[serde(rename = "DelayedMsgB64", with = "As::<Base64>")]
+    pub delayed_msg: Vec<u8>,
     pub start_state: GoGlobalState,
     #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
