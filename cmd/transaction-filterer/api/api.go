@@ -8,23 +8,29 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 const namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
-	sequencerClient *ethclient.Client
-	txOpts          *bind.TransactOpts
+	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+	txOpts                         *bind.TransactOpts
 }
 
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHash common.Hash) error {
-	log.Info("Received request to filter transaction", "txHash", txHash.Hex())
-	return nil
+	log.Info("Received call to filter transaction", "txHash", txHash.Hex())
+	_, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(t.txOpts, txHash)
+	if err != nil {
+		log.Warn("Failed to filter transaction", "txHash", txHash.Hex(), "err", err)
+	}
+	return err
 }
 
 var DefaultStackConfig = node.Config{
@@ -59,9 +65,17 @@ func NewStack(
 		return nil, err
 	}
 
+	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
+		types.ArbFilteredTransactionsManagerAddress,
+		sequencerClient,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	api := &TransactionFiltererAPI{
-		sequencerClient: sequencerClient,
-		txOpts:          txOpts,
+		arbFilteredTransactionsManager: arbFilteredTransactionsManager,
+		txOpts:                         txOpts,
 	}
 	apis := []rpc.API{{
 		Namespace: namespace,
