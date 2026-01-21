@@ -1,3 +1,5 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
@@ -22,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
+var arbitratorValidationSteps = metrics.NewRegisteredHistogram("crates/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
 	Workers                     int                          `koanf:"workers" reload:"hot"`

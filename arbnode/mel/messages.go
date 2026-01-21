@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package mel
 
 import (
@@ -56,13 +58,23 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
-// Hash will replace AfterInboxAcc
 func (m *DelayedInboxMessage) Hash() common.Hash {
-	encoded, err := rlp.EncodeToBytes(m)
+	encoded, err := rlp.EncodeToBytes(m.WithMELRelevantFields())
 	if err != nil {
 		panic(err)
 	}
 	return crypto.Keccak256Hash(encoded)
+}
+
+func (m *DelayedInboxMessage) WithMELRelevantFields() *DelayedInboxMessage {
+	return &DelayedInboxMessage{
+		BlockHash: m.BlockHash,
+		Message: &arbostypes.L1IncomingMessage{
+			Header: m.Message.Header,
+			L2msg:  m.Message.L2msg,
+		},
+		ParentChainBlockNumber: m.ParentChainBlockNumber,
+	}
 }
 
 type BatchMetadata struct {

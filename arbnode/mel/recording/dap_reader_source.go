@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrecording
 
 import (
@@ -39,9 +41,9 @@ func (r *DAPReader) RecoverPayloadAndPreimages(batchNum uint64, batchBlockHash c
 	return r.reader.RecoverPayloadAndPreimages(batchNum, batchBlockHash, sequencerMsg)
 }
 
-// DAPReaderSource is used for recording preimages related to sequencer batches stored by da providers, given a
-// DapReaderSource it implements GetReader method to return a daprovider.Reader interface that records preimgaes. It takes
-// in a context variable (corresponding to creation of validation entry) from the MEL validator
+// DAPReaderSource is used for recording preimages related to sequencer batches stored by da providers. Given a
+// DA provider reader source, it implements GetReader method to return a daprovider.Reader interface that records
+// preimages. It takes in a context variable (corresponding to creation of validation entry) from the MEL validator
 type DAPReaderSource struct {
 	validatorCtx context.Context
 	dapReaders   arbstate.DapReaderSource

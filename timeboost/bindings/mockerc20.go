@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
 

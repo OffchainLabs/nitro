@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -88,6 +88,7 @@ func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *Throttl
 type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
+	melValidator MELValidatorInterface
 
 	reorgMutex sync.RWMutex
 
@@ -636,13 +637,23 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
+	streamerMsgCount, err := v.streamer.GetProcessedMessageCount() // Ask MEL validator LatestValidatedMELState().MsgCount
 	if err != nil {
 		return false, err
 	}
 	if pos >= streamerMsgCount {
 		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
 		return false, nil
+	}
+	if v.melValidator != nil {
+		latestValidatedState, err := v.melValidator.LatestValidatedMELState(ctx)
+		if err != nil {
+			return false, err
+		}
+		if pos >= arbutil.MessageIndex(latestValidatedState.MsgCount) {
+			log.Trace("create validation entry: nothing to do", "pos", pos, "latestMELValidatedMsgCount", latestValidatedState.MsgCount)
+			return false, nil
+		}
 	}
 	msg, err := v.streamer.GetMessage(pos)
 	if err != nil {
@@ -784,7 +795,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
-	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
+	_, err := v.recorder.PrepareForRecord(pos, recordUntil).Await(ctx)
 	if err != nil {
 		return false, err
 	}

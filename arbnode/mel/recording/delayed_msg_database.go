@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrecording
 
 import (
@@ -112,7 +114,7 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 	if err != nil {
 		return nil, err
 	}
-	delayedMsgBytes, err := rlp.EncodeToBytes(delayed)
+	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithMELRelevantFields())
 	if err != nil {
 		return nil, err
 	}
