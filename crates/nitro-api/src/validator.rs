@@ -2,11 +2,12 @@
 
 use arbutil::Bytes32;
 use serde::Deserialize;
-use serde_with::{base64::Base64, serde_as, DisplayFromStr};
-use std::{
-    collections::HashMap,
-    io::{self, BufRead},
-};
+use serde_with::base64::Base64;
+use serde_with::As;
+use serde_with::DisplayFromStr;
+use std::collections::HashMap;
+use std::io;
+use std::io::BufRead;
 
 /// Counterpart to Go `validator.GoGlobalState`.
 #[derive(Clone, Debug, Deserialize)]
@@ -19,12 +20,11 @@ pub struct GoGlobalState {
 }
 
 /// Counterpart to Go `validator.server_api.BatchInfoJson`.
-#[serde_as]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
-    #[serde_as(as = "Base64")]
+    #[serde(with = "As::<Base64>")]
     pub data_b64: Vec<u8>,
 }
 
@@ -58,20 +58,19 @@ impl From<Vec<u8>> for UserWasm {
 }
 
 /// Counterpart to Go `validator.server_api.InputJSON`.
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationInput {
     pub id: u64,
     pub has_delayed_msg: bool,
     pub delayed_msg_nr: u64,
-    #[serde_as(as = "HashMap<DisplayFromStr, HashMap<Base64, Base64>>")]
+    #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>")]
     pub preimages_b64: HashMap<u32, HashMap<Bytes32, Vec<u8>>>,
     pub batch_info: Vec<BatchInfo>,
-    #[serde_as(as = "Base64")]
+    #[serde(with = "As::<Base64>")]
     pub delayed_msg_b64: Vec<u8>,
     pub start_state: GoGlobalState,
-    #[serde_as(as = "HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>")]
+    #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
     pub debug_chain: bool,
     #[serde(rename = "max-user-wasmSize")]
