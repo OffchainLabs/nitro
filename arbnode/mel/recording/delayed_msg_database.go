@@ -114,7 +114,7 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 	if err != nil {
 		return nil, err
 	}
-	delayedMsgBytes, err := rlp.EncodeToBytes(delayed)
+	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithMELRelevantFields())
 	if err != nil {
 		return nil, err
 	}
