@@ -41,7 +41,10 @@ func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
 
 func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
 
-func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
 
 func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum))

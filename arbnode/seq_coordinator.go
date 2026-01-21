@@ -525,7 +525,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		// we maintain chosen status if we had it and nobody in the priorities wants the lockout
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
-			err := c.sequencer.ForwardTo(nextChosen)
+			_, err := c.sequencer.ForwardTo(nextChosen).Await(ctx)
 			if err != nil {
 				// The error was already logged in ForwardTo, just clean up state.
 				// Setting prevChosenSequencer to an empty string will cause the next update to attempt to reconnect.
@@ -650,7 +650,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	if chosenSeq != c.config.Url() && chosenSeq != c.prevChosenSequencer {
 		var err error
 		if c.sequencer != nil {
-			err = c.sequencer.ForwardTo(chosenSeq)
+			_, err = c.sequencer.ForwardTo(chosenSeq).Await(ctx)
 		}
 		if err == nil {
 			c.prevChosenSequencer = chosenSeq

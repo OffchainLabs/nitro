@@ -577,12 +577,11 @@ func (n *ExecutionNode) Activate() {
 	}
 }
 
-func (n *ExecutionNode) ForwardTo(url string) error {
+func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
-		return n.Sequencer.ForwardTo(url)
-	} else {
-		return errors.New("forwardTo not supported - sequencer not active")
+		return containers.NewReadyPromise(struct{}{}, n.Sequencer.ForwardTo(url))
 	}
+	return containers.NewReadyPromise(struct{}{}, errors.New("forwardTo not supported - sequencer not active"))
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) {
