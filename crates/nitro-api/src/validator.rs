@@ -13,15 +13,13 @@ use std::io::BufRead;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
-    #[serde(with = "prefixed_hex")] //TODO
-    pub block_hash: Vec<u8>,
-    #[serde(with = "prefixed_hex")]
-    pub send_root: Vec<u8>,
+    pub block_hash: Bytes32,
+    pub send_root: Bytes32,
     pub batch: u64,
     pub pos_in_batch: u64,
 }
 
-// Counterpart to Go `validator.server_api.BatchInfoJson`.
+/// Counterpart to Go `validator.server_api.BatchInfoJson`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
@@ -82,27 +80,5 @@ pub struct ValidationInput {
 impl ValidationInput {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         Ok(serde_json::from_reader(&mut reader)?)
-    }
-}
-
-/// `prefixed_hex` deserializes hex strings which are prefixed with `0x`
-///
-/// The default hex deserializer does not support prefixed hex strings.
-///
-/// It is an error to use this deserializer on a string that does not
-/// begin with `0x`.
-mod prefixed_hex {
-    use serde::{self, Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        if let Some(s) = s.strip_prefix("0x") {
-            hex::decode(s).map_err(serde::de::Error::custom)
-        } else {
-            Err(serde::de::Error::custom("missing 0x prefix"))
-        }
     }
 }

@@ -682,6 +682,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 
 [[package]]
+name = "nitro-api"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "brotli",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,6 +918,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "lru",
+ "nitro-api",
  "nom",
  "num",
  "num-derive",

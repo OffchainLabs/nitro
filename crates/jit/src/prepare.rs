@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::WasmEnv;
-use arbutil::{Bytes32, PreimageType};
+use arbutil::PreimageType;
 use eyre::Ok;
 use nitro_api::validator;
 use std::env;
@@ -35,14 +35,8 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
     env.process.already_has_input = true;
     env.process.debug = debug;
 
-    let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();
-    let block_hash: Bytes32 = block_hash.into();
-    let send_root: [u8; 32] = data.start_state.send_root.try_into().unwrap();
-    let send_root: Bytes32 = send_root.into();
-    let bytes32_vals: [Bytes32; 2] = [block_hash, send_root];
-    let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
-    env.small_globals = u64_vals;
-    env.large_globals = bytes32_vals;
+    env.small_globals = [data.start_state.batch, data.start_state.pos_in_batch];
+    env.large_globals = [data.start_state.block_hash, data.start_state.send_root];
 
     for batch_info in data.batch_info.iter() {
         env.sequencer_messages
