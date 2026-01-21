@@ -70,7 +70,7 @@ type L1IncomingMessage struct {
 	// in rlp it's used to distinguish old from new (old will load into first arg)
 	//
 	// NOTE: These fields are not included when storing a L1MessageType_BatchPostingReport
-	// type delayed message into the preimages map for MEL validation
+	// type delayed message or L2 message into the preimages map for MEL validation
 	LegacyBatchGasCost *uint64         `json:"batchGasCost,omitempty" rlp:"optional"`
 	BatchDataStats     *BatchDataStats `json:"batchDataTokens,omitempty" rlp:"optional"`
 }
