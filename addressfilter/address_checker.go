@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package txfilter
+package addressfilter
 
 import (
 	"sync"
@@ -9,8 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
-
-	"github.com/offchainlabs/nitro/restrictedaddr"
 )
 
 // Default parameters for HashedAddressChecker, used in NewDefaultHashedAddressChecker
@@ -24,7 +22,7 @@ const (
 // the HashStore; this checker only manages async execution and per-tx
 // aggregation.
 type HashedAddressChecker struct {
-	store    *restrictedaddr.HashStore
+	store    *HashStore
 	workChan chan workItem
 }
 
@@ -44,10 +42,14 @@ type workItem struct {
 
 // NewHashedAddressChecker constructs a new checker backed by a HashStore.
 func NewHashedAddressChecker(
-	store *restrictedaddr.HashStore,
+	store *HashStore,
 	workerCount int,
 	queueSize int,
 ) *HashedAddressChecker {
+	if store == nil {
+		panic("HashStore cannot be nil")
+	}
+
 	c := &HashedAddressChecker{
 		store:    store,
 		workChan: make(chan workItem, queueSize),
@@ -60,7 +62,7 @@ func NewHashedAddressChecker(
 	return c
 }
 
-func NewDefaultHashedAddressChecker(store *restrictedaddr.HashStore) *HashedAddressChecker {
+func NewDefaultHashedAddressChecker(store *HashStore) *HashedAddressChecker {
 	return NewHashedAddressChecker(
 		store,
 		restrictedAddrWorkerCount,
@@ -83,11 +85,13 @@ func (c *HashedAddressChecker) worker() {
 }
 
 func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
+	s.pending.Add(1)
 	select {
 	case s.checker.workChan <- workItem{addr: addr, state: s}:
-		s.pending.Add(1)
+		// ok
 	default:
-		// queue full: drop work conservatively
+		// queue full: drop check (fail-open, false negative possible)
+		s.pending.Done()
 	}
 }
 

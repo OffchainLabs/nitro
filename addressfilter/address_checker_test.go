@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package txfilter
+package addressfilter
 
 import (
 	"crypto/sha256"
@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/offchainlabs/nitro/restrictedaddr"
 )
 
 func mustState(t *testing.T, s any) *HashedAddressCheckerState {
@@ -29,10 +27,10 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	addrFiltered := common.HexToAddress("0x000000000000000000000000000000000000dead")
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 
-	store := restrictedaddr.NewHashStore()
+	store := NewHashStore()
 
-	filteredHash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
-	store.Load(salt, [][32]byte{filteredHash}, "test")
+	hash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
+	store.Load(salt, []common.Hash{hash}, "test")
 
 	checker := NewDefaultHashedAddressChecker(store)
 
@@ -80,7 +78,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 
 	const filteredCount = 500
 	filteredAddrs := make([]common.Address, filteredCount)
-	filteredHashes := make([][32]byte, filteredCount)
+	filteredHashes := make([]common.Hash, filteredCount)
 
 	for i := range filteredAddrs {
 		addr := common.BytesToAddress([]byte{byte(i + 1)})
@@ -88,7 +86,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 		filteredHashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
 	}
 
-	store := restrictedaddr.NewHashStore()
+	store := NewHashStore()
 	store.Load(salt, filteredHashes, "heavy")
 
 	checker := NewDefaultHashedAddressChecker(store)

@@ -13,9 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/restrictedaddr"
+	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
-	"github.com/offchainlabs/nitro/txfilter"
 )
 
 func isFilteredError(err error) bool {
@@ -25,17 +24,20 @@ func isFilteredError(err error) bool {
 	return strings.Contains(err.Error(), "internal error")
 }
 
-func newHashedChecker(addrs []common.Address) *txfilter.HashedAddressChecker {
-	store := restrictedaddr.NewHashStore()
+func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
+	store := addressfilter.NewHashStore()
 	if len(addrs) > 0 {
 		salt := []byte("test-salt")
-		hashes := make([][32]byte, len(addrs))
+		hashes := make([]common.Hash, len(addrs))
 		for i, addr := range addrs {
-			hashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
+			salted := make([]byte, len(salt)+common.AddressLength)
+			copy(salted, salt)
+			copy(salted[len(salt):], addr.Bytes())
+			hashes[i] = sha256.Sum256(salted)
 		}
 		store.Load(salt, hashes, "test")
 	}
-	return txfilter.NewDefaultHashedAddressChecker(store)
+	return addressfilter.NewDefaultHashedAddressChecker(store)
 }
 
 func TestAddressFilterDirectTransfer(t *testing.T) {
