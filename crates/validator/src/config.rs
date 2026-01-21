@@ -4,9 +4,14 @@
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
-use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum InputMode {
+    Native,
+    Continuous,
+}
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
@@ -18,42 +23,23 @@ pub struct ServerConfig {
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
 
+    #[clap(long, value_enum, default_value_t = InputMode::Native)]
+    pub mode: InputMode,
+
     #[clap(flatten)]
-    module_root_config: ModuleRootConfig,
+    pub module_root_config: ModuleRootConfig,
 }
 
 #[derive(Clone, Debug, Args)]
 #[group(required = true, multiple = false)]
-struct ModuleRootConfig {
+pub struct ModuleRootConfig {
     /// Supported module root.
     #[clap(long)]
-    module_root: Option<Bytes32>,
+    pub module_root: Option<Bytes32>,
 
     /// Path to the file containing the module root.
     #[clap(long)]
-    module_root_path: Option<PathBuf>,
-}
-
-impl ServerConfig {
-    pub fn get_module_root(&self) -> anyhow::Result<Bytes32> {
-        match (
-            self.module_root_config.module_root,
-            &self.module_root_config.module_root_path,
-        ) {
-            (Some(root), None) => Ok(root),
-            (None, Some(ref path)) => {
-                let content = read_to_string(path)?;
-                let root = content
-                    .trim()
-                    .parse::<Bytes32>()
-                    .map_err(|e| anyhow::anyhow!(e))?;
-                Ok(root)
-            }
-            _ => Err(anyhow::anyhow!(
-                "Either module_root or module_root_path must be specified"
-            )),
-        }
-    }
+    pub module_root_path: Option<PathBuf>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]

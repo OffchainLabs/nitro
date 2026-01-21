@@ -7,14 +7,15 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
+use crate::endpoints::validate::{validate_contiguous, validate_native, ValidationRequest};
 use crate::ServerState;
-use arbutil::{Bytes32, PreimageType};
+use arbutil::Bytes32;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::info;
 
 pub async fn capacity() -> impl IntoResponse {
     "1" // TODO: Figure out max number of workers (optionally, make it configurable)
@@ -35,65 +36,26 @@ pub async fn stylus_archs() -> &'static str {
     "host"
 }
 
-pub async fn validate(Json(request): Json<ValidationRequest>) -> Result<Json<GlobalState>, String> {
-    let delayed_inbox = match request.has_delayed_msg {
-        true => vec![jit::SequencerMessage {
-            number: request.delayed_msg_number,
-            data: request.delayed_msg,
-        }],
-        false => vec![],
-    };
-
-    let opts = jit::Opts {
-        validator: jit::ValidatorOpts {
-            binary: Default::default(),
-            cranelift: true, // The default for JIT binary, no need for LLVM right now
-            debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
-            require_success: false, // Relevant for JIT binary only.
-        },
-        input_mode: jit::InputMode::Native(jit::NativeInput {
-            old_state: request.start_state.into(),
-            inbox: request.batch_info.into_iter().map(Into::into).collect(),
-            delayed_inbox,
-            preimages: request.preimages,
-            programs: request.user_wasms[stylus_archs().await].clone(),
-        }),
-    };
-
-    let result = jit::run(&opts).map_err(|error| format!("{error}"))?;
-    if let Some(err) = result.error {
-        Err(format!("{err}"))
-    } else {
-        Ok(Json(GlobalState::from(result.new_state)))
+pub async fn validate(
+    State(state): State<Arc<ServerState>>,
+    Json(request): Json<ValidationRequest>,
+) -> Result<Json<GlobalState>, String> {
+    match state.mode {
+        crate::config::InputMode::Native => validate_native(request, &state.locator).await,
+        crate::config::InputMode::Continuous => validate_contiguous(request, &state.locator).await,
     }
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("[{:?}]", state.module_root)
-}
-
-/// Counterpart for Go struct `validator.ValidationInput`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ValidationRequest {
-    id: u64,
-    has_delayed_msg: bool,
-    #[serde(rename = "DelayedMsgNr")]
-    delayed_msg_number: u64,
-    preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
-    user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
-    batch_info: Vec<BatchInfo>,
-    delayed_msg: Vec<u8>,
-    start_state: GlobalState,
-    debug_chain: bool,
+    format!("{:?}", state.locator.module_roots())
 }
 
 /// Counterpart for Go struct `validator.BatchInfo`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
-    number: u64,
-    data: Vec<u8>,
+    pub number: u64,
+    pub data: Vec<u8>,
 }
 
 impl From<BatchInfo> for jit::SequencerMessage {
@@ -106,13 +68,13 @@ impl From<BatchInfo> for jit::SequencerMessage {
 }
 
 /// Counterpart for Go struct `validator.GoGlobalState`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct GlobalState {
-    block_hash: Bytes32,
-    send_root: Bytes32,
-    batch: u64,
-    pos_in_batch: u64,
+    pub block_hash: Bytes32,
+    pub send_root: Bytes32,
+    pub batch: u64,
+    pub pos_in_batch: u64,
 }
 
 impl From<GlobalState> for jit::GlobalState {

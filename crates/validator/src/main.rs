@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use anyhow::Result;
-use arbutil::Bytes32;
 use clap::Parser;
 use logging::init_logging;
 use router::create_router;
@@ -10,14 +9,18 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
+use crate::{config::InputMode, server_jit::machine_locator::MachineLocator};
+
 mod config;
+mod endpoints;
 mod logging;
 mod router;
-mod spawner_endpoints;
+mod server_jit;
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
-    module_root: Bytes32,
+    mode: InputMode,
+    locator: MachineLocator,
 }
 
 #[tokio::main]
@@ -26,8 +29,11 @@ async fn main() -> Result<()> {
     init_logging(config.logging_format)?;
     info!("Starting validator server with config: {:#?}", config);
 
+    let locator = MachineLocator::new(&config.module_root_config)?;
+
     let state = Arc::new(ServerState {
-        module_root: config.get_module_root()?,
+        mode: config.mode,
+        locator,
     });
 
     let listener = TcpListener::bind(config.address).await?;
