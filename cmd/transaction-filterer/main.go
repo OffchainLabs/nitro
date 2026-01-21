@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -43,6 +44,7 @@ type TransactionFiltererConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
+	ChainId   int64                    `koanf:"chain-id"`
 	Wallet    genericconf.WalletConfig `koanf:"wallet"`
 	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
 }
@@ -82,6 +84,7 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
+	ChainId:       412346, // nitro-testnode chainid
 	Sequencer:     rpcclient.DefaultClientConfig,
 }
 
@@ -103,6 +106,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 
+	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
 }
@@ -191,7 +195,7 @@ func startup() error {
 	sequencerClient := ethclient.NewClient(sequencerRPCClient)
 	defer sequencerClient.Close()
 
-	txOpts, _, err := util.OpenWallet("", &config.Wallet, nil)
+	txOpts, _, err := util.OpenWallet("", &config.Wallet, big.NewInt(config.ChainId))
 	if err != nil {
 		return fmt.Errorf("failed to open filterer wallet: %w", err)
 	}
