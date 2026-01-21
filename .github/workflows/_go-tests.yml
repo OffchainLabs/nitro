@@ -40,7 +40,10 @@ on:
       run-execution-spec-tests:
         required: false
         type: boolean
-      run-pebble:
+      run-pebble-a:
+        required: false
+        type: boolean
+      run-pebble-b:
         required: false
         type: boolean
 
@@ -216,11 +219,17 @@ jobs:
 
       # --------------------- PEBBLE MODE ---------------------
 
-      - name: run pebble tests
-        if: inputs.run-pebble
+      - name: run pebble tests (A-batch)
+        if: inputs.run-pebble-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble.xml
+          --junitfile test-results/junit-pebble.xml --run '^Test[A-L]'
+
+      - name: run pebble tests (B-batch)
+        if: inputs.run-pebble-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          --junitfile test-results/junit-pebble.xml --skip '^Test[A-L]'
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
