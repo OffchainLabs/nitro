@@ -76,3 +76,35 @@ func (c *Server) PrepareForRecord(ctx context.Context, start, end arbutil.Messag
 	_, err := c.client.PrepareForRecord(start, end).Await(ctx)
 	return err
 }
+
+func (c *Server) Pause(ctx context.Context) error {
+	_, err := c.client.Pause().Await(ctx)
+	return err
+}
+
+func (c *Server) Activate(ctx context.Context) error {
+	_, err := c.client.Activate().Await(ctx)
+	return err
+}
+
+func (c *Server) ForwardTo(ctx context.Context, url string) error {
+	_, err := c.client.ForwardTo(url).Await(ctx)
+	return err
+}
+
+func (c *Server) SequenceDelayedMessage(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+	_, err := c.client.SequenceDelayedMessage(message, delayedSeqNum).Await(ctx)
+	return err
+}
+
+func (c *Server) NextDelayedMessageNumber(ctx context.Context) (uint64, error) {
+	return c.client.NextDelayedMessageNumber().Await(ctx)
+}
+
+func (c *Server) Synced(ctx context.Context) (bool, error) {
+	return c.client.Synced().Await(ctx)
+}
+
+func (c *Server) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
+	return c.client.FullSyncProgressMap().Await(ctx)
+}
