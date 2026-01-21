@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::WasmEnv;
-use arbutil::PreimageType;
 use eyre::Ok;
 use nitro_api::validator;
 use std::env;
