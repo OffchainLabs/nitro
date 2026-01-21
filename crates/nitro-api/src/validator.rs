@@ -1,13 +1,12 @@
 //! Go `validator` module (../../validator/) related types.
 
-use arbutil::Bytes32;
+use arbutil::{Bytes32, PreimageType};
 use serde::Deserialize;
-use serde_with::base64::Base64;
-use serde_with::As;
-use serde_with::DisplayFromStr;
-use std::collections::HashMap;
-use std::io;
-use std::io::BufRead;
+use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
+use std::{
+    collections::HashMap,
+    io::{self, BufRead},
+};
 
 /// Counterpart to Go `validator.GoGlobalState`.
 #[derive(Clone, Debug, Deserialize)]
@@ -64,8 +63,11 @@ pub struct ValidationInput {
     pub id: u64,
     pub has_delayed_msg: bool,
     pub delayed_msg_nr: u64,
-    #[serde(rename = "PreimagesB64", with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>")]
-    pub preimages: HashMap<u32, HashMap<Bytes32, Vec<u8>>>,
+    #[serde(
+        rename = "PreimagesB64",
+        with = "As::<HashMap<TryFromInto<u8>, HashMap<Base64, Base64>>>"
+    )]
+    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
     pub batch_info: Vec<BatchInfo>,
     #[serde(rename = "DelayedMsgB64", with = "As::<Base64>")]
     pub delayed_msg: Vec<u8>,

@@ -48,8 +48,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
             .insert(data.delayed_msg_nr, data.delayed_msg.clone());
     }
 
-    for (ty, inner_map) in data.preimages {
-        let preimage_ty = PreimageType::try_from(ty as u8)?;
+    for (preimage_ty, inner_map) in data.preimages {
         let map = env.preimages.entry(preimage_ty).or_default();
         for (hash, preimage) in inner_map {
             map.insert(hash, preimage);
