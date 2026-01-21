@@ -151,18 +151,17 @@ COPY crates/arbutil crates/arbutil
 COPY crates/bench crates/bench
 COPY crates/brotli crates/brotli
 COPY crates/caller-env crates/caller-env
+COPY crates/nitro-api crates/nitro-api
 COPY crates/prover/Cargo.toml crates/prover/
 COPY crates/prover/benches crates/prover/benches
 COPY crates/bench/Cargo.toml crates/bench/
 COPY crates/jit/Cargo.toml crates/jit/
 COPY crates/stylus/Cargo.toml crates/stylus/
-COPY crates/nitro-api/Cargo.toml crates/nitro-api/
 COPY crates/validator/Cargo.toml crates/validator/
 COPY crates/tools/wasmer crates/tools/wasmer
 COPY crates/wasm-libraries/user-host-trait/Cargo.toml crates/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir crates/{prover,jit,nitro-api,stylus,validator}/src crates/wasm-libraries/user-host-trait/src'
+RUN bash -c 'mkdir crates/{prover,jit,stylus,validator}/src crates/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
-    echo "fn test() {}" > crates/nitro-api/src/lib.rs && \
     echo "fn test() {}" > crates/prover/src/lib.rs && \
     echo "fn test() {}" > crates/bench/src/lib.rs && \
     echo "fn test() {}" > crates/prover/benches/merkle_bench.rs && \
@@ -170,13 +169,12 @@ RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
     echo "fn test() {}" > crates/validator/src/lib.rs && \
     echo "fn test() {}" > crates/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --release --lib && \
-    rm crates/prover/src/lib.rs crates/nitro-api/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
+    rm crates/prover/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
     rm crates/wasm-libraries/user-host-trait/src/lib.rs && \
     rm crates/prover/benches/merkle_bench.rs && \
     rm crates/bench/src/lib.rs
 COPY ./Makefile ./
 COPY crates/prover crates/prover
-COPY crates/nitro-api crates/nitro-api
 COPY crates/wasm-libraries crates/wasm-libraries
 COPY crates/jit crates/jit
 COPY crates/stylus crates/stylus
