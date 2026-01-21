@@ -119,9 +119,9 @@ func (s *Syncer) DownloadAndLoad(ctx context.Context) error {
 		return fmt.Errorf("HeadObject failed for s3://%s/%s: %w", s.config.Bucket, s.config.ObjectKey, err)
 	}
 
-	etagDigest := aws.ToString(headOutput.ETag)
+	newETagDigest := aws.ToString(headOutput.ETag)
 	objectSize := aws.ToInt64(headOutput.ContentLength)
-	err = s.downloadAndHandle(ctx, etagDigest, objectSize)
+	err = s.downloadAndHandle(ctx, newETagDigest, objectSize)
 	return err
 }
 
@@ -145,5 +145,9 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objec
 		return fmt.Errorf("download failed for s3://%s/%s: %w", s.config.Bucket, s.config.ObjectKey, err)
 	}
 
-	return s.handleData(buffer.Bytes(), etagDigest)
+	err = s.handleData(buffer.Bytes(), etagDigest)
+	if err == nil {
+		s.digestETag = etagDigest
+	}
+	return err
 }

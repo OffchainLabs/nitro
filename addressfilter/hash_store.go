@@ -80,8 +80,12 @@ func (h *HashStore) IsRestricted(addr common.Address) bool {
 		return restricted
 	}
 
-	hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
-	_, restricted := data.hashes[hash]
+	saltedAddr := make([]byte, len(data.salt)+common.AddressLength)
+	copy(saltedAddr, data.salt)
+	copy(saltedAddr[len(data.salt):], addr.Bytes())
+	saltedHash := sha256.Sum256(saltedAddr)
+
+	_, restricted := data.hashes[saltedHash]
 
 	// Cache the result
 	data.cache.Add(addr, restricted)

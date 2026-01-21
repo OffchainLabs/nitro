@@ -75,6 +75,9 @@ func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid salt hex: %w", err)
 	}
+	if len(salt) == 0 {
+		return nil, nil, fmt.Errorf("salt cannot be empty")
+	}
 
 	hashes := make([]common.Hash, len(payload.AddressHashes))
 	for i, h := range payload.AddressHashes {

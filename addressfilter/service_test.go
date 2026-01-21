@@ -34,7 +34,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	}
 
 	// Pre-compute hashes
-	var hashes []common.Hash
+	hashes := make([]common.Hash, 0, len(addresses))
 	for _, addr := range addresses {
 		hash := sha256.Sum256(append(salt, addr.Bytes()...))
 		hashes = append(hashes, hash)

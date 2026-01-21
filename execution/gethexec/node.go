@@ -28,7 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	addressfilter "github.com/offchainlabs/nitro/address-filter"
+	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -477,11 +477,11 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
-	if n.addressFilterService != nil {
-		if err = n.addressFilterService.Initialize(ctx); err != nil {
-			return fmt.Errorf("error initializing restricted addr service: %w", err)
-		}
+
+	if err = n.addressFilterService.Initialize(ctx); err != nil {
+		return fmt.Errorf("error initializing restricted addr service: %w", err)
 	}
+
 	return nil
 }
 
@@ -516,9 +516,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 
-	if n.addressFilterService != nil {
-		n.addressFilterService.Start(ctx)
-	}
+	n.addressFilterService.Start(ctx)
 	return nil
 }
 
@@ -548,10 +546,7 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
-
-	if n.addressFilterService != nil && n.addressFilterService.Started() {
-		n.addressFilterService.StopAndWait()
-	}
+	n.addressFilterService.StopAndWait()
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
