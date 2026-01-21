@@ -81,7 +81,7 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}]
 	NextDelayedMessageNumber() containers.PromiseInterface[uint64]
 	Synced() containers.PromiseInterface[bool]
 	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
