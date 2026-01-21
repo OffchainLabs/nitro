@@ -529,7 +529,8 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
-	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+	arbosVersion := c.State.ArbOSVersion()
+	if arbosVersion >= params.ArbosVersion_MultiConstraintFix && arbosVersion < params.ArbosVersion_MultiGasConstraintsVersion {
 		limit := l2pricing.GasConstraintsMaxNum
 		if len(constraints) > limit {
 			return fmt.Errorf("too many constraints. Max: %d", limit)
@@ -559,11 +560,6 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
-	limit := l2pricing.MultiGasConstraintsMaxNum
-	if len(constraints) > limit {
-		return fmt.Errorf("too many constraints. Max: %d", limit)
-	}
-
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
