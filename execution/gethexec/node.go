@@ -426,7 +426,7 @@ func CreateExecutionNode(
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
 			Version:       "1.0",
-			Service:       executionrpcserver.NewServer(execNode, execNode),
+			Service:       executionrpcserver.NewServer(execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
