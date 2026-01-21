@@ -35,7 +35,7 @@ func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
 
 // GetBatchPosters gets the addresses of all current batch posters
 func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
-	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
+	return c.State.L1PricingState().BatchPosterTable().AllPosters(maxGetAllMembers)
 }
 
 // Adds additional batch poster address

@@ -1,12 +1,14 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::GlobalState;
 use arbutil::Bytes32;
 use std::{
     io,
     io::{BufReader, BufWriter, Read, Write},
     net::TcpStream,
 };
+use wasmer::Pages;
 
 pub const SUCCESS: u8 = 0x0;
 pub const FAILURE: u8 = 0x1;
@@ -62,4 +64,33 @@ pub fn write_bytes32(writer: &mut BufWriter<TcpStream>, data: &Bytes32) -> Resul
 pub fn write_bytes(writer: &mut BufWriter<TcpStream>, data: &[u8]) -> Result<(), io::Error> {
     write_u64(writer, data.len() as u64)?;
     writer.write_all(data)
+}
+
+macro_rules! check {
+    ($expr:expr) => {{
+        if let Err(comms_error) = $expr {
+            eprintln!("Failed to send results to Go: {comms_error}");
+            panic!("Communication failure");
+        }
+    }};
+}
+
+pub fn report_success(
+    writer: &mut BufWriter<TcpStream>,
+    new_state: &GlobalState,
+    memory_used: &Pages,
+) {
+    check!(write_u8(writer, SUCCESS));
+    check!(write_u64(writer, new_state.inbox_position));
+    check!(write_u64(writer, new_state.position_within_message));
+    check!(write_bytes32(writer, &new_state.last_block_hash));
+    check!(write_bytes32(writer, &new_state.last_send_root));
+    check!(write_u64(writer, memory_used.bytes().0 as u64));
+    check!(writer.flush());
+}
+
+pub fn report_error(writer: &mut BufWriter<TcpStream>, error: String) {
+    check!(write_u8(writer, FAILURE));
+    check!(write_bytes(writer, &error.into_bytes()));
+    check!(writer.flush());
 }
