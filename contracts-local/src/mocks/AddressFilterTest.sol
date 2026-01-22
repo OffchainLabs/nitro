@@ -58,4 +58,14 @@ contract AddressFilterTest {
     function selfDestructTo(address payable beneficiary) external {
         selfdestruct(beneficiary);
     }
+
+    /// @notice Emitted to mention an address in event topics for filtering tests.
+    /// topic[1] contains the mentioned address.
+    event AddressMentioned(address indexed mentioned);
+
+    /// @notice Emits an event mentioning an address in the topics for filtering tests.
+    /// topic[1] contains the mentioned address.
+    function emitMention(address mentioned) external {
+        emit AddressMentioned(mentioned);
+    }
 }
