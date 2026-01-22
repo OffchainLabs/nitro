@@ -1,6 +1,7 @@
 //! Go `validator` module (../../validator/) related types.
 
 use arbutil::{Bytes32, PreimageType};
+use brotli::BrotliStatus;
 use serde::Deserialize;
 use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
 use std::{
@@ -52,9 +53,11 @@ impl AsRef<[u8]> for UserWasm {
 }
 
 /// The `Vec<u8>` is assumed to be compressed using `brotli`, and must be decompressed before use.
-impl From<Vec<u8>> for UserWasm {
-    fn from(data: Vec<u8>) -> Self {
-        Self(brotli::decompress(&data, brotli::Dictionary::Empty).unwrap())
+impl TryFrom<Vec<u8>> for UserWasm {
+    type Error = BrotliStatus;
+
+    fn try_from(data: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(Self(brotli::decompress(&data, brotli::Dictionary::Empty)?))
     }
 }
 
