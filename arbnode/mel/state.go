@@ -176,7 +176,6 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 		return err
 	}
 	// In recording mode this would also record the message preimages needed for MEL validation
-
 	if _, err := s.msgsAcc.Append(msg.Hash(), msgBytes...); err != nil {
 		return err
 	}

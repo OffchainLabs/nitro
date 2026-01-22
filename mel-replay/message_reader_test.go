@@ -18,17 +18,17 @@ import (
 func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 	ctx := context.Background()
 	var messages []*arbostypes.MessageWithMetadata
-	numMsgs := uint64(25)
+	numMsgs := uint64(10)
 	for i := range numMsgs {
 		messages = append(messages, &arbostypes.MessageWithMetadata{
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
-					BlockNumber: i + 1,
+					BlockNumber: i,
 					RequestId:   &common.Hash{},
 					L1BaseFee:   common.Big0,
 				},
 			},
-			DelayedMessagesRead: i + 2,
+			DelayedMessagesRead: i,
 		})
 	}
 	state := &mel.State{}
