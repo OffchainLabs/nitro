@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -70,6 +71,10 @@ type TransactionStreamerInterface interface {
 	PauseReorgs()
 	ResumeReorgs()
 	ChainConfig() *params.ChainConfig
+}
+
+type MELValidatorInterface interface {
+	LatestValidatedMELState(context.Context) (*mel.State, error)
 }
 
 type InboxReaderInterface interface {
@@ -143,9 +148,10 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  daprovider.PreimagesMap
-	UserWasms  state.UserWasms
-	DelayedMsg []byte
+	Preimages               daprovider.PreimagesMap
+	UserWasms               state.UserWasms
+	DelayedMsg              []byte
+	EndParentChainBlockHash common.Hash
 }
 
 func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.ValidationInput, error) {
