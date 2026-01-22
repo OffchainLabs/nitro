@@ -151,6 +151,11 @@ func (s *State) Clone() *State {
 	}
 }
 
+func (s *State) ReadMessage(msgIdx uint64) (*arbostypes.MessageWithMetadata, error) {
+	// TODO: Unimplemented.
+	return &arbostypes.MessageWithMetadata{}, nil
+}
+
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	if s.msgsAcc == nil {
 		log.Debug("Initializing MelState's msgsAcc")

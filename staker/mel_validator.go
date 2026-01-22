@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -322,21 +323,28 @@ func (mv *MELValidator) GetModuleRootsToValidate() []common.Hash {
 	return validatingModuleRoots
 }
 
-func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, uint64, error) {
-	if latestValidatedParentChainBlock == 0 { // TODO: last validated.
+func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, uint64, error) {
+	if lastValidatedParentChainBlock == 0 { // TODO: last validated.
 		// ending position- bold staker latest posted assertion on chain that it agrees with (l1blockhash)-
 		return nil, 0, errors.New("trying to create validation entry for zero block number")
 	}
-	preState, err := mv.messageExtractor.GetState(ctx, latestValidatedParentChainBlock)
+	currentState, err := mv.messageExtractor.GetState(ctx, lastValidatedParentChainBlock)
 	if err != nil {
 		return nil, 0, err
 	}
 	// We have already validated message extraction of messages till count toValidateMsgExtractionCount, so can return early
 	// and wait for block validator to progress the toValidateMsgExtractionCount
-	if preState.MsgCount >= toValidateMsgExtractionCount {
+	if currentState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, 0, nil
 	}
+	initialState := currentState.Clone()
+	encodedInitialState, err := rlp.EncodeToBytes(initialState)
+	if err != nil {
+		return nil, 0, err
+	}
 	preimages := make(daprovider.PreimagesMap)
+	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	preimages[arbutil.Keccak256PreimageType][initialState.Hash()] = encodedInitialState
 	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
 	if err != nil {
 		return nil, 0, err
@@ -345,12 +353,17 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestVal
 	if err != nil {
 		return nil, 0, err
 	}
-	var state *mel.State // to be used in endGS
-	for i := latestValidatedParentChainBlock + 1; ; i++ {
+	var endState *mel.State
+	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
 			return nil, 0, err
 		}
+		encodedHeader, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			return nil, 0, err
+		}
+		preimages[arbutil.Keccak256PreimageType][header.Hash()] = encodedHeader
 		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
 			return nil, 0, err
@@ -365,7 +378,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestVal
 		if err := receiptsRecorder.Initialize(ctx); err != nil {
 			return nil, 0, err
 		}
-		state, _, _, _, err = melextraction.ExtractMessages(ctx, preState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
+		endState, _, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
@@ -373,28 +386,36 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, latestVal
 		if err != nil {
 			return nil, 0, err
 		}
-		if state.Hash() != wantState.Hash() {
+		if endState.Hash() != wantState.Hash() {
 			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
 		if err := receiptsRecorder.CollectTxIndicesPreimage(); err != nil {
 			return nil, 0, err
 		}
-		if state.MsgCount >= toValidateMsgExtractionCount {
+		if endState.MsgCount >= toValidateMsgExtractionCount {
 			break
 		}
-		preState = state
+		currentState = endState
 	}
-	endGs := validator.GoGlobalState{
-		// After MEL fields get added to GlobalState
-		// MELStateHash:  state.Hash(),
-		// PositionInMEL: preState.MsgCount - 1,
-	}
+	fmt.Printf("Initial state hash: %#x\n", initialState.Hash())
 	return &validationEntry{
-		Start:                   mv.latestValidatedGS,
-		End:                     endGs,
-		Preimages:               preimages,
-		EndParentChainBlockHash: state.ParentChainBlockHash,
-	}, state.ParentChainBlockNumber, nil
+		Preimages: preimages,
+		Start: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: initialState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   0,
+		},
+		End: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: endState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   0,
+		},
+		EndParentChainBlockHash: endState.ParentChainBlockHash,
+	}, 0, nil
 }
 
 func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validationEntry) (*validationDoneEntry, error) {
