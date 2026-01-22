@@ -296,42 +296,42 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 	testCases := []struct {
 		name          string
 		genesisConfig *params.ArbOSInit
-		initConfig    *conf.InitConfig
+		patch         *conf.GenesisPatch
 		expected      *big.Int
 		shouldErr     bool
 	}{
 		{
 			name:          "No genesis config, no direct flag",
 			genesisConfig: nil,
-			initConfig:    initConfigWithFee(""),
+			patch:         patchFee(""),
 			expected:      arbostypes.DefaultInitialL1BaseFee,
 		},
 		{
 			name:          "No genesis config, direct flag set",
 			genesisConfig: nil,
-			initConfig:    initConfigWithFee(fee.String()),
+			patch:         patchFee(fee.String()),
 			expected:      fee,
 		}, {
 			name:          "Genesis config set, no direct flag",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithFee(""),
+			patch:         patchFee(""),
 			expected:      fee,
 		}, {
 			name:          "Genesis config and direct flag consistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithFee(fee.String()),
+			patch:         patchFee(fee.String()),
 			expected:      fee,
 		}, {
 			name:          "Genesis config and direct flag inconsistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithFee("11"),
+			patch:         patchFee("11"),
 			shouldErr:     true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resolvedFee, err := resolveInitialL1BaseFee(tc.genesisConfig, tc.initConfig)
+			resolvedFee, err := resolveInitialL1BaseFee(tc.genesisConfig, tc.patch)
 			if tc.shouldErr && err == nil {
 				Fail(t, "expected error but got none")
 			}
@@ -345,8 +345,8 @@ func TestInitialL1BaseFeeResolution(t *testing.T) {
 	}
 }
 
-func initConfigWithFee(feeStr string) *conf.InitConfig {
-	return &conf.InitConfig{
+func patchFee(feeStr string) *conf.GenesisPatch {
+	return &conf.GenesisPatch{
 		InitialL1BaseFee: feeStr,
 	}
 }
@@ -367,42 +367,42 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 	testCases := []struct {
 		name          string
 		genesisConfig *params.ArbOSInit
-		initConfig    *conf.InitConfig
+		patch         *conf.GenesisPatch
 		expected      []byte
 		shouldErr     bool
 	}{
 		{
 			name:          "No genesis config, no direct config",
 			genesisConfig: nil,
-			initConfig:    initConfigWithChainConfig(""),
+			patch:         patchChainConfig(""),
 			expected:      chainConfigSerialized,
 		},
 		{
 			name:          "No genesis config, direct config set",
 			genesisConfig: nil,
-			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
+			patch:         patchChainConfig(string(chainConfigInitFlag)),
 			expected:      chainConfigInitFlag,
 		}, {
 			name:          "Genesis config set, no direct config",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithChainConfig(""),
+			patch:         patchChainConfig(""),
 			expected:      chainConfigGenesisJSON,
 		}, {
 			name:          "Genesis config and direct config consistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithChainConfig(string(chainConfigGenesisJSON)),
+			patch:         patchChainConfig(string(chainConfigGenesisJSON)),
 			expected:      chainConfigGenesisJSON,
 		}, {
 			name:          "Genesis config and direct config inconsistent",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfigWithChainConfig(string(chainConfigInitFlag)),
+			patch:         patchChainConfig(string(chainConfigInitFlag)),
 			shouldErr:     true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resolvedConfig, err := resolveSerializedChainConfig(tc.genesisConfig, tc.initConfig, chainConfig)
+			resolvedConfig, err := resolveSerializedChainConfig(tc.genesisConfig, tc.patch, chainConfig)
 			if tc.shouldErr && err == nil {
 				Fail(t, "expected error but got none")
 			}
@@ -416,8 +416,8 @@ func TestSerializedChainConfigResolution(t *testing.T) {
 	}
 }
 
-func initConfigWithChainConfig(configStr string) *conf.InitConfig {
-	return &conf.InitConfig{
+func patchChainConfig(configStr string) *conf.GenesisPatch {
+	return &conf.GenesisPatch{
 		SerializedChainConfig: configStr,
 	}
 }
@@ -430,7 +430,7 @@ func TestGetExecutionParsedInitMessage(t *testing.T) {
 		SerializedChainConfig:              string(chainConfigGenesisJSON),
 	}
 	chainConfigInitFlag := []byte(`{"chainId":2}`)
-	initConfig := &conf.InitConfig{SerializedChainConfig: string(chainConfigInitFlag)}
+	patch := &conf.GenesisPatch{SerializedChainConfig: string(chainConfigInitFlag)}
 
 	fallbackChainConfig := &params.ChainConfig{ChainID: big.NewInt(3)}
 	serializedFallbackChainConfig, err := json.Marshal(fallbackChainConfig)
@@ -439,7 +439,7 @@ func TestGetExecutionParsedInitMessage(t *testing.T) {
 	testCases := []struct {
 		name                          string
 		genesisConfig                 *params.ArbOSInit
-		initConfig                    *conf.InitConfig
+		patch                         *conf.GenesisPatch
 		genesisChainConfig            *params.ArbOSInit
 		expectedSerializedChainConfig []byte
 		shouldErr                     bool
@@ -451,7 +451,7 @@ func TestGetExecutionParsedInitMessage(t *testing.T) {
 		},
 		{
 			name:                          "Uses serializedChainConfig from initConfig",
-			initConfig:                    initConfig,
+			patch:                         patch,
 			expectedSerializedChainConfig: chainConfigInitFlag,
 		},
 		{
@@ -461,14 +461,14 @@ func TestGetExecutionParsedInitMessage(t *testing.T) {
 		{
 			name:          "Error on conflicting serializedChainConfig",
 			genesisConfig: genesisConfig,
-			initConfig:    initConfig,
+			patch:         patch,
 			shouldErr:     true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parsedInitMessage, err := getExecutionParsedInitMessage(tc.genesisConfig, tc.initConfig, fallbackChainConfig)
+			parsedInitMessage, err := getExecutionParsedInitMessage(tc.genesisConfig, tc.patch, fallbackChainConfig)
 			if tc.shouldErr && err == nil {
 				Fail(t, "expected error but got none")
 			}

@@ -17,35 +17,35 @@ import (
 )
 
 type InitConfig struct {
-	Force                         bool             `koanf:"force"`
-	Url                           string           `koanf:"url"`
-	Latest                        string           `koanf:"latest"`
-	LatestBase                    string           `koanf:"latest-base"`
-	ValidateChecksum              bool             `koanf:"validate-checksum"`
-	DownloadPath                  string           `koanf:"download-path"`
-	DownloadPoll                  time.Duration    `koanf:"download-poll"`
-	DevInit                       bool             `koanf:"dev-init"`
-	DevInitAddress                string           `koanf:"dev-init-address"`
-	DevMaxCodeSize                uint64           `koanf:"dev-max-code-size"`
-	DevInitBlockNum               uint64           `koanf:"dev-init-blocknum"`
-	Empty                         bool             `koanf:"empty"`
-	ImportWasm                    bool             `koanf:"import-wasm"`
-	AccountsPerSync               uint             `koanf:"accounts-per-sync"`
-	ImportFile                    string           `koanf:"import-file"`
-	GenesisJsonFile               string           `koanf:"genesis-json-file"`
-	ThenQuit                      bool             `koanf:"then-quit"`
-	Prune                         string           `koanf:"prune"`
-	PruneParallelStorageTraversal bool             `koanf:"prune-parallel-storage-traversal"`
-	PruneBloomSize                uint64           `koanf:"prune-bloom-size"`
-	PruneThreads                  int              `koanf:"prune-threads"`
-	PruneTrieCleanCache           int              `koanf:"prune-trie-clean-cache"`
-	RecreateMissingStateFrom      uint64           `koanf:"recreate-missing-state-from"`
-	RebuildLocalWasm              string           `koanf:"rebuild-local-wasm"`
-	ReorgToBatch                  int64            `koanf:"reorg-to-batch"`
-	ReorgToMessageBatch           int64            `koanf:"reorg-to-message-batch"`
-	ReorgToBlockBatch             int64            `koanf:"reorg-to-block-batch"`
-	ValidateGenesisAssertion      bool             `koanf:"validate-genesis-assertion"`
-	GenesisOverride               *GenesisOverride `koanf:"genesis-override"`
+	Force                         bool          `koanf:"force"`
+	Url                           string        `koanf:"url"`
+	Latest                        string        `koanf:"latest"`
+	LatestBase                    string        `koanf:"latest-base"`
+	ValidateChecksum              bool          `koanf:"validate-checksum"`
+	DownloadPath                  string        `koanf:"download-path"`
+	DownloadPoll                  time.Duration `koanf:"download-poll"`
+	DevInit                       bool          `koanf:"dev-init"`
+	DevInitAddress                string        `koanf:"dev-init-address"`
+	DevMaxCodeSize                uint64        `koanf:"dev-max-code-size"`
+	DevInitBlockNum               uint64        `koanf:"dev-init-blocknum"`
+	Empty                         bool          `koanf:"empty"`
+	ImportWasm                    bool          `koanf:"import-wasm"`
+	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
+	ImportFile                    string        `koanf:"import-file"`
+	GenesisJsonFile               string        `koanf:"genesis-json-file"`
+	ThenQuit                      bool          `koanf:"then-quit"`
+	Prune                         string        `koanf:"prune"`
+	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
+	PruneBloomSize                uint64        `koanf:"prune-bloom-size"`
+	PruneThreads                  int           `koanf:"prune-threads"`
+	PruneTrieCleanCache           int           `koanf:"prune-trie-clean-cache"`
+	RecreateMissingStateFrom      uint64        `koanf:"recreate-missing-state-from"`
+	RebuildLocalWasm              string        `koanf:"rebuild-local-wasm"`
+	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	GenesisPatch                  GenesisPatch  `koanf:"genesis-patch"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -77,7 +77,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
-	GenesisOverride:               &GenesisOverrideDefault,
+	GenesisPatch:                  GenesisPatchDefault,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -113,7 +113,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"\"false\"- do not rebuild on startup",
 	)
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
-	GenesisOverrideAddOptions(prefix+".genesis-override", f)
+	GenesisPatchAddOptions(prefix+".genesis-patch", f)
 }
 
 func (c *InitConfig) Validate() error {
@@ -142,7 +142,7 @@ func (c *InitConfig) Validate() error {
 	if c.RebuildLocalWasm != "auto" && c.RebuildLocalWasm != "force" && c.RebuildLocalWasm != "false" {
 		return fmt.Errorf("invalid value of rebuild-local-wasm, want: auto or force or false, got: %s", c.RebuildLocalWasm)
 	}
-	if err := c.GenesisOverride.Validate(); err != nil {
+	if err := c.GenesisPatch.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -157,32 +157,32 @@ var (
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
 
-type GenesisOverride struct {
+type GenesisPatch struct {
 	InitialL1BaseFee      string `koanf:"initial-l1base-fee"`
 	SerializedChainConfig string `koanf:"serialized-chain-config"`
 }
 
-var GenesisOverrideDefault = GenesisOverride{
+var GenesisPatchDefault = GenesisPatch{
 	InitialL1BaseFee:      "",
 	SerializedChainConfig: "",
 }
 
-func GenesisOverrideAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".initial-l1base-fee", GenesisOverrideDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
-	f.String(prefix+".serialized-chain-config", GenesisOverrideDefault.SerializedChainConfig, "serialized chain config to use for initialization")
+func GenesisPatchAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".initial-l1base-fee", GenesisPatchDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
+	f.String(prefix+".serialized-chain-config", GenesisPatchDefault.SerializedChainConfig, "serialized chain config to use for initialization")
 }
 
-func (g *GenesisOverride) Validate() error {
+func (g *GenesisPatch) Validate() error {
 	if _, success := big.NewInt(0).SetString(g.InitialL1BaseFee, 10); !success {
-		return fmt.Errorf("failed to parse L1 BaseFee override: `%s` (passed with `genesis-override.initial-l1base-fee` flag)", g.InitialL1BaseFee)
+		return fmt.Errorf("failed to parse L1 BaseFee patch: `%s` (passed with `genesis-patch.initial-l1base-fee` flag)", g.InitialL1BaseFee)
 	}
 	return nil
 }
 
-func (g *GenesisOverride) InitialL1BaseFeeParsed() (*big.Int, error) {
+func (g *GenesisPatch) InitialL1BaseFeeParsed() (*big.Int, error) {
 	parsed, success := big.NewInt(0).SetString(g.InitialL1BaseFee, 10)
 	if !success {
-		return nil, fmt.Errorf("failed to parse L1 BaseFee override: `%s` (passed with `genesis-override.initial-l1base-fee` flag)", g.InitialL1BaseFee)
+		return nil, fmt.Errorf("failed to parse L1 BaseFee patch: `%s` (passed with `genesis-patch.initial-l1base-fee` flag)", g.InitialL1BaseFee)
 	}
 	return parsed, nil
 }

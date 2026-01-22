@@ -888,7 +888,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 			}
 			log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
 		} else {
-			parsedInitMessage, err = getExecutionParsedInitMessage(genesisArbOSInit, &config.Init, chainConfig)
+			parsedInitMessage, err = getExecutionParsedInitMessage(genesisArbOSInit, &config.Init.GenesisPatch, chainConfig)
 			if err != nil {
 				return executionDB, nil, err
 			}
@@ -934,14 +934,14 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 
 func getExecutionParsedInitMessage(
 	genesisArbOSInit *params.ArbOSInit,
-	initConfig *conf.InitConfig,
+	genesisPatch *conf.GenesisPatch,
 	fallbackChainConfig *params.ChainConfig,
 ) (*arbostypes.ParsedInitMessage, error) {
-	initialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, initConfig)
+	initialL1BaseFee, err := resolveInitialL1BaseFee(genesisArbOSInit, genesisPatch)
 	if err != nil {
 		return nil, err
 	}
-	serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, initConfig, fallbackChainConfig)
+	serializedChainConfig, err := resolveSerializedChainConfig(genesisArbOSInit, genesisPatch, fallbackChainConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -959,21 +959,21 @@ func getExecutionParsedInitMessage(
 	}, err
 }
 
-func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig) (*big.Int, error) {
+func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, genesisPatch *conf.GenesisPatch) (*big.Int, error) {
 	var fromGenesisJSON, fromCLIFlag *big.Int
 	if genesisArbOSInit != nil && genesisArbOSInit.InitialL1BaseFee != nil {
 		fromGenesisJSON = genesisArbOSInit.InitialL1BaseFee
 	}
-	if initConfig != nil && initConfig.GenesisOverride.InitialL1BaseFee != "" {
+	if genesisPatch != nil && genesisPatch.InitialL1BaseFee != "" {
 		var err error
-		fromCLIFlag, err = initConfig.GenesisOverride.InitialL1BaseFeeParsed()
+		fromCLIFlag, err = genesisPatch.InitialL1BaseFeeParsed()
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if fromGenesisJSON != nil && fromCLIFlag != nil && fromGenesisJSON.Cmp(fromCLIFlag) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", fromGenesisJSON.String(), initConfig.GenesisOverride.InitialL1BaseFee)
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `genesis-patch.initial-l1base-fee` flag was set to %s", fromGenesisJSON.String(), genesisPatch.InitialL1BaseFee)
 	}
 	if fromGenesisJSON != nil {
 		return fromGenesisJSON, nil
@@ -984,17 +984,17 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 	return arbostypes.DefaultInitialL1BaseFee, nil
 }
 
-func resolveSerializedChainConfig(genesisArbOSInit *params.ArbOSInit, initConfig *conf.InitConfig, fallbackChainConfig *params.ChainConfig) ([]byte, error) {
+func resolveSerializedChainConfig(genesisArbOSInit *params.ArbOSInit, genesisPatch *conf.GenesisPatch, fallbackChainConfig *params.ChainConfig) ([]byte, error) {
 	var fromGenesisJSON, fromCLIFlag []byte
 	if genesisArbOSInit != nil && len(genesisArbOSInit.SerializedChainConfig) != 0 {
 		fromGenesisJSON = []byte(genesisArbOSInit.SerializedChainConfig)
 	}
-	if initConfig != nil && len(initConfig.GenesisOverride.SerializedChainConfig) != 0 {
-		fromCLIFlag = []byte(initConfig.GenesisOverride.SerializedChainConfig)
+	if genesisPatch != nil && len(genesisPatch.SerializedChainConfig) != 0 {
+		fromCLIFlag = []byte(genesisPatch.SerializedChainConfig)
 	}
 
 	if fromGenesisJSON != nil && fromCLIFlag != nil && !bytes.Equal(fromGenesisJSON, fromCLIFlag) {
-		return nil, errors.New("serialized chain config configuration mismatch between `genesis-json-file` and `serialized-chain-config` flag")
+		return nil, errors.New("serialized chain config configuration mismatch between `genesis-json-file` and `genesis-patch.serialized-chain-config` flag")
 	}
 	if fromGenesisJSON != nil {
 		return fromGenesisJSON, nil
