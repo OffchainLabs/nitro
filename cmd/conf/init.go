@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util"
 )
 
@@ -79,7 +78,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
-	InitialL1BaseFee:              arbostypes.DefaultInitialL1BaseFee.String(),
+	InitialL1BaseFee:              "",
 	SerializedChainConfig:         "",
 }
 
