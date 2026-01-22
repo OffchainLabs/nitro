@@ -168,9 +168,6 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 			}
 		}
 	}
-	if s.msgPreimagesDest != nil {
-		s.msgsAcc.RecordPreimagesTo(s.msgPreimagesDest[arbutil.Keccak256PreimageType])
-	}
 	msgBytes, err := rlp.EncodeToBytes(msg.WithMELRelevantFields())
 	if err != nil {
 		return err
