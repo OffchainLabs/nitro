@@ -119,6 +119,19 @@ func (h *LogHandler) WasLogged(pattern string) bool {
 	return false
 }
 
+func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
+	re, err := regexp.Compile(pattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if record.Level == lvl && re.MatchString(record.Message) {
+			return true
+		}
+	}
+	return false
+}
+
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
 		t:               t,
