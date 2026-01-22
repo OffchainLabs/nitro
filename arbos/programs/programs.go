@@ -224,7 +224,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
+	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
 		arbosVersion:    evm.Context.ArbOSVersion,

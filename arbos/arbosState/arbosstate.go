@@ -462,12 +462,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case params.ArbosVersion_60:
+			// Changes for ArbosVersion_StylusContractLimit
 			p, err := state.Programs().Params()
 			ensure(err)
 			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
 			ensure(p.Save())
-		case params.ArbosVersion_TransactionFiltering:
-			// Once the final ArbOS version is locked in, this can be moved to that numeric version.
+			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
 
 		default:

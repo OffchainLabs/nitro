@@ -326,8 +326,8 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	return asmMap, nil
 }
 
-func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
-	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, maxWasmSize, pagelimit, time, debugMode, program, runCtx)
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, params, time, debugMode, program, runCtx)
 	var ok bool
 	var localAsm []byte
 	if asmMap != nil {
