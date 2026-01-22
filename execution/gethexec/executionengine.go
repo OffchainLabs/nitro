@@ -43,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -1194,4 +1195,24 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return false, err
+	}
+
+	statedb, err := s.bc.StateAt(currentHeader.Root)
+	if err != nil {
+		return false, err
+	}
+
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return false, err
+	}
+
+	filteredState := filteredTransactions.Open(statedb, arbState.Burner)
+	return filteredState.IsFiltered(txHash)
 }

@@ -28,6 +28,11 @@ import (
 var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
 	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
+// filteredTxFullRetryInterval is how often to do a full re-execution when halted
+// on a filtered delayed message. This is a backstop; normally if the tx is added
+// to the onchain filter the fast onchain filter check will detect it right away.
+const filteredTxFullRetryInterval = 30 * time.Second
+
 // FilteredTxWaitState tracks a halt while waiting for a filtered transaction
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
@@ -35,6 +40,7 @@ type FilteredTxWaitState struct {
 	DelayedMsgIdx uint64
 	FirstSeen     time.Time
 	LastLogTime   time.Time
+	LastFullRetry time.Time
 }
 
 type DelayedSequencer struct {
@@ -57,7 +63,6 @@ type DelayedSequencerConfig struct {
 	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
 	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
 	RescanInterval      time.Duration `koanf:"rescan-interval" reload:"hot"`
-	HaltedRetryInterval time.Duration `koanf:"halted-retry-interval" reload:"hot"`
 }
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
@@ -68,7 +73,6 @@ func DelayedSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 	f.Duration(prefix+".rescan-interval", DefaultDelayedSequencerConfig.RescanInterval, "frequency to rescan for new delayed messages (the parent chain reader's poll-interval config is more important than this)")
-	f.Duration(prefix+".halted-retry-interval", DefaultDelayedSequencerConfig.HaltedRetryInterval, "how often to retry when halted on a filtered delayed message")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
@@ -77,7 +81,6 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	RequireFullFinality: false,
 	UseMergeFinality:    true,
 	RescanInterval:      time.Second,
-	HaltedRetryInterval: 30 * time.Second,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
@@ -86,7 +89,6 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	RequireFullFinality: false,
 	UseMergeFinality:    false,
 	RescanInterval:      time.Millisecond * 100,
-	HaltedRetryInterval: time.Millisecond * 100,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
@@ -142,7 +144,17 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 				"waitingSince", d.waitingForFilteredTx.FirstSeen)
 			d.waitingForFilteredTx.LastLogTime = now
 		}
-		// Fall through to retry sequencing - will succeed if tx hash was added to filter
+
+		needsFullRetry := time.Since(d.waitingForFilteredTx.LastFullRetry) >= filteredTxFullRetryInterval
+		if !needsFullRetry {
+			// Fast-path to check if we should try re-executing the tx
+			isInFilter, err := d.exec.IsTxHashInOnchainFilter(d.waitingForFilteredTx.TxHash)
+			if err != nil {
+				log.Error("error checking onchain filter", "err", err)
+			} else if !isInFilter {
+				return nil
+			}
+		}
 	}
 
 	var finalized uint64
@@ -238,6 +250,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			if err != nil {
 				var filteredErr *gethexec.ErrFilteredDelayedMessage
 				if errors.As(err, &filteredErr) {
+					now := time.Now()
 					if d.waitingForFilteredTx == nil {
 						// First time hitting this filtered tx - log and set waiting state
 						log.Warn("Delayed message filtered - HALTING delayed sequencer",
@@ -246,11 +259,14 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 						d.waitingForFilteredTx = &FilteredTxWaitState{
 							TxHash:        filteredErr.TxHash,
 							DelayedMsgIdx: filteredErr.DelayedMsgIdx,
-							FirstSeen:     time.Now(),
-							LastLogTime:   time.Now(),
+							FirstSeen:     now,
+							LastLogTime:   now,
+							LastFullRetry: now,
 						}
+					} else {
+						d.waitingForFilteredTx.LastFullRetry = now
 					}
-					// Return nil to halt without propagating error up - will retry on next RescanInterval
+					// Return nil to halt without propagating error up - will retry on next interval
 					return nil
 				}
 				return err
@@ -299,12 +315,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			}
 		}
 		if latestHeader != nil {
-			config = d.config()
-			interval := config.RescanInterval
-			if d.isWaitingForFilteredTx() {
-				interval = config.HaltedRetryInterval
-			}
-			rescanTimer.Reset(interval)
+			rescanTimer.Reset(d.config().RescanInterval)
 		}
 		var ok bool
 		select {
@@ -345,10 +356,4 @@ func (d *DelayedSequencer) WaitingForFilteredTx() (common.Hash, bool) {
 		return common.Hash{}, false
 	}
 	return d.waitingForFilteredTx.TxHash, true
-}
-
-func (d *DelayedSequencer) isWaitingForFilteredTx() bool {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	return d.waitingForFilteredTx != nil
 }

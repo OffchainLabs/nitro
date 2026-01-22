@@ -84,6 +84,7 @@ type ExecutionSequencer interface {
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
+	IsTxHashInOnchainFilter(txHash common.Hash) (bool, error)
 }
 
 // needed for batch poster
