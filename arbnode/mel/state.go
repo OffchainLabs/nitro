@@ -4,6 +4,7 @@ package mel
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 // State defines the main struct describing the results of processing a single parent
@@ -45,7 +48,8 @@ type State struct {
 	// msgsAcc is MerkleAccumulator that accumulates all the L2 messages extracted. It
 	// resets after the current melstate is finished generating and is reinitialized using
 	// appropriate MessageMerklePartials of the state
-	msgsAcc *merkleAccumulator.MerkleAccumulator
+	msgsAcc          *merkleAccumulator.MerkleAccumulator
+	msgPreimagesDest daprovider.PreimagesMap
 }
 
 // DelayedMessageDatabase can read delayed messages by their global index.
@@ -108,10 +112,16 @@ func (s *State) Clone() *State {
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
 	copy(msgAccRoot[:], s.MsgRoot[:])
 	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
-	var delayedMessageMerklePartials []common.Hash
-	for _, partial := range s.DelayedMessageMerklePartials {
+	var messageMerklePartials []common.Hash
+	for _, msgPartial := range s.MessageMerklePartials {
 		clone := common.Hash{}
-		copy(clone[:], partial[:])
+		copy(clone[:], msgPartial[:])
+		messageMerklePartials = append(messageMerklePartials, clone)
+	}
+	var delayedMessageMerklePartials []common.Hash
+	for _, delayedPartial := range s.DelayedMessageMerklePartials {
+		clone := common.Hash{}
+		copy(clone[:], delayedPartial[:])
 		delayedMessageMerklePartials = append(delayedMessageMerklePartials, clone)
 	}
 	var delayedMessageBacklog *DelayedMessageBacklog
@@ -132,9 +142,12 @@ func (s *State) Clone() *State {
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagesSeen:                s.DelayedMessagesSeen,
+		MessageMerklePartials:              messageMerklePartials,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
 		delayedMessageBacklog:              delayedMessageBacklog,
 		readCountFromBacklog:               s.readCountFromBacklog,
+		// we copy msgPreimagesDest as is to continue recordng of msg preimages
+		msgPreimagesDest: s.msgPreimagesDest,
 	}
 }
 
@@ -147,6 +160,13 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 			return err
 		}
 		s.msgsAcc = acc
+		if s.msgPreimagesDest != nil {
+			s.msgsAcc.RecordPreimagesTo(s.msgPreimagesDest[arbutil.Keccak256PreimageType])
+			_, err := s.msgsAcc.Root()
+			if err != nil {
+				return err
+			}
+		}
 	}
 	msgBytes, err := rlp.EncodeToBytes(msg.WithMELRelevantFields())
 	if err != nil {
@@ -246,6 +266,20 @@ func (s *State) ReorgTo(newState *State) error {
 	newState.delayedMessageBacklog = delayedMessageBacklog
 	// Reset the pre-read delayed messages count since they havent been verified against latest state's merkle root
 	newState.readCountFromBacklog = 0
+	return nil
+}
+
+// RecordMsgPreimagesTo initializes the state's msgPreimagesDest to record preimages
+// related to the extracted messages needed for MEL validation into the given preimages map,
+// this will be used to initialize msgsAcc when accumulating messages
+func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
+	if preimagesMap == nil {
+		return errors.New("msg preimages recording destination cannot be nil")
+	}
+	if _, ok := preimagesMap[arbutil.Keccak256PreimageType]; !ok {
+		preimagesMap[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	}
+	s.msgPreimagesDest = preimagesMap
 	return nil
 }
 

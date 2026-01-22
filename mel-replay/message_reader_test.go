@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -35,7 +34,7 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 	state := &mel.State{}
 	// Simulate extracting of Messages in native mode to record preimages
 	preimages := make(daprovider.PreimagesMap)
-	require.NoError(t, melrecording.InitializeRecordingMsgPreimages(state, preimages))
+	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
 	for i := range numMsgs {
 		require.NoError(t, state.AccumulateMessage(messages[i]))
 		state.MsgCount++
