@@ -62,14 +62,14 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 		/* queueSize */ 0,
 	)
 
+	// Tx 5: synchronous call
 	overflowState := mustState(t, overflowChecker.NewTxState())
 	overflowState.TouchAddress(addrFiltered)
 
-	// false negative allowed
-	assert.False(
+	assert.True(
 		t,
 		overflowState.IsFiltered(),
-		"expected overflowed check to be unfiltered (false negative allowed)",
+		"expected cached filtered address to still be filtered",
 	)
 }
 

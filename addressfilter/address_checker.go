@@ -13,8 +13,8 @@ import (
 
 // Default parameters for HashedAddressChecker, used in NewDefaultHashedAddressChecker
 const (
-	restrictedAddrWorkerCount = 4
-	restrictedAddrQueueSize   = 1024
+	defaultRestrictedAddrWorkerCount = 4
+	defaultRestrictedAddrQueueSize   = 8192
 )
 
 // HashedAddressChecker is a global, shared address checker that filters
@@ -65,8 +65,8 @@ func NewHashedAddressChecker(
 func NewDefaultHashedAddressChecker(store *HashStore) *HashedAddressChecker {
 	return NewHashedAddressChecker(
 		store,
-		restrictedAddrWorkerCount,
-		restrictedAddrQueueSize,
+		defaultRestrictedAddrWorkerCount,
+		defaultRestrictedAddrQueueSize,
 	)
 }
 
@@ -76,11 +76,15 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
+func (c *HashedAddressChecker) processAddress(addr common.Address, state *HashedAddressCheckerState) {
+	restricted := c.store.IsRestricted(addr)
+	state.report(restricted)
+}
+
 // worker runs for the lifetime of the checker; workChan is never closed.
 func (c *HashedAddressChecker) worker() {
 	for item := range c.workChan {
-		restricted := c.store.IsRestricted(item.addr)
-		item.state.report(restricted)
+		c.processAddress(item.addr, item.state)
 	}
 }
 
@@ -90,8 +94,8 @@ func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
 	case s.checker.workChan <- workItem{addr: addr, state: s}:
 		// ok
 	default:
-		// queue full: drop check (fail-open, false negative possible)
-		s.pending.Done()
+		// queue full: process synchronously to avoid dropping
+		s.checker.processAddress(addr, s)
 	}
 }
 

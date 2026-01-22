@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -371,15 +370,6 @@ func CreateExecutionNode(
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
 
-	var addressChecker state.AddressChecker
-	if addressFilterService != nil {
-		hashStore := addressFilterService.GetHashStore()
-		if hashStore != nil {
-			addressChecker = addressfilter.NewDefaultHashedAddressChecker(hashStore)
-			execEngine.SetAddressChecker(addressChecker)
-		}
-	}
-
 	execNode := &ExecutionNode{
 		ExecutionDB:              executionDB,
 		Backend:                  backend,
@@ -491,6 +481,12 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if n.addressFilterService != nil {
 		if err = n.addressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing restricted addr service: %w", err)
+		}
+
+		hashStore := n.addressFilterService.GetHashStore()
+		if hashStore != nil {
+			addressChecker := addressfilter.NewDefaultHashedAddressChecker(hashStore)
+			n.ExecEngine.SetAddressChecker(addressChecker)
 		}
 	}
 
