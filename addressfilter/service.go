@@ -27,7 +27,7 @@ type Service struct {
 // Returns nil if the service is not enabled in the configuration.
 func NewService(ctx context.Context, config *Config) (*Service, error) {
 	if !config.Enable {
-		return &Service{config: config}, nil
+		return nil, nil
 	}
 
 	if err := config.Validate(); err != nil {
@@ -51,10 +51,6 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 // This method blocks until the hash list is successfully loaded.
 // If this fails, the node should not start.
 func (s *Service) Initialize(ctx context.Context) error {
-	if !s.config.Enable {
-		log.Info("address-filter service disabled")
-		return nil
-	}
 	log.Info("initializing address-filter service, downloading initial hash list",
 		"bucket", s.config.S3.Bucket,
 		"key", s.config.S3.ObjectKey,
@@ -75,9 +71,6 @@ func (s *Service) Initialize(ctx context.Context) error {
 // Start begins the background polling goroutine.
 // This should be called after Initialize() succeeds.
 func (s *Service) Start(ctx context.Context) {
-	if !s.config.Enable {
-		return
-	}
 	s.StopWaiter.Start(ctx, s)
 
 	// Start periodic polling goroutine

@@ -478,8 +478,10 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 
-	if err = n.addressFilterService.Initialize(ctx); err != nil {
-		return fmt.Errorf("error initializing restricted addr service: %w", err)
+	if n.addressFilterService != nil {
+		if err = n.addressFilterService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing restricted addr service: %w", err)
+		}
 	}
 
 	return nil
@@ -515,8 +517,9 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-
-	n.addressFilterService.Start(ctx)
+	if n.addressFilterService != nil {
+		n.addressFilterService.Start(ctx)
+	}
 	return nil
 }
 
@@ -546,7 +549,9 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
-	n.addressFilterService.StopAndWait()
+	if n.addressFilterService != nil {
+		n.addressFilterService.StopAndWait()
+	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
