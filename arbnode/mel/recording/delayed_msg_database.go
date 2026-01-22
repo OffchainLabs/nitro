@@ -55,7 +55,10 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 		}
 		r.initialized = true
 	}
-	r.initSeenDelayedMsgsAccForRecording(state) // lightweight operation that is needed as state.Clone() clears the seenDelayedMsgsAcc
+	// Lightweight operation that is needed as state.Clone() clears the seenDelayedMsgsAcc
+	if err := r.initSeenDelayedMsgsAccForRecording(state); err != nil {
+		return nil, fmt.Errorf("error initializing seenDelayedMsgsAcc for recording: %w", err)
+	}
 	delayed, err := fetchDelayedMessage(r.db, index)
 	if err != nil {
 		return nil, err
