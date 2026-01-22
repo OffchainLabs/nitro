@@ -168,8 +168,8 @@ var GenesisPatchDefault = GenesisPatch{
 }
 
 func GenesisPatchAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".initial-l1base-fee", GenesisPatchDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
-	f.String(prefix+".serialized-chain-config", GenesisPatchDefault.SerializedChainConfig, "serialized chain config to use for initialization")
+	f.String(prefix+".initial-l1base-fee", GenesisPatchDefault.InitialL1BaseFee, "initial L1 base fee for genesis block; this will be used for restoring init message only if not defined in genesis.json")
+	f.String(prefix+".serialized-chain-config", GenesisPatchDefault.SerializedChainConfig, "serialized chain config to use for initialization; this will be used for restoring init message if not defined in genesis.json")
 }
 
 func (g *GenesisPatch) Validate() error {
