@@ -31,7 +31,7 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
 	} else {
-		log.Info("Successfuly called sequencer", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
+		log.Info("Successfully called sequencer", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 	}
 	return err
 }
