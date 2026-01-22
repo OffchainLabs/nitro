@@ -4,9 +4,9 @@ name: detect-file-changes
 on:
   workflow_call:
     outputs:
-      arbitrator_changed:
-        description: 'True if Arbitrator or related files changed.'
-        value: ${{ jobs.changes.outputs.arbitrator_changed }}
+      rust_changed:
+        description: 'True if Rust files changed.'
+        value: ${{ jobs.changes.outputs.rust_changed }}
       bold_legacy_changed:
         description: 'True if Bold Legacy or related files changed.'
         value: ${{ jobs.changes.outputs.bold_legacy_changed }}
@@ -19,7 +19,7 @@ jobs:
     name: Detect file changes
     runs-on: ubuntu-4
     outputs:
-      arbitrator_changed: ${{ steps.changed.outputs.arbitrator_any_changed }}
+      rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
 
@@ -36,11 +36,11 @@ jobs:
         uses: tj-actions/changed-files@v46.0.5
         with:
           files_yaml: |
-            arbitrator:
-              - 'arbitrator/**'
+            rust:
+              - 'crates/**'
               - 'contracts/**'
               - 'Makefile'
-              - '.github/workflows/_arbitrator.yml'
+              - '.github/workflows/_rust-tests.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'

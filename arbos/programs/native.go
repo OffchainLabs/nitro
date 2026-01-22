@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
@@ -324,6 +324,20 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 		}
 	}
 	return asmMap, nil
+}
+
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, maxWasmSize, pagelimit, time, debugMode, program, runCtx)
+	var ok bool
+	var localAsm []byte
+	if asmMap != nil {
+		localAsm, ok = asmMap[rawdb.LocalTarget()]
+	}
+	if err != nil || !ok {
+		panic(fmt.Sprintf("failed to get compiled program for activated program, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
+	}
+
+	return localAsm
 }
 
 func callProgram(
