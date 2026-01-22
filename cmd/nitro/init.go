@@ -964,16 +964,16 @@ func resolveInitialL1BaseFee(genesisArbOSInit *params.ArbOSInit, initConfig *con
 	if genesisArbOSInit != nil && genesisArbOSInit.InitialL1BaseFee != nil {
 		fromGenesisJSON = genesisArbOSInit.InitialL1BaseFee
 	}
-	if initConfig != nil && initConfig.InitialL1BaseFee != "" {
+	if initConfig != nil && initConfig.GenesisOverride.InitialL1BaseFee != "" {
 		var err error
-		fromCLIFlag, err = initConfig.InitialL1BaseFeeParsed()
+		fromCLIFlag, err = initConfig.GenesisOverride.InitialL1BaseFeeParsed()
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if fromGenesisJSON != nil && fromCLIFlag != nil && fromGenesisJSON.Cmp(fromCLIFlag) != 0 {
-		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", fromGenesisJSON.String(), initConfig.InitialL1BaseFee)
+		return nil, fmt.Errorf("initial l1 base fee configuration mismatch: `genesis-json-file` sets the value to %s, while `initial-l1base-fee` flag was set to %s", fromGenesisJSON.String(), initConfig.GenesisOverride.InitialL1BaseFee)
 	}
 	if fromGenesisJSON != nil {
 		return fromGenesisJSON, nil
@@ -989,8 +989,8 @@ func resolveSerializedChainConfig(genesisArbOSInit *params.ArbOSInit, initConfig
 	if genesisArbOSInit != nil && len(genesisArbOSInit.SerializedChainConfig) != 0 {
 		fromGenesisJSON = []byte(genesisArbOSInit.SerializedChainConfig)
 	}
-	if initConfig != nil && len(initConfig.SerializedChainConfig) != 0 {
-		fromCLIFlag = []byte(initConfig.SerializedChainConfig)
+	if initConfig != nil && len(initConfig.GenesisOverride.SerializedChainConfig) != 0 {
+		fromCLIFlag = []byte(initConfig.GenesisOverride.SerializedChainConfig)
 	}
 
 	if fromGenesisJSON != nil && fromCLIFlag != nil && !bytes.Equal(fromGenesisJSON, fromCLIFlag) {
