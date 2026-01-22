@@ -2,8 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use eyre::Result;
-use std::{fs::File, io::Write, path::PathBuf};
-use structopt::StructOpt;
+use std::io::Write;
 
 /// order matters!
 const HOSTIOS: [[&str; 3]; 42] = [
