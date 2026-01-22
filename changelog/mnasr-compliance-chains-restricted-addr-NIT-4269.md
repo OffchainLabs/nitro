@@ -8,10 +8,10 @@
 
 ### Configuration
   - Add `--execution.address-filter.enable` flag to enable/disable address filtering 
-  - Add `--execution.address-filter.poll-interval` flag to set the polling interval for
+  - Add `--execution.address-filter.poll-interval` flag to set the polling interval for the s3 syncer , e.g. 5s
   - Add `--execution.address-filter.s3.*` group of flags to configure S3 access:
     - Add `--execution.address-filter.s3.bucket` flag to specify the S3 bucket name for the hashed address list
     - Add `--execution.address-filter.s3.region` flag to specify the AWS region of
     - Add `--execution.address-filter.s3.object-key` flag to specify the S3 object key for the hashed address list
-    - Add `--execution.address-filter.s3.AccessKey` flag to specify the AWS access
-    - Add `--execution.address-filter.s3.SecretKey` flag to specify the AWS secret key
+    - Add `--execution.address-filter.s3.access-key` flag to specify the AWS access
+    - Add `--execution.address-filter.s3.secret-key` flag to specify the AWS secret key
