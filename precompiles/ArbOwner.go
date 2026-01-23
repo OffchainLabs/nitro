@@ -111,32 +111,6 @@ func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint6
 	return setFeatureFromTime(c.State.TransactionFilteringEnabledTimeHandle(), evm.Context.Time, timestamp)
 }
 
-// SetTransactionFilteringFrom sets a time in epoch seconds when the transaction filterering
-// feature becomes enabled. Setting it to 0 disables the feature.
-// If the feature is disabled, then the time must be at least 7 days in the
-// future.
-func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint64) error {
-	if timestamp == 0 {
-		return c.State.SetTransactionFilteringFromTime(0)
-	}
-	stored, err := c.State.TransactionFilteringFromTime()
-	if err != nil {
-		return err
-	}
-	now := evm.Context.Time
-
-	if err := validateFeatureFromTimeUpdate(
-		stored,
-		now,
-		timestamp,
-		TransactionFilteringEnableDelay,
-	); err != nil {
-		return err
-	}
-
-	return c.State.SetTransactionFilteringFromTime(timestamp)
-}
-
 // AddNativeTokenOwner adds account as a native token owner
 func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
 	enabledTime, err := c.State.NativeTokenManagementFromTime()
