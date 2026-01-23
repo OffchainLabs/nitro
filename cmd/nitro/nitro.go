@@ -38,15 +38,18 @@ import (
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -550,50 +553,29 @@ func mainImpl() int {
 			log.Error("failed to create execution node", "err", err)
 			return 1
 		}
-		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
-			ctx,
-			stack,
-			execNode,
-			consensusDB,
-			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			l2BlockChain.Config(),
-			l1Client,
-			&rollupAddrs,
-			l1TransactionOptsValidator,
-			l1TransactionOptsBatchPoster,
-			dataSigner,
-			fatalErrChan,
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-			blobReader,
-			wasmModuleRoot,
-		)
-		if err != nil {
-			log.Error("failed to create consensus node", "err", err)
-			return 1
-		}
-	} else {
-		consensusNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(
-			ctx,
-			stack,
-			nil,
-			consensusDB,
-			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			l2BlockChain.Config(),
-			l1Client,
-			&rollupAddrs,
-			l1TransactionOptsValidator,
-			l1TransactionOptsBatchPoster,
-			dataSigner,
-			fatalErrChan,
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-			blobReader,
-			wasmModuleRoot,
-		)
-		if err != nil {
-			log.Error("failed to create consensus node", "err", err)
-			return 1
-		}
 	}
+	consensusNode, err = arbnode.CreateConsensusNode(
+		ctx,
+		stack,
+		execNode,
+		consensusDB,
+		&config.ConsensusNodeConfigFetcher{liveNodeConfig},
+		l2BlockChain.Config(),
+		l1Client,
+		&rollupAddrs,
+		l1TransactionOptsValidator,
+		l1TransactionOptsBatchPoster,
+		dataSigner,
+		fatalErrChan,
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+		blobReader,
+		wasmModuleRoot,
+	)
+	if err != nil {
+		log.Error("failed to create consensus node", "err", err)
+		return 1
+	}
+
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
@@ -726,6 +708,15 @@ func mainImpl() int {
 		deferFuncs = []func(){cleanup}
 	}
 
+	if nodeConfig.VersionAlerter.Enable {
+		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		}
+		alerter.Start(ctx)
+		defer alerter.StopAndWait()
+	}
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -764,6 +755,43 @@ func mainImpl() int {
 	}
 
 	return 0
+}
+
+func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+	var batchCount uint64
+	if initConfig.ReorgToBatch >= 0 {
+		// #nosec G115
+		batchCount = uint64(initConfig.ReorgToBatch) + 1
+	} else {
+		var messageIndex arbutil.MessageIndex
+		if initConfig.ReorgToMessageBatch >= 0 {
+			// #nosec G115
+			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
+		} else if initConfig.ReorgToBlockBatch > 0 {
+			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			// #nosec G115
+			blockNum := uint64(initConfig.ReorgToBlockBatch)
+			if blockNum < genesis {
+				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
+			}
+			messageIndex = arbutil.MessageIndex(blockNum - genesis)
+		} else {
+			log.Warn("Tried to do init reorg, but no init reorg options specified")
+			return nil
+		}
+		// Reorg out the batch containing the next message
+		var found bool
+		var err error
+		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if err != nil {
+			return err
+		}
+		if !found {
+			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+			return nil
+		}
+	}
+	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
