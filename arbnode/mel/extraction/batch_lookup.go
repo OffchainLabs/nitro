@@ -60,6 +60,12 @@ func ParseBatchesFromBlock(
 			return nil, nil, fmt.Errorf("error fetching tx by hash: %v in ParseBatchesFromBlock: %w ", log.TxHash, err)
 		}
 
+		// Record this log for MEL validation. This is a very cheap operation in native mode
+		// and is optimized for recording mode as well.
+		if _, err := logsFetcher.LogsForTxIndex(ctx, parentChainHeader.Hash(), log.TxIndex); err != nil {
+			return nil, nil, fmt.Errorf("error recording relevant logs: %w", err)
+		}
+
 		batch := &mel.SequencerInboxBatch{
 			BlockHash:              log.BlockHash,
 			ParentChainBlockNumber: log.BlockNumber,

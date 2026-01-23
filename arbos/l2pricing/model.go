@@ -14,9 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const ArbosSingleGasConstraintsVersion = params.ArbosVersion_50
-const ArbosMultiGasConstraintsVersion = params.ArbosVersion_60
-
 const InitialSpeedLimitPerSecondV0 = 1000000
 const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
 const InitialSpeedLimitPerSecondV6 = 7000000
@@ -26,6 +23,9 @@ const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialPricingInertia = 102
 const InitialBacklogTolerance = 10
 const InitialPerTxGasLimitV50 uint64 = 32 * 1000000
+
+// Static price equivalent to the single gas backlog update cost
+const MultiConstraintStaticBacklogUpdateCost = storage.StorageReadCost + storage.StorageWriteCost
 
 type GasModel int
 
@@ -39,7 +39,7 @@ const (
 // GasModelToUse returns the active gas-pricing model based on ArbOS version
 // and whether the corresponding constraints are currently configured.
 func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
-	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
+	if ps.ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
 		constraintsLength, err := ps.MultiGasConstraintsLength()
 		if err != nil {
 			return GasModelUnknown, err
@@ -48,7 +48,7 @@ func (ps *L2PricingState) GasModelToUse() (GasModel, error) {
 			return GasModelMultiGasConstraints, nil
 		}
 	}
-	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
+	if ps.ArbosVersion >= params.ArbosVersion_SingleGasConstraintsVersion {
 		constraintsLength, err := ps.GasConstraintsLength()
 		if err != nil {
 			return GasModelUnknown, err
@@ -149,39 +149,23 @@ func applyGasDelta(op BacklogOperation, backlog uint64, delta uint64) uint64 {
 	}
 }
 
-// TODO(NIT-4152): eliminate manual gas calculation
 // BacklogUpdateCost returns the gas cost for updating the backlog in the active pricing model.
 func (ps *L2PricingState) BacklogUpdateCost() uint64 {
-	result := uint64(0)
-
-	// Multi-dimensional pricer overhead (ArbOS 60 and later)
-	if ps.ArbosVersion >= ArbosMultiGasConstraintsVersion {
-		// Read multi-gas constraints length (GasModelToUse)
-		// This overhead applies even when no constraints are configured.
-		result += storage.StorageReadCost
-
-		// updateMultiGasConstraintsBacklogs costs
-		constraintsLength, _ := ps.multiGasConstraints.Length()
-		if constraintsLength > 0 {
-			result += storage.StorageReadCost // read length to traverse
-
-			// DecrementBacklog costs for each multi-dimensional constraint
-			result += constraintsLength * uint64(multigas.NumResourceKind) * storage.StorageReadCost
-			result += constraintsLength * (storage.StorageReadCost + storage.StorageWriteCost)
-			return result
-		}
-		// No return here, fallthrough to single-constraint costs
+	// Charge static price for any pricer starting from ArbosVersion_MultiGasConstraintsVersion
+	if ps.ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
+		return MultiConstraintStaticBacklogUpdateCost
 	}
 
+	result := uint64(0)
 	// Single-dimensional constraint pricer costs
 	// This overhead applies even when no constraints are configured.
-	if ps.ArbosVersion >= ArbosSingleGasConstraintsVersion {
+	if ps.ArbosVersion >= params.ArbosVersion_SingleGasConstraintsVersion {
 		// Read gas constraints length for "GasModelToUse()"
 		result += storage.StorageReadCost
 	}
 
 	if ps.ArbosVersion >= params.ArbosVersion_MultiConstraintFix {
-		// updateSingleGasConstraintsBacklogs costs (ArbOS 51 and later)
+		// updateSingleGasConstraintsBacklogs costs (ArbosVersion_MultiConstraintFix and later)
 		constraintsLength, _ := ps.gasConstraints.Length()
 		if constraintsLength > 0 {
 			result += storage.StorageReadCost // read length to traverse

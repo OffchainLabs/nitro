@@ -16,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,17 +25,25 @@ import (
 // which ensures only a chain owner can access these methods. For methods that
 // are safe for non-owners to call, see ArbOwnerOld
 type ArbOwner struct {
-	Address          addr // 0x70
+	Address addr // 0x70
+
 	OwnerActs        func(ctx, mech, bytes4, addr, []byte) error
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
+
+	TransactionFiltererAdded        func(ctx, mech, common.Address) error
+	TransactionFiltererAddedGasCost func(common.Address) (uint64, error)
+
+	TransactionFiltererRemoved        func(ctx, mech, common.Address) error
+	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
 }
 
-const NativeTokenEnableDelay = 7 * 24 * 60 * 60
+const maxGetAllMembers = 65536
+const FeatureEnableDelay = 7 * 24 * 60 * 60 // one week
 
 var (
-	ErrOutOfBounds         = errors.New("value out of bounds")
-	ErrNativeTokenDelay    = errors.New("native token feature must be enabled at least 7 days in the future")
-	ErrNativeTokenBackward = errors.New("native token feature cannot be updated to a time earlier than the current time at which it is scheduled to be enabled")
+	ErrOutOfBounds = errors.New("value out of bounds")
+	ErrDelay       = errors.New("feature must be enabled at least 7 days in the future")
+	ErrBackward    = errors.New("feature cannot be updated to a time earlier than the current scheduled enable time")
 )
 
 // AddChainOwner adds account as a chain owner
@@ -58,37 +67,48 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers(65536)
+	return c.State.ChainOwners().AllMembers(maxGetAllMembers)
 }
 
-// SetNativeTokenManagementFrom sets a time in epoch seconds when the native token
-// management becomes enabled. Setting it to 0 disables the feature.
-// If the feature is disabled, then the time must be at least 7 days in the
-// future.
-func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
+// setFeatureFromTime sets a time in epoch seconds when a feature becomes enabled.
+// Setting it to 0 disables the feature.
+// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the future.
+func setFeatureFromTime(field storage.StorageBackedUint64, now, timestamp uint64) error {
 	if timestamp == 0 {
-		return c.State.SetNativeTokenManagementFromTime(0)
+		return field.Set(0)
 	}
-	stored, err := c.State.NativeTokenManagementFromTime()
+	stored, err := field.Get()
 	if err != nil {
 		return err
 	}
-	now := evm.Context.Time
-	// If the feature is disabled, then the time must be at least 7 days in the
+
+	// If the feature is disabled, then the time must be at least FeatureEnableDelay days in the
 	// future.
 	// If the feature is scheduled to be enabled more than 7 days in the future,
 	// and the new time is also in the future, then it must be at least 7 days
 	// in the future.
-	if (stored == 0 && timestamp < now+NativeTokenEnableDelay) ||
-		(stored > now+NativeTokenEnableDelay && timestamp < now+NativeTokenEnableDelay) {
-		return ErrNativeTokenDelay
+	if (stored == 0 && timestamp < now+FeatureEnableDelay) ||
+		(stored > now+FeatureEnableDelay && timestamp < now+FeatureEnableDelay) {
+		return ErrDelay
 	}
+
 	// If the feature is scheduled to be enabled earlier than the minimum delay,
 	// then the new time to enable it must be only further in the future.
-	if stored > now && stored <= now+NativeTokenEnableDelay && timestamp < stored {
-		return ErrNativeTokenBackward
+	if stored > now && stored <= now+FeatureEnableDelay && timestamp < stored {
+		return ErrBackward
 	}
-	return c.State.SetNativeTokenManagementFromTime(timestamp)
+
+	return field.Set(timestamp)
+}
+
+// SetNativeTokenManagementFrom sets native token management enabled-from time.
+func (con ArbOwner) SetNativeTokenManagementFrom(c ctx, evm mech, timestamp uint64) error {
+	return setFeatureFromTime(c.State.NativeTokenEnabledTimeHandle(), evm.Context.Time, timestamp)
+}
+
+// SetTransactionFilteringFrom sets transaction filtering enabled-from time.
+func (con ArbOwner) SetTransactionFilteringFrom(c ctx, evm mech, timestamp uint64) error {
+	return setFeatureFromTime(c.State.TransactionFilteringEnabledTimeHandle(), evm.Context.Time, timestamp)
 }
 
 // AddNativeTokenOwner adds account as a native token owner
@@ -119,7 +139,49 @@ func (con ArbOwner) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, error)
 
 // GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwner) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.NativeTokenOwners().AllMembers(65536)
+	return c.State.NativeTokenOwners().AllMembers(maxGetAllMembers)
+}
+
+// AddTransactionFilterer adds account as a transaction filterer (authorized to use ArbFilteredTransactionsManager)
+func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error {
+	enabledTime, err := c.State.TransactionFilteringFromTime()
+	if err != nil {
+		return err
+	}
+	if enabledTime == 0 || enabledTime > evm.Context.Time {
+		return errors.New("transaction filtering feature is not enabled yet")
+	}
+
+	if err := c.State.TransactionFilterers().Add(filterer); err != nil {
+		return err
+	}
+	return con.TransactionFiltererAdded(c, evm, filterer)
+}
+
+// RemoveTransactionFilterer removes account from the list of transaction filterers
+func (con ArbOwner) RemoveTransactionFilterer(c ctx, evm mech, filterer addr) error {
+	member, err := con.IsTransactionFilterer(c, evm, filterer)
+	if err != nil {
+		return err
+	}
+	if !member {
+		return errors.New("tried to remove non existing transaction filterer")
+	}
+
+	if err := c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	return con.TransactionFiltererRemoved(c, evm, filterer)
+}
+
+// IsTransactionFilterer checks if the account is a transaction filterer
+func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool, error) {
+	return c.State.TransactionFilterers().IsMember(filterer)
+}
+
+// GetAllTransactionFilterers retrieves the list of transaction filterers
+func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
+	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
@@ -467,7 +529,8 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
-	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+	arbosVersion := c.State.ArbOSVersion()
+	if arbosVersion >= params.ArbosVersion_MultiConstraintFix && arbosVersion < params.ArbosVersion_MultiGasConstraintsVersion {
 		limit := l2pricing.GasConstraintsMaxNum
 		if len(constraints) > limit {
 			return fmt.Errorf("too many constraints. Max: %d", limit)
@@ -497,11 +560,6 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
-	limit := l2pricing.MultiGasConstraintsMaxNum
-	if len(constraints) > limit {
-		return fmt.Errorf("too many constraints. Max: %d", limit)
-	}
-
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
@@ -542,4 +600,8 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		}
 	}
 	return nil
+}
+
+func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint16) error {
+	return errors.New("SetMaxStylusContractFragments is not implemented yet")
 }

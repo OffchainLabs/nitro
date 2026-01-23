@@ -21,7 +21,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -541,7 +540,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 
 	var multiDimensionalCost *big.Int
 	var err error
-	if p.state.L2PricingState().ArbosVersion >= l2pricing.ArbosMultiGasConstraintsVersion {
+	if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
 		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
 		p.state.Restrict(err)
 	}

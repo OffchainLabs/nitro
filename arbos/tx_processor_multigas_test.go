@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -115,7 +116,7 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 	)
 
 	// Set up multi-gas constraints and spin model to produce different multi-dimensional cost.
-	txProcessor.state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	txProcessor.state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	Require(t, txProcessor.state.L2PricingState().AddMultiGasConstraint(
 		100000,
@@ -188,7 +189,7 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 
 	// Set up multi-gas constraints and spin model to produce a different multi-dimensional cost.
 	pricing := txProcessor.state.L2PricingState()
-	pricing.ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	pricing.ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	Require(t, pricing.AddMultiGasConstraint(
 		100000,
