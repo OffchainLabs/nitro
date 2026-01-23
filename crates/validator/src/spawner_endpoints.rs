@@ -7,6 +7,7 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
+use crate::engine::config::{TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
 use crate::engine::execution::{validate_continuous, validate_native, ValidationRequest};
 use crate::{config::InputMode, ServerState};
 use arbutil::Bytes32;
@@ -24,15 +25,14 @@ pub async fn name() -> impl IntoResponse {
     "Rust JIT validator"
 }
 
-pub async fn stylus_archs() -> &'static str {
-    if cfg!(target_os = "linux") {
-        if cfg!(target_arch = "aarch64") {
-            return "arm64";
-        } else if cfg!(target_arch = "x86_64") {
-            return "amd64";
-        }
+pub fn local_target() -> &'static str {
+    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        TARGET_ARM_64
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        TARGET_AMD_64
+    } else {
+        TARGET_HOST
     }
-    "host"
 }
 
 pub async fn validate(
@@ -74,21 +74,6 @@ pub struct GlobalState {
     pub send_root: Bytes32,
     pub batch: u64,
     pub pos_in_batch: u64,
-}
-
-impl GlobalState {
-    pub fn set_block_hash(&mut self, block_hash: [u8; 32]) {
-        self.block_hash.0 = block_hash;
-    }
-    pub fn set_send_root(&mut self, send_root: [u8; 32]) {
-        self.send_root.0 = send_root;
-    }
-    pub fn set_batch(&mut self, batch: u64) {
-        self.batch = batch;
-    }
-    pub fn set_pos_in_batch(&mut self, pos_in_batch: u64) {
-        self.pos_in_batch = pos_in_batch;
-    }
 }
 
 impl From<GlobalState> for jit::GlobalState {

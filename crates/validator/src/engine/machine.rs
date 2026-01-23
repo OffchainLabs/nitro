@@ -23,7 +23,7 @@ use anyhow::{anyhow, Context, Result};
 use arbutil::Bytes32;
 use std::{
     collections::HashMap,
-    env::{self, consts},
+    env::{self},
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -36,7 +36,7 @@ use tracing::{debug, error, warn};
 
 use crate::{
     engine::{config::JitMachineConfig, execution::ValidationRequest},
-    spawner_endpoints::GlobalState,
+    spawner_endpoints::{local_target, GlobalState},
 };
 
 const SUCCESS_BYTE: u8 = 0x0;
@@ -76,23 +76,6 @@ async fn read_bytes_with_len<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec
     let mut buf = vec![0u8; len as usize];
     reader.read_exact(&mut buf).await?;
     Ok(buf)
-}
-
-const TARGET_ARM_64: &str = "arm64";
-const TARGET_AMD_64: &str = "amd64";
-const TARGET_HOST: &str = "host";
-
-fn local_target() -> String {
-    if consts::OS == "linux" {
-        match consts::ARCH {
-            "aarch64" => return TARGET_ARM_64.to_owned(),
-            "x86_64" => return TARGET_AMD_64.to_owned(),
-            arch => {
-                debug!("Unsupported architecture {arch} detected. Using host as target arch");
-            }
-        }
-    }
-    TARGET_HOST.to_owned()
 }
 
 pub struct JitMachine {
@@ -224,7 +207,7 @@ impl JitMachine {
 
         // 9. Send User Wasms
         let local_target = local_target();
-        let local_user_wasm = request.user_wasms.get(&local_target);
+        let local_user_wasm = request.user_wasms.get(local_target);
 
         // if there are user wasms, but only for wrong architecture - error
         if local_user_wasm.is_none_or(|m| m.is_empty()) {
@@ -263,10 +246,10 @@ impl JitMachine {
                 // We write the values to socket in BigEndian so we can use
                 // read_u64() directly from AsyncReadExt which handles
                 // BigEndian by default
-                state.set_batch(conn.read_u64().await?);
-                state.set_pos_in_batch(conn.read_u64().await?);
-                state.set_block_hash(read_bytes32(&mut conn).await?);
-                state.set_send_root(read_bytes32(&mut conn).await?);
+                state.batch = conn.read_u64().await?;
+                state.pos_in_batch = conn.read_u64().await?;
+                state.block_hash.0 = read_bytes32(&mut conn).await?;
+                state.send_root.0 = read_bytes32(&mut conn).await?;
 
                 let memory_used = conn.read_u64().await?;
                 if memory_used > self.wasm_memory_usage_limit {
@@ -296,22 +279,16 @@ impl JitMachine {
             .context("failed to wait for JIT process to exit")?;
 
         if status.success() {
-            tracing::debug!("JIT machine exited successfully");
+            debug!("JIT machine exited successfully");
             Ok(())
         } else {
             // Determine if it was a code (error) or a signal (killed)
-            match status.code() {
-                Some(code) => {
-                    let msg = format!("JIT machine exited with error code: {code}");
-                    error!("{msg}");
-                    Err(anyhow!(msg))
-                }
-                None => {
-                    let msg = "JIT machine terminated by signal";
-                    error!("{msg}");
-                    Err(anyhow!(msg))
-                }
-            }
+            let msg = match status.code() {
+                Some(code) => format!("JIT machine exited with error code: {code}"),
+                None => "JIT machine terminated by signal".to_owned(),
+            };
+            error!("{msg}");
+            Err(anyhow!(msg))
         }
     }
 }

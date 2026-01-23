@@ -11,7 +11,7 @@
 //!    embedded `jit` crate. This utilizes the `jit::InputMode::Native` configuration
 //!    and is typically used for direct, low-overhead validation.
 //!
-//! 2. **Continuous Mode (`validate_contiguous`):** Orchestrates an external "JIT Machine"
+//! 2. **Continuous Mode (`validate_continuous`):** Orchestrates an external "JIT Machine"
 //!    process (via `JitMachine`). This mode spawns a separate binary to handle
 //!    validation, isolating the execution environment and allowing for specific
 //!    binary version targeting.
@@ -21,10 +21,14 @@ use std::collections::HashMap;
 use arbutil::{Bytes32, PreimageType};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::{
-    engine::{config::JitMachineConfig, machine::JitMachine},
-    spawner_endpoints::{stylus_archs, BatchInfo, GlobalState},
+    engine::{
+        config::{JitMachineConfig, DEFAULT_JIT_CRANELIFT},
+        machine::JitMachine,
+    },
+    spawner_endpoints::{local_target, BatchInfo, GlobalState},
 };
 
 /// Counterpart for Go struct `validator.ValidationInput`.
@@ -56,7 +60,7 @@ pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalSt
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
             binary: Default::default(),
-            cranelift: true, // The default for JIT binary, no need for LLVM right now
+            cranelift: DEFAULT_JIT_CRANELIFT,
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
         },
@@ -65,7 +69,7 @@ pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalSt
             inbox: request.batch_info.into_iter().map(Into::into).collect(),
             delayed_inbox,
             preimages: request.preimages,
-            programs: request.user_wasms[stylus_archs().await].clone(),
+            programs: request.user_wasms[local_target()].clone(),
         }),
     };
 
@@ -93,11 +97,14 @@ pub async fn validate_continuous(request: ValidationRequest) -> Result<Json<Glob
         .await
         .map_err(|error| format!("{error:?}"))?;
 
-    // Make sure JIT validator binary is done
-    jit_machine
-        .complete_machine()
-        .await
-        .map_err(|error| format!("{error:?}"))?;
+    // Make sure JIT validator binary is done. We move such call into a background task
+    // for cleanup so we don't block the HTTP response since as far as vlidation goes,
+    // it's considered a success if feed_machine succeeds
+    tokio::spawn(async move {
+        if let Err(error) = jit_machine.complete_machine().await {
+            error!("complete_machine failed: {error:?}");
+        }
+    });
 
     Ok(Json(new_state))
 }

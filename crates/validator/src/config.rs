@@ -1,9 +1,14 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+//! Server Configuration and CLI Argument Parsing.
+//!
+//! This module defines the command-line interface (CLI) and configuration structures
+//! for the validation server. It utilizes `clap` to parse arguments and environment variables
+//! into strongly-typed configuration objects used throughout the application.
+
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
-use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -12,6 +17,13 @@ use std::path::PathBuf;
 pub enum InputMode {
     Native,
     Continuous,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Default)]
+pub enum LoggingFormat {
+    #[default]
+    Text,
+    Json,
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -63,14 +75,6 @@ impl ServerConfig {
             )),
         }
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LoggingFormat {
-    #[default]
-    Text,
-    Json,
 }
 
 #[cfg(test)]
