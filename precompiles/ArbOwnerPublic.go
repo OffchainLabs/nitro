@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -21,7 +21,7 @@ type ArbOwnerPublic struct {
 
 // GetAllChainOwners retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers(65536)
+	return c.State.ChainOwners().AllMembers(maxGetAllMembers)
 }
 
 // RectifyChainOwner checks if the account is a chain owner
@@ -45,7 +45,7 @@ func (con ArbOwnerPublic) IsNativeTokenOwner(c ctx, evm mech, addr addr) (bool, 
 
 // GetAllNativeTokenOwners retrieves the list of native token owners
 func (con ArbOwnerPublic) GetAllNativeTokenOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.NativeTokenOwners().AllMembers(65536)
+	return c.State.NativeTokenOwners().AllMembers(maxGetAllMembers)
 }
 
 // GetNativeTokenMangementFrom returns the time in epoch seconds when the
@@ -67,7 +67,7 @@ func (con ArbOwnerPublic) IsTransactionFilterer(c ctx, evm mech, filterer addr) 
 
 // GetAllTransactionFilterers retrieves the list of transaction filterers
 func (con ArbOwnerPublic) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.TransactionFilterers().AllMembers(65536)
+	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
 // GetNetworkFeeAccount gets the network fee collector

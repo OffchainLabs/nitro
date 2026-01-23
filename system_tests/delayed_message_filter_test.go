@@ -60,9 +60,9 @@ func waitForDelayedSequencerHalt(t *testing.T, ctx context.Context, builder *Nod
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		hash := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
-		if hash != nil {
-			return *hash
+		hash, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+		if waiting {
+			return hash
 		}
 		<-time.After(100 * time.Millisecond)
 	}
@@ -78,8 +78,8 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		hash := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
-		if hash == nil {
+		_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+		if !waiting {
 			return
 		}
 		<-time.After(100 * time.Millisecond)
@@ -87,7 +87,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 	t.Fatal("timeout waiting for delayed sequencer to resume")
 }
 
-// addTxHashToOnChainFilter adds a tx hash to the on-chain filter via the precompile.
+// addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
 func addTxHashToOnChainFilter(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) {
 	t.Helper()
 
@@ -167,7 +167,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	require.Equal(t, initialBalance, finalBalance, "filtered address balance should not change")
 }
 
-// TestDelayedMessageFilterBypass verifies that adding tx hash to on-chain filter allows tx to proceed.
+// TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.
 func TestDelayedMessageFilterBypass(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -218,7 +218,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, midBalance, "balance should not change while halted")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Get sender's initial nonce and balance before bypass
@@ -332,11 +332,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, normal2Initial, normal2Mid, "normal user 2 balance should not change while blocked")
 
-	// Get sender balance before bypass to verify gas consumption later
-	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
-	require.NoError(t, err)
-
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash1, "Filterer")
 
 	// Wait for delayed sequencer to resume
@@ -406,8 +402,8 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	<-time.After(time.Second)
 
 	// Verify sequencer is NOT halted
-	hash := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
-	require.Nil(t, hash, "sequencer should not be halted for non-filtered address")
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+	require.False(t, waiting, "sequencer should not be halted for non-filtered address")
 
 	// Verify balance DID change (message processed normally)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, normalAddr, nil)
@@ -500,7 +496,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
 	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CALL tx")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume
@@ -565,7 +561,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
 	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered STATICCALL tx")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume
@@ -631,7 +627,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
 	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CREATE tx")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume
@@ -695,7 +691,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
 	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CREATE2 tx")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume
@@ -757,7 +753,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
 	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered SELFDESTRUCT tx")
 
-	// Add tx hash to on-chain filter to bypass
+	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume

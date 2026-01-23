@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
@@ -43,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -72,7 +73,7 @@ var ResultNotFound = errors.New("result not found")
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains a transaction
 // that touches a filtered address. The sequencer should halt and wait for the tx hash
-// to be added to the on-chain filter before retrying.
+// to be added to the onchain filter before retrying.
 type ErrFilteredDelayedMessage struct {
 	TxHash        common.Hash
 	DelayedMsgIdx uint64
@@ -1194,4 +1195,24 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return false, err
+	}
+
+	statedb, err := s.bc.StateAt(currentHeader.Root)
+	if err != nil {
+		return false, err
+	}
+
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return false, err
+	}
+
+	filteredState := filteredTransactions.Open(statedb, arbState.Burner)
+	return filteredState.IsFiltered(txHash)
 }

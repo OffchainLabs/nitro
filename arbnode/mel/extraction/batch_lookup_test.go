@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
@@ -244,6 +246,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt.BlockHash = block.Hash()
 		blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 		eventUnpacker := &mockEventUnpacker{
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
@@ -322,6 +325,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		receipts,
 		trie.NewStackTrie(nil),
 	)
+	receipt.BlockHash = block.Hash()
 	blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 	eventUnpacker := &mockEventUnpacker{
 		events: []*bridgegen.SequencerInboxSequencerBatchDelivered{

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbosState
@@ -467,8 +467,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 52, 53, 54, 55, 56, 57, 58, 59:
 			// these versions are left to Orbit chains for custom upgrades.
 
-		case params.ArbosVersion_60:
-			// no change state needed
+		case params.ArbosVersion_TransactionFiltering:
+			// Once the final ArbOS version is locked in, this can be moved to that numeric version.
+			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
@@ -653,4 +655,12 @@ func (state *ArbosState) SetChainConfig(serializedChainConfig []byte) error {
 
 func (state *ArbosState) GenesisBlockNum() (uint64, error) {
 	return state.genesisBlockNum.Get()
+}
+
+func (state *ArbosState) NativeTokenEnabledTimeHandle() storage.StorageBackedUint64 {
+	return state.nativeTokenEnabledTime
+}
+
+func (state *ArbosState) TransactionFilteringEnabledTimeHandle() storage.StorageBackedUint64 {
+	return state.transactionFilteringEnabledTime
 }

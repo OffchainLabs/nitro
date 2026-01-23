@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package execution
 
 import (
@@ -66,12 +68,11 @@ type ExecutionClient interface {
 // needed for validators / stakers
 type ExecutionRecorder interface {
 	RecordBlockCreation(
-		ctx context.Context,
 		pos arbutil.MessageIndex,
 		msg *arbostypes.MessageWithMetadata,
 		wasmTargets []rawdb.WasmTarget,
-	) (*RecordResult, error)
-	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+	) containers.PromiseInterface[*RecordResult]
+	PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 }
 
 // needed for sequencer
@@ -84,6 +85,7 @@ type ExecutionSequencer interface {
 	NextDelayedMessageNumber() (uint64, error)
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
+	IsTxHashInOnchainFilter(txHash common.Hash) (bool, error)
 }
 
 // needed for batch poster

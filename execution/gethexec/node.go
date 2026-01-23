@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package gethexec
 
 import (
@@ -41,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type StylusTargetConfig struct {
@@ -241,6 +244,7 @@ type ConfigFetcher interface {
 }
 
 type ExecutionNode struct {
+	stopwaiter.StopWaiter
 	ExecutionDB              ethdb.Database
 	Backend                  *arbitrum.Backend
 	FilterSystem             *filters.FilterSystem
@@ -422,7 +426,7 @@ func CreateExecutionNode(
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
 			Version:       "1.0",
-			Service:       executionrpcserver.NewServer(execNode),
+			Service:       executionrpcserver.NewServer(execNode, execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
@@ -463,7 +467,13 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 }
 
 // not thread safe
-func (n *ExecutionNode) Start(ctx context.Context) error {
+func (n *ExecutionNode) Start(ctxIn context.Context) error {
+	n.StopWaiter.Start(ctxIn, n)
+	ctx, err := n.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
 	if n.started.Swap(true) {
 		return errors.New("already started")
 	}
@@ -478,7 +488,7 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	// 	return fmt.Errorf("error starting geth stack: %w", err)
 	// }
 	n.ExecEngine.Start(ctx)
-	err := n.TxPublisher.Start(ctx)
+	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
@@ -514,6 +524,7 @@ func (n *ExecutionNode) StopAndWait() {
 	// if err := n.Stack.Close(); err != nil {
 	// 	log.Error("error on stak close", "err", err)
 	// }
+	n.StopWaiter.StopAndWait()
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
@@ -531,6 +542,9 @@ func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
 }
+func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
+}
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
 }
@@ -539,15 +553,19 @@ func (n *ExecutionNode) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
-	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
-) (*execution.RecordResult, error) {
-	return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+) containers.PromiseInterface[*execution.RecordResult] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
+	})
 }
-func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	return n.Recorder.PrepareForRecord(ctx, start, end)
+
+func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
+	})
 }
 
 func (n *ExecutionNode) Pause() {
