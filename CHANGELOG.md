@@ -124,6 +124,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Fixed ValidateCertificate proof generation to panic on preimageType overflow (> 255) instead of silently using a fallback value, aligning with the Solidity one-step prover which reverts for this case. [[PR]](https://github.com//nitro/pull/4187)
 - Update implementation of receipts and txs fetching in mel-replay. [[PR]](https://github.com//nitro/pull/4199)
 - Added testing for recording and fetching of logs and txs needed for MEL validation. [[PR]](https://github.com//nitro/pull/4199)
+- Fixed batch poster on L3s not waiting for transaction receipt before posting next batch, causing duplicate batch attempts and spurious error logs. [[PR]](https://github.com/OffchainLabs/nitro/pull/4273)
 
 ### Internal
 
