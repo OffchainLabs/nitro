@@ -13,6 +13,7 @@ rust-version.workspace = true
 brotli = { workspace = true, optional = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmer = { workspace = true, optional = true }
 
 [features]
