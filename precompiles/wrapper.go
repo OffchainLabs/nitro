@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -133,22 +133,22 @@ func (wrapper *OwnerPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }
 
-// TransactionFilterPrecompile wraps ArbFilteredTransactionsManager to preserve free storage access for filterers.
+// FreeAccessPrecompile wraps ArbFilteredTransactionsManager to preserve free storage access for filterers.
 // Call forwards the call and decides whether storage access is free based on caller role.
-type TransactionFilterPrecompile struct {
+type FreeAccessPrecompile struct {
 	precompile ArbosPrecompile
 }
 
 func filtererOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
-	return address, &TransactionFilterPrecompile{precompile: impl}
+	return address, &FreeAccessPrecompile{precompile: impl}
 }
 
-func (wrapper *TransactionFilterPrecompile) Address() common.Address {
+func (wrapper *FreeAccessPrecompile) Address() common.Address {
 	return wrapper.precompile.Address()
 }
 
 // Call decides gas charging based on caller role, but always forwards the call.
-func (wrapper *TransactionFilterPrecompile) Call(
+func (wrapper *FreeAccessPrecompile) Call(
 	input []byte,
 	actingAsAddress common.Address,
 	caller common.Address,
@@ -190,10 +190,10 @@ func (wrapper *TransactionFilterPrecompile) Call(
 	return output, burner.GasLeft(), burner.gasUsed, err
 }
 
-func (wrapper *TransactionFilterPrecompile) Precompile() *Precompile {
+func (wrapper *FreeAccessPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
-func (wrapper *TransactionFilterPrecompile) Name() string {
+func (wrapper *FreeAccessPrecompile) Name() string {
 	return wrapper.precompile.Name()
 }

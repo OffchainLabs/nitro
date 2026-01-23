@@ -1,0 +1,13 @@
+[workspace]
+members = [
+	"arbcompress",
+	"arbkeccak",
+	"forward",
+	"host-io",
+	"program-exec",
+	"user-host",
+	"user-host-trait",
+	"user-test",
+	"wasi-stub",
+]
+resolver = "2"

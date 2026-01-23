@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package env
@@ -30,6 +30,7 @@ func GetTestDatabaseEngine() string {
 	switch engineFlag {
 	case rawdb.DBLeveldb, rawdb.DBPebble, MemoryDB:
 		databaseEngine = engineFlag
+	case "":
 	default:
 		log.Warn("invalid test database engine flag; using default",
 			"provided", engineFlag,
