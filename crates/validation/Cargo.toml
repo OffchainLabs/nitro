@@ -1,5 +1,5 @@
 [package]
-name = "nitro-api"
+name = "validation"
 version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
@@ -12,7 +12,6 @@ rust-version.workspace = true
 [dependencies]
 arbutil = { workspace = true }
 brotli = { workspace = true }
-hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true, features = ["base64"] }

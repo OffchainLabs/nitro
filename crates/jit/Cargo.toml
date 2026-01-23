@@ -17,7 +17,6 @@ clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
 libc = { workspace = true }
-nitro-api = { workspace = true }
 prover = { workspace = true, features = ["native"] }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
@@ -25,6 +24,7 @@ sha2 = { workspace = true }
 sha3 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
+validation = { workspace = true }
 wasmer = { workspace = true }
 wasmer-compiler-cranelift = { workspace = true }
 wasmer-compiler-llvm = { workspace = true, optional = true }

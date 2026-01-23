@@ -1345,7 +1345,6 @@ dependencies = [
  "eyre",
  "hex",
  "libc",
- "nitro-api",
  "prover",
  "rand",
  "rand_pcg",
@@ -1353,6 +1352,7 @@ dependencies = [
  "sha3",
  "stylus",
  "thiserror",
+ "validation",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
@@ -1535,18 +1535,6 @@ name = "more-asserts"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
-
-[[package]]
-name = "nitro-api"
-version = "0.1.0"
-dependencies = [
- "arbutil",
- "brotli",
- "hex",
- "serde",
- "serde_json",
- "serde_with",
-]
 
 [[package]]
 name = "nom"
@@ -1889,7 +1877,6 @@ dependencies = [
  "lazy_static",
  "libc",
  "lru",
- "nitro-api",
  "nom",
  "num",
  "num-derive",
@@ -1907,6 +1894,7 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "structopt",
+ "validation",
  "wasmer",
  "wasmer-compiler-singlepass",
  "wasmer-types",
@@ -2818,6 +2806,17 @@ name = "uuid"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+
+[[package]]
+name = "validation"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "brotli",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
 
 [[package]]
 name = "validator"

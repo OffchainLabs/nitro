@@ -24,7 +24,6 @@ hex = { workspace = true }
 lazy_static = { workspace = true }
 libc = { workspace = true }
 lru = { workspace = true }
-nitro-api = { workspace = true }
 nom = { workspace = true }
 num = { workspace = true }
 num-derive = { workspace = true }
@@ -41,6 +40,7 @@ sha3 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
 static_assertions = { workspace = true }
 structopt = { workspace = true }
+validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
 wasmer-types = { workspace = true }
