@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
@@ -11,14 +12,60 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
-func prepareL1AndL2(t *testing.T, ctx context.Context, withL1 bool) (*NodeBuilder, []*types.Receipt) {
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, withL1)
+func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, false, builder.chainConfig.ChainID, nil, &chaininfo.RollupAddresses{}, builder.chainConfig)
+	Require(t, err)
+
+	serializedChainConfig, err := json.Marshal(builder.chainConfig)
+	Require(t, err)
+
+	// We create an initMessage since builder doesn't create an initMessage without an L1
+	expectedInitMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               builder.chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           builder.chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+
+	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
+		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
+	}
+}
+
+func TestGetConsensusParsedInitMsgWithParentChain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// We need L1 to get builder.initMessage
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
+	Require(t, err)
+
+	if success := reflect.DeepEqual(initMessage, builder.initMessage); !success {
+		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
+	}
+}
+
+func TestOpenExistingExecutionDB(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l2StackConfig.DBEngine = rawdb.DBPebble
 	builder.l2StackConfig.Name = "arb-init-test-l2"
 	builder.execConfig.Caching.StateScheme = rawdb.PathScheme
@@ -31,45 +78,6 @@ func prepareL1AndL2(t *testing.T, ctx context.Context, withL1 bool) (*NodeBuilde
 		txs = append(txs, tx)
 	}
 	receipts := builder.L2.SendWaitTestTransactions(t, txs)
-
-	return builder, receipts
-}
-
-func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	nodeConfig := config.NodeConfigDefault
-	nodeConfig.Node.ParentChainReader.Enable = false
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, nil, &chaininfo.RollupAddresses{}, builder.chainConfig)
-	Require(t, err)
-
-	reflect.DeepEqual(initMessage, builder.initMessage)
-}
-
-func TestGetConsensusParsedInitMsg(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	nodeConfig := config.NodeConfigDefault
-	nodeConfig.Node.ParentChainReader.Enable = true
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, nodeConfig.Node.ParentChainReader.Enable, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
-	Require(t, err)
-
-	reflect.DeepEqual(initMessage, builder.initMessage)
-}
-
-func TestOpenExistingExecutionDB(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	builder, receipts := prepareL1AndL2(t, ctx, true)
 
 	builder.L2.cleanup()
 	t.Log("stopped L2 node")

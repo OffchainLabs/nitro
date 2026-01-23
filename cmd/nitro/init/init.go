@@ -47,7 +47,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -1033,7 +1032,7 @@ func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled boo
 	return parsedInitMessage, nil
 }
 
-func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisMsgResult *execution.MessageResult) (*protocol.AssertionCreatedInfo, [32]byte, error) {
+func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisHash common.Hash, sendRoot common.Hash) (*protocol.AssertionCreatedInfo, [32]byte, error) {
 	var assertionHash [32]byte
 
 	if l1Client == nil {
@@ -1063,8 +1062,8 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 	if err != nil {
 		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
 		genesisGlobalState := protocol.GoGlobalState{
-			BlockHash:  genesisMsgResult.BlockHash,
-			SendRoot:   genesisMsgResult.SendRoot,
+			BlockHash:  genesisHash,
+			SendRoot:   sendRoot,
 			Batch:      1,
 			PosInBatch: 0,
 		}
@@ -1088,45 +1087,33 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 	return genesisAssertionCreationInfo, assertionHash, err
 }
 
-func GetAndValidateGenesisAssertion(ctx context.Context, config *config.NodeConfig, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
+func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
 	genesisBlock := l2BlockChain.Genesis()
-	genesisMsgResult := execution.MessageResult{
-		BlockHash: genesisBlock.Hash(),
-		SendRoot:  types.DeserializeHeaderExtraInformation(genesisBlock.Header()).SendRoot,
-	}
-	if config.Init.ValidateGenesisAssertion {
-		genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, &genesisMsgResult)
-		if err != nil {
-			return err
-		}
-
-		accountsReader, err := initDataReader.GetAccountDataReader()
-		if err != nil {
-			return err
-		}
-
-		if err := validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, &genesisMsgResult, accountsReader.More()); err != nil {
-			if !config.Init.Force {
-				return fmt.Errorf("error testing genesis assertion: %w", err)
-			}
-			log.Error("Error testing genesis assertions", "err", err)
-		}
+	sendRoot := types.DeserializeHeaderExtraInformation(genesisBlock.Header()).SendRoot
+	genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, genesisBlock.Hash(), sendRoot)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	accountsReader, err := initDataReader.GetAccountDataReader()
+	if err != nil {
+		return err
+	}
+
+	return validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, genesisBlock.Hash(), sendRoot, accountsReader.More())
 }
 
-func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesisMsgResult *execution.MessageResult, initDataReaderHasAccounts bool) error {
+func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesisHash common.Hash, sendRoot common.Hash, initDataReaderHasAccounts bool) error {
 	beforeGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.BeforeState.GlobalState)
 	afterGlobalState := protocol.GoGlobalStateFromSolidity(genesisAssertionCreationInfo.AfterState.GlobalState)
 	isNullAssertion := beforeGlobalState.Batch == afterGlobalState.Batch && beforeGlobalState.PosInBatch == afterGlobalState.PosInBatch
 	if isNullAssertion && initDataReaderHasAccounts {
 		return errors.New("genesis assertion is null but there are accounts in the init data")
 	}
-	if !isNullAssertion && afterGlobalState.BlockHash != genesisMsgResult.BlockHash {
+	if !isNullAssertion && afterGlobalState.BlockHash != genesisHash {
 		return errors.New("genesis assertion is non null and its afterGlobalState.BlockHash doesn't match the genesis blockHash")
 	}
-	log.Info("Genesis assertion validated", "genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesisMsgResult.BlockHash, "genesisSendRoot", genesisMsgResult.SendRoot)
+	log.Info("Genesis assertion validated", "genesisAssertionHash", genesisAssertionHash, "genesisBlockHash", genesisHash, "genesisSendRoot", sendRoot)
 	return nil
 }
 

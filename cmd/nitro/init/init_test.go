@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -924,7 +926,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	Require(t, err)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipIniDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -972,7 +974,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 	Require(t, err)
 
 	// This means no init method is supplied to GetInit
-	if skipIniDataReader {
+	if skipInitDataReader {
 		nodeConfig.Init.Empty = false
 		nodeConfig.Init.ImportFile = ""
 		nodeConfig.Init.GenesisJsonFile = ""
@@ -994,6 +996,10 @@ func TestSimpleGetInit(t *testing.T) {
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
+
+	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
@@ -1035,6 +1041,10 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
+	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	require.Equal(t, expectedChainConfig, chainConfig)
+
 	if arbOsInit != nil {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
 	}
@@ -1054,6 +1064,10 @@ func TestGetInitWithEmpty(t *testing.T) {
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
+
+	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
@@ -1096,6 +1110,10 @@ func TestGetInitWithImportFile(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
+	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	require.Equal(t, expectedChainConfig, chainConfig)
+
 	if arbOsInit != nil {
 		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
 	}
@@ -1136,6 +1154,7 @@ func TestGetInitWithGenesis(t *testing.T) {
 		t.Fatalf("Expected non nil chainConfig")
 	}
 
+	// First make sure some key fields have the expected value
 	expectedChainId := new(big.Int).SetUint64(3503995874084926)
 	if chainConfig.ChainID.Uint64() != expectedChainId.Uint64() {
 		t.Fatalf("chainConfig chainID %d does not match expected chain ID: %d", chainConfig.ChainID, expectedChainId)
@@ -1147,6 +1166,16 @@ func TestGetInitWithGenesis(t *testing.T) {
 	if *chainConfig.PragueTime != 120 {
 		t.Fatalf("expected chainConfig.PragueTime to be 120 but got: %d", *chainConfig.PragueTime)
 	}
+
+	// Make sure getInitHelper read the correct genesis file with all its fields
+	genesisJson, err := os.ReadFile(genesisJsonFile)
+	Require(t, err)
+	var gen core.Genesis
+	err = json.Unmarshal(genesisJson, &gen)
+	Require(t, err)
+	expectedChainConfig := gen.Config
+
+	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
 		t.Fatalf("arbOsInit expected to be nil")

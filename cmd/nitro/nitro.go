@@ -456,11 +456,12 @@ func mainImpl() int {
 		return 1
 	}
 
-	if initDataReader != nil {
-		err = nitroinit.GetAndValidateGenesisAssertion(ctx, nodeConfig, l2BlockChain, initDataReader, &rollupAddrs, l1Client)
-		if err != nil {
+	if initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
+		if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
 			log.Error("error trying to validate genesis assertion", "err", err)
-			return 1
+			if !nodeConfig.Init.Force {
+				return 1
+			}
 		}
 	}
 
