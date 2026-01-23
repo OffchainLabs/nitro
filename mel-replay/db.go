@@ -1,6 +1,4 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package main
+package melreplay
 
 import (
 	"errors"
@@ -16,7 +14,7 @@ import (
 var _ ethdb.Database = (*DB)(nil)
 
 type DB struct {
-	resolver preimageResolver
+	resolver PreimageResolver
 }
 
 func (d *DB) Get(key []byte) ([]byte, error) {

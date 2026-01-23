@@ -384,6 +384,7 @@ dependencies = [
  "brotli",
  "rand",
  "rand_pcg",
+ "tiny-keccak",
  "wasmer",
 ]
 
@@ -1352,6 +1353,7 @@ dependencies = [
  "sha3",
  "stylus",
  "thiserror",
+ "validation",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
@@ -1893,6 +1895,7 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "structopt",
+ "validation",
  "wasmer",
  "wasmer-compiler-singlepass",
  "wasmer-types",
@@ -2806,6 +2809,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 
 [[package]]
+name = "validation"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "brotli",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "validator"
 version = "0.1.0"
 dependencies = [
@@ -2813,6 +2827,7 @@ dependencies = [
  "arbutil",
  "axum",
  "clap 4.5.53",
+ "jit",
  "serde",
  "serde_json",
  "tokio",

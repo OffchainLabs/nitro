@@ -24,6 +24,7 @@ sha2 = { workspace = true }
 sha3 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
+validation = { workspace = true }
 wasmer = { workspace = true }
 wasmer-compiler-cranelift = { workspace = true }
 wasmer-compiler-llvm = { workspace = true, optional = true }

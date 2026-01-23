@@ -1,17 +1,23 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::machine::Escape;
 use arbutil::{Bytes32, PreimageType};
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashMap;
+use std::io::BufWriter;
+use std::net::TcpStream;
 use std::path::PathBuf;
+use std::time::Duration;
+use wasmer::{FrameInfo, Pages};
 
 mod arbcompress;
+mod arbkeccak;
 mod caller_env;
 pub mod machine;
 mod prepare;
 pub mod program;
-mod socket;
+pub mod socket;
 pub mod stylus_backend;
 mod test;
 mod wasip1_stub;
@@ -99,6 +105,68 @@ pub struct NativeInput {
     pub delayed_inbox: Vec<SequencerMessage>,
     pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
     pub programs: HashMap<Bytes32, Vec<u8>>,
+}
+
+/// Result of running the JIT validation.
+pub struct RunResult {
+    /// Amount of memory used by the Wasm instance.
+    pub memory_used: Pages,
+    /// Total runtime of the Wasm instance (measured from the first wavmio instruction to finish).
+    pub runtime: Duration,
+
+    /// New global state after running the Wasm instance. May be invalid, if `self.error` is `Some`.
+    pub new_state: GlobalState,
+
+    /// Error encountered during execution, if any.
+    pub error: Option<Escape>,
+    /// Stack trace of the error, if any.
+    pub trace: Vec<FrameInfo>,
+    /// Optional socket to report results back to the spawner, if `InputMode` was `Continuous`.
+    pub socket: Option<BufWriter<TcpStream>>,
+}
+
+pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
+    let (instance, env, mut store) = machine::create(opts)?;
+    let outcome = instance
+        .exports
+        .get_function("_start")?
+        .call(&mut store, &[]);
+
+    let memory_used = instance.exports.get_memory("memory")?.view(&store).size();
+    let env = env.as_mut(&mut store);
+
+    let mut result = RunResult {
+        memory_used,
+        runtime: env.process.timestamp.elapsed(),
+        new_state: GlobalState {
+            last_block_hash: env.large_globals[0],
+            last_send_root: env.large_globals[1],
+            inbox_position: env.small_globals[0],
+            position_within_message: env.small_globals[1],
+        },
+        error: None,
+        trace: vec![],
+        // It is okay to take the socket ownership here because `env` will be dropped after this function returns.
+        socket: env.process.socket.take().map(|(w, _)| w),
+    };
+
+    match outcome {
+        Ok(value) => {
+            // The proper way `_start` returns successfully is by trapping with an exit code `0`, not by returning a value.
+            result.error = Some(Escape::UnexpectedReturn(value.to_vec()));
+        }
+        Err(err) => {
+            result.trace = err.trace().to_vec();
+            match Escape::from(err) {
+                Escape::Exit(0) => {}
+                escape => {
+                    result.error = Some(escape);
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 mod cli_parsing {

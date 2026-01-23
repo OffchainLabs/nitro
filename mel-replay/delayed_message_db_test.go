@@ -1,6 +1,4 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package main
+package melreplay_test
 
 import (
 	"context"
@@ -15,28 +13,15 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
+	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
 )
 
-var _ preimageResolver = (*mockPreimageResolver)(nil)
-var _ mel.DelayedMessageDatabase = (*delayedMessageDatabase)(nil)
-
-type testPreimageResolver struct {
-	preimages map[common.Hash][]byte
-}
-
-func (r *testPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	if preimageType != arbutil.Keccak256PreimageType {
-		return nil, fmt.Errorf("unsupported preimageType: %d", preimageType)
-	}
-	if preimage, ok := r.preimages[hash]; ok {
-		return preimage, nil
-	}
-	return nil, fmt.Errorf("preimage not found for hash: %v", hash)
-}
+var _ melreplay.PreimageResolver = (*mockPreimageResolver)(nil)
 
 func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
@@ -72,7 +57,9 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
 	require.NoError(t, melDB.SaveState(ctx, state))
 
-	recordingDB := melrecording.NewDelayedMsgDatabase(db)
+	preimages := make(daprovider.PreimagesMap)
+	recordingDB, err := melrecording.NewDelayedMsgDatabase(db, preimages)
+	require.NoError(t, err)
 	for i := startBlockNum; i < numMsgs; i++ {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 		state.DelayedMessagesSeen++
@@ -88,11 +75,12 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	}
 
 	// Test reading in wasm mode
-	delayedDB := &delayedMessageDatabase{
-		&testPreimageResolver{
-			preimages: recordingDB.Preimages(),
-		},
-	}
+	delayedDB := melreplay.NewDelayedMessageDatabase(
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
+	)
 	for i := startBlockNum; i < numMsgsToRead; i++ {
 		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)
 		require.NoError(t, err)
@@ -103,7 +91,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 func TestReadDelayedMessage(t *testing.T) {
 	ctx := context.Background()
 	t.Run("message index out of range", func(t *testing.T) {
-		db := &delayedMessageDatabase{}
+		db := melreplay.NewDelayedMessageDatabase(nil)
 		state := &mel.State{
 			DelayedMessagesSeen: 5,
 		}
@@ -121,7 +109,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     1,
 			DelayedMessagesSeenRoot: root,
@@ -150,7 +138,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     2,
 			DelayedMessagesSeenRoot: root,
@@ -183,7 +171,7 @@ func TestReadDelayedMessage(t *testing.T) {
 		preimages, root := buildMerkleTree(t, messages)
 
 		resolver := &mockPreimageResolver{preimages: preimages}
-		db := &delayedMessageDatabase{preimageResolver: resolver}
+		db := melreplay.NewDelayedMessageDatabase(resolver)
 		state := &mel.State{
 			DelayedMessagesSeen:     3,
 			DelayedMessagesSeenRoot: root,
@@ -217,7 +205,7 @@ func TestNextPowerOfTwo(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := nextPowerOfTwo(tc.input)
+		result := melreplay.NextPowerOfTwo(tc.input)
 		if result != tc.expected {
 			t.Errorf("nextPowerOfTwo(%d) = %d, expected %d", tc.input, result, tc.expected)
 		}
