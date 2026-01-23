@@ -308,16 +308,16 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 		return nil, ProgramNotWasmError()
 	}
 
-	if state.IsStylusProgramClassic(prefixedWasm) {
+	if state.IsStylusClassicProgramPrefix(prefixedWasm) {
 		return handleClassicStylus(prefixedWasm, params.MaxWasmSize)
 	}
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
-		if state.IsStylusProgramRoot(prefixedWasm) {
+		if state.IsStylusRootProgramPrefix(prefixedWasm) {
 			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
 		}
 
-		if state.IsStylusProgramFragment(prefixedWasm) {
+		if state.IsStylusFragmentPrefix(prefixedWasm) {
 			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
 		}
 	}
