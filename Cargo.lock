@@ -383,6 +383,7 @@ dependencies = [
  "brotli",
  "rand",
  "rand_pcg",
+ "tiny-keccak",
  "wasmer",
 ]
 
