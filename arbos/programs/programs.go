@@ -387,15 +387,14 @@ func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragme
 	return wasm, nil
 }
 
-// Named return parameters allow us to return the zero-value for 'dict' implicitly on error
-func getStylusCompressionDict(id byte) (dict arbcompress.Dictionary, err error) {
+func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
 	switch id {
 	case 0:
 		return arbcompress.EmptyDictionary, nil
 	case 1:
 		return arbcompress.StylusProgramDictionary, nil
 	default:
-		return dict, fmt.Errorf("unsupported dictionary type: %d", id)
+		return 0, fmt.Errorf("unsupported dictionary type: %d", id)
 	}
 }
 
