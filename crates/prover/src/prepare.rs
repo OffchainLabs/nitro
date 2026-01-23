@@ -3,12 +3,12 @@
 use crate::machine::{argument_data_to_inbox, GlobalState, Machine};
 use crate::utils::CBytes;
 use arbutil::{Bytes32, PreimageType};
-use nitro_api::validator::ValidationInput;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use validation::ValidationInput;
 
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;

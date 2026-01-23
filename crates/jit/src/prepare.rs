@@ -3,11 +3,11 @@
 
 use crate::machine::WasmEnv;
 use eyre::Ok;
-use nitro_api::validator::ValidationInput;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use validation::ValidationInput;
 
 // local_target matches rawdb.LocalTarget() on the go side.
 // While generating json_inputs file, one should make sure user_wasms map
