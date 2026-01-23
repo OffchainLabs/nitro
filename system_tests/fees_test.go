@@ -274,7 +274,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	numReimbursed := 0
 	for _, bpAddr := range batchPosterAddresses {
-		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != l1pricing.L1PricerFundsPoolAddress {
+		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != types.L1PricerFundsPoolAddress {
 			numReimbursed++
 			bal, err := builder.L1.Client.BalanceAt(ctx, bpAddr, nil)
 			Require(t, err)

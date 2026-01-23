@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -386,7 +387,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// no state changes needed
 		case params.ArbosVersion_10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
-				l1pricing.L1PricerFundsPoolAddress,
+				types.L1PricerFundsPoolAddress,
 			).ToBig()))
 
 		case params.ArbosVersion_11:
