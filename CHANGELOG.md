@@ -14,7 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - `--node.batch-poster.das-retention-period` -> `--node.batch-poster.anytrust-retention-period`
 - `--node.data-availability.rpc-aggregator.das-rpc-client.*` -> `--node.data-availability.rpc-aggregator.rpc-client.*`
 - `--node.batch-poster.max-size` -> `--node.batch-poster.max-calldata-batch-size`
-- `--node.da-provider.*` has been removed
+- `--node.da-provider.*` -> `--node.da.external-provider.*`
 - `anytrusttool` `--das-retention-period` -> `--anytrust-retention-period`
 - `anytrusttool` `--das-rpc-client.*` -> `--rpc-client.*`
 - `daprovider` `--anytrust.parent-chain.node-url` -> `--parent-chain-node-url`
