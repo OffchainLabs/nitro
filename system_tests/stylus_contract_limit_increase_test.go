@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -594,10 +595,12 @@ func TestFragmentedContractFailsOnArbOS50(t *testing.T) {
 	})
 	defer cleanup()
 
-	cfg := defaultDeployConfig()
-	cfg.expectActivation = false
-	cfg.expectedErr = "unknown stylus version"
-	deployAndActivateFragmentedContract(t, builder.ctx, auth, builder.L2.Client, cfg)
+	fragments, _, _ := readFragmentedContractFile(t, rustFile("storage"), 2)
+	require.Len(t, fragments, 2)
+
+	auth.GasLimit = 32_000_000
+	_, err := deployContractForwardError(t, builder.ctx, auth, builder.L2.Client, fragments[0])
+	require.ErrorContains(t, err, vm.ErrInvalidCode.Error())
 }
 
 func TestArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
