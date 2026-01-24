@@ -38,12 +38,10 @@ import (
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -560,7 +558,7 @@ func mainImpl() int {
 		stack,
 		execNode,
 		consensusDB,
-		&config.ConsensusNodeConfigFetcher{liveNodeConfig},
+		&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
 		l2BlockChain.Config(),
 		l1Client,
 		&rollupAddrs,
@@ -756,43 +754,6 @@ func mainImpl() int {
 	}
 
 	return 0
-}
-
-func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
-	var batchCount uint64
-	if initConfig.ReorgToBatch >= 0 {
-		// #nosec G115
-		batchCount = uint64(initConfig.ReorgToBatch) + 1
-	} else {
-		var messageIndex arbutil.MessageIndex
-		if initConfig.ReorgToMessageBatch >= 0 {
-			// #nosec G115
-			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
-		} else if initConfig.ReorgToBlockBatch > 0 {
-			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
-			// #nosec G115
-			blockNum := uint64(initConfig.ReorgToBlockBatch)
-			if blockNum < genesis {
-				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
-			}
-			messageIndex = arbutil.MessageIndex(blockNum - genesis)
-		} else {
-			log.Warn("Tried to do init reorg, but no init reorg options specified")
-			return nil
-		}
-		// Reorg out the batch containing the next message
-		var found bool
-		var err error
-		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
-		if err != nil {
-			return err
-		}
-		if !found {
-			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
-			return nil
-		}
-	}
-	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {

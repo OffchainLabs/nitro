@@ -315,6 +315,7 @@ func createL2NodeWithRollupAddresses(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	parentChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
 	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), parentChainId, 0)
 	Require(t, err)
 
