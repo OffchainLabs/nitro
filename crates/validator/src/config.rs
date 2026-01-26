@@ -7,11 +7,44 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
+use anyhow::Result;
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use tokio::sync::Mutex;
+
+use crate::engine::config::JitMachineConfig;
+use crate::engine::machine::JitMachine;
+
+#[derive(Debug)]
+pub struct ServerState {
+    pub mode: InputMode,
+    pub module_root: Bytes32,
+    pub jit_machine: Option<Mutex<JitMachine>>,
+}
+
+impl ServerState {
+    pub fn new(config: &ServerConfig) -> Result<Self> {
+        let module_root = config.get_module_root()?;
+        let jit_machine = match config.mode {
+            InputMode::Continuous => {
+                let config = JitMachineConfig::default();
+
+                let jit_machine = JitMachine::new(&config, Some(module_root))?;
+
+                Some(Mutex::new(jit_machine))
+            }
+            InputMode::Native => None,
+        };
+        Ok(ServerState {
+            mode: config.mode,
+            module_root,
+            jit_machine,
+        })
+    }
+}
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum InputMode {
@@ -36,6 +69,7 @@ pub struct ServerConfig {
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
 
+    /// Defines how Validator consumes input
     #[clap(long, value_enum, default_value_t = InputMode::Native)]
     pub mode: InputMode,
 

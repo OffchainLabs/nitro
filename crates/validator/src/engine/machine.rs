@@ -32,7 +32,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     process::{Child, ChildStdin, Command},
 };
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 use crate::{
     engine::{config::JitMachineConfig, execution::ValidationRequest},
@@ -78,10 +78,12 @@ async fn read_bytes_with_len<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec
     Ok(buf)
 }
 
+#[derive(Debug)]
 pub struct JitMachine {
     pub process_stdin: Option<ChildStdin>,
     pub process: Child,
     pub wasm_memory_usage_limit: u64,
+    is_active: bool,
 }
 
 impl JitMachine {
@@ -137,7 +139,12 @@ impl JitMachine {
             process_stdin: Some(stdin),
             process: child,
             wasm_memory_usage_limit: config.wasm_memory_usage_limit,
+            is_active: true,
         })
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.is_active && self.process_stdin.is_some()
     }
 
     pub async fn feed_machine(&mut self, request: &ValidationRequest) -> Result<GlobalState> {
@@ -272,23 +279,13 @@ impl JitMachine {
             drop(stdin);
         }
 
-        let status = self
-            .process
-            .wait()
+        self.process
+            .kill()
             .await
-            .context("failed to wait for JIT process to exit")?;
+            .context("failed to kill jit process")?;
 
-        if status.success() {
-            debug!("JIT machine exited successfully");
-            Ok(())
-        } else {
-            // Determine if it was a code (error) or a signal (killed)
-            let msg = match status.code() {
-                Some(code) => format!("JIT machine exited with error code: {code}"),
-                None => "JIT machine terminated by signal".to_owned(),
-            };
-            error!("{msg}");
-            Err(anyhow!(msg))
-        }
+        self.is_active = false;
+
+        Ok(())
     }
 }

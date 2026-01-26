@@ -21,13 +21,10 @@ use std::collections::HashMap;
 use arbutil::{Bytes32, PreimageType};
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::{
-    engine::{
-        config::{JitMachineConfig, DEFAULT_JIT_CRANELIFT},
-        machine::JitMachine,
-    },
+    config::ServerState,
+    engine::config::DEFAULT_JIT_CRANELIFT,
     spawner_endpoints::{local_target, BatchInfo, GlobalState},
 };
 
@@ -81,30 +78,30 @@ pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalSt
     }
 }
 
-pub async fn validate_continuous(request: ValidationRequest) -> Result<Json<GlobalState>, String> {
-    let config = JitMachineConfig::default();
-    let module_root = if request.module_root == Bytes32::default() {
-        None
-    } else {
-        Some(request.module_root)
-    };
+pub async fn validate_continuous(
+    server_state: &ServerState,
+    request: ValidationRequest,
+) -> Result<Json<GlobalState>, String> {
+    if server_state.jit_machine.is_none() {
+        return Err(format!(
+            "Jit machine is required continuous mode. Requested module root: {}",
+            server_state.module_root
+        ));
+    }
 
-    let mut jit_machine =
-        JitMachine::new(&config, module_root).map_err(|error| format!("{error:?}"))?;
+    let mut locked_jit_machine = server_state.jit_machine.as_ref().unwrap().lock().await;
 
-    let new_state = jit_machine
+    if !locked_jit_machine.is_active() {
+        return Err(format!(
+            "Jit machine is not active. Maybe it received a shutdown signal? Requested module root: {}",
+            server_state.module_root
+        ));
+    }
+
+    let new_state = locked_jit_machine
         .feed_machine(&request)
         .await
         .map_err(|error| format!("{error:?}"))?;
-
-    // Make sure JIT validator binary is done. We move such call into a background task
-    // for cleanup so we don't block the HTTP response since as far as vlidation goes,
-    // it's considered a success if feed_machine succeeds
-    tokio::spawn(async move {
-        if let Err(error) = jit_machine.complete_machine().await {
-            error!("complete_machine failed: {error:?}");
-        }
-    });
 
     Ok(Json(new_state))
 }

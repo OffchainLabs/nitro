@@ -41,7 +41,7 @@ pub async fn validate(
 ) -> Result<Json<GlobalState>, String> {
     match state.mode {
         InputMode::Native => validate_native(request).await,
-        InputMode::Continuous => validate_continuous(request).await,
+        InputMode::Continuous => validate_continuous(&state, request).await,
     }
 }
 

@@ -2,27 +2,21 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use anyhow::Result;
-use arbutil::Bytes32;
 use clap::Parser;
 use logging::init_logging;
-use router::create_router;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::config::InputMode;
+use crate::config::ServerState;
+use crate::server::run_server;
 
 mod config;
 mod engine;
 mod logging;
 mod router;
+mod server;
 mod spawner_endpoints;
-
-#[derive(Clone, Debug)]
-pub struct ServerState {
-    mode: InputMode,
-    module_root: Bytes32,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,13 +24,8 @@ async fn main() -> Result<()> {
     init_logging(config.logging_format)?;
     info!("Starting validator server with config: {:#?}", config);
 
-    let state = Arc::new(ServerState {
-        mode: config.mode,
-        module_root: config.get_module_root()?,
-    });
-
+    let state = Arc::new(ServerState::new(&config)?);
     let listener = TcpListener::bind(config.address).await?;
-    axum::serve(listener, create_router().with_state(state))
-        .await
-        .map_err(Into::into)
+
+    run_server(listener, state).await
 }
