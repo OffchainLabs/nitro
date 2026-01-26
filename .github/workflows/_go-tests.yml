@@ -150,6 +150,39 @@ jobs:
           JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K[a-f0-9]+')
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
+      - name: run the Rust validation server on block input json
+        if: inputs.run-defaults-a
+        run: |
+          # 1. Start server in background
+          cargo run --release --bin validator -- --module-root-path ./target/machines/latest/module-root.txt &
+          SERVER_PID=$!
+          
+          # 2. Wait for server to respond (up to 5 seconds)
+          echo "Waiting for validator to start..."
+          timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'
+          
+          # 3. Request and parse Server Hash
+          RESPONSE=$(curl -s -X POST http://localhost:4141/validation_validate \
+            -H "Content-Type: application/json" \
+            -d @target/TestProgramStorage/block_inputs.json)
+          
+          # 4. Stop the server
+          kill $SERVER_PID
+
+          # 5. Compare hashes          
+          SERVER_HASH=$(echo "$RESPONSE" | jq -r '.BlockHash')
+          JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+          
+          echo "JIT Hash:    $JIT_HASH"
+          echo "Server Hash: $SERVER_HASH"
+          
+          if [ "$JIT_HASH" == "$SERVER_HASH" ]; then
+            echo "✅ Validation successful"
+          else
+            echo "❌ Validation failed: hashes do not match"
+            exit 1
+          fi
+
       # --------------------- FLAKY MODE --------------------------
 
       - name: run flaky tests
