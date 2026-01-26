@@ -336,8 +336,7 @@ lazy_static! {
 
         let forward = include_bytes!("forward_stub.wat");
         let forward = wat::parse_bytes(forward).unwrap();
-        let forward = binary::parse(&forward, Path::new("forward"))
-            .unwrap();
+        let forward = binary::parse(&forward, Path::new("forward")).unwrap();
 
         for (name, &(export, kind)) in &forward.exports {
             if kind == ExportKind::Func {
