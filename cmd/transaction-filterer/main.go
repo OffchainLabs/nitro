@@ -198,7 +198,7 @@ func mainImpl() int {
 	sequencerClient := ethclient.NewClient(sequencerRPCClient)
 	defer sequencerClient.Close()
 
-	txOpts, _, err := util.OpenWallet("", &config.Wallet, big.NewInt(config.ChainId))
+	txOpts, _, err := util.OpenWallet("transaction-filterer", &config.Wallet, big.NewInt(config.ChainId))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error opening wallet: %v\n", err)
 		return 1
