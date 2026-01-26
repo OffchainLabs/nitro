@@ -25,6 +25,7 @@ type TransactionFiltererAPI struct {
 	txOpts                         *bind.TransactOpts
 }
 
+// Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
