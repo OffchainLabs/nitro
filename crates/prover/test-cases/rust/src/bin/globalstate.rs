@@ -1,3 +1,5 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);
     pub fn wavm_set_globalstate_bytes32(idx: u32, ptr: *const u8);

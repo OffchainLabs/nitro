@@ -13,6 +13,7 @@ rust-version.workspace = true
 brotli = { workspace = true, optional = true }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmer = { workspace = true, optional = true }
 
 [features]
@@ -20,3 +21,4 @@ default = ["brotli"]
 brotli = ["dep:brotli"]
 static_caller = []
 wasmer_traits = ["dep:wasmer", "brotli?/wasmer_traits"]
+cc_brotli = ["brotli?/cc_brotli"]

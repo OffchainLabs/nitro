@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
@@ -11,7 +11,6 @@ pub mod machine;
 /// cbindgen:ignore
 pub mod memory;
 pub mod merkle;
-pub mod parse_input;
 pub mod prepare;
 mod print;
 pub mod programs;

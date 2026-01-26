@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 #![cfg_attr(target_arch = "wasm32", no_std)]
@@ -19,6 +19,8 @@ pub mod wasmer_traits;
 
 #[cfg(feature = "brotli")]
 pub mod brotli;
+
+pub mod arbkeccak;
 
 mod guest_ptr;
 pub mod wasip1_stub;

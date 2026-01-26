@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::Bytes32;
 
 const VALUE_HASHES: &[Bytes32; 64] = &[

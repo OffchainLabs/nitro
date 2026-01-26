@@ -5,6 +5,7 @@ members = [
     "crates/brotli",
     "crates/caller-env",
     "crates/jit",
+    "crates/validation",
     "crates/prover",
     "crates/stylus",
     "crates/validator",
@@ -71,6 +72,7 @@ structopt = { version = "0.3.26" }
 thiserror = { version = "1.0.33" }
 tiny-keccak = { version = "2.0.2" }
 tokio = { version = "1.48.0" }
+tower-http = { version = "0.6.8" }
 tracing = { version = "0.1.44" }
 tracing-subscriber = { version = "0.3.22" }
 wasmparser = { version = "0.121" }
@@ -79,9 +81,11 @@ wat = { version = "1.0.56" }
 arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
 caller-env = { path = "crates/caller-env" }
+jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
+validation = { path = "crates/validation" }
 wasmer = { path = "crates/tools/wasmer/lib/api" }
 wasmer-compiler-cranelift = { path = "crates/tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }

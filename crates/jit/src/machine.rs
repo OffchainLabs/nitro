@@ -1,18 +1,19 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program, socket,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
+    arbcompress, arbkeccak, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
+    SequencerMessage,
 };
-use arbutil::{Bytes32, Color, PreimageType};
+use arbutil::{Bytes32, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
+    collections::HashMap,
     fs::File,
-    io::{self, Write},
-    io::{BufReader, BufWriter, ErrorKind, Read},
+    io::{self, BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
     sync::Arc,
     time::Instant,
@@ -20,54 +21,63 @@ use std::{
 use thiserror::Error;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    Pages, RuntimeError, Store,
+    RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
-pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
-    let file = &opts.validator.binary;
-
-    let wasm = match std::fs::read(file) {
-        Ok(wasm) => wasm,
-        Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
-    };
-
+pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let mut store = match opts.validator.cranelift {
-        true => {
-            let mut compiler = Cranelift::new();
-            compiler.canonicalize_nans(true);
-            compiler.enable_verifier();
-            Store::new(compiler)
-        }
-        false => {
-            #[cfg(not(feature = "llvm"))]
-            panic!("Please rebuild with the \"llvm\" feature for LLVM support");
-            #[cfg(feature = "llvm")]
-            {
-                let mut compiler = wasmer_compiler_llvm::LLVM::new();
-                compiler.canonicalize_nans(true);
-                compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-                compiler.enable_verifier();
-                Store::new(compiler)
-            }
-        }
+        true => get_store_with_cranelift_compiler(),
+        false => get_store_with_llvm_compiler(),
     };
 
-    let module = match Module::new(&store, wasm) {
-        Ok(module) => module,
-        Err(err) => panic!("{}", err),
-    };
-
+    let env = WasmEnv::try_from(opts)?;
     let func_env = FunctionEnv::new(&mut store, env);
+
+    let wasm = std::fs::read(&opts.validator.binary)?;
+    let module = Module::new(&store, wasm)?;
+    let imports = imports(&mut store, &func_env);
+    let instance = Instance::new(&mut store, &module, &imports)?;
+
+    let memory = instance.exports.get_memory("memory")?.clone();
+    func_env.as_mut(&mut store).memory = Some(memory);
+
+    Ok((instance, func_env, store))
+}
+
+fn get_store_with_cranelift_compiler() -> Store {
+    let mut compiler = Cranelift::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
+    Store::new(compiler)
+}
+
+#[cfg(not(feature = "llvm"))]
+fn get_store_with_llvm_compiler() -> Store {
+    panic!("Please rebuild with the \"llvm\" feature for LLVM support");
+}
+#[cfg(feature = "llvm")]
+fn get_store_with_llvm_compiler() -> Store {
+    let mut compiler = wasmer_compiler_llvm::LLVM::new();
+    compiler.canonicalize_nans(true);
+    compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+    compiler.enable_verifier();
+    Store::new(compiler)
+}
+
+fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Imports {
     macro_rules! func {
         ($func:expr) => {
-            Function::new_typed_with_env(&mut store, &func_env, $func)
+            Function::new_typed_with_env(store, func_env, $func)
         };
     }
-    let imports = imports! {
+    imports! {
         "arbcompress" => {
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
+        },
+        "arbkeccak" => {
+            "keccak256" => func!(arbkeccak::keccak256),
         },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
@@ -121,6 +131,8 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "fd_fdstat_set_flags" => func!(wasip1_stub::fd_fdstat_set_flags),
         },
         "programs" => {
+            "program_prepare" => func!(program::program_prepare),
+            "program_requires_prepare" => func!(program::program_requires_prepare),
             "new_program" => func!(program::new_program),
             "pop" => func!(program::pop),
             "set_response" => func!(program::set_response),
@@ -134,20 +146,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "activate" => func!(program::activate),
             "activate_v2" => func!(program::activate_v2),
         },
-    };
-
-    let instance = match Instance::new(&mut store, &module, &imports) {
-        Ok(instance) => instance,
-        Err(err) => panic!("Failed to create instance: {}", err.red()),
-    };
-    let memory = match instance.exports.get_memory("memory") {
-        Ok(memory) => memory.clone(),
-        Err(err) => panic!("Failed to get memory: {}", err.red()),
-    };
-
-    let env = func_env.as_mut(&mut store);
-    env.memory = Some(memory);
-    (instance, func_env, store)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -162,6 +161,8 @@ pub enum Escape {
     Child(ErrReport),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
+    #[error("unexpected return from _start `{0:?}`")]
+    UnexpectedReturn(Vec<wasmer::Value>),
 }
 
 pub type MaybeEscape = Result<(), Escape>;
@@ -178,10 +179,9 @@ impl Escape {
 
 impl From<RuntimeError> for Escape {
     fn from(outcome: RuntimeError) -> Self {
-        match outcome.downcast() {
-            Ok(escape) => escape,
-            Err(outcome) => Escape::Failure(format!("unknown runtime error: {outcome}")),
-        }
+        outcome
+            .downcast()
+            .unwrap_or_else(|outcome| Escape::Failure(format!("unknown runtime error: {outcome}")))
     }
 }
 
@@ -224,27 +224,40 @@ impl TryFrom<&Opts> for WasmEnv {
         match &opts.input_mode {
             InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
             InputMode::Local(local) => prepare_env_from_files(env, local),
+            InputMode::Native(native) => prepare_env_from_native(env, native),
             InputMode::Continuous => Ok(env),
         }
     }
 }
 
-fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    env.process.already_has_input = true;
+fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+    let mut native = NativeInput {
+        old_state: input.old_state.clone(),
+        inbox: vec![],
+        delayed_inbox: vec![],
+        preimages: HashMap::new(),
+        programs: HashMap::new(),
+    };
 
-    let mut inbox_position = input.inbox_position;
+    let mut inbox_position = input.old_state.inbox_position;
     let mut delayed_position = input.delayed_inbox_position;
 
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.sequencer_messages.insert(inbox_position, msg);
+        native.inbox.push(SequencerMessage {
+            number: inbox_position,
+            data: msg,
+        });
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        env.delayed_messages.insert(delayed_position, msg);
+        native.delayed_inbox.push(SequencerMessage {
+            number: delayed_position,
+            data: msg,
+        });
         delayed_position += 1;
     }
 
@@ -264,7 +277,7 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -273,42 +286,39 @@ fn prepare_env_from_files(mut env: WasmEnv, input: &LocalInput) -> Result<WasmEn
         }
     }
 
-    env.small_globals = [input.inbox_position, input.position_within_message];
-    env.large_globals = [input.last_block_hash, input.last_send_root];
-    Ok(env)
+    prepare_env_from_native(env, &native)
 }
 
-impl WasmEnv {
-    pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
-        let writer = match &mut self.process.socket {
-            Some((writer, _)) => writer,
-            None => return,
-        };
+fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+    env.process.already_has_input = true;
 
-        macro_rules! check {
-            ($expr:expr) => {{
-                if let Err(comms_error) = $expr {
-                    eprintln!("Failed to send results to Go: {comms_error}");
-                    panic!("Communication failure");
-                }
-            }};
-        }
-
-        if let Some(error) = error {
-            check!(socket::write_u8(writer, socket::FAILURE));
-            check!(socket::write_bytes(writer, &error.into_bytes()));
-            check!(writer.flush());
-            return;
-        }
-
-        check!(socket::write_u8(writer, socket::SUCCESS));
-        check!(socket::write_u64(writer, self.small_globals[0]));
-        check!(socket::write_u64(writer, self.small_globals[1]));
-        check!(socket::write_bytes32(writer, &self.large_globals[0]));
-        check!(socket::write_bytes32(writer, &self.large_globals[1]));
-        check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
-        check!(writer.flush());
+    for msg in &input.inbox {
+        env.sequencer_messages.insert(msg.number, msg.data.clone());
     }
+    for msg in &input.delayed_inbox {
+        env.delayed_messages.insert(msg.number, msg.data.clone());
+    }
+
+    for (preimage_type, preimages_map) in &input.preimages {
+        let type_map = env.preimages.entry(*preimage_type).or_default();
+        for (hash, preimage) in preimages_map {
+            type_map.insert(*hash, preimage.clone());
+        }
+    }
+
+    for (hash, program) in &input.programs {
+        env.module_asms.insert(*hash, program[..].into());
+    }
+
+    env.small_globals = [
+        input.old_state.inbox_position,
+        input.old_state.position_within_message,
+    ];
+    env.large_globals = [
+        input.old_state.last_block_hash,
+        input.old_state.last_send_root,
+    ];
+    Ok(env)
 }
 
 pub struct ProcessEnv {

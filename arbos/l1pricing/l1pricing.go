@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l1pricing
@@ -49,10 +49,9 @@ type L1PricingState struct {
 }
 
 var (
-	BatchPosterTableKey      = []byte{0}
-	BatchPosterAddress       = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
-	BatchPosterPayToAddress  = BatchPosterAddress
-	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B00000000000000000000000000000000000f6")
+	BatchPosterTableKey     = []byte{0}
+	BatchPosterAddress      = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	BatchPosterPayToAddress = BatchPosterAddress
 
 	ErrInvalidTime = errors.New("invalid timestamp")
 )
@@ -300,7 +299,7 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	scenario util.TracingScenario,
 	reason tracing.BalanceChangeReason,
 ) (*big.Int, error) {
-	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
+	if err := util.TransferBalance(&types.L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, reason); err != nil {
 		return nil, err
 	}
 	old, err := ps.L1FeesAvailable()

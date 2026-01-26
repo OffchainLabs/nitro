@@ -1,72 +1,67 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::{color, Color};
+use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
-use jit::machine;
-use jit::machine::{Escape, WasmEnv};
-use jit::Opts;
+use jit::{
+    machine::Escape,
+    run,
+    socket::{report_error, report_success},
+    Opts,
+};
+use wasmer::FrameInfo;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    let env = WasmEnv::try_from(&opts)?;
+    let result = run(&opts)?;
 
-    let (instance, env, mut store) = machine::create(&opts, env);
+    let runtime = format!("{}ms", result.runtime.as_millis());
 
-    let main = instance.exports.get_function("_start")?;
-    let outcome = main.call(&mut store, &[]);
-    let escape = match outcome {
-        Ok(outcome) => {
-            println!("Go returned values {outcome:?}");
-            None
-        }
-        Err(outcome) => {
-            let trace = outcome.trace();
-            if !trace.is_empty() {
-                println!("backtrace:");
+    if let Some(error) = result.error {
+        print_trace(&result.trace);
+        let message = match error {
+            Escape::Exit(x) => format!("Failed in {runtime} with exit code {x}."),
+            Escape::Failure(err) => format!("Jit failed with {err} in {runtime}."),
+            Escape::HostIO(err) => format!("Hostio failed with {err} in {runtime}."),
+            Escape::Child(err) => format!("Child failed with {err} in {runtime}."),
+            Escape::SocketError(err) => format!("Socket failed with {err} in {runtime}."),
+            Escape::UnexpectedReturn(values) => {
+                format!("Jit unexpectedly returned values {values:?} in {runtime}.")
             }
-            for frame in trace {
-                let module = frame.module_name();
-                let name = frame.function_name().unwrap_or("??");
-                println!("  in {} of {}", name.red(), module.red());
-            }
-            Some(Escape::from(outcome))
+        };
+        if opts.validator.debug {
+            println!("{message}")
         }
-    };
-
-    let memory_used = instance.exports.get_memory("memory")?.view(&store).size();
-
-    let env = env.as_mut(&mut store);
-    let user = env.process.socket.is_none();
-    let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-    let time = color::when(user, time, color::PINK);
-    let hash = color::when(user, hex::encode(env.large_globals[0]), color::PINK);
-    let (success, message) = match escape {
-        Some(Escape::Exit(0)) => (true, format!("Completed in {time} with hash {hash}.")),
-        Some(Escape::Exit(x)) => (false, format!("Failed in {time} with exit code {x}.")),
-        Some(Escape::Failure(err)) => (false, format!("Jit failed with {err} in {time}.")),
-        Some(Escape::HostIO(err)) => (false, format!("Hostio failed with {err} in {time}.")),
-        Some(Escape::Child(err)) => (false, format!("Child failed with {err} in {time}.")),
-        Some(Escape::SocketError(err)) => (false, format!("Socket failed with {err} in {time}.")),
-        None => (false, "Machine exited prematurely".to_owned()),
-    };
-
-    if opts.validator.debug || !success {
-        println!("{message}");
-    }
-
-    let error = match success {
-        true => None,
-        false => Some(message),
-    };
-
-    env.send_results(error, memory_used);
-
-    if !success && opts.validator.require_success {
-        std::process::exit(1);
+        if let Some(mut socket) = result.socket {
+            report_error(&mut socket, message);
+        }
+        if opts.validator.require_success {
+            std::process::exit(1);
+        }
+    } else {
+        if opts.validator.debug {
+            println!(
+                "Completed in {runtime} with hash {}.",
+                result.new_state.last_block_hash
+            )
+        }
+        if let Some(mut socket) = result.socket {
+            report_success(&mut socket, &result.new_state, &result.memory_used);
+        }
     }
     Ok(())
+}
+
+fn print_trace(trace: &[FrameInfo]) {
+    if !trace.is_empty() {
+        println!("backtrace:");
+    }
+    for frame in trace {
+        let module = frame.module_name();
+        let name = frame.function_name().unwrap_or("??");
+        println!("  in {} of {}", name.red(), module.red());
+    }
 }
 
 // require an usize be at least 32 bits wide

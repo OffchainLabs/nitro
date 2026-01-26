@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -8,9 +8,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -241,7 +241,7 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	if err != nil {
 		return nil, err
 	}
-	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	haveFunds := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
 	return arbmath.BigSub(haveFunds.ToBig(), needFunds), nil
 }
