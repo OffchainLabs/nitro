@@ -40,7 +40,10 @@ on:
       run-execution-spec-tests:
         required: false
         type: boolean
-      run-pebble:
+      run-pebble-a:
+        required: false
+        type: boolean
+      run-pebble-b:
         required: false
         type: boolean
 
@@ -101,7 +104,21 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
-
+      
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
+        if: inputs.run-defaults-a
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
+    
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
+        if: inputs.run-defaults-b
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
+      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -126,13 +143,8 @@ jobs:
         if: inputs.run-defaults-a
         run: |
           make build-jit
-          if [ -n "$(target/bin/jit \
-              --binary target/machines/latest/replay.wasm \
-              --cranelift \
-              --json-inputs='${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')" ]; then
-            echo "Error: Command produced output."
-            exit 1
-          fi
+          target/bin/jit --binary target/machines/latest/replay.wasm --require-success \
+          json --inputs '${{ github.workspace }}/target/TestProgramStorage/block_inputs.json'
 
       # --------------------- FLAKY MODE --------------------------
 
@@ -202,11 +214,17 @@ jobs:
 
       # --------------------- PEBBLE MODE ---------------------
 
-      - name: run pebble tests
-        if: inputs.run-pebble
+      - name: run pebble tests (A-batch)
+        if: inputs.run-pebble-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble.xml
+          --junitfile test-results/junit-pebble.xml --run '^Test[A-L]'
+
+      - name: run pebble tests (B-batch)
+        if: inputs.run-pebble-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          --junitfile test-results/junit-pebble.xml --skip '^Test[A-L]'
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
 

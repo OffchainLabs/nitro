@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/staker"
@@ -362,7 +363,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, _, _, _ := createTestNodeOnL1ForBoldProtocol(
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _ := createTestNodeOnL1ForBoldProtocol(
 		t,
 		ctx,
 		false,
@@ -386,7 +387,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -424,6 +425,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 	)
 	Require(t, err)
 
-	Require(t, l2node.Start(ctx))
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
+	Require(t, err)
 	return l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator
 }

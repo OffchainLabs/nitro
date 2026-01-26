@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package blocksreexecutor
 
 import (
@@ -34,6 +36,7 @@ type Config struct {
 	Enable             bool   `koanf:"enable"`
 	Mode               string `koanf:"mode"`
 	Blocks             string `koanf:"blocks"` // Range of blocks to be executed in json format
+	CommitStateToDisk  bool   `koanf:"commit-state-to-disk"`
 	Room               int    `koanf:"room"`
 	MinBlocksPerThread uint64 `koanf:"min-blocks-per-thread"`
 	TrieCleanLimit     int    `koanf:"trie-clean-limit"`
@@ -71,6 +74,7 @@ var DefaultConfig = Config{
 	Mode:               "random",
 	Room:               util.GoMaxProcs(),
 	Blocks:             `[[0,0]]`, // execute from chain start to chain end
+	CommitStateToDisk:  false,
 	MinBlocksPerThread: 0,
 	TrieCleanLimit:     0,
 	ValidateMultiGas:   false,
@@ -81,6 +85,7 @@ var TestConfig = Config{
 	Enable:             true,
 	Mode:               "full",
 	Blocks:             `[[0,0]]`, // execute from chain start to chain end
+	CommitStateToDisk:  false,
 	Room:               util.GoMaxProcs(),
 	TrieCleanLimit:     600,
 	MinBlocksPerThread: 0,
@@ -93,6 +98,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enables re-execution of a range of blocks against historic state")
 	f.String(prefix+".mode", DefaultConfig.Mode, "mode to run the blocks-reexecutor on. Valid modes full and random. full - execute all the blocks in the given range. random - execute a random sample range of blocks with in a given range")
 	f.String(prefix+".blocks", DefaultConfig.Blocks, "json encoded list of block ranges in the form of start and end block numbers in a list of size 2")
+	f.Bool(prefix+".commit-state-to-disk", DefaultConfig.CommitStateToDisk, "if set, blocks-reexecutor not only re-executes blocks but it also commits their state to triedb")
 	f.Int(prefix+".room", DefaultConfig.Room, "number of threads to parallelize blocks re-execution")
 	f.Uint64(prefix+".min-blocks-per-thread", DefaultConfig.MinBlocksPerThread, "minimum number of blocks to execute per thread. When mode is random this acts as the size of random block range sample")
 	f.Int(prefix+".trie-clean-limit", DefaultConfig.TrieCleanLimit, "memory allowance (MB) to use for caching trie nodes in memory")
@@ -110,9 +116,10 @@ type BlocksReExecutor struct {
 	fatalErrChan chan error
 	blocks       [][3]uint64 // start, end and minBlocksPerThread of block ranges
 	mutex        sync.Mutex
+	success      chan struct{}
 }
 
-func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrChan chan error) (*BlocksReExecutor, error) {
+func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksReExecutor, error) {
 	if blockchain.TrieDB().Scheme() == rawdb.PathScheme {
 		return nil, errors.New("blocksReExecutor not supported on pathdb")
 	}
@@ -197,7 +204,8 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database, fatalErrC
 		stateFor:     stateForFunc,
 		blocks:       blocks,
 		done:         make(chan struct{}, c.Room),
-		fatalErrChan: fatalErrChan,
+		fatalErrChan: make(chan error, c.Room),
+		success:      make(chan struct{}),
 		mutex:        sync.Mutex{},
 	}
 	return blocksReExecutor, nil
@@ -215,7 +223,12 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	if start < startBlock {
 		start = startBlock
 	}
-	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), logState, -1)
+	startHeader := s.blockchain.GetHeaderByNumber(start)
+	if startHeader == nil {
+		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
+		return startBlock
+	}
+	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return startBlock
@@ -260,7 +273,7 @@ func (s *BlocksReExecutor) Impl(ctx context.Context, startBlock, currentBlock, m
 	return currentBlock
 }
 
-func (s *BlocksReExecutor) Start(ctx context.Context, done chan struct{}) {
+func (s *BlocksReExecutor) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
 	s.LaunchThread(func(ctx context.Context) {
 		// Using returned value from Impl we can avoid duplicate reexecution of blocks
@@ -273,10 +286,21 @@ func (s *BlocksReExecutor) Start(ctx context.Context, done chan struct{}) {
 				log.Info("BlocksReExecutor successfully completed re-execution of blocks against historic state", "stateAt", blocks[0], "startBlock", blocks[0]+1, "endBlock", blocks[1])
 			}
 		}
-		if done != nil {
-			close(done)
+		if s.success != nil {
+			close(s.success)
 		}
 	})
+}
+
+func (s *BlocksReExecutor) WaitForReExecution(ctx context.Context) error {
+	select {
+	case err := <-s.fatalErrChan:
+		log.Error("shutting BlocksReExecutor down due to fatal error", "err", err)
+		return fmt.Errorf("shutting BlocksReExecutor down due to fatal error %w", err)
+	case <-s.success:
+	}
+
+	return nil
 }
 
 func (s *BlocksReExecutor) StopAndWait() {
@@ -299,6 +323,14 @@ func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected
 	if result != expected {
 		return nil, arbitrum.NoopStateRelease, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
 	}
+
+	if s.config.CommitStateToDisk {
+		err = s.db.TrieDB().Commit(expected, false)
+		if err != nil {
+			return nil, arbitrum.NoopStateRelease, fmt.Errorf("trieDB commit failed in commitStateAndVerify, number %d root %v: %w", blockNumber, expected, err)
+		}
+	}
+
 	sdb, err := state.New(result, s.db)
 	if err == nil {
 		_ = s.db.TrieDB().Reference(result, common.Hash{})

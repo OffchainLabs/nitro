@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -20,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 

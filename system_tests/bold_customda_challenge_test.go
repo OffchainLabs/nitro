@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -42,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -166,7 +167,7 @@ func createNodeBWithSharedContracts(
 	stakeTokenAddr common.Address,
 	l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain,
-) (*ethclient.Client, *arbnode.Node) {
+) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
 	fatalErrChan := make(chan error, 10)
 
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
@@ -190,9 +191,9 @@ func createNodeBWithSharedContracts(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	l2executionDB, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	l2consensusDB, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
@@ -206,10 +207,10 @@ func createNodeBWithSharedContracts(
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
 	Require(t, err)
 
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
@@ -217,14 +218,14 @@ func createNodeBWithSharedContracts(
 	Require(t, err)
 
 	// Create node using the same addresses as the first node
-	l2node, err := arbnode.CreateNodeFullExecutionClient(ctx, l2stack, execNode, execNode, execNode, execNode, l2arbDb, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
-	return l2client, l2node
+	return l2client, l2node, execNode, l2stack
 }
 
 func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
@@ -320,7 +321,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
 
 	// Create L2 node A
-	l2info, l2nodeA, _, _, assertionChain := createL2NodeForBoldProtocol(
+	l2info, l2nodeA, l2execNodeA, _, l2stackA, assertionChain := createL2NodeForBoldProtocol(
 		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
 		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
 		false, asserterOpts, signerCfg, // useExternalSigner=false
@@ -339,7 +340,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
 	// Create node B using the same contracts as node A
-	l2clientB, l2nodeB := createNodeBWithSharedContracts(
+	l2clientB, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
 		t,
 		ctx,
 		l2nodeA,
@@ -398,7 +399,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.ExecutionRecorder,
-		l2nodeA.ArbDB,
+		l2nodeA.ConsensusDB,
 		dapReadersA,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -414,7 +415,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.ExecutionRecorder,
-		l2nodeB.ArbDB,
+		l2nodeB.ConsensusDB,
 		dapReadersB,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStackB,
@@ -501,8 +502,10 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	)
 	Require(t, err)
 
-	Require(t, l2nodeA.Start(ctx))
-	Require(t, l2nodeB.Start(ctx))
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stackA, l2execNodeA, l2nodeA)
+	Require(t, err)
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stackB, l2execNodeB, l2nodeB)
+	Require(t, err)
 
 	chalManagerAddr := assertionChain.SpecChallengeManager()
 	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
@@ -510,7 +513,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
 		l2nodeB.L1Reader,
 		&evilOpts,
 		NewCommonConfigFetcher(l2nodeConfig),

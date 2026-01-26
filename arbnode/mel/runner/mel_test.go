@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -35,13 +37,14 @@ func TestMessageExtractor(t *testing.T) {
 			{}: {},
 		},
 	}
-	arbDb := rawdb.NewMemoryDatabase()
-	melDb := NewDatabase(arbDb)
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB := NewDatabase(consensusDB)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		parentChainReader,
+		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
-		melDb,
+		melDB,
 		messageConsumer,
 		daprovider.NewDAProviderRegistry(),
 		common.Hash{},
@@ -69,7 +72,7 @@ func TestMessageExtractor(t *testing.T) {
 			Version:                42,
 			ParentChainBlockNumber: 0,
 		}
-		require.NoError(t, melDb.SaveState(ctx, melState))
+		require.NoError(t, melDB.SaveState(ctx, melState))
 		_, err = extractor.Act(ctx)
 		require.NoError(t, err)
 

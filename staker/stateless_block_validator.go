@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -206,7 +206,7 @@ func newValidationEntry(
 	}
 	valBatches = append(valBatches, prevBatches...)
 
-	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
+	validator.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -236,7 +236,7 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
-	arbdb ethdb.Database,
+	consensusDB ethdb.Database,
 	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
@@ -278,7 +278,7 @@ func NewStatelessBlockValidator(
 		inboxReader:          inboxReader,
 		inboxTracker:         inbox,
 		streamer:             streamer,
-		db:                   arbdb,
+		db:                   consensusDB,
 		dapReaders:           dapReaders,
 		execSpawners:         executionSpawners,
 		boldExecSpawners:     boldExecutionSpawners,
@@ -363,17 +363,6 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	return true, &fullInfo, nil
 }
 
-func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
-	for piType, piMap := range source {
-		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(piMap))
-		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
-	}
-}
-
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -383,7 +372,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(wasmTargets) == 0 {
 			wasmTargets = v.wasmTargets
 		}
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg, wasmTargets).Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -394,7 +383,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
 				arbutil.Keccak256PreimageType: recording.Preimages,
 			}
-			copyPreimagesInto(e.Preimages, recordingPreimages)
+			validator.CopyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}

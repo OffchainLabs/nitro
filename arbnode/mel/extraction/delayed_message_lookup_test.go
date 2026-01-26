@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
@@ -122,6 +124,7 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt.BlockHash = block.Hash()
 		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err := parseDelayedMessagesFromBlock(
 			ctx,
@@ -200,6 +203,8 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt1.BlockHash = block.Hash()
+		receipt2.BlockHash = block.Hash()
 		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
@@ -298,6 +303,8 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt1.BlockHash = block.Hash()
+		receipt2.BlockHash = block.Hash()
 		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,
@@ -392,6 +399,8 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt1.BlockHash = block.Hash()
+		receipt2.BlockHash = block.Hash()
 		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		_, err = parseDelayedMessagesFromBlock(
 			ctx,
@@ -490,6 +499,8 @@ func Test_parseDelayedMessagesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt1.BlockHash = block.Hash()
+		receipt2.BlockHash = block.Hash()
 		blockLogsFetcher = newMockBlockLogsFetcher(receipts)
 		delayedMessages, err := parseDelayedMessagesFromBlock(
 			ctx,

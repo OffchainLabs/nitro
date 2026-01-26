@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -160,6 +160,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriters:    nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -300,6 +301,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriters:    nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)

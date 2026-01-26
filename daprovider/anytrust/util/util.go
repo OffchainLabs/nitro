@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package util
 
@@ -89,6 +89,21 @@ func (d *reader) CollectPreimages(
 	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PreimagesResult, error) {
 		_, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, false, true)
 		return daprovider.PreimagesResult{Preimages: preimages}, err
+	})
+}
+
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (d *reader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		payload, preimages, err := d.recoverInternal(ctx, batchNum, sequencerMsg, true, true)
+		return daprovider.PayloadAndPreimagesResult{
+			Payload:   payload,
+			Preimages: preimages,
+		}, err
 	})
 }
 
@@ -183,6 +198,10 @@ func recoverPayloadFromBatchInternal(
 	if needPreimages {
 		preimages = make(daprovider.PreimagesMap)
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)
+	}
+	if len(sequencerMsg) < 40 {
+		log.Error("AnyTrust sequencer message too short: expected at least 40 bytes", "length", len(sequencerMsg))
+		return nil, nil, nil
 	}
 	cert, err := DeserializeCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {

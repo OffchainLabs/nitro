@@ -1,10 +1,10 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package proofenhancement
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -53,26 +53,10 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	var certHash [32]byte
 	copy(certHash[:], proof[hashPos:markerPos])
 
-	// Find the batch containing this message
-	batchContainingMessage, found, err := e.inboxTracker.FindInboxBatchContainingMessage(messageNum)
+	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
 	}
-	if !found {
-		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
-	}
-
-	// Get the sequencer message
-	sequencerMessage, _, err := e.inboxReader.GetSequencerMessageBytes(ctx, batchContainingMessage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
-	}
-
-	// Extract certificate from sequencer message (skip sequencer message header)
-	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
-		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
-	}
-	certificate := sequencerMessage[SequencerMessageHeaderSize:]
 
 	// Verify the certificate hash matches what's requested
 	actualHash := crypto.Keccak256Hash(certificate)
@@ -81,9 +65,6 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	}
 
 	// Get validator for this certificate type
-	if len(certificate) == 0 {
-		return nil, fmt.Errorf("empty certificate")
-	}
 	validator := e.dapRegistry.GetValidator(certificate[0])
 	if validator == nil {
 		return nil, fmt.Errorf("no validator registered for certificate type 0x%02x", certificate[0])
@@ -95,28 +76,8 @@ func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, mes
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)
 	}
-	validityProof := result.Proof
 
-	// Build enhanced proof: [...originalProof..., certSize(8), certificate, validityProof]
 	// Remove the marker data (hash + marker) from original proof
 	originalProofLen := hashPos
-	certSize := uint64(len(certificate))
-	enhancedProof := make([]byte, originalProofLen+CertificateSizeFieldSize+len(certificate)+len(validityProof))
-
-	// Copy original proof (without marker data)
-	copy(enhancedProof, proof[:originalProofLen])
-
-	// Add certSize
-	offset := originalProofLen
-	binary.BigEndian.PutUint64(enhancedProof[offset:], certSize)
-	offset += CertificateSizeFieldSize
-
-	// Add certificate
-	copy(enhancedProof[offset:], certificate)
-	offset += len(certificate)
-
-	// Add validity proof
-	copy(enhancedProof[offset:], validityProof)
-
-	return enhancedProof, nil
+	return constructEnhancedProof(proof[:originalProofLen], certificate, result.Proof), nil
 }

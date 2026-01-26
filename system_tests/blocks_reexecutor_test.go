@@ -1,11 +1,16 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/trie"
 
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 )
@@ -36,7 +41,6 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	l2info := builder.L2Info
 	client := builder.L2.Client
 	blockchain := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
-	feedErrChan := make(chan error, 10)
 
 	l2info.GenerateAccount("User2")
 	genesis, err := client.BlockNumber(ctx)
@@ -62,27 +66,145 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	// Reexecute blocks at mode full
 	c.MinBlocksPerThread = 10
 	Require(t, c.Validate())
-	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
-	success := make(chan struct{})
-	executorFull.Start(ctx, success)
-	select {
-	case err := <-feedErrChan:
-		t.Fatalf("error occurred: %v", err)
-	case <-success:
-	}
+	executorFull.Start(ctx)
+	err = executorFull.WaitForReExecution(ctx)
+	Require(t, err)
 
 	// Reexecute blocks at mode random
 	c.Mode = "random"
 	c.MinBlocksPerThread = 20
 	Require(t, c.Validate())
-	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ChainDB, feedErrChan)
+	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
-	success = make(chan struct{})
-	executorRandom.Start(ctx, success)
-	select {
-	case err := <-feedErrChan:
-		t.Fatalf("error occurred: %v", err)
-	case <-success:
+	executorRandom.Start(ctx)
+	err = executorFull.WaitForReExecution(ctx)
+	Require(t, err)
+}
+
+func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, offset uint64) {
+	t.Helper()
+	for i := from; i <= from+offset; i++ {
+		header := bc.GetHeaderByNumber(i)
+		_, err := bc.StateAt(header.Root)
+		Require(t, err)
 	}
+}
+
+func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, offset uint64) {
+	t.Helper()
+	expectedErr := &trie.MissingNodeError{}
+	for blockNum := from; blockNum <= from+offset; blockNum++ {
+		header := bc.GetHeaderByNumber(blockNum)
+		_, err := bc.StateAt(header.Root)
+		if err == nil {
+			Fatal(t, "expeted StateAt to fail for blockNumber:", header.Number)
+		}
+		if !errors.As(err, &expectedErr) {
+			Fatal(t, "getting state failed with unexpected error, root:", header.Root, "blockNumber:", header.Number, "err:", err)
+		}
+	}
+}
+
+func TestBlocksReExecutorCommitState(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
+	// For now PathDB is not supported
+	builder.RequireScheme(t, rawdb.HashScheme)
+
+	maxNumberOfBlocksToSkipStateSaving := uint32(150)
+
+	// 1. Setup builder to be run in sparse archive mode
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
+	builder.execConfig.Caching.BlockAge = 0
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = maxNumberOfBlocksToSkipStateSaving
+	builder.execConfig.Caching.MaxAmountOfGasToSkipStateSaving = 0
+
+	maxRecreateStateDepth := int64(100 * 1000 * 1000)
+
+	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
+	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxTxDataSize = 150
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	client := builder.L2.Client
+	blockchain := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+
+	// 2. Create about 500 blocks
+	l2info.GenerateAccount("User2")
+	genesis, err := client.BlockNumber(ctx)
+	Require(t, err)
+	for i := genesis; i < genesis+900; i++ {
+		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
+		err := client.SendTransaction(ctx, tx)
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, client, tx)
+		Require(t, err)
+		if have, want := receipt.BlockNumber.Uint64(), uint64(i)+1; have != want {
+			Fatal(t, "internal test error - tx got included in unexpected block number, have:", have, "want:", want)
+		}
+	}
+
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+
+	// 3. Assert that some blocks are missing in 140 block windows
+	offset := uint64(maxNumberOfBlocksToSkipStateSaving - 10)
+	assertMissingStateForBlockRange(t, bc, 2, offset)
+	assertMissingStateForBlockRange(t, bc, 160, offset)
+	assertMissingStateForBlockRange(t, bc, 310, offset)
+	assertMissingStateForBlockRange(t, bc, 460, offset)
+	assertMissingStateForBlockRange(t, bc, 610, offset)
+
+	// 4. We first run BlocksReExecutor with CommitStateToDisk set to false to make sure
+	// BlocksReExecutor does not commit state to disk
+	c := blocksreexecutor.TestConfig
+	c.ValidateMultiGas = true
+	c.Blocks = `[[0, 42], [110, 160], [180, 200], [480, 580]]`
+	// We don't need to explicit set it to false since default is false, but we want to be explicit
+	c.CommitStateToDisk = false
+
+	// Reexecute blocks at mode full
+	c.MinBlocksPerThread = 10
+	Require(t, c.Validate())
+	executorFull, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
+	Require(t, err)
+	executorFull.Start(ctx)
+	err = executorFull.WaitForReExecution(ctx)
+	Require(t, err)
+
+	// 5. Now that we have run Block Re-executor CommitStateToDisk set to false
+	// we should expect state to NOT be present for those same blocks
+	assertMissingStateForBlockRange(t, bc, 2, offset)
+	assertMissingStateForBlockRange(t, bc, 160, offset)
+	assertMissingStateForBlockRange(t, bc, 310, offset)
+	assertMissingStateForBlockRange(t, bc, 460, offset)
+	assertMissingStateForBlockRange(t, bc, 610, offset)
+
+	// 6. Now we run BlocksReExecutor with CommitStateToDisk set to true to make sure
+	// BlocksReExecutor does indeed commit state of c.Blocks to disk.
+	// We don't set c.Blocks since we want to use the same blocks range
+	c.CommitStateToDisk = true
+	Require(t, c.Validate())
+	executorFullCommit, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
+	Require(t, err)
+	executorFullCommit.Start(ctx)
+	err = executorFullCommit.WaitForReExecution(ctx)
+	Require(t, err)
+
+	// 6. Now that we have run Block Re-executor with CommitStateToDisk set to true
+	// we should expect state to be present for the ranges we set for c.Blocks
+	assertStateExistForBlockRange(t, bc, 2, 190)
+	assertStateExistForBlockRange(t, bc, 460, 120)
+
+	// 7. Finally, make sure we haven't committed state for blocks not specified in c.Blocks range
+	assertMissingStateForBlockRange(t, bc, 310, offset)
+	assertMissingStateForBlockRange(t, bc, 581, 20)
+	assertMissingStateForBlockRange(t, bc, 610, offset)
 }
