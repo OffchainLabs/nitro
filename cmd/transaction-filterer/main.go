@@ -171,7 +171,7 @@ func startup() error {
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(config.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
-			return fmt.Errorf("Failed to prepare jwt secret file: %w", err)
+			return fmt.Errorf("failed to prepare jwt secret file: %w", err)
 		}
 		stackConf.JWTSecret = filename
 	}
@@ -220,6 +220,6 @@ func startup() error {
 
 func main() {
 	if err := startup(); err != nil {
-		log.Error("Error running cmd", "err", err)
+		log.Error("error running cmd", "err", err)
 	}
 }
