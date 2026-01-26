@@ -184,48 +184,6 @@ func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Addres
 	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
-// AddTransactionFilterer adds account as a transaction filterer (authorized to use ArbFilteredTransactionsManager)
-func (con ArbOwner) AddTransactionFilterer(c ctx, evm mech, filterer addr) error {
-	enabledTime, err := c.State.TransactionFilteringFromTime()
-	if err != nil {
-		return err
-	}
-	if enabledTime == 0 || enabledTime > evm.Context.Time {
-		return errors.New("transaction filtering feature is not enabled yet")
-	}
-
-	if err := c.State.TransactionFilterers().Add(filterer); err != nil {
-		return err
-	}
-	return con.TransactionFiltererAdded(c, evm, filterer)
-}
-
-// RemoveTransactionFilterer removes account from the list of transaction filterers
-func (con ArbOwner) RemoveTransactionFilterer(c ctx, evm mech, filterer addr) error {
-	member, err := con.IsTransactionFilterer(c, evm, filterer)
-	if err != nil {
-		return err
-	}
-	if !member {
-		return errors.New("tried to remove non existing transaction filterer")
-	}
-
-	if err := c.State.TransactionFilterers().Remove(filterer, c.State.ArbOSVersion()); err != nil {
-		return err
-	}
-	return con.TransactionFiltererRemoved(c, evm, filterer)
-}
-
-// IsTransactionFilterer checks if the account is a transaction filterer
-func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool, error) {
-	return c.State.TransactionFilterers().IsMember(filterer)
-}
-
-// GetAllTransactionFilterers retrieves the list of transaction filterers
-func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.TransactionFilterers().AllMembers(65536)
-}
-
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.State.L1PricingState().SetInertia(inertia)
