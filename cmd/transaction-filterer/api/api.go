@@ -58,7 +58,6 @@ var DefaultStackConfig = node.Config{
 }
 
 func NewStack(
-	ctx context.Context,
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,

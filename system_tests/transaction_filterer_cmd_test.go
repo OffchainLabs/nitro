@@ -43,7 +43,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 	builder.L2.TransferBalance(t, "Owner", filtererName, big.NewInt(1e16), builder.L2Info)
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts("Filterer", ctx)
 
-	transactionFiltererStack, err := api.NewStack(ctx, &transactionFiltererStackConf, &filtererTxOpts, builder.L2.Client)
+	transactionFiltererStack, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, builder.L2.Client)
 	require.NoError(t, err)
 	err = transactionFiltererStack.Start()
 	require.NoError(t, err)

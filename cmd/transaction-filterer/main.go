@@ -200,7 +200,7 @@ func startup() error {
 		return fmt.Errorf("failed to open filterer wallet: %w", err)
 	}
 
-	stack, err := api.NewStack(ctx, &stackConf, txOpts, sequencerClient)
+	stack, err := api.NewStack(&stackConf, txOpts, sequencerClient)
 	if err != nil {
 		return err
 	}
