@@ -25,7 +25,7 @@ type TransactionFiltererAPI struct {
 	txOpts                         *bind.TransactOpts
 }
 
-func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
@@ -33,10 +33,11 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
+		return common.Hash{}, err
 	} else {
 		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
+		return tx.Hash(), nil
 	}
-	return err
 }
 
 var DefaultStackConfig = node.Config{
