@@ -10,12 +10,139 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func TestExtractAddresses_EdgeCases(t *testing.T) {
-	rule := EventRule{
-		Signature:      crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)")),
-		TopicAddresses: []int{1, 2},
-		Bypass:         &BypassRule{TopicIndex: 2, EqualsTo: common.Address{}},
+func selector4(sig string) [4]byte {
+	hash := crypto.Keccak256([]byte(sig))
+	var out [4]byte
+	copy(out[:], hash[:4])
+	return out
+}
+
+func TestValidateEventRulesFromJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		json    string
+		wantErr bool
+	}{
+		{
+			name: "valid rule",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"topicAddresses": [1, 2]
+				}]
+			}`,
+			wantErr: false,
+		},
+		{
+			name: "zero selector",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0x00000000",
+					"topicAddresses": [1, 2]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "missing )",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256",
+					"selector": "0xddf252ad",
+					"topicAddresses": [1, 2]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "event does not match selector",
+			json: `{
+				"rules": [{
+					"event": "Approval(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"topicAddresses": [1, 2]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "topic index zero",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"topicAddresses": [0]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "topic index too large",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"topicAddresses": [4]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "data address offset not aligned",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"dataAddresses": [1]
+				}]
+			}`,
+			wantErr: true,
+		},
+		{
+			name: "bypass topic index invalid",
+			json: `{
+				"rules": [{
+					"event": "Transfer(address,address,uint256)",
+					"selector": "0xddf252ad",
+					"bypass": {
+						"topicIndex": 4,
+						"equals": "0x0000000000000000000000000000000000000000"
+					}
+				}]
+			}`,
+			wantErr: true,
+		},
 	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewEventFilterFromJSON([]byte(tt.json))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractAddresses_EdgeCases(t *testing.T) {
+	event := "Transfer(address,address,uint256)"
+	sel := selector4(event)
+
+	rule := EventRule{
+		Event:          event,
+		Selector:       sel,
+		TopicAddresses: []int{1, 2},
+		Bypass:         &BypassRule{TopicIndex: 2, Equals: common.Address{}},
+	}
+
 	filter, err := NewEventFilter([]EventRule{rule})
 	if err != nil {
 		t.Fatal(err)
@@ -23,6 +150,8 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	fullSigHash := crypto.Keccak256Hash([]byte(event))
 
 	tests := []struct {
 		name     string
@@ -42,28 +171,28 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 		},
 		{
 			name:     "signature only, no indexed params",
-			topics:   []common.Hash{rule.Signature},
+			topics:   []common.Hash{fullSigHash},
 			expected: 0,
 		},
 		{
 			name:     "one indexed param",
-			topics:   []common.Hash{rule.Signature, common.BytesToHash(addr1.Bytes())},
+			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes())},
 			expected: 1,
 		},
 		{
 			name:     "two indexed params",
-			topics:   []common.Hash{rule.Signature, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr2.Bytes())},
+			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr2.Bytes())},
 			expected: 2,
 		},
 		{
 			name:     "bypass triggered (to == 0x0)",
-			topics:   []common.Hash{rule.Signature, common.BytesToHash(addr1.Bytes()), common.BytesToHash(common.Address{}.Bytes())},
+			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(common.Address{}.Bytes())},
 			expected: -1,
 		},
 		{
 			name:     "duplicate addresses",
-			topics:   []common.Hash{rule.Signature, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr1.Bytes())},
-			expected: 1, // deduped
+			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr1.Bytes())},
+			expected: 1,
 		},
 	}
 
@@ -88,18 +217,21 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 		"rules": [
 			{
 				"event": "Transfer(address,address,uint256)",
+				"selector": "0xddf252ad",
 				"topicAddresses": [1, 2],
-				"bypass": {"topicIndex": 2, "equalsTo": "0x0000000000000000000000000000000000000000"}
+				"bypass": {"topicIndex": 2, "equals": "0x0000000000000000000000000000000000000000"}
 			},
 			{
 				"event": "TransferSingle(address,address,address,uint256,uint256)",
+				"selector": "0xc3d58168",
 				"topicAddresses": [2, 3],
-				"bypass": {"topicIndex": 3, "equalsTo": "0x0000000000000000000000000000000000000000"}
+				"bypass": {"topicIndex": 3, "equals": "0x0000000000000000000000000000000000000000"}
 			},
 			{
 				"event": "TransferBatch(address,address,address,uint256[],uint256[])",
+				"selector": "0x4a39dc06",
 				"topicAddresses": [2, 3],
-				"bypass": {"topicIndex": 3, "equalsTo": "0x0000000000000000000000000000000000000000"}
+				"bypass": {"topicIndex": 3, "equals": "0x0000000000000000000000000000000000000000"}
 			}
 		]
 	}`
