@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -151,7 +150,7 @@ func printSampleUsage(progname string) {
 	fmt.Printf("Sample usage:                  %s --help \n", progname)
 }
 
-func startup() error {
+func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
@@ -171,25 +170,29 @@ func startup() error {
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(config.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
-			return fmt.Errorf("failed to prepare jwt secret file: %w", err)
+			fmt.Fprintf(os.Stderr, "failed to prepare jwt secret file: %v\n", err)
+			return 1
 		}
 		stackConf.JWTSecret = filename
 	}
 
 	err = genericconf.InitLog(config.LogType, config.LogLevel, &config.FileLogging, genericconf.DefaultPathResolver(config.Persistent.LogDir))
 	if err != nil {
-		return fmt.Errorf("error initializing log: %w", err)
+		fmt.Fprintf(os.Stderr, "error initializing log: %v\n", err)
+		return 1
 	}
 
 	if err := util.StartMetrics(config.Metrics, config.PProf, &config.MetricsServer, &config.PprofCfg); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error starting metrics server: %v\n", err)
+		return 1
 	}
 
 	sequencerRPCConfigFetcher := func() *rpcclient.ClientConfig { return &config.Sequencer }
 	sequencerRPCClient := rpcclient.NewRpcClient(sequencerRPCConfigFetcher, nil)
 	err = sequencerRPCClient.Start(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to start sequencer rpc client: %w", err)
+		fmt.Fprintf(os.Stderr, "error starting sequencer rpc client: %v\n", err)
+		return 1
 	}
 	defer sequencerRPCClient.Close()
 	sequencerClient := ethclient.NewClient(sequencerRPCClient)
@@ -197,17 +200,20 @@ func startup() error {
 
 	txOpts, _, err := util.OpenWallet("", &config.Wallet, big.NewInt(config.ChainId))
 	if err != nil {
-		return fmt.Errorf("failed to open filterer wallet: %w", err)
+		fmt.Fprintf(os.Stderr, "error opening wallet: %v\n", err)
+		return 1
 	}
 
 	stack, err := api.NewStack(&stackConf, txOpts, sequencerClient)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
+		return 1
 	}
 
 	err = stack.Start()
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error starting stack: %v\n", err)
+		return 1
 	}
 	defer stack.Close()
 
@@ -215,11 +221,9 @@ func startup() error {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 	<-sigint
 
-	return nil
+	return 0
 }
 
 func main() {
-	if err := startup(); err != nil {
-		log.Error("error running cmd", "err", err)
-	}
+	os.Exit(mainImpl())
 }
