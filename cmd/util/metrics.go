@@ -26,7 +26,7 @@ func StartMetrics(metricsEnable bool, pprofEnable bool, metricsServerConfig *gen
 		log.Info("Enabling metrics collection")
 		metrics.Enable()
 		go metrics.CollectProcessMetrics(metricsServerConfig.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", metricsServerConfig.Addr, metricsServerConfig.Port))
+		exp.Setup(mAddr)
 	}
 	if pprofEnable {
 		genericconf.StartPprof(pAddr)
