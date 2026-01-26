@@ -37,7 +37,9 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 		}
 		store.Load(salt, hashes, "test")
 	}
-	return addressfilter.NewDefaultHashedAddressChecker(store)
+	checker := addressfilter.NewDefaultHashedAddressChecker(store)
+	checker.Start(context.Background())
+	return checker
 }
 
 func TestAddressFilterDirectTransfer(t *testing.T) {

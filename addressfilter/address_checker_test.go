@@ -4,6 +4,7 @@
 package addressfilter
 
 import (
+	"context"
 	"crypto/sha256"
 	"sync"
 	"testing"
@@ -33,6 +34,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	store.Load(salt, []common.Hash{hash}, "test")
 
 	checker := NewDefaultHashedAddressChecker(store)
+	checker.Start(context.Background())
 
 	// Tx 1: filtered address
 	state1 := mustState(t, checker.NewTxState())
@@ -90,6 +92,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	store.Load(salt, filteredHashes, "heavy")
 
 	checker := NewDefaultHashedAddressChecker(store)
+	checker.Start(context.Background())
 
 	const txCount = 100
 	const touchesPerTx = 100

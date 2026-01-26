@@ -4,11 +4,14 @@
 package addressfilter
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 // Default parameters for HashedAddressChecker, used in NewDefaultHashedAddressChecker
@@ -22,8 +25,10 @@ const (
 // the HashStore; this checker only manages async execution and per-tx
 // aggregation.
 type HashedAddressChecker struct {
-	store    *HashStore
-	workChan chan workItem
+	stopwaiter.StopWaiter
+	store       *HashStore
+	workChan    chan workItem
+	workerCount int
 }
 
 // HashedAddressCheckerState tracks address filtering for a single transaction.
@@ -51,15 +56,22 @@ func NewHashedAddressChecker(
 	}
 
 	c := &HashedAddressChecker{
-		store:    store,
-		workChan: make(chan workItem, queueSize),
-	}
-
-	for range workerCount {
-		go c.worker()
+		store:       store,
+		workChan:    make(chan workItem, queueSize),
+		workerCount: workerCount,
 	}
 
 	return c
+}
+
+func (c *HashedAddressChecker) Start(ctx context.Context) {
+	c.StopWaiter.Start(ctx, c)
+
+	for i := 0; i < c.workerCount; i++ {
+		c.LaunchThread(func(ctx context.Context) {
+			c.worker(ctx)
+		})
+	}
 }
 
 func NewDefaultHashedAddressChecker(store *HashStore) *HashedAddressChecker {
@@ -82,14 +94,26 @@ func (c *HashedAddressChecker) processAddress(addr common.Address, state *Hashed
 }
 
 // worker runs for the lifetime of the checker; workChan is never closed.
-func (c *HashedAddressChecker) worker() {
-	for item := range c.workChan {
-		c.processAddress(item.addr, item.state)
+func (c *HashedAddressChecker) worker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case item := <-c.workChan:
+			c.processAddress(item.addr, item.state)
+		}
 	}
 }
 
 func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
 	s.pending.Add(1)
+
+	// If the checker is stopped, process synchronously
+	if s.checker.Stopped() {
+		s.checker.processAddress(addr, s)
+		return
+	}
+
 	select {
 	case s.checker.workChan <- workItem{addr: addr, state: s}:
 		// ok
