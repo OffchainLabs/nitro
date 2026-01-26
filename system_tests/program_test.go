@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -1023,7 +1023,7 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	userWasm := deployWasm(t, ctx, auth, l2client, "../arbitrator/prover/test-cases/user.wat")
+	userWasm := deployWasm(t, ctx, auth, l2client, "../crates/prover/test-cases/user.wat")
 	// Passing input of size 4 invokes $infinite_loop function that calls the infinite loop
 	tx := l2info.PrepareTxTo("Owner", &userWasm, 1000000, nil, make([]byte, 4))
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -1480,8 +1480,8 @@ func testEarlyExit(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
-	panicAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/panic-after-write.wat")
+	earlyAddress := deployWasm(t, ctx, auth, l2client, "../crates/stylus/tests/exit-early/exit-early.wat")
+	panicAddress := deployWasm(t, ctx, auth, l2client, "../crates/stylus/tests/exit-early/panic-after-write.wat")
 
 	ensure := func(tx *types.Transaction, err error) {
 		t.Helper()
@@ -1900,16 +1900,18 @@ func assertStorageAt(
 }
 
 func rustFile(name string) string {
-	return fmt.Sprintf("../arbitrator/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
+	return fmt.Sprintf("../crates/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
 }
 
 func watFile(name string) string {
-	return fmt.Sprintf("../arbitrator/stylus/tests/%v.wat", name)
+	return fmt.Sprintf("../crates/stylus/tests/%v.wat", name)
 }
 
 func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	t.Helper()
-	msgCount := arbutil.BlockNumberToMessageCount(block, 0)
+	msgIndex, err := arbutil.BlockNumberToMessageIndex(block, 0)
+	Require(t, err)
+	msgCount := msgIndex + 1
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)

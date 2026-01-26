@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package blocksreexecutor
 
 import (
@@ -221,7 +223,12 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	if start < startBlock {
 		start = startBlock
 	}
-	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), logState, -1)
+	startHeader := s.blockchain.GetHeaderByNumber(start)
+	if startHeader == nil {
+		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
+		return startBlock
+	}
+	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return startBlock

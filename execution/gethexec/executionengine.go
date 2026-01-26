@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -88,7 +89,7 @@ type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
+	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
@@ -116,6 +117,8 @@ type ExecutionEngine struct {
 	exposeMultiGas bool
 
 	runningMaintenance atomic.Bool
+
+	addressChecker state.AddressChecker
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -265,7 +268,7 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
+func (s *ExecutionEngine) SetConsensus(consensus consensus.FullConsensusClient) {
 	if s.Started() {
 		panic("trying to set transaction consensus after start")
 	}
@@ -282,7 +285,7 @@ func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgId
 	return nil, errors.New("FullConsensusClient is not accessible to execution")
 }
 
-func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 
@@ -527,6 +530,9 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return nil, err
+	}
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
@@ -1130,4 +1136,8 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	return &execution.MaintenanceStatus{
 		IsRunning: s.runningMaintenance.Load(),
 	}
+}
+
+func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
+	s.addressChecker = checker
 }

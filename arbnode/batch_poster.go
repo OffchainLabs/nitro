@@ -647,7 +647,7 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	// Rather than checking the latest block, we're going to check a recent
 	// block (5 blocks back) to avoid reorgs.
-	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetBlockNumber := new(big.Int).Sub(latestHeader.Number, big.NewInt(5))
 	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
@@ -2032,7 +2032,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	b.backlog.Store(backlog)
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
-	if config.DataPoster.UseNoOpStorage {
+	if b.dataPoster.UsingNoOpStorage() {
 		receipt, err := b.l1Reader.WaitForTxApproval(ctx, tx)
 		if err != nil {
 			return false, fmt.Errorf("error waiting for tx receipt: %w", err)

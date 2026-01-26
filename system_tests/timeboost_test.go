@@ -1,3 +1,5 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -756,8 +758,9 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 
 	// Rebuild blockMetadata and cleanup trackers from ConsensusDB
 	rebuildStartPos := uint64(5)
-	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, consensusDB, newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
+	blockMetadataFetcher, err := arbnode.NewBlockMetadataFetcher(ctx, arbnode.BlockMetadataFetcherConfig{Source: rpcclient.ClientConfig{URL: builder.L2.Stack.HTTPEndpoint()}}, consensusDB, builder.L2.ExecNode.ExecEngine.GetGenesisBlockNumber(), newNode.ExecNode, rebuildStartPos, builder.chainConfig.ChainID.Uint64())
 	Require(t, err)
+	Require(t, blockMetadataFetcher.InitializeTrackBlockMetadataFrom())
 	blockMetadataFetcher.Update(ctx)
 
 	// Check if all blockMetadata starting from rebuildStartPos was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared

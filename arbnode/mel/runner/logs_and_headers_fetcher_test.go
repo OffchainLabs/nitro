@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -11,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
 
 func TestLogsFetcher(t *testing.T) {
@@ -100,9 +102,11 @@ func TestLogsFetcher(t *testing.T) {
 	require.True(t, reflect.DeepEqual(fetcher.logsByBlockHash[batchBlockHash], batchTxLogs[:2]))        // last log shouldn't be returned by the filter query
 	require.True(t, reflect.DeepEqual(fetcher.logsByBlockHash[delayedBlockHash], delayedMsgTxLogs[:3])) // last log shouldn't be returned by the filter query
 	// Verify that logsByTxIndex is correct
-	require.True(t, len(fetcher.logsByTxIndex) == 1)
+	require.True(t, len(fetcher.logsByTxIndex) == 2) // for both delayed msg and sequencer batch
 	require.True(t, fetcher.logsByTxIndex[batchBlockHash] != nil)
-	require.True(t, reflect.DeepEqual(fetcher.logsByTxIndex[batchBlockHash][batchTxIndex], batchTxLogs[:2])) // last log shouldn't be returned by the filter query
+	require.True(t, fetcher.logsByTxIndex[delayedBlockHash] != nil)
+	require.True(t, reflect.DeepEqual(fetcher.logsByTxIndex[batchBlockHash][batchTxIndex], batchTxLogs[:2]))             // last log shouldn't be returned by the filter query
+	require.True(t, reflect.DeepEqual(fetcher.logsByTxIndex[delayedBlockHash][delayedMsgTxIndex], delayedMsgTxLogs[:3])) // last log shouldn't be returned by the filter query
 
 	// TODO: remove this when mel runner code is synced, this is added temporarily to fix lint failures
 	_, err := fetcher.getHeaderByNumber(ctx, 0)

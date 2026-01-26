@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbstate
@@ -121,7 +121,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 						log.Error(err.Error())
 					}
 				} else if daprovider.IsDACertificateMessageHeaderByte(payload[0]) && daprovider.IsCertificateValidationError(err) {
-					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
+					log.Error("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 					payload = nil
 				} else {
 					return nil, err

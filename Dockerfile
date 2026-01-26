@@ -52,13 +52,14 @@ RUN apt-get update && \
     # pinned rust 1.88.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY Cargo.* ./
+COPY crates/arbutil crates/arbutil
+COPY crates/brotli crates/brotli
+COPY crates/caller-env crates/caller-env
+COPY crates/prover crates/prover
+COPY crates/validation crates/validation
+COPY crates/wasm-libraries crates/wasm-libraries
+COPY crates/tools/wasmer crates/tools/wasmer
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
@@ -93,7 +94,6 @@ COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
-COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
 COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
@@ -114,17 +114,19 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
     cargo install --force cbindgen --version 0.24.3
-COPY arbitrator/Cargo.* arbitrator/
+COPY Cargo.* ./
 COPY ./Makefile ./
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY crates/arbutil crates/arbutil
+COPY crates/bench crates/bench
+COPY crates/brotli crates/brotli
+COPY crates/caller-env crates/caller-env
+COPY crates/prover crates/prover
+COPY crates/wasm-libraries crates/wasm-libraries
+COPY crates/jit crates/jit
+COPY crates/validation crates/validation
+COPY crates/stylus crates/stylus
+COPY crates/validator crates/validator
+COPY crates/tools/wasmer crates/tools/wasmer
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -144,39 +146,42 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-COPY arbitrator/prover/benches arbitrator/prover/benches
-COPY arbitrator/bench/Cargo.toml arbitrator/bench/
-COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
-COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
-RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
-    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    rm arbitrator/prover/benches/merkle_bench.rs && \
-    rm arbitrator/bench/src/lib.rs
+COPY Cargo.* ./
+COPY crates/arbutil crates/arbutil
+COPY crates/bench crates/bench
+COPY crates/brotli crates/brotli
+COPY crates/caller-env crates/caller-env
+COPY crates/validation crates/validation
+COPY crates/prover/Cargo.toml crates/prover/
+COPY crates/prover/benches crates/prover/benches
+COPY crates/bench/Cargo.toml crates/bench/
+COPY crates/jit/Cargo.toml crates/jit/
+COPY crates/stylus/Cargo.toml crates/stylus/
+COPY crates/validator/Cargo.toml crates/validator/
+COPY crates/tools/wasmer crates/tools/wasmer
+COPY crates/wasm-libraries/user-host-trait/Cargo.toml crates/wasm-libraries/user-host-trait/Cargo.toml
+RUN bash -c 'mkdir crates/{prover,jit,stylus,validator}/src crates/wasm-libraries/user-host-trait/src'
+RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
+    echo "fn test() {}" > crates/prover/src/lib.rs && \
+    echo "fn test() {}" > crates/bench/src/lib.rs && \
+    echo "fn test() {}" > crates/prover/benches/merkle_bench.rs && \
+    echo "fn test() {}" > crates/stylus/src/lib.rs && \
+    echo "fn test() {}" > crates/validator/src/lib.rs && \
+    echo "fn test() {}" > crates/wasm-libraries/user-host-trait/src/lib.rs && \
+    cargo build --release --lib && \
+    rm crates/prover/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
+    rm crates/wasm-libraries/user-host-trait/src/lib.rs && \
+    rm crates/prover/benches/merkle_bench.rs && \
+    rm crates/bench/src/lib.rs
 COPY ./Makefile ./
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
+COPY crates/prover crates/prover
+COPY crates/wasm-libraries crates/wasm-libraries
+COPY crates/jit crates/jit
+COPY crates/stylus crates/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN touch -a -m arbitrator/prover/src/lib.rs
+RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
@@ -193,15 +198,14 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
-COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
-COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
-COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
-COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
-COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
-COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
-COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 COPY ./contracts-legacy ./contracts-legacy

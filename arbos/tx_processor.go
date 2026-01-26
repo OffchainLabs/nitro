@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
@@ -21,7 +21,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -80,6 +79,10 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
+
+	// Record touched addresses for tx filtering
+	p.evm.StateDB.TouchAddress(contract.Address())
+	p.evm.StateDB.TouchAddress(contract.Caller())
 }
 
 func (p *TxProcessor) PopContract() {
@@ -537,7 +540,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 
 	var multiDimensionalCost *big.Int
 	var err error
-	if p.state.L2PricingState().ArbosVersion >= l2pricing.ArbosMultiGasConstraintsVersion {
+	if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
 		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
 		p.state.Restrict(err)
 	}
@@ -692,7 +695,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	if arbmath.BigGreaterThan(computeCost, common.Big0) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, tracing.BalanceIncreaseNetworkFee)
 	}
-	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
+	posterFeeDestination := types.L1PricerFundsPoolAddress
 	if p.state.ArbOSVersion() < params.ArbosVersion_2 {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}

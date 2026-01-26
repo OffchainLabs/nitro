@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -50,6 +50,7 @@ var (
 	validatorMsgCountRecordSentGauge         = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
+	validatorMemoryLimitExceededGuage        = metrics.NewRegisteredGauge("arb/validator/memory/limit_exceeded", nil)
 )
 
 // WorkerThrottler tracks concurrent validation executions for a spawner
@@ -139,6 +140,7 @@ type BlockValidator struct {
 	fatalErr chan<- error
 
 	MemoryFreeLimitChecker resourcemanager.LimitChecker
+	memoryLimitExceeded    atomic.Bool
 }
 
 type BlockValidatorConfig struct {
@@ -387,42 +389,8 @@ func NewBlockValidator(
 			ret.legacyValidInfo = legacyInfo
 		}
 	}
-	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 && ret.legacyValidInfo == nil {
-		genesis, err := streamer.ResultAtMessageIndex(0)
-		if err != nil {
-			return nil, err
-		}
-		ret.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
-	if config().Dangerous.Revalidation.StartBlock > 0 {
-		startBlock := config().Dangerous.Revalidation.StartBlock
-		messageCount, err := inbox.GetBatchMessageCount(startBlock - 1)
-		if err != nil {
-			return nil, err
-		}
-		res := &execution.MessageResult{}
-		if messageCount > 0 {
-			res, err = streamer.ResultAtMessageIndex(messageCount - 1)
-			if err != nil {
-				return nil, err
-			}
-		}
-		_, endPos, err := statelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
-		if err != nil {
-			return nil, err
-		}
-		gs := BuildGlobalState(*res, endPos)
-		err = ret.writeLastValidated(gs, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
+	ret.streamer = streamer
+	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	if config().MemoryFreeLimit != "" {
@@ -780,6 +748,15 @@ func (v *BlockValidator) isMemoryLimitExceeded() bool {
 	if err != nil {
 		log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
 	}
+	if exceeded && !v.memoryLimitExceeded.Load() {
+		// If we just exceeded the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(1)
+		v.memoryLimitExceeded.Store(true)
+	} else if !exceeded && v.memoryLimitExceeded.Load() {
+		// If we are no longer exceeding the limit, update the metric and store the state
+		validatorMemoryLimitExceededGuage.Update(0)
+		v.memoryLimitExceeded.Store(false)
+	}
 	return exceeded
 }
 
@@ -807,7 +784,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock
-	err := v.recorder.PrepareForRecord(ctx, pos, recordUntil)
+	_, err := v.recorder.PrepareForRecord(pos, recordUntil).Await(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -1313,6 +1290,43 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
+
+	// genesis block is impossible to validate unless genesis state is empty
+	if v.lastValidGS.Batch == 0 && v.legacyValidInfo == nil {
+		genesis, err := v.streamer.ResultAtMessageIndex(0)
+		if err != nil {
+			return err
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+	}
+	if config.Dangerous.Revalidation.StartBlock > 0 {
+		startBlock := config.Dangerous.Revalidation.StartBlock
+		messageCount, err := v.inboxTracker.GetBatchMessageCount(startBlock - 1)
+		if err != nil {
+			return err
+		}
+		res := &execution.MessageResult{}
+		if messageCount > 0 {
+			res, err = v.streamer.ResultAtMessageIndex(messageCount - 1)
+			if err != nil {
+				return err
+			}
+		}
+		_, endPos, err := v.StatelessBlockValidator.GlobalStatePositionsAtCount(messageCount)
+		if err != nil {
+			return err
+		}
+		gs := BuildGlobalState(*res, endPos)
+		err = v.writeLastValidated(gs, nil)
+		if err != nil {
+			return err
+		}
+	}
 
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {

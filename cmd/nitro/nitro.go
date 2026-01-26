@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -46,9 +46,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
-	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
+	"github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -57,11 +58,12 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -283,6 +285,13 @@ func mainImpl() int {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
 		} else {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
+		}
+	}
+	if nodeConfig.Execution.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		if nodeConfig.Execution.Caching.Archive {
+			nodeConfig.Execution.Caching.StateHistory = gethexec.DefaultArchiveNodeStateHistory
+		} else {
+			nodeConfig.Execution.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
@@ -520,20 +529,6 @@ func mainImpl() int {
 		}
 	}
 
-	execNode, err := gethexec.CreateExecutionNode(
-		ctx,
-		stack,
-		executionDB,
-		l2BlockChain,
-		l1Client,
-		&ExecutionNodeConfigFetcher{liveNodeConfig},
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-	)
-	if err != nil {
-		log.Error("failed to create execution node", "err", err)
-		return 1
-	}
 	var wasmModuleRoot common.Hash
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
@@ -543,12 +538,27 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
-	currentNode, err := arbnode.CreateNodeFullExecutionClient(
+	var execNode *gethexec.ExecutionNode
+	var consensusNode *arbnode.Node
+	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
+		execNode, err = gethexec.CreateExecutionNode(
+			ctx,
+			stack,
+			executionDB,
+			l2BlockChain,
+			l1Client,
+			&ExecutionNodeConfigFetcher{liveNodeConfig},
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+		)
+		if err != nil {
+			log.Error("failed to create execution node", "err", err)
+			return 1
+		}
+	}
+	consensusNode, err = arbnode.CreateConsensusNode(
 		ctx,
 		stack,
-		execNode,
-		execNode,
-		execNode,
 		execNode,
 		consensusDB,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
@@ -564,7 +574,7 @@ func mainImpl() int {
 		wasmModuleRoot,
 	)
 	if err != nil {
-		log.Error("failed to create node", "err", err)
+		log.Error("failed to create consensus node", "err", err)
 		return 1
 	}
 
@@ -611,19 +621,19 @@ func mainImpl() int {
 		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
-		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
-		count, err := currentNode.TxStreamer.GetMessageCount()
+		count, err := consensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
 			count = 0
 		}
 		if count == 0 {
-			err = currentNode.TxStreamer.AddFakeInitMessage()
+			err = consensusNode.TxStreamer.AddFakeInitMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -674,7 +684,7 @@ func mainImpl() int {
 	}
 
 	gqlConf := nodeConfig.GraphQL
-	if gqlConf.Enable {
+	if execNode != nil && gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
@@ -691,19 +701,29 @@ func mainImpl() int {
 		}
 	}
 	if err == nil {
-		err = currentNode.Start(ctx)
+		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+			log.Error("Error initializing and starting execution and consensus", "err", err)
+			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
-		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
+		deferFuncs = []func(){cleanup}
+	}
+
+	if nodeConfig.VersionAlerter.Enable {
+		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		}
+		alerter.Start(ctx)
+		defer alerter.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {
@@ -711,9 +731,11 @@ func mainImpl() int {
 		}
 	}
 
-	err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
-	if err != nil {
-		fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+	if execNode != nil {
+		err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)
+		}
 	}
 
 	err = nil
@@ -738,29 +760,30 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf                   genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node                   arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution              gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation             valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain            conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
-	Chain                  conf.L2Config                   `koanf:"chain"`
-	LogLevel               string                          `koanf:"log-level" reload:"hot"`
-	LogType                string                          `koanf:"log-type" reload:"hot"`
-	FileLogging            genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent             conf.PersistentConfig           `koanf:"persistent"`
-	HTTP                   genericconf.HTTPConfig          `koanf:"http"`
-	WS                     genericconf.WSConfig            `koanf:"ws"`
-	IPC                    genericconf.IPCConfig           `koanf:"ipc"`
-	Auth                   genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL                genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics                bool                            `koanf:"metrics"`
-	MetricsServer          genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf                  bool                            `koanf:"pprof"`
-	PprofCfg               genericconf.PProf               `koanf:"pprof-cfg"`
-	Init                   conf.InitConfig                 `koanf:"init"`
-	Rpc                    genericconf.RpcConfig           `koanf:"rpc"`
-	BlocksReExecutor       blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
-	EnsureRollupDeployment bool                            `koanf:"ensure-rollup-deployment" reload:"hot"`
+	Conf                   genericconf.ConfConfig           `koanf:"conf" reload:"hot"`
+	Node                   arbnode.Config                   `koanf:"node" reload:"hot"`
+	Execution              gethexec.Config                  `koanf:"execution" reload:"hot"`
+	Validation             valnode.Config                   `koanf:"validation" reload:"hot"`
+	ParentChain            conf.ParentChainConfig           `koanf:"parent-chain" reload:"hot"`
+	Chain                  conf.L2Config                    `koanf:"chain"`
+	LogLevel               string                           `koanf:"log-level" reload:"hot"`
+	LogType                string                           `koanf:"log-type" reload:"hot"`
+	FileLogging            genericconf.FileLoggingConfig    `koanf:"file-logging" reload:"hot"`
+	Persistent             conf.PersistentConfig            `koanf:"persistent"`
+	HTTP                   genericconf.HTTPConfig           `koanf:"http"`
+	WS                     genericconf.WSConfig             `koanf:"ws"`
+	IPC                    genericconf.IPCConfig            `koanf:"ipc"`
+	Auth                   genericconf.AuthRPCConfig        `koanf:"auth"`
+	GraphQL                genericconf.GraphQLConfig        `koanf:"graphql"`
+	Metrics                bool                             `koanf:"metrics"`
+	MetricsServer          genericconf.MetricsServerConfig  `koanf:"metrics-server"`
+	PProf                  bool                             `koanf:"pprof"`
+	PprofCfg               genericconf.PProf                `koanf:"pprof-cfg"`
+	Init                   conf.InitConfig                  `koanf:"init"`
+	Rpc                    genericconf.RpcConfig            `koanf:"rpc"`
+	BlocksReExecutor       blocksreexecutor.Config          `koanf:"blocks-reexecutor"`
+	EnsureRollupDeployment bool                             `koanf:"ensure-rollup-deployment" reload:"hot"`
+	VersionAlerter         nitroversionalerter.ClientConfig `koanf:"version-alerter" reload:"hot"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -787,6 +810,7 @@ var NodeConfigDefault = NodeConfig{
 	PprofCfg:               genericconf.PProfDefault,
 	BlocksReExecutor:       blocksreexecutor.DefaultConfig,
 	EnsureRollupDeployment: true,
+	VersionAlerter:         nitroversionalerter.DefaultClientConfig,
 }
 
 func NodeConfigAddOptions(f *pflag.FlagSet) {
@@ -814,6 +838,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	genericconf.RpcConfigAddOptions("rpc", f)
 	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 	f.Bool("ensure-rollup-deployment", NodeConfigDefault.EnsureRollupDeployment, "before starting the node, wait until the transaction that deployed rollup is finalized")
+	nitroversionalerter.ClientConfigAddOptions("version-alerter", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -880,11 +905,37 @@ func (c *NodeConfig) Validate() error {
 	if err := c.Execution.Validate(); err != nil {
 		return err
 	}
+	if c.Node.ExecutionRPCClient.URL == "self" || c.Node.ExecutionRPCClient.URL == "self-auth" {
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable {
+			return errors.New("sequencing and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
+		if !c.Node.RPCServer.Enable {
+			return errors.New("consensus and execution are configured to communicate over rpc but consensus node has not enabled rpc server")
+		}
+		if !c.Execution.RPCServer.Enable {
+			return errors.New("consensus and execution are configured to communicate over rpc but execution node has not enabled rpc server")
+		}
+		if c.Execution.ConsensusRPCClient.URL != c.Node.ExecutionRPCClient.URL {
+			return errors.New("consensus and execution are configured to communicate over rpc but execution node has consensusRPCClient url not equal to that of execution (self or self-auth)")
+		}
+		if c.WS.Addr == "" {
+			return errors.New("consensus and execution are configured to communicate over rpc but websocket is not enabled")
+		}
+	} else if c.Node.ExecutionRPCClient.URL != "" {
+		if c.Node.Sequencer || c.Node.BatchPoster.Enable {
+			return errors.New("sequencing and batch-posting are currently not supported when connecting to an execution client over RPC")
+		}
+	} else if c.Execution.ConsensusRPCClient.URL != "" {
+		return errors.New("consensus is connecting directly to execution but execution is connecting to consensus over an rpc- invalid case")
+	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
 	}
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
 		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
+	}
+	if err := c.VersionAlerter.Validate(); err != nil {
+		return err
 	}
 	return c.Persistent.Validate()
 }
@@ -1050,6 +1101,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	if chainInfo.TrackBlockMetadataFrom > 0 && chainInfo.BlockMetadataUrl != "" {
 		chainDefaults["node.block-metadata-fetcher.enable"] = true
 	}
+
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
 		return err
