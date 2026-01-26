@@ -78,6 +78,10 @@ func GetEndParentChainBlockHash() (hash common.Hash) {
 	return
 }
 
+func GetRelevantTxIndices(parentChainBlockHash common.Hash) ([]byte, error) {
+	return nil, nil
+}
+
 func SetEndMELRoot(hash common.Hash) {
 	hashUnsafe := unsafe.Pointer(&hash[0])
 	setGlobalStateBytes32(IDX_MEL_ROOT, hashUnsafe)

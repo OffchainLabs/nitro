@@ -14,17 +14,19 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var (
-	preimages               = make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	startMelStateHash       = common.Hash{}
-	melMsgHash              = common.Hash{}
-	endMelStateHash         = common.Hash{} // This is set by the stubbed SetEndMELStateHash function
-	endParentChainBlockHash = common.Hash{} // This is set by the stubbed GetEndParentChainBlockHash function
-	positionInMEL           = uint64(0)
+	preimages                = make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	relevantTxIndicesByBlock = make(map[common.Hash][]uint)
+	startMelStateHash        = common.Hash{}
+	melMsgHash               = common.Hash{}
+	endMelStateHash          = common.Hash{} // This is set by the stubbed SetEndMELStateHash function
+	endParentChainBlockHash  = common.Hash{} // This is set by the stubbed GetEndParentChainBlockHash function
+	positionInMEL            = uint64(0)
 )
 
 func StubInit() {
@@ -32,6 +34,7 @@ func StubInit() {
 	startMelRootFlag := flag.String("start-mel-state-hash", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	positionInMELFlag := flag.Uint64("position-in-mel", 0, "positionInMEL")
+	relevantIndicesPath := flag.String("relevant-tx-indices", "", "file to load relevant tx indices from")
 	flag.Parse()
 	endParentChainBlockHash = common.HexToHash(*endParentChainBlockHashFlag)
 	startMelStateHash = common.HexToHash(*startMelRootFlag)
@@ -41,6 +44,13 @@ func StubInit() {
 		panic(err)
 	}
 	if err = json.Unmarshal(fileBytes, &preimages); err != nil {
+		panic(err)
+	}
+	fileBytes, err = os.ReadFile(*relevantIndicesPath)
+	if err != nil {
+		panic(err)
+	}
+	if err = json.Unmarshal(fileBytes, &relevantTxIndicesByBlock); err != nil {
 		panic(err)
 	}
 }
@@ -66,6 +76,14 @@ func GetStartMELRoot() (hash common.Hash) {
 func GetEndParentChainBlockHash() (hash common.Hash) {
 	hash = endParentChainBlockHash
 	return
+}
+
+func GetRelevantTxIndices(parentChainBlockHash common.Hash) ([]byte, error) {
+	txIndices, ok := relevantTxIndicesByBlock[parentChainBlockHash]
+	if !ok {
+		return nil, errors.New("no relevant tx indices for block hash")
+	}
+	return rlp.EncodeToBytes(txIndices)
 }
 
 func SetEndMELRoot(hash common.Hash) {

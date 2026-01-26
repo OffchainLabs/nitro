@@ -23,9 +23,9 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
-	"github.com/offchainlabs/nitro/arbnode/mel/recording"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -355,6 +355,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	}
 	currentState.RecordMsgPreimagesTo(preimages)
 	var endState *mel.State
+	relevantTxIndicesByBlockHash := make(map[common.Hash][]uint)
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
@@ -390,9 +391,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if endState.Hash() != wantState.Hash() {
 			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
 		}
-		if err := receiptsRecorder.CollectTxIndicesPreimage(); err != nil {
-			return nil, 0, err
-		}
+		relevantTxIndicesByBlockHash[header.Hash()] = receiptsRecorder.RelevantTxIndices()
 		if endState.MsgCount >= toValidateMsgExtractionCount {
 			break
 		}
@@ -415,7 +414,8 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			Batch:        0,
 			PosInBatch:   0,
 		},
-		EndParentChainBlockHash: endState.ParentChainBlockHash,
+		EndParentChainBlockHash:      endState.ParentChainBlockHash,
+		RelevantTxIndicesByBlockHash: relevantTxIndicesByBlockHash,
 	}, 0, nil
 }
 

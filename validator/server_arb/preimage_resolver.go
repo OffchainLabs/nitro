@@ -12,5 +12,11 @@ extern ResolvedPreimage preimageResolver(size_t context, uint8_t preimageType, c
 ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash) {
   return preimageResolver(context, preimageType, hash);
 }
+
+extern ResolvedPreimage mapResolver(size_t context, const uint8_t* hash);
+
+ResolvedPreimage mapResolverC(size_t context, const uint8_t* hash) {
+  return mapResolver(context, hash);
+}
 */
 import "C"

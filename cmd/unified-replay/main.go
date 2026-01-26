@@ -102,12 +102,13 @@ func extractMessagesUpTo(
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
 	delayedMsgDatabase := melreplay.NewDelayedMessageDatabase(resolver)
 	ctx := context.Background()
+	txIndicesFetcher := &relevantTxIndicesFetcher{}
 	for i := len(blockHeaderHashes) - 1; i >= 0; i-- {
 		headerHash := blockHeaderHashes[i]
 		header := getHeaderByHash(headerHash)
 		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())
 		txsFetcher := melreplay.NewTransactionFetcher(header, resolver)
-		logsFetcher := melreplay.NewLogsFetcher(header, resolver)
+		logsFetcher := melreplay.NewLogsFetcher(header, resolver, txIndicesFetcher)
 		postState, _, _, _, err := melextraction.ExtractMessages(
 			ctx,
 			currentState,

@@ -16,16 +16,17 @@ type BatchInfo struct {
 
 // lint:require-exhaustive-initialization
 type ValidationInput struct {
-	Id                      uint64
-	HasDelayedMsg           bool
-	DelayedMsgNr            uint64
-	Preimages               daprovider.PreimagesMap
-	UserWasms               map[rawdb.WasmTarget]map[common.Hash][]byte
-	BatchInfo               []BatchInfo
-	DelayedMsg              []byte
-	StartState              GoGlobalState
-	DebugChain              bool
-	EndParentChainBlockHash common.Hash
+	Id                           uint64
+	HasDelayedMsg                bool
+	DelayedMsgNr                 uint64
+	Preimages                    daprovider.PreimagesMap
+	UserWasms                    map[rawdb.WasmTarget]map[common.Hash][]byte
+	BatchInfo                    []BatchInfo
+	DelayedMsg                   []byte
+	StartState                   GoGlobalState
+	DebugChain                   bool
+	EndParentChainBlockHash      common.Hash
+	RelevantTxIndicesByBlockHash map[common.Hash][]uint
 }
 
 func CopyPreimagesInto(dest, source daprovider.PreimagesMap) {

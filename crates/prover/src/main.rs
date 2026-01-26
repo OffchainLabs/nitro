@@ -7,7 +7,10 @@ use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
+    machine::{
+        GlobalState, InboxIdentifier, Machine, MachineStatus, MapResolver, PreimageResolver,
+        ProofInfo,
+    },
     prepare::prepare_machine,
     utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
@@ -536,9 +539,11 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
                     .insert(hash.into(), buf.as_slice().into());
             }
         }
+        let map_values: HashMap<Bytes32, CBytes> = HashMap::default();
         let preimage_resolver =
             Arc::new(move |_, ty, hash| preimages.get(&ty).and_then(|m| m.get(&hash)).cloned())
                 as PreimageResolver;
+        let map_resolver = Arc::new(move |_, hash| map_values.get(&hash).cloned()) as MapResolver;
 
         let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
@@ -565,6 +570,7 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
             global_state,
             inbox_contents,
             preimage_resolver,
+            map_resolver,
         )
     }
 }

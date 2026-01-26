@@ -27,6 +27,7 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
+use nom::combinator::map_res;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -994,6 +995,57 @@ impl PreimageResolverWrapper {
     }
 }
 
+pub type MapResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes> + Send + Sync>;
+
+/// Wraps a preimage resolver to provide an easier API
+/// and cache the last value retrieved.
+#[derive(Clone)]
+struct MapResolverWrapper {
+    resolver: MapResolver,
+    last_resolved: Option<(Bytes32, CBytes)>,
+}
+
+impl fmt::Debug for MapResolverWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "resolver...")
+    }
+}
+
+impl MapResolverWrapper {
+    pub fn new(resolver: MapResolver) -> MapResolverWrapper {
+        MapResolverWrapper {
+            resolver,
+            last_resolved: None,
+        }
+    }
+
+    #[cfg(feature = "native")]
+    pub fn get(&mut self, context: u64, hash: Bytes32) -> Option<&[u8]> {
+        // TODO: this is unnecessarily complicated by the rust borrow checker.
+        // This will probably be simplifiable when Polonius is shipped.
+        if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
+            self.last_resolved = None;
+        }
+        match &mut self.last_resolved {
+            Some(resolved) => Some(&resolved.1),
+            x => {
+                let data = (self.resolver)(context, hash)?;
+                Some(&x.insert((hash, data)).1)
+            }
+        }
+    }
+
+    #[cfg(feature = "native")]
+    pub fn get_const(&self, context: u64, hash: Bytes32) -> Option<CBytes> {
+        if let Some(resolved) = &self.last_resolved {
+            if resolved.0 == hash {
+                return Some(resolved.1.clone());
+            }
+        }
+        (self.resolver)(context, hash)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
@@ -1010,6 +1062,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    map_resolver: MapResolverWrapper,
     end_parent_chain_block_hash: Bytes32, // Used for MEL proving.
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
@@ -1241,6 +1294,10 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
     Arc::new(|_, _, _| None) as _
 }
 
+pub fn get_empty_map_resolver() -> MapResolver {
+    Arc::new(|_, _| None) as _
+}
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
     pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
@@ -1255,6 +1312,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        map_resolver: MapResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source, binary_path)
@@ -1279,6 +1337,7 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+            map_resolver,
             None,
         )
     }
@@ -1308,6 +1367,7 @@ impl Machine {
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _, _| panic!("tried to read preimage")),
+            Arc::new(|_, _| panic!("tried to read map value")),
             Some(stylus_data),
         )?;
 
@@ -1355,6 +1415,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        map_resolver: MapResolver,
         stylus_data: Option<StylusData>,
     ) -> Result<Machine> {
         use ArbValueType::*;
@@ -1581,6 +1642,7 @@ impl Machine {
             inbox_contents,
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
+            map_resolver: MapResolverWrapper::new(map_resolver),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             end_parent_chain_block_hash: Bytes32::default(),
@@ -1614,6 +1676,7 @@ impl Machine {
             inbox_contents: Default::default(),
             first_too_far: Default::default(),
             preimage_resolver: PreimageResolverWrapper::new(Arc::new(|_, _, _| None)),
+            map_resolver: MapResolverWrapper::new(Arc::new(|_, _| None)),
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
             context: Default::default(),
@@ -1669,6 +1732,7 @@ impl Machine {
             inbox_contents: Default::default(),
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
+            map_resolver: MapResolverWrapper::new(get_empty_map_resolver()),
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             end_parent_chain_block_hash: Bytes32::default(),
@@ -3321,6 +3385,10 @@ impl Machine {
 
     pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
         self.preimage_resolver.resolver = resolver;
+    }
+
+    pub fn set_map_resolver(&mut self, resolver: MapResolver) {
+        self.map_resolver.resolver = resolver;
     }
 
     pub fn set_context(&mut self, context: u64) {

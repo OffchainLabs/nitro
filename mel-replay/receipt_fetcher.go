@@ -15,17 +15,25 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
-	"github.com/offchainlabs/nitro/arbutil"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
+
+type relevantTxIndicesFetcher interface {
+	FetchRelevantTxIndices(ctx context.Context, parentChainBlockHash common.Hash) ([]uint, error)
+}
 
 type receiptFetcherForBlock struct {
 	header           *types.Header
 	preimageResolver PreimageResolver
+	txIndicesFetcher relevantTxIndicesFetcher
 }
 
-func NewLogsFetcher(header *types.Header, preimageResolver PreimageResolver) melextraction.LogsFetcher {
-	return &receiptFetcherForBlock{header, preimageResolver}
+func NewLogsFetcher(
+	header *types.Header,
+	preimageResolver PreimageResolver,
+	txIndicesFetcher relevantTxIndicesFetcher,
+) melextraction.LogsFetcher {
+	return &receiptFetcherForBlock{header, preimageResolver, txIndicesFetcher}
 }
 
 // LogsForTxIndex fetches logs for a specific transaction index by walking
@@ -54,17 +62,12 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
 	}
-	relevantTxIndicesKey := RelevantTxIndexesKey(rf.header.Hash())
-	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, relevantTxIndicesKey)
+	txIndices, err := rf.txIndicesFetcher.FetchRelevantTxIndices(ctx, parentChainBlockHash)
 	if err != nil {
 		return nil, err
 	}
-	var txIndexes []uint
-	if err := rlp.DecodeBytes(txIndexData, &txIndexes); err != nil {
-		return nil, err
-	}
 	var relevantLogs []*types.Log
-	for _, txIndex := range txIndexes {
+	for _, txIndex := range txIndices {
 		logs, err := rf.LogsForTxIndex(ctx, parentChainBlockHash, txIndex)
 		if err != nil {
 			return nil, err

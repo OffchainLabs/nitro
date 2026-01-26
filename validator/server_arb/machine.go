@@ -8,6 +8,7 @@ package server_arb
 #include "arbitrator.h"
 
 ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash);
+ResolvedPreimage mapResolverC(size_t context, const uint8_t* hash);
 */
 import "C"
 
@@ -64,6 +65,9 @@ var _ MachineInterface = (*ArbitratorMachine)(nil)
 var preimageResolvers containers.SyncMap[int64, goPreimageResolverWithRefCounter]
 var lastPreimageResolverId atomic.Int64 // atomic
 
+var mapResolvers containers.SyncMap[int64, goMapResolverWithRefCounter]
+var lastMapValueResolverId atomic.Int64 // atomic
+
 func dereferenceContextId(contextId *int64) {
 	if contextId != nil {
 		resolverWithRefCounter, ok := preimageResolvers.Load(*contextId)
@@ -76,6 +80,22 @@ func dereferenceContextId(contextId *int64) {
 			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
 		} else if refCount == 0 {
 			preimageResolvers.Delete(*contextId)
+		}
+	}
+}
+
+func dereferenceMapResolverContextId(contextId *int64) {
+	if contextId != nil {
+		resolverWithRefCounter, ok := mapResolvers.Load(*contextId)
+		if !ok {
+			panic(fmt.Sprintf("dereferenceContextId: resolver with ref counter not found, contextId: %v", *contextId))
+		}
+
+		refCount := resolverWithRefCounter.refCounter.Add(-1)
+		if refCount < 0 {
+			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
+		} else if refCount == 0 {
+			mapResolvers.Delete(*contextId)
 		}
 	}
 }
@@ -101,6 +121,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	}
 	mach := &ArbitratorMachine{ptr: ptr}
 	C.arbitrator_set_preimage_resolver(ptr, (*[0]byte)(C.preimageResolverC))
+	C.arbitrator_set_map_resolver(ptr, (*[0]byte)(C.mapResolverC))
 	runtime.SetFinalizer(mach, (*ArbitratorMachine).Destroy)
 	return mach
 }
@@ -144,6 +165,12 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 			resolverWithRefCounter.refCounter.Add(1)
 		} else {
 			panic(fmt.Sprintf("Clone: resolver with ref counter not found, contextId: %v", *m.contextId))
+		}
+		mapResolverWithRefCounter, ok := mapResolvers.Load(*m.contextId)
+		if ok {
+			mapResolverWithRefCounter.refCounter.Add(1)
+		} else {
+			panic(fmt.Sprintf("Clone: map resolver with ref counter not found, contextId: %v", *m.contextId))
 		}
 	}
 
@@ -436,6 +463,60 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 		refCounter: &refCounter,
 	}
 	preimageResolvers.Store(id, resolverWithRefCounter)
+
+	m.contextId = &id
+	C.arbitrator_set_context(m.ptr, u64(id))
+	return nil
+}
+
+type GoMapResolver = func(common.Hash) ([]byte, error)
+type goMapResolverWithRefCounter struct {
+	resolver   GoMapResolver
+	refCounter *atomic.Int64
+}
+
+//export mapResolver
+func mapResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
+	var hash common.Hash
+	input := (*[1 << 30]byte)(ptr)[:32]
+	copy(hash[:], input)
+	resolverWithRefCounter, ok := mapResolvers.Load(int64(context))
+	if !ok {
+		log.Error("mapResolver: resolver with ref counter not found", "context", int64(context))
+		return C.ResolvedPreimage{
+			len: -1,
+		}
+	}
+	mapValue, err := resolverWithRefCounter.resolver(hash)
+	if err != nil {
+		log.Error("map value resolution failed", "err", err)
+		return C.ResolvedPreimage{
+			len: -1,
+		}
+	}
+	return C.ResolvedPreimage{
+		ptr: (*u8)(C.CBytes(mapValue)),
+		len: (C.ptrdiff_t)(len(mapValue)),
+	}
+}
+
+func (m *ArbitratorMachine) SetRelevantTxIndicesResolver(resolver GoMapResolver) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	dereferenceMapResolverContextId(m.contextId)
+
+	id := lastMapValueResolverId.Add(1)
+	refCounter := atomic.Int64{}
+	refCounter.Store(1)
+	resolverWithRefCounter := goMapResolverWithRefCounter{
+		resolver:   resolver,
+		refCounter: &refCounter,
+	}
+	mapResolvers.Store(id, resolverWithRefCounter)
 
 	m.contextId = &id
 	C.arbitrator_set_context(m.ptr, u64(id))

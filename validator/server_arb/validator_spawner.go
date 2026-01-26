@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
@@ -119,6 +120,16 @@ func (v *ArbitratorSpawner) loadEntryToMachine(_ context.Context, entry *validat
 			return preimage, nil
 		}
 		return nil, errors.New("preimage not found")
+	}
+	relevantTxIndicesResolver := func(parentChainBlockHash common.Hash) ([]byte, error) {
+		if txIndicesData, ok := entry.RelevantTxIndicesByBlockHash[parentChainBlockHash]; ok {
+			// TODO: Inefficient...instead provide the already RLP encoded data to the function.
+			return rlp.EncodeToBytes(txIndicesData)
+		}
+		return nil, fmt.Errorf("relevant tx indices not found for block hash %v", parentChainBlockHash)
+	}
+	if err := mach.SetRelevantTxIndicesResolver(relevantTxIndicesResolver); err != nil {
+		return err
 	}
 	if err := mach.SetPreimageResolver(resolver); err != nil {
 		return err

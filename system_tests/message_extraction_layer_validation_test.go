@@ -2,10 +2,9 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -13,10 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -73,14 +72,14 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	t.Log(entry.Preimages)
 
-	jsonPreimages, err := json.Marshal(entry.Preimages)
-	Require(t, err)
-	Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
-	t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
-	t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
-	initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
-	Require(t, err)
-	t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
+	// jsonPreimages, err := json.Marshal(entry.Preimages)
+	// Require(t, err)
+	// Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
+	// t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
+	// t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
+	// initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
+	// Require(t, err)
+	// t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
@@ -94,9 +93,10 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{
-			Preimages:               entry.Preimages,
-			StartState:              entry.Start,
-			EndParentChainBlockHash: entry.EndParentChainBlockHash,
+			Preimages:                    entry.Preimages,
+			StartState:                   entry.Start,
+			EndParentChainBlockHash:      entry.EndParentChainBlockHash,
+			RelevantTxIndicesByBlockHash: entry.RelevantTxIndicesByBlockHash,
 		},
 		true, /* use bold machine */
 	)
@@ -180,7 +180,10 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 		header, err := builder.L1.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(state.ParentChainBlockNumber+1))
 		Require(t, err)
 		preimagesBasedTxsFetcher := melreplay.NewTransactionFetcher(header, preimageResolver)
-		preimagesBasedLogsFetcher := melreplay.NewLogsFetcher(header, preimageResolver)
+		txIndicesFetcher := &relevantTxIndicesFetcher{
+			txIndices: entry.RelevantTxIndicesByBlockHash,
+		}
+		preimagesBasedLogsFetcher := melreplay.NewLogsFetcher(header, preimageResolver, txIndicesFetcher)
 		postState, _, _, _, err := melextraction.ExtractMessages(ctx, state, header, preimagesBasedDapReaders, preimagesBasedDelayedDb, preimagesBasedTxsFetcher, preimagesBasedLogsFetcher, nil)
 		Require(t, err)
 		wantState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, state.ParentChainBlockNumber+1)
@@ -190,6 +193,20 @@ func TestMELValidator_Recording_Preimages(t *testing.T) {
 		}
 		state = postState
 	}
+}
+
+type relevantTxIndicesFetcher struct {
+	txIndices map[common.Hash][]uint
+}
+
+func (rf *relevantTxIndicesFetcher) FetchRelevantTxIndices(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) ([]uint, error) {
+	txIndices, ok := rf.txIndices[parentChainBlockHash]
+	if !ok {
+		return nil, errors.New("no relevant tx indices for block hash")
+	}
+	return txIndices, nil
 }
 
 type blobPreimageReader struct {

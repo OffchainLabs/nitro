@@ -1,7 +1,6 @@
 package melrecording
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
 )
 
 // ReceiptRecorder records preimages corresponding to the receipts of a parent chain block
@@ -167,18 +165,10 @@ func (rr *ReceiptRecorder) LogsForBlockHash(ctx context.Context, parentChainBloc
 	return rr.logs, nil
 }
 
-// CollectTxIndicesPreimage adds the array of relevant tx indexes to the preimages map as a value
-// to the key represented by parentChainBlockHash.
-func (rr *ReceiptRecorder) CollectTxIndicesPreimage() error {
+func (rr *ReceiptRecorder) RelevantTxIndices() []uint {
 	var relevantLogsTxIndexes []uint
 	for k := range rr.relevantLogsTxIndexes {
 		relevantLogsTxIndexes = append(relevantLogsTxIndexes, k)
 	}
-	var buf bytes.Buffer
-	if err := rlp.Encode(&buf, relevantLogsTxIndexes); err != nil {
-		return err
-	}
-	relevantTxIndicesKey := melreplay.RelevantTxIndexesKey(rr.parentChainBlockHash)
-	rr.recordPreimages(relevantTxIndicesKey, buf.Bytes(), arbutil.Keccak256PreimageType)
-	return nil
+	return relevantLogsTxIndexes
 }

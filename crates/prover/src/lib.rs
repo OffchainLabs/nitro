@@ -48,6 +48,8 @@ use std::{
 };
 use utils::CBytes;
 
+use crate::machine::get_empty_map_resolver;
+
 lazy_static::lazy_static! {
     static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
 }
@@ -167,6 +169,7 @@ unsafe fn arbitrator_load_machine_impl(
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),
+        get_empty_map_resolver(),
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -449,6 +452,20 @@ unsafe fn handle_preimage_resolution(
     Some(data)
 }
 
+#[cfg(feature = "native")]
+unsafe fn handle_map_resolution(
+    context: u64,
+    hash: Bytes32,
+    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
+) -> Option<CBytes> {
+    let res = resolver(context, hash.as_ptr());
+    if res.len < 0 {
+        return None;
+    }
+    let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+    Some(data)
+}
+
 #[no_mangle]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
@@ -472,6 +489,21 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
             handle_preimage_resolution(context, ty, hash, resolver)
         },
     ) as PreimageResolver);
+}
+
+#[no_mangle]
+#[cfg(feature = "native")]
+pub unsafe extern "C" fn arbitrator_set_map_resolver(
+    mach: *mut Machine,
+    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
+) {
+    use crate::machine::MapResolver;
+
+    (*mach).set_map_resolver(
+        Arc::new(move |context: u64, hash: Bytes32| -> Option<CBytes> {
+            handle_map_resolution(context, hash, resolver)
+        }) as MapResolver,
+    );
 }
 
 #[no_mangle]

@@ -5,6 +5,7 @@ package melreplay_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -16,11 +17,25 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/recording"
+	melrecording "github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 )
+
+type relevantTxIndicesFetcher struct {
+	txIndices map[common.Hash][]uint
+}
+
+func (rf *relevantTxIndicesFetcher) FetchRelevantTxIndices(
+	ctx context.Context, parentChainBlockHash common.Hash,
+) ([]uint, error) {
+	txIndices, ok := rf.txIndices[parentChainBlockHash]
+	if !ok {
+		return nil, errors.New("no relevant tx indices for block hash")
+	}
+	return txIndices, nil
+}
 
 func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	ctx := context.Background()
@@ -92,14 +107,17 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	}
 
 	// Test reading of logs from the recorded preimages
-	require.NoError(t, recorder.CollectTxIndicesPreimage())
-	require.NoError(t, err)
+	txIndicesByBlockHash := make(map[common.Hash][]uint)
+	txIndicesByBlockHash[block.Hash()] = recorder.RelevantTxIndices()
+	txIndicesFetcher := &relevantTxIndicesFetcher{txIndices: txIndicesByBlockHash}
+
 	receiptFetcher := melreplay.NewLogsFetcher(
 		block.Header(),
 		melreplay.NewTypeBasedPreimageResolver(
 			arbutil.Keccak256PreimageType,
 			preimages,
 		),
+		txIndicesFetcher,
 	)
 	// Test LogsForBlockHash
 	logs, err := receiptFetcher.LogsForBlockHash(ctx, block.Hash())
