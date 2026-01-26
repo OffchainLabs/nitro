@@ -1,12 +1,12 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::path::PathBuf;
 use anyhow::Result;
 use arbutil::Bytes32;
 use clap::Parser;
 use logging::init_logging;
 use router::create_router;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;

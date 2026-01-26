@@ -2828,11 +2828,11 @@ dependencies = [
  "clap 4.5.53",
  "jit",
  "serde",
- "serde_json",
  "tokio",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "validation",
 ]
 
 [[package]]
