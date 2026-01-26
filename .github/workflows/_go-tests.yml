@@ -224,7 +224,7 @@ jobs:
         if: inputs.run-pebble-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble.xml --skip '^Test[A-L]'
+          --junitfile test-results/junit-pebble.xml --skip '^Test[A-L]' --parallel  $(( $(nproc) > 2 ? $(nproc) / 2 : 1 ))
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
 

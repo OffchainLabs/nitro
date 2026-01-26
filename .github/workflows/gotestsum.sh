@@ -19,6 +19,7 @@ race=false
 cover=false
 consensus_execution_in_same_process_use_rpc=false
 flaky=false
+parallel=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -83,6 +84,9 @@ while [[ $# -gt 0 ]]; do
       flaky=true
       shift
       ;;
+    --parallel)
+      check_missing_value $# "$1" "--parallel"
+      parallel=$1
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -134,6 +138,10 @@ fi
 
 if [ "$cover" == true ]; then
   cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
+fi
+
+if [ "$parallel" != "" ]; then
+  cmd="$cmd -parallel $parallel"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
