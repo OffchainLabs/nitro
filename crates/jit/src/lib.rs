@@ -12,6 +12,7 @@ use std::time::Duration;
 use wasmer::{FrameInfo, Pages};
 
 mod arbcompress;
+mod arbkeccak;
 mod caller_env;
 pub mod machine;
 mod prepare;

@@ -5,6 +5,7 @@ members = [
     "crates/brotli",
     "crates/caller-env",
     "crates/jit",
+    "crates/validation",
     "crates/prover",
     "crates/stylus",
     "crates/validator",
@@ -84,6 +85,7 @@ jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
+validation = { path = "crates/validation" }
 wasmer = { path = "crates/tools/wasmer/lib/api" }
 wasmer-compiler-cranelift = { path = "crates/tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
