@@ -35,7 +35,10 @@ pub async fn stylus_archs() -> &'static str {
     "host"
 }
 
-pub async fn validate(Json(request): Json<ValidationRequest>) -> Result<Json<GlobalState>, String> {
+pub async fn validate(
+    State(state): State<Arc<ServerState>>,
+    Json(request): Json<ValidationRequest>,
+) -> Result<Json<GlobalState>, String> {
     let delayed_inbox = match request.has_delayed_msg {
         true => vec![jit::SequencerMessage {
             number: request.delayed_msg_number,
@@ -46,7 +49,7 @@ pub async fn validate(Json(request): Json<ValidationRequest>) -> Result<Json<Glo
 
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
-            binary: Default::default(),
+            binary: state.binary.clone(),
             cranelift: true, // The default for JIT binary, no need for LLVM right now
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.

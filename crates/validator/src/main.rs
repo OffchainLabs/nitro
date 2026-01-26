@@ -1,6 +1,7 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::path::PathBuf;
 use anyhow::Result;
 use arbutil::Bytes32;
 use clap::Parser;
@@ -17,6 +18,7 @@ mod spawner_endpoints;
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
+    binary: PathBuf,
     module_root: Bytes32,
 }
 
@@ -27,6 +29,7 @@ async fn main() -> Result<()> {
     info!("Starting validator server with config: {:#?}", config);
 
     let state = Arc::new(ServerState {
+        binary: config.binary.clone(),
         module_root: config.get_module_root()?,
     });
 
