@@ -26,8 +26,11 @@ type TransactionFiltererAPI struct {
 }
 
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+	txOpts := *t.txOpts
+	txOpts.Context = ctx
+
 	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
-	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(t.txOpts, txHashToFilter)
+	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
 	} else {
