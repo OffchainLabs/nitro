@@ -85,8 +85,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --parallel)
+      shift
       check_missing_value $# "$1" "--parallel"
       parallel=$1
+      shift
+      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
