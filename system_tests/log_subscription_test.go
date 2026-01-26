@@ -21,6 +21,8 @@ func TestLogSubscription(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithPrestateTracerChecks = true
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
