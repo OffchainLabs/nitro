@@ -75,7 +75,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 
 	// Filterer not added to the filterers set yet, should fail
 	err = transactionFiltererRPCClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
-	require.Error(t, err)
+	require.ErrorContains(t, err, "execution reverted")
 
 	// Add filterer
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
