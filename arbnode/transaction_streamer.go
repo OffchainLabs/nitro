@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -1303,6 +1304,15 @@ func (s *TransactionStreamer) checkResult(msgIdx arbutil.MessageIndex, msgResult
 		return
 	}
 	if msgResult.BlockHash != *msgAndBlockInfo.BlockHash {
+		if malicious.Enabled() {
+			log.Warn(
+				"malicious-mode: blockhash mismatch ignored",
+				"msgIdx", msgIdx,
+				"expected", msgAndBlockInfo.BlockHash,
+				"actual", msgResult.BlockHash,
+			)
+			return
+		}
 		log.Error(
 			BlockHashMismatchLogMsg,
 			"msgIdx", msgIdx,

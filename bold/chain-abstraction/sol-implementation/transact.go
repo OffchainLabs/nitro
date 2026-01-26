@@ -16,10 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers"
+	"github.com/offchainlabs/nitro/util/malicious"
 )
 
 const FUSAKA_MAX_GAS = 1 << 24 // Fusaka hard fork adds a max cap for transactions of 2**24 gas.
@@ -63,13 +65,29 @@ func (a *AssertionChain) transact(
 	}
 	// We do not send the tx, but instead estimate gas first.
 	opts := copyTxOpts(a.txOpts)
+	fallbackGas := uint64(5_000_000)
+	if fallbackGas >= FUSAKA_MAX_GAS {
+		fallbackGas = FUSAKA_MAX_GAS - 1
+	}
 
 	// No BOLD transactions require a value.
 	opts.Value = big.NewInt(0)
 	opts.NoSend = true
+	if malicious.AllowGasEstimationFailure() && opts.GasLimit == 0 {
+		// Avoid preflight estimate inside abigen when estimation is expected to fail.
+		opts.GasLimit = fallbackGas
+	}
 	tx, err := fn(opts)
 	if err != nil {
-		return nil, errors.Wrap(err, "test execution of tx errored before sending payable tx")
+		if malicious.AllowGasEstimationFailure() {
+			if opts.GasLimit == 0 {
+				opts.GasLimit = fallbackGas
+			}
+			tx, err = fn(opts)
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, "test execution of tx errored before sending payable tx")
+		}
 	}
 	// Convert the transaction into a CallMsg.
 	msg := ethereum.CallMsg{
@@ -85,7 +103,17 @@ func (a *AssertionChain) transact(
 	// without needing to pay for the transaction and waste funds.
 	gas, err := backend.EstimateGas(ctx, msg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "gas estimation errored for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
+		if malicious.AllowGasEstimationFailure() {
+			gas = fallbackGas
+			log.Warn(
+				"malicious-mode: gas estimation failed, using fallback",
+				"err", err,
+				"fallbackGas", gas,
+				"tx", containers.Trunc(tx.Hash().Bytes()),
+			)
+		} else {
+			return nil, errors.Wrapf(err, "gas estimation errored for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
+		}
 	}
 
 	if gas >= FUSAKA_MAX_GAS {

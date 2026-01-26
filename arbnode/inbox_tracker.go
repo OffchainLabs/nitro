@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/malicious"
 )
 
 var (
@@ -642,6 +643,7 @@ func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
 	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
+	bytes = malicious.MutateInboxMessage(bytes)
 	return bytes, b.batches[0].BlockHash, err
 }
 

@@ -68,6 +68,7 @@ import (
 	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
+	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -154,6 +155,14 @@ func mainImpl() int {
 	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+	malicious.SetConfig(malicious.Config{
+		Enabled:                   nodeConfig.Validation.Wasm.MaliciousMode,
+		OverrideWasmModuleRoot:    nodeConfig.Validation.Wasm.OverrideModuleRoot,
+		AllowGasEstimationFailure: nodeConfig.Validation.Wasm.AllowGasEstimateFail,
+	})
+	if nodeConfig.Validation.Wasm.MaliciousMode {
+		_ = os.Setenv("NITRO_MALICIOUS_MODE", "1")
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
@@ -1104,6 +1113,10 @@ func (f *ExecutionNodeConfigFetcher) Get() *gethexec.Config {
 }
 
 func checkWasmModuleRootCompatibility(ctx context.Context, wasmConfig valnode.WasmConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) error {
+	if malicious.Enabled() && malicious.OverrideWasmModuleRoot() {
+		log.Warn("malicious-mode: skipping wasm module root compatibility check")
+		return nil
+	}
 	// Fetch current on-chain WASM module root
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(rollupAddrs.Rollup, l1Client)
 	if err != nil {

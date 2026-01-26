@@ -96,7 +96,7 @@ type ConfigFetcher func() *Config
 var DefaultConfig = Config{
 	Enable:               true,
 	PollOnly:             false,
-	PollInterval:         15 * time.Second,
+	PollInterval:         3 * time.Second,
 	PollTimeout:          5 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,

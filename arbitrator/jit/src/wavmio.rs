@@ -8,12 +8,22 @@ use crate::{
 };
 use arbutil::{Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};
+use lazy_static::lazy_static;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
     time::Instant,
 };
+
+const INBOX_MUTATION_OFFSET: usize = 64;
+const INBOX_MUTATION_MASK: u8 = 0x01;
+
+lazy_static! {
+    static ref MALICIOUS_INBOX_MUTATION: bool = std::env::var("NITRO_MALICIOUS_MODE")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+}
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
@@ -81,6 +91,16 @@ pub fn read_inbox_message(
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
+    if *MALICIOUS_INBOX_MUTATION {
+        if let Some(rel) = INBOX_MUTATION_OFFSET.checked_sub(offset) {
+            if rel < read.len() {
+                let mut mutated = read.to_vec();
+                mutated[rel] ^= INBOX_MUTATION_MASK;
+                mem.write_slice(out_ptr, &mutated);
+                return Ok(mutated.len() as u32);
+            }
+        }
+    }
     mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }

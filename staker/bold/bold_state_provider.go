@@ -16,13 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
+	protocol "github.com/offchainlabs/nitro/bold/chain-abstraction"
 	"github.com/offchainlabs/nitro/bold/containers/option"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
+	l2stateprovider "github.com/offchainlabs/nitro/bold/layer2-state-provider"
 	"github.com/offchainlabs/nitro/bold/state-commitments/history"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/challenge-cache"
+	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
+	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
@@ -71,6 +72,20 @@ func NewBOLDStateProvider(
 		inboxReader:              inboxReader,
 	}
 	return sp, nil
+}
+
+func (s *BOLDStateProvider) resolvedWasmModuleRoot(moduleRoot common.Hash) common.Hash {
+	if !malicious.OverrideWasmModuleRoot() {
+		return moduleRoot
+	}
+	if s.statelessValidator == nil {
+		return moduleRoot
+	}
+	latest := s.statelessValidator.GetLatestWasmModuleRoot()
+	if latest == (common.Hash{}) {
+		return moduleRoot
+	}
+	return latest
 }
 
 // ExecutionStateAfterPreviousState Produces the L2 execution state for the next
@@ -347,9 +362,10 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	moduleRoot := s.resolvedWasmModuleRoot(cfg.AssertionMetadata.WasmModuleRoot)
 	cacheKey := &challengecache.Key{
 		RollupBlockHash: messageResult.BlockHash,
-		WavmModuleRoot:  cfg.AssertionMetadata.WasmModuleRoot,
+		WavmModuleRoot:  moduleRoot,
 		MessageHeight:   uint64(messageNum),
 		StepHeights:     stepHeights,
 	}
@@ -379,7 +395,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	// TODO: Enable Redis streams.
 	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
 		ctx,
-		cfg.AssertionMetadata.WasmModuleRoot,
+		moduleRoot,
 		input,
 		uint64(cfg.MachineStartIndex),
 		uint64(cfg.StepSize),
@@ -494,6 +510,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	moduleRoot := s.resolvedWasmModuleRoot(assertionMetadata.WasmModuleRoot)
 	log.Info(
 		"Getting machine OSP",
 		"fromBatch", assertionMetadata.FromState.Batch,
@@ -505,7 +522,7 @@ func (s *BOLDStateProvider) CollectProof(
 	)
 	return s.statelessValidator.BOLDExecutionSpawners()[0].GetProofAt(
 		ctx,
-		assertionMetadata.WasmModuleRoot,
+		moduleRoot,
 		input,
 		uint64(machineIndex),
 	)

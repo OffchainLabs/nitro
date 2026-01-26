@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -41,6 +42,14 @@ func mainImpl() int {
 	nodeConfig, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+	malicious.SetConfig(malicious.Config{
+		Enabled:                   nodeConfig.Validation.Wasm.MaliciousMode,
+		OverrideWasmModuleRoot:    nodeConfig.Validation.Wasm.OverrideModuleRoot,
+		AllowGasEstimationFailure: nodeConfig.Validation.Wasm.AllowGasEstimateFail,
+	})
+	if nodeConfig.Validation.Wasm.MaliciousMode {
+		_ = os.Setenv("NITRO_MALICIOUS_MODE", "1")
 	}
 	stackConf := DefaultValidationNodeStackConfig
 	stackConf.DataDir = "" // ephemeral

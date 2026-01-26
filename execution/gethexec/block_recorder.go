@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/malicious"
 )
 
 // BlockRecorder uses a separate statedatabase from the blockchain.
@@ -180,7 +181,16 @@ func (r *BlockRecorder) RecordBlockCreation(
 	// check we got the canonical hash
 	canonicalHash := r.execEngine.bc.GetCanonicalHash(uint64(blockNum))
 	if canonicalHash != blockHash {
-		return nil, fmt.Errorf("Blockhash doesn't match when recording got %v canonical %v", blockHash, canonicalHash)
+		if malicious.Enabled() {
+			log.Warn(
+				"malicious-mode: blockhash mismatch during recording",
+				"got", blockHash,
+				"canonical", canonicalHash,
+				"blockNum", blockNum,
+			)
+		} else {
+			return nil, fmt.Errorf("Blockhash doesn't match when recording got %v canonical %v", blockHash, canonicalHash)
+		}
 	}
 
 	// these won't usually do much here (they will in preparerecording), but doesn't hurt to check

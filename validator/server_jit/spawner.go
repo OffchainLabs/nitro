@@ -88,6 +88,7 @@ func (v *JitSpawner) StylusArchs() []rawdb.WasmTarget {
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
+	moduleRoot = server_common.ResolveModuleRoot(v.locator, moduleRoot)
 	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
 	if err != nil {
 		return validator.GoGlobalState{}, fmt.Errorf("unable to get WASM machine: %w", err)
@@ -105,6 +106,7 @@ func (s *JitSpawner) Name() string {
 }
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
+	moduleRoot = server_common.ResolveModuleRoot(v.locator, moduleRoot)
 	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer v.count.Add(-1)

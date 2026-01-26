@@ -58,6 +58,15 @@ use rayon::prelude::*;
 #[cfg(feature = "counters")]
 static GET_MODULES_MERKLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+const INBOX_MUTATION_OFFSET: usize = 64;
+const INBOX_MUTATION_MASK: u8 = 0x01;
+
+lazy_static! {
+    static ref MALICIOUS_INBOX_MUTATION: bool = std::env::var("NITRO_MALICIOUS_MODE")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+}
+
 #[cfg(feature = "counters")]
 pub fn print_counters() {
     println!(
@@ -2554,7 +2563,18 @@ impl Machine {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
                             let read = message.get(offset..(offset + len)).unwrap_or_default();
-                            if module.memory.store_slice_aligned(ptr.into(), read) {
+                            let mut mutated = None;
+                            if *MALICIOUS_INBOX_MUTATION {
+                                if let Some(rel) = INBOX_MUTATION_OFFSET.checked_sub(offset) {
+                                    if rel < read.len() {
+                                        let mut buf = read.to_vec();
+                                        buf[rel] ^= INBOX_MUTATION_MASK;
+                                        mutated = Some(buf);
+                                    }
+                                }
+                            }
+                            let write_data = mutated.as_deref().unwrap_or(read);
+                            if module.memory.store_slice_aligned(ptr.into(), write_data) {
                                 value_stack.push(Value::I32(len as u32));
                             } else {
                                 error!();

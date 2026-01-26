@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
@@ -385,7 +386,16 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			return err
 		}
 		if recording.BlockHash != e.End.BlockHash {
-			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+			if malicious.Enabled() {
+				log.Warn(
+					"malicious-mode: recording blockhash mismatch ignored",
+					"pos", e.Pos,
+					"expected", e.End.BlockHash,
+					"got", recording.BlockHash,
+				)
+			} else {
+				return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+			}
 		}
 		if recording.Preimages != nil {
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{

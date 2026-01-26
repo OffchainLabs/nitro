@@ -22,6 +22,7 @@ structopt = "0.3.26"
 sha3 = "0.9.1"
 libc = "0.2.132"
 sha2 = "0.9.9"
+lazy_static.workspace = true
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]

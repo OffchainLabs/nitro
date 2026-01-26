@@ -171,6 +171,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(_ context.Context, entry *validat
 func (v *ArbitratorSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
+	moduleRoot = server_common.ResolveModuleRoot(v.locator, moduleRoot)
 	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
 	if err != nil {
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
@@ -210,6 +211,7 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
+	moduleRoot = server_common.ResolveModuleRoot(v.locator, moduleRoot)
 	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread(v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer v.count.Add(-1)
