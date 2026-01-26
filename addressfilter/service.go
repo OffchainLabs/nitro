@@ -16,16 +16,16 @@ import (
 // Service manages the address-filteress synchronization pipeline.
 // It periodically polls S3 for hash list updates and maintains an in-memory
 // copy for efficient address filtering.
-type Service struct {
+type FilterService struct {
 	stopwaiter.StopWaiter
-	config  *Config
-	hashStore   *HashStore
-	syncMgr *S3SyncManager
+	config    *Config
+	hashStore *HashStore
+	syncMgr   *S3SyncManager
 }
 
-// NewService creates a new address-filteress service.
+// NewFilterService creates a new address-filteress service.
 // Returns nil if the service is not enabled in the configuration.
-func NewService(ctx context.Context, config *Config) (*Service, error) {
+func NewFilterService(ctx context.Context, config *Config) (*FilterService, error) {
 	if !config.Enable {
 		return nil, nil
 	}
@@ -40,17 +40,17 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
 	}
 
-	return &Service{
-		config:  config,
-		hashStore:   hashStore,
-		syncMgr: syncMgr,
+	return &FilterService{
+		config:    config,
+		hashStore: hashStore,
+		syncMgr:   syncMgr,
 	}, nil
 }
 
 // Initialize downloads the initial hash list from S3.
 // This method blocks until the hash list is successfully loaded.
 // If this fails, the node should not start.
-func (s *Service) Initialize(ctx context.Context) error {
+func (s *FilterService) Initialize(ctx context.Context) error {
 	log.Info("initializing address-filter service, downloading initial hash list",
 		"bucket", s.config.S3.Bucket,
 		"key", s.config.S3.ObjectKey,
@@ -70,7 +70,7 @@ func (s *Service) Initialize(ctx context.Context) error {
 
 // Start begins the background polling goroutine.
 // This should be called after Initialize() succeeds.
-func (s *Service) Start(ctx context.Context) {
+func (s *FilterService) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
 
 	// Start periodic polling goroutine
@@ -86,7 +86,7 @@ func (s *Service) Start(ctx context.Context) {
 	)
 }
 
-func (s *Service) GetHashCount() int {
+func (s *FilterService) GetHashCount() int {
 	if !s.config.Enable {
 		return 0
 	}
@@ -94,21 +94,21 @@ func (s *Service) GetHashCount() int {
 }
 
 // GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
-func (s *Service) GetHashStoreDigest() string {
+func (s *FilterService) GetHashStoreDigest() string {
 	if !s.config.Enable {
 		return ""
 	}
 	return s.hashStore.Digest()
 }
 
-func (s *Service) GetLoadedAt() time.Time {
+func (s *FilterService) GetLoadedAt() time.Time {
 	if !s.config.Enable {
 		return time.Time{}
 	}
 	return s.hashStore.LoadedAt()
 }
 
-func (s *Service) GetHashStore() *HashStore {
+func (s *FilterService) GetHashStore() *HashStore {
 	if !s.config.Enable {
 		return nil
 	}
