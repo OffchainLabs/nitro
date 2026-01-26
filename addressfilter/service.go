@@ -19,7 +19,7 @@ import (
 type Service struct {
 	stopwaiter.StopWaiter
 	config  *Config
-	store   *HashStore
+	hashStore   *HashStore
 	syncMgr *S3SyncManager
 }
 
@@ -34,15 +34,15 @@ func NewService(ctx context.Context, config *Config) (*Service, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	store := NewHashStore()
-	syncMgr, err := NewS3SyncManager(ctx, config, store)
+	hashStore := NewHashStoreWithCacheSize(config.CacheSize)
+	syncMgr, err := NewS3SyncManager(ctx, config, hashStore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
 	}
 
 	return &Service{
 		config:  config,
-		store:   store,
+		hashStore:   hashStore,
 		syncMgr: syncMgr,
 	}, nil
 }
@@ -62,8 +62,8 @@ func (s *Service) Initialize(ctx context.Context) error {
 	}
 
 	log.Info("address-filter service initialized",
-		"hash_count", s.store.Size(),
-		"etag-digest", s.store.Digest(),
+		"hash_count", s.hashStore.Size(),
+		"etag-digest", s.hashStore.Digest(),
 	)
 	return nil
 }
@@ -90,7 +90,7 @@ func (s *Service) GetHashCount() int {
 	if !s.config.Enable {
 		return 0
 	}
-	return s.store.Size()
+	return s.hashStore.Size()
 }
 
 // GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
@@ -98,19 +98,19 @@ func (s *Service) GetHashStoreDigest() string {
 	if !s.config.Enable {
 		return ""
 	}
-	return s.store.Digest()
+	return s.hashStore.Digest()
 }
 
 func (s *Service) GetLoadedAt() time.Time {
 	if !s.config.Enable {
 		return time.Time{}
 	}
-	return s.store.LoadedAt()
+	return s.hashStore.LoadedAt()
 }
 
 func (s *Service) GetHashStore() *HashStore {
 	if !s.config.Enable {
 		return nil
 	}
-	return s.store
+	return s.hashStore
 }

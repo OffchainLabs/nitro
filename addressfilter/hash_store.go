@@ -49,10 +49,10 @@ func NewHashStoreWithCacheSize(cacheSize int) *HashStore {
 	return h
 }
 
-// Load atomically swaps in a new hash list.
+// Store atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
 // A new LRU cache is created for the new data, ensuring atomic consistency.
-func (h *HashStore) Load(salt []byte, hashes []common.Hash, digest string) {
+func (h *HashStore) Store(salt []byte, hashes []common.Hash, digest string) {
 	newData := &hashData{
 		salt:     salt,
 		hashes:   make(map[common.Hash]struct{}, len(hashes)),

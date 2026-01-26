@@ -46,7 +46,7 @@ func (c *Config) Validate() error {
 // DownloadConfig holds configuration for S3 multipart downloads.
 type DownloadConfig struct {
 	PartSizeMB         int `koanf:"part-size-mb"`
-	PartBodyMaxRetries int `koanf:"part-body-max-retries"`
+	PartBodyMaxRetries int `koanf:"max-retries"`
 	Concurrency        int `koanf:"concurrency"`
 }
 
@@ -57,4 +57,11 @@ func DefaultDownloadConfig() DownloadConfig {
 		PartBodyMaxRetries: 5,
 		Concurrency:        10,
 	}
+}
+
+// DownloadConfigAddOptions adds download configuration flags to the given flag set.
+func DownloadConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig DownloadConfig) {
+	f.Int(prefix+".part-size-mb", defaultConfig.PartSizeMB, "S3 multipart download part size in MB")
+	f.Int(prefix+".concurrency", defaultConfig.Concurrency, "S3 multipart download concurrency")
+	f.Int(prefix+".max-retries", defaultConfig.PartBodyMaxRetries, "maximum retries for S3 part body download")
 }
