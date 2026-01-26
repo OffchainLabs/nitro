@@ -1,7 +1,7 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{spawner_endpoints, ServerState};
+use crate::{endpoints::spawner_endpoints, ServerState};
 use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
