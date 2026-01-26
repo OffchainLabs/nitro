@@ -1,2 +1,0 @@
-### Ignored
-- Update Stylus SDK C and BF submodule pins
