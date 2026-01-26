@@ -141,10 +141,14 @@ jobs:
 
       - name: run jit prover on block input json
         if: inputs.run-defaults-a
+        id: jit
         run: |
           make build-jit
-          target/bin/jit --binary target/machines/latest/replay.wasm --require-success \
-          json --inputs '${{ github.workspace }}/target/TestProgramStorage/block_inputs.json'
+          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs '${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')
+          
+          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K[a-f0-9]+')
+          echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
       # --------------------- FLAKY MODE --------------------------
 
