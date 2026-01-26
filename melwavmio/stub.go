@@ -10,9 +10,11 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -33,7 +35,7 @@ func StubInit() {
 	endParentChainBlockHashFlag := flag.String("end-parent-chain-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "endParentChainBlockHash")
 	startMelRootFlag := flag.String("start-mel-state-hash", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
-	positionInMELFlag := flag.Uint64("position-in-mel", 0, "positionInMEL")
+	positionInMELFlag := flag.Uint64("position-in-mel", 1, "positionInMEL")
 	relevantIndicesPath := flag.String("relevant-tx-indices", "", "file to load relevant tx indices from")
 	flag.Parse()
 	endParentChainBlockHash = common.HexToHash(*endParentChainBlockHashFlag)
@@ -102,6 +104,11 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 	val, ok := preimages[ty][hash]
 	if !ok {
 		return []byte{}, errors.New("preimage not found")
+	}
+	if ty == arbutil.Keccak256PreimageType {
+		if hash != crypto.Keccak256Hash(val) {
+			return []byte{}, fmt.Errorf("preimage did not rehash to expected hash: %v", hash)
+		}
 	}
 	return val, nil
 }

@@ -514,6 +514,12 @@ pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64
 
 #[no_mangle]
 #[cfg(feature = "native")]
+pub unsafe extern "C" fn arbitrator_set_map_resolver_context(mach: *mut Machine, context: u64) {
+    (*mach).set_map_resolver_context(context);
+}
+
+#[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
     (*mach).hash()
 }

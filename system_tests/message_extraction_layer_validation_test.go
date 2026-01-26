@@ -2,9 +2,11 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -72,14 +74,17 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	t.Log(entry.Preimages)
 
-	// jsonPreimages, err := json.Marshal(entry.Preimages)
-	// Require(t, err)
-	// Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
-	// t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
-	// t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
-	// initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
-	// Require(t, err)
-	// t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
+	jsonPreimages, err := json.Marshal(entry.Preimages)
+	Require(t, err)
+	Require(t, os.WriteFile("~/Desktop/mypreimages.json", jsonPreimages, os.ModePerm))
+	jsonIndices, err := json.Marshal(entry.RelevantTxIndicesByBlockHash)
+	Require(t, err)
+	Require(t, os.WriteFile("~/Desktop/txindices.json", jsonIndices, os.ModePerm))
+	t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
+	t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
+	initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
+	Require(t, err)
+	t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
@@ -89,7 +94,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0x592166acf37c075f84b00da823e67a0349529de52c2a9d003f1522b135240283")
+	wasmModuleRoot := common.HexToHash("0xcd9b76f227bbc2e6510124bf29b73b6f0e64f2e7a168a57905be13d3389015f4")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{

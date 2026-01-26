@@ -1068,6 +1068,7 @@ pub struct Machine {
     stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
     context: u64,
+    map_resolver_context: u64,
     debug_info: bool, // Not part of machine hash
 }
 
@@ -1646,6 +1647,7 @@ impl Machine {
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             end_parent_chain_block_hash: Bytes32::default(),
+            map_resolver_context: 0,
             context: 0,
             debug_info,
         };
@@ -1680,6 +1682,7 @@ impl Machine {
             stylus_modules: Default::default(),
             initial_hash: Default::default(),
             context: Default::default(),
+            map_resolver_context: Default::default(),
             end_parent_chain_block_hash: Default::default(),
             debug_info: Default::default(),
         }
@@ -1737,6 +1740,7 @@ impl Machine {
             initial_hash: Bytes32::default(),
             end_parent_chain_block_hash: Bytes32::default(),
             context: 0,
+            map_resolver_context: 0,
             debug_info: false,
         };
         mach.initial_hash = mach.hash();
@@ -2654,7 +2658,7 @@ impl Machine {
                         error!();
                     };
 
-                    let Some(data) = self.map_resolver.get(self.context, hash) else {
+                    let Some(data) = self.map_resolver.get(self.map_resolver_context, hash) else {
                         eprintln!(
                             "{} for hash {}",
                             "Missing requested value for hash".red(),
@@ -3421,6 +3425,10 @@ impl Machine {
 
     pub fn set_context(&mut self, context: u64) {
         self.context = context;
+    }
+
+    pub fn set_map_resolver_context(&mut self, context: u64) {
+        self.map_resolver_context = context;
     }
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {

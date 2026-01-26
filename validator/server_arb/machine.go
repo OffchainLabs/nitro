@@ -53,10 +53,11 @@ type MachineInterface interface {
 
 // ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
-	mutex     sync.Mutex // needed because go finalizers don't synchronize (meaning they aren't thread safe)
-	ptr       *C.struct_Machine
-	contextId *int64
-	frozen    bool // does not allow anything that changes machine state, not cloned with the machine
+	mutex             sync.Mutex // needed because go finalizers don't synchronize (meaning they aren't thread safe)
+	ptr               *C.struct_Machine
+	preimageContextId *int64
+	mapContextId      *int64
+	frozen            bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
@@ -88,12 +89,12 @@ func dereferenceMapResolverContextId(contextId *int64) {
 	if contextId != nil {
 		resolverWithRefCounter, ok := mapResolvers.Load(*contextId)
 		if !ok {
-			panic(fmt.Sprintf("dereferenceContextId: resolver with ref counter not found, contextId: %v", *contextId))
+			panic(fmt.Sprintf("dereferenceMapContextId: resolver with ref counter not found, contextId: %v", *contextId))
 		}
 
 		refCount := resolverWithRefCounter.refCounter.Add(-1)
 		if refCount < 0 {
-			panic(fmt.Sprintf("dereferenceContextId: ref counter is negative, contextId: %v", *contextId))
+			panic(fmt.Sprintf("dereferenceMapContextId: ref counter is negative, contextId: %v", *contextId))
 		} else if refCount == 0 {
 			mapResolvers.Delete(*contextId)
 		}
@@ -111,8 +112,10 @@ func (m *ArbitratorMachine) Destroy() {
 		runtime.SetFinalizer(m, nil)
 	}
 
-	dereferenceContextId(m.contextId)
-	m.contextId = nil
+	dereferenceContextId(m.preimageContextId)
+	m.preimageContextId = nil
+	dereferenceMapResolverContextId(m.mapContextId)
+	m.mapContextId = nil
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -157,20 +160,23 @@ func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
-	newMach.contextId = m.contextId
+	newMach.preimageContextId = m.preimageContextId
+	newMach.mapContextId = m.mapContextId
 
-	if m.contextId != nil {
-		resolverWithRefCounter, ok := preimageResolvers.Load(*m.contextId)
+	if m.preimageContextId != nil {
+		resolverWithRefCounter, ok := preimageResolvers.Load(*m.preimageContextId)
 		if ok {
 			resolverWithRefCounter.refCounter.Add(1)
 		} else {
-			panic(fmt.Sprintf("Clone: resolver with ref counter not found, contextId: %v", *m.contextId))
+			panic(fmt.Sprintf("Clone: preimage resolver with ref counter not found, contextId: %v", *m.preimageContextId))
 		}
-		mapResolverWithRefCounter, ok := mapResolvers.Load(*m.contextId)
+	}
+	if m.mapContextId != nil {
+		mapResolverWithRefCounter, ok := mapResolvers.Load(*m.mapContextId)
 		if ok {
 			mapResolverWithRefCounter.refCounter.Add(1)
 		} else {
-			panic(fmt.Sprintf("Clone: map resolver with ref counter not found, contextId: %v", *m.contextId))
+			panic(fmt.Sprintf("Clone: map resolver with ref counter not found, contextId: %v", *m.mapContextId))
 		}
 	}
 
@@ -453,7 +459,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	dereferenceContextId(m.contextId)
+	dereferenceContextId(m.preimageContextId)
 
 	id := lastPreimageResolverId.Add(1)
 	refCounter := atomic.Int64{}
@@ -464,7 +470,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	}
 	preimageResolvers.Store(id, resolverWithRefCounter)
 
-	m.contextId = &id
+	m.preimageContextId = &id
 	C.arbitrator_set_context(m.ptr, u64(id))
 	return nil
 }
@@ -507,7 +513,7 @@ func (m *ArbitratorMachine) SetRelevantTxIndicesResolver(resolver GoMapResolver)
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	dereferenceMapResolverContextId(m.contextId)
+	dereferenceMapResolverContextId(m.mapContextId)
 
 	id := lastMapValueResolverId.Add(1)
 	refCounter := atomic.Int64{}
@@ -518,8 +524,8 @@ func (m *ArbitratorMachine) SetRelevantTxIndicesResolver(resolver GoMapResolver)
 	}
 	mapResolvers.Store(id, resolverWithRefCounter)
 
-	m.contextId = &id
-	C.arbitrator_set_context(m.ptr, u64(id))
+	m.mapContextId = &id
+	C.arbitrator_set_map_resolver_context(m.ptr, u64(id))
 	return nil
 }
 

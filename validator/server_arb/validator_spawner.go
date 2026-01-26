@@ -128,10 +128,10 @@ func (v *ArbitratorSpawner) loadEntryToMachine(_ context.Context, entry *validat
 		}
 		return nil, fmt.Errorf("relevant tx indices not found for block hash %v", parentChainBlockHash)
 	}
-	if err := mach.SetRelevantTxIndicesResolver(relevantTxIndicesResolver); err != nil {
+	if err := mach.SetPreimageResolver(resolver); err != nil {
 		return err
 	}
-	if err := mach.SetPreimageResolver(resolver); err != nil {
+	if err := mach.SetRelevantTxIndicesResolver(relevantTxIndicesResolver); err != nil {
 		return err
 	}
 	if err := mach.SetEndParentChainBlockHash(entry.EndParentChainBlockHash); err != nil {
