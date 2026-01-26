@@ -179,6 +179,8 @@ pub enum Opcode {
     GetEndParentChainBlockHash,
     /// Validates the DACertificate certificate before allowing ReadPreImage to access it
     ValidateCertificate,
+    /// Performs a map lookup via a resolver.
+    PerformMapLookup,
 }
 
 impl Opcode {
@@ -296,6 +298,7 @@ impl Opcode {
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
             Opcode::GetEndParentChainBlockHash => 0x8033,
+            Opcode::PerformMapLookup => 0x8034,
         }
     }
 
@@ -310,6 +313,7 @@ impl Opcode {
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
                 | Opcode::GetEndParentChainBlockHash
+                | Opcode::PerformMapLookup
         )
     }
 }

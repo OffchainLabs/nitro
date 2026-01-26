@@ -79,7 +79,10 @@ func GetEndParentChainBlockHash() (hash common.Hash) {
 }
 
 func GetRelevantTxIndices(parentChainBlockHash common.Hash) ([]byte, error) {
-	return nil, nil
+	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
+		hashUnsafe := unsafe.Pointer(&parentChainBlockHash[0])
+		return resolveMapLookup(hashUnsafe, offset, buf)
+	}), nil
 }
 
 func SetEndMELRoot(hash common.Hash) {

@@ -15,6 +15,7 @@ extern "C" {
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
     pub fn wavm_get_end_parent_chain_block_hash(ptr: *mut u8);
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_perform_map_lookup(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_dacertificate_preimage(ptr: *mut u8, offset: usize) -> usize;
@@ -120,6 +121,31 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
     assert_eq!(our_ptr as usize % 32, 0);
 
     let read = wavm_read_delayed_inbox_message(msg_num, our_ptr, offset);
+    assert!(read <= 32);
+    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
+    read
+}
+
+/// Retrieves a value from a map via a resolver.
+#[no_mangle]
+pub unsafe extern "C" fn wavmio__resolveMapLookup(
+    hash_ptr: GuestPtr,
+    offset: usize,
+    out_ptr: GuestPtr,
+) -> usize {
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    our_buf.copy_from_slice(&hash);
+
+    let our_ptr = our_buf.as_mut_ptr();
+    assert_eq!(our_ptr as usize % 32, 0);
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    our_buf.copy_from_slice(&hash);
+
+    let our_ptr = our_buf.as_mut_ptr();
+    assert_eq!(our_ptr as usize % 32, 0);
+    let read = wavm_perform_map_lookup(our_ptr, offset);
     assert!(read <= 32);
     STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
     read

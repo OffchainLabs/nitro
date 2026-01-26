@@ -2642,6 +2642,34 @@ impl Machine {
                     assert!(success, "Failed to write to previously read memory");
                     value_stack.push(Value::I32(len as u32));
                 }
+                Opcode::PerformMapLookup => {
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    // Data reads must be word aligned
+                    if offset % 32 != 0 {
+                        error!();
+                    }
+
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!();
+                    };
+
+                    let Some(data) = self.map_resolver.get(self.context, hash) else {
+                        eprintln!(
+                            "{} for hash {}",
+                            "Missing requested value for hash".red(),
+                            hash.red(),
+                        );
+                        self.print_backtrace(true);
+                        bail!("missing requested value for hash {}", hash);
+                    };
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, data.len().saturating_sub(offset));
+                    let read = data.get(offset..(offset + len)).unwrap_or_default();
+                    let success = module.memory.store_slice_aligned(ptr.into(), read);
+                    assert!(success, "Failed to write to previously read memory");
+                    value_stack.push(Value::I32(len as u32));
+                }
                 Opcode::ReadInboxMessage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();
