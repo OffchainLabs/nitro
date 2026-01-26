@@ -17,14 +17,6 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-pub async fn capacity() -> impl IntoResponse {
-    "1" // TODO: Figure out max number of workers (optionally, make it configurable)
-}
-
-pub async fn name() -> impl IntoResponse {
-    "Rust JIT validator"
-}
-
 pub fn local_target() -> &'static str {
     if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
         TARGET_ARM_64
@@ -33,20 +25,6 @@ pub fn local_target() -> &'static str {
     } else {
         TARGET_HOST
     }
-}
-
-pub async fn validate(
-    State(state): State<Arc<ServerState>>,
-    Json(request): Json<ValidationRequest>,
-) -> Result<Json<GlobalState>, String> {
-    match state.mode {
-        InputMode::Native => validate_native(request).await,
-        InputMode::Continuous => validate_continuous(&state, request).await,
-    }
-}
-
-pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("[{:?}]", state.module_root)
 }
 
 /// Counterpart for Go struct `validator.BatchInfo`.
@@ -96,4 +74,26 @@ impl From<jit::GlobalState> for GlobalState {
             pos_in_batch: state.position_within_message,
         }
     }
+}
+
+pub async fn validate(
+    State(state): State<Arc<ServerState>>,
+    Json(request): Json<ValidationRequest>,
+) -> Result<Json<GlobalState>, String> {
+    match state.mode {
+        InputMode::Native => validate_native(request).await,
+        InputMode::Continuous => validate_continuous(&state, request).await,
+    }
+}
+
+pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    format!("{:?}", state.available_workers)
+}
+
+pub async fn name() -> impl IntoResponse {
+    "Rust JIT validator"
+}
+
+pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    format!("[{:?}]", state.module_root)
 }

@@ -314,6 +314,8 @@ type NodeBuilder struct {
 	deployReferenceDAContracts  bool
 	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
+	WithPrestateTracerChecks bool
 
 	// ReferenceDA server (created if withReferenceDAProvider is true)
 	referenceDAServer *http.Server
@@ -929,6 +931,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	}
 
 	return func() {
+		if b.WithPrestateTracerChecks {
+			AutomatedPrestateTracerTest(t, b.L2)
+		}
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
@@ -1009,6 +1014,9 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2.ExecNode = execNode
 	b.L2.cleanup = cleanup
 	return func() {
+		if b.WithPrestateTracerChecks {
+			AutomatedPrestateTracerTest(t, b.L2)
+		}
 		b.L2.cleanup()
 		b.ctxCancel()
 	}
