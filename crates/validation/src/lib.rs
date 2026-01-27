@@ -1,6 +1,6 @@
 use arbutil::{Bytes32, PreimageType};
 use brotli::BrotliStatus;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
 use std::{
     collections::HashMap,
@@ -8,7 +8,7 @@ use std::{
 };
 
 /// Counterpart to Go `validator.GoGlobalState`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
     #[serde(with = "As::<DisplayFromStr>")]

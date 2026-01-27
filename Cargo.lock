@@ -316,6 +316,7 @@ dependencies = [
 name = "brotli"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "lazy_static",
  "num_enum",
  "wasmer",
@@ -2837,11 +2838,11 @@ dependencies = [
  "clap 4.5.53",
  "jit",
  "serde",
- "serde_json",
  "tokio",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "validation",
 ]
 
 [[package]]

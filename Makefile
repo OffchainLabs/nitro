@@ -64,6 +64,7 @@ arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forwar
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
+validation_server=$(output_root)/bin/validator
 
 arbitrator_cases=crates/prover/test-cases
 
@@ -190,6 +191,9 @@ build-prover-bin: $(prover_bin)
 
 .PHONY: build-jit
 build-jit: $(arbitrator_jit)
+
+.PHONY: build-validation-server
+build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
@@ -369,6 +373,11 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --release -p jit ${CARGOFLAGS}
 	install target/release/jit $@
+
+$(validation_server): $(DEP_PREDICATE)
+	mkdir -p `dirname $(validation_server)`
+	cargo build --release -p validator ${CARGOFLAGS}
+	install target/release/validator $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
