@@ -9,6 +9,7 @@ use std::io::BufWriter;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
+use validation::{BatchInfo, UserWasm};
 use wasmer::{FrameInfo, Pages};
 
 mod arbcompress;
@@ -92,19 +93,35 @@ pub struct GlobalState {
     pub position_within_message: u64,
 }
 
-#[derive(Clone, Debug)]
-pub struct SequencerMessage {
-    pub number: u64,
-    pub data: Vec<u8>,
+impl From<validation::GoGlobalState> for GlobalState {
+    fn from(state: validation::GoGlobalState) -> Self {
+        Self {
+            last_block_hash: state.block_hash,
+            last_send_root: state.send_root,
+            inbox_position: state.batch,
+            position_within_message: state.pos_in_batch,
+        }
+    }
+}
+
+impl From<GlobalState> for validation::GoGlobalState {
+    fn from(state: GlobalState) -> Self {
+        Self {
+            block_hash: state.last_block_hash,
+            send_root: state.last_send_root,
+            batch: state.inbox_position,
+            pos_in_batch: state.position_within_message,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct NativeInput {
     pub old_state: GlobalState,
-    pub inbox: Vec<SequencerMessage>,
-    pub delayed_inbox: Vec<SequencerMessage>,
+    pub inbox: Vec<BatchInfo>,
+    pub delayed_inbox: Vec<BatchInfo>,
     pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
-    pub programs: HashMap<Bytes32, Vec<u8>>,
+    pub programs: HashMap<Bytes32, UserWasm>,
 }
 
 /// Result of running the JIT validation.
