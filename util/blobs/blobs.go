@@ -78,7 +78,11 @@ func EncodeBlobs(data []byte) ([]kzg4844.Blob, error) {
 
 // DecodeBlobs decodes blobs into the batch data encoded in them.
 func DecodeBlobs(blobs []kzg4844.Blob) ([]byte, error) {
-	var rlpData []byte
+	if len(blobs) == 0 {
+		return nil, nil
+	}
+	bytesPerBlob := params.BlobTxFieldElementsPerBlob*31 + params.BlobTxFieldElementsPerBlob*spareBlobBits/8
+	rlpData := make([]byte, 0, len(blobs)*bytesPerBlob)
 	for _, blob := range blobs {
 		for fieldIndex := 0; fieldIndex < params.BlobTxFieldElementsPerBlob; fieldIndex++ {
 			rlpData = append(rlpData, blob[fieldIndex*32+1:(fieldIndex+1)*32]...)
