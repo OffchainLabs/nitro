@@ -106,10 +106,7 @@ fn local_stylus_target_must_be_present_if_some_target_is_present() {
     let input = ValidationInput {
         user_wasms: HashMap::from([(
             "some-other-target".to_string(),
-            HashMap::from([(
-                Bytes32::from([0u8; 32]),
-                UserWasm(vec![1, 2, 3]),
-            )]),
+            HashMap::from([(Bytes32::from([0u8; 32]), UserWasm(vec![1, 2, 3]))]),
         )]),
         ..Default::default()
     };
