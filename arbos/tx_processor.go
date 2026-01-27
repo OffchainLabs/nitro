@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -51,6 +52,8 @@ type TxProcessor struct {
 	// for the NUMBER and BLOCKHASH opcodes.
 	cachedL1BlockNumber *uint64
 	cachedL1BlockHashes map[uint64]common.Hash
+
+	txOnchainFiltered bool
 }
 
 func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
@@ -144,10 +147,22 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		return false, multigas.ZeroGas(), nil, nil
 	}
 
+	// Check onchain tx hash filter. Cache result here (before gas charging);
+	// a follow-up PR will use IsTxOnchainFiltered() in handleRevertedTx
+	// to execute filtered txs as no-ops (after gas is bought).
+	evm := p.evm
+	filteredState := filteredTransactions.Open(evm.StateDB, p.state.Burner)
+	isFiltered, err := filteredState.IsFiltered(underlyingTx.Hash())
+	if err != nil {
+		return false, multigas.ZeroGas(), err, nil
+	}
+	if isFiltered {
+		p.txOnchainFiltered = true
+	}
+
 	var tracingInfo *util.TracingInfo
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
-	evm := p.evm
 
 	startTracer := func() func() {
 		tracer := evm.Config.Tracer
@@ -857,6 +872,10 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 		return false
 	}
 	return enabled
+}
+
+func (p *TxProcessor) IsTxOnchainFiltered() bool {
+	return p.txOnchainFiltered
 }
 
 func (p *TxProcessor) EVM() *vm.EVM {
