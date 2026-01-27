@@ -92,15 +92,6 @@ type ArbOSVersionGetter interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
-type ConsensusInfo interface {
-	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
-}
-
-type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
-	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
-}
-
 type FullExecutionClient interface {
 	ExecutionClient
 	ExecutionSequencer
