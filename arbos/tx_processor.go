@@ -148,8 +148,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 	}
 
 	// Check onchain tx hash filter. Cache result here (before gas charging);
-	// a follow-up PR will use IsTxOnchainFiltered() in handleRevertedTx
-	// to execute filtered txs as no-ops (after gas is bought).
+	// handleRevertedTx reads it via ProcessingHook.IsTxOnchainFiltered() to
+	// execute filtered txs as no-ops (after gas is bought).
 	evm := p.evm
 	filteredState := filteredTransactions.Open(evm.StateDB, p.state.Burner)
 	isFiltered, err := filteredState.IsFiltered(underlyingTx.Hash())

@@ -285,6 +285,8 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 	normal2Initial, err := builder.L2.Client.BalanceAt(ctx, normal2Addr, nil)
 	require.NoError(t, err)
+	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
 
 	// Grant Filterer the transaction filterer role
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
