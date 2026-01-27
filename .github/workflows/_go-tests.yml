@@ -256,14 +256,14 @@ jobs:
         if: inputs.run-pebble-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble.xml --run '^Test[A-N]'
+          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]'
           --packages-parallel 1 --tests-parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))
 
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble.xml --skip '^Test[A-N]'
+          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]'
           --packages-parallel 1 --tests-parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
