@@ -527,32 +527,7 @@ func (p *TxProcessor) HeldGas() uint64 {
 	return p.computeHoldGas
 }
 
-func (p *TxProcessor) filterEvent(
-	topics []common.Hash,
-	data []byte,
-	emitter common.Address,
-	sender common.Address,
-) {
-	if len(topics) < 2 {
-		return
-	}
-
-	var addr common.Address
-	copy(addr[:], topics[1].Bytes()[12:])
-	p.evm.StateDB.TouchAddress(addr)
-}
-
 func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, success bool) {
-	logs := p.evm.StateDB.GetCurrentTxLogs()
-	for _, l := range logs {
-		p.filterEvent(
-			l.Topics,
-			l.Data,
-			l.Address,
-			p.msg.From,
-		)
-	}
-
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	scenario := util.TracingAfterEVM

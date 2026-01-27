@@ -334,3 +334,40 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 		})
 	}
 }
+
+func TestNewEventFilterFromNilConfig(t *testing.T) {
+	filter, err := NewEventFilterFromConfig(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if filter != nil {
+		t.Fatalf("expected nil filter, got %#v", filter)
+	}
+}
+
+func TestEventFilterConfigValidateDuplicateSelector(t *testing.T) {
+	event := "Transfer(address,address,uint256)"
+	hash := crypto.Keccak256([]byte(event))
+	var sel [4]byte
+	copy(sel[:], hash[:4])
+
+	cfg := &EventFilterConfig{
+		Rules: []EventRule{
+			{
+				Event:          event,
+				Selector:       sel,
+				TopicAddresses: []int{1, 2},
+			},
+			{
+				Event:          event,
+				Selector:       sel,
+				TopicAddresses: []int{1},
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatalf("expected duplicate selector error, got nil")
+	}
+}

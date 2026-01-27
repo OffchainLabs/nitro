@@ -42,6 +42,13 @@ type EventRule struct {
 	Bypass *BypassRule
 }
 
+type EventFilterConfig struct {
+	// Optional JSON file with event filter rules
+	Path string `koanf:"path"`
+	// Optional inline rules, appended after file rules (if any)
+	Rules []EventRule `koanf:"rules"`
+}
+
 type EventFilter struct {
 	rules map[[4]byte]EventRule
 }
@@ -146,14 +153,29 @@ func (e *EventRule) Validate() error {
 	return nil
 }
 
+func (c *EventFilterConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	seen := make(map[[4]byte]struct{}, len(c.Rules))
+	for i, rule := range c.Rules {
+		if err := rule.Validate(); err != nil {
+			return fmt.Errorf("validation: rule[%d] error: %w", i, err)
+		}
+		if _, ok := seen[rule.Selector]; ok {
+			return fmt.Errorf("validation: duplicate rule selector 0x%x", rule.Selector)
+		}
+		seen[rule.Selector] = struct{}{}
+	}
+	return nil
+}
+
 func NewEventFilter(rules []EventRule) (*EventFilter, error) {
 	m := make(map[[4]byte]EventRule, len(rules))
 	for i, rule := range rules {
 		if err := rule.Validate(); err != nil {
-			return nil, fmt.Errorf("rules[%d]: %w", i, err)
-		}
-		if _, exists := m[rule.Selector]; exists {
-			return nil, fmt.Errorf("rules[%d]: duplicate selector 0x%x", i, rule.Selector)
+			return nil, fmt.Errorf("rule[%d] error: %w", i, err)
 		}
 		m[rule.Selector] = rule
 	}
@@ -176,6 +198,36 @@ func NewEventFilterFromFile(path string) (*EventFilter, error) {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
 	return NewEventFilterFromJSON(data)
+}
+
+func NewEventFilterFromConfig(cfg *EventFilterConfig) (*EventFilter, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+
+	var rules []EventRule
+
+	if cfg.Path != "" {
+		filter, err := NewEventFilterFromFile(cfg.Path)
+		if err != nil {
+			return nil, err
+		}
+		if filter != nil {
+			for _, r := range filter.rules {
+				rules = append(rules, r)
+			}
+		}
+	}
+
+	if len(cfg.Rules) != 0 {
+		rules = append(rules, cfg.Rules...)
+	}
+
+	if len(rules) == 0 {
+		return nil, nil
+	}
+
+	return NewEventFilter(rules)
 }
 
 // ExtractAddresses returns all addresses referenced by this event rule verbatim.
