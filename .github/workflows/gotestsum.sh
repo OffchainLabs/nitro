@@ -19,8 +19,7 @@ race=false
 cover=false
 consensus_execution_in_same_process_use_rpc=false
 flaky=false
-packages_parallel=""
-tests_parallel=""
+reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -85,16 +84,8 @@ while [[ $# -gt 0 ]]; do
       flaky=true
       shift
       ;;
-    --packages-parallel)
-      shift
-      check_missing_value $# "$1" "--packages-parallel"
-      packages_parallel=$1
-      shift
-      ;;
-    --tests-parallel)
-      shift
-      check_missing_value $# "$1" "tests-parallel"
-      tests_parallel=$1
+    --reduce-parallelism)
+      reduce_parallelism=true
       shift
       ;;
     *)
@@ -150,12 +141,8 @@ if [ "$cover" == true ]; then
   cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
-if [ "$packages_parallel" != "" ]; then
-  cmd="$cmd -p $packages_parallel" # sets how many packages to run in parallel
-fi
-
-if [ "$tests_parallel" != "" ]; then
-  cmd="$cmd -parallel $tests_parallel" # sets how many tests in the same package to run in parallel
+if [ "$reduce_parallelism" == true ]; then
+  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
