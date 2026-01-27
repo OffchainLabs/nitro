@@ -7,6 +7,7 @@ use clap::Parser;
 use config::ServerConfig;
 use logging::init_logging;
 use router::create_router;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::{net::TcpListener, runtime::Builder};
 use tracing::info;
@@ -18,6 +19,7 @@ mod spawner_endpoints;
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
+    binary: PathBuf,
     module_root: Bytes32,
     available_workers: usize,
 }
@@ -28,6 +30,7 @@ fn main() -> Result<()> {
 
     let available_workers = server_config.get_workers()?;
     let state = Arc::new(ServerState {
+        binary: server_config.binary.clone(),
         module_root: server_config.get_module_root()?,
         available_workers,
     });
