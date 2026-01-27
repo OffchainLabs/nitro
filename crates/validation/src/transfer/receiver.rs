@@ -17,7 +17,7 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
     ensure_readiness(reader)?;
 
     Ok(ValidationInput {
-        has_delayed_msg: delayed_message.data.is_empty(),
+        has_delayed_msg: !delayed_message.data.is_empty(),
         delayed_msg_nr: delayed_message.number,
         preimages,
         batch_info: inbox,

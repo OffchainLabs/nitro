@@ -23,7 +23,7 @@ pub fn local_target() -> String {
 }
 
 /// Counterpart to Go `validator.GoGlobalState`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
     #[serde(with = "As::<DisplayFromStr>")]
@@ -35,7 +35,7 @@ pub struct GoGlobalState {
 }
 
 /// Counterpart to Go `validator.server_api.BatchInfoJson`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
@@ -49,7 +49,7 @@ pub struct BatchInfo {
 ///
 /// Note: The wrapped `Vec<u8>` is already `Base64` decoded before
 /// `from(Vec<u8>)` is called by `serde`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq,)]
 pub struct UserWasm(Vec<u8>);
 
 impl UserWasm {
@@ -75,7 +75,7 @@ impl TryFrom<Vec<u8>> for UserWasm {
 }
 
 /// Counterpart to Go `validator.server_api.InputJSON`.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationInput {
     pub id: u64,

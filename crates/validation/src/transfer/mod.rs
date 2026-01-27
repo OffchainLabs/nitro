@@ -3,6 +3,8 @@ use std::io;
 mod primitives;
 mod receiver;
 mod sender;
+#[cfg(test)]
+mod tests;
 
 pub use receiver::*;
 pub use sender::*;
