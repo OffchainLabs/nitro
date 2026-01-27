@@ -90,7 +90,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0xd17136c0c6ac9760cd42f5538bcbc2f6e9842bb09814a229ce4c8a1d6c392069")
+	wasmModuleRoot := common.HexToHash("0xd4038a12b6946eb6aa614d3c6ccf94f0c6a57f0c00b11d67c2e0343791eb5eef")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{
