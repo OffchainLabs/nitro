@@ -136,6 +136,37 @@ type batchFetcher interface {
 	FindInboxBatchContainingMessage(messageIndex arbutil.MessageIndex) (uint64, bool, error)
 }
 
+// computeNextMessageCountAndBatchIndex determines the ending message count and batch index for
+// the next assertion in the BoLD protocol.
+// It enforces a critical invariant: assertions must not span more than
+// maxNumberOfBlocks messages beyond the previous state.
+//
+// Parameters:
+//   - maxSeqInboxCount: The maximum sequencer inbox batch count (upper bound for the assertion)
+//   - previousGlobalState: The global state at the end of the previous assertion,
+//     containing Batch and PosInBatch
+//   - inboxTracker: Interface to query batch message counts and find batches containing messages
+//   - maxNumberOfBlocks: Maximum number of blocks (messages) allowed in
+//     a single assertion (blockChallengeLeafHeight)
+//
+// Returns:
+//   - messageCount: The ending message index for the assertion
+//   - batchIndex: The batch index containing messageCount
+//   - error: Error if inputs are invalid or data is unavailable
+//
+// Algorithm:
+//  1. Compute messageCount = messages at end of batch (maxSeqInboxCount - 1)
+//  2. Compute previousMessageCount = messages at previous state
+//     = messages at end of batch (previousGlobalState.Batch - 1) + PosInBatch
+//  3. Compute delta = messageCount - previousMessageCount
+//  4. If delta > maxNumberOfBlocks:
+//     Cap: messageCount = previousMessageCount + maxNumberOfBlocks
+//     Recompute: batchIndex = batch containing capped messageCount
+//  5. Return (messageCount, batchIndex)
+//
+// The invariant messageCount - previousMessageCount <= maxNumberOfBlocks must always hold.
+// This bound exists because challenge parameters and history commitments assume bounded
+// assertion sizes of at most maxNumberOfBlocks + 1 states.
 func computeNextMessageCountAndBatchIndex(
 	maxSeqInboxCount uint64,
 	previousGlobalState protocol.GoGlobalState,
