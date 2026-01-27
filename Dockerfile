@@ -57,6 +57,7 @@ COPY crates/arbutil crates/arbutil
 COPY crates/brotli crates/brotli
 COPY crates/caller-env crates/caller-env
 COPY crates/prover crates/prover
+COPY crates/validation crates/validation
 COPY crates/wasm-libraries crates/wasm-libraries
 COPY crates/tools/wasmer crates/tools/wasmer
 COPY brotli brotli
@@ -122,6 +123,7 @@ COPY crates/caller-env crates/caller-env
 COPY crates/prover crates/prover
 COPY crates/wasm-libraries crates/wasm-libraries
 COPY crates/jit crates/jit
+COPY crates/validation crates/validation
 COPY crates/stylus crates/stylus
 COPY crates/validator crates/validator
 COPY crates/tools/wasmer crates/tools/wasmer
@@ -149,6 +151,7 @@ COPY crates/arbutil crates/arbutil
 COPY crates/bench crates/bench
 COPY crates/brotli crates/brotli
 COPY crates/caller-env crates/caller-env
+COPY crates/validation crates/validation
 COPY crates/prover/Cargo.toml crates/prover/
 COPY crates/prover/benches crates/prover/benches
 COPY crates/bench/Cargo.toml crates/bench/
