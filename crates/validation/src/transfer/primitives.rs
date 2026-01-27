@@ -52,7 +52,3 @@ pub fn write_bytes(writer: &mut impl Write, data: &[u8]) -> IOResult<()> {
     write_u64(writer, data.len() as u64)?;
     writer.write_all(data)
 }
-
-pub fn read_boxed_slice(reader: &mut impl Read) -> IOResult<Box<[u8]>> {
-    Ok(Vec::into_boxed_slice(read_bytes(reader)?))
-}

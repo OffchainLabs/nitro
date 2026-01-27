@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
 use std::{
     collections::HashMap,
+    env,
     io::{self, BufRead},
 };
 
@@ -11,8 +12,18 @@ pub mod transfer;
 
 pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
 
+/// Counterpart to Go `rawdb.LocalTarget()`.
+pub fn local_target() -> String {
+    match (env::consts::OS, env::consts::ARCH) {
+        ("linux", "aarch64") => "arm64",
+        ("linux", "x86_64") => "amd64",
+        _ => "host",
+    }
+    .to_string()
+}
+
 /// Counterpart to Go `validator.GoGlobalState`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
     #[serde(with = "As::<DisplayFromStr>")]
@@ -64,7 +75,7 @@ impl TryFrom<Vec<u8>> for UserWasm {
 }
 
 /// Counterpart to Go `validator.server_api.InputJSON`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationInput {
     pub id: u64,
