@@ -4,7 +4,6 @@
 use crate::{
     arbcompress, arbkeccak, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
-    SequencerMessage,
 };
 use arbutil::{Bytes32, PreimageType};
 use eyre::{bail, ErrReport, Report, Result};
@@ -19,6 +18,7 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
+use validation::BatchInfo;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
     RuntimeError, Store,
@@ -245,7 +245,7 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.inbox.push(SequencerMessage {
+        native.inbox.push(BatchInfo {
             number: inbox_position,
             data: msg,
         });
@@ -254,7 +254,7 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.delayed_inbox.push(SequencerMessage {
+        native.delayed_inbox.push(BatchInfo {
             number: delayed_position,
             data: msg,
         });
@@ -307,7 +307,7 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
     }
 
     for (hash, program) in &input.programs {
-        env.module_asms.insert(*hash, program[..].into());
+        env.module_asms.insert(*hash, program.as_ref().into());
     }
 
     env.small_globals = [
