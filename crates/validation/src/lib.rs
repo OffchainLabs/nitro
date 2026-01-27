@@ -101,4 +101,15 @@ impl ValidationInput {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         Ok(serde_json::from_reader(&mut reader)?)
     }
+
+    pub fn delayed_msg(&self) -> Option<BatchInfo> {
+        if self.has_delayed_msg {
+            Some(BatchInfo {
+                number: self.delayed_msg_nr,
+                data: self.delayed_msg.clone(),
+            })
+        } else {
+            None
+        }
+    }
 }

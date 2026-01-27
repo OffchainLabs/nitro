@@ -60,8 +60,8 @@ fn receive_delayed_message(reader: &mut impl Read) -> IOResult<Option<BatchInfo>
 }
 
 fn receive_preimages(reader: &mut impl Read) -> IOResult<PreimageMap> {
-    let mut preimages = PreimageMap::default();
     let preimage_types = read_u32(reader)?;
+    let mut preimages = PreimageMap::with_capacity(preimage_types as usize);
     for _ in 0..preimage_types {
         let preimage_ty = PreimageType::try_from(read_u8(reader)?)
             .map_err(|e| Error::new(InvalidData, e.to_string()))?;
@@ -77,8 +77,8 @@ fn receive_preimages(reader: &mut impl Read) -> IOResult<PreimageMap> {
 }
 
 fn receive_user_wasms(reader: &mut impl Read) -> IOResult<HashMap<Bytes32, UserWasm>> {
-    let mut user_wasms = HashMap::new();
     let programs_count = read_u32(reader)?;
+    let mut user_wasms = HashMap::with_capacity(programs_count as usize);
     for _ in 0..programs_count {
         let module_hash = read_bytes32(reader)?;
         let module_asm = read_bytes(reader)?;

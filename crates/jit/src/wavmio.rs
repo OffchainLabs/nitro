@@ -302,7 +302,8 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         }
     }
     for (module_hash, module_asm) in &input.user_wasms[&local_target()] {
-        env.module_asms.insert(*module_hash, module_asm.as_vec().into());
+        env.module_asms
+            .insert(*module_hash, module_asm.as_vec().into());
     }
 
     let writer = BufWriter::new(socket);
