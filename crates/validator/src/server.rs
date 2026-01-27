@@ -174,6 +174,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "workflow does not have a jit binary available for now"]
     async fn test_server_lifecycle_continuous_mode() -> Result<()> {
         // 1. Setup Config and State. Use dummy module root is okay.
         let config = ServerConfig::try_parse_from([
