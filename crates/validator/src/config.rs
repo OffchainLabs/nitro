@@ -18,6 +18,10 @@ pub struct ServerConfig {
     #[clap(long, default_value = "0.0.0.0:4141")]
     pub address: SocketAddr,
 
+    /// Path to the `replay.wasm` binary.
+    #[clap(long, default_value = "./target/machines/latest/replay.wasm")]
+    pub binary: PathBuf,
+
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
