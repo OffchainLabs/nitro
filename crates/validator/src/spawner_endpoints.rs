@@ -8,7 +8,7 @@
 //! field names).
 
 use crate::engine::config::{TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
-use crate::engine::execution::{validate_continuous, validate_native, ValidationRequest};
+use crate::engine::execution::{validate_continuous, validate_native};
 use crate::{config::InputMode, ServerState};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -31,7 +31,7 @@ pub async fn validate(
     Json(request): Json<ValidationInput>,
 ) -> Result<Json<GoGlobalState>, String> {
     match state.mode {
-        InputMode::Native => validate_native(request).await,
+        InputMode::Native => validate_native(&state, request).await,
         InputMode::Continuous => validate_continuous(&state, request).await,
     }
 }

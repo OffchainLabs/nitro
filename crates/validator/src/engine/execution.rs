@@ -70,16 +70,16 @@ pub async fn validate_continuous(
         ));
     }
 
-    let mut locked_jit_machine = server_state.jit_machine.as_ref().unwrap().lock().await;
+    let jit_machine = server_state.jit_machine.as_ref().unwrap();
 
-    if !locked_jit_machine.is_active() {
+    if !jit_machine.is_active().await {
         return Err(format!(
             "Jit machine is not active. Maybe it received a shutdown signal? Requested module root: {}",
             server_state.module_root
         ));
     }
 
-    let new_state = locked_jit_machine
+    let new_state = jit_machine
         .feed_machine(&request)
         .await
         .map_err(|error| format!("{error:?}"))?;

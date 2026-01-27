@@ -25,7 +25,7 @@ tracing-subscriber = { workspace = true, features = [
     "json",
     "env-filter",
 ] }
+validation = { workspace = true }
 
 [dev-dependencies]
 reqwest = "0.13.1"
-validation = { workspace = true }

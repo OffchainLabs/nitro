@@ -13,7 +13,6 @@ use clap::{Args, Parser, ValueEnum};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tokio::sync::Mutex;
 
 use crate::engine::config::JitMachineConfig;
 use crate::engine::machine::JitMachine;
@@ -23,7 +22,9 @@ pub struct ServerState {
     pub mode: InputMode,
     pub binary: PathBuf,
     pub module_root: Bytes32,
-    pub jit_machine: Option<Mutex<JitMachine>>,
+    /// jit machine responsible for computing next GlobalState. Not wrapped
+    /// in Arc<> since the caller of ServerState is wrapped in Arc<>
+    pub jit_machine: Option<JitMachine>,
     pub available_workers: usize,
 }
 
@@ -37,7 +38,7 @@ impl ServerState {
 
                 let jit_machine = JitMachine::new(&config, Some(module_root))?;
 
-                Some(Mutex::new(jit_machine))
+                Some(jit_machine)
             }
             InputMode::Native => None,
         };

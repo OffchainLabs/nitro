@@ -8,7 +8,7 @@ use tracing::info;
 use crate::config::ServerState;
 use crate::router::create_router;
 
-pub(crate) async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
+pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
 }
 
@@ -27,8 +27,7 @@ where
     info!("Shutdown signal received. Running cleanup...");
 
     if let Some(jit_machine) = state.jit_machine.as_ref() {
-        let mut locked_jit_machine = jit_machine.lock().await;
-        locked_jit_machine.complete_machine().await?;
+        jit_machine.complete_machine().await?;
     }
 
     Ok(())
@@ -70,25 +69,27 @@ pub(crate) async fn shutdown_signal() {
 mod tests {
     use anyhow::Result;
     use clap::Parser;
-    use std::sync::Arc;
-    use tokio::{net::TcpListener, sync::oneshot};
+    use std::{net::SocketAddr, sync::Arc};
+    use tokio::{
+        net::TcpListener,
+        sync::oneshot::{self, Sender},
+        task::JoinHandle,
+    };
 
     use crate::{
         config::{ServerConfig, ServerState},
         server::run_server_internal,
     };
 
-    #[tokio::test]
-    async fn test_server_lifecycle() -> Result<()> {
-        // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-        ])
-        .unwrap();
-        let state = Arc::new(ServerState::new(&config)?);
+    struct TestServerConfig {
+        sender: Sender<()>,
+        server_handle: JoinHandle<Result<()>>,
+        addr: SocketAddr,
+        state: Arc<ServerState>,
+    }
 
+    async fn spinup_server(config: &ServerConfig) -> Result<TestServerConfig> {
+        let state = Arc::new(ServerState::new(config)?);
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
@@ -107,16 +108,19 @@ mod tests {
             run_server_internal(listener, state_for_server, shutdown_signal).await
         });
 
-        // 5. Check that jit machine is active
-        if let Some(jit) = state.jit_machine.as_ref() {
-            let locked_jit_machine = jit.lock().await;
-            assert!(locked_jit_machine.is_active());
-        }
+        Ok(TestServerConfig {
+            sender: tx,
+            server_handle,
+            addr,
+            state,
+        })
+    }
 
-        // 6. Make a real request here to prove the server is up
+    async fn verify_and_shutdown_server(test_config: TestServerConfig) -> Result<()> {
+        // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("http://{}/validation_capacity", addr))
+            .get(format!("http://{}/validation_capacity", test_config.addr))
             .send()
             .await;
 
@@ -126,27 +130,70 @@ mod tests {
         );
         assert_eq!(resp.unwrap().status(), 200);
 
-        // 7. Trigger Shutdown
+        // 6. Trigger Shutdown
         println!("Sending shutdown signal...");
-        let _ = tx.send(());
+        let _ = test_config.sender.send(());
 
-        // 8. Wait for the server to finish (this ensures cleanup ran)
-        let result = server_handle.await?;
+        // 7. Wait for the server to finish (this ensures cleanup ran)
+        let result = test_config.server_handle.await?;
         assert!(result.is_ok(), "Server should exit successfully");
 
-        // 9. Verify Cleanup
-        if let Some(jit) = state.jit_machine.as_ref() {
-            let locked_jit_machine = jit.lock().await;
-            assert!(!locked_jit_machine.is_active());
+        // 8. Verify jit_machine Cleanup
+        if let Some(jit) = test_config.state.jit_machine.as_ref() {
+            assert!(!jit.is_active().await);
         }
 
-        // 10. Verify same request from above fails expectadly
+        // 9. Verify same request from above fails expectadly
         let resp = client
-            .get(format!("http://{}/validation_capacity", addr))
+            .get(format!("http://{}/validation_capacity", test_config.addr))
             .send()
             .await;
 
         assert!(resp.is_err(), "server should not be up");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_server_lifecycle_native_mode() -> Result<()> {
+        // 1. Setup Config and State. Use dummy module root is okay.
+        let config = ServerConfig::try_parse_from([
+            "server",
+            "--module-root",
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+        ])
+        .unwrap();
+        let test_config = spinup_server(&config).await?;
+
+        // Since we're running in native mode there should not be an active jit_machine
+        assert!(test_config.state.jit_machine.is_none());
+
+        verify_and_shutdown_server(test_config).await.unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_server_lifecycle_continuous_mode() -> Result<()> {
+        // 1. Setup Config and State. Use dummy module root is okay.
+        let config = ServerConfig::try_parse_from([
+            "server",
+            "--module-root",
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "--mode",
+            "continuous",
+        ])
+        .unwrap();
+        let test_config = spinup_server(&config).await?;
+
+        assert!(test_config.state.jit_machine.is_some());
+
+        // Check that jit machine is active
+        if let Some(jit) = test_config.state.jit_machine.as_ref() {
+            assert!(jit.is_active().await);
+        }
+
+        verify_and_shutdown_server(test_config).await.unwrap();
 
         Ok(())
     }

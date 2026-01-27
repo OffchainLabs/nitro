@@ -31,13 +31,12 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     process::{Child, ChildStdin, Command},
+    sync::Mutex,
 };
 use tracing::{error, warn};
+use validation::{GoGlobalState, ValidationInput};
 
-use crate::{
-    engine::{config::JitMachineConfig, execution::ValidationRequest},
-    spawner_endpoints::{local_target, GlobalState},
-};
+use crate::{engine::config::JitMachineConfig, spawner_endpoints::local_target};
 
 const SUCCESS_BYTE: u8 = 0x0;
 const FAILURE_BYTE: u8 = 0x1;
@@ -80,10 +79,12 @@ async fn read_bytes_with_len<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec
 
 #[derive(Debug)]
 pub struct JitMachine {
-    pub process_stdin: Option<ChildStdin>,
-    pub process: Child,
+    /// Handler to jit binary stdin. Instead of using Mutex<> for the entire
+    /// JitMachine we chose to use a more granular Mutex<> to avoid contention
+    pub process_stdin: Mutex<Option<ChildStdin>>,
+    /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown
+    pub process: Mutex<Child>,
     pub wasm_memory_usage_limit: u64,
-    is_active: bool,
 }
 
 impl JitMachine {
@@ -136,25 +137,24 @@ impl JitMachine {
             .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
 
         Ok(Self {
-            process_stdin: Some(stdin),
-            process: child,
+            process_stdin: Mutex::new(Some(stdin)),
+            process: Mutex::new(child),
             wasm_memory_usage_limit: config.wasm_memory_usage_limit,
-            is_active: true,
         })
     }
 
-    pub fn is_active(&self) -> bool {
-        self.is_active && self.process_stdin.is_some()
+    pub async fn is_active(&self) -> bool {
+        self.process_stdin.lock().await.is_some()
     }
 
-    pub async fn feed_machine(&mut self, request: &ValidationRequest) -> Result<GlobalState> {
+    pub async fn feed_machine(&self, request: &ValidationInput) -> Result<GoGlobalState> {
         // 1. Create new TCP connection
         // Binding with a port number of 0 will request that the OS assigns a port to this listener.
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .context("failed to create TCP listener")?;
 
-        let mut state = GlobalState::default();
+        let mut state = GoGlobalState::default();
 
         let addr = listener.local_addr().context("failed to get local addr")?;
 
@@ -162,13 +162,16 @@ impl JitMachine {
         let address_str = format!("{addr}\n");
 
         // 3. Send TCP connection via stdin pipe
-        if let Some(stdin) = &mut self.process_stdin {
-            stdin
-                .write_all(address_str.as_bytes())
-                .await
-                .context("failed to write address to jit stdin")?;
-        } else {
-            return Err(anyhow!("JIT machine stdin is not available"));
+        {
+            let mut locked_process_stdin = self.process_stdin.lock().await;
+            if let Some(stdin) = locked_process_stdin.as_mut() {
+                stdin
+                    .write_all(address_str.as_bytes())
+                    .await
+                    .context("failed to write address to jit stdin")?;
+            } else {
+                return Err(anyhow!("JIT machine stdin is not available"));
+            }
         }
 
         // 4. Wait for the child to call us back
@@ -195,7 +198,7 @@ impl JitMachine {
         // 7. Send Delayed Inbox
         if request.has_delayed_msg {
             write_u8(&mut conn, ANOTHER_BYTE).await?;
-            write_u64(&mut conn, request.delayed_msg_number).await?;
+            write_u64(&mut conn, request.delayed_msg_nr).await?;
             write_bytes(&mut conn, &request.delayed_msg).await?;
         }
         write_u8(&mut conn, SUCCESS_BYTE).await?;
@@ -232,7 +235,7 @@ impl JitMachine {
         write_u32(&mut conn, local_user_wasm.len() as u32).await?;
         for (module_hash, program) in local_user_wasm {
             write_exact(&mut conn, &module_hash.0).await?;
-            write_bytes(&mut conn, program).await?;
+            write_bytes(&mut conn, &program.as_vec()).await?;
         }
 
         // 10. Signal that we are done sending global state
@@ -272,19 +275,20 @@ impl JitMachine {
         }
     }
 
-    pub async fn complete_machine(&mut self) -> Result<()> {
+    pub async fn complete_machine(&self) -> Result<()> {
         // Close stdin. This sends EOF to the child process, signaling it to stop.
         // We take the Option to ensure it's dropped and cannot be used again.
-        if let Some(stdin) = self.process_stdin.take() {
+
+        let mut locked_process_stdin = self.process_stdin.lock().await;
+        if let Some(stdin) = locked_process_stdin.take() {
             drop(stdin);
         }
 
-        self.process
+        let mut locked_process = self.process.lock().await;
+        locked_process
             .kill()
             .await
             .context("failed to kill jit process")?;
-
-        self.is_active = false;
 
         Ok(())
     }
