@@ -37,7 +37,6 @@ func NewS3SyncManager(ctx context.Context, config *Config, hashStore *HashStore)
 		ctx,
 		&config.S3,
 		s.handleHashListData,
-		s3syncer.WithDownloadConfig(config.Download),
 	)
 
 	if err != nil {

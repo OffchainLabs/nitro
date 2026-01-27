@@ -34,7 +34,7 @@ func NewFilterService(ctx context.Context, config *Config) (*FilterService, erro
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	hashStore := NewHashStoreWithCacheSize(config.CacheSize)
+	hashStore := NewHashStore(config.CacheSize)
 	syncMgr, err := NewS3SyncManager(ctx, config, hashStore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)

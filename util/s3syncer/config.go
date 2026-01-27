@@ -11,11 +11,14 @@ import (
 
 // Config holds the S3 configuration for syncing data.
 type Config struct {
-	Bucket    string `koanf:"bucket"`
-	Region    string `koanf:"region"`
-	ObjectKey string `koanf:"object-key"`
-	AccessKey string `koanf:"access-key"`
-	SecretKey string `koanf:"secret-key"`
+	Bucket      string `koanf:"bucket"`
+	Region      string `koanf:"region"`
+	ObjectKey   string `koanf:"object-key"`
+	AccessKey   string `koanf:"access-key"`
+	SecretKey   string `koanf:"secret-key"`
+	ChunkSizeMB int    `koanf:"chunk-size-mb"`
+	MaxRetries  int    `koanf:"max-retries"`
+	Concurrency int    `koanf:"concurrency"`
 }
 
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
@@ -27,6 +30,9 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secret-key", "", "AWS secret key for S3 (optional, uses default credentials if "+
 		"not provided which check for credentials in specific order like env variables, shared credentials, etc.)")
 	f.String(prefix+".object-key", "", "S3 object key (path) to the file")
+	f.Int(prefix+".chunk-size-mb", defaultChunkSizeMB, "S3 multipart download part size in MB")
+	f.Int(prefix+".concurrency", defaultConcurrency, "S3 multipart download concurrency")
+	f.Int(prefix+".max-retries", defaultMaxRetries, "maximum retries for S3 part body download")
 }
 
 // Validate checks that required S3 configuration fields are set.
@@ -43,25 +49,9 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// DownloadConfig holds configuration for S3 multipart downloads.
-type DownloadConfig struct {
-	PartSizeMB         int `koanf:"part-size-mb"`
-	PartBodyMaxRetries int `koanf:"max-retries"`
-	Concurrency        int `koanf:"concurrency"`
-}
 
-// DefaultDownloadConfig returns the default download configuration.
-func DefaultDownloadConfig() DownloadConfig {
-	return DownloadConfig{
-		PartSizeMB:         32,
-		PartBodyMaxRetries: 5,
-		Concurrency:        10,
-	}
-}
-
-// DownloadConfigAddOptions adds download configuration flags to the given flag set.
-func DownloadConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig DownloadConfig) {
-	f.Int(prefix+".part-size-mb", defaultConfig.PartSizeMB, "S3 multipart download part size in MB")
-	f.Int(prefix+".concurrency", defaultConfig.Concurrency, "S3 multipart download concurrency")
-	f.Int(prefix+".max-retries", defaultConfig.PartBodyMaxRetries, "maximum retries for S3 part body download")
-}
+const (
+	defaultChunkSizeMB = 32
+	defaultMaxRetries  = 5
+	defaultConcurrency = 10
+)

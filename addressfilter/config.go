@@ -13,24 +13,21 @@ import (
 )
 
 type Config struct {
-	Enable       bool                    `koanf:"enable"`
-	S3           s3syncer.Config         `koanf:"s3"`
-	Download     s3syncer.DownloadConfig `koanf:"download"`
-	PollInterval time.Duration           `koanf:"poll-interval"`
-	CacheSize    int                     `koanf:"cache-size"`
+	Enable       bool            `koanf:"enable"`
+	S3           s3syncer.Config `koanf:"s3"`
+	PollInterval time.Duration   `koanf:"poll-interval"`
+	CacheSize    int             `koanf:"cache-size"`
 }
 
 var DefaultConfig = Config{
 	Enable:       false,
 	PollInterval: 5 * time.Minute,
 	CacheSize:    10000,
-	Download:     s3syncer.DefaultDownloadConfig(),
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable restricted address synchronization service")
 	s3syncer.ConfigAddOptions(prefix+".s3", f)
-	s3syncer.DownloadConfigAddOptions(prefix+".download", f, DefaultConfig.Download)
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval between polling S3 for hash list updates")
 	f.Int(prefix+".cache-size", DefaultConfig.CacheSize, "LRU cache size for address lookup results")
 }

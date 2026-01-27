@@ -17,7 +17,7 @@ import (
 )
 
 func TestHashStore_IsRestricted(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	// Test empty store
 	addr := common.HexToAddress("0x1234567890123456789012345678901234567890")
@@ -66,7 +66,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 }
 
 func TestHashStore_AtomicSwap(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	salt1 := []byte("salt1")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
@@ -99,7 +99,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 }
 
 func TestHashStore_ConcurrentAccess(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	salt1 := []byte("test-salt")
 	var addresses []common.Address
@@ -341,7 +341,7 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Test creating store with custom cache size
-	store := NewHashStoreWithCacheSize(500)
+	store := NewHashStore(500)
 
 	// Create test data
 	salt := []byte("test-salt")
@@ -375,7 +375,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 }
 
 func TestHashStore_LoadedAt(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	// Empty store should have zero time
 	if !store.LoadedAt().IsZero() {

@@ -22,58 +22,31 @@ type DataHandler func(data []byte, digest string) error
 
 // Syncer handles S3 object syncing with ETag-based change detection.
 type Syncer struct {
-	client         s3client.FullClient
-	config         *Config
-	downloadConfig DownloadConfig
-	handleData     DataHandler
-	digestETag     string
-	mutex          sync.Mutex
+	client     s3client.FullClient
+	config     *Config
+	handleData DataHandler
+	digestETag string
+	mutex      sync.Mutex
 }
-
-// Option configures a Syncer.
-type Option func(*Syncer)
 
 const bytesInMB = 1024 * 1024
-
-// WithDownloadConfig sets custom download configuration.
-func WithDownloadConfig(dc DownloadConfig) Option {
-	return func(s *Syncer) {
-		s.downloadConfig = dc
-	}
-}
-
-// WithS3Client sets a custom S3 client (useful for testing).
-func WithS3Client(client s3client.FullClient) Option {
-	return func(s *Syncer) {
-		s.client = client
-	}
-}
 
 // NewSyncer creates a new S3 syncer with the given callbacks.
 func NewSyncer(
 	ctx context.Context,
 	config *Config,
 	dataHandler DataHandler,
-	opts ...Option,
 ) (*Syncer, error) {
 	s := &Syncer{
-		config:         config,
-		downloadConfig: DefaultDownloadConfig(),
-		handleData:     dataHandler,
+		config:     config,
+		handleData: dataHandler,
 	}
 
-	for _, opt := range opts {
-		opt(s)
+	client, err := s3client.NewS3FullClient(ctx, config.AccessKey, config.SecretKey, config.Region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}
-
-	// Create S3 client if not provided via option
-	if s.client == nil {
-		client, err := s3client.NewS3FullClient(ctx, config.AccessKey, config.SecretKey, config.Region)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create S3 client: %w", err)
-		}
-		s.client = client
-	}
+	s.client = client
 
 	return s, nil
 }
@@ -128,9 +101,9 @@ func (s *Syncer) DownloadAndLoad(ctx context.Context) error {
 // downloadAndHandle downloads the S3 object to a temp file and calls the data handler.
 func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string, objectSize int64) error {
 	downloader := manager.NewDownloader(s.client.Client(), func(d *manager.Downloader) {
-		d.PartSize = int64(s.downloadConfig.PartSizeMB) * bytesInMB
-		d.PartBodyMaxRetries = s.downloadConfig.PartBodyMaxRetries
-		d.Concurrency = s.downloadConfig.Concurrency
+		d.PartSize = int64(s.config.ChunkSizeMB) * bytesInMB
+		d.PartBodyMaxRetries = s.config.MaxRetries
+		d.Concurrency = s.config.Concurrency
 	})
 
 	// let's use an in-memory buffer to avoid file I/O

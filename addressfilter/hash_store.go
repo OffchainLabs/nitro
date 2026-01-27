@@ -32,13 +32,7 @@ type HashStore struct {
 	cacheSize int
 }
 
-const defaultCacheSize = 10000
-
-func NewHashStore() *HashStore {
-	return NewHashStoreWithCacheSize(defaultCacheSize)
-}
-
-func NewHashStoreWithCacheSize(cacheSize int) *HashStore {
+func NewHashStore(cacheSize int) *HashStore {
 	h := &HashStore{
 		cacheSize: cacheSize,
 	}

@@ -17,7 +17,6 @@
     - Add `--execution.address-filter.s3.object-key` flag to specify the S3 object key for the hashed address list
     - Add `--execution.address-filter.s3.access-key` flag to specify the AWS access key
     - Add `--execution.address-filter.s3.secret-key` flag to specify the AWS secret key
-  - Add `--execution.address-filter.download.*` group of flags to configure S3 download settings:
-    - Add `--execution.address-filter.download.part-size-mb` flag to set S3 multipart download part size in MB (default: 32)
-    - Add `--execution.address-filter.download.concurrency` flag to set S3 multipart download concurrency (default: 10)
-    - Add `--execution.address-filter.download.max-retries` flag to set maximum retries for S3 part body download (default: 5)
+    - Add `--execution.address-filter.s3.chunk-size-mb` flag to set S3 multipart download part size in MB (default: 32)
+    - Add `--execution.address-filter.s3.concurrency` flag to set S3 multipart download concurrency (default: 10)
+    - Add `--execution.address-filter.s3.max-retries` flag to set maximum retries for S3 part body download (default: 5)
