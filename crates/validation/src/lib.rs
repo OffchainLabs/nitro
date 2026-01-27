@@ -9,6 +9,8 @@ use std::{
 
 pub mod transfer;
 
+pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
+
 /// Counterpart to Go `validator.GoGlobalState`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -22,7 +24,7 @@ pub struct GoGlobalState {
 }
 
 /// Counterpart to Go `validator.server_api.BatchInfoJson`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
@@ -72,7 +74,7 @@ pub struct ValidationInput {
         rename = "PreimagesB64",
         with = "As::<HashMap<TryFromInto<u8>, HashMap<Base64, Base64>>>"
     )]
-    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    pub preimages: PreimageMap,
     pub batch_info: Vec<BatchInfo>,
     #[serde(rename = "DelayedMsgB64", with = "As::<Base64>")]
     pub delayed_msg: Vec<u8>,
