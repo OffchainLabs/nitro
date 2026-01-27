@@ -49,7 +49,7 @@ pub struct BatchInfo {
 ///
 /// Note: The wrapped `Vec<u8>` is already `Base64` decoded before
 /// `from(Vec<u8>)` is called by `serde`.
-#[derive(Clone, Debug, PartialEq, Eq,)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 
 impl UserWasm {
