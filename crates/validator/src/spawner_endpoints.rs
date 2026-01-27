@@ -14,8 +14,8 @@ use axum::Json;
 use std::sync::Arc;
 use validation::{BatchInfo, GoGlobalState, ValidationInput};
 
-pub async fn capacity() -> impl IntoResponse {
-    "1" // TODO: Figure out max number of workers (optionally, make it configurable)
+pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    format!("{:?}", state.available_workers)
 }
 
 pub async fn name() -> impl IntoResponse {

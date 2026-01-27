@@ -1,12 +1,16 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use anyhow::Result;
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use tracing::warn;
+
+const DEFAULT_NUM_WORKERS: usize = 4;
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
@@ -24,6 +28,9 @@ pub struct ServerConfig {
 
     #[clap(flatten)]
     module_root_config: ModuleRootConfig,
+
+    #[clap(long)]
+    workers: Option<usize>,
 }
 
 #[derive(Clone, Debug, Args)]
@@ -58,6 +65,22 @@ impl ServerConfig {
             )),
         }
     }
+
+    pub fn get_workers(&self) -> Result<usize> {
+        if let Some(workers) = self.workers {
+            Ok(workers)
+        } else {
+            let workers = match std::thread::available_parallelism() {
+                Ok(count) => count.get(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    DEFAULT_NUM_WORKERS
+                }
+                Err(e) => return Err(e.into()),
+            };
+            Ok(workers)
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
@@ -70,8 +93,9 @@ pub enum LoggingFormat {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::ServerConfig;
     use clap::Parser;
+
+    use crate::config::ServerConfig;
 
     #[test]
     fn verify_cli() {
@@ -132,5 +156,19 @@ mod tests {
             ServerConfig::try_parse_from(["server"]).is_err(),
             "Not specifying either module root or module root path should fail"
         );
+    }
+
+    #[test]
+    fn capacity_parsing() {
+        let server_config = ServerConfig::try_parse_from([
+            "server",
+            "--module-root",
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+        ])
+        .unwrap();
+
+        assert!(server_config.workers.is_none());
+        let workers = server_config.get_workers().unwrap();
+        assert!(workers > 0);
     }
 }
