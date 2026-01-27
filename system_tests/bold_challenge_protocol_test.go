@@ -698,7 +698,7 @@ func createL2NodeForBoldProtocol(
 	)
 	Require(t, err)
 
-	l2client = ClientForStack(t, l2stack, false)
+	l2client = ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
