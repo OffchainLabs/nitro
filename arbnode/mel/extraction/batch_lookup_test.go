@@ -246,6 +246,7 @@ func Test_parseBatchesFromBlock(t *testing.T) {
 			receipts,
 			trie.NewStackTrie(nil),
 		)
+		receipt.BlockHash = block.Hash()
 		blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 		eventUnpacker := &mockEventUnpacker{
 			events: []*bridgegen.SequencerInboxSequencerBatchDelivered{event},
@@ -324,6 +325,7 @@ func Test_parseBatchesFromBlock_outOfOrderBatches(t *testing.T) {
 		receipts,
 		trie.NewStackTrie(nil),
 	)
+	receipt.BlockHash = block.Hash()
 	blockLogsFetcher := newMockBlockLogsFetcher(receipts)
 	eventUnpacker := &mockEventUnpacker{
 		events: []*bridgegen.SequencerInboxSequencerBatchDelivered{

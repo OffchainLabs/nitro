@@ -60,10 +60,11 @@ replay_wasm=$(output_latest)/replay.wasm
 arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress user_host program_exec)
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbkeccak user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
+validation_server=$(output_root)/bin/validator
 
 arbitrator_cases=crates/prover/test-cases
 
@@ -190,6 +191,9 @@ build-prover-bin: $(prover_bin)
 
 .PHONY: build-jit
 build-jit: $(arbitrator_jit)
+
+.PHONY: build-validation-server
+build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
@@ -370,6 +374,11 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	cargo build --release -p jit ${CARGOFLAGS}
 	install target/release/jit $@
 
+$(validation_server): $(DEP_PREDICATE)
+	mkdir -p `dirname $(validation_server)`
+	cargo build --release -p validator ${CARGOFLAGS}
+	install target/release/validator $@
+
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 	./scripts/remove_reference_types.sh $@
@@ -451,6 +460,11 @@ $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli)
 	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 
+$(output_latest)/arbkeccak.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbkeccak
+	install crates/wasm-libraries/$(wasm32_wasi)/arbkeccak.wasm $@
+	./scripts/remove_reference_types.sh $@
+
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
 	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
 	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
@@ -461,7 +475,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbkeccak program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@

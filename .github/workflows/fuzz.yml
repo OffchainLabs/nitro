@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   list:
-    runs-on: ubuntu-4
+    runs-on: arbitrator-ci
 
     steps:
       - uses: actions/checkout@v6
