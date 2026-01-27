@@ -100,3 +100,23 @@ fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn local_stylus_target_must_be_present_if_some_target_is_present() {
+    let input = ValidationInput {
+        user_wasms: HashMap::from([(
+            "some-other-target".to_string(),
+            HashMap::from([(
+                Bytes32::from([0u8; 32]),
+                UserWasm(vec![1, 2, 3]),
+            )]),
+        )]),
+        ..Default::default()
+    };
+
+    let (mut reader, mut writer) = pipe().unwrap();
+
+    let result = send_validation_input(&mut writer, &input);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("bad stylus arch"));
+}
