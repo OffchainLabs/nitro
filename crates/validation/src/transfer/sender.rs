@@ -1,5 +1,5 @@
 use crate::transfer::primitives::{write_bytes, write_bytes32, write_u32, write_u64, write_u8};
-use crate::transfer::{IOResult, ANOTHER, READY, SUCCESS};
+use crate::transfer::{IOResult, ANOTHER, FAILURE, READY, SUCCESS};
 use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};
 use arbutil::Bytes32;
 use std::collections::HashMap;
@@ -15,6 +15,21 @@ pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -
     send_preimages(writer, &input.preimages)?;
     send_user_wasms(writer, &input.user_wasms)?;
     finish_sending(writer)
+}
+
+pub fn send_successful_response(
+    writer: &mut impl Write,
+    new_state: &GoGlobalState,
+    memory_used: u64,
+) -> IOResult<()> {
+    write_u8(writer, SUCCESS)?;
+    send_global_state(writer, new_state)?;
+    write_u64(writer, memory_used)
+}
+
+pub fn send_failure_response(writer: &mut impl Write, error_message: &str) -> IOResult<()> {
+    write_u8(writer, FAILURE)?;
+    write_bytes(writer, error_message.as_bytes())
 }
 
 fn send_global_state(writer: &mut impl Write, start_state: &GoGlobalState) -> IOResult<()> {

@@ -28,6 +28,22 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
     })
 }
 
+pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalState, u64), String>> {
+    match read_u8(reader)? {
+        super::SUCCESS => {
+            let new_state = receive_global_state(reader)?;
+            let memory_used = read_u64(reader)?;
+            Ok(Ok((new_state, memory_used)))
+        }
+        super::FAILURE => {
+            let error_bytes = read_bytes(reader)?;
+            let error_message = String::from_utf8_lossy(&error_bytes).to_string();
+            Ok(Err(error_message))
+        }
+        other => Ok(Err(format!("unexpected response byte: {other}"))),
+    }
+}
+
 fn receive_global_state(reader: &mut impl Read) -> IOResult<GoGlobalState> {
     let inbox_position = read_u64(reader)?;
     let position_within_message = read_u64(reader)?;
