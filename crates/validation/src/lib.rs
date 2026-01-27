@@ -7,6 +7,8 @@ use std::{
     io::{self, BufRead},
 };
 
+pub mod transfer;
+
 /// Counterpart to Go `validator.GoGlobalState`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
