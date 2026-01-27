@@ -18,7 +18,6 @@ mod logging;
 mod router;
 mod server;
 mod spawner_endpoints;
-
 fn main() -> Result<()> {
     let server_config = ServerConfig::parse();
     init_logging(server_config.logging_format)?;

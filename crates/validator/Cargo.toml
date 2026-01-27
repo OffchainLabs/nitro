@@ -28,3 +28,4 @@ tracing-subscriber = { workspace = true, features = [
 
 [dev-dependencies]
 reqwest = "0.13.1"
+validation = { workspace = true }

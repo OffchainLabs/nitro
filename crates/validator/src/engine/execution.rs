@@ -16,39 +16,20 @@
 //!    validation, isolating the execution environment and allowing for specific
 //!    binary version targeting.
 
-use std::collections::HashMap;
-
-use arbutil::{Bytes32, PreimageType};
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use validation::{BatchInfo, GoGlobalState, ValidationInput};
 
 use crate::{
-    config::ServerState,
-    engine::config::DEFAULT_JIT_CRANELIFT,
-    spawner_endpoints::{local_target, BatchInfo, GlobalState},
+    config::ServerState, engine::config::DEFAULT_JIT_CRANELIFT, spawner_endpoints::local_target,
 };
 
-/// Counterpart for Go struct `validator.ValidationInput`.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ValidationRequest {
-    id: u64,
-    pub has_delayed_msg: bool,
-    #[serde(rename = "DelayedMsgNr")]
-    pub delayed_msg_number: u64,
-    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
-    pub user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
-    pub batch_info: Vec<BatchInfo>,
-    pub delayed_msg: Vec<u8>,
-    pub start_state: GlobalState,
-    pub module_root: Bytes32,
-    debug_chain: bool,
-}
-
-pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalState>, String> {
+pub async fn validate_native(
+    server_state: &ServerState,
+    request: ValidationInput,
+) -> Result<Json<GoGlobalState>, String> {
     let delayed_inbox = match request.has_delayed_msg {
-        true => vec![jit::SequencerMessage {
-            number: request.delayed_msg_number,
+        true => vec![BatchInfo {
+            number: request.delayed_msg_nr,
             data: request.delayed_msg,
         }],
         false => vec![],
@@ -56,14 +37,14 @@ pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalSt
 
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
-            binary: Default::default(),
+            binary: server_state.binary.clone(),
             cranelift: DEFAULT_JIT_CRANELIFT,
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
         },
         input_mode: jit::InputMode::Native(jit::NativeInput {
             old_state: request.start_state.into(),
-            inbox: request.batch_info.into_iter().map(Into::into).collect(),
+            inbox: request.batch_info,
             delayed_inbox,
             preimages: request.preimages,
             programs: request.user_wasms[local_target()].clone(),
@@ -74,14 +55,14 @@ pub async fn validate_native(request: ValidationRequest) -> Result<Json<GlobalSt
     if let Some(err) = result.error {
         Err(format!("{err}"))
     } else {
-        Ok(Json(GlobalState::from(result.new_state)))
+        Ok(Json(GoGlobalState::from(result.new_state)))
     }
 }
 
 pub async fn validate_continuous(
     server_state: &ServerState,
-    request: ValidationRequest,
-) -> Result<Json<GlobalState>, String> {
+    request: ValidationInput,
+) -> Result<Json<GoGlobalState>, String> {
     if server_state.jit_machine.is_none() {
         return Err(format!(
             "Jit machine is required continuous mode. Requested module root: {}",

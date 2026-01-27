@@ -21,6 +21,7 @@ use crate::engine::machine::JitMachine;
 #[derive(Debug)]
 pub struct ServerState {
     pub mode: InputMode,
+    pub binary: PathBuf,
     pub module_root: Bytes32,
     pub jit_machine: Option<Mutex<JitMachine>>,
     pub available_workers: usize,
@@ -42,6 +43,7 @@ impl ServerState {
         };
         Ok(ServerState {
             mode: config.mode,
+            binary: config.binary.clone(),
             module_root,
             jit_machine,
             available_workers,
@@ -70,6 +72,10 @@ pub struct ServerConfig {
     /// Socket address where the server should be run.
     #[clap(long, default_value = "0.0.0.0:4141")]
     pub address: SocketAddr,
+
+    /// Path to the `replay.wasm` binary.
+    #[clap(long, default_value = "./target/machines/latest/replay.wasm")]
+    pub binary: PathBuf,
 
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
