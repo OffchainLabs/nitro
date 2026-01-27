@@ -162,7 +162,7 @@ jobs:
           echo "Waiting for validator to start..."
           timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'
           
-          # 3. Request and parse Server Hash
+          # 3. Send validation request
           RESPONSE=$(curl -s -X POST http://localhost:4141/validation_validate \
             -H "Content-Type: application/json" \
             -d @target/TestProgramStorage/block_inputs.json)
