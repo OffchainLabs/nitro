@@ -4,7 +4,6 @@
 use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    socket,
 };
 use arbutil::{Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};

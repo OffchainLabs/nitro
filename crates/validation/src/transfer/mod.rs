@@ -4,8 +4,8 @@ mod primitives;
 mod receiver;
 mod sender;
 
-pub use receiver::receive_validation_input;
-pub use sender::send_validation_input;
+pub use receiver::*;
+pub use sender::*;
 
 pub type IOResult<T> = Result<T, io::Error>;
 
