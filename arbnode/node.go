@@ -1342,12 +1342,12 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	return nil
 }
 
-func registerAPIs(currentNode *Node, stack *node.Node) {
+func registerAPIs(currentNode *Node, stack *node.Node, genesisBlockNum uint64) {
 	var apis []rpc.API
 	apis = append(apis, rpc.API{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   NewArbAPI(currentNode),
+		Service:   NewArbAPI(currentNode, genesisBlockNum),
 		Public:    true,
 	})
 
@@ -1417,7 +1417,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if err != nil {
 		return nil, err
 	}
-	registerAPIs(currentNode, stack)
+	registerAPIs(currentNode, stack, l2Config.ArbitrumChainParams.GenesisBlockNum)
 	return currentNode, nil
 }
 
@@ -1453,7 +1453,7 @@ func CreateConsensusNode(
 	if err != nil {
 		return nil, err
 	}
-	registerAPIs(currentNode, stack)
+	registerAPIs(currentNode, stack, l2Config.ArbitrumChainParams.GenesisBlockNum)
 	return currentNode, nil
 }
 

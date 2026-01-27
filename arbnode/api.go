@@ -4,7 +4,6 @@ package arbnode
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -40,31 +38,21 @@ func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.Global
 }
 
 type ArbAPI struct {
-	consensusNode *Node
+	consensusNode   *Node
+	genesisBlockNum uint64
 }
 
-func NewArbAPI(consensusNode *Node) *ArbAPI {
+func NewArbAPI(consensusNode *Node, genesisBlockNum uint64) *ArbAPI {
 	return &ArbAPI{
-		consensusNode: consensusNode,
+		consensusNode:   consensusNode,
+		genesisBlockNum: genesisBlockNum,
 	}
-}
-
-func (a *ArbAPI) blockNumberToMessageIndex(ctx context.Context, blockNum uint64) (arbutil.MessageIndex, error) {
-	// blocks behind genesis are treated as belonging to batch 0
-	msgIdx, err := a.consensusNode.ExecutionClient.BlockNumberToMessageIndex(blockNum).Await(ctx)
-	if err != nil {
-		if !errors.Is(err, gethexec.BlockNumBeforeGenesis) {
-			return 0, err
-		}
-		msgIdx = 0
-	}
-	return msgIdx, nil
 }
 
 func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint64, error) {
 	getL1ConfirmationCallsCounter.Inc(1)
 
-	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
+	msgIdx, err := arbutil.BlockNumberToMessageIndex(blockNum, a.genesisBlockNum)
 	if err != nil {
 		return 0, err
 	}
@@ -74,7 +62,7 @@ func (a *ArbAPI) GetL1Confirmations(ctx context.Context, blockNum uint64) (uint6
 func (a *ArbAPI) FindBatchContainingBlock(ctx context.Context, blockNum uint64) (uint64, error) {
 	findBatchContainingBlockCallsCounter.Inc(1)
 
-	msgIdx, err := a.blockNumberToMessageIndex(ctx, blockNum)
+	msgIdx, err := arbutil.BlockNumberToMessageIndex(blockNum, a.genesisBlockNum)
 	if err != nil {
 		return 0, err
 	}
