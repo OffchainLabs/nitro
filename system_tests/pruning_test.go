@@ -192,7 +192,19 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	Require(t, err)
 }
 
-func TestStateAfterPruning(t *testing.T) {
+func TestStateAfterPruningValidator(t *testing.T) {
+	testStateAfterPruning(t, "validator")
+}
+
+func TestStateAfterPruningMinimal(t *testing.T) {
+	testStateAfterPruning(t, "minimal")
+}
+
+func TestStateAfterPruningFull(t *testing.T) {
+	testStateAfterPruning(t, "full")
+}
+
+func testStateAfterPruning(t *testing.T, mode string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -202,6 +214,8 @@ func TestStateAfterPruning(t *testing.T) {
 
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	builder.nodeConfig.BlockValidator.Enable = true
+	// Used to avoid l1 timestamp delta error since we're creating several blocks
+	builder.execConfig.Sequencer.MaxAcceptableTimestampDelta = time.Hour * 72
 
 	_ = builder.Build(t)
 	l2cleanupDone := false
@@ -212,9 +226,16 @@ func TestStateAfterPruning(t *testing.T) {
 		builder.L1.cleanup()
 	}()
 	builder.L2Info.GenerateAccount("User2")
-	generateBlocks(t, ctx, builder, builder.L2, 200)
 
-	safeMsgIdx := arbutil.MessageIndex(14)
+	numOfBlocksToGenerate := 5000
+
+	// We need to generate these many blocks because of how pruning procedure
+	// works. Such procedure has an offset `minRootDistance` set to `2000`; so,
+	// if we want to force both last validated and last finalized blocks to be
+	// persisted by pruning procedure we need them to be > 2000 blocks apart.
+	generateBlocks(t, ctx, builder, builder.L2, numOfBlocksToGenerate)
+
+	safeMsgIdx := arbutil.MessageIndex(4860)
 	safeMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(safeMsgIdx).Await(ctx)
 	Require(t, err)
 	safeFinalityData := arbutil.FinalityData{
@@ -222,7 +243,7 @@ func TestStateAfterPruning(t *testing.T) {
 		BlockHash: safeMsgResult.BlockHash,
 	}
 
-	finalizedMsgIdx := arbutil.MessageIndex(9)
+	finalizedMsgIdx := arbutil.MessageIndex(4850)
 	finalizedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
 	Require(t, err)
 	finalizedFinalityData := arbutil.FinalityData{
@@ -230,7 +251,7 @@ func TestStateAfterPruning(t *testing.T) {
 		BlockHash: finalizedMsgResult.BlockHash,
 	}
 
-	validatedMsgIdx := arbutil.MessageIndex(6)
+	validatedMsgIdx := arbutil.MessageIndex(2550)
 	validatedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(validatedMsgIdx).Await(ctx)
 	Require(t, err)
 	validatedFinalityData := arbutil.FinalityData{
@@ -255,19 +276,25 @@ func TestStateAfterPruning(t *testing.T) {
 		t.Fatal("Balances for User2 are expected to monotonically increase")
 	}
 
-	t.Logf("balanceAt1: %d, balanceAt50: %d, balanceAtLastBlock: %d", balanceAt1, balanceAt50, balanceAtLastBlock)
-
 	expectedFinalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
 
 	finalizedBlock, err := builder.L2.Client.BlockByHash(ctx, expectedFinalizedBlockHash)
-	t.Logf("Finalized block is %d with hash: %s", finalizedBlock.Number().Uint64(), finalizedBlock.Hash().Hex())
 
 	if lastBlock < finalizedBlock.Number().Uint64() {
 		t.Fatalf("lastBlock: %d should have been greater than finalized block: %d", lastBlock, finalizedBlock.Number().Uint64())
 	}
 
-	lastBlockBeforeCleanup, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
+	// Since we're running a regular node (without archival mode), we manually commit
+	// some of the blocks to test if prunning procedure indeed deletes such blocks specified
+	// with the exception of last validate and finalized blocks (if in "validator" mode)
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+	triedb := bc.StateCache().TrieDB()
+
+	for i := 2000; i < numOfBlocksToGenerate; i++ {
+		header := bc.GetHeaderByNumber(uint64(i))
+		err = triedb.Commit(header.Root, false)
+		Require(t, err)
+	}
 
 	l2cleanupDone = true
 	builder.L2.cleanup()
@@ -285,10 +312,8 @@ func TestStateAfterPruning(t *testing.T) {
 		// No need to check validated and finality data since we do that on the test above
 
 		initConfig := conf.InitConfigDefault
-		initConfig.Prune = "validator"
-		// initConfig.Prune = "minimal"
+		initConfig.Prune = mode
 
-		// initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
@@ -303,54 +328,61 @@ func TestStateAfterPruning(t *testing.T) {
 		}
 	}()
 
-	builder.l2StackConfig.DBEngine = "pebble"
-	builder.nodeConfig.ParentChainReader.Enable = false
-	builder.withL1 = false
-	builder.L2.cleanup = func() {}
-	builder.RestartL2Node(t)
-	t.Log("restarted the node")
+	// We could have restarted the same node, but spinning up a node with the same
+	// executionDB simulates the desired scenario
+	builder.execConfig.Caching.Archive = false
+	testClientL2, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
+	defer cleanup()
 
-	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
+	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(testClientL2.ExecNode.ExecutionDB)
 
 	if finalizedBlockHash != expectedFinalizedBlockHash {
 		t.Fatalf("Expected finalizedBlockHash: %s does not match finalizedBlockHash after l2 restart: %s", expectedFinalizedBlockHash.Hex(), finalizedBlockHash.Hex())
 	}
 
-	_, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(1))
-	if !strings.Contains(err.Error(), "missing trie node") {
-		t.Fatal("Expected balance retrieval to fail for block 1")
+	// We make sure that genesis block can be queried since it's always added as an important
+	// root so it's trie node should have been deleted
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(0))
+	Require(t, err)
+
+	// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
+	// all blocks between [1, 5000) with the execption of last validated and last finalized blocks
+	for i := 1; i < numOfBlocksToGenerate; i++ {
+		if mode == "validator" && (arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx) {
+			continue
+		}
+		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
+		if !strings.Contains(err.Error(), "missing trie node") {
+			t.Fatalf("Expected balance retrieval to fail for block %d", i)
+		}
 	}
-	// Require(t, err)
-	_, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(50))
-	if !strings.Contains(err.Error(), "missing trie node") {
-		t.Fatal("Expected balance retrieval to fail for block 50")
+
+	newLastBlock, err := testClientL2.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	if newLastBlock < lastBlock {
+		t.Fatalf("Expected last block of new node %d to be equal or ahead of original node last block: %d", newLastBlock, lastBlock)
 	}
 
-	for i := 1; i < 100; i++ {
-		missingBlock := rawdb.ReadCanonicalHash(builder.L2.ExecNode.ExecutionDB, uint64(i))
-		t.Logf("i: %d, missingBlock: %s", i, missingBlock.Hex())
+	// Now we check if the blocks that got committed as part of builder.cleanup() got persisted. We do that by calling
+	// BalanceAt(...) since that requires stateDB for such block to be presetn to succeed
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock)))
+	Require(t, err)
+
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-1)))
+	Require(t, err)
+
+	// This is yet another block committed by builder.cleanup() as (HEAD - 127 - 1)
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-126)))
+	Require(t, err)
+
+	// We do the same for last validated and last finalized blocks since they should have been added as important roots
+	// we only check these in validator mode since all other modes they are also pruned
+	if mode == "validator" {
+		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
+		Require(t, err)
+
+		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
+		Require(t, err)
 	}
-
-	newLastBlock, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
-
-	t.Logf("lastBlock: %d, lastBlockBeforeCleanup: %d, newLastBlock: %d", lastBlock, lastBlockBeforeCleanup, newLastBlock)
-
-	_, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock)))
-	Require(t, err)
-
-	// This call succeeds on master and fails on this branch!!
-	_, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-1)))
-	Require(t, err)
-
-	// This call fails!!
-	_, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-2)))
-	Require(t, err)
-
-	// Both calls below fail
-	// Make sure we can still retrieve balance at last finalized block number
-	// _, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("Owner"), big.NewInt(int64(finalizedBlock.Number().Uint64())))
-	// Require(t, err)
-	// _, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedBlock.Number().Uint64())))
-	// Require(t, err)
 }
