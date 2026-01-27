@@ -7,6 +7,8 @@ use std::io::{Read, Write};
 mod primitives;
 mod receiver;
 
+pub use receiver::receive_validation_input;
+
 const SUCCESS: u8 = 0x0;
 const FAILURE: u8 = 0x1;
 const PREIMAGE: u8 = 0x2;
