@@ -405,7 +405,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			MELStateHash: initialState.Hash(),
 			MELMsgHash:   common.Hash{},
 			Batch:        0,
-			PosInBatch:   0,
+			PosInBatch:   initialState.MsgCount,
 		},
 		End: validator.GoGlobalState{
 			BlockHash:    common.Hash{},

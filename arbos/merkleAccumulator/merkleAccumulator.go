@@ -180,9 +180,9 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash, itemBytesToRecord ...
 		events = append(events, MerkleTreeNodeEvent{level, size - 1, common.BytesToHash(soFar)})
 	}
 	if acc.recordPreimages != nil && itemBytesToRecord != nil {
-		keyBytes := crypto.Keccak256(itemHash.Bytes())
-		key := common.BytesToHash(keyBytes)
-		acc.recordPreimages(key, itemBytesToRecord)
+		hashItemHash := crypto.Keccak256(itemHash.Bytes())
+		acc.recordPreimages(common.BytesToHash(hashItemHash), itemHash.Bytes())
+		acc.recordPreimages(itemHash, itemBytesToRecord)
 	}
 	return events, nil
 }
