@@ -264,7 +264,7 @@ func TestParseHashListJSON(t *testing.T) {
 		},
 	}
 	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
-	salt, hashes, err = parseHashListJSON(unknownSchemeJSON)
+	_, hashes, err = parseHashListJSON(unknownSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON with unknown hashing_scheme: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestParseHashListJSON(t *testing.T) {
 		},
 	}
 	noSchemeJSON, _ := json.Marshal(noSchemePayload)
-	salt, hashes, err = parseHashListJSON(noSchemeJSON)
+	_, hashes, err = parseHashListJSON(noSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON without hashing_scheme: %v", err)
 	}

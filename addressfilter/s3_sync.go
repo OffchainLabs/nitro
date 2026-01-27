@@ -25,8 +25,8 @@ type hashListPayload struct {
 }
 
 type S3SyncManager struct {
-	Syncer *s3syncer.Syncer
-	hashStore  *HashStore
+	Syncer    *s3syncer.Syncer
+	hashStore *HashStore
 }
 
 func NewS3SyncManager(ctx context.Context, config *Config, hashStore *HashStore) (*S3SyncManager, error) {

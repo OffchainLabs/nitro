@@ -49,7 +49,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-
 const (
 	defaultChunkSizeMB = 32
 	defaultMaxRetries  = 5
