@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/challenge-cache"
+	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -85,37 +85,15 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	maxSeqInboxCount uint64,
 	previousGlobalState protocol.GoGlobalState,
 ) (*protocol.ExecutionState, error) {
-	if maxSeqInboxCount == 0 {
-		return nil, errors.New("max inbox count cannot be zero")
-	}
-	batchIndex := maxSeqInboxCount
 	maxNumberOfBlocks := uint64(s.blockChallengeLeafHeight)
-	messageCount, err := s.inboxTracker.GetBatchMessageCount(batchIndex - 1)
+	messageCount, batchIndex, err := computeNextMessageCountAndBatchIndex(
+		maxSeqInboxCount,
+		previousGlobalState,
+		s.inboxTracker,
+		maxNumberOfBlocks,
+	)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
-		}
 		return nil, err
-	}
-	var previousMessageCount arbutil.MessageIndex
-	if previousGlobalState.Batch > 0 {
-		previousMessageCount, err = s.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return nil, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
-			}
-			return nil, err
-		}
-	}
-	previousMessageCount += arbutil.MessageIndex(previousGlobalState.PosInBatch)
-	messageDiffBetweenBatches := messageCount - previousMessageCount
-	maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
-	if messageDiffBetweenBatches > maxMessageCount {
-		messageCount = maxMessageCount
-		batchIndex, _, err = s.inboxTracker.FindInboxBatchContainingMessage(messageCount)
-		if err != nil {
-			return nil, err
-		}
 	}
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, state.Batch(batchIndex))
 	if err != nil {
@@ -151,6 +129,50 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	}
 	executionState.EndHistoryRoot = historyCommit.Merkle
 	return executionState, nil
+}
+
+type batchFetcher interface {
+	GetBatchMessageCount(batchIndex uint64) (arbutil.MessageIndex, error)
+	FindInboxBatchContainingMessage(messageIndex arbutil.MessageIndex) (uint64, bool, error)
+}
+
+func computeNextMessageCountAndBatchIndex(
+	maxSeqInboxCount uint64,
+	previousGlobalState protocol.GoGlobalState,
+	inboxTracker batchFetcher,
+	maxNumberOfBlocks uint64,
+) (arbutil.MessageIndex, uint64, error) {
+	if maxSeqInboxCount == 0 {
+		return 0, 0, errors.New("max inbox count cannot be zero")
+	}
+	batchIndex := maxSeqInboxCount
+	messageCount, err := inboxTracker.GetBatchMessageCount(batchIndex - 1)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return 0, 0, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
+		}
+		return 0, 0, err
+	}
+	var previousMessageCount arbutil.MessageIndex
+	if previousGlobalState.Batch > 0 {
+		previousMessageCount, err = inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return 0, 0, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
+			}
+			return 0, 0, err
+		}
+	}
+	previousMessageCount += arbutil.MessageIndex(previousGlobalState.PosInBatch)
+	messageDiffBetweenBatches := messageCount - previousMessageCount
+	if messageDiffBetweenBatches > arbutil.MessageIndex(maxNumberOfBlocks) {
+		messageCount = previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
+		batchIndex, _, err = inboxTracker.FindInboxBatchContainingMessage(messageCount)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	return messageCount, batchIndex, nil
 }
 
 func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
