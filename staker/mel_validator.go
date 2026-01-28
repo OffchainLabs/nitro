@@ -372,14 +372,11 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err := txsRecorder.Initialize(ctx); err != nil {
 			return nil, 0, err
 		}
-		receiptsRecorder, err := melrecording.NewReceiptRecorder(mv.l1Client, header.Hash(), preimages)
+		recordedLogsFetcher, err := melrecording.RecordReceipts(ctx, mv.l1Client, header.Hash(), preimages)
 		if err != nil {
 			return nil, 0, err
 		}
-		if err := receiptsRecorder.Initialize(ctx); err != nil {
-			return nil, 0, err
-		}
-		endState, _, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, receiptsRecorder, nil)
+		endState, _, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
@@ -389,9 +386,6 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		}
 		if endState.Hash() != wantState.Hash() {
 			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
-		}
-		if err := receiptsRecorder.CollectTxIndicesPreimage(); err != nil {
-			return nil, 0, err
 		}
 		if endState.MsgCount >= toValidateMsgExtractionCount {
 			break
