@@ -22,7 +22,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -190,8 +189,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	if db.IsAddressFiltered() {
 		// If the tx is already in the onchain filter, the STF will
 		// execute it as a no-op in handleRevertedTx -- don't halt.
-		filteredState := filteredTransactions.Open(db, a.Burner)
-		isOnchainFiltered, err := filteredState.IsFiltered(tx.Hash())
+		isOnchainFiltered, err := a.FilteredTransactions().IsFiltered(tx.Hash())
 		if err != nil {
 			return err
 		}

@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -151,8 +150,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 	// handleRevertedTx reads it via ProcessingHook.IsTxOnchainFiltered() to
 	// execute filtered txs as no-ops (after gas is bought).
 	evm := p.evm
-	filteredState := filteredTransactions.Open(evm.StateDB, p.state.Burner)
-	isFiltered, err := filteredState.IsFiltered(underlyingTx.Hash())
+	isFiltered, err := p.state.FilteredTransactions().IsFiltered(underlyingTx.Hash())
 	if err != nil {
 		return false, multigas.ZeroGas(), err, nil
 	}
