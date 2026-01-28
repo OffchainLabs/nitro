@@ -103,13 +103,9 @@ impl ValidationInput {
     }
 
     pub fn delayed_msg(&self) -> Option<BatchInfo> {
-        if self.has_delayed_msg {
-            Some(BatchInfo {
-                number: self.delayed_msg_nr,
-                data: self.delayed_msg.clone(),
-            })
-        } else {
-            None
-        }
+        self.has_delayed_msg.then(|| BatchInfo {
+            number: self.delayed_msg_nr,
+            data: self.delayed_msg.clone(),
+        })
     }
 }
