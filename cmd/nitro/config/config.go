@@ -249,6 +249,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 
+	if err = arbnode.FixCompressionLevelsCLIParsing("node.batch-poster.compression-levels", k); err != nil {
+		return nil, nil, err
+	}
+
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, err

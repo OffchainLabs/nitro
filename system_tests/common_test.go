@@ -2441,10 +2441,20 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 func deployContract(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
 ) common.Address {
+	address, err := deployContractForwardError(t, ctx, auth, client, code)
+	Require(t, err)
+	return address
+}
+
+func deployContractForwardError(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) (common.Address, error) {
 	deploy := deployContractInitCode(code, false)
 	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		From:      auth.From,
 		GasPrice:  basefee,
@@ -2452,14 +2462,22 @@ func deployContract(
 		Value:     big.NewInt(0),
 		Data:      deploy,
 	})
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)
-	Require(t, err)
-	Require(t, client.SendTransaction(ctx, tx))
+	if err != nil {
+		return common.Address{}, err
+	}
+	if err := client.SendTransaction(ctx, tx); err != nil {
+		return common.Address{}, err
+	}
 	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-	return crypto.CreateAddress(auth.From, nonce)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return crypto.CreateAddress(auth.From, nonce), nil
 }
 
 func sendContractCall(

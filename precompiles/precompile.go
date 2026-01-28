@@ -561,7 +561,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["IsNativeTokenOwner"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 	ArbOwnerPublic.methodsByName["GetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
-	ArbOwnerPublic.methodsByName["GetMaxStylusContractFragments"].arbosVersion = params.ArbosVersion_60
+	ArbOwnerPublic.methodsByName["GetMaxStylusContractFragments"].arbosVersion = params.ArbosVersion_StylusContractLimit
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(precompilesgen.ArbWasmMetaData, ArbWasmImpl))
@@ -656,6 +656,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["GetAllNativeTokenOwners"].arbosVersion = params.ArbosVersion_41
 	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
+	ArbOwner.methodsByName["SetMaxStylusContractFragments"].arbosVersion = params.ArbosVersion_StylusContractLimit
 
 	ArbOwner.methodsByName["AddTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwner.methodsByName["RemoveTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
