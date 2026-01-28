@@ -188,8 +188,8 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	}
 
 	if db.IsAddressFiltered() {
-		// If the tx is already in the onchain filter, a follow-up PR will
-		// handle it as a no-op in the STF -- don't halt.
+		// If the tx is already in the onchain filter, the STF will
+		// execute it as a no-op in handleRevertedTx -- don't halt.
 		filteredState := filteredTransactions.Open(db, a.Burner)
 		isOnchainFiltered, err := filteredState.IsFiltered(tx.Hash())
 		if err != nil {
