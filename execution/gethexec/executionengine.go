@@ -783,7 +783,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if applyDelayedFilter {
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
-		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, lastArbosVersion)
+		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)
 		if err != nil {
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
@@ -802,12 +802,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			s.exposeMultiGas,
 		)
 		if errors.Is(err, arbos.ErrDelayedTxFiltered) && filteringHooks.FilteredTxHash != (common.Hash{}) {
-				return nil, nil, nil, &ErrFilteredDelayedMessage{
-					TxHash:        filteringHooks.FilteredTxHash,
-					DelayedMsgIdx: msg.DelayedMessagesRead - 1,
-				}
+			return nil, nil, nil, &ErrFilteredDelayedMessage{
+				TxHash:        filteringHooks.FilteredTxHash,
+				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
+			}
 		} else if err != nil {
-			return nil, nil, nil, err		
+			return nil, nil, nil, err
 		}
 		return block, statedb, receipts, nil
 	}
