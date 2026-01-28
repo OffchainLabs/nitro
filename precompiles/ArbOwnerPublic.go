@@ -4,8 +4,6 @@
 package precompiles
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -113,5 +111,9 @@ func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, er
 }
 
 func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint16, error) {
-	return 0, errors.New("GetMaxStylusContractFragments is not implemented yet")
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return 0, err
+	}
+	return params.MaxFragmentCount, nil
 }
