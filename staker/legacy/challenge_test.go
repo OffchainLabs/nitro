@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package legacystaker
@@ -242,7 +242,7 @@ func runChallengeTest(
 
 func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *server_arb.ArbitratorMachine {
 	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../../arbitrator/prover/test-cases/")
+	wasmDir := path.Join(path.Dir(filename), "../../crates/prover/test-cases/")
 
 	wasmPath := path.Join(wasmDir, wasmname)
 

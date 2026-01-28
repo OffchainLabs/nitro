@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -17,6 +17,7 @@ import (
 	"github.com/r3labs/diff/v3"
 	"github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -32,6 +33,8 @@ func TestEmptyCliConfig(t *testing.T) {
 	err = anytrust.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
 	Require(t, err)
 	err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k)
+	Require(t, err)
+	err = arbnode.FixCompressionLevelsCLIParsing("node.batch-poster.compression-levels", k)
 	Require(t, err)
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
@@ -105,6 +108,23 @@ func TestExternalProviderSingularConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.da.external-provider.rpc.url http://localhost:8547 --node.da.external-provider.with-writer=true --node.transaction-streamer.track-block-metadata-from=10", " ")
 	_, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
+}
+
+func TestCompressionLevelsConfig(t *testing.T) {
+	args := strings.Split(`--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.batch-poster.compression-levels [{"backlog":0,"level":11,"recompression-level":11},{"backlog":30,"level":6,"recompression-level":11}] --node.transaction-streamer.track-block-metadata-from=10`, " ")
+	_, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+}
+
+func TestCompressionLevelsConflict(t *testing.T) {
+	args := strings.Split(`--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.batch-poster.compression-level 8 --node.batch-poster.compression-levels [{"backlog":0,"level":11,"recompression-level":11}] --node.transaction-streamer.track-block-metadata-from=10`, " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when both compression-level and compression-levels are specified")
+	}
+	if !strings.Contains(err.Error(), "cannot specify both compression-level (deprecated) and compression-levels") {
+		Fail(t, "error message should mention conflict between deprecated and new config, got:", err.Error())
+	}
 }
 
 func TestReloads(t *testing.T) {

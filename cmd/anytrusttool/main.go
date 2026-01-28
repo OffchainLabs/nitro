@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -362,6 +362,11 @@ func dumpKeyset(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Disable chunked store since dumpKeyset doesn't need to store data,
+	// it only needs to read public keys to compute the keyset hash.
+	// Chunked store requires a signer which is not available here.
+	config.Keyset.RPCClient.EnableChunkedStore = false
 
 	services, err := anytrust.ParseServices(config.Keyset, nil)
 	if err != nil {

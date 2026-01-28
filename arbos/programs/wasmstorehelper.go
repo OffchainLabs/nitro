@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
@@ -51,7 +51,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return nil
 	}
 
-	wasm, err := getWasmFromContractCode(code, progParams.MaxWasmSize)
+	wasm, err := getWasmFromContractCode(statedb, code, progParams, false)
 	if err != nil {
 		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)

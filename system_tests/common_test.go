@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -76,7 +76,7 @@ import (
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -314,6 +314,8 @@ type NodeBuilder struct {
 	deployReferenceDAContracts  bool
 	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
+	WithPrestateTracerChecks bool
 
 	// ReferenceDA server (created if withReferenceDAProvider is true)
 	referenceDAServer *http.Server
@@ -688,6 +690,13 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 			b.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+	if b.execConfig.Caching.StateHistory == gethexec.UninitializedStateHistory {
+		if b.execConfig.Caching.Archive {
+			b.execConfig.Caching.StateHistory = gethexec.DefaultArchiveNodeStateHistory
+		} else {
+			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
+		}
+	}
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
@@ -789,7 +798,7 @@ func buildOnParentChain(
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
-	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNode(
 		ctx, chainTestClient.Stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), parentChainTestClient.Client,
 		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId, parentChainTestClient.L1BlobReader, locator.LatestWasmModuleRoot())
 	Require(t, err)
@@ -922,6 +931,9 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	}
 
 	return func() {
+		if b.WithPrestateTracerChecks {
+			AutomatedPrestateTracerTest(t, b.L2)
+		}
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
 			b.L1.cleanup()
@@ -968,7 +980,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	b.L2.ConsensusNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(
+	b.L2.ConsensusNode, err = arbnode.CreateConsensusNode(
 		b.ctx, b.L2.Stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(),
 		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
@@ -1002,6 +1014,9 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2.ExecNode = execNode
 	b.L2.cleanup = cleanup
 	return func() {
+		if b.WithPrestateTracerChecks {
+			AutomatedPrestateTracerTest(t, b.L2)
+		}
 		b.L2.cleanup()
 		b.ctxCancel()
 	}
@@ -1036,7 +1051,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	currentNode, err := arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
+	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
@@ -2128,7 +2143,7 @@ func Create2ndNodeWithConfig(
 	if useExecutionClientOnly {
 		currentNode, err = arbnode.CreateConsensusNodeConnectedWithSimpleExecutionClient(ctx, chainStack, currentExec, consensusDB, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	} else {
-		currentNode, err = arbnode.CreateConsensusNodeConnectedWithFullExecutionClient(ctx, chainStack, currentExec, consensusDB, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
+		currentNode, err = arbnode.CreateConsensusNode(ctx, chainStack, currentExec, consensusDB, consensusConfigFetcher, blockchain.Config(), parentChainClient, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), blobReader, locator.LatestWasmModuleRoot())
 	}
 
 	Require(t, err)
@@ -2460,10 +2475,20 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 func deployContract(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
 ) common.Address {
+	address, err := deployContractForwardError(t, ctx, auth, client, code)
+	Require(t, err)
+	return address
+}
+
+func deployContractForwardError(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) (common.Address, error) {
 	deploy := deployContractInitCode(code, false)
 	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		From:      auth.From,
 		GasPrice:  basefee,
@@ -2471,14 +2496,22 @@ func deployContract(
 		Value:     big.NewInt(0),
 		Data:      deploy,
 	})
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)
-	Require(t, err)
-	Require(t, client.SendTransaction(ctx, tx))
+	if err != nil {
+		return common.Address{}, err
+	}
+	if err := client.SendTransaction(ctx, tx); err != nil {
+		return common.Address{}, err
+	}
 	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-	return crypto.CreateAddress(auth.From, nonce)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return crypto.CreateAddress(auth.From, nonce), nil
 }
 
 func sendContractCall(

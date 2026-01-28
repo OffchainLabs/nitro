@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble]
+        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
     with:
       run-name: ${{ matrix.test-mode }}
@@ -23,7 +23,8 @@ jobs:
       run-challenge: ${{ matrix.test-mode == 'challenge' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
-      run-pebble: ${{ matrix.test-mode == 'pebble' }}
+      run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}
+      run-pebble-b: ${{ matrix.test-mode == 'pebble-b' }}
 
   notify-on-failure:
     name: Notify Slack on failure

@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package testhelpers
@@ -113,6 +113,19 @@ func (h *LogHandler) WasLogged(pattern string) bool {
 	defer h.mutex.Unlock()
 	for _, record := range h.records {
 		if re.MatchString(record.Message) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
+	re, err := regexp.Compile(pattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if record.Level == lvl && re.MatchString(record.Message) {
 			return true
 		}
 	}

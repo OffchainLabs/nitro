@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 // Package pubsub implements publisher/subscriber model (one to many).
 // During normal operation, publisher returns "Promise" when publishing a
 // message, which will return response from consumer when awaited.

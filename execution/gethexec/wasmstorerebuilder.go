@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -93,7 +93,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 		codeHashBytes := bytes.TrimPrefix(iter.Key(), rawdb.CodePrefix)
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
-		if state.IsStylusProgram(code) {
+		if state.IsStylusDeployableProgramPrefix(code) {
 			if err := programs.SaveActiveProgramToWasmStore(stateDB, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}

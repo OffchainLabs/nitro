@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l1pricing
@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -108,7 +109,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 
 	// pay rewards, as much as possible
 	paymentForRewards := arbmath.BigMulByUint(arbmath.UintToBig(perUnitReward), unitsAllocated)
-	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
+	availableFunds := statedb.GetBalance(types.L1PricerFundsPoolAddress)
 	if arbmath.BigLessThan(availableFunds.ToBig(), paymentForRewards) {
 		paymentForRewards = availableFunds.ToBig()
 	}
@@ -121,12 +122,12 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
+		&types.L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
 	}
-	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
+	availableFunds = statedb.GetBalance(types.L1PricerFundsPoolAddress)
 
 	// settle up payments owed to the batch poster, as much as possible
 	balanceDueToPoster, err := posterState.FundsDue()
@@ -143,7 +144,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 			return err
 		}
 		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
+			&types.L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 		)
 		if err != nil {
 			return err
@@ -170,7 +171,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := arbmath.BigSub(statedb.GetBalance(types.L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -234,7 +235,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	oldSurplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
+	oldSurplus := arbmath.BigSub(statedb.GetBalance(types.L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -283,7 +284,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	}
 
 	// allocate funds to this update
-	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
+	collectedSinceUpdate := statedb.GetBalance(types.L1PricerFundsPoolAddress)
 	availableFunds := arbmath.BigDivByUint(arbmath.BigMulByUint(collectedSinceUpdate.ToBig(), allocationNumerator), allocationDenominator)
 
 	// pay rewards, as much as possible
@@ -300,7 +301,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		return err
 	}
 	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
+		&types.L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, tracing.BalanceChangeTransferBatchposterReward,
 	)
 	if err != nil {
 		return err
@@ -331,7 +332,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 				return err
 			}
 			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
+				&types.L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, tracing.BalanceChangeTransferBatchposterRefund,
 			)
 			if err != nil {
 				return err
@@ -360,7 +361,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := arbmath.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := arbmath.BigSub(statedb.GetBalance(types.L1PricerFundsPoolAddress).ToBig(), arbmath.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
