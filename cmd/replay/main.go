@@ -277,7 +277,7 @@ func populateEcdsaCaches() {
 }
 
 func main() {
-	wavmio.StubInit()
+	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(
@@ -449,5 +449,5 @@ func main() {
 	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
-	wavmio.StubFinal()
+	wavmio.OnFinal()
 }

@@ -75,7 +75,7 @@ func parsePreimageBytes(path string) {
 	}
 }
 
-func StubInit() {
+func OnInit() {
 	preimages = make(map[common.Hash][]byte)
 	var delayedMsgPath arrayFlags
 	seqMsgPosFlag := flag.Uint64("inbox-position", 0, "position for sequencer inbox message")
@@ -110,7 +110,7 @@ func StubInit() {
 	}
 }
 
-func StubFinal() {
+func OnFinal() {
 	log.Info("End state", "lastblockHash", lastBlockHash, "InboxPosition", seqMsgPos+seqAdvanced, "positionWithinMessage", posWithinMsg)
 }
 
