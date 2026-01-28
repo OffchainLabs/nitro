@@ -7,6 +7,7 @@ package programs
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -124,10 +125,9 @@ func programRequiresPrepare(
 
 //go:wasmimport programs program_prepare
 func ProgramPrepare(
-	statedbPtr unsafe.Pointer,
+	wasmPtr unsafe.Pointer,
 	moduleHashPtr unsafe.Pointer,
 	addressForLoggingPtr unsafe.Pointer,
-	codePtr unsafe.Pointer,
 	codeSize uint64,
 	codehashPtr unsafe.Pointer,
 	maxWasmSize uint32,
@@ -156,7 +156,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, programAddress common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
 	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
 	if requiresPrepare != 0 {
 		var debugInt uint32
@@ -164,13 +164,17 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			debugInt = 1
 		}
 
+		wasm, err := getWasm(statedb, programAddress, params)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get wasm for program, program address: %v, err: %v", programAddress.Hex(), err))
+		}
+
 		codeSize := uint64(len(code))
 
 		ProgramPrepare(
-			unsafe.Pointer(&statedb),
+			unsafe.Pointer(&wasm),
 			unsafe.Pointer(&moduleHash),
-			unsafe.Pointer(&addressForLogging),
-			unsafe.Pointer(&code),
+			unsafe.Pointer(&programAddress),
 			codeSize,
 			unsafe.Pointer(&codehash),
 			params.MaxWasmSize,
