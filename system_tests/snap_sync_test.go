@@ -32,6 +32,7 @@ func TestSnapSync(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(databaseEngine)
 	// only supported for hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),

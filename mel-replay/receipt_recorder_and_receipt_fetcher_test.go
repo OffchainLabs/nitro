@@ -22,17 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/mel-replay"
 )
 
-type mockPreimageResolver struct {
-	preimages map[common.Hash][]byte
-}
-
-func (m *mockPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	if preimage, exists := m.preimages[hash]; exists {
-		return preimage, nil
-	}
-	return nil, fmt.Errorf("preimage not found for hash: %s", hash.Hex())
-}
-
 func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	ctx := context.Background()
 	blockReader := &mockBlockReader{
