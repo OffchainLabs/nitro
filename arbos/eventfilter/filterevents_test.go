@@ -307,8 +307,8 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 	}
 }
 
-func TestNewEventFilterFromNilConfig(t *testing.T) {
-	filter, err := NewEventFilterFromConfig(nil)
+func TestNewEventFilterFromDefaultConfig(t *testing.T) {
+	filter, err := NewEventFilterFromConfig(DefaultEventFilterConfig)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

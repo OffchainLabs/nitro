@@ -52,6 +52,11 @@ type EventFilterConfig struct {
 	Rules []EventRule `koanf:"rules"`
 }
 
+var DefaultEventFilterConfig = EventFilterConfig{
+	Path:  "",
+	Rules: nil,
+}
+
 type EventFilter struct {
 	rules map[[eventSelectorSize]byte]EventRule
 }
@@ -150,7 +155,7 @@ func (e *EventRule) Validate() error {
 }
 
 func (c *EventFilterConfig) Validate() error {
-	if c == nil {
+	if c.Rules == nil {
 		return nil
 	}
 
@@ -196,11 +201,7 @@ func NewEventFilterFromFile(path string) (*EventFilter, error) {
 	return NewEventFilterFromJSON(data)
 }
 
-func NewEventFilterFromConfig(cfg *EventFilterConfig) (*EventFilter, error) {
-	if cfg == nil {
-		return nil, nil
-	}
-
+func NewEventFilterFromConfig(cfg EventFilterConfig) (*EventFilter, error) {
 	var rules []EventRule
 
 	if cfg.Path != "" {

@@ -557,9 +557,7 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 		panic("execConfig must be initialised before setting event filter rules")
 	}
 
-	b.execConfig.Sequencer.EventFilter = &eventfilter.EventFilterConfig{
-		Rules: rules,
-	}
+	b.execConfig.Sequencer.EventFilter.Rules = rules
 
 	return b
 }

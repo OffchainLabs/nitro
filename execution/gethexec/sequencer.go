@@ -64,26 +64,26 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                       bool                           `koanf:"enable"`
-	MaxBlockSpeed                time.Duration                  `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration                  `koanf:"read-from-tx-queue-timeout" reload:"hot"`
-	MaxRevertGasReject           uint64                         `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration                  `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string                       `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig                `koanf:"forwarder"`
-	QueueSize                    int                            `koanf:"queue-size"`
-	QueueTimeout                 time.Duration                  `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize               int                            `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize                int                            `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize        int                            `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry      time.Duration                  `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	ExpectedSurplusGasPriceMode  string                         `koanf:"expected-surplus-gas-price-mode"`
-	ExpectedSurplusSoftThreshold string                         `koanf:"expected-surplus-soft-threshold" reload:"hot"`
-	ExpectedSurplusHardThreshold string                         `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool                           `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig                `koanf:"timeboost"`
-	Dangerous                    DangerousConfig                `koanf:"dangerous"`
-	EventFilter                  *eventfilter.EventFilterConfig `koanf:"event-filter"`
+	Enable                       bool                          `koanf:"enable"`
+	MaxBlockSpeed                time.Duration                 `koanf:"max-block-speed" reload:"hot"`
+	ReadFromTxQueueTimeout       time.Duration                 `koanf:"read-from-tx-queue-timeout" reload:"hot"`
+	MaxRevertGasReject           uint64                        `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta  time.Duration                 `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist              []string                      `koanf:"sender-whitelist"`
+	Forwarder                    ForwarderConfig               `koanf:"forwarder"`
+	QueueSize                    int                           `koanf:"queue-size"`
+	QueueTimeout                 time.Duration                 `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize               int                           `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize                int                           `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize        int                           `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry      time.Duration                 `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	ExpectedSurplusGasPriceMode  string                        `koanf:"expected-surplus-gas-price-mode"`
+	ExpectedSurplusSoftThreshold string                        `koanf:"expected-surplus-soft-threshold" reload:"hot"`
+	ExpectedSurplusHardThreshold string                        `koanf:"expected-surplus-hard-threshold" reload:"hot"`
+	EnableProfiling              bool                          `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
+	Dangerous                    DangerousConfig               `koanf:"dangerous"`
+	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -171,12 +171,12 @@ func (c *SequencerConfig) Validate() error {
 	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
-	if c.EventFilter != nil {
-		err := c.EventFilter.Validate()
-		if err != nil {
-			return fmt.Errorf("invalid event filter config: %w", err)
-		}
+
+	err = c.EventFilter.Validate()
+	if err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
 	}
+
 	return nil
 }
 
@@ -216,7 +216,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
-	EventFilter:                  nil,
+	EventFilter:                  eventfilter.DefaultEventFilterConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
