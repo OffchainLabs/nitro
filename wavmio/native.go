@@ -110,6 +110,8 @@ func OnInit() {
 	}
 }
 
+func OnReady() {}
+
 func OnFinal() {
 	log.Info("End state", "lastblockHash", lastBlockHash, "InboxPosition", seqMsgPos+seqAdvanced, "positionWithinMessage", posWithinMsg)
 }

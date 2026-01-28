@@ -42,6 +42,10 @@ func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 
 func OnInit() {}
 
+func OnReady() {
+	beforeFirstIO()
+}
+
 func OnFinal() {}
 
 func GetLastBlockHash() (hash common.Hash) {
