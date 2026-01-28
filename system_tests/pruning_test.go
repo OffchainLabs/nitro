@@ -269,6 +269,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	Require(t, err)
 	balanceAt50, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(50))
 	Require(t, err)
+	// #nosec G115
 	balanceAtLastBlock, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(lastBlock)))
 	Require(t, err)
 
@@ -291,6 +292,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	triedb := bc.StateCache().TrieDB()
 
 	for i := 2000; i < numOfBlocksToGenerate; i++ {
+		// #nosec G115
 		header := bc.GetHeaderByNumber(uint64(i))
 		err = triedb.Commit(header.Root, false)
 		Require(t, err)
@@ -346,7 +348,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	Require(t, err)
 
 	// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
-	// all blocks between [1, 5000) with the execption of last validated and last finalized blocks
+	// all blocks between [1, 5000) with the exception of last validated and last finalized blocks
 	for i := 1; i < numOfBlocksToGenerate; i++ {
 		if mode == "validator" && (arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx) {
 			continue
@@ -364,16 +366,19 @@ func testStateAfterPruning(t *testing.T, mode string) {
 		t.Fatalf("Expected last block of new node %d to be equal or ahead of original node last block: %d", newLastBlock, lastBlock)
 	}
 
+	// #nosec G115
+	newLastBlockInt := int64(newLastBlock)
+
 	// Now we check if the blocks that got committed as part of builder.cleanup() got persisted. We do that by calling
 	// BalanceAt(...) since that requires stateDB for such block to be presetn to succeed
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock)))
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt))
 	Require(t, err)
 
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-1)))
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt-1))
 	Require(t, err)
 
 	// This is yet another block committed by builder.cleanup() as (HEAD - 127 - 1)
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(newLastBlock-126)))
+	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt-126))
 	Require(t, err)
 
 	// We do the same for last validated and last finalized blocks since they should have been added as important roots
