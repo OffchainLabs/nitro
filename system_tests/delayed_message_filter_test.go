@@ -221,19 +221,38 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
+	// Get sender's initial nonce and balance before bypass
+	senderAddr := builder.L2Info.GetAddress("Sender")
+	senderNonceBefore, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure delayed message is processed
 	advanceAndWaitForDelayed(t, ctx, builder)
 
-	// Verify balance DID change (tx processed with bypass)
-	// TODO: This will change once we replace filtered tx with noop/burn,
-	// but for now it shows that the tx was allowed to proceed.
+	// Verify filtered address balance did NOT change (tx executed as no-op)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
-	expectedBalance := new(big.Int).Add(initialBalance, big.NewInt(1e12))
-	require.Equal(t, expectedBalance, finalBalance, "filtered address should receive funds after bypass")
+	require.Equal(t, initialBalance, finalBalance, "filtered address should NOT receive funds - tx executed as no-op")
+
+	// Verify the receipt exists and has failed status
+	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
+
+	// Verify sender's nonce was incremented
+	senderNonceAfter, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, senderNonceBefore+1, senderNonceAfter, "sender nonce should be incremented")
+
+	// Verify sender's balance decreased (gas was consumed)
+	senderBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
 // TestDelayedMessageFilterBlocksSubsequent verifies that messages behind filtered one are blocked.
@@ -257,6 +276,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	normal1Addr := builder.L2Info.GetAddress("NormalUser1")
 	normal2Addr := builder.L2Info.GetAddress("NormalUser2")
+	senderAddr := builder.L2Info.GetAddress("Sender")
 
 	// Get initial balances
 	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -264,6 +284,8 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	normal1Initial, err := builder.L2.Client.BalanceAt(ctx, normal1Addr, nil)
 	require.NoError(t, err)
 	normal2Initial, err := builder.L2.Client.BalanceAt(ctx, normal2Addr, nil)
+	require.NoError(t, err)
+	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
 
 	// Grant Filterer the transaction filterer role
@@ -321,13 +343,21 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	// Advance L1 again to ensure all delayed messages are processed
 	advanceAndWaitForDelayed(t, ctx, builder)
 
-	// Verify ALL messages eventually processed
-	// TODO: This will change once we replace filtered tx with noop/burn,
-	// but for now it shows that the tx was allowed to proceed.
+	// Verify filtered tx executed as no-op (balance unchanged)
 	filteredFinal, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
-	require.Equal(t, new(big.Int).Add(filteredInitial, big.NewInt(1e12)), filteredFinal, "filtered user should receive funds after bypass")
+	require.Equal(t, filteredInitial, filteredFinal, "filtered user should NOT receive funds - tx executed as no-op")
 
+	// Verify sender's balance decreased due to gas consumption from all 3 txs
+	// (1 no-op filtered tx that burned gas + 2 normal transfers)
+	senderBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	// Sender sent 2e12 + 3e12 = 5e12 in the two successful transfers, plus gas for all 3 txs
+	expectedMaxBalance := new(big.Int).Sub(senderBalanceBefore, big.NewInt(5e12))
+	require.True(t, senderBalanceAfter.Cmp(expectedMaxBalance) < 0,
+		"sender balance should be less than (before - transfers) due to gas consumption on all txs including no-op")
+
+	// Verify non-filtered messages were processed normally
 	normal1Final, err := builder.L2.Client.BalanceAt(ctx, normal1Addr, nil)
 	require.NoError(t, err)
 	require.Equal(t, new(big.Int).Add(normal1Initial, big.NewInt(2e12)), normal1Final, "normal user 1 should receive funds after unblock")
@@ -443,7 +473,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	require.NoError(t, err)
 
 	// Deploy caller contract (not filtered)
-	callerAddr, caller := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Deploy target contract (will be filtered)
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
@@ -474,25 +504,13 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
-	// Verify the tx was processed
+	// Verify the tx was processed as a no-op (failed receipt, no execution)
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "tx should succeed after bypass")
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
 
-	// TODO: This will change once we replace filtered tx with noop/burn,
-	// but for now it shows that the tx was allowed to proceed.
-	// Verify the CallResult event was emitted (the call itself may return false
-	// since AddressFilterTest has no fallback, but the tx executed)
-	foundEvent := false
-	for _, log := range receipt.Logs {
-		if log.Address == callerAddr {
-			_, err := caller.ParseCallResult(*log)
-			if err == nil {
-				foundEvent = true
-			}
-		}
-	}
-	require.True(t, foundEvent, "CallResult event should be emitted")
+	// Verify no events were emitted (tx was not executed)
+	require.Empty(t, receipt.Logs, "no events should be emitted for no-op execution")
 }
 
 // TestDelayedMessageFilterStaticCall verifies that a delayed message STATICCALLing a filtered contract halts the sequencer.
@@ -554,7 +572,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	// Verify the tx was processed
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "tx should succeed after bypass")
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
 }
 
 // TestDelayedMessageFilterCreate verifies that a delayed message CREATing at a filtered address halts the sequencer.
@@ -620,7 +638,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	// Verify the tx was processed
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "tx should succeed after bypass")
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
 }
 
 // TestDelayedMessageFilterCreate2 verifies that a delayed message CREATE2ing at a filtered address halts the sequencer.
@@ -684,7 +702,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	// Verify the tx was processed
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "tx should succeed after bypass")
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
 }
 
 // TestDelayedMessageFilterSelfdestruct verifies that a delayed message SELFDESTRUCTing to a filtered beneficiary halts the sequencer.
@@ -746,5 +764,5 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	// Verify the tx was processed
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "tx should succeed after bypass")
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
 }
