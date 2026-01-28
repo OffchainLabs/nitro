@@ -144,6 +144,9 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			d.waitingForFilteredTx.LastLogTime = now
 		}
 
+		// Periodically attempt full re-execution even if the tx hash isn't in the
+		// onchain filter yet. The filtered address set may have changed since the
+		// last attempt, which could allow the tx to succeed without needing bypass.
 		needsFullRetry := time.Since(d.waitingForFilteredTx.LastFullRetry) >= config.FilteredTxFullRetryInterval
 		if !needsFullRetry {
 			// Fast-path to check if we should try re-executing the tx
