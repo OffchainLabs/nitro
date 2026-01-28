@@ -218,15 +218,15 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, midBalance, "balance should not change while halted")
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
-
-	// Get sender's initial nonce and balance before bypass
+	// Get sender's nonce and balance before bypass
 	senderAddr := builder.L2Info.GetAddress("Sender")
 	senderNonceBefore, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
 	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
+
+	// Add tx hash to onchain filter
+	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
