@@ -85,22 +85,18 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
-	// Make sure we shut down test functionality before the rest of the node
-	ctx, cancelCtx = context.WithCancel(ctx)
-	defer cancelCtx()
-
 	// Chain assertion info contains a BeforeState and AfterState which are used to dictate if genesis
 	// assertion is nil or not. When a chain is deployed, a genesis assertion is created. Such new chain
 	// deployment can happen from scratch or as part of a chain upgrade. In the first case, genesis
 	// chain assertion BeforeState and AfterState will be both zero since there's nothing before genesis.
-	// On the other hand, for the latter case, AfterState will be non zero since the rollup has been
+	// On the other hand, for the latter case, AfterState will be non zero since the chain has been
 	// created on an existing chain. In this test environment, we are simulating the first case where a
 	// chain is deployed from scratch, so we expect genesis assertion to be nil/zero for both BeforeState
 	// and AfterState. On top of that, we have an extra check in GetAndValidateGenesisAssertion to make
 	// sure that nil assertions have no leftover accounts; however, that does not apply to a test
 	// environment, which is why it is safe to remove such account (genesis account) from ArbInitData
 	// before creating initDataReader.
-	l2info.ArbInitData.Accounts = l2info.ArbInitData.Accounts[1:]
+	l2info.ArbInitData.Accounts = []statetransfer.AccountInitializationInfo{}
 
 	initDataReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
 	if initDataReader == nil {
@@ -123,14 +119,14 @@ func TestValidateGenesisAssertionWithBuilder(t *gotesting.T) {
 	// assertion is nil or not. When a chain is deployed, a genesis assertion is created. Such new chain
 	// deployment can happen from scratch or as part of a chain upgrade. In the first case, genesis
 	// chain assertion BeforeState and AfterState will be both zero since there's nothing before genesis.
-	// On the other hand, for the latter case, AfterState will be non zero since the rollup has been
+	// On the other hand, for the latter case, AfterState will be non zero since the chain has been
 	// created on an existing chain. In this test environment, we are simulating the first case where a
 	// chain is deployed from scratch, so we expect genesis assertion to be nil/zero for both BeforeState
 	// and AfterState. On top of that, we have an extra check in GetAndValidateGenesisAssertion to make
 	// sure that nil assertions have no leftover accounts; however, that does not apply to a test
 	// environment, which is why it is safe to remove any account from ArbInitData and in the case of
 	// builder there's 2 (Owner and Faucet) added by NewArbTestInfo
-	builder.L2Info.ArbInitData.Accounts = builder.L2Info.ArbInitData.Accounts[2:]
+	builder.L2Info.ArbInitData.Accounts = []statetransfer.AccountInitializationInfo{}
 
 	initDataReader := statetransfer.NewMemoryInitDataReader(&builder.L2Info.ArbInitData)
 	if initDataReader == nil {

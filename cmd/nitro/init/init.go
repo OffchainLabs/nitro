@@ -1032,29 +1032,29 @@ func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled boo
 	return parsedInitMessage, nil
 }
 
-func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisHash common.Hash, sendRoot common.Hash) (*protocol.AssertionCreatedInfo, [32]byte, error) {
+func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisHash common.Hash, sendRoot common.Hash) (*protocol.AssertionCreatedInfo, [32]byte, bool, error) {
 	var assertionHash [32]byte
 
 	if l1Client == nil {
-		return nil, assertionHash, fmt.Errorf("no l1 client")
+		return nil, assertionHash, false, fmt.Errorf("no l1 client")
 	}
 
 	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Client)
 	if err != nil {
-		return nil, assertionHash, err
+		return nil, assertionHash, false, err
 	}
 	_, err = userLogic.ChallengeGracePeriodBlocks(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		if !headerreader.IsExecutionReverted(err) {
-			return nil, assertionHash, err
+			return nil, assertionHash, false, err
 		}
 		log.Warn("Genesis Assertion is not tested") // not a bold chain
-		return nil, assertionHash, nil
+		return nil, assertionHash, false, nil
 	}
 
 	assertionHash, err = userLogic.GenesisAssertionHash(&bind.CallOpts{Context: context.Background()})
 	if err != nil {
-		return nil, assertionHash, err
+		return nil, assertionHash, false, err
 	}
 
 	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
@@ -1078,21 +1078,25 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 
 		assertionHash, err = userLogic.ComputeAssertionHash(&bind.CallOpts{Context: ctx}, common.Hash{}, genesisAssertionState, common.Hash{})
 		if err != nil {
-			return nil, assertionHash, err
+			return nil, assertionHash, false, err
 		}
 
 		genesisAssertionCreationInfo, err = bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
 	}
 
-	return genesisAssertionCreationInfo, assertionHash, err
+	return genesisAssertionCreationInfo, assertionHash, true, err
 }
 
 func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.BlockChain, initDataReader statetransfer.InitDataReader, rollupAddrs *chaininfo.RollupAddresses, l1Client *ethclient.Client) error {
 	genesisBlock := l2BlockChain.Genesis()
 	sendRoot := types.DeserializeHeaderExtraInformation(genesisBlock.Header()).SendRoot
-	genesisAssertionCreationInfo, genesisAssertionHash, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, genesisBlock.Hash(), sendRoot)
+	genesisAssertionCreationInfo, genesisAssertionHash, isBoldChain, err := getGenesisAssertionCreationInfo(ctx, rollupAddrs.Rollup, l1Client, genesisBlock.Hash(), sendRoot)
 	if err != nil {
 		return err
+	}
+
+	if !isBoldChain {
+		return errors.New("genesis assertion is only valid for bold chains")
 	}
 
 	accountsReader, err := initDataReader.GetAccountDataReader()

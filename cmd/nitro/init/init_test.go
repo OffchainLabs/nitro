@@ -926,7 +926,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	Require(t, err)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -938,7 +938,7 @@ func getInitHelper(t *testing.T, ownerAdress string, emptyState bool, importFile
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
-	nodeConfig.Chain.ID = 42161
+	nodeConfig.Chain.ID = chainID
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
 	if emptyState {
 		nodeConfig.Init.Empty = emptyState
@@ -991,14 +991,14 @@ func TestSimpleGetInit(t *testing.T) {
 	t.Parallel()
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", "", true, false)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, 412346, false, "", "", true, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	expectedChainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1034,15 +1034,15 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 	t.Parallel()
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", "", true, true)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, 421613, false, "", "", true, true)
 	Require(t, err)
 
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1058,7 +1058,7 @@ func TestGetInitWithEmpty(t *testing.T) {
 	t.Parallel()
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, true, "", "", false, false)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, 42161, true, "", "", false, false)
 
 	Require(t, err)
 	if chainConfig == nil {
@@ -1066,7 +1066,7 @@ func TestGetInitWithEmpty(t *testing.T) {
 	}
 
 	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1104,14 +1104,14 @@ func TestGetInitWithImportFile(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	importFile := "testdata/initFileContent.json"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, importFile, "", false, false)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, 412347, false, importFile, "", false, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = 0
+	expectedChainConfig := chaininfo.ArbitrumDevTestAnyTrustChainConfig()
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1148,7 +1148,7 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJsonFile := "testdata/testGenesis.json"
-	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, false, "", genesisJsonFile, false, false)
+	initDataReader, chainConfig, arbOsInit, err := getInitHelper(t, ownerAdress, 0, false, "", genesisJsonFile, false, false)
 	Require(t, err)
 	if chainConfig == nil {
 		t.Fatalf("Expected non nil chainConfig")
@@ -1204,6 +1204,63 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	err = initDataReader.Close()
 	Require(t, err)
+}
+
+func TestGetInitWithChainconfigInDB(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	// Only used to create executionDB through OpenInitializeExecutionDB
+	nodeConfig.Init.Empty = true
+	nodeConfig.Init.ValidateGenesisAssertion = false
+
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	executionDB, _, _, err := OpenInitializeExecutionDB(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+
+	// Need to write chainconfig to executionDB to force GetInit to call gethexec.TryReadStoredChainConfig()
+	expectedChainConfig := chaininfo.ArbitrumNovaChainConfig()
+	expectedChainConfig.ChainID = big.NewInt(94753)
+	genesisHash := rawdb.ReadCanonicalHash(executionDB, config.NodeConfigDefault.Init.DevInitBlockNum)
+	rawdb.WriteChainConfig(executionDB, genesisHash, expectedChainConfig)
+
+	// We already call getInit once inside openInitializeExecutionDB but calling a
+	// second time is okay since we're just loading configs
+	nodeConfig.Init.Empty = false
+	initDataReader, chainConfig, arbOsInit, err := GetInit(&nodeConfig, executionDB)
+	Require(t, err)
+
+	if arbOsInit != nil {
+		t.Fatalf("arbOsInit expected to be nil")
+	}
+
+	if initDataReader != nil {
+		t.Fatalf("initDataReader should be nil")
+	}
+
+	require.Equal(t, expectedChainConfig, chainConfig)
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
