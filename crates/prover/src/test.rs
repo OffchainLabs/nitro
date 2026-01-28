@@ -55,7 +55,7 @@ pub fn reject_ambiguous_imports() {
 
 #[test]
 pub fn test_compress() -> Result<()> {
-    let data = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+    let data = include_bytes!("forward_stub.wat");
     let mut last = vec![];
 
     for dict in [Dictionary::Empty, Dictionary::StylusProgram] {
