@@ -77,6 +77,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
         },
         "arbcrypto" => {
+            "ecrecovery" => func!(arbcrypto::ecrecovery),
             "keccak256" => func!(arbcrypto::keccak256),
         },
         "wavmio" => {

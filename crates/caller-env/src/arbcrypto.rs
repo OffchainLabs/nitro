@@ -2,6 +2,16 @@ use crate::{ExecEnv, GuestPtr, MemAccess};
 use core::mem::MaybeUninit;
 use tiny_keccak::{Hasher, Keccak};
 
+pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
+    mem: &mut M,
+    _env: &mut E,
+    hash_ptr: GuestPtr,
+    sig_ptr: GuestPtr,
+    pub_ptr: GuestPtr,
+) -> u8 {
+    0
+}
+
 pub fn keccak256<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     _env: &mut E,

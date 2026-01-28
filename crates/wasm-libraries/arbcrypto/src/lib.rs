@@ -6,6 +6,21 @@
 use caller_env::{self, GuestPtr};
 
 #[no_mangle]
+pub unsafe extern "C" fn arbcrypto__ecrecovery(
+    hash_ptr: GuestPtr,
+    sig_ptr: GuestPtr,
+    pub_ptr: GuestPtr,
+) -> u8 {
+    caller_env::arbcrypto::ecrecovery(
+        &mut caller_env::static_caller::STATIC_MEM,
+        &mut caller_env::static_caller::STATIC_ENV,
+        hash_ptr,
+        sig_ptr,
+        pub_ptr,
+    )
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn arbcrypto__keccak256(
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,

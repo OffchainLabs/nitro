@@ -1,6 +1,23 @@
 use crate::caller_env::{JitEnv, JitExecEnv};
-use crate::machine::{MaybeEscape, WasmEnvMut};
+use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use caller_env::GuestPtr;
+
+pub fn ecrecovery(
+    mut src: WasmEnvMut,
+    hash_ptr: GuestPtr,
+    sig_ptr: GuestPtr,
+    pub_ptr: GuestPtr,
+) -> Result<u8, Escape> {
+    let (mut mem, wenv) = src.jit_env();
+
+    Ok(caller_env::arbcrypto::ecrecovery(
+        &mut mem,
+        &mut JitExecEnv { wenv },
+        hash_ptr,
+        sig_ptr,
+        pub_ptr,
+    ))
+}
 
 pub fn keccak256(
     mut src: WasmEnvMut,
