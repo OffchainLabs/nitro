@@ -4,7 +4,6 @@
 use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    socket,
 };
 use arbutil::{Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};
@@ -14,6 +13,8 @@ use std::{
     net::TcpStream,
     time::Instant,
 };
+use validation::local_target;
+use validation::transfer::receive_validation_input;
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
@@ -281,49 +282,27 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
-    let stream = &mut reader;
+    let input = receive_validation_input(&mut reader)?;
 
-    let inbox_position = socket::read_u64(stream)?;
-    let position_within_message = socket::read_u64(stream)?;
-    let last_block_hash = socket::read_bytes32(stream)?;
-    let last_send_root = socket::read_bytes32(stream)?;
+    env.small_globals = [input.start_state.batch, input.start_state.pos_in_batch];
+    env.large_globals = [input.start_state.block_hash, input.start_state.send_root];
 
-    env.small_globals = [inbox_position, position_within_message];
-    env.large_globals = [last_block_hash, last_send_root];
-
-    while socket::read_u8(stream)? == socket::ANOTHER {
-        let position = socket::read_u64(stream)?;
-        let message = socket::read_bytes(stream)?;
-        env.sequencer_messages.insert(position, message);
+    for batch in input.batch_info {
+        env.sequencer_messages.insert(batch.number, batch.data);
     }
-    while socket::read_u8(stream)? == socket::ANOTHER {
-        let position = socket::read_u64(stream)?;
-        let message = socket::read_bytes(stream)?;
-        env.delayed_messages.insert(position, message);
+    if input.has_delayed_msg {
+        env.delayed_messages
+            .insert(input.delayed_msg_nr, input.delayed_msg);
     }
-
-    let preimage_types = socket::read_u32(stream)?;
-    for _ in 0..preimage_types {
-        let preimage_ty = PreimageType::try_from(socket::read_u8(stream)?)
-            .map_err(|e| Escape::Failure(e.to_string()))?;
-        let map = env.preimages.entry(preimage_ty).or_default();
-        let preimage_count = socket::read_u32(stream)?;
-        for _ in 0..preimage_count {
-            let hash = socket::read_bytes32(stream)?;
-            let preimage = socket::read_bytes(stream)?;
-            map.insert(hash, preimage);
+    for (preimage_type, preimages) in input.preimages {
+        let preimage_map = env.preimages.entry(preimage_type).or_default();
+        for (hash, preimage) in preimages {
+            preimage_map.insert(hash, preimage);
         }
     }
-
-    let programs_count = socket::read_u32(stream)?;
-    for _ in 0..programs_count {
-        let module_hash = socket::read_bytes32(stream)?;
-        let module_asm = socket::read_boxed_slice(stream)?;
-        env.module_asms.insert(module_hash, module_asm.into());
-    }
-
-    if socket::read_u8(stream)? != socket::READY {
-        return Escape::hostio("failed to parse global state");
+    for (module_hash, module_asm) in &input.user_wasms[local_target()] {
+        env.module_asms
+            .insert(*module_hash, module_asm.as_vec().into());
     }
 
     let writer = BufWriter::new(socket);

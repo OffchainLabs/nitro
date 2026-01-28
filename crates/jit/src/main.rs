@@ -4,12 +4,8 @@
 use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
-use jit::{
-    machine::Escape,
-    run,
-    socket::{report_error, report_success},
-    Opts,
-};
+use jit::{machine::Escape, run, Opts};
+use validation::transfer::{send_failure_response, send_successful_response};
 use wasmer::FrameInfo;
 
 fn main() -> Result<()> {
@@ -34,7 +30,7 @@ fn main() -> Result<()> {
             println!("{message}")
         }
         if let Some(mut socket) = result.socket {
-            report_error(&mut socket, message);
+            send_failure_response(&mut socket, &message)?;
         }
         if opts.validator.require_success {
             std::process::exit(1);
@@ -47,7 +43,11 @@ fn main() -> Result<()> {
             )
         }
         if let Some(mut socket) = result.socket {
-            report_success(&mut socket, &result.new_state, &result.memory_used);
+            send_successful_response(
+                &mut socket,
+                &result.new_state.into(),
+                result.memory_used.bytes().0 as u64,
+            )?;
         }
     }
     Ok(())
