@@ -801,14 +801,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			runCtx,
 			s.exposeMultiGas,
 		)
-		if err != nil {
-			if errors.Is(err, arbos.ErrDelayedTxFiltered) && filteringHooks.FilteredTxHash != (common.Hash{}) {
+		if errors.Is(err, arbos.ErrDelayedTxFiltered) && filteringHooks.FilteredTxHash != (common.Hash{}) {
 				return nil, nil, nil, &ErrFilteredDelayedMessage{
 					TxHash:        filteringHooks.FilteredTxHash,
 					DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 				}
-			}
-			return nil, nil, nil, err
+		} else if err != nil {
+			return nil, nil, nil, err		
 		}
 		return block, statedb, receipts, nil
 	}
