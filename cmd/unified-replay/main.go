@@ -17,10 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
+	"github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -54,15 +54,13 @@ func main() {
 
 	positionInMEL := melwavmio.GetPositionInMEL()
 	if melState.MsgCount > positionInMEL {
-		nextMsg, err := melState.ReadMessage(positionInMEL)
+		resolver := &wavmPreimageResolver{}
+		msgReader := melreplay.NewMessageReader(resolver)
+		nextMsg, err := msgReader.Read(context.Background(), melState, positionInMEL)
 		if err != nil {
 			panic(fmt.Errorf("error reading message idx %d: %w", positionInMEL, err))
 		}
-		msgHash, err := mel.MessageHash(nextMsg)
-		if err != nil {
-			panic(fmt.Errorf("error hashing message idx %d: %w", positionInMEL, err))
-		}
-		melwavmio.SetMELMsgHash(msgHash)
+		melwavmio.SetMELMsgHash(nextMsg.Hash())
 	} else {
 		melwavmio.SetMELMsgHash(common.Hash{})
 	}

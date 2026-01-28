@@ -146,14 +146,9 @@ func (s *State) Clone() *State {
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
 		delayedMessageBacklog:              delayedMessageBacklog,
 		readCountFromBacklog:               s.readCountFromBacklog,
-		// we copy msgPreimagesDest as is to continue recordng of msg preimages
+		// we pass along msgPreimagesDest to continue recordng of msg preimages
 		msgPreimagesDest: s.msgPreimagesDest,
 	}
-}
-
-func (s *State) ReadMessage(msgIdx uint64) (*arbostypes.MessageWithMetadata, error) {
-	// TODO: Unimplemented.
-	return &arbostypes.MessageWithMetadata{}, nil
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
@@ -238,10 +233,6 @@ func getPartialsAndRoot(acc *merkleAccumulator.MerkleAccumulator) ([]common.Hash
 		return nil, common.Hash{}, err
 	}
 	return partials, root, err
-}
-
-func (s *State) SetMsgsAcc(acc *merkleAccumulator.MerkleAccumulator) {
-	s.msgsAcc = acc
 }
 
 func (s *State) GetSeenDelayedMsgsAcc() *merkleAccumulator.MerkleAccumulator {

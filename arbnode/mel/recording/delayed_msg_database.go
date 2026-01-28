@@ -68,7 +68,8 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 		return nil, err
 	}
 	hashDelayedHash := crypto.Keccak256(delayed.Hash().Bytes())
-	r.preimages[common.BytesToHash(hashDelayedHash)] = delayedMsgBytes
+	r.preimages[common.BytesToHash(hashDelayedHash)] = delayed.Hash().Bytes()
+	r.preimages[delayed.Hash()] = delayedMsgBytes
 	return delayed, nil
 }
 

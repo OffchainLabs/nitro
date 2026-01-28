@@ -32,14 +32,20 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 		})
 	}
 	state := &mel.State{}
-	// Simulate extracting of Messages in native mode to record preimages
-	preimages := make(daprovider.PreimagesMap)
-	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
-	for i := range numMsgs {
+	for i := range uint64(5) {
 		require.NoError(t, state.AccumulateMessage(messages[i]))
 		state.MsgCount++
 	}
 	require.NoError(t, state.GenerateMessageMerklePartialsAndRoot())
+	// Simulate extracting of Messages in native mode to record preimages
+	preimages := make(daprovider.PreimagesMap)
+	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
+	newState := state.Clone()
+	for i := uint64(5); i < numMsgs; i++ {
+		require.NoError(t, newState.AccumulateMessage(messages[i]))
+		newState.MsgCount++
+	}
+	require.NoError(t, newState.GenerateMessageMerklePartialsAndRoot())
 
 	// Test reading in wasm mode
 	msgReader := melreplay.NewMessageReader(
@@ -48,8 +54,8 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 			preimages,
 		),
 	)
-	for i := range numMsgs {
-		msg, err := msgReader.Read(ctx, state, i)
+	for i := uint64(5); i < numMsgs; i++ {
+		msg, err := msgReader.Read(ctx, newState, i)
 		require.NoError(t, err)
 		require.Equal(t, msg.Hash(), messages[i].Hash())
 	}

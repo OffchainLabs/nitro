@@ -233,10 +233,10 @@ func extractMessagesImpl(
 		}
 		for _, msg := range messagesInBatch {
 			messages = append(messages, msg)
-			state.MsgCount += 1
 			if err = state.AccumulateMessage(msg); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("failed to accumulate message: %w", err)
 			}
+			state.MsgCount += 1
 		}
 		state.BatchCount += 1
 		batchMetas = append(batchMetas, &mel.BatchMetadata{

@@ -180,7 +180,9 @@ func buildMerkleTree(t *testing.T, messages []*mel.DelayedInboxMessage) (map[com
 		require.NoError(t, err)
 		hash := crypto.Keccak256Hash(encoded)
 		preimages[hash] = encoded
-		leafHashes[i] = hash
+		hashOfHash := crypto.Keccak256Hash(hash.Bytes())
+		preimages[hashOfHash] = hash.Bytes()
+		leafHashes[i] = hashOfHash
 	}
 
 	currentLevel := leafHashes
