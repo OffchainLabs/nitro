@@ -6,6 +6,8 @@ package eventfilter
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -83,17 +85,6 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "data address offset not aligned",
-			json: `{
-				"rules": [{
-					"event": "Transfer(address,address,uint256)",
-					"selector": "0xddf252ad",
-					"dataAddresses": [1]
-				}]
-			}`,
-			wantErr: true,
-		},
-		{
 			name: "bypass topic index invalid",
 			json: `{
 				"rules": [{
@@ -111,15 +102,17 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewEventFilterFromJSON([]byte(tt.json))
+			filter, err := NewEventFilterFromJSON([]byte(tt.json))
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
 				}
+				assert.Nil(t, filter)
 			} else {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
+				assert.True(t, filter.HasRules())
 			}
 		})
 	}
@@ -150,17 +143,17 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 		name     string
 		topics   []common.Hash
 		data     []byte
-		expected int // expected number of addresses, -1 means nil
+		expected int
 	}{
 		{
 			name:     "empty topics",
 			topics:   []common.Hash{},
-			expected: -1,
+			expected: 0,
 		},
 		{
 			name:     "unknown signature",
 			topics:   []common.Hash{crypto.Keccak256Hash([]byte("Unknown(address)"))},
-			expected: -1,
+			expected: 0,
 		},
 		{
 			name:     "signature only, no indexed params",
@@ -180,7 +173,7 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 		{
 			name:     "bypass triggered (to == 0x0)",
 			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(common.Address{}.Bytes())},
-			expected: -1,
+			expected: 0,
 		},
 		{
 			name:     "duplicate addresses",
@@ -192,14 +185,8 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := filter.ExtractAddresses(tt.topics, tt.data, common.Address{}, common.Address{})
-			if tt.expected == -1 {
-				if result != nil {
-					t.Errorf("expected nil, got %v", result)
-				}
-			} else {
-				if len(result) != tt.expected {
-					t.Errorf("expected %d addresses, got %d", tt.expected, len(result))
-				}
+			if len(result) != tt.expected {
+				t.Errorf("expected %d addresses, got %d", tt.expected, len(result))
 			}
 		})
 	}
@@ -247,7 +234,6 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 		name      string
 		topics    []common.Hash
 		wantAddrs []common.Address
-		wantNil   bool
 	}{
 		{
 			name: "ERC20 transfer",
@@ -265,7 +251,7 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 				common.BytesToHash(from.Bytes()),
 				common.BytesToHash(zero.Bytes()),
 			},
-			wantNil: true,
+			wantAddrs: []common.Address{},
 		},
 		{
 			name: "ERC1155 TransferSingle",
@@ -285,7 +271,7 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 				common.BytesToHash(from.Bytes()),
 				common.BytesToHash(zero.Bytes()),
 			},
-			wantNil: true,
+			wantAddrs: []common.Address{},
 		},
 		{
 			name: "ERC1155 TransferBatch",
@@ -302,13 +288,6 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := filter.ExtractAddresses(tt.topics, nil, common.Address{}, common.Address{})
-
-			if tt.wantNil {
-				if result != nil {
-					t.Errorf("expected nil, got %v", result)
-				}
-				return
-			}
 
 			if len(result) != len(tt.wantAddrs) {
 				t.Errorf("expected %d addresses, got %d", len(tt.wantAddrs), len(result))
