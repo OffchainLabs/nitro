@@ -113,7 +113,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address, params.MaxWasmSize)
+	wasm, err := getWasm(statedb, address, params)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -224,7 +224,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
+	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
 		arbosVersion:    evm.Context.ArbOSVersion,
@@ -298,30 +298,104 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address, maxWasmSize uint32) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(prefixedWasm, maxWasmSize)
+	return getWasmFromContractCode(statedb, prefixedWasm, params, true)
 }
 
-func getWasmFromContractCode(prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
-	if prefixedWasm == nil {
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, isActivation bool) ([]byte, error) {
+	if len(prefixedWasm) == 0 {
 		return nil, ProgramNotWasmError()
 	}
-	wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
+
+	if state.IsStylusClassicProgramPrefix(prefixedWasm) {
+		return handleClassicStylus(prefixedWasm, params.MaxWasmSize)
+	}
+
+	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
+		if state.IsStylusRootProgramPrefix(prefixedWasm) {
+			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
+		}
+
+		if state.IsStylusFragmentPrefix(prefixedWasm) {
+			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
+		}
+	}
+
+	return nil, ProgramNotWasmError()
+}
+
+func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
+	wasm, dictByte, err := state.StripStylusPrefix(data)
 	if err != nil {
 		return nil, err
 	}
 
-	var dict arbcompress.Dictionary
-	switch dictByte {
-	case 0:
-		dict = arbcompress.EmptyDictionary
-	case 1:
-		dict = arbcompress.StylusProgramDictionary
-	default:
-		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+	dict, err := getStylusCompressionDict(dictByte)
+	if err != nil {
+		return nil, err
 	}
-	return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
+
+	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
+}
+
+func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16, isActivation bool) ([]byte, error) {
+	root, err := state.NewStylusRoot(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if isActivation {
+		if root.DecompressedLength > maxSize {
+			return nil, fmt.Errorf("invalid wasm: decompressedLength %d is greater then MaxWasmSize %d", root.DecompressedLength, maxSize)
+		}
+		if len(root.Addresses) > int(maxFragments) {
+			return nil, fmt.Errorf("invalid wasm: fragment count exceeds limit of %d", maxFragments)
+		}
+	}
+
+	if len(root.Addresses) == 0 {
+		return nil, fmt.Errorf("invalid wasm: fragment count cannot be zero")
+	}
+
+	var compressedWasm []byte
+	for _, addr := range root.Addresses {
+		fragCode := statedb.GetCode(addr)
+
+		payload, err := state.StripStylusFragmentPrefix(fragCode)
+		if err != nil {
+			return nil, err
+		}
+
+		compressedWasm = append(compressedWasm, payload...)
+	}
+
+	dict, err := getStylusCompressionDict(root.DictionaryType)
+	if err != nil {
+		return nil, err
+	}
+
+	wasm, err := arbcompress.DecompressWithDictionary(compressedWasm, int(root.DecompressedLength), dict)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(wasm) != int(root.DecompressedLength) {
+		return nil, fmt.Errorf("invalid wasm: decompressed length %d does not match expected length %d", len(wasm), root.DecompressedLength)
+	}
+
+	return wasm, nil
+}
+
+func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
+	switch id {
+	case 0:
+		return arbcompress.EmptyDictionary, nil
+	case 1:
+		return arbcompress.StylusProgramDictionary, nil
+	default:
+		return 0, fmt.Errorf("unsupported dictionary type: %d", id)
+	}
 }
 
 // Gets a program entry, which may be expired or not yet activated.
