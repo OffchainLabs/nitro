@@ -64,8 +64,8 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 		return nil, err
 	}
 	entries, indices, maxIndex := collectTrieEntries(receiptsTrie)
-	if len(indices) != 0 && len(indices) != int(maxIndex)+1 {
-		return nil, fmt.Errorf("incorrect number of receipts in trie, want: %d, have: %d", int(maxIndex)+1, len(indices))
+	if len(indices) != 0 && uint64(len(indices)) != maxIndex+1 {
+		return nil, fmt.Errorf("incorrect number of receipts in trie, want: %d, have: %d", maxIndex+1, len(indices))
 	}
 	rawReceipts := reconstructOrderedData(entries, indices)
 	receipts, err := decodeReceiptsData(rawReceipts)
@@ -76,6 +76,7 @@ func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentCh
 	for i, receipt := range receipts {
 		// This is needed to enable fetching corresponding tx from the txFetcher
 		for _, log := range receipt.Logs {
+			// #nosec G115
 			log.TxIndex = uint(i)
 			log.BlockHash = rf.header.Hash()
 			log.BlockNumber = rf.header.Number.Uint64()

@@ -17,10 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
+	"github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
 	"github.com/offchainlabs/nitro/wavmio"
 )

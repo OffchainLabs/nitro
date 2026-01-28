@@ -2,10 +2,8 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -73,14 +71,14 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	t.Log(entry.Preimages)
 
-	jsonPreimages, err := json.Marshal(entry.Preimages)
-	Require(t, err)
-	Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
-	t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
-	t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
-	initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
-	Require(t, err)
-	t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
+	// jsonPreimages, err := json.Marshal(entry.Preimages)
+	// Require(t, err)
+	// Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
+	// t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
+	// t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
+	// initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
+	// Require(t, err)
+	// t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
@@ -90,7 +88,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0xd4038a12b6946eb6aa614d3c6ccf94f0c6a57f0c00b11d67c2e0343791eb5eef")
+	wasmModuleRoot := common.HexToHash("0x680289b92d5944850d04919b2c7c0076b43944d210368066651008c7aaadc908")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{

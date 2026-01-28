@@ -353,7 +353,9 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if err != nil {
 		return nil, 0, err
 	}
-	currentState.RecordMsgPreimagesTo(preimages)
+	if err := currentState.RecordMsgPreimagesTo(preimages); err != nil {
+		return nil, 0, err
+	}
 	var endState *mel.State
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
