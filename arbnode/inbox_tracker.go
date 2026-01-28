@@ -42,17 +42,19 @@ type InboxTracker struct {
 	dapReaders     *daprovider.ReaderRegistry
 	snapSyncConfig SnapSyncConfig
 
-	batchMetaMutex sync.Mutex
-	batchMeta      *containers.LruCache[uint64, BatchMetadata]
+	batchMetaMutex   sync.Mutex
+	batchMeta        *containers.LruCache[uint64, BatchMetadata]
+	maxL2MessageSize uint64
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig, maxL2MessageSize uint64) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:             db,
-		txStreamer:     txStreamer,
-		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
-		snapSyncConfig: snapSyncConfig,
+		db:               db,
+		txStreamer:       txStreamer,
+		dapReaders:       dapReaders,
+		batchMeta:        containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig:   snapSyncConfig,
+		maxL2MessageSize: maxL2MessageSize,
 	}
 	return tracker, nil
 }
@@ -768,7 +770,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate, t.maxL2MessageSize)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1
 	for {
