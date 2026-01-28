@@ -8,7 +8,7 @@ use std::{
 };
 
 /// Counterpart to Go `validator.GoGlobalState`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
     #[serde(with = "As::<DisplayFromStr>")]
