@@ -482,6 +482,13 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		if err = n.addressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing restricted addr service: %w", err)
 		}
+
+		hashStore := n.addressFilterService.GetHashStore()
+		if hashStore != nil {
+			addressChecker := addressfilter.NewDefaultHashedAddressChecker(hashStore)
+			addressChecker.Start(ctx)
+			n.ExecEngine.SetAddressChecker(addressChecker)
+		}
 	}
 
 	return nil
