@@ -38,7 +38,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
         }
     }
 
-    if let Some(user_wasms) = data.user_wasms.get(&local_target()) {
+    if let Some(user_wasms) = data.user_wasms.get(local_target()) {
         for (module_hash, module_asm) in user_wasms.iter() {
             env.module_asms
                 .insert(*module_hash, module_asm.as_vec().into());

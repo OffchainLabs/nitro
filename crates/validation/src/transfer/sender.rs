@@ -1,5 +1,5 @@
 use crate::transfer::primitives::{write_bytes, write_bytes32, write_u32, write_u64, write_u8};
-use crate::transfer::{IOResult, ANOTHER, FAILURE, READY, SUCCESS};
+use crate::transfer::{markers, IOResult};
 use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};
 use arbutil::Bytes32;
 use std::collections::HashMap;
@@ -22,13 +22,13 @@ pub fn send_successful_response(
     new_state: &GoGlobalState,
     memory_used: u64,
 ) -> IOResult<()> {
-    write_u8(writer, SUCCESS)?;
+    write_u8(writer, markers::SUCCESS)?;
     send_global_state(writer, new_state)?;
     write_u64(writer, memory_used)
 }
 
 pub fn send_failure_response(writer: &mut impl Write, error_message: &str) -> IOResult<()> {
-    write_u8(writer, FAILURE)?;
+    write_u8(writer, markers::FAILURE)?;
     write_bytes(writer, error_message.as_bytes())
 }
 
@@ -41,11 +41,11 @@ fn send_global_state(writer: &mut impl Write, start_state: &GoGlobalState) -> IO
 
 fn send_batches(writer: &mut impl Write, batch_info: &[BatchInfo]) -> IOResult<()> {
     for batch in batch_info {
-        write_u8(writer, ANOTHER)?;
+        write_u8(writer, markers::ANOTHER)?;
         write_u64(writer, batch.number)?;
         write_bytes(writer, &batch.data)?;
     }
-    write_u8(writer, SUCCESS)
+    write_u8(writer, markers::SUCCESS)
 }
 
 fn send_preimages(writer: &mut impl Write, preimages: &PreimageMap) -> IOResult<()> {
@@ -66,7 +66,7 @@ fn send_user_wasms(
     user_wasms: &HashMap<String, HashMap<Bytes32, UserWasm>>,
 ) -> IOResult<()> {
     let local_target = local_target();
-    let local_target_user_wasms = user_wasms.get(&local_target);
+    let local_target_user_wasms = user_wasms.get(local_target);
 
     if local_target_user_wasms.is_none_or(|m| m.is_empty()) {
         for (arch, wasms) in user_wasms {
@@ -92,5 +92,5 @@ fn send_user_wasms(
 }
 
 fn finish_sending(writer: &mut impl Write) -> IOResult<()> {
-    write_u8(writer, READY)
+    write_u8(writer, markers::READY)
 }

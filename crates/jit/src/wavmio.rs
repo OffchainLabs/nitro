@@ -300,7 +300,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
             preimage_map.insert(hash, preimage);
         }
     }
-    for (module_hash, module_asm) in &input.user_wasms[&local_target()] {
+    for (module_hash, module_asm) in &input.user_wasms[local_target()] {
         env.module_asms
             .insert(*module_hash, module_asm.as_vec().into());
     }

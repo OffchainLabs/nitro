@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
 use std::{
     collections::HashMap,
-    env,
     io::{self, BufRead},
 };
 
@@ -12,14 +11,19 @@ pub mod transfer;
 
 pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
 
+pub const TARGET_ARM_64: &str = "arm64";
+pub const TARGET_AMD_64: &str = "amd64";
+pub const TARGET_HOST: &str = "host";
+
 /// Counterpart to Go `rawdb.LocalTarget()`.
-pub fn local_target() -> String {
-    match (env::consts::OS, env::consts::ARCH) {
-        ("linux", "aarch64") => "arm64",
-        ("linux", "x86_64") => "amd64",
-        _ => "host",
+pub fn local_target() -> &'static str {
+    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        TARGET_ARM_64
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        TARGET_AMD_64
+    } else {
+        TARGET_HOST
     }
-    .to_string()
 }
 
 /// Counterpart to Go `validator.GoGlobalState`.

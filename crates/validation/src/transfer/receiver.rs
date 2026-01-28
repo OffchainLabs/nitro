@@ -1,5 +1,5 @@
 use crate::transfer::primitives::{read_bytes, read_bytes32, read_u32, read_u64, read_u8};
-use crate::transfer::{IOResult, ANOTHER, READY};
+use crate::transfer::{markers, IOResult};
 use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};
 use arbutil::{Bytes32, PreimageType};
 use io::Error;
@@ -23,19 +23,19 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
         batch_info: inbox,
         delayed_msg: delayed_message.data,
         start_state,
-        user_wasms: HashMap::from([(local_target(), user_wasms)]),
+        user_wasms: HashMap::from([(local_target().to_string(), user_wasms)]),
         ..Default::default()
     })
 }
 
 pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalState, u64), String>> {
     match read_u8(reader)? {
-        super::SUCCESS => {
+        markers::SUCCESS => {
             let new_state = receive_global_state(reader)?;
             let memory_used = read_u64(reader)?;
             Ok(Ok((new_state, memory_used)))
         }
-        super::FAILURE => {
+        markers::FAILURE => {
             let error_bytes = read_bytes(reader)?;
             let error_message = String::from_utf8_lossy(&error_bytes).to_string();
             Ok(Err(error_message))
@@ -59,7 +59,7 @@ fn receive_global_state(reader: &mut impl Read) -> IOResult<GoGlobalState> {
 
 fn receive_batches(reader: &mut impl Read) -> IOResult<Vec<BatchInfo>> {
     let mut batches = vec![];
-    while read_u8(reader)? == ANOTHER {
+    while read_u8(reader)? == markers::ANOTHER {
         let number = read_u64(reader)?;
         let data = read_bytes(reader)?;
         batches.push(BatchInfo { number, data });
@@ -105,7 +105,7 @@ fn receive_user_wasms(reader: &mut impl Read) -> IOResult<HashMap<Bytes32, UserW
 
 fn ensure_readiness(reader: &mut impl Read) -> IOResult<()> {
     let byte = read_u8(reader)?;
-    if byte == READY {
+    if byte == markers::READY {
         Ok(())
     } else {
         Err(Error::new(

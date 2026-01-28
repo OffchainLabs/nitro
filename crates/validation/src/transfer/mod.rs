@@ -1,11 +1,11 @@
 use std::io;
 
+mod markers;
 mod primitives;
 mod receiver;
 mod sender;
 #[cfg(test)]
 mod tests;
-mod markers;
 
 pub use receiver::*;
 pub use sender::*;

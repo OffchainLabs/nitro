@@ -81,7 +81,7 @@ fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ]),
         user_wasms: HashMap::from([(
-            local_target(),
+            local_target().to_string(),
             HashMap::from([
                 (Bytes32::from([3u8; 32]), UserWasm(vec![20, 21, 22])),
                 (Bytes32::from([4u8; 32]), UserWasm(vec![30, 31, 32])),
@@ -111,7 +111,7 @@ fn local_stylus_target_must_be_present_if_some_target_is_present() {
         ..Default::default()
     };
 
-    let (mut reader, mut writer) = pipe().unwrap();
+    let (_, mut writer) = pipe().unwrap();
 
     let result = send_validation_input(&mut writer, &input);
     assert!(result.is_err());
