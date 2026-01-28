@@ -175,7 +175,8 @@
         "DataAvailabilityCommittee": false,
         "InitialArbOSVersion": 51,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
-        "GenesisBlockNum": 0
+        "GenesisBlockNum": 0,
+		"MaxL2MessageSize": 1000000000
       }
     }
   },

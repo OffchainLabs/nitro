@@ -146,9 +146,10 @@ func (c *SequencerConfig) Validate() error {
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
 		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
-	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
-		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
-	}
+	// TODO add dangerous flag to skip the check or figure out how to get MaxL2MessageSize from chainconfig or check it later
+	//if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
+	//	return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	//}
 	if c.Timeboost.Enable {
 		if len(c.Timeboost.AuctionContractAddress) > 0 && !common.IsHexAddress(c.Timeboost.AuctionContractAddress) {
 			return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.Timeboost.AuctionContractAddress)
@@ -919,6 +920,7 @@ type FullSequencingHooks struct {
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+	maxL2MessageSize         uint64
 }
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
@@ -956,7 +958,7 @@ func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessa
 			l2Message = append(l2Message, txBytes...)
 		}
 	}
-	if len(l2Message) > arbostypes.MaxL2MessageSize {
+	if uint64(len(l2Message)) > s.maxL2MessageSize {
 		return nil, errors.New("l2message too long")
 	}
 	return &arbostypes.L1IncomingMessage{
@@ -1037,6 +1039,7 @@ func MakeSequencingHooks(
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
+	maxL2MessageSize uint64,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -1046,6 +1049,7 @@ func MakeSequencingHooks(
 		preTxFilter:              preTxFilter,
 		postTxFilter:             postTxFilter,
 		blockFilter:              blockFilter,
+		maxL2MessageSize:         maxL2MessageSize,
 	}
 	return res
 }
@@ -1057,6 +1061,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
+	maxL2MessageSize uint64,
 ) *FullSequencingHooks {
 	var items []txQueueItem
 	for _, tx := range txes {
@@ -1070,6 +1075,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 		preTxFilter,
 		postTxFilter,
 		blockFilter,
+		maxL2MessageSize,
 	)
 }
 
@@ -1327,6 +1333,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.preTxFilter,
 		s.postTxFilter,
 		nil,
+		s.execEngine.bc.Config().MaxL2MessageSize(),
 	)
 
 	for _, queueItem := range queueItems {
