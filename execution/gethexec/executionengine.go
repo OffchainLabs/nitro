@@ -782,7 +782,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// which tx caused the halt.
 	if applyDelayedFilter {
 		chainConfig := s.bc.Config()
-		lastArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
+		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, lastArbosVersion)
 		if err != nil {
 			log.Warn("error parsing incoming message for filtering", "err", err)
