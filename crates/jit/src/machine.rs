@@ -24,6 +24,7 @@ use wasmer::{
     RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
+use caller_env::GuestPtr;
 
 pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let mut store = match opts.validator.cranelift {
@@ -78,6 +79,9 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
         },
         "arbkeccak" => {
             "keccak256" => func!(arbkeccak::keccak256),
+        },
+        "hooks" => {
+            "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
         },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
