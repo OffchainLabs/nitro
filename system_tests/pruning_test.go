@@ -192,16 +192,10 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	Require(t, err)
 }
 
-func TestStateAfterPruningValidator(t *testing.T) {
-	testStateAfterPruning(t, "validator")
-}
-
-func TestStateAfterPruningMinimal(t *testing.T) {
-	testStateAfterPruning(t, "minimal")
-}
-
-func TestStateAfterPruningFull(t *testing.T) {
-	testStateAfterPruning(t, "full")
+func TestStateAfterPruning(t *testing.T) {
+	for _, mode := range []string{"validator", "full", "minimal"} {
+		t.Run(fmt.Sprintf("-%s-mode-after_pruning_test", mode), func(t *testing.T) { testStateAfterPruning(t, mode) })
+	}
 }
 
 func testStateAfterPruning(t *testing.T, mode string) {
