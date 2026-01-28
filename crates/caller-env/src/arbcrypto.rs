@@ -6,7 +6,9 @@ pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     _env: &mut E,
     hash_ptr: GuestPtr,
+    hash_len: u32,
     sig_ptr: GuestPtr,
+    sig_len: u32,
     pub_ptr: GuestPtr,
 ) -> u32 {
     0

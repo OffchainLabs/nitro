@@ -5,7 +5,9 @@ use caller_env::GuestPtr;
 pub fn ecrecovery(
     mut src: WasmEnvMut,
     hash_ptr: GuestPtr,
+    hash_len: u32,
     sig_ptr: GuestPtr,
+    sig_len: u32,
     pub_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, wenv) = src.jit_env();
@@ -14,7 +16,9 @@ pub fn ecrecovery(
         &mut mem,
         &mut JitExecEnv { wenv },
         hash_ptr,
+        hash_len,
         sig_ptr,
+        sig_len,
         pub_ptr,
     ))
 }

@@ -8,14 +8,18 @@ use caller_env::{self, GuestPtr};
 #[no_mangle]
 pub unsafe extern "C" fn arbcrypto__ecrecovery(
     hash_ptr: GuestPtr,
+    hash_len: u32,
     sig_ptr: GuestPtr,
+    sig_len: u32,
     pub_ptr: GuestPtr,
 ) -> u32 {
     caller_env::arbcrypto::ecrecovery(
         &mut caller_env::static_caller::STATIC_MEM,
         &mut caller_env::static_caller::STATIC_ENV,
         hash_ptr,
+        hash_len,
         sig_ptr,
+        sig_len,
         pub_ptr,
     )
 }
