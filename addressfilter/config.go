@@ -23,6 +23,7 @@ var DefaultConfig = Config{
 	Enable:       false,
 	PollInterval: 5 * time.Minute,
 	CacheSize:    10000,
+	S3:           s3syncer.DefaultS3Config,
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {

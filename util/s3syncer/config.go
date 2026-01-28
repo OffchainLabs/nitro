@@ -30,9 +30,9 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secret-key", "", "AWS secret key for S3 (optional, uses default credentials if "+
 		"not provided which check for credentials in specific order like env variables, shared credentials, etc.)")
 	f.String(prefix+".object-key", "", "S3 object key (path) to the file")
-	f.Int(prefix+".chunk-size-mb", defaultChunkSizeMB, "S3 multipart download part size in MB")
-	f.Int(prefix+".concurrency", defaultConcurrency, "S3 multipart download concurrency")
-	f.Int(prefix+".max-retries", defaultMaxRetries, "maximum retries for S3 part body download")
+	f.Int(prefix+".chunk-size-mb", DefaultS3Config.ChunkSizeMB, "S3 multipart download part size in MB")
+	f.Int(prefix+".concurrency", DefaultS3Config.Concurrency, "S3 multipart download concurrency")
+	f.Int(prefix+".max-retries", DefaultS3Config.MaxRetries, "maximum retries for S3 part body download")
 }
 
 // Validate checks that required S3 configuration fields are set.
@@ -49,8 +49,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-const (
-	defaultChunkSizeMB = 32
-	defaultMaxRetries  = 5
-	defaultConcurrency = 10
-)
+var DefaultS3Config = Config{
+	ChunkSizeMB: 32,
+	MaxRetries:  3,
+	Concurrency: 10,
+}
