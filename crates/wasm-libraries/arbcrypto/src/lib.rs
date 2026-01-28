@@ -10,7 +10,7 @@ pub unsafe extern "C" fn arbcrypto__ecrecovery(
     hash_ptr: GuestPtr,
     sig_ptr: GuestPtr,
     pub_ptr: GuestPtr,
-) -> u8 {
+) -> u32 {
     caller_env::arbcrypto::ecrecovery(
         &mut caller_env::static_caller::STATIC_MEM,
         &mut caller_env::static_caller::STATIC_ENV,

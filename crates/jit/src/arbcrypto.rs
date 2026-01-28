@@ -7,7 +7,7 @@ pub fn ecrecovery(
     hash_ptr: GuestPtr,
     sig_ptr: GuestPtr,
     pub_ptr: GuestPtr,
-) -> Result<u8, Escape> {
+) -> Result<u32, Escape> {
     let (mut mem, wenv) = src.jit_env();
 
     Ok(caller_env::arbcrypto::ecrecovery(
