@@ -24,7 +24,6 @@ use wasmer::{
     RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
-use caller_env::GuestPtr;
 
 pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let mut store = match opts.validator.cranelift {
