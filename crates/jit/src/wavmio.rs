@@ -295,9 +295,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
             .insert(input.delayed_msg_nr, input.delayed_msg);
     }
     for (preimage_type, preimages) in input.preimages {
-        let map = env.preimages.entry(preimage_type).or_default();
+        let preimage_map = env.preimages.entry(preimage_type).or_default();
         for (hash, preimage) in preimages {
-            map.insert(hash, preimage);
+            preimage_map.insert(hash, preimage);
         }
     }
     for (module_hash, module_asm) in &input.user_wasms[&local_target()] {
