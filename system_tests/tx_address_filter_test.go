@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/arbos/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/txfilter"
 )
@@ -324,43 +325,116 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	Require(t, err)
 }
 
-func TestAddressFilterEventMentionRejected(t *testing.T) {
+func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	// Configure event filter rules
+	rules := []eventfilter.EventRule{
+		{
+			Event:          "Transfer(address,address,uint256)",
+			Selector:       eventfilter.Selector4("Transfer(address,address,uint256)"),
+			TopicAddresses: []int{1, 2},
+		},
+		{
+			Event:          "TransferSingle(address,address,address,uint256,uint256)",
+			Selector:       eventfilter.Selector4("TransferSingle(address,address,address,uint256,uint256)"),
+			TopicAddresses: []int{2, 3},
+		},
+		{
+			Event:          "TransferBatch(address,address,address,uint256[],uint256[])",
+			Selector:       eventfilter.Selector4("TransferBatch(address,address,address,uint256[],uint256[])"),
+			TopicAddresses: []int{2, 3},
+		},
+	}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithEventFilterRules(rules)
 	builder.isSequencer = true
+
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Deploy contract that will selfdestruct
+	// Deploy test contract
 	_, contract := deployAddressFilterTestContract(t, ctx, builder)
 
-	// Create a target address to be filtered (the selfdestruct beneficiary)
+	// Create filtered address
 	builder.L2Info.GenerateAccount("FilteredBeneficiary")
 	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
 
-	// Set up filter to block the beneficiary
+	// Create non-filtered address
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+
 	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
-	// Test: emit an event mentioning filtered beneficiary should fail
+	// Test 1: Transfer to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	_, err := contract.EmitMention(&auth, filteredAddr)
+	_, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
 	if err == nil {
-		t.Fatal("expected emit event to filtered beneficiary to be rejected")
+		t.Fatal("expected EmitTransfer to filtered beneficiary to be rejected")
 	}
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
 	}
 
-	// Deploy another contract and test with non-filtered beneficiary
-	_, contract2 := deployAddressFilterTestContract(t, ctx, builder)
-	builder.L2Info.GenerateAccount("CleanBeneficiary")
-	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+	// Test 2: Transfer from filtered beneficiary should fail
+	_, err = contract.EmitTransfer(&auth, filteredAddr, auth.From)
+	if err == nil {
+		t.Fatal("expected EmitTransfer from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
 
+	// Test 3: Transfer to and from clean beneficiary should succeed
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-	tx, err := contract2.EmitMention(&auth, cleanAddr)
+	tx, err := contract.EmitTransfer(&auth, auth.From, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tx, err = contract.EmitTransfer(&auth, cleanAddr, auth.From)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Test 4: TransferSingle involving filtered beneficiary should fail
+	_, err = contract.EmitTransferSingle(&auth, auth.From, cleanAddr, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferSingle to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	_, err = contract.EmitTransferSingle(&auth, auth.From, filteredAddr, cleanAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferSingle from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 5: TransferBatch involving filtered beneficiary should fail
+	_, err = contract.EmitTransferBatch(&auth, auth.From, cleanAddr, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferBatch to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	_, err = contract.EmitTransferBatch(&auth, auth.From, filteredAddr, cleanAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferBatch from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 6: UnfilteredEvent should always succeed
+	tx, err = contract.EmitUnfiltered(&auth, filteredAddr)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

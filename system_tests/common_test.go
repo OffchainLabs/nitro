@@ -58,6 +58,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/eventfilter"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -548,6 +549,18 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 
 func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	b.takeOwnership = takeOwnership
+	return b
+}
+
+func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
+	if b.execConfig == nil {
+		panic("execConfig must be initialised before setting event filter rules")
+	}
+
+	b.execConfig.Sequencer.EventFilter = &eventfilter.EventFilterConfig{
+		Rules: rules,
+	}
+
 	return b
 }
 

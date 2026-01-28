@@ -1,2 +1,2 @@
 ### Added
-- Introduce eventfilter package for filtering transaction logs based on event selectors and topic-encoded addresses
+- Introduce event filter module for filtering transaction logs based on event selectors and topic-encoded addresses

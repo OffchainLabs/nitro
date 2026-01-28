@@ -10,13 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func selector4(sig string) [4]byte {
-	hash := crypto.Keccak256([]byte(sig))
-	var out [4]byte
-	copy(out[:], hash[:4])
-	return out
-}
-
 func TestValidateEventRulesFromJSON(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -134,7 +127,7 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 
 func TestExtractAddresses_EdgeCases(t *testing.T) {
 	event := "Transfer(address,address,uint256)"
-	sel := selector4(event)
+	sel := Selector4(event)
 
 	rule := EventRule{
 		Event:          event,

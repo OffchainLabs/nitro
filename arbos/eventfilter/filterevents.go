@@ -35,9 +35,6 @@ type EventRule struct {
 	// Topic indices containing addresses to filter (1-indexed)
 	TopicAddresses []int
 
-	// DataAddresses contains byte offsets in the event data where addresses are located
-	DataAddresses []int
-
 	// Bypass defines a rule to skip filtering for this event, nil if no bypass
 	Bypass *BypassRule
 }
@@ -87,7 +84,6 @@ func (e *EventRule) UnmarshalJSON(data []byte) error {
 
 	e.Event = raw.Event
 	e.TopicAddresses = raw.TopicAddresses
-	e.DataAddresses = raw.DataAddresses
 	e.Bypass = raw.Bypass
 
 	return nil
@@ -137,12 +133,6 @@ func (e *EventRule) Validate() error {
 	for i, idx := range e.TopicAddresses {
 		if idx <= 0 || idx > 3 {
 			return fmt.Errorf("topicAddresses[%d] out of range, got %d", i, idx)
-		}
-	}
-
-	for i, offset := range e.DataAddresses {
-		if offset < 0 || offset%32 != 0 {
-			return fmt.Errorf("dataAddresses[%d]: offset must be non-negative and 32-byte aligned, got %d", i, offset)
 		}
 	}
 
@@ -233,7 +223,7 @@ func NewEventFilterFromConfig(cfg *EventFilterConfig) (*EventFilter, error) {
 // ExtractAddresses returns all addresses referenced by this event rule verbatim.
 func (f *EventFilter) ExtractAddresses(topics []common.Hash, data []byte, _emitter common.Address, _sender common.Address) []common.Address {
 	if len(topics) == 0 {
-		return nil
+		return []common.Address{}
 	}
 
 	var selector [4]byte
@@ -241,14 +231,14 @@ func (f *EventFilter) ExtractAddresses(topics []common.Hash, data []byte, _emitt
 
 	rule, ok := f.rules[selector]
 	if !ok {
-		return nil
+		return []common.Address{}
 	}
 
 	if rule.Bypass != nil {
 		idx := rule.Bypass.TopicIndex
 		if idx > 0 && idx < len(topics) {
 			if common.BytesToAddress(topics[idx][12:]) == rule.Bypass.Equals {
-				return nil
+				return []common.Address{}
 			}
 		}
 	}
@@ -263,21 +253,21 @@ func (f *EventFilter) ExtractAddresses(topics []common.Hash, data []byte, _emitt
 		}
 	}
 
-	// Extract from data
-	for _, offset := range rule.DataAddresses {
-		if offset >= 0 && offset+32 <= len(data) {
-			address := common.BytesToAddress(data[offset+12 : offset+32])
-			seen[address] = struct{}{}
-		}
-	}
-
 	if len(seen) == 0 {
-		return nil
+		return []common.Address{}
 	}
 
 	out := make([]common.Address, 0, len(seen))
 	for addr := range seen {
 		out = append(out, addr)
 	}
+	return out
+}
+
+// Helper function to compute selector from event signature, used in unit and system tests.
+func Selector4(sig string) [4]byte {
+	hash := crypto.Keccak256([]byte(sig))
+	var out [4]byte
+	copy(out[:], hash[:4])
 	return out
 }
