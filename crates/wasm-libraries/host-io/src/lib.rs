@@ -160,3 +160,7 @@ pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr
     let result = wavm_validate_certificate(our_ptr, preimage_type);
     result
 }
+
+/// A hook called just before the first IO operation.
+#[no_mangle]
+pub unsafe extern "C" fn hooks__beforeFirstIO() {}
