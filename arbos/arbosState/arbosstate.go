@@ -325,6 +325,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 
+	transactionFiltererStorage := sto.OpenCachedSubStorage(transactionFiltererSubspace)
+	err = addressSet.Initialize(transactionFiltererStorage)
+	if err != nil {
+		return nil, err
+	}
+
 	aState, err := OpenArbosState(stateDB, burner)
 	if err != nil {
 		return nil, err
