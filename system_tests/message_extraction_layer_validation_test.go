@@ -2,7 +2,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -10,11 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -106,31 +102,4 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	if finalResult.GlobalState.MELStateHash != entry.End.MELStateHash {
 		t.Fatalf("Expected final mel state hash %s, got %s", entry.End.MELStateHash, finalResult.GlobalState.MELStateHash)
 	}
-}
-
-type blobPreimageReader struct {
-	preimageResolver melreplay.PreimageResolver
-}
-
-func (b *blobPreimageReader) Initialize(ctx context.Context) error { return nil }
-
-func (b *blobPreimageReader) GetBlobs(
-	ctx context.Context,
-	batchBlockHash common.Hash,
-	versionedHashes []common.Hash,
-) ([]kzg4844.Blob, error) {
-	var blobs []kzg4844.Blob
-	for _, h := range versionedHashes {
-		var blob kzg4844.Blob
-		preimage, err := b.preimageResolver.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
-		if err != nil {
-			return nil, err
-		}
-		if len(preimage) != len(blob) {
-			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
-		}
-		copy(blob[:], preimage)
-		blobs = append(blobs, blob)
-	}
-	return blobs, nil
 }

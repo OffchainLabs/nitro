@@ -543,7 +543,7 @@ fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
         let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
         let mel_state_root = decode_hex_arg(&opts.mel_state_root, "--mel-state-root")?;
-        let mel_msg_hash = decode_hex_arg(&opts.mel_state_root, "--mel-msg-hash")?;
+        let mel_msg_hash = decode_hex_arg(&opts.mel_msg_hash, "--mel-msg-hash")?;
 
         let global_state = GlobalState {
             u64_vals: [opts.inbox_position, opts.position_within_message],
