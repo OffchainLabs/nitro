@@ -44,6 +44,7 @@ eyre = { version = "0.6.5" }
 fnv = { version = "1.0.7" }
 gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
+k256 = { version = "0.13.4", default-features = false}
 lazy_static = { version = "1.4.0" }
 libc = { version = "0.2.132" }
 lru = { version = "0.16.3" }
