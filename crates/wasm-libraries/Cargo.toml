@@ -1,12 +1,13 @@
 [workspace]
 members = [
 	"arbcompress",
-	"wasi-stub",
+	"arbcrypto",
+	"forward",
 	"host-io",
-	"user-host",
-        "user-host-trait",
-	"user-test",
 	"program-exec",
-        "forward",
+	"user-host",
+	"user-host-trait",
+	"user-test",
+	"wasi-stub",
 ]
 resolver = "2"

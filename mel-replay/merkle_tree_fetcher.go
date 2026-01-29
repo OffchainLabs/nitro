@@ -44,7 +44,11 @@ func fetchObjectFromMerkleTree[T any](merkleRoot common.Hash, merkleDepth int, m
 		currentDepth--
 	}
 	// At this point, currentHash should be the hash of the object.
-	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, currentHash)
+	objectHashBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, currentHash)
+	if err != nil {
+		return nil, err
+	}
+	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, common.BytesToHash(objectHashBytes))
 	if err != nil {
 		return nil, err
 	}

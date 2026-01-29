@@ -5,6 +5,7 @@ members = [
     "crates/brotli",
     "crates/caller-env",
     "crates/jit",
+    "crates/validation",
     "crates/prover",
     "crates/stylus",
     "crates/validator",
@@ -43,6 +44,7 @@ eyre = { version = "0.6.5" }
 fnv = { version = "1.0.7" }
 gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
+k256 = { version = "0.13.4", default-features = false}
 lazy_static = { version = "1.4.0" }
 libc = { version = "0.2.132" }
 lru = { version = "0.16.3" }
@@ -84,6 +86,7 @@ jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
+validation = { path = "crates/validation" }
 wasmer = { path = "crates/tools/wasmer/lib/api" }
 wasmer-compiler-cranelift = { path = "crates/tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
