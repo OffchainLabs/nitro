@@ -28,10 +28,10 @@ import (
 var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
 	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
-// FilteredTxWaitState tracks a halt while waiting for a filtered transaction
+// FilteredTxWaitState tracks a halt while waiting for filtered transactions
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
-	TxHash        common.Hash
+	TxHashes      []common.Hash
 	DelayedMsgIdx uint64
 	FirstSeen     time.Time
 	LastLogTime   time.Time
@@ -137,23 +137,33 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			if waitDuration > 1*time.Hour {
 				logLevel = log.Error
 			}
-			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hash to be added to onchain filter",
-				"txHash", d.waitingForFilteredTx.TxHash,
+			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hashes to be added to onchain filter",
+				"txHashes", d.waitingForFilteredTx.TxHashes,
 				"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
 				"waitingSince", d.waitingForFilteredTx.FirstSeen)
 			d.waitingForFilteredTx.LastLogTime = now
 		}
 
-		// Periodically attempt full re-execution even if the tx hash isn't in the
+		// Periodically attempt full re-execution even if the tx hashes aren't in the
 		// onchain filter yet. The filtered address set may have changed since the
 		// last attempt, which could allow the tx to succeed without needing bypass.
 		needsFullRetry := time.Since(d.waitingForFilteredTx.LastFullRetry) >= config.FilteredTxFullRetryInterval
 		if !needsFullRetry {
-			// Fast-path to check if we should try re-executing the tx
-			isInFilter, err := d.exec.IsTxHashInOnchainFilter(d.waitingForFilteredTx.TxHash)
-			if err != nil {
-				log.Error("error checking onchain filter", "err", err)
-			} else if !isInFilter {
+			// Fast-path: check if all filtered tx hashes are now in the onchain filter
+			allInFilter := true
+			for _, txHash := range d.waitingForFilteredTx.TxHashes {
+				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash)
+				if err != nil {
+					log.Error("error checking onchain filter", "err", err, "txHash", txHash)
+					allInFilter = false
+					break
+				}
+				if !isInFilter {
+					allInFilter = false
+					break
+				}
+			}
+			if !allInFilter {
 				return nil
 			}
 		}
@@ -254,12 +264,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 				if errors.As(err, &filteredErr) {
 					now := time.Now()
 					if d.waitingForFilteredTx == nil {
-						// First time hitting this filtered tx - log and set waiting state
+						// First time hitting filtered tx(es) - log and set waiting state
 						log.Warn("Delayed message filtered - HALTING delayed sequencer",
-							"txHash", filteredErr.TxHash,
+							"txHashes", filteredErr.TxHashes,
 							"delayedMsgIdx", filteredErr.DelayedMsgIdx)
 						d.waitingForFilteredTx = &FilteredTxWaitState{
-							TxHash:        filteredErr.TxHash,
+							TxHashes:      filteredErr.TxHashes,
 							DelayedMsgIdx: filteredErr.DelayedMsgIdx,
 							FirstSeen:     now,
 							LastLogTime:   now,
@@ -276,7 +286,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Success - clear waiting state if we were waiting
 			if d.waitingForFilteredTx != nil {
 				log.Info("Filtered tx resolved - resuming delayed sequencer",
-					"txHash", d.waitingForFilteredTx.TxHash,
+					"txHashes", d.waitingForFilteredTx.TxHashes,
 					"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
 					"waitedFor", time.Since(d.waitingForFilteredTx.FirstSeen))
 				d.waitingForFilteredTx = nil
@@ -349,13 +359,13 @@ func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.LaunchThread(d.run)
 }
 
-// WaitingForFilteredTx returns the tx hash being waited on, or a zero hash and false if not halted.
+// WaitingForFilteredTx returns the tx hashes being waited on, or nil and false if not halted.
 // This is primarily for testing the halt-and-wait behavior.
-func (d *DelayedSequencer) WaitingForFilteredTx() (common.Hash, bool) {
+func (d *DelayedSequencer) WaitingForFilteredTx() ([]common.Hash, bool) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 	if d.waitingForFilteredTx == nil {
-		return common.Hash{}, false
+		return nil, false
 	}
-	return d.waitingForFilteredTx.TxHash, true
+	return d.waitingForFilteredTx.TxHashes, true
 }

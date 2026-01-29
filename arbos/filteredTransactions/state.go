@@ -38,3 +38,7 @@ func (s *FilteredTransactionsState) IsFiltered(txHash common.Hash) (bool, error)
 	}
 	return value == presentHash, nil
 }
+
+func (s *FilteredTransactionsState) IsFilteredFree(txHash common.Hash) bool {
+	return s.store.GetFree(txHash) == presentHash
+}

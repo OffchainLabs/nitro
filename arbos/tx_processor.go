@@ -51,8 +51,6 @@ type TxProcessor struct {
 	// for the NUMBER and BLOCKHASH opcodes.
 	cachedL1BlockNumber *uint64
 	cachedL1BlockHashes map[uint64]common.Hash
-
-	txOnchainFiltered bool
 }
 
 func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
@@ -146,18 +144,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		return false, multigas.ZeroGas(), nil, nil
 	}
 
-	// Check onchain tx hash filter. Cache result here (before gas charging);
-	// handleRevertedTx reads it via ProcessingHook.IsTxOnchainFiltered() to
-	// execute filtered txs as no-ops (after gas is bought).
 	evm := p.evm
-	isFiltered, err := p.state.FilteredTransactions().IsFiltered(underlyingTx.Hash())
-	if err != nil {
-		return false, multigas.ZeroGas(), err, nil
-	}
-	if isFiltered {
-		p.txOnchainFiltered = true
-	}
-
 	var tracingInfo *util.TracingInfo
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
@@ -872,8 +859,8 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 	return enabled
 }
 
-func (p *TxProcessor) IsTxOnchainFiltered() bool {
-	return p.txOnchainFiltered
+func (p *TxProcessor) IsFilteredTx(txHash common.Hash) bool {
+	return p.state.FilteredTransactions().IsFilteredFree(txHash)
 }
 
 func (p *TxProcessor) EVM() *vm.EVM {

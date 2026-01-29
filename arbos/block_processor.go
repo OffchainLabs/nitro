@@ -159,48 +159,6 @@ func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
 }
 
-// ErrDelayedTxFiltered propagates up to halt the delayed sequencer, unlike
-// ErrArbTxFilter which just skips individual transactions in normal sequencing.
-var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
-
-// DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
-// for delayed message processing. When a delayed message touches a filtered address,
-// it returns ErrDelayedTxFiltered which propagates up to halt the delayed sequencer.
-// Checks the onchain filter directly to determine if a filtered tx should bypass halting.
-type DelayedFilteringSequencingHooks struct {
-	NoopSequencingHooks
-	FilteredTxHash common.Hash
-}
-
-func NewDelayedFilteringSequencingHooks(txes types.Transactions) *DelayedFilteringSequencingHooks {
-	return &DelayedFilteringSequencingHooks{NoopSequencingHooks: NoopSequencingHooks{txs: txes}}
-}
-
-// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Returns ErrDelayedTxFiltered if any address is filtered (unless the tx hash
-// is already in the onchain filter). This error propagates up to halt the
-// delayed sequencer.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	db.TouchAddress(sender)
-	if tx.To() != nil {
-		db.TouchAddress(*tx.To())
-	}
-
-	if db.IsAddressFiltered() {
-		// If the tx is already in the onchain filter, the STF will
-		// execute it as a no-op in handleRevertedTx -- don't halt.
-		isOnchainFiltered, err := a.FilteredTransactions().IsFiltered(tx.Hash())
-		if err != nil {
-			return err
-		}
-		if !isOnchainFiltered {
-			f.FilteredTxHash = tx.Hash()
-			return ErrDelayedTxFiltered
-		}
-	}
-	return nil
-}
-
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -443,12 +401,6 @@ func ProduceBlockAdvanced(
 		}
 
 		if err != nil {
-			// ErrDelayedTxFiltered must propagate up for delayed message filtering to halt.
-			// There is one block created per delayed message so this doesn't affect messages
-			// prior to the filtered one.
-			if errors.Is(err, ErrDelayedTxFiltered) {
-				return nil, nil, err
-			}
 			logLevel := log.Debug
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn

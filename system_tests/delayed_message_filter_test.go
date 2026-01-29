@@ -52,22 +52,22 @@ func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBu
 }
 
 // waitForDelayedSequencerHalt waits until the delayed sequencer is halted on a filtered tx.
-// Returns the tx hash being waited on.
-func waitForDelayedSequencerHalt(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) common.Hash {
+// Returns the tx hashes being waited on.
+func waitForDelayedSequencerHalt(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) []common.Hash {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		hash, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
 		if waiting {
-			return hash
+			return hashes
 		}
 		<-time.After(100 * time.Millisecond)
 	}
 	t.Fatal("timeout waiting for delayed sequencer to halt")
-	return common.Hash{}
+	return nil
 }
 
 // waitForDelayedSequencerResume waits until the delayed sequencer is no longer halted.
@@ -158,8 +158,9 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered tx")
 
 	// Verify balance did NOT change (block not created)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -210,8 +211,9 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx)
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1)
+	require.Equal(t, txHash, haltedOnTxs[0])
 
 	// Verify balance did NOT change yet
 	midBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -318,8 +320,9 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on first tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash1, haltedOnTx, "sequencer should be halted on the first (filtered) tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash1, haltedOnTxs[0], "sequencer should be halted on the first (filtered) tx")
 
 	// Verify ALL balances unchanged (all messages blocked)
 	filteredMid, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -495,8 +498,9 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CALL tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CALL tx")
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -560,8 +564,9 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered STATICCALL tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered STATICCALL tx")
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -626,8 +631,9 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CREATE tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CREATE tx")
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -690,8 +696,9 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered CREATE2 tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CREATE2 tx")
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -752,8 +759,9 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTx := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Equal(t, txHash, haltedOnTx, "sequencer should be halted on the filtered SELFDESTRUCT tx")
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered SELFDESTRUCT tx")
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")

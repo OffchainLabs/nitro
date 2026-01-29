@@ -71,17 +71,55 @@ var (
 var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
 var ResultNotFound = errors.New("result not found")
 
-// ErrFilteredDelayedMessage is returned when a delayed message contains a transaction
-// that touches a filtered address. The sequencer should halt and wait for the tx hash
+// ErrFilteredDelayedMessage is returned when a delayed message contains transactions
+// that touch filtered addresses. The sequencer should halt and wait for the tx hashes
 // to be added to the onchain filter before retrying.
 type ErrFilteredDelayedMessage struct {
-	TxHash        common.Hash
+	TxHashes      []common.Hash
 	DelayedMsgIdx uint64
 }
 
 func (e *ErrFilteredDelayedMessage) Error() string {
-	return fmt.Sprintf("delayed message %d: tx %s touches filtered address",
-		e.DelayedMsgIdx, e.TxHash.Hex())
+	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
+		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
+}
+
+// ErrDelayedTxFiltered is an internal error used during block production to signal
+// that a transaction touched a filtered address and is not in the onchain filter.
+var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
+
+// DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
+// for delayed message processing. Collects all tx hashes that touch filtered addresses
+// and are not in the onchain filter. After block production, the caller checks if any
+// hashes were collected and returns ErrFilteredDelayedMessage if so.
+type DelayedFilteringSequencingHooks struct {
+	arbos.NoopSequencingHooks
+	FilteredTxHashes []common.Hash
+}
+
+func NewDelayedFilteringSequencingHooks(txes types.Transactions) *DelayedFilteringSequencingHooks {
+	return &DelayedFilteringSequencingHooks{NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes)}
+}
+
+// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
+// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
+// Does not return an error - the caller checks FilteredTxHashes after block production.
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	db.TouchAddress(sender)
+	if tx.To() != nil {
+		db.TouchAddress(*tx.To())
+	}
+
+	if db.IsAddressFiltered() {
+		isOnchainFiltered, err := a.FilteredTransactions().IsFiltered(tx.Hash())
+		if err != nil {
+			return err
+		}
+		if !isOnchainFiltered {
+			f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
+		}
+	}
+	return nil
 }
 
 type L1PriceDataOfMsg struct {
@@ -788,7 +826,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
 		}
-		filteringHooks := arbos.NewDelayedFilteringSequencingHooks(txes)
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes)
 
 		block, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
@@ -801,13 +839,15 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			runCtx,
 			s.exposeMultiGas,
 		)
-		if errors.Is(err, arbos.ErrDelayedTxFiltered) && filteringHooks.FilteredTxHash != (common.Hash{}) {
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		// Check if any txs touched filtered addresses but are not in the onchain filter
+		if len(filteringHooks.FilteredTxHashes) > 0 {
 			return nil, nil, nil, &ErrFilteredDelayedMessage{
-				TxHash:        filteringHooks.FilteredTxHash,
+				TxHashes:      filteringHooks.FilteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
-		} else if err != nil {
-			return nil, nil, nil, err
 		}
 		return block, statedb, receipts, nil
 	}
