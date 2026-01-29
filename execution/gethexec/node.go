@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
+	transactionfiltererclient "github.com/offchainlabs/nitro/cmd/transaction-filterer/client"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
@@ -293,7 +294,14 @@ func CreateExecutionNode(
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+
+	var transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
+	if config.TransactionFiltererRPCClient.URL != "" {
+		filtererConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().TransactionFiltererRPCClient }
+		transactionFiltererRPCClient = transactionfiltererclient.NewTransactionFiltererRPCClient(filtererConfigFetcher, nil)
+	}
+
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -512,12 +520,12 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 			return fmt.Errorf("error starting consensus rpc client: %w", err)
 		}
 	}
-	// TODO after separation
-	// err := n.Stack.Start()
-	// if err != nil {
-	// 	return fmt.Errorf("error starting geth stack: %w", err)
-	// }
-	n.ExecEngine.Start(ctx)
+
+	err = n.ExecEngine.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting execution engine: %w", err)
+	}
+
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
