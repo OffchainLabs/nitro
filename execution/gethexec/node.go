@@ -298,7 +298,7 @@ func CreateExecutionNode(
 	var transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
 	if config.TransactionFiltererRPCClient.URL != "" {
 		filtererConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().TransactionFiltererRPCClient }
-		transactionFiltererRPCClient = transactionfiltererclient.NewTransactionFiltererRPCClient(filtererConfigFetcher, nil)
+		transactionFiltererRPCClient = transactionfiltererclient.NewTransactionFiltererRPCClient(filtererConfigFetcher)
 	}
 
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)

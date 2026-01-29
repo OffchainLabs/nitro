@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -20,9 +19,9 @@ type TransactionFiltererRPCClient struct {
 	client *rpcclient.RpcClient
 }
 
-func NewTransactionFiltererRPCClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *TransactionFiltererRPCClient {
+func NewTransactionFiltererRPCClient(config rpcclient.ClientConfigFetcher) *TransactionFiltererRPCClient {
 	return &TransactionFiltererRPCClient{
-		client: rpcclient.NewRpcClient(config, stack),
+		client: rpcclient.NewRpcClient(config, nil),
 	}
 }
 

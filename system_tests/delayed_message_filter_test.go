@@ -142,7 +142,7 @@ func setTransactionFiltererService(t *testing.T, ctx context.Context, builder *N
 		config.URL = transactionFiltererStack.HTTPEndpoint()
 		return &config
 	}
-	transactionFiltererRPCClient := client.NewTransactionFiltererRPCClient(transactionFiltererRPCClientConfigFetcher, nil)
+	transactionFiltererRPCClient := client.NewTransactionFiltererRPCClient(transactionFiltererRPCClientConfigFetcher)
 	err = transactionFiltererRPCClient.Start(ctx)
 	require.NoError(t, err)
 
