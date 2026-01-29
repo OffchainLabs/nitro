@@ -1,2 +1,2 @@
 ### Added
-- Sequencer calls transaction-filterer command is delayed transaction was filtered
+- Sequencer calls transaction-filterer command if delayed transaction was filtered
