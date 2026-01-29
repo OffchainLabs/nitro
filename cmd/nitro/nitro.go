@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path"
 	"reflect"
 	"strings"
 	"syscall"
@@ -1009,6 +1010,26 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Execution.TxIndexer.Enable = true
 		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
+	}
+
+	if nodeConfig.Init.GenesisJsonFile == "" && nodeConfig.Chain.ID != 0 && nodeConfig.Init.GenesisJsonFileDirectory != "" {
+		files, err := os.ReadDir(nodeConfig.Init.GenesisJsonFileDirectory)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error reading genesis json file directory %s: %w", nodeConfig.Init.GenesisJsonFileDirectory, err)
+		}
+		for _, file := range files {
+			if file.IsDir() {
+				continue
+			}
+			if !strings.Contains(file.Name(), fmt.Sprintf("%d", nodeConfig.Chain.ID)) {
+				continue
+			}
+			fullPath := path.Join(nodeConfig.Init.GenesisJsonFileDirectory, file.Name())
+			nodeConfig.Init.GenesisJsonFile = fullPath
+			nodeConfig.Init.Empty = false
+			log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", nodeConfig.Chain.ID)
+			break
+		}
 	}
 
 	err = nodeConfig.Validate()
