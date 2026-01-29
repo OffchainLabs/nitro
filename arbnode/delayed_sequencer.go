@@ -265,7 +265,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 					now := time.Now()
 					if d.waitingForFilteredTx == nil {
 						// First time hitting filtered tx(es) - log and set waiting state
-						log.Warn("Delayed message filtered - HALTING delayed sequencer",
+						log.Error("Delayed message filtered - HALTING delayed sequencer",
 							"txHashes", filteredErr.TxHashes,
 							"delayedMsgIdx", filteredErr.DelayedMsgIdx)
 						d.waitingForFilteredTx = &FilteredTxWaitState{
