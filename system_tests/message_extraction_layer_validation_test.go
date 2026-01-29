@@ -71,7 +71,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
 	Require(t, err)
 
-	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
+	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	Require(t, err)
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		defaultCfg := server_arb.DefaultArbitratorSpawnerConfig
@@ -84,9 +84,8 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0x680289b92d5944850d04919b2c7c0076b43944d210368066651008c7aaadc908")
 	execRunPromise := arbSpawner.CreateExecutionRun(
-		wasmModuleRoot,
+		locator.LatestWasmModuleRoot(),
 		&validator.ValidationInput{
 			Id:                      1,
 			HasDelayedMsg:           entry.HasDelayedMsg,

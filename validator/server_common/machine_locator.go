@@ -21,7 +21,23 @@ type MachineLocator struct {
 
 var ErrMachineNotFound = errors.New("machine not found")
 
-func NewMachineLocator(rootPath string) (*MachineLocator, error) {
+type MachineLocatorConfig struct {
+	melEnabled bool
+}
+
+type MachineLocatorOpt func(*MachineLocatorConfig)
+
+func WithMELEnabled() MachineLocatorOpt {
+	return func(cfg *MachineLocatorConfig) {
+		cfg.melEnabled = true
+	}
+}
+
+func NewMachineLocator(rootPath string, opts ...MachineLocatorOpt) (*MachineLocator, error) {
+	cfg := &MachineLocatorConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	dirs := []string{rootPath}
 	if rootPath == "" {
 		// Check the project dir: <project>/arbnode/node.go => ../../target/machines
@@ -72,7 +88,12 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 			log.Warn("Reading directory", "dir", dir, "error", err)
 		}
 		for _, file := range files {
-			mrFile := filepath.Join(dir, file.Name(), "unified_module_root.txt")
+			var mrFile string
+			if cfg.melEnabled {
+				mrFile = filepath.Join(dir, file.Name(), "unified-module-root.txt")
+			} else {
+				mrFile = filepath.Join(dir, file.Name(), "module-root.txt")
+			}
 			if _, err := os.Stat(mrFile); err != nil {
 				// Skip if module-roots file does not exist.
 				continue
