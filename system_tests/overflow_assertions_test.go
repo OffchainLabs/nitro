@@ -74,7 +74,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
 	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
 	Require(t, err)
 	defer requireClose(t, l1stack)
