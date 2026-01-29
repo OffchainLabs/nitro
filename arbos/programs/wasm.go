@@ -156,7 +156,7 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
 	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
 	if requiresPrepare != 0 {
 		var debugInt uint32
@@ -173,8 +173,8 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			unsafe.Pointer(&code),
 			codeSize,
 			unsafe.Pointer(&codehash),
-			maxWasmSize,
-			uint32(pagelimit),
+			params.MaxWasmSize,
+			uint32(params.PageLimit),
 			time,
 			debugInt,
 			unsafe.Pointer(&program),
