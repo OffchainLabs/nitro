@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -92,8 +93,15 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{
+			Id:                      1,
+			HasDelayedMsg:           entry.HasDelayedMsg,
+			DelayedMsgNr:            entry.DelayedMsgNr,
 			Preimages:               entry.Preimages,
+			UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+			BatchInfo:               entry.BatchInfo,
+			DelayedMsg:              entry.DelayedMsg,
 			StartState:              entry.Start,
+			DebugChain:              false,
 			EndParentChainBlockHash: entry.EndParentChainBlockHash,
 		},
 		true, /* use bold machine */

@@ -252,11 +252,12 @@ func TestValidationServerAPI(t *testing.T) {
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
@@ -321,11 +322,12 @@ func TestThrottledValidationSpawner(t *testing.T) {
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 
 	// Launch 4 validations without delay - they complete immediately
