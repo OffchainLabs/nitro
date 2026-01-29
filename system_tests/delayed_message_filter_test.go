@@ -44,6 +44,22 @@ func sendDelayedTx(t *testing.T, ctx context.Context, builder *NodeBuilder, tx *
 	return tx.Hash()
 }
 
+// sendDelayedBatch sends a batch of transactions via L1 delayed inbox as a single delayed message.
+func sendDelayedBatch(t *testing.T, ctx context.Context, builder *NodeBuilder, txes types.Transactions) {
+	t.Helper()
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+
+	batchData, err := l2MessageBatchDataFromTxes(txes)
+	Require(t, err)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+	l1tx, err := delayedInbox.SendL2Message(&l1opts, batchData)
+	Require(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+}
+
 // advanceAndWaitForDelayed advances L1 blocks and waits for delayed message processing.
 func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
@@ -368,6 +384,120 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	normal2Final, err := builder.L2.Client.BalanceAt(ctx, normal2Addr, nil)
 	require.NoError(t, err)
 	require.Equal(t, new(big.Int).Add(normal2Initial, big.NewInt(3e12)), normal2Final, "normal user 2 should receive funds after unblock")
+}
+
+// TestDelayedMessageFilterBatch verifies that the sequencer correctly handles a batched delayed message
+// containing multiple transactions where one (not the first) touches a filtered address.
+func TestDelayedMessageFilterBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("User1")
+	builder.L2Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	user1Addr := builder.L2Info.GetAddress("User1")
+	user2Addr := builder.L2Info.GetAddress("User2")
+
+	// Get initial balances
+	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	user1Initial, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
+	require.NoError(t, err)
+	user2Initial, err := builder.L2.Client.BalanceAt(ctx, user2Addr, nil)
+	require.NoError(t, err)
+
+	// Grant Filterer the transaction filterer role
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Set up address filter to block FilteredUser
+	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Create batch of 3 transactions within a single delayed message:
+	// tx1: Sender -> User1 (normal transfer, NOT filtered)
+	// tx2: Sender -> FilteredUser (will be filtered - note this is NOT the first tx)
+	// tx3: Sender -> User2 (normal transfer, NOT filtered)
+	transferAmount := big.NewInt(1e15)
+	tx1 := builder.L2Info.PrepareTx("Sender", "User1", builder.L2Info.TransferGas, transferAmount, nil)
+	tx2 := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
+	tx3 := builder.L2Info.PrepareTx("Sender", "User2", builder.L2Info.TransferGas, transferAmount, nil)
+
+	txBatch := types.Transactions{tx1, tx2, tx3}
+
+	// Send as a single batched delayed message
+	sendDelayedBatch(t, ctx, builder, txBatch)
+
+	// Advance L1 to trigger delayed message processing
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify sequencer is halted on tx2 (the filtered one, which is NOT the first in the batch)
+	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
+	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
+	require.Equal(t, tx2.Hash(), haltedOnTxs[0], "sequencer should be halted on tx2 (the filtered tx)")
+
+	// Verify ALL balances unchanged while halted (entire batch is blocked)
+	filteredMid, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitial, filteredMid, "filtered user balance should not change while halted")
+
+	user1Mid, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, user1Initial, user1Mid, "user1 balance should not change while batch is blocked")
+
+	user2Mid, err := builder.L2.Client.BalanceAt(ctx, user2Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, user2Initial, user2Mid, "user2 balance should not change while batch is blocked")
+
+	// Add tx2 hash to onchain filter
+	addTxHashToOnChainFilter(t, ctx, builder, tx2.Hash(), "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure all delayed messages are processed
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify final balances:
+	// tx1: User1 should receive transferAmount
+	user1Final, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(user1Initial, transferAmount), user1Final,
+		"user1 should receive funds from tx1 after unblock")
+
+	// tx2: FilteredUser should NOT receive (tx executed as no-op)
+	filteredFinal, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitial, filteredFinal,
+		"filtered user should NOT receive funds - tx2 executed as no-op")
+
+	// tx3: User2 should receive transferAmount
+	user2Final, err := builder.L2.Client.BalanceAt(ctx, user2Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(user2Initial, transferAmount), user2Final,
+		"user2 should receive funds from tx3 after unblock")
+
+	// Verify tx2 receipt exists and has failed status
+	receipt, err := builder.L2.Client.TransactionReceipt(ctx, tx2.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,
+		"bypassed tx2 should have failed receipt status")
 }
 
 // TestDelayedMessageFilterNonFilteredPasses verifies that non-filtered delayed messages pass without issue.
