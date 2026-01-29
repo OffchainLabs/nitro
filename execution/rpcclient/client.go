@@ -45,108 +45,62 @@ func convertError(err error) error {
 	return err
 }
 
-func (c *Client) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.MessageResult, error) {
-		var res execution.MessageResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_digestMessage", msgIdx, msg, msgForPrefetch)
-		if err != nil {
-			return nil, convertError(err)
-		}
-		return &res, nil
+func sendRequest[T any](c *Client, method string, args ...any) containers.PromiseInterface[T] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (T, error) {
+		var res T
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+method, args...)
+		return res, convertError(err)
 	})
+}
+
+func (c *Client) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	return sendRequest[*execution.MessageResult](c, "_digestMessage", msgIdx, msg, msgForPrefetch)
 }
 
 func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) ([]*execution.MessageResult, error) {
-		var res []*execution.MessageResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
-		if err != nil {
-			return nil, convertError(err)
-		}
-		return res, nil
-	})
+	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
 }
 
 func (c *Client) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (arbutil.MessageIndex, error) {
-		var res arbutil.MessageIndex
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_headMessageIndex")
-		return res, convertError(err)
-
-	})
+	return sendRequest[arbutil.MessageIndex](c, "_headMessageIndex")
 }
 
 func (c *Client) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.MessageResult, error) {
-		var res *execution.MessageResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_resultAtMessageIndex", msgIdx)
-		return res, convertError(err)
-	})
+	return sendRequest[*execution.MessageResult](c, "_resultAtMessageIndex", msgIdx)
 }
 
 func (c *Client) SetFinalityData(safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_setFinalityData", safeFinalityData, finalizedFinalityData, validatedFinalityData)
-		return struct{}{}, convertError(err)
-	})
+	return sendRequest[struct{}](c, "_setFinalityData", safeFinalityData, finalizedFinalityData, validatedFinalityData)
 }
 
 func (c *Client) SetConsensusSyncData(syncData *execution.ConsensusSyncData) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_setConsensusSyncData", syncData)
-		return struct{}{}, convertError(err)
-	})
+	return sendRequest[struct{}](c, "_setConsensusSyncData", syncData)
 }
 
 func (c *Client) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_markFeedStart", to)
-		return struct{}{}, convertError(err)
-	})
+	return sendRequest[struct{}](c, "_markFeedStart", to)
 }
 
 func (c *Client) TriggerMaintenance() containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_triggerMaintenance")
-		return struct{}{}, convertError(err)
-	})
+	return sendRequest[struct{}](c, "_triggerMaintenance")
 }
 
 func (c *Client) ShouldTriggerMaintenance() containers.PromiseInterface[bool] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (bool, error) {
-		var res bool
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_shouldTriggerMaintenance")
-		return res, convertError(err)
-	})
+	return sendRequest[bool](c, "_shouldTriggerMaintenance")
 }
 
 func (c *Client) MaintenanceStatus() containers.PromiseInterface[*execution.MaintenanceStatus] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.MaintenanceStatus, error) {
-		var res *execution.MaintenanceStatus
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_maintenanceStatus")
-		return res, convertError(err)
-	})
+	return sendRequest[*execution.MaintenanceStatus](c, "_maintenanceStatus")
 }
 
 func (c *Client) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
-		var res uint64
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_arbOSVersionForMessageIndex", msgIdx)
-		return res, convertError(err)
-	})
+	return sendRequest[uint64](c, "_arbOSVersionForMessageIndex", msgIdx)
 }
 
 func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) containers.PromiseInterface[*execution.RecordResult] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (*execution.RecordResult, error) {
-		var res execution.RecordResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg, wasmTargets)
-		return &res, convertError(err)
-	})
+	return sendRequest[*execution.RecordResult](c, "_recordBlockCreation", pos, msg, wasmTargets)
 }
 
 func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_prepareForRecord", start, end)
-		return struct{}{}, convertError(err)
-	})
+	return sendRequest[struct{}](c, "_prepareForRecord", start, end)
 }

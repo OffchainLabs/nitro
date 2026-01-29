@@ -1,13 +1,69 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+//! Server Configuration and CLI Argument Parsing.
+//!
+//! This module defines the command-line interface (CLI) and configuration structures
+//! for the validation server. It utilizes `clap` to parse arguments and environment variables
+//! into strongly-typed configuration objects used throughout the application.
+
 use anyhow::Result;
 use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
-use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+
+use crate::engine::config::JitMachineConfig;
+use crate::engine::machine::JitMachine;
+
+#[derive(Debug)]
+pub struct ServerState {
+    pub mode: InputMode,
+    pub binary: PathBuf,
+    pub module_root: Bytes32,
+    /// jit machine responsible for computing next GlobalState. Not wrapped
+    /// in Arc<> since the caller of ServerState is wrapped in Arc<>
+    pub jit_machine: Option<JitMachine>,
+    pub available_workers: usize,
+}
+
+impl ServerState {
+    pub fn new(config: &ServerConfig) -> Result<Self> {
+        let available_workers = config.get_workers()?;
+        let module_root = config.get_module_root()?;
+        let jit_machine = match config.mode {
+            InputMode::Continuous => {
+                let config = JitMachineConfig::default();
+
+                let jit_machine = JitMachine::new(&config, Some(module_root))?;
+
+                Some(jit_machine)
+            }
+            InputMode::Native => None,
+        };
+        Ok(ServerState {
+            mode: config.mode,
+            binary: config.binary.clone(),
+            module_root,
+            jit_machine,
+            available_workers,
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum InputMode {
+    Native,
+    Continuous,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Default)]
+pub enum LoggingFormat {
+    #[default]
+    Text,
+    Json,
+}
 use tracing::warn;
 
 const DEFAULT_NUM_WORKERS: usize = 4;
@@ -18,9 +74,17 @@ pub struct ServerConfig {
     #[clap(long, default_value = "0.0.0.0:4141")]
     pub address: SocketAddr,
 
+    /// Path to the `replay.wasm` binary.
+    #[clap(long, default_value = "./target/machines/latest/replay.wasm")]
+    pub binary: PathBuf,
+
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
+
+    /// Defines how Validator consumes input
+    #[clap(long, value_enum, default_value_t = InputMode::Native)]
+    pub mode: InputMode,
 
     #[clap(flatten)]
     module_root_config: ModuleRootConfig,
@@ -77,14 +141,6 @@ impl ServerConfig {
             Ok(workers)
         }
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LoggingFormat {
-    #[default]
-    Text,
-    Json,
 }
 
 #[cfg(test)]

@@ -2,8 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use eyre::Result;
-use std::{fs::File, io::Write, path::PathBuf};
-use structopt::StructOpt;
+use std::io::Write;
 
 /// order matters!
 const HOSTIOS: [[&str; 3]; 42] = [
@@ -51,30 +50,7 @@ const HOSTIOS: [[&str; 3]; 42] = [
     ["pay_for_memory_grow", "i32", ""],
 ];
 
-#[derive(StructOpt)]
-#[structopt(name = "arbitrator-prover")]
-struct Opts {
-    #[structopt(long)]
-    path: PathBuf,
-    #[structopt(long)]
-    stub: bool,
-}
-
-fn main() -> Result<()> {
-    let opts = Opts::from_args();
-    let file = &mut File::options()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(opts.path)?;
-
-    match opts.stub {
-        true => forward_stub(file),
-        false => forward(file),
-    }
-}
-
-fn forward(file: &mut File) -> Result<()> {
+pub fn forward<W: Write>(file: &mut W) -> Result<()> {
     macro_rules! wln {
         ($($text:tt)*) => {
             writeln!(file, $($text)*)?;
@@ -149,7 +125,7 @@ fn forward(file: &mut File) -> Result<()> {
     Ok(())
 }
 
-fn forward_stub(file: &mut File) -> Result<()> {
+pub fn forward_stub<W: Write>(file: &mut W) -> Result<()> {
     macro_rules! wln {
         ($($text:tt)*) => {
             writeln!(file, $($text)*)?;
