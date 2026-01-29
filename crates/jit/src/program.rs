@@ -189,9 +189,9 @@ pub fn program_requires_prepare(
 pub fn program_prepare(
     mut _env: WasmEnvMut,
     _wasm_ptr: GuestPtr,
+    _wasm_size: u64,
     _module_hash_ptr: GuestPtr,
     _address_for_logging_ptr: GuestPtr,
-    _code_size: u64,
     _code_hash_ptr: GuestPtr,
     _max_wasm_size: u32,
     _page_limit: u32,

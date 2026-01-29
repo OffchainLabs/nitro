@@ -126,9 +126,9 @@ func programRequiresPrepare(
 //go:wasmimport programs program_prepare
 func ProgramPrepare(
 	wasmPtr unsafe.Pointer,
+	wasmSize uint64,
 	moduleHashPtr unsafe.Pointer,
 	addressForLoggingPtr unsafe.Pointer,
-	codeSize uint64,
 	codehashPtr unsafe.Pointer,
 	maxWasmSize uint32,
 	pagelimit uint32,
@@ -169,13 +169,13 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			panic(fmt.Sprintf("failed to get wasm for program, program address: %v, err: %v", addressForLogging.Hex(), err))
 		}
 
-		codeSize := uint64(len(code))
+		wasmSize := uint64(len(wasm))
 
 		ProgramPrepare(
 			unsafe.Pointer(&wasm),
+			wasmSize,
 			unsafe.Pointer(&moduleHash),
 			unsafe.Pointer(&addressForLogging),
-			codeSize,
 			unsafe.Pointer(&codehash),
 			params.MaxWasmSize,
 			uint32(params.PageLimit),
