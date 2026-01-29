@@ -61,7 +61,7 @@ type StylusParams struct {
 	KeepaliveDays    uint16
 	BlockCacheSize   uint16
 	MaxWasmSize      uint32
-	MaxFragmentCount uint16
+	MaxFragmentCount uint8
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -113,7 +113,7 @@ func (p Programs) Params() (*StylusParams, error) {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
 	if p.ArbosVersion >= params.ArbosVersion_StylusContractLimit {
-		stylusParams.MaxFragmentCount = arbmath.BytesToUint16(take(2))
+		stylusParams.MaxFragmentCount = arbmath.BytesToUint8(take(1))
 	} else {
 		stylusParams.MaxFragmentCount = 0
 	}
@@ -147,7 +147,7 @@ func (p *StylusParams) Save() error {
 		data = append(data, arbmath.Uint32ToBytes(p.MaxWasmSize)...)
 	}
 	if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
-		data = append(data, arbmath.Uint16ToBytes(p.MaxFragmentCount)...)
+		data = append(data, arbmath.Uint8ToBytes(p.MaxFragmentCount)...)
 	}
 
 	slot := uint64(0)
