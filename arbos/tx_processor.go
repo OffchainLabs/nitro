@@ -528,7 +528,6 @@ func (p *TxProcessor) HeldGas() uint64 {
 }
 
 func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, success bool) {
-
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	scenario := util.TracingAfterEVM
