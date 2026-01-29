@@ -126,16 +126,17 @@ func setTransactionFiltererRPCClient(t *testing.T, ctx context.Context, builder 
 
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
 
+	// creates transaction-filterer API server
 	transactionFiltererStackConf := api.DefaultStackConfig
 	// use arbitrary available ports
 	transactionFiltererStackConf.HTTPPort = 0
 	transactionFiltererStackConf.WSPort = 0
 	transactionFiltererStackConf.AuthPort = 0
-
 	transactionFiltererStack, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, builder.L2.Client)
 	require.NoError(t, err)
 	err = transactionFiltererStack.Start()
 
+	// create transaction-filterer client
 	transactionFiltererRPCClientConfigFetcher := func() *rpcclient.ClientConfig {
 		config := rpcclient.DefaultClientConfig
 		config.URL = transactionFiltererStack.HTTPEndpoint()
