@@ -9,13 +9,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/melwavmio"
 )
-
-type preimageResolver interface {
-	ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error)
-}
 
 type wavmPreimageResolver struct{}
 

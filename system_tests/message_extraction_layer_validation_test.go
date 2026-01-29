@@ -11,10 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
+	"github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -71,7 +71,16 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	t.Log(entry.Preimages)
 
-	locator, err := server_common.NewMachineLocator("target/machines")
+	// jsonPreimages, err := json.Marshal(entry.Preimages)
+	// Require(t, err)
+	// Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
+	// t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
+	// t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
+	// initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
+	// Require(t, err)
+	// t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
+
+	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		return &server_arb.DefaultArbitratorSpawnerConfig
@@ -79,7 +88,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
 	Require(t, arbSpawner.Start(ctx))
-	wasmModuleRoot := common.HexToHash("0x5bb0a3fcc8a1f7cabda7489b005d04291ab30603551976b528c365a025d24092")
+	wasmModuleRoot := common.HexToHash("0x680289b92d5944850d04919b2c7c0076b43944d210368066651008c7aaadc908")
 	execRunPromise := arbSpawner.CreateExecutionRun(
 		wasmModuleRoot,
 		&validator.ValidationInput{
