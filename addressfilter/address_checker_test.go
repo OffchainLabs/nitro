@@ -28,10 +28,11 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	addrFiltered := common.HexToAddress("0x000000000000000000000000000000000000dead")
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 
-	store := NewHashStore()
+	const cacheSize = 100
+	store := NewHashStore(cacheSize)
 
 	hash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
-	store.Load(salt, []common.Hash{hash}, "test")
+	store.Store(salt, []common.Hash{hash}, "test")
 
 	checker := NewDefaultHashedAddressChecker(store)
 	checker.Start(context.Background())
@@ -79,6 +80,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	salt := []byte("heavy-salt")
 
 	const filteredCount = 500
+	const cacheSize = 100
 	filteredAddrs := make([]common.Address, filteredCount)
 	filteredHashes := make([]common.Hash, filteredCount)
 
@@ -88,8 +90,8 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 		filteredHashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
 	}
 
-	store := NewHashStore()
-	store.Load(salt, filteredHashes, "heavy")
+	store := NewHashStore(cacheSize)
+	store.Store(salt, filteredHashes, "heavy")
 
 	checker := NewDefaultHashedAddressChecker(store)
 	checker.Start(context.Background())

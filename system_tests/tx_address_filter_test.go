@@ -25,7 +25,8 @@ func isFilteredError(err error) bool {
 }
 
 func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
-	store := addressfilter.NewHashStore()
+	const cacheSize = 100
+	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
 		salt := []byte("test-salt")
 		hashes := make([]common.Hash, len(addrs))
@@ -35,7 +36,7 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 			copy(salted[len(salt):], addr.Bytes())
 			hashes[i] = sha256.Sum256(salted)
 		}
-		store.Load(salt, hashes, "test")
+		store.Store(salt, hashes, "test")
 	}
 	checker := addressfilter.NewDefaultHashedAddressChecker(store)
 	checker.Start(context.Background())
