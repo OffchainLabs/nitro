@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 	"strings"
 
@@ -87,9 +86,16 @@ func mainImpl() error {
 	})
 	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
+
+	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
+	if initialL1BaseFee == nil {
+		initialL1BaseFee = arbostypes.DefaultInitialL1BaseFee
+		log.Warn("initialL1BaseFee was not set - falling back to default value", "fallback_value", initialL1BaseFee)
+	}
+
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      big.NewInt(config.InitialL1BaseFee),
+		InitialL1BaseFee:      initialL1BaseFee,
 		ChainConfig:           chainConfig,
 		SerializedChainConfig: serializedChainConfig,
 	}
@@ -164,22 +170,19 @@ func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
 }
 
 type Config struct {
-	Caching          gethexec.CachingConfig `koanf:"caching"`
-	GenesisJsonFile  string                 `koanf:"genesis-json-file"`
-	AccountsPerSync  uint                   `koanf:"accounts-per-sync"`
-	InitialL1BaseFee int64                  `koanf:"initial-l1-base-fee"`
+	Caching         gethexec.CachingConfig `koanf:"caching"`
+	GenesisJsonFile string                 `koanf:"genesis-json-file"`
+	AccountsPerSync uint                   `koanf:"accounts-per-sync"`
 }
 
 var ConfigDefault = Config{
-	Caching:          gethexec.DefaultCachingConfig,
-	GenesisJsonFile:  "",
-	AccountsPerSync:  100000,
-	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.Int64(),
+	Caching:         gethexec.DefaultCachingConfig,
+	GenesisJsonFile: "",
+	AccountsPerSync: 100000,
 }
 
 func ConfigAddOptions(f *pflag.FlagSet) {
 	gethexec.CachingConfigAddOptions("caching", f)
 	f.String("genesis-json-file", ConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint("accounts-per-sync", ConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
-	f.Int64("initial-l1-base-fee", ConfigDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
 }
