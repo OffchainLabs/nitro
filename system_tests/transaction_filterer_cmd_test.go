@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/client"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
@@ -54,10 +55,10 @@ func TestTransactionFiltererCmd(t *testing.T) {
 		config.URL = transactionFiltererStack.HTTPEndpoint()
 		return &config
 	}
-	transactionFiltererRPCClient := rpcclient.NewRpcClient(transactionFiltererRPCClientConfigFetcher, nil)
+	transactionFiltererRPCClient := client.NewTransactionFiltererRPCClient(transactionFiltererRPCClientConfigFetcher, nil)
 	err = transactionFiltererRPCClient.Start(ctx)
 	require.NoError(t, err)
-	defer transactionFiltererRPCClient.Close()
+	defer transactionFiltererRPCClient.StopAndWait()
 
 	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
 		types.ArbFilteredTransactionsManagerAddress,
@@ -74,7 +75,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 	require.False(t, filtered)
 
 	// Filterer not added to the filterers set yet, should fail
-	err = transactionFiltererRPCClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
+	_, err = transactionFiltererRPCClient.Filter(txHash).Await(ctx)
 	require.ErrorContains(t, err, "execution reverted")
 
 	// Add filterer
@@ -87,7 +88,7 @@ func TestTransactionFiltererCmd(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now filtering should work
-	err = transactionFiltererRPCClient.CallContext(ctx, nil, "transactionfilterer_filter", txHash)
+	_, err = transactionFiltererRPCClient.Filter(txHash).Await(ctx)
 	require.NoError(t, err)
 
 	// Ensure transaction is now filtered
