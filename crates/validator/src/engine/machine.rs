@@ -19,63 +19,23 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
+use crate::engine::config::JitMachineConfig;
 use anyhow::{anyhow, Context, Result};
 use arbutil::Bytes32;
+use std::net::TcpListener;
 use std::{
-    collections::HashMap,
     env::{self},
     path::{Path, PathBuf},
     process::Stdio,
 };
+use tokio::io::AsyncWriteExt;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
     process::{Child, ChildStdin, Command},
     sync::Mutex,
 };
 use tracing::{error, warn};
+use validation::transfer::{receive_response, send_validation_input};
 use validation::{GoGlobalState, ValidationInput};
-
-use crate::{engine::config::JitMachineConfig, spawner_endpoints::local_target};
-
-const SUCCESS_BYTE: u8 = 0x0;
-const FAILURE_BYTE: u8 = 0x1;
-const ANOTHER_BYTE: u8 = 0x3;
-const READY_BYTE: u8 = 0x4;
-
-async fn write_exact(conn: &mut TcpStream, data: &[u8]) -> Result<()> {
-    conn.write_all(data).await.map_err(|e| anyhow!(e))
-}
-
-async fn write_u8(conn: &mut TcpStream, data: u8) -> Result<()> {
-    write_exact(conn, &[data]).await
-}
-
-async fn write_u32(conn: &mut TcpStream, data: u32) -> Result<()> {
-    write_exact(conn, &data.to_be_bytes()).await
-}
-
-async fn write_u64(conn: &mut TcpStream, data: u64) -> Result<()> {
-    write_exact(conn, &data.to_be_bytes()).await
-}
-
-async fn write_bytes(conn: &mut TcpStream, data: &[u8]) -> Result<()> {
-    write_u64(conn, data.len() as u64).await?;
-    write_exact(conn, data).await
-}
-
-async fn read_bytes32<R: AsyncRead + Unpin>(reader: &mut R) -> Result<[u8; 32]> {
-    let mut buf = [0u8; 32];
-    reader.read_exact(&mut buf).await?;
-    Ok(buf)
-}
-
-async fn read_bytes_with_len<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<u8>> {
-    let len = reader.read_u64().await?;
-    let mut buf = vec![0u8; len as usize];
-    reader.read_exact(&mut buf).await?;
-    Ok(buf)
-}
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -150,11 +110,7 @@ impl JitMachine {
     pub async fn feed_machine(&self, request: &ValidationInput) -> Result<GoGlobalState> {
         // 1. Create new TCP connection
         // Binding with a port number of 0 will request that the OS assigns a port to this listener.
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("failed to create TCP listener")?;
-
-        let mut state = GoGlobalState::default();
+        let listener = TcpListener::bind("127.0.0.1:0").context("failed to create TCP listener")?;
 
         let addr = listener.local_addr().context("failed to get local addr")?;
 
@@ -177,101 +133,26 @@ impl JitMachine {
         // 4. Wait for the child to call us back
         let (mut conn, _) = listener
             .accept()
-            .await
             .context("failed to open listener connection")?;
 
-        // 5. Send Global State
-        // TODO: add timeout for reads and writes
-        write_u64(&mut conn, request.start_state.batch).await?;
-        write_u64(&mut conn, request.start_state.pos_in_batch).await?;
-        write_exact(&mut conn, &request.start_state.block_hash.0).await?;
-        write_exact(&mut conn, &request.start_state.send_root.0).await?;
+        // 5. Send data
+        send_validation_input(&mut conn, request)?;
 
-        // 6. Send batch info
-        for batch in request.batch_info.iter() {
-            write_u8(&mut conn, ANOTHER_BYTE).await?;
-            write_u64(&mut conn, batch.number).await?;
-            write_bytes(&mut conn, &batch.data).await?;
-        }
-        write_u8(&mut conn, SUCCESS_BYTE).await?;
-
-        // 7. Send Delayed Inbox
-        if request.has_delayed_msg {
-            write_u8(&mut conn, ANOTHER_BYTE).await?;
-            write_u64(&mut conn, request.delayed_msg_nr).await?;
-            write_bytes(&mut conn, &request.delayed_msg).await?;
-        }
-        write_u8(&mut conn, SUCCESS_BYTE).await?;
-
-        // 8. Send Known Preimages
-        write_u32(&mut conn, request.preimages.len() as u32).await?;
-
-        for (ty, preimages) in request.preimages.iter() {
-            write_u8(&mut conn, *ty as u8).await?;
-            write_u32(&mut conn, preimages.len() as u32).await?;
-            for (hash, preimage) in preimages {
-                write_exact(&mut conn, &hash.0).await?;
-                write_bytes(&mut conn, preimage).await?;
-            }
-        }
-
-        // 9. Send User Wasms
-        let local_target = local_target();
-        let local_user_wasm = request.user_wasms.get(local_target);
-
-        // if there are user wasms, but only for wrong architecture - error
-        if local_user_wasm.is_none_or(|m| m.is_empty()) {
-            for (arch, wasms) in &request.user_wasms {
-                if !wasms.is_empty() {
-                    return Err(anyhow!(
-                        "bad stylus arch. got {arch}, expected {local_target}",
-                    ));
-                }
-            }
-        }
-
-        let empty_map = HashMap::new();
-        let local_user_wasm = local_user_wasm.unwrap_or(&empty_map);
-        write_u32(&mut conn, local_user_wasm.len() as u32).await?;
-        for (module_hash, program) in local_user_wasm {
-            write_exact(&mut conn, &module_hash.0).await?;
-            write_bytes(&mut conn, &program.as_vec()).await?;
-        }
-
-        // 10. Signal that we are done sending global state
-        write_u8(&mut conn, READY_BYTE).await?;
-
-        // 11. Read Response and return new state
-        let mut kind_buf = [0u8; 1];
-        conn.read_exact(&mut kind_buf).await?;
-
-        match kind_buf[0] {
-            FAILURE_BYTE => {
-                let msg_bytes = read_bytes_with_len(&mut conn).await?;
-                let msg = String::from_utf8_lossy(&msg_bytes);
-                error!("Jit Machine Failure message: {msg}");
-                Err(anyhow!("Jit Machine Failure: {msg}"))
-            }
-            SUCCESS_BYTE => {
-                // We write the values to socket in BigEndian so we can use
-                // read_u64() directly from AsyncReadExt which handles
-                // BigEndian by default
-                state.batch = conn.read_u64().await?;
-                state.pos_in_batch = conn.read_u64().await?;
-                state.block_hash.0 = read_bytes32(&mut conn).await?;
-                state.send_root.0 = read_bytes32(&mut conn).await?;
-
-                let memory_used = conn.read_u64().await?;
+        // 6. Read Response and return new state
+        match receive_response(&mut conn)? {
+            Ok((new_state, memory_used)) => {
                 if memory_used > self.wasm_memory_usage_limit {
                     warn!(
                         "WARN: memory used {} exceeds limit {}",
                         memory_used, self.wasm_memory_usage_limit
                     );
                 }
-
-                Ok(state)
+                Ok(new_state)
             }
-            _ => Err(anyhow!("inter-process communication failure: unknown byte")),
+            Err(err) => {
+                error!("Jit Machine Failure message: {err}");
+                Err(anyhow!("Jit Machine Failure: {err}"))
+            }
         }
     }
 

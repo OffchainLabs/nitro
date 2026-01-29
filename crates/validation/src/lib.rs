@@ -7,8 +7,27 @@ use std::{
     io::{self, BufRead},
 };
 
+pub mod transfer;
+
+pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
+
+pub const TARGET_ARM_64: &str = "arm64";
+pub const TARGET_AMD_64: &str = "amd64";
+pub const TARGET_HOST: &str = "host";
+
+/// Counterpart to Go `rawdb.LocalTarget()`.
+pub fn local_target() -> &'static str {
+    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        TARGET_ARM_64
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        TARGET_AMD_64
+    } else {
+        TARGET_HOST
+    }
+}
+
 /// Counterpart to Go `validator.GoGlobalState`.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct GoGlobalState {
     #[serde(with = "As::<DisplayFromStr>")]
@@ -20,7 +39,7 @@ pub struct GoGlobalState {
 }
 
 /// Counterpart to Go `validator.server_api.BatchInfoJson`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
@@ -34,7 +53,7 @@ pub struct BatchInfo {
 ///
 /// Note: The wrapped `Vec<u8>` is already `Base64` decoded before
 /// `from(Vec<u8>)` is called by `serde`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 
 impl UserWasm {
@@ -60,7 +79,7 @@ impl TryFrom<Vec<u8>> for UserWasm {
 }
 
 /// Counterpart to Go `validator.server_api.InputJSON`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationInput {
     pub id: u64,
@@ -70,7 +89,7 @@ pub struct ValidationInput {
         rename = "PreimagesB64",
         with = "As::<HashMap<TryFromInto<u8>, HashMap<Base64, Base64>>>"
     )]
-    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
+    pub preimages: PreimageMap,
     pub batch_info: Vec<BatchInfo>,
     #[serde(rename = "DelayedMsgB64", with = "As::<Base64>")]
     pub delayed_msg: Vec<u8>,
@@ -85,5 +104,12 @@ pub struct ValidationInput {
 impl ValidationInput {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         Ok(serde_json::from_reader(&mut reader)?)
+    }
+
+    pub fn delayed_msg(&self) -> Option<BatchInfo> {
+        self.has_delayed_msg.then(|| BatchInfo {
+            number: self.delayed_msg_nr,
+            data: self.delayed_msg.clone(),
+        })
     }
 }
