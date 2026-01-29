@@ -519,6 +519,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	if n.addressFilterService != nil {
 		n.addressFilterService.Start(ctx)
+		n.ExecEngine.SetAddressChecker(n.addressFilterService.GetAddressChecker())
 	}
 	return nil
 }
