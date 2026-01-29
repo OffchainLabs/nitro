@@ -11,7 +11,6 @@ pub mod machine;
 /// cbindgen:ignore
 pub mod memory;
 pub mod merkle;
-pub mod parse_input;
 pub mod prepare;
 mod print;
 pub mod programs;

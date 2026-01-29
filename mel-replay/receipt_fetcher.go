@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
 
 type receiptFetcherForBlock struct {
@@ -50,7 +50,6 @@ func (rf *receiptFetcherForBlock) LogsForTxIndex(ctx context.Context, parentChai
 	return receipt.Logs, nil
 }
 
-// TODO: LogsForBlockHashAllLogs is kept, in case we go with an implementation of returning all logs present in a block
 func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")

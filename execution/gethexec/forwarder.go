@@ -142,7 +142,11 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 			err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 		}
 		if err != nil {
-			log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+			if pos == 0 {
+				log.Warn("error forwarding transaction trying different target", "current target", f.targets[pos], "err", err)
+			} else {
+				log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "pos", pos, "total targets", len(f.rpcClients), "err", err)
+			}
 		}
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err

@@ -262,7 +262,7 @@ func activateProgramInternal(
 }
 
 // getCompiledProgram gets compiled wasm for all targets and recompiles missing ones.
-func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
+func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
 	targets := runCtx.WasmTargets()
 	// even though we need only asm for local target, make sure that all configured targets are available as they are needed during multi-target recording of a program call
 	asmMap, missingTargets, err := statedb.ActivatedAsmMap(targets, moduleHash)
@@ -277,7 +277,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
-	wasm, err := getWasmFromContractCode(code, maxWasmSize)
+	wasm, err := getWasmFromContractCode(statedb, code, params, false)
 	if err != nil {
 		log.Error("Failed to reactivate program: getWasm", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -290,7 +290,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
 	// compile only missing targets
-	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, pagelimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -326,8 +326,8 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	return asmMap, nil
 }
 
-func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
-	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, maxWasmSize, pagelimit, time, debugMode, program, runCtx)
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, params, time, debugMode, program, runCtx)
 	var ok bool
 	var localAsm []byte
 	if asmMap != nil {
@@ -413,7 +413,7 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, debug bool, time uint64, runCtx *core.MessageRunContext) {
 	if runCtx.IsCommitMode() {
 		// address is only used for logging
-		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params.MaxWasmSize, params.PageLimit, time, debug, program, runCtx)
+		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params, time, debug, program, runCtx)
 		var ok bool
 		var localAsm []byte
 		if asmMap != nil {

@@ -93,12 +93,6 @@ func RecordReceipts(ctx context.Context, parentChainReader BlockReader, parentCh
 	}, nil
 }
 
-// RecordPreimages records preimages corresponding to all the receipts in a block using preimageRecordingHasher
-func (rr *recordedLogsFetcher) RecordPreimages(ctx context.Context) error {
-
-	return nil
-}
-
 func (rr *recordedLogsFetcher) LogsForTxIndex(ctx context.Context, parentChainBlockHash common.Hash, txIndex uint) ([]*types.Log, error) {
 	if rr.parentChainBlockHash != parentChainBlockHash {
 		return nil, fmt.Errorf("parentChainBlockHash mismatch. expected: %v got: %v", rr.parentChainBlockHash, parentChainBlockHash)
