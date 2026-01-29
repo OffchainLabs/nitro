@@ -61,10 +61,6 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to read genesis JSON file %s: %w", config.GenesisJsonFile, err)
 	}
-	serializedChainConfig, err := extractSerializedChainConfigFromJSON(genesisJson)
-	if err != nil {
-		return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
-	}
 	var gen core.Genesis
 	if err := json.Unmarshal(genesisJson, &gen); err != nil {
 		return fmt.Errorf("failed to unmarshal genesis JSON: %w", err)
@@ -87,17 +83,27 @@ func mainImpl() error {
 	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
 
+	serializedChainConfig := gen.SerializedChainConfig
+	if serializedChainConfig == "" {
+		log.Warn("Serialized chain config was not set (`serializedConfig`) - using the `config` field serialization from the genesis file")
+		configSerializationBytes, err := extractSerializedChainConfigFromJSON(genesisJson)
+		if err != nil {
+			return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
+		}
+		serializedChainConfig = string(configSerializationBytes)
+	}
+
 	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
 	if initialL1BaseFee == nil {
+		log.Warn("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
 		initialL1BaseFee = arbostypes.DefaultInitialL1BaseFee
-		log.Warn("initialL1BaseFee was not set - falling back to default value", "fallback_value", initialL1BaseFee)
 	}
 
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
 		InitialL1BaseFee:      initialL1BaseFee,
 		ChainConfig:           chainConfig,
-		SerializedChainConfig: serializedChainConfig,
+		SerializedChainConfig: []byte(serializedChainConfig),
 	}
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
