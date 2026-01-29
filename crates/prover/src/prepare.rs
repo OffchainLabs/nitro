@@ -30,9 +30,9 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     let binary_path = Path::new(&machines);
     let mut mach = Machine::new_from_wavm(binary_path)?;
 
-    let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();
+    let block_hash: [u8; 32] = data.start_state.block_hash.0;
     let block_hash: Bytes32 = block_hash.into();
-    let send_root: [u8; 32] = data.start_state.send_root.try_into().unwrap();
+    let send_root: [u8; 32] = data.start_state.send_root.0;
     let send_root: Bytes32 = send_root.into();
     // This tool is only used to benchmark bold proving of block execution,
     // so the final two MEL fields are left as default.
