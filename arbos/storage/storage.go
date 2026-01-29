@@ -152,6 +152,14 @@ func (s *Storage) GetFree(key common.Hash) common.Hash {
 	return s.db.GetState(s.account, s.mapAddress(key))
 }
 
+// ClearFree deletes a storage slot without charging gas. Setting a slot to
+// common.Hash{} (all zeros) causes geth to delete the entry from the storage
+// trie rather than storing zeros (see state_object.go updateTrie).
+// Dangerous due to DoS potential - only use for consensus-critical cleanup.
+func (s *Storage) ClearFree(key common.Hash) {
+	s.db.SetState(s.account, s.mapAddress(key), common.Hash{})
+}
+
 func (s *Storage) GetStorageSlot(key common.Hash) common.Hash {
 	return s.mapAddress(key)
 }

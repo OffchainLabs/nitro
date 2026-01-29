@@ -111,13 +111,15 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	}
 
 	if db.IsAddressFiltered() {
-		isOnchainFiltered, err := a.FilteredTransactions().IsFiltered(tx.Hash())
-		if err != nil {
-			return err
+		// If the STF already handled this tx via the onchain filter mechanism,
+		// the filter entry has been cleaned up and we're done.
+		var filteredErr *core.ErrFilteredTx
+		if errors.As(result.Err, &filteredErr) {
+			return nil
 		}
-		if !isOnchainFiltered {
-			f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
-		}
+		// Otherwise, this tx touched a filtered address but wasn't in the
+		// onchain filter - collect it so the caller can halt.
+		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
 	}
 	return nil
 }

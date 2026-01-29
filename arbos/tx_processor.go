@@ -863,6 +863,13 @@ func (p *TxProcessor) IsFilteredTx(txHash common.Hash) bool {
 	return p.state.FilteredTransactions().IsFilteredFree(txHash)
 }
 
+// RemoveFilteredTx removes a tx hash from the onchain filter after execution.
+// Called from handleRevertedTx after a filtered tx is executed as a no-op.
+// This cleanup is gas-free and truly deletes the entry from the storage trie.
+func (p *TxProcessor) RemoveFilteredTx(txHash common.Hash) {
+	p.state.FilteredTransactions().DeleteFree(txHash)
+}
+
 func (p *TxProcessor) EVM() *vm.EVM {
 	return p.evm
 }
