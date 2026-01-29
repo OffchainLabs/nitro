@@ -40,13 +40,10 @@ type importantRoots struct {
 	heights     []uint64
 }
 
-// The minimum block distance between two important roots
-const minRootDistance = 2000
-
 // Marks a header as important, and records its root and height.
 // If overwrite is true, it'll remove any future roots and replace them with this header.
 // If overwrite is false, it'll ignore this header if it has future roots.
-func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
+func (r *importantRoots) addHeader(header *types.Header, overwrite bool, minRootDistance uint64) error {
 	targetBlockNum := header.Number.Uint64()
 	for {
 		if header == nil || header.Root == (common.Hash{}) {
@@ -86,7 +83,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initConfig *conf.InitConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool, minRootDistance uint64) ([]common.Hash, error) {
 	chainConfig := gethexec.TryReadStoredChainConfig(executionDB)
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
@@ -100,7 +97,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initCon
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
-	err := roots.addHeader(genesisHeader, false)
+	err := roots.addHeader(genesisHeader, false, minRootDistance)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +115,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initCon
 			confirmedHeader = rawdb.ReadHeader(executionDB, confirmedHash, confirmedNumber)
 		}
 		if confirmedHeader != nil {
-			err = roots.addHeader(confirmedHeader, false)
+			err = roots.addHeader(confirmedHeader, false, minRootDistance)
 			if err != nil {
 				return nil, err
 			}
@@ -139,7 +136,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initCon
 				lastValidatedHeader = rawdb.ReadHeader(executionDB, lastValidatedBlockHash, headerNum)
 			}
 			if lastValidatedHeader != nil {
-				err = roots.addHeader(lastValidatedHeader, false)
+				err = roots.addHeader(lastValidatedHeader, false, minRootDistance)
 				if err != nil {
 					return nil, err
 				}
@@ -178,7 +175,7 @@ func findImportantRoots(ctx context.Context, executionDB ethdb.Database, initCon
 		if l2Header == nil {
 			log.Warn("latest finalized L2 block is unknown", "blockNum", finalizedBlockNumber)
 		} else {
-			err = roots.addHeader(l2Header, false)
+			err = roots.addHeader(l2Header, false, minRootDistance)
 			if err != nil {
 				return nil, err
 			}
@@ -238,8 +235,14 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		return latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash, nil
 	}
 }
-
 func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool) error {
+	// The minimum block distance between two important roots
+	const minRootDistance = 2000
+
+	return PruneExecutionDBWithDistance(ctx, executionDB, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired, melEnabled, minRootDistance)
+}
+
+func PruneExecutionDBWithDistance(ctx context.Context, executionDB ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, validatorRequired, melEnabled bool, minRootDistance uint64) error {
 	if cacheConfig.StateScheme == rawdb.PathScheme {
 		return nil
 	}
@@ -247,7 +250,7 @@ func PruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *no
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), executionDB, initConfig.PruneThreads)
 	}
-	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired)
+	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired, minRootDistance)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}

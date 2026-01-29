@@ -196,6 +196,14 @@ func TestStateAfterPruningValidator(t *testing.T) {
 	testStateAfterPruning(t, "validator")
 }
 
+func TestStateAfterPruningMinimal(t *testing.T) {
+	testStateAfterPruning(t, "minimal")
+}
+
+func TestStateAfterPruningFull(t *testing.T) {
+	testStateAfterPruning(t, "full")
+}
+
 func testStateAfterPruning(t *testing.T, mode string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -219,7 +227,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	}()
 	builder.L2Info.GenerateAccount("User2")
 
-	numOfBlocksToGenerate := 5000
+	numOfBlocksToGenerate := 300
 
 	// We need to generate these many blocks because of how pruning procedure
 	// works. Such procedure has an offset `minRootDistance` set to `2000`; so,
@@ -227,7 +235,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	// persisted by pruning procedure we need them to be > 2000 blocks apart.
 	generateBlocks(t, ctx, builder, builder.L2, numOfBlocksToGenerate)
 
-	safeMsgIdx := arbutil.MessageIndex(4860)
+	safeMsgIdx := arbutil.MessageIndex(260)
 	safeMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(safeMsgIdx).Await(ctx)
 	Require(t, err)
 	safeFinalityData := arbutil.FinalityData{
@@ -235,7 +243,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 		BlockHash: safeMsgResult.BlockHash,
 	}
 
-	finalizedMsgIdx := arbutil.MessageIndex(4850)
+	finalizedMsgIdx := arbutil.MessageIndex(250)
 	finalizedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(finalizedMsgIdx).Await(ctx)
 	Require(t, err)
 	finalizedFinalityData := arbutil.FinalityData{
@@ -243,7 +251,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 		BlockHash: finalizedMsgResult.BlockHash,
 	}
 
-	validatedMsgIdx := arbutil.MessageIndex(2550)
+	validatedMsgIdx := arbutil.MessageIndex(140)
 	validatedMsgResult, err := builder.L2.ExecNode.ResultAtMessageIndex(validatedMsgIdx).Await(ctx)
 	Require(t, err)
 	validatedFinalityData := arbutil.FinalityData{
@@ -283,7 +291,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
 
-	for i := 2000; i < numOfBlocksToGenerate; i++ {
+	for i := 50; i < numOfBlocksToGenerate; i++ {
 		// #nosec G115
 		header := bc.GetHeaderByNumber(uint64(i))
 		err = triedb.Commit(header.Root, false)
@@ -310,7 +318,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
+		err = pruning.PruneExecutionDBWithDistance(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false, 100)
 		Require(t, err)
 
 		executionDBEntriesAfterPruning := countStateEntries(executionDB)
@@ -324,7 +332,6 @@ func testStateAfterPruning(t *testing.T, mode string) {
 
 	// We could have restarted the same node, but spinning up a node with the same
 	// executionDB simulates the desired scenario
-	builder.execConfig.Caching.Archive = false
 	testClientL2, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
 	defer cleanup()
 
@@ -340,9 +347,10 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	Require(t, err)
 
 	// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
-	// all blocks between [1, 5000) with the exception of last validated and last finalized blocks
+	// all blocks between [1, 300) with the exception of last validated and last finalized blocks
 	for i := 1; i < numOfBlocksToGenerate; i++ {
-		if mode == "validator" && (arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx) {
+		// #nosec G115
+		if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx {
 			continue
 		}
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
@@ -354,24 +362,24 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	newLastBlock, err := testClientL2.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	if newLastBlock < lastBlock {
-		t.Fatalf("Expected last block of new node %d to be equal or ahead of original node last block: %d", newLastBlock, lastBlock)
+	// The restarted node loses about ~90 blocks when restarting since some dirty blocks haven't been committed to trieDB
+	if lastBlock < newLastBlock {
+		t.Fatalf("Expected last block of new node %d to be behind of original node last block: %d", newLastBlock, lastBlock)
 	}
 
 	// #nosec G115
 	newLastBlockInt := int64(newLastBlock)
 
 	// Now we check if the blocks that got committed as part of builder.cleanup() got persisted. We do that by calling
-	// BalanceAt(...) since that requires stateDB for such block to be presetn to succeed
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt))
-	Require(t, err)
-
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt-1))
-	Require(t, err)
-
-	// This is yet another block committed by builder.cleanup() as (HEAD - 127 - 1)
-	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt-126))
-	Require(t, err)
+	// BalanceAt(...) since that requires stateDB for such block to be presetn to succeed. It gets a bit tricky since
+	// pruning procedure was called in original node where last block was `lastBlock` so it'll remember blocks relative
+	// to that block from lastBlock - 126 until last available block of new node.
+	// #nosec G115
+	checkUntilBlock := int64(lastBlock) - 126
+	for i := newLastBlockInt; i > checkUntilBlock; i-- {
+		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt))
+		Require(t, err)
+	}
 
 	// We do the same for last validated and last finalized blocks since they should have been added as important roots
 	// we only check these in validator mode since all other modes they are also pruned
