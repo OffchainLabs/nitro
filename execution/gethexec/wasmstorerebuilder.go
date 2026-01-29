@@ -93,7 +93,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 		codeHashBytes := bytes.TrimPrefix(iter.Key(), rawdb.CodePrefix)
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
-		if state.IsStylusProgram(code) {
+		if state.IsStylusDeployableProgramPrefix(code) {
 			if err := programs.SaveActiveProgramToWasmStore(stateDB, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}

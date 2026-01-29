@@ -16,7 +16,8 @@ axum = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 jit = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "process", "signal"] }
 tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = [
@@ -25,3 +26,6 @@ tracing-subscriber = { workspace = true, features = [
     "env-filter",
 ] }
 validation = { workspace = true }
+
+[dev-dependencies]
+reqwest = "0.13.1"
