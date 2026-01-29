@@ -394,7 +394,6 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		}
 		currentState = endState
 	}
-	fmt.Printf("Initial state hash: %#x\n", initialState.Hash())
 	return &validationEntry{
 		Preimages: preimages,
 		Start: validator.GoGlobalState{
