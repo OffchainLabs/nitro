@@ -1145,7 +1145,7 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
 }
 
-// Only used for tests.
+// Only used for tests
 func (s *ExecutionEngine) SetTransactionFiltererRPCClient(transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient) {
 	s.transactionFiltererRPCClient.Store(transactionFiltererRPCClient)
 }

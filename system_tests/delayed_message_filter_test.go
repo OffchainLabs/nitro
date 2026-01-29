@@ -121,7 +121,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 	t.Fatal("timeout waiting for delayed sequencer to resume")
 }
 
-func setTransactionFiltererRPCClient(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) *node.Node {
+func setTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) *node.Node {
 	t.Helper()
 
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
@@ -270,7 +270,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -379,7 +379,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.Equal(t, normal2Initial, normal2Mid, "normal user 2 balance should not change while blocked")
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash1, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash1, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -490,7 +490,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.Equal(t, user2Initial, user2Mid, "user2 balance should not change while batch is blocked")
 
 	// Add tx2 hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, tx2.Hash(), "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, tx2.Hash(), "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -656,7 +656,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -721,7 +721,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -787,7 +787,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -851,7 +851,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
@@ -913,7 +913,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set transaction filterer RPC Client, this will eventually add tx hash to onchain filter
-	transactionFiltererStack := setTransactionFiltererRPCClient(t, ctx, builder, txHash, "Filterer")
+	transactionFiltererStack := setTransactionFiltererService(t, ctx, builder, txHash, "Filterer")
 	defer transactionFiltererStack.Close()
 
 	// Wait for delayed sequencer to resume
