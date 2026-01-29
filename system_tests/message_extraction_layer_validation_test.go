@@ -70,21 +70,16 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
 	Require(t, err)
-	t.Log(entry.Preimages)
-
-	// jsonPreimages, err := json.Marshal(entry.Preimages)
-	// Require(t, err)
-	// Require(t, os.WriteFile("/tmp/mypreimages.json", jsonPreimages, os.ModePerm))
-	// t.Log("MELStateHash", entry.Start.MELStateHash.Hex())
-	// t.Log("EndParentChainBlockHash", entry.EndParentChainBlockHash.Hex())
-	// initialMELState, err := builder.L2.ConsensusNode.MessageExtractor.GetState(ctx, startBlock)
-	// Require(t, err)
-	// t.Log("PositionInMEL", initialMELState.MsgCount) // Because we only recorded preimages for starting from this l2 block
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-		return &server_arb.DefaultArbitratorSpawnerConfig
+		defaultCfg := server_arb.DefaultArbitratorSpawnerConfig
+		defaultCfg.MachineConfig = server_arb.ArbitratorMachineConfig{
+			WavmBinaryPath:       "unified_machine.wavm.br",
+			UntilHostIoStatePath: "unified-until-host-io-state.bin",
+		}
+		return &defaultCfg
 	}
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	Require(t, err)
@@ -113,8 +108,6 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	if finalResult.GlobalState.MELStateHash != entry.End.MELStateHash {
 		t.Fatalf("Expected final mel state hash %s, got %s", entry.End.MELStateHash, finalResult.GlobalState.MELStateHash)
 	}
-	t.Log("Passed")
-	// t.Fatal("Failed")
 }
 
 func TestMELValidator_Recording_Preimages(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 )
 
 type ArbitratorMachineConfig struct {
-	WavmBinaryPath       string
-	UntilHostIoStatePath string
+	WavmBinaryPath       string `koanf:"wavm-binary-path" reload:"hot"`
+	UntilHostIoStatePath string `koanf:"util-host-io-state-path" reload:"hot"`
 }
 
 var DefaultArbitratorMachineConfig = ArbitratorMachineConfig{
