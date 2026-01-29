@@ -80,7 +80,6 @@ func mainImpl() error {
 	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 		Accounts: accounts,
 	})
-	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
 
 	serializedChainConfig := gen.SerializedChainConfig
@@ -93,6 +92,11 @@ func mainImpl() error {
 		serializedChainConfig = string(configSerializationBytes)
 	}
 
+	var chainConfig params.ChainConfig
+	if err := json.Unmarshal([]byte(serializedChainConfig), &chainConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal chain config: %w", err)
+	}
+
 	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
 	if initialL1BaseFee == nil {
 		log.Warn("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
@@ -102,13 +106,13 @@ func mainImpl() error {
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
 		InitialL1BaseFee:      initialL1BaseFee,
-		ChainConfig:           chainConfig,
+		ChainConfig:           &chainConfig,
 		SerializedChainConfig: []byte(serializedChainConfig),
 	}
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
 		initDataReader,
-		chainConfig,
+		&chainConfig,
 		genesisArbOSInit,
 		parsedInitMessage,
 		config.AccountsPerSync,
