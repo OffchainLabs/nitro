@@ -413,15 +413,16 @@ func TestExecutionKeepAlive(t *testing.T) {
 	Require(t, err)
 
 	valInput := validator.ValidationInput{
-		Id:            0,
-		HasDelayedMsg: false,
-		DelayedMsgNr:  0,
-		Preimages:     daprovider.PreimagesMap{},
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:     []validator.BatchInfo{},
-		DelayedMsg:    []byte{},
-		StartState:    validator.GoGlobalState{},
-		DebugChain:    false,
+		Id:                      0,
+		HasDelayedMsg:           false,
+		DelayedMsgNr:            0,
+		Preimages:               daprovider.PreimagesMap{},
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              validator.GoGlobalState{},
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)
