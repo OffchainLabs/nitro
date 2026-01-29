@@ -78,13 +78,13 @@ type ExecutionRecorder interface {
 // needed for sequencer
 type ExecutionSequencer interface {
 	ExecutionClient
-	Pause()
-	Activate()
-	ForwardTo(url string) error
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
-	NextDelayedMessageNumber() (uint64, error)
-	Synced(ctx context.Context) bool
-	FullSyncProgressMap(ctx context.Context) map[string]interface{}
+	Pause() containers.PromiseInterface[struct{}]
+	Activate() containers.PromiseInterface[struct{}]
+	ForwardTo(url string) containers.PromiseInterface[struct{}]
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}]
+	NextDelayedMessageNumber() containers.PromiseInterface[uint64]
+	Synced() containers.PromiseInterface[bool]
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
 }
 
 // needed for batch poster
