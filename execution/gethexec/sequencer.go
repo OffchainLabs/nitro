@@ -42,7 +42,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -87,7 +86,6 @@ type SequencerConfig struct {
 	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
-	TransactionFiltererRPCClient rpcclient.ClientConfig `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 }
 
 type DangerousConfig struct {
@@ -219,14 +217,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	EventFilter:                  eventfilter.DefaultEventFilterConfig,
-	TransactionFiltererRPCClient: rpcclient.ClientConfig{
-		URL:                       "",
-		JWTSecret:                 "",
-		Retries:                   3,
-		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
-		ArgLogLimit:               2048,
-		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
-	},
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -255,7 +245,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
-	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultSequencerConfig.TransactionFiltererRPCClient)
 }
 
 func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
