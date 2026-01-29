@@ -11,9 +11,9 @@ rust-version.workspace = true
 
 [dependencies]
 brotli = { workspace = true, optional = true }
+k256 = { workspace = true, features = ["ecdsa"] }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
-secp256k1 = { workspace = true, features = ["alloc", "recovery"] }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmer = { workspace = true, optional = true }
 

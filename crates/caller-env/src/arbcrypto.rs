@@ -1,8 +1,7 @@
 use crate::arbcrypto::ECRecoveryStatus::*;
 use crate::{ExecEnv, GuestPtr, MemAccess};
 use core::mem::MaybeUninit;
-use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use secp256k1::Message;
+use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use tiny_keccak::{Hasher, Keccak};
 
 #[repr(u32)]
@@ -15,8 +14,9 @@ enum ECRecoveryStatus {
 }
 
 const HASH_LENGTH: usize = 32;
-const SIGNATURE_LENGTH: usize = 65; // 64 bytes for actual signature + 1 byte for recovery id
-const SIGNATURE_RECOVERY_ID_INDEX: usize = 64;
+const SIGNATURE_LENGTH: usize = 64;
+const SIGNATURE_WITH_ID_LENGTH: usize = SIGNATURE_LENGTH + 1;
+const RECOVERY_ID_INDEX: usize = 64;
 
 pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
@@ -29,28 +29,23 @@ pub fn ecrecovery<M: MemAccess, E: ExecEnv>(
 ) -> u32 {
     if hash_len as usize != HASH_LENGTH {
         return InvalidHashLength as u32;
-    } else if sig_len as usize != SIGNATURE_LENGTH {
+    } else if sig_len as usize != SIGNATURE_WITH_ID_LENGTH {
         return InvalidSignatureLength as u32;
     }
 
-    let hash = Message::from_digest(mem.read_fixed(hash_ptr));
+    let hash = mem.read_fixed::<HASH_LENGTH>(hash_ptr);
 
-    let sig_bytes = mem.read_fixed::<SIGNATURE_LENGTH>(sig_ptr);
-    let Ok(recovery_id) = RecoveryId::try_from(sig_bytes[SIGNATURE_RECOVERY_ID_INDEX] as i32)
-    else {
+    let sig_bytes = mem.read_fixed::<SIGNATURE_WITH_ID_LENGTH>(sig_ptr);
+    let sig = Signature::from_slice(&sig_bytes[..SIGNATURE_LENGTH]).expect("Length checked");
+    let Some(recovery_id) = RecoveryId::from_byte(sig_bytes[RECOVERY_ID_INDEX]) else {
         return InvalidRecoveryId as u32;
     };
-    let Ok(sig) =
-        RecoverableSignature::from_compact(&sig_bytes[..SIGNATURE_LENGTH - 1], recovery_id)
-    else {
+
+    let Ok(pubkey) = VerifyingKey::recover_from_prehash(&hash, &sig, recovery_id) else {
         return RecoveryFailed as u32;
     };
 
-    let Ok(pubkey) = secp256k1::Secp256k1::new().recover_ecdsa(hash, &sig) else {
-        return RecoveryFailed as u32;
-    };
-
-    mem.write_slice(pub_ptr, pubkey.serialize_uncompressed().as_ref());
+    mem.write_slice(pub_ptr, pubkey.to_encoded_point(false).as_bytes());
     Success as u32
 }
 

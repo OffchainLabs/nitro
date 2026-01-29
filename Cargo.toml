@@ -44,6 +44,7 @@ eyre = { version = "0.6.5" }
 fnv = { version = "1.0.7" }
 gperftools = { version = "0.2.0" }
 hex = { version = "0.4.3" }
+k256 = { version = "0.13.4", default-features = false}
 lazy_static = { version = "1.4.0" }
 libc = { version = "0.2.132" }
 lru = { version = "0.16.3" }
@@ -60,7 +61,6 @@ rand_pcg = { version = "0.3.1", default-features = false }
 rayon = { version = "1.5.1" }
 ruint2 = { version = "1.9.0" }
 rustc-demangle = { version = "0.1.21" }
-secp256k1 = { version = "0.31.1", default-features = false }
 serde = { version = "1.0.130" }
 serde_json = { version = "1.0.67" }
 serde_with = { version = "3.8.1" }
