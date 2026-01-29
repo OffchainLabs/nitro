@@ -1021,6 +1021,7 @@ dependencies = [
  "enum-iterator 2.3.0",
  "eyre",
  "fnv",
+ "forward",
  "hex",
  "lazy_static",
  "libc",

@@ -3,6 +3,10 @@ name = "forward"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "forward"
+path = "bin/mod.rs"
+
 [dependencies]
 eyre = "0.6.5"
 structopt = "0.3.26"
