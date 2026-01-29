@@ -135,6 +135,7 @@ func setTransactionFiltererService(t *testing.T, ctx context.Context, builder *N
 	transactionFiltererStack, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, builder.L2.Client)
 	require.NoError(t, err)
 	err = transactionFiltererStack.Start()
+	require.NoError(t, err)
 
 	// create transaction-filterer client
 	transactionFiltererRPCClientConfigFetcher := func() *rpcclient.ClientConfig {
