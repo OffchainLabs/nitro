@@ -214,8 +214,7 @@ func testStateAfterPruning(t *testing.T, mode string) {
 
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	builder.nodeConfig.BlockValidator.Enable = true
-	// Used to avoid l1 timestamp delta error since we're creating several blocks
-	builder.execConfig.Sequencer.MaxAcceptableTimestampDelta = time.Hour * 72
+	builder.DontParalellise()
 
 	_ = builder.Build(t)
 	l2cleanupDone := false
