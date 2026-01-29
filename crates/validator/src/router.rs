@@ -21,7 +21,7 @@ pub fn create_router() -> Router<Arc<ServerState>> {
         )
         .route(
             &format!("{BASE_NAMESPACE}_stylusArchs"),
-            get(spawner_endpoints::stylus_archs),
+            get(spawner_endpoints::local_target()),
         )
         .route(
             &format!("{BASE_NAMESPACE}_validate"),

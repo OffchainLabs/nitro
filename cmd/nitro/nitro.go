@@ -14,7 +14,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -172,30 +171,15 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
-			if err != nil {
-				log.Warn("Failed to get workdir", "err", err)
-			}
-		}
-		return func(path string) string {
-			if filepath.IsAbs(path) {
-				return path
-			}
-			return filepath.Join(workdir, path)
-		}
-	}
-
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
+		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
 		stackConf.JWTSecret = filename
 	}
-	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -618,7 +602,7 @@ func mainImpl() int {
 	}
 
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
@@ -974,6 +958,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 	if err = anytrust.FixKeysetCLIParsing("node.da.anytrust.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
+	}
+
+	if err = arbnode.FixCompressionLevelsCLIParsing("node.batch-poster.compression-levels", k); err != nil {
 		return nil, nil, err
 	}
 

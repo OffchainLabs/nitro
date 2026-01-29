@@ -60,10 +60,11 @@ replay_wasm=$(output_latest)/replay.wasm
 arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbkeccak user_host program_exec)
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbcrypto user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
+validation_server=$(output_root)/bin/validator
 
 arbitrator_cases=crates/prover/test-cases
 
@@ -165,7 +166,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -190,6 +191,9 @@ build-prover-bin: $(prover_bin)
 
 .PHONY: build-jit
 build-jit: $(arbitrator_jit)
+
+.PHONY: build-validation-server
+build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
@@ -349,6 +353,9 @@ $(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
 
+$(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
+
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
@@ -369,6 +376,11 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --release -p jit ${CARGOFLAGS}
 	install target/release/jit $@
+
+$(validation_server): $(DEP_PREDICATE)
+	mkdir -p `dirname $(validation_server)`
+	cargo build --release -p validator ${CARGOFLAGS}
+	install target/release/validator $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
@@ -451,9 +463,9 @@ $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli)
 	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 
-$(output_latest)/arbkeccak.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbkeccak
-	install crates/wasm-libraries/$(wasm32_wasi)/arbkeccak.wasm $@
+$(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
+	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
+	install crates/wasm-libraries/$(wasm32_wasi)/arbcrypto.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
@@ -466,7 +478,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbkeccak program_exec)
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
