@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-const namespace = "transactionfilterer"
+const Namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
 	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
@@ -47,13 +47,13 @@ var DefaultStackConfig = node.Config{
 	AuthAddr:            node.DefaultAuthHost,
 	AuthPort:            node.DefaultAuthPort,
 	AuthVirtualHosts:    node.DefaultAuthVhosts,
-	HTTPModules:         []string{namespace},
+	HTTPModules:         []string{Namespace},
 	HTTPHost:            node.DefaultHTTPHost,
 	HTTPVirtualHosts:    []string{"localhost"},
 	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 	WSHost:              node.DefaultWSHost,
 	WSPort:              node.DefaultWSPort,
-	WSModules:           []string{namespace},
+	WSModules:           []string{Namespace},
 	GraphQLVirtualHosts: []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr:  "",
@@ -85,7 +85,7 @@ func NewStack(
 		txOpts:                         txOpts,
 	}
 	apis := []rpc.API{{
-		Namespace: namespace,
+		Namespace: Namespace,
 		Version:   "1.0",
 		Service:   api,
 		Public:    true,
