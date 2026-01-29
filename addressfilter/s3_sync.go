@@ -18,30 +18,26 @@ import (
 // hashListPayload represents the JSON structure of the hash list file used for unmarshalling.
 type hashListPayload struct {
 	Salt          string `json:"salt"`
+	HashingScheme string `json:"hashing_scheme,omitempty"`
 	AddressHashes []struct {
 		Hash string `json:"hash"`
 	} `json:"address_hashes"`
 }
 
 type S3SyncManager struct {
-	Syncer *s3syncer.Syncer
-	store  *HashStore
+	Syncer    *s3syncer.Syncer
+	hashStore *HashStore
 }
 
-func NewS3SyncManager(ctx context.Context, config *Config, store *HashStore) (*S3SyncManager, error) {
+func NewS3SyncManager(ctx context.Context, config *Config, hashStore *HashStore) (*S3SyncManager, error) {
 	s := &S3SyncManager{
-		store: store,
+		hashStore: hashStore,
 	}
 	syncer, err := s3syncer.NewSyncer(
 		ctx,
 		&config.S3,
 		s.handleHashListData,
-		// These are initial settings that can be tuned as needed.
-		s3syncer.WithDownloadConfig(s3syncer.DownloadConfig{
-			PartSizeMB:         100,
-			Concurrency:        10,
-			PartBodyMaxRetries: 5,
-		}))
+	)
 
 	if err != nil {
 		return nil, err
@@ -51,14 +47,14 @@ func NewS3SyncManager(ctx context.Context, config *Config, store *HashStore) (*S
 	return s, nil
 }
 
-// handleHashListData parses the downloaded JSON data and loads it into the store.
+// handleHashListData parses the downloaded JSON data and loads it into the hashStore.
 func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 	salt, hashes, err := parseHashListJSON(data)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	s.store.Load(salt, hashes, digest)
+	s.hashStore.Store(salt, hashes, digest)
 	log.Info("loaded restricted addr list", "hash_count", len(hashes), "etag", digest, "size_bytes", len(data))
 	return nil
 }
@@ -69,6 +65,12 @@ func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, nil, fmt.Errorf("JSON unmarshal failed: %w", err)
+	}
+
+	// Validate hashing scheme - warn if not Sha256 but continue for forward compatibility
+	if payload.HashingScheme != "" && payload.HashingScheme != "Sha256" {
+		log.Warn("unknown hashing scheme in address list, continuing with Sha256 assumption",
+			"scheme", payload.HashingScheme)
 	}
 
 	salt, err := hex.DecodeString(payload.Salt)

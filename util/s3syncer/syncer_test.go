@@ -68,17 +68,3 @@ func TestConfigValidate(t *testing.T) {
 		})
 	}
 }
-
-func TestDefaultDownloadConfig(t *testing.T) {
-	dc := DefaultDownloadConfig()
-
-	if dc.PartSizeMB != 32 {
-		t.Errorf("DefaultDownloadConfig().PartSizeMB = %d, want 32", dc.PartSizeMB)
-	}
-	if dc.PartBodyMaxRetries != 5 {
-		t.Errorf("DefaultDownloadConfig().PartBodyMaxRetries = %d, want 5", dc.PartBodyMaxRetries)
-	}
-	if dc.Concurrency != 10 {
-		t.Errorf("DefaultDownloadConfig().Concurrency = %d, want 10", dc.Concurrency)
-	}
-}

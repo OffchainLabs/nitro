@@ -17,7 +17,7 @@ import (
 )
 
 func TestHashStore_IsRestricted(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	// Test empty store
 	addr := common.HexToAddress("0x1234567890123456789012345678901234567890")
@@ -40,8 +40,8 @@ func TestHashStore_IsRestricted(t *testing.T) {
 		hashes = append(hashes, hash)
 	}
 
-	// Load the hashes
-	store.Load(salt, hashes, "test-etag")
+	// Store the hashes
+	store.Store(salt, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
@@ -66,24 +66,24 @@ func TestHashStore_IsRestricted(t *testing.T) {
 }
 
 func TestHashStore_AtomicSwap(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	salt1 := []byte("salt1")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	hash1 := sha256.Sum256(append(salt1, addr1.Bytes()...))
 
-	// Load first set
-	store.Load(salt1, []common.Hash{hash1}, "etag1")
+	// Store first set
+	store.Store(salt1, []common.Hash{hash1}, "etag1")
 	if !store.IsRestricted(addr1) {
 		t.Error("addr1 should be restricted after first load")
 	}
 
-	// Load second set with different salt (simulating hourly rotation)
+	// Store second set with different salt (simulating hourly rotation)
 	salt2 := []byte("salt2")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 	hash2 := sha256.Sum256(append(salt2, addr2.Bytes()...))
 
-	store.Load(salt2, []common.Hash{hash2}, "etag2")
+	store.Store(salt2, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
 	if store.IsRestricted(addr1) {
@@ -99,7 +99,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 }
 
 func TestHashStore_ConcurrentAccess(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	salt1 := []byte("test-salt")
 	var addresses []common.Address
@@ -111,7 +111,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		hash := sha256.Sum256(append(salt1, addr.Bytes()...))
 		hashes1 = append(hashes1, hash)
 	}
-	store.Load(salt1, hashes1, "etag")
+	store.Store(salt1, hashes1, "etag")
 
 	// prepare second set for swapping
 	salt2 := []byte("new-salt")
@@ -154,9 +154,9 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
 			if i%2 == 0 {
-				store.Load(salt1, hashes1, "etag")
+				store.Store(salt1, hashes1, "etag")
 			} else {
-				store.Load(salt2, hashes2, "new-etag")
+				store.Store(salt2, hashes2, "new-etag")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -234,6 +234,59 @@ func TestParseHashListJSON(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for wrong hash length")
 	}
+
+	// Test with hashing_scheme: Sha256 (should parse without error)
+	sha256Payload := map[string]interface{}{
+		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"hashing_scheme": "Sha256",
+		"address_hashes": []map[string]interface{}{
+			{"hash": hex.EncodeToString(hashed_addr1[:])},
+		},
+	}
+	sha256JSON, _ := json.Marshal(sha256Payload)
+	salt, hashes, err = parseHashListJSON(sha256JSON)
+	if err != nil {
+		t.Fatalf("failed to parse JSON with Sha256 hashing_scheme: %v", err)
+	}
+	if string(salt) != "test-salt" {
+		t.Errorf("expected salt 'test-salt', got '%s'", string(salt))
+	}
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(hashes))
+	}
+
+	// Test with unknown hashing_scheme (should parse but log warning - we can't easily verify log in test)
+	unknownSchemePayload := map[string]interface{}{
+		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"hashing_scheme": "Unknown",
+		"address_hashes": []map[string]interface{}{
+			{"hash": hex.EncodeToString(hashed_addr1[:])},
+		},
+	}
+	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
+	_, hashes, err = parseHashListJSON(unknownSchemeJSON)
+	if err != nil {
+		t.Fatalf("failed to parse JSON with unknown hashing_scheme: %v", err)
+	}
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(hashes))
+	}
+
+	// Test without hashing_scheme field (backward compatible)
+	noSchemePayload := map[string]interface{}{
+		"salt": hex.EncodeToString([]byte("test-salt")),
+		"address_hashes": []map[string]interface{}{
+			{"hash": hex.EncodeToString(hashed_addr1[:])},
+		},
+	}
+	noSchemeJSON, _ := json.Marshal(noSchemePayload)
+	_, hashes, err = parseHashListJSON(noSchemeJSON)
+	if err != nil {
+		t.Fatalf("failed to parse JSON without hashing_scheme: %v", err)
+	}
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(hashes))
+	}
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -258,6 +311,7 @@ func TestConfig_Validate(t *testing.T) {
 			ObjectKey: "hashlists/current.json",
 		},
 		PollInterval: 5 * time.Minute,
+		CacheSize:    10000,
 	}
 	if err := validConfig.Validate(); err != nil {
 		t.Errorf("valid config should pass validation: %v", err)
@@ -269,10 +323,59 @@ func TestConfig_Validate(t *testing.T) {
 	if err := invalidPollConfig.Validate(); err == nil {
 		t.Error("config with zero poll interval should be invalid")
 	}
+
+	// Test invalid cache size (zero)
+	invalidCacheConfig := validConfig
+	invalidCacheConfig.PollInterval = 5 * time.Minute
+	invalidCacheConfig.CacheSize = 0
+	if err := invalidCacheConfig.Validate(); err == nil {
+		t.Error("config with zero cache size should be invalid")
+	}
+
+	// Test invalid cache size (negative)
+	invalidCacheConfig.CacheSize = -1
+	if err := invalidCacheConfig.Validate(); err == nil {
+		t.Error("config with negative cache size should be invalid")
+	}
+}
+
+func TestHashStore_CustomCacheSize(t *testing.T) {
+	// Test creating store with custom cache size
+	store := NewHashStore(500)
+
+	// Create test data
+	salt := []byte("test-salt")
+	addresses := []common.Address{
+		common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		common.HexToAddress("0x2222222222222222222222222222222222222222"),
+	}
+
+	// Pre-compute hashes
+	hashes := make([]common.Hash, 0, len(addresses))
+	for _, addr := range addresses {
+		hash := sha256.Sum256(append(salt, addr.Bytes()...))
+		hashes = append(hashes, hash)
+	}
+
+	// Store the hashes
+	store.Store(salt, hashes, "test-etag")
+
+	// Verify store works correctly with custom size
+	if !store.IsRestricted(addresses[0]) {
+		t.Error("address should be restricted")
+	}
+	if !store.IsRestricted(addresses[1]) {
+		t.Error("address should be restricted")
+	}
+
+	nonRestrictedAddr := common.HexToAddress("0x3333333333333333333333333333333333333333")
+	if store.IsRestricted(nonRestrictedAddr) {
+		t.Error("address should not be restricted")
+	}
 }
 
 func TestHashStore_LoadedAt(t *testing.T) {
-	store := NewHashStore()
+	store := NewHashStore(100)
 
 	// Empty store should have zero time
 	if !store.LoadedAt().IsZero() {
@@ -281,7 +384,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 
 	// After load, should have current time
 	before := time.Now()
-	store.Load([]byte("salt"), nil, "etag")
+	store.Store([]byte("salt"), nil, "etag")
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()

@@ -11,9 +11,9 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -309,7 +309,7 @@ func (con ArbOwner) SetBrotliCompressionLevel(c ctx, evm mech, level uint64) err
 
 // Releases surplus funds from L1PricerFundsPoolAddress for use
 func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
-	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	balance := evm.StateDB.GetBalance(types.L1PricerFundsPoolAddress)
 	l1p := c.State.L1PricingState()
 	recognized, err := l1p.L1FeesAvailable()
 	if err != nil {
@@ -529,7 +529,8 @@ func (con ArbOwner) SetGasPricingConstraints(c ctx, evm mech, constraints [][3]u
 		return fmt.Errorf("failed to clear existing constraints: %w", err)
 	}
 
-	if c.State.ArbOSVersion() >= params.ArbosVersion_MultiConstraintFix {
+	arbosVersion := c.State.ArbOSVersion()
+	if arbosVersion >= params.ArbosVersion_MultiConstraintFix && arbosVersion < params.ArbosVersion_MultiGasConstraintsVersion {
 		limit := l2pricing.GasConstraintsMaxNum
 		if len(constraints) > limit {
 			return fmt.Errorf("too many constraints. Max: %d", limit)
@@ -559,11 +560,6 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
-	limit := l2pricing.MultiGasConstraintsMaxNum
-	if len(constraints) > limit {
-		return fmt.Errorf("too many constraints. Max: %d", limit)
-	}
-
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
@@ -606,6 +602,11 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	return nil
 }
 
-func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint16) error {
-	return errors.New("SetMaxStylusContractFragments is not implemented yet")
+func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint8) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.MaxFragmentCount = maxFragments
+	return params.Save()
 }

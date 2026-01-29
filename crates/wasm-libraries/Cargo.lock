@@ -53,6 +53,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbkeccak"
+version = "0.1.0"
+dependencies = [
+ "caller-env",
+]
+
+[[package]]
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
@@ -184,6 +191,7 @@ dependencies = [
  "brotli",
  "rand",
  "rand_pcg",
+ "tiny-keccak",
 ]
 
 [[package]]
@@ -902,6 +910,7 @@ dependencies = [
  "enum-iterator 2.3.0",
  "eyre",
  "fnv",
+ "forward",
  "hex",
  "lazy_static",
  "libc",
@@ -921,6 +930,7 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "structopt",
+ "validation",
  "wasmer-types",
  "wasmparser",
  "wat",
@@ -1446,6 +1456,17 @@ name = "uuid"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+
+[[package]]
+name = "validation"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "brotli",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
 
 [[package]]
 name = "vec_map"

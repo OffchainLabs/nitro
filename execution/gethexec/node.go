@@ -270,7 +270,7 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	addressFilterService     *addressfilter.Service
+	addressFilterService     *addressfilter.FilterService
 }
 
 func CreateExecutionNode(
@@ -365,7 +365,7 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	addressFilterService, err := addressfilter.NewService(ctx, &config.AddressFilter)
+	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
@@ -481,13 +481,6 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if n.addressFilterService != nil {
 		if err = n.addressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing restricted addr service: %w", err)
-		}
-
-		hashStore := n.addressFilterService.GetHashStore()
-		if hashStore != nil {
-			addressChecker := addressfilter.NewDefaultHashedAddressChecker(hashStore)
-			addressChecker.Start(ctx)
-			n.ExecEngine.SetAddressChecker(addressChecker)
 		}
 	}
 
