@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, arbkeccak, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
+    arbcompress, arbcrypto, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
 };
 use arbutil::{Bytes32, PreimageType};
@@ -76,8 +76,9 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
         },
-        "arbkeccak" => {
-            "keccak256" => func!(arbkeccak::keccak256),
+        "arbcrypto" => {
+            "ecrecovery" => func!(arbcrypto::ecrecovery),
+            "keccak256" => func!(arbcrypto::keccak256),
         },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
