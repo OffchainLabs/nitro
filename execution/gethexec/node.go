@@ -119,26 +119,27 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig    `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig        `koanf:"forwarder"`
-	ForwardingTarget            string                 `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string               `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig          `koanf:"caching"`
-	RPC                         arbitrum.Config        `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig        `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                   `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig      `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig     `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                 `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                 `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig      `koanf:"vmtrace"`
-	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
-	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
-	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
-	AddressFilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
+	ParentChainReader            headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                    SequencerConfig        `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase            BlockRecorderConfig    `koanf:"recording-database"`
+	TxPreChecker                 TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                    ForwarderConfig        `koanf:"forwarder"`
+	ForwardingTarget             string                 `koanf:"forwarding-target"`
+	SecondaryForwardingTarget    []string               `koanf:"secondary-forwarding-target"`
+	Caching                      CachingConfig          `koanf:"caching"`
+	RPC                          arbitrum.Config        `koanf:"rpc"`
+	TxIndexer                    TxIndexerConfig        `koanf:"tx-indexer"`
+	EnablePrefetchBlock          bool                   `koanf:"enable-prefetch-block"`
+	SyncMonitor                  SyncMonitorConfig      `koanf:"sync-monitor"`
+	StylusTarget                 StylusTargetConfig     `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize    uint64                 `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit  uint64                 `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                      LiveTracingConfig      `koanf:"vmtrace"`
+	ExposeMultiGas               bool                   `koanf:"expose-multi-gas"`
+	RPCServer                    rpcserver.Config       `koanf:"rpc-server"`
+	ConsensusRPCClient           rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
+	AddressFilter                addressfilter.Config   `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient rpcclient.ClientConfig `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -197,6 +198,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &ConfigDefault.TransactionFiltererRPCClient)
 }
 
 type LiveTracingConfig struct {
@@ -243,8 +245,15 @@ var ConfigDefault = Config{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-
 	AddressFilter: addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient: rpcclient.ClientConfig{
+		URL:                       "",
+		JWTSecret:                 "",
+		Retries:                   3,
+		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+		ArgLogLimit:               2048,
+		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	},
 }
 
 type ConfigFetcher interface {
