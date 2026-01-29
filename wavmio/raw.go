@@ -30,3 +30,6 @@ func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output 
 
 //go:wasmimport wavmio validateCertificate
 func validateCertificate(ty uint32, hash unsafe.Pointer) uint32
+
+//go:wasmimport hooks beforeFirstIO
+func beforeFirstIO()

@@ -1,0 +1,2 @@
+### Added
+ - Added a new hook to `replay.wasm` to enable an action just before the first IO (wavmio) instruction. It is expected that every `wasm` execution environment will provide a module `hooks` with a method `beforeFirstIO`. JIT and Arbitrator provers have noop implementations.

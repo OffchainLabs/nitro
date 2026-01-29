@@ -79,6 +79,9 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
         "arbkeccak" => {
             "keccak256" => func!(arbkeccak::keccak256),
         },
+        "hooks" => {
+            "beforeFirstIO" => func!(|_: WasmEnvMut|{}),
+        },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
             "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),

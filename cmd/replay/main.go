@@ -277,7 +277,7 @@ func populateEcdsaCaches() {
 }
 
 func main() {
-	wavmio.StubInit()
+	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(
@@ -290,6 +290,7 @@ func main() {
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
+	wavmio.OnReady()
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	var lastBlockHeader *types.Header
@@ -449,5 +450,5 @@ func main() {
 	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
-	wavmio.StubFinal()
+	wavmio.OnFinal()
 }
