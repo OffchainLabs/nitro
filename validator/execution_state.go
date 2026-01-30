@@ -15,10 +15,12 @@ import (
 )
 
 type GoGlobalState struct {
-	BlockHash  common.Hash
-	SendRoot   common.Hash
-	Batch      uint64
-	PosInBatch uint64
+	BlockHash    common.Hash
+	SendRoot     common.Hash
+	MELStateHash common.Hash
+	MELMsgHash   common.Hash
+	Batch        uint64
+	PosInBatch   uint64
 }
 
 func (g GoGlobalState) String() string {

@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -336,7 +337,14 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if currentState.MsgCount >= toValidateMsgExtractionCount {
 		return nil, 0, nil
 	}
+	initialState := currentState.Clone()
+	encodedInitialState, err := rlp.EncodeToBytes(initialState)
+	if err != nil {
+		return nil, 0, err
+	}
 	preimages := make(daprovider.PreimagesMap)
+	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	preimages[arbutil.Keccak256PreimageType][initialState.Hash()] = encodedInitialState
 	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
 	if err != nil {
 		return nil, 0, err
@@ -354,6 +362,11 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err != nil {
 			return nil, 0, err
 		}
+		encodedHeader, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			return nil, 0, err
+		}
+		preimages[arbutil.Keccak256PreimageType][header.Hash()] = encodedHeader
 		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
 			return nil, 0, err
@@ -381,17 +394,24 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		}
 		currentState = endState
 	}
-	endGs := validator.GoGlobalState{
-		// After MEL fields get added to GlobalState
-		// MELStateHash:  state.Hash(),
-		// PositionInMEL: preState.MsgCount - 1,
-	}
 	return &validationEntry{
-		Start:                   mv.latestValidatedGS,
-		End:                     endGs,
-		Preimages:               preimages,
+		Preimages: preimages,
+		Start: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: initialState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   initialState.MsgCount,
+		},
+		End: validator.GoGlobalState{
+			BlockHash:    common.Hash{},
+			MELStateHash: endState.Hash(),
+			MELMsgHash:   common.Hash{},
+			Batch:        0,
+			PosInBatch:   0,
+		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
-	}, endState.ParentChainBlockNumber, nil
+	}, 0, nil
 }
 
 func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validationEntry) (*validationDoneEntry, error) {

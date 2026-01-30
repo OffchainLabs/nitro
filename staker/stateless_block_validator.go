@@ -159,15 +159,16 @@ func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.Va
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	res := validator.ValidationInput{
-		Id:            uint64(e.Pos),
-		HasDelayedMsg: e.HasDelayedMsg,
-		DelayedMsgNr:  e.DelayedMsgNr,
-		Preimages:     e.Preimages,
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
-		BatchInfo:     e.BatchInfo,
-		DelayedMsg:    e.DelayedMsg,
-		StartState:    e.Start,
-		DebugChain:    e.ChainConfig.DebugMode(),
+		Id:                      uint64(e.Pos),
+		HasDelayedMsg:           e.HasDelayedMsg,
+		DelayedMsgNr:            e.DelayedMsgNr,
+		Preimages:               e.Preimages,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte, len(e.UserWasms)),
+		BatchInfo:               e.BatchInfo,
+		DelayedMsg:              e.DelayedMsg,
+		StartState:              e.Start,
+		DebugChain:              e.ChainConfig.DebugMode(),
+		EndParentChainBlockHash: e.EndParentChainBlockHash,
 	}
 	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
 		return nil, fmt.Errorf("stylus support is required")

@@ -53,6 +53,12 @@ func GlobalStateToC(gsIn validator.GoGlobalState) C.GlobalState {
 	for i, b := range gsIn.SendRoot {
 		gs.bytes32_vals[1].bytes[i] = C.uint8_t(b)
 	}
+	for i, b := range gsIn.MELStateHash {
+		gs.bytes32_vals[2].bytes[i] = C.uint8_t(b)
+	}
+	for i, b := range gsIn.MELMsgHash {
+		gs.bytes32_vals[3].bytes[i] = C.uint8_t(b)
+	}
 	return gs
 }
 
@@ -65,11 +71,21 @@ func GlobalStateFromC(gs C.GlobalState) validator.GoGlobalState {
 	for i := range sendRoot {
 		sendRoot[i] = byte(gs.bytes32_vals[1].bytes[i])
 	}
+	var melStateHash common.Hash
+	for i := range melStateHash {
+		melStateHash[i] = byte(gs.bytes32_vals[2].bytes[i])
+	}
+	var melMsgHash common.Hash
+	for i := range melMsgHash {
+		melMsgHash[i] = byte(gs.bytes32_vals[3].bytes[i])
+	}
 	return validator.GoGlobalState{
-		Batch:      uint64(gs.u64_vals[0]),
-		PosInBatch: uint64(gs.u64_vals[1]),
-		BlockHash:  blockHash,
-		SendRoot:   sendRoot,
+		Batch:        uint64(gs.u64_vals[0]),
+		PosInBatch:   uint64(gs.u64_vals[1]),
+		BlockHash:    blockHash,
+		SendRoot:     sendRoot,
+		MELStateHash: melStateHash,
+		MELMsgHash:   melMsgHash,
 	}
 }
 
