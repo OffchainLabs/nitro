@@ -1,11 +1,20 @@
 [package]
 name = "user-host-trait"
 version = "0.1.0"
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "lib.rs"
 
 [dependencies]
-arbutil = { path = "../../arbutil/" }
-caller-env = { path = "../../caller-env/" }
-prover = { path = "../../prover/", default-features = false }
-eyre = "0.6.5"
-ruint2 = "1.9.0"
+arbutil = { workspace = true }
+caller-env = { workspace = true }
+eyre = { workspace = true }
+prover = { workspace = true }
+ruint2 = { workspace = true }

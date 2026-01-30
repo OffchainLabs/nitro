@@ -52,7 +52,7 @@ criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true }
 
 [build-dependencies]
-forward = { path = "../wasm-libraries/forward" }
+forward = { workspace = true }
 
 [[bench]]
 name = "merkle_bench"

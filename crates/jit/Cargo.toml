@@ -12,7 +12,7 @@ rust-version.workspace = true
 [dependencies]
 arbutil = { workspace = true }
 brotli = { workspace = true, features = ["wasmer_traits"] }
-caller-env = { workspace = true, features = ["wasmer_traits"] }
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
 clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
