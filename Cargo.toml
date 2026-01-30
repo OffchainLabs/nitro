@@ -19,6 +19,10 @@ members = [
     "crates/wasm-libraries/user-test",
     "crates/wasm-libraries/wasi-stub",
 ]
+default-members = [
+    "crates/jit",
+    "crates/prover",
+]
 exclude = [
     "crates/langs",
     "crates/stylus/tests",
