@@ -20,7 +20,7 @@ pub mod wasmer_traits;
 #[cfg(feature = "brotli")]
 pub mod brotli;
 
-pub mod arbkeccak;
+pub mod arbcrypto;
 
 mod guest_ptr;
 pub mod wasip1_stub;
