@@ -18,6 +18,7 @@ import (
 const (
 	eventSelectorSize = 4
 	abiAddressOffset  = 12 // address is right-aligned in 32-byte ABI word
+	logTopicCount     = 3  // topics[0] is event signature, topics[1..3] are indexed params
 )
 
 // BypassRule defines when to skip filtering entirely for an event.
@@ -99,37 +100,33 @@ func (e *EventRule) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func EventRulesFromJSON(data []byte) ([]EventRule, error) {
+	var rulesRaw struct {
+		Rules []EventRule `json:"rules"`
+	}
+	if err := json.Unmarshal(data, &rulesRaw); err != nil {
+		return nil, fmt.Errorf("parsing rules: %w", err)
+	}
+	return rulesRaw.Rules, nil
+}
+
+func EventRulesFromFile(path string) ([]EventRule, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config file: %w", err)
+	}
+	return EventRulesFromJSON(data)
+}
+
 func (e *EventRule) Validate() error {
 	if e.Selector == ([eventSelectorSize]byte{}) {
 		return fmt.Errorf("selector cannot be zero")
 	}
 
-	// Parse and canonicalise event signature
-	parsed, err := abi.ParseSelector(e.Event)
+	computed, canonical, err := CanonicalSelectorFromEvent(e.Event)
 	if err != nil {
-		return fmt.Errorf("invalid event %q: %w", e.Event, err)
+		return err
 	}
-
-	// Canonicalise argument list
-	args := make([]string, len(parsed.Inputs))
-	for i, in := range parsed.Inputs {
-		typ, err := abi.NewType(in.Type, "", nil)
-		if err != nil {
-			return fmt.Errorf("invalid type %q in event %q: %w", in.Type, e.Event, err)
-		}
-		args[i] = typ.String()
-	}
-
-	canonical := fmt.Sprintf(
-		"%s(%s)",
-		parsed.Name,
-		strings.Join(args, ","),
-	)
-
-	// Compute selector from canonical form
-	hash := crypto.Keccak256([]byte(canonical))
-	var computed [eventSelectorSize]byte
-	copy(computed[:], hash[:eventSelectorSize])
 
 	if e.Selector != computed {
 		return fmt.Errorf(
@@ -141,14 +138,13 @@ func (e *EventRule) Validate() error {
 	}
 
 	for i, idx := range e.TopicAddresses {
-		// Only indexed address params in topics 1–3 are supported
-		if idx <= 0 || idx > 3 {
+		if idx <= 0 || idx > logTopicCount {
 			return fmt.Errorf("topicAddresses[%d] out of range, got %d", i, idx)
 		}
 	}
 
-	if e.Bypass != nil && (e.Bypass.TopicIndex <= 0 || e.Bypass.TopicIndex > 3) {
-		return fmt.Errorf("bypass.topicIndex must be 1-3, got %d", e.Bypass.TopicIndex)
+	if e.Bypass != nil && (e.Bypass.TopicIndex <= 0 || e.Bypass.TopicIndex > logTopicCount) {
+		return fmt.Errorf("bypass.topicIndex must be 1-%d, got %d", logTopicCount, e.Bypass.TopicIndex)
 	}
 
 	return nil
@@ -183,37 +179,15 @@ func NewEventFilter(rules []EventRule) (*EventFilter, error) {
 	return &EventFilter{rules: m}, nil
 }
 
-func NewEventFilterFromJSON(data []byte) (*EventFilter, error) {
-	var config struct {
-		Rules []EventRule `json:"rules"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
-	}
-	return NewEventFilter(config.Rules)
-}
-
-func NewEventFilterFromFile(path string) (*EventFilter, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
-	}
-	return NewEventFilterFromJSON(data)
-}
-
 func NewEventFilterFromConfig(cfg EventFilterConfig) (*EventFilter, error) {
 	var rules []EventRule
 
 	if cfg.Path != "" {
-		filter, err := NewEventFilterFromFile(cfg.Path)
+		rulesFromFile, err := EventRulesFromFile(cfg.Path)
 		if err != nil {
 			return nil, err
 		}
-		if filter != nil {
-			for _, r := range filter.rules {
-				rules = append(rules, r)
-			}
-		}
+		rules = append(rules, rulesFromFile...)
 	}
 
 	if len(cfg.Rules) != 0 {
@@ -231,8 +205,8 @@ func (f *EventFilter) HasRules() bool {
 	return len(f.rules) > 0
 }
 
-// ExtractAddresses returns all addresses referenced by this event rule verbatim.
-func (f *EventFilter) ExtractAddresses(topics []common.Hash, _data []byte, _emitter common.Address, _sender common.Address) []common.Address {
+// AddressesForFiltering returns all addresses referenced by this event rule verbatim.
+func (f *EventFilter) AddressesForFiltering(topics []common.Hash, _data []byte, _emitter common.Address, _sender common.Address) []common.Address {
 	if len(topics) == 0 {
 		return []common.Address{}
 	}
@@ -275,10 +249,31 @@ func (f *EventFilter) ExtractAddresses(topics []common.Hash, _data []byte, _emit
 	return out
 }
 
-// Helper function to compute selector from event signature, used for test purposes only.
-func Selector4(sig string) [eventSelectorSize]byte {
-	hash := crypto.Keccak256([]byte(sig))
-	var out [eventSelectorSize]byte
-	copy(out[:], hash[:eventSelectorSize])
-	return out
+// CanonicalSelectorFromEvent parses an event signature, canonicalises its ABI types, and returns the selector and canonical form.
+func CanonicalSelectorFromEvent(event string) (selector [eventSelectorSize]byte, canonical string, err error) {
+	parsed, err := abi.ParseSelector(event)
+	if err != nil {
+		return selector, "", fmt.Errorf("invalid event %q: %w", event, err)
+	}
+
+	args := make([]string, len(parsed.Inputs))
+	for i, in := range parsed.Inputs {
+		var typ abi.Type
+		typ, err = abi.NewType(in.Type, "", nil)
+		if err != nil {
+			return selector, "", fmt.Errorf("invalid type %q in event %q: %w", in.Type, event, err)
+		}
+		args[i] = typ.String()
+	}
+
+	canonical = fmt.Sprintf(
+		"%s(%s)",
+		parsed.Name,
+		strings.Join(args, ","),
+	)
+
+	hash := crypto.Keccak256([]byte(canonical))
+	copy(selector[:], hash[:eventSelectorSize])
+
+	return selector, canonical, nil
 }

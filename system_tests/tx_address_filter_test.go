@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbos/eventfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/txfilter"
 )
@@ -329,23 +329,34 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Configure event filter rules
-	rules := []eventfilter.EventRule{
+	specs := []struct {
+		event          string
+		topicAddresses []int
+	}{
 		{
-			Event:          "Transfer(address,address,uint256)",
-			Selector:       eventfilter.Selector4("Transfer(address,address,uint256)"),
-			TopicAddresses: []int{1, 2},
+			event:          "Transfer(address,address,uint256)",
+			topicAddresses: []int{1, 2},
 		},
 		{
-			Event:          "TransferSingle(address,address,address,uint256,uint256)",
-			Selector:       eventfilter.Selector4("TransferSingle(address,address,address,uint256,uint256)"),
-			TopicAddresses: []int{2, 3},
+			event:          "TransferSingle(address,address,address,uint256,uint256)",
+			topicAddresses: []int{2, 3},
 		},
 		{
-			Event:          "TransferBatch(address,address,address,uint256[],uint256[])",
-			Selector:       eventfilter.Selector4("TransferBatch(address,address,address,uint256[],uint256[])"),
-			TopicAddresses: []int{2, 3},
+			event:          "TransferBatch(address,address,address,uint256[],uint256[])",
+			topicAddresses: []int{2, 3},
 		},
+	}
+
+	rules := make([]eventfilter.EventRule, 0, len(specs))
+	for _, s := range specs {
+		selector, _, err := eventfilter.CanonicalSelectorFromEvent(s.event)
+		Require(t, err)
+
+		rules = append(rules, eventfilter.EventRule{
+			Event:          s.event,
+			Selector:       selector,
+			TopicAddresses: s.topicAddresses,
+		})
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithEventFilterRules(rules)

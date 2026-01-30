@@ -34,10 +34,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/eventfilter"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -778,7 +778,7 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, addr := range s.eventFilter.ExtractAddresses(l.Topics, l.Data, l.Address, sender) {
+			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
 				statedb.TouchAddress(addr)
 			}
 		}

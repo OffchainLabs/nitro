@@ -102,7 +102,11 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter, err := NewEventFilterFromJSON([]byte(tt.json))
+			rules, err := EventRulesFromJSON([]byte(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error parsing JSON: %v", err)
+			}
+			filter, err := NewEventFilter(rules)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -120,11 +124,14 @@ func TestValidateEventRulesFromJSON(t *testing.T) {
 
 func TestExtractAddresses_EdgeCases(t *testing.T) {
 	event := "Transfer(address,address,uint256)"
-	sel := Selector4(event)
+	selector, _, err := CanonicalSelectorFromEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	rule := EventRule{
 		Event:          event,
-		Selector:       sel,
+		Selector:       selector,
 		TopicAddresses: []int{1, 2},
 		Bypass:         &BypassRule{TopicIndex: 2, Equals: common.Address{}},
 	}
@@ -184,7 +191,7 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.ExtractAddresses(tt.topics, tt.data, common.Address{}, common.Address{})
+			result := filter.AddressesForFiltering(tt.topics, tt.data, common.Address{}, common.Address{})
 			if len(result) != tt.expected {
 				t.Errorf("expected %d addresses, got %d", tt.expected, len(result))
 			}
@@ -216,7 +223,11 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 		]
 	}`
 
-	filter, err := NewEventFilterFromJSON([]byte(rulesJSON))
+	rules, err := EventRulesFromJSON([]byte(rulesJSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing JSON: %v", err)
+	}
+	filter, err := NewEventFilter(rules)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +298,7 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.ExtractAddresses(tt.topics, nil, common.Address{}, common.Address{})
+			result := filter.AddressesForFiltering(tt.topics, nil, common.Address{}, common.Address{})
 
 			if len(result) != len(tt.wantAddrs) {
 				t.Errorf("expected %d addresses, got %d", len(tt.wantAddrs), len(result))
