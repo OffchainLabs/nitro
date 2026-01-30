@@ -82,7 +82,7 @@ func mainImpl() error {
 	})
 	genesisArbOSInit := gen.ArbOSInit
 
-	serializedChainConfig := gen.SerializedConfig
+	serializedChainConfig := gen.SerializedChainConfig
 	if serializedChainConfig == "" {
 		log.Warn("Serialized chain config was not set (`serializedConfig`) - using the `config` field serialization from the genesis file")
 		configSerializationBytes, err := extractSerializedChainConfigFromJSON(genesisJson)
