@@ -1,18 +1,24 @@
 [package]
 name = "user-test"
 version = "0.1.0"
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-arbutil = { path = "../../arbutil/" }
-caller-env = { path = "../../caller-env/", features = ["static_caller"] }
-prover = { path = "../../prover/", default-features = false }
-user-host-trait = { path = "../user-host-trait" }
-eyre = "0.6.5"
-fnv = "1.0.7"
-hex = "0.4.3"
-lazy_static = "1.4.0"
-parking_lot = "0.12.1"
+arbutil = { workspace = true }
+caller-env = { workspace = true, features = ["static_caller"] }
+eyre = { workspace = true }
+fnv = { workspace = true }
+hex = { workspace = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+prover = { workspace = true }
+user-host-trait = { workspace = true }

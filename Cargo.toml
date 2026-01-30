@@ -12,12 +12,17 @@ members = [
     "crates/wasm-libraries/arbcompress",
     "crates/wasm-libraries/arbcrypto",
     "crates/wasm-libraries/forward",
+    "crates/wasm-libraries/host-io",
+    "crates/wasm-libraries/program-exec",
+    "crates/wasm-libraries/user-host",
+    "crates/wasm-libraries/user-host-trait",
+    "crates/wasm-libraries/user-test",
+    "crates/wasm-libraries/wasi-stub",
 ]
 exclude = [
     "crates/langs",
     "crates/stylus/tests",
     "crates/tools",
-    "crates/wasm-libraries",
     "crates/wasm-testsuite",
 ]
 resolver = "2"
@@ -82,10 +87,11 @@ tracing = { version = "0.1.44" }
 tracing-subscriber = { version = "0.3.22" }
 wasmparser = { version = "0.121" }
 wat = { version = "1.0.56" }
+wee_alloc = { version = "0.4.5" }
 
 arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
-caller-env = { path = "crates/caller-env" }
+caller-env = { path = "crates/caller-env", default-features = false }
 forward = { path = "crates/wasm-libraries/forward" }
 jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
