@@ -9,7 +9,8 @@ members = [
     "crates/prover",
     "crates/stylus",
     "crates/validator",
-    "crates/wasm-libraries/arbcompress"
+    "crates/wasm-libraries/arbcompress",
+    "crates/wasm-libraries/arbcrypto",
 ]
 exclude = [
     "crates/langs",

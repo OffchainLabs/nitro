@@ -1,6 +1,5 @@
 [workspace]
 members = [
-	"arbcrypto",
 	"forward",
 	"host-io",
 	"program-exec",

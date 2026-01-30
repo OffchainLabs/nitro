@@ -464,7 +464,7 @@ $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli)
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
 	install crates/wasm-libraries/$(wasm32_wasi)/arbcrypto.wasm $@
 	./scripts/remove_reference_types.sh $@
 

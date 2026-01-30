@@ -44,13 +44,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbcrypto"
-version = "0.1.0"
-dependencies = [
- "caller-env",
-]
-
-[[package]]
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
