@@ -495,7 +495,7 @@ $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wa
 
 $(output_latest)/unified_machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(unified_replay_wasm)
 	$(prover_bin) $(unified_replay_wasm) --generate-binaries $(output_latest) --until-hostio-bin-filename="unified-until-host-io-state.bin" --brotli-wavm-machine-filename="unified_machine.wavm.br" --module-root-filename="unified-module-root.txt" \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
