@@ -80,7 +80,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 		if waiting && len(hashes) == len(expectedHashes) {
 			match := true
 			for _, h := range hashes {
@@ -96,7 +96,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 		<-time.After(100 * time.Millisecond)
 	}
 	// Get current state for error message
-	hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+	hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	t.Fatalf("timeout waiting for delayed sequencer to halt on expected hashes: expected=%v, got=%v, waiting=%v", expectedHashes, hashes, waiting)
 }
 
@@ -108,7 +108,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+		_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 		if !waiting {
 			return
 		}
@@ -543,7 +543,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	<-time.After(time.Second)
 
 	// Verify sequencer is NOT halted
-	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be halted for non-filtered address")
 
 	// Verify balance DID change (message processed normally)

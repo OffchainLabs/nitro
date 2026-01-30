@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -361,8 +362,8 @@ func (d *DelayedSequencer) Start(ctxIn context.Context) {
 }
 
 // WaitingForFilteredTx returns the tx hashes being waited on, or nil and false if not halted.
-// This is primarily for testing the halt-and-wait behavior.
-func (d *DelayedSequencer) WaitingForFilteredTx() ([]common.Hash, bool) {
+// Takes a testing.T to prevent production code from calling this test-only function.
+func (d *DelayedSequencer) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bool) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 	if d.waitingForFilteredTx == nil {
