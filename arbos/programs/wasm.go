@@ -128,13 +128,11 @@ func ProgramPrepare(
 	wasmPtr unsafe.Pointer,
 	wasmSize uint64,
 	moduleHashPtr unsafe.Pointer,
-	addressForLoggingPtr unsafe.Pointer,
 	codehashPtr unsafe.Pointer,
 	maxWasmSize uint32,
 	pagelimit uint32,
-	time uint64,
 	debugMode uint32,
-	programPtr unsafe.Pointer,
+	stylusVersion uint32,
 	runCtxPtr unsafe.Pointer,
 )
 
@@ -175,13 +173,11 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			unsafe.Pointer(&wasm),
 			wasmSize,
 			unsafe.Pointer(&moduleHash),
-			unsafe.Pointer(&addressForLogging),
 			unsafe.Pointer(&codehash),
 			params.MaxWasmSize,
 			uint32(params.PageLimit),
-			time,
 			debugInt,
-			unsafe.Pointer(&program),
+			uint32(params.Version),
 			unsafe.Pointer(runCtx),
 		)
 	}

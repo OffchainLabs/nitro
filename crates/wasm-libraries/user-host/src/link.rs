@@ -150,13 +150,11 @@ pub unsafe extern "C" fn programs__program_prepare(
     _wasm_ptr: GuestPtr,
     _wasm_size: u64,
     _module_hash_ptr: GuestPtr,
-    _address_for_logging_ptr: GuestPtr,
     _code_hash_ptr: GuestPtr,
     _max_wasm_size: u32,
     _page_limit: u32,
-    _time: u64,
     _debug_mode: u32,
-    _program_ptr: GuestPtr,
+    _stylus_version: u32,
     _run_ctx_ptr: GuestPtr,
 ) {
 }
