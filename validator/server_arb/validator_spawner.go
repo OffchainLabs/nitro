@@ -51,6 +51,7 @@ func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
+	ArbitratorMachineConfigAddOptions(prefix+".machine-config", f)
 	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
