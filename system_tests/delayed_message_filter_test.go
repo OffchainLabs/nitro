@@ -147,7 +147,7 @@ func setTransactionFiltererService(t *testing.T, ctx context.Context, builder *N
 	err = transactionFiltererRPCClient.Start(ctx)
 	require.NoError(t, err)
 
-	builder.L2.ExecNode.ExecEngine.SetTransactionFiltererRPCClient(transactionFiltererRPCClient)
+	builder.L2.ExecNode.ExecEngine.SetTransactionFiltererRPCClient(t, transactionFiltererRPCClient)
 
 	return transactionFiltererStack
 }
