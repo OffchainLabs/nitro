@@ -1,7 +1,7 @@
 [workspace]
 members = [
 	"arbcompress",
-	"arbkeccak",
+	"arbcrypto",
 	"forward",
 	"host-io",
 	"program-exec",
