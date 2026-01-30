@@ -152,6 +152,24 @@ func setTransactionFiltererService(t *testing.T, ctx context.Context, builder *N
 	return transactionFiltererStack
 }
 
+// addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
+func addTxHashToOnChainFilter(t *testing.T, ctx context.Context, builder *NodeBuilder, txHash common.Hash, filtererName string) {
+	t.Helper()
+
+	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
+
+	arbFilteredTxs, err := precompilesgen.NewArbFilteredTransactionsManager(
+		types.ArbFilteredTransactionsManagerAddress,
+		builder.L2.Client,
+	)
+	require.NoError(t, err)
+
+	tx, err := arbFilteredTxs.AddFilteredTransaction(&filtererTxOpts, txHash)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+}
+
 // setupFilteredTxTestBuilder creates a NodeBuilder configured for delayed message filtering tests.
 func setupFilteredTxTestBuilder(t *testing.T, ctx context.Context) *NodeBuilder {
 	t.Helper()
