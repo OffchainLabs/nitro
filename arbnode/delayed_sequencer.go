@@ -88,7 +88,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	RequireFullFinality:         false,
 	UseMergeFinality:            false,
 	RescanInterval:              time.Millisecond * 100,
-	FilteredTxFullRetryInterval: 30 * time.Second,
+	FilteredTxFullRetryInterval: 1 * time.Second,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {

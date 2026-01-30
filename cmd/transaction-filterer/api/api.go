@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -18,15 +19,20 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-const namespace = "transactionfilterer"
+const Namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
 	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
-	txOpts                         *bind.TransactOpts
+
+	txOptsMutex sync.Mutex // avoids concurrent transactions with the same nonce
+	txOpts      *bind.TransactOpts
 }
 
 // Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
+	t.txOptsMutex.Lock()
+	defer t.txOptsMutex.Unlock()
+
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
@@ -47,13 +53,13 @@ var DefaultStackConfig = node.Config{
 	AuthAddr:            node.DefaultAuthHost,
 	AuthPort:            node.DefaultAuthPort,
 	AuthVirtualHosts:    node.DefaultAuthVhosts,
-	HTTPModules:         []string{namespace},
+	HTTPModules:         []string{Namespace},
 	HTTPHost:            node.DefaultHTTPHost,
 	HTTPVirtualHosts:    []string{"localhost"},
 	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 	WSHost:              node.DefaultWSHost,
 	WSPort:              node.DefaultWSPort,
-	WSModules:           []string{namespace},
+	WSModules:           []string{Namespace},
 	GraphQLVirtualHosts: []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr:  "",
@@ -85,7 +91,7 @@ func NewStack(
 		txOpts:                         txOpts,
 	}
 	apis := []rpc.API{{
-		Namespace: namespace,
+		Namespace: Namespace,
 		Version:   "1.0",
 		Service:   api,
 		Public:    true,
