@@ -44,8 +44,8 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     ];
     let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
     let start_state = GlobalState {
-        bytes32_vals: bytes32_vals,
-        u64_vals: u64_vals,
+        bytes32_vals,
+        u64_vals,
     };
 
     for (arch, wasm) in data.user_wasms.iter() {
