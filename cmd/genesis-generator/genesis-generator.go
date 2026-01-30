@@ -81,6 +81,9 @@ func mainImpl() error {
 		Accounts: accounts,
 	})
 	genesisArbOSInit := gen.ArbOSInit
+	if genesisArbOSInit == nil {
+		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
+	}
 
 	serializedChainConfig := gen.SerializedChainConfig
 	if serializedChainConfig == "" {
