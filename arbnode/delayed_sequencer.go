@@ -276,6 +276,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 							LastFullRetry: now,
 						}
 					} else {
+						d.waitingForFilteredTx.TxHashes = filteredErr.TxHashes
 						d.waitingForFilteredTx.LastFullRetry = now
 					}
 					// Return nil to halt without propagating error up - will retry on next interval

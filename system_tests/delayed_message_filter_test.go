@@ -67,23 +67,37 @@ func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBu
 	<-time.After(time.Second * 2)
 }
 
-// waitForDelayedSequencerHalt waits until the delayed sequencer is halted on a filtered tx.
-// Returns the tx hashes being waited on.
-func waitForDelayedSequencerHalt(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) []common.Hash {
+// waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
+func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
 	t.Helper()
+	expectedSet := make(map[common.Hash]struct{}, len(expectedHashes))
+	for _, h := range expectedHashes {
+		expectedSet[h] = struct{}{}
+	}
+
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
 		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
-		if waiting {
-			return hashes
+		if waiting && len(hashes) == len(expectedHashes) {
+			match := true
+			for _, h := range hashes {
+				if _, ok := expectedSet[h]; !ok {
+					match = false
+					break
+				}
+			}
+			if match {
+				return
+			}
 		}
 		<-time.After(100 * time.Millisecond)
 	}
-	t.Fatal("timeout waiting for delayed sequencer to halt")
-	return nil
+	// Get current state for error message
+	hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx()
+	t.Fatalf("timeout waiting for delayed sequencer to halt on expected hashes: expected=%v, got=%v, waiting=%v", expectedHashes, hashes, waiting)
 }
 
 // waitForDelayedSequencerResume waits until the delayed sequencer is no longer halted.
@@ -174,9 +188,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Verify balance did NOT change (block not created)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -227,9 +239,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1)
-	require.Equal(t, txHash, haltedOnTxs[0])
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Verify balance did NOT change yet
 	midBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -336,9 +346,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on first tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash1, haltedOnTxs[0], "sequencer should be halted on the first (filtered) tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash1}, 10*time.Second)
 
 	// Verify ALL balances unchanged (all messages blocked)
 	filteredMid, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -448,9 +456,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on tx2 (the filtered one, which is NOT the first in the batch)
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, tx2.Hash(), haltedOnTxs[0], "sequencer should be halted on tx2 (the filtered tx)")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 10*time.Second)
 
 	// Verify ALL balances unchanged while halted (entire batch is blocked)
 	filteredMid, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -628,9 +634,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CALL tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -694,9 +698,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered STATICCALL tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -761,9 +763,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CREATE tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -826,9 +826,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered CREATE2 tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -889,9 +887,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	advanceAndWaitForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
-	haltedOnTxs := waitForDelayedSequencerHalt(t, ctx, builder, 10*time.Second)
-	require.Len(t, haltedOnTxs, 1, "should be halted on exactly one tx")
-	require.Equal(t, txHash, haltedOnTxs[0], "sequencer should be halted on the filtered SELFDESTRUCT tx")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Add tx hash to onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
@@ -903,4 +899,171 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "bypassed tx should have failed receipt status")
+}
+
+// TestDelayedMessageFilterTxHashesUpdateOnchainFilter verifies that TxHashes updates when one tx
+// from a batch gets added to the onchain filter.
+func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	// Configure short retry interval so we don't have to wait long
+	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("FilteredUser1")
+	builder.L2Info.GenerateAccount("FilteredUser2")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr1 := builder.L2Info.GetAddress("FilteredUser1")
+	filteredAddr2 := builder.L2Info.GetAddress("FilteredUser2")
+
+	// Grant Filterer the transaction filterer role
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Set up address filter to block both FilteredUser1 and FilteredUser2
+	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr1, filteredAddr2})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Create batch of 2 transactions within a single delayed message:
+	// tx1: Sender -> FilteredUser1 (filtered)
+	// tx2: Sender -> FilteredUser2 (filtered)
+	transferAmount := big.NewInt(1e15)
+	tx1 := builder.L2Info.PrepareTx("Sender", "FilteredUser1", builder.L2Info.TransferGas, transferAmount, nil)
+	tx2 := builder.L2Info.PrepareTx("Sender", "FilteredUser2", builder.L2Info.TransferGas, transferAmount, nil)
+
+	txBatch := types.Transactions{tx1, tx2}
+
+	// Send as a single batched delayed message
+	sendDelayedBatch(t, ctx, builder, txBatch)
+
+	// Advance L1 to trigger delayed message processing
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify sequencer is halted on both tx1 and tx2
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx1.Hash(), tx2.Hash()}, 10*time.Second)
+
+	// Add tx1 to onchain filter (but NOT tx2)
+	addTxHashToOnChainFilter(t, ctx, builder, tx1.Hash(), "Filterer")
+
+	// Wait for full retry to occur and verify TxHashes updated to only tx2
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 5*time.Second)
+
+	// Add tx2 to onchain filter
+	addTxHashToOnChainFilter(t, ctx, builder, tx2.Hash(), "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure delayed message is processed
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify both receipts exist and have failed status (executed as no-ops)
+	receipt1, err := builder.L2.Client.TransactionReceipt(ctx, tx1.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt1.Status, "tx1 should have failed receipt status")
+
+	receipt2, err := builder.L2.Client.TransactionReceipt(ctx, tx2.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt2.Status, "tx2 should have failed receipt status")
+}
+
+// TestDelayedMessageFilterTxHashesUpdateAddressSetChange verifies that TxHashes updates when
+// the filtered address set changes.
+func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	// Configure short retry interval so we don't have to wait long
+	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("User1")
+	builder.L2Info.GenerateAccount("User2")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	user1Addr := builder.L2Info.GetAddress("User1")
+	user2Addr := builder.L2Info.GetAddress("User2")
+
+	// Get initial balances
+	user1Initial, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
+	require.NoError(t, err)
+	user2Initial, err := builder.L2.Client.BalanceAt(ctx, user2Addr, nil)
+	require.NoError(t, err)
+
+	// Set up address filter to block both User1 and User2
+	filter := txfilter.NewStaticAsyncChecker([]common.Address{user1Addr, user2Addr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Create batch of 2 transactions within a single delayed message:
+	// tx1: Sender -> User1 (filtered)
+	// tx2: Sender -> User2 (filtered)
+	transferAmount := big.NewInt(1e15)
+	tx1 := builder.L2Info.PrepareTx("Sender", "User1", builder.L2Info.TransferGas, transferAmount, nil)
+	tx2 := builder.L2Info.PrepareTx("Sender", "User2", builder.L2Info.TransferGas, transferAmount, nil)
+
+	txBatch := types.Transactions{tx1, tx2}
+
+	// Send as a single batched delayed message
+	sendDelayedBatch(t, ctx, builder, txBatch)
+
+	// Advance L1 to trigger delayed message processing
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify sequencer is halted on both tx1 and tx2
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx1.Hash(), tx2.Hash()}, 10*time.Second)
+
+	// Change the address filter to only filter User2 (remove User1 from filter)
+	newFilter := txfilter.NewStaticAsyncChecker([]common.Address{user2Addr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(newFilter)
+
+	// Wait for full retry to occur and verify TxHashes updated to only tx2
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 5*time.Second)
+
+	// Change the address filter to filter neither (remove User2 from filter)
+	noFilter := txfilter.NewStaticAsyncChecker([]common.Address{})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(noFilter)
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure delayed message is processed
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify tx1 succeeded (User1 received funds - no longer filtered)
+	user1Final, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(user1Initial, transferAmount), user1Final,
+		"User1 should receive funds - no longer filtered")
+
+	// Verify tx2 also succeeded (User2 received funds - no longer filtered)
+	user2Final, err := builder.L2.Client.BalanceAt(ctx, user2Addr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(user2Initial, transferAmount), user2Final,
+		"User2 should receive funds - no longer filtered")
+
+	// Verify both receipts exist and have success status
+	receipt1, err := builder.L2.Client.TransactionReceipt(ctx, tx1.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt1.Status, "tx1 should have success status")
+
+	receipt2, err := builder.L2.Client.TransactionReceipt(ctx, tx2.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt2.Status, "tx2 should have success status")
 }
