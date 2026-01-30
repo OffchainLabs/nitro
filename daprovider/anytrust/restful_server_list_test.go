@@ -5,6 +5,7 @@ package anytrust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -265,7 +266,7 @@ func TestRestfulServerURLsFromListWithWait_ContextCancellation(t *testing.T) {
 	if urls != nil {
 		t.Fatal("Expected nil URLs on context cancellation")
 	}
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Expected context.Canceled, got: %v", err)
 	}
 
