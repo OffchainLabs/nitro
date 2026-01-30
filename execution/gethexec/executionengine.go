@@ -857,9 +857,17 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		if len(filteringHooks.FilteredTxHashes) > 0 {
 			transactionFiltererRPCClient := s.transactionFiltererRPCClient.Load()
 			if transactionFiltererRPCClient != nil {
-				for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
-					transactionFiltererRPCClient.Filter(filteredTxHash)
-				}
+				s.LaunchThread(func(ctx context.Context) {
+					// Call transaction-filterer sequentially.
+					// To avoid nonce collisions when adding a tx to ArbFilteredTransactionsManager,
+					// transaction-filterer will process only one Filter call at a time.
+					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
+						_, err := transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
+						if err != nil {
+							log.Error("error reporting filtered tx to transaction-filterer", "filteredTxHash", filteredTxHash, "err", err)
+						}
+					}
+				})
 			}
 
 			return nil, nil, nil, &ErrFilteredDelayedMessage{
