@@ -106,7 +106,7 @@ func mainImpl() error {
 
 	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
 	if initialL1BaseFee == nil {
-		log.Warn("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
+		log.Info("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
 		initialL1BaseFee = arbostypes.DefaultInitialL1BaseFee
 	}
 
