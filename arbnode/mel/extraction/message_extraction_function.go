@@ -233,10 +233,10 @@ func extractMessagesImpl(
 		}
 		for _, msg := range messagesInBatch {
 			messages = append(messages, msg)
-			state.MsgCount += 1
 			if err = state.AccumulateMessage(msg); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("failed to accumulate message: %w", err)
 			}
+			state.MsgCount += 1
 		}
 		state.BatchCount += 1
 		batchMetas = append(batchMetas, &mel.BatchMetadata{
@@ -244,6 +244,12 @@ func extractMessagesImpl(
 			DelayedMessageCount: state.DelayedMessagesRead,
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
+	}
+	if len(messages) > 0 {
+		// Only need to calculate partials once, after all the messages are extracted
+		if err := state.GenerateMessageMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }
