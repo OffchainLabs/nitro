@@ -196,7 +196,6 @@ pub fn program_prepare(
     _page_limit: u32,
     _debug_mode: u32,
     _stylus_version: u32,
-    _run_ctx_ptr: GuestPtr,
 ) -> MaybeEscape {
     Ok(())
 }

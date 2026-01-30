@@ -155,7 +155,6 @@ pub unsafe extern "C" fn programs__program_prepare(
     _page_limit: u32,
     _debug_mode: u32,
     _stylus_version: u32,
-    _run_ctx_ptr: GuestPtr,
 ) {
 }
 

@@ -133,7 +133,6 @@ func ProgramPrepare(
 	pagelimit uint32,
 	debugMode uint32,
 	stylusVersion uint32,
-	runCtxPtr unsafe.Pointer,
 )
 
 //go:wasmimport programs pop
@@ -178,7 +177,6 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			uint32(params.PageLimit),
 			debugInt,
 			uint32(params.Version),
-			unsafe.Pointer(runCtx),
 		)
 	}
 
