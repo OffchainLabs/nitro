@@ -280,7 +280,6 @@ clean:
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
-	rm -rf crates/wasm-libraries/target
 	rm -f crates/wasm-libraries/soft-float/soft-float.wasm
 	rm -f crates/wasm-libraries/soft-float/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
@@ -396,8 +395,8 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@touch -c $@ # cargo might decide to not rebuild the header
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
-	install crates/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
+	cargo build --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
+	install $(wasm32_unknown)/wasi_stub.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
@@ -439,33 +438,33 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f64_promote_f32
 
 $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
-	install crates/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
+	install $(wasm32_wasi)/host_io.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
-	install crates/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
+	install $(wasm32_wasi)/user_host.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
-	install crates/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
+	install $(wasm32_wasi)/program_exec.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
-	install crates/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
+	install $(wasm32_wasi)/user_test.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
 	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
-	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
+	install $(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
 	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
-	install crates/wasm-libraries/$(wasm32_wasi)/arbcrypto.wasm $@
+	install $(wasm32_wasi)/arbcrypto.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
