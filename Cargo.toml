@@ -11,6 +11,7 @@ members = [
     "crates/validator",
     "crates/wasm-libraries/arbcompress",
     "crates/wasm-libraries/arbcrypto",
+    "crates/wasm-libraries/forward",
 ]
 exclude = [
     "crates/langs",
@@ -85,6 +86,7 @@ wat = { version = "1.0.56" }
 arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
 caller-env = { path = "crates/caller-env" }
+forward = { path = "crates/wasm-libraries/forward" }
 jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }

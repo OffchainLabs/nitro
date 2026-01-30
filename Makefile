@@ -469,11 +469,11 @@ $(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_l
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
-	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
+	cargo run --release --bin forward -- --path $(forward_dir)/forward.wat
 	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
 
 $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
-	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward_stub.wat --stub
+	cargo run --release --bin forward -- --path $(forward_dir)/forward_stub.wat --stub
 	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
