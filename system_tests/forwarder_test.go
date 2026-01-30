@@ -224,13 +224,8 @@ func TestRedisForwarder(t *testing.T) {
 	var seqNodes []*arbnode.Node
 	var seqClients []*ethclient.Client
 	for _, path := range nodePaths {
-		testClientSeq, _ := createSequencer(t, builder, path, redisUrl)
-		node := testClientSeq.ConsensusNode
-
-		t.Cleanup(func() {
-			node.StopAndWait()
-		})
-
+		testClientSeq, cleanupTestSeq := createSequencer(t, builder, path, redisUrl)
+		defer cleanupTestSeq()
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)
 		seqClients = append(seqClients, testClientSeq.Client)
 	}
