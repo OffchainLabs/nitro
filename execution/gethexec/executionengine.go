@@ -1154,7 +1154,10 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 }
 
 // Only used for tests
-func (s *ExecutionEngine) SetTransactionFiltererRPCClient(transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient) {
+func (s *ExecutionEngine) SetTransactionFiltererRPCClient(
+	_ *testing.T,
+	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient,
+) {
 	s.transactionFiltererRPCClient.Store(transactionFiltererRPCClient)
 }
 
