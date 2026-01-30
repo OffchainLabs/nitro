@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -43,6 +44,7 @@ type TxPreCheckerConfig struct {
 	Strictness             uint  `koanf:"strictness" reload:"hot"`
 	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
 	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
+	ApplyTransactionFilter bool  `koanf:"apply-transaction-filter" reload:"hot"`
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
@@ -51,6 +53,7 @@ var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
 	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
+	ApplyTransactionFilter: false,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -59,6 +62,7 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"30 = full validation which may reject txs that would succeed")
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
+	f.Bool(prefix+".apply-transaction-filter", DefaultTxPreCheckerConfig.ApplyTransactionFilter, "whether to apply the transaction filter while pre-checking")
 }
 
 type TxPreChecker struct {
@@ -113,6 +117,65 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 		txNonce:    txNonce,
 		stateNonce: stateNonce,
 	}
+}
+
+func applyTransactionFilterPrecheck(
+	bc *core.BlockChain,
+	chainConfig *params.ChainConfig,
+	header *types.Header,
+	statedb *state.StateDB,
+	arbos *arbosState.ArbosState,
+	tx *types.Transaction,
+	stateNonce uint64,
+) error {
+	signer := types.MakeSigner(
+		chainConfig,
+		header.Number,
+		header.Time,
+		arbos.ArbOSVersion(),
+	)
+
+	snapshot := statedb.Snapshot()
+	defer statedb.RevertToSnapshot(snapshot)
+
+	blockCtx := core.NewEVMBlockContext(header, bc, nil)
+	evm := vm.NewEVM(
+		blockCtx,
+		statedb,
+		chainConfig,
+		vm.Config{},
+	)
+
+	deadlineCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	go func() {
+		<-deadlineCtx.Done()
+		if errors.Is(deadlineCtx.Err(), context.DeadlineExceeded) {
+			// Stop evm execution. Note cancellation is not necessarily immediate.
+			evm.Cancel()
+		}
+	}()
+	defer cancel()
+
+	statedb.SetTxContext(tx.Hash(), 1)
+	message, err := core.TransactionToMessage(tx, signer, header.BaseFee, core.NewMessageEthcallContext())
+	if err != nil {
+		return err
+	}
+	message.Nonce = stateNonce
+
+	gasPool := new(core.GasPool).AddGas(tx.Gas())
+
+	_, err = core.ApplyMessage(evm, message, gasPool)
+	// Ignore execution errors
+	_ = err
+
+	// TODO: parse log events, waits https://github.com/OffchainLabs/nitro/pull/4271/
+
+	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+		return state.ErrArbTxFilter
+	}
+
+	return nil
 }
 
 func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, config *TxPreCheckerConfig) error {
@@ -192,6 +255,21 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
 		}
 	}
+
+	if config.ApplyTransactionFilter {
+		if err := applyTransactionFilterPrecheck(
+			bc,
+			chainConfig,
+			header,
+			statedb,
+			arbos,
+			tx,
+			stateNonce,
+		); err != nil {
+			return err
+		}
+	}
+
 	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
 	if arbmath.BigLessThan(balance.ToBig(), cost) {
