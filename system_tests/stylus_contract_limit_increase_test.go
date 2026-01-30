@@ -301,7 +301,6 @@ func TestCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T) {
 }
 
 func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
-	t.Skip("Failing due to some precompile issues in geth")
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
@@ -341,7 +340,6 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 }
 
 func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
-	t.Skip("Failing due to some precompile issues in geth")
 	builder, _, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
