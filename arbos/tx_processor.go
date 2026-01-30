@@ -859,8 +859,40 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 	return enabled
 }
 
-func (p *TxProcessor) IsFilteredTx(txHash common.Hash) bool {
-	return p.state.FilteredTransactions().IsFilteredFree(txHash)
+func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas.MultiGas) (multigas.MultiGas, error) {
+	if p.msg.Tx == nil {
+		return usedMultiGas, nil
+	}
+
+	txHash := p.msg.Tx.Hash()
+
+	// Check for pre-recorded reverted transactions
+	if l2GasUsed, ok := core.RevertedTxGasUsed[txHash]; ok {
+		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
+
+		// Calculate adjusted gas since l2GasUsed contains params.TxGas
+		adjustedGas := l2GasUsed - params.TxGas
+		*gasRemaining -= adjustedGas
+
+		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(adjustedGas))
+		return usedMultiGas, vm.ErrExecutionReverted
+	}
+
+	// Check if tx is in the onchain filter (gas-free read).
+	// This handles delayed messages that were flagged by address filter,
+	// then added to onchain filter list. We skip execution but consume gas.
+	if p.state.FilteredTransactions().IsFilteredFree(txHash) {
+		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
+
+		// Consume all remaining gas as punishment
+		usedGas := *gasRemaining
+		*gasRemaining = 0
+		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(usedGas))
+
+		return usedMultiGas, &core.ErrFilteredTx{TxHash: txHash}
+	}
+
+	return usedMultiGas, nil
 }
 
 func (p *TxProcessor) EVM() *vm.EVM {
