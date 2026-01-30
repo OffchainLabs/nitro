@@ -44,15 +44,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbcompress"
-version = "0.1.0"
-dependencies = [
- "brotli",
- "caller-env",
- "paste",
-]
-
-[[package]]
 name = "arbcrypto"
 version = "0.1.0"
 dependencies = [

@@ -1,6 +1,5 @@
 [workspace]
 members = [
-	"arbcompress",
 	"arbcrypto",
 	"forward",
 	"host-io",

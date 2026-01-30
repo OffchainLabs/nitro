@@ -459,7 +459,7 @@ $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
 	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 

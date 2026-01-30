@@ -1,13 +1,19 @@
 [package]
 name = "arbcompress"
 version = "0.1.0"
-edition = "2021"
-publish = false
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [lib]
+path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-brotli.path = "../../brotli"
-caller-env = { path = "../../caller-env/", features = ["static_caller"] }
-paste = "1.0.14"
+brotli = { workspace = true }
+caller-env = { workspace = true, features = ["static_caller"] }
+paste =  { workspace = true }
