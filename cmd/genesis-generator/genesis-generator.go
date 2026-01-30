@@ -87,7 +87,7 @@ func mainImpl() error {
 
 	serializedChainConfig := gen.SerializedChainConfig
 	if serializedChainConfig == "" {
-		log.Warn("Serialized chain config was not set (`serializedConfig`) - using the `config` field serialization from the genesis file")
+		log.Warn("Serialized chain config was not set (`serializedChainConfig`) - using the `config` field serialization from the genesis file")
 		configSerializationBytes, err := extractSerializedChainConfigFromJSON(genesisJson)
 		if err != nil {
 			return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
@@ -98,6 +98,10 @@ func mainImpl() error {
 	var chainConfig params.ChainConfig
 	if err := json.Unmarshal([]byte(serializedChainConfig), &chainConfig); err != nil {
 		return fmt.Errorf("failed to unmarshal chain config: %w", err)
+	}
+
+	if chainConfig.ChainID == nil {
+		return fmt.Errorf("chain ID was not set (`serializedChainConfig.chainId`)")
 	}
 
 	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
