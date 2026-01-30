@@ -175,10 +175,10 @@ pub enum Opcode {
     PopCoThread,
     /// switch between main and a cothread
     SwitchThread,
-    /// Gets the end parent chain block hash for MEL
-    GetEndParentChainBlockHash,
     /// Validates the DACertificate certificate before allowing ReadPreImage to access it
     ValidateCertificate,
+    /// Gets the end parent chain block hash for MEL
+    GetEndParentChainBlockHash,
 }
 
 impl Opcode {
