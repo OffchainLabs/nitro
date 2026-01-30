@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 	"strings"
 
@@ -62,10 +61,6 @@ func mainImpl() error {
 	if err != nil {
 		return fmt.Errorf("failed to read genesis JSON file %s: %w", config.GenesisJsonFile, err)
 	}
-	serializedChainConfig, err := extractSerializedChainConfigFromJSON(genesisJson)
-	if err != nil {
-		return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
-	}
 	var gen core.Genesis
 	if err := json.Unmarshal(genesisJson, &gen); err != nil {
 		return fmt.Errorf("failed to unmarshal genesis JSON: %w", err)
@@ -85,18 +80,46 @@ func mainImpl() error {
 	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 		Accounts: accounts,
 	})
-	chainConfig := gen.Config
 	genesisArbOSInit := gen.ArbOSInit
+	if genesisArbOSInit == nil {
+		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
+	}
+
+	serializedChainConfig := gen.SerializedChainConfig
+	if serializedChainConfig == "" {
+		log.Warn("Serialized chain config was not set (`serializedChainConfig`) - using the `config` field serialization from the genesis file")
+		configSerializationBytes, err := extractSerializedChainConfigFromJSON(genesisJson)
+		if err != nil {
+			return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
+		}
+		serializedChainConfig = string(configSerializationBytes)
+	}
+
+	var chainConfig params.ChainConfig
+	if err := json.Unmarshal([]byte(serializedChainConfig), &chainConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal chain config: %w", err)
+	}
+
+	if chainConfig.ChainID == nil {
+		return fmt.Errorf("chain ID was not set (`serializedChainConfig.chainId`)")
+	}
+
+	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
+	if initialL1BaseFee == nil {
+		log.Info("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
+		initialL1BaseFee = arbostypes.DefaultInitialL1BaseFee
+	}
+
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      big.NewInt(config.InitialL1BaseFee),
-		ChainConfig:           chainConfig,
-		SerializedChainConfig: serializedChainConfig,
+		InitialL1BaseFee:      initialL1BaseFee,
+		ChainConfig:           &chainConfig,
+		SerializedChainConfig: []byte(serializedChainConfig),
 	}
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
 		initDataReader,
-		chainConfig,
+		&chainConfig,
 		genesisArbOSInit,
 		parsedInitMessage,
 		config.AccountsPerSync,
@@ -164,22 +187,19 @@ func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
 }
 
 type Config struct {
-	Caching          gethexec.CachingConfig `koanf:"caching"`
-	GenesisJsonFile  string                 `koanf:"genesis-json-file"`
-	AccountsPerSync  uint                   `koanf:"accounts-per-sync"`
-	InitialL1BaseFee int64                  `koanf:"initial-l1-base-fee"`
+	Caching         gethexec.CachingConfig `koanf:"caching"`
+	GenesisJsonFile string                 `koanf:"genesis-json-file"`
+	AccountsPerSync uint                   `koanf:"accounts-per-sync"`
 }
 
 var ConfigDefault = Config{
-	Caching:          gethexec.DefaultCachingConfig,
-	GenesisJsonFile:  "",
-	AccountsPerSync:  100000,
-	InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee.Int64(),
+	Caching:         gethexec.DefaultCachingConfig,
+	GenesisJsonFile: "",
+	AccountsPerSync: 100000,
 }
 
 func ConfigAddOptions(f *pflag.FlagSet) {
 	gethexec.CachingConfigAddOptions("caching", f)
 	f.String("genesis-json-file", ConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.Uint("accounts-per-sync", ConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
-	f.Int64("initial-l1-base-fee", ConfigDefault.InitialL1BaseFee, "initial L1 base fee for genesis block")
 }
