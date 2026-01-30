@@ -40,6 +40,7 @@ sha3 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
 static_assertions = { workspace = true }
 structopt = { workspace = true }
+validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
 wasmer-types = { workspace = true }
@@ -49,6 +50,9 @@ wat = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true }
+
+[build-dependencies]
+forward = { path = "../wasm-libraries/forward" }
 
 [[bench]]
 name = "merkle_bench"
@@ -64,3 +68,4 @@ counters = []
 native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
+cc_brotli = ["brotli/cc_brotli"]
