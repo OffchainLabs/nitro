@@ -149,9 +149,6 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 
 // Gets a storage slot for free. Dangerous due to DoS potential.
 func (s *Storage) GetFree(key common.Hash) common.Hash {
-	if info := s.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(s.mapAddress(key))
-	}
 	return s.db.GetState(s.account, s.mapAddress(key))
 }
 
