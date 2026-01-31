@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/features"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -55,6 +56,7 @@ type ArbosState struct {
 	chainOwners                     *addressSet.AddressSet
 	nativeTokenOwners               *addressSet.AddressSet
 	transactionFilterers            *addressSet.AddressSet
+	filteredTransactions            *filteredTransactions.FilteredTransactionsState
 	sendMerkle                      *merkleAccumulator.MerkleAccumulator
 	programs                        *programs.Programs
 	features                        *features.Features
@@ -94,6 +96,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		chainOwners:                     addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		nativeTokenOwners:               addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		transactionFilterers:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(transactionFiltererSubspace)),
+		filteredTransactions:            filteredTransactions.Open(stateDB, burner),
 		sendMerkle:                      merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs:                        programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features:                        features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
@@ -321,6 +324,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	nativeTokenOwnersStorage := sto.OpenCachedSubStorage(nativeTokenOwnerSubspace)
 	err = addressSet.Initialize(nativeTokenOwnersStorage)
+	if err != nil {
+		return nil, err
+	}
+
+	transactionFiltererStorage := sto.OpenCachedSubStorage(transactionFiltererSubspace)
+	err = addressSet.Initialize(transactionFiltererStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -596,6 +605,10 @@ func (state *ArbosState) SetTransactionFilteringFromTime(val uint64) error {
 
 func (state *ArbosState) TransactionFilterers() *addressSet.AddressSet {
 	return state.transactionFilterers
+}
+
+func (state *ArbosState) FilteredTransactions() *filteredTransactions.FilteredTransactionsState {
+	return state.filteredTransactions
 }
 
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
