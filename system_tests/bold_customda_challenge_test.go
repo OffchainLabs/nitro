@@ -340,7 +340,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
 	// Create node B using the same contracts as node A
-	l2clientB, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
+	_, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
 		t,
 		ctx,
 		l2nodeA,
@@ -355,8 +355,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		assertionChain,
 	)
 	defer l2nodeB.StopAndWait()
-	_ = l2clientB // suppress unused variable warning
-
 	genesisA, err := l2nodeA.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
 	Require(t, err)
 	genesisB, err := l2nodeB.ExecutionClient.ResultAtMessageIndex(0).Await(ctx)
