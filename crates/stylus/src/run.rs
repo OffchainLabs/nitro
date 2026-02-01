@@ -114,7 +114,7 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                 .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink, ink);
         }
 
-        let outs = env.outs.clone();
+        let outs = std::mem::take(&mut env.outs);
         Ok(match status {
             0 => UserOutcome::Success(outs),
             _ => UserOutcome::Revert(outs),
