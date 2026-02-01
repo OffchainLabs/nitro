@@ -1,3 +1,5 @@
+// Copyright 2026-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::primitives::{read_bytes, read_bytes32, read_u32, read_u64, read_u8};
 use crate::transfer::{markers, IOResult};
 use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};

@@ -1,3 +1,5 @@
+// Copyright 2026-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::{Bytes32, PreimageType};
 use brotli::BrotliStatus;
 use serde::{Deserialize, Serialize};

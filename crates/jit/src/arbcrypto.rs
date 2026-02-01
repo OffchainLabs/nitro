@@ -1,3 +1,5 @@
+// Copyright 2026-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::caller_env::{JitEnv, JitExecEnv};
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use caller_env::GuestPtr;
