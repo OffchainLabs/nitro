@@ -314,11 +314,7 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 
 	cc.lastHeardUnix.Store(time.Now().Unix())
 
-	var data []byte
-	var opCode ws.OpCode
-	var err error
-	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
-	return data, opCode, err
+	return ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {
