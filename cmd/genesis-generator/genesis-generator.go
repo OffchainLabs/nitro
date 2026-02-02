@@ -80,11 +80,10 @@ func mainImpl() error {
 	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 		Accounts: accounts,
 	})
-	genesisArbOSInit := gen.ArbOSInit
-	if genesisArbOSInit == nil {
-		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
-	}
 
+	if gen.Config != nil {
+		return errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
+	}
 	if gen.SerializedChainConfig == "" {
 		return errors.New("serialized chain config was not set (`serializedChainConfig`)")
 	}
@@ -94,20 +93,21 @@ func mainImpl() error {
 	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
 		return fmt.Errorf("failed to unmarshal chain config: %w", err)
 	}
-
 	if chainConfig.ChainID == nil {
 		return fmt.Errorf("chain ID was not set (`serializedChainConfig.chainId`)")
 	}
 
-	initialL1BaseFee := genesisArbOSInit.InitialL1BaseFee
-	if initialL1BaseFee == nil {
-		log.Info("Initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`) - falling back to the default value", "fallback_value", arbostypes.DefaultInitialL1BaseFee)
-		initialL1BaseFee = arbostypes.DefaultInitialL1BaseFee
+	genesisArbOSInit := gen.ArbOSInit
+	if genesisArbOSInit == nil {
+		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
+	}
+	if genesisArbOSInit.InitialL1BaseFee == nil {
+		return errors.New("initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`)")
 	}
 
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      initialL1BaseFee,
+		InitialL1BaseFee:      genesisArbOSInit.InitialL1BaseFee,
 		ChainConfig:           &chainConfig,
 		SerializedChainConfig: serializedChainConfig,
 	}
