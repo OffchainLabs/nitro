@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -316,7 +316,7 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 	// Verify initial
 	count, err := arbOwnerPublic.GetMaxStylusContractFragments(callOpts)
 	Require(t, err)
-	require.Equal(t, uint16(2), count)
+	require.Equal(t, uint8(2), count)
 
 	// Change to 1
 	tx, err := arbOwner.SetMaxStylusContractFragments(&auth, 1)
@@ -326,7 +326,7 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 
 	count, err = arbOwnerPublic.GetMaxStylusContractFragments(callOpts)
 	Require(t, err)
-	require.Equal(t, uint16(1), count)
+	require.Equal(t, uint8(1), count)
 
 	// Change to 3
 	tx, err = arbOwner.SetMaxStylusContractFragments(&auth, 3)
@@ -336,7 +336,7 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 
 	count, err = arbOwnerPublic.GetMaxStylusContractFragments(callOpts)
 	Require(t, err)
-	require.Equal(t, uint16(3), count)
+	require.Equal(t, uint8(3), count)
 }
 
 func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
@@ -351,7 +351,7 @@ func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
 
 	count, err := arbOwnerPublic.GetMaxStylusContractFragments(&bind.CallOpts{Context: builder.ctx})
 	Require(t, err)
-	require.Equal(t, uint16(2), count)
+	require.Equal(t, uint8(2), count)
 }
 
 // Generic Runners for Limit Decrease Scenarios

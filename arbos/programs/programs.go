@@ -339,7 +339,7 @@ func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
 }
 
-func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16, isActivation bool) ([]byte, error) {
+func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, isActivation bool) ([]byte, error) {
 	root, err := state.NewStylusRoot(data)
 	if err != nil {
 		return nil, err

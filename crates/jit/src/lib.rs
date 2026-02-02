@@ -13,12 +13,11 @@ use validation::{BatchInfo, UserWasm};
 use wasmer::{FrameInfo, Pages};
 
 mod arbcompress;
-mod arbkeccak;
+mod arbcrypto;
 mod caller_env;
 pub mod machine;
 mod prepare;
 pub mod program;
-pub mod socket;
 pub mod stylus_backend;
 mod test;
 mod wasip1_stub;

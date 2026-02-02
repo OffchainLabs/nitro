@@ -2,41 +2,30 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use anyhow::Result;
-use arbutil::Bytes32;
 use clap::Parser;
 use config::ServerConfig;
 use logging::init_logging;
-use router::create_router;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::{net::TcpListener, runtime::Builder};
 use tracing::info;
 
+use crate::config::ServerState;
+use crate::server::run_server;
+
 mod config;
+mod engine;
 mod logging;
 mod router;
+mod server;
 mod spawner_endpoints;
-
-#[derive(Clone, Debug)]
-pub struct ServerState {
-    binary: PathBuf,
-    module_root: Bytes32,
-    available_workers: usize,
-}
-
 fn main() -> Result<()> {
     let server_config = ServerConfig::parse();
     init_logging(server_config.logging_format)?;
 
-    let available_workers = server_config.get_workers()?;
-    let state = Arc::new(ServerState {
-        binary: server_config.binary.clone(),
-        module_root: server_config.get_module_root()?,
-        available_workers,
-    });
+    let state = Arc::new(ServerState::new(&server_config)?);
 
     let runtime = Builder::new_multi_thread()
-        .worker_threads(available_workers)
+        .worker_threads(state.available_workers)
         .enable_all()
         .build()?;
 
@@ -52,7 +41,5 @@ async fn async_main(server_config: ServerConfig, state: Arc<ServerState>) -> Res
     );
 
     let listener = TcpListener::bind(server_config.address).await?;
-    axum::serve(listener, create_router().with_state(state))
-        .await
-        .map_err(Into::into)
+    run_server(listener, state).await
 }

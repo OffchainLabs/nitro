@@ -3,26 +3,10 @@
 
 use crate::machine::WasmEnv;
 use eyre::Ok;
-use std::env;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use validation::ValidationInput;
-
-// local_target matches rawdb.LocalTarget() on the go side.
-// While generating json_inputs file, one should make sure user_wasms map
-// has entry for the system's arch that jit validation is being run on
-pub fn local_target() -> String {
-    if env::consts::OS == "linux" {
-        match env::consts::ARCH {
-            "aarch64" => "arm64".to_string(),
-            "x86_64" => "amd64".to_string(),
-            _ => "host".to_string(),
-        }
-    } else {
-        "host".to_string()
-    }
-}
+use validation::{local_target, ValidationInput};
 
 pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<WasmEnv> {
     let file = File::open(json_inputs)?;
@@ -54,7 +38,7 @@ pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<Wa
         }
     }
 
-    if let Some(user_wasms) = data.user_wasms.get(&local_target()) {
+    if let Some(user_wasms) = data.user_wasms.get(local_target()) {
         for (module_hash, module_asm) in user_wasms.iter() {
             env.module_asms
                 .insert(*module_hash, module_asm.as_vec().into());

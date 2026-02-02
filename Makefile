@@ -60,7 +60,7 @@ replay_wasm=$(output_latest)/replay.wasm
 arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbkeccak user_host program_exec)
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbcrypto user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
@@ -280,7 +280,6 @@ clean:
 	rm -rf $(output_root)
 	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
-	rm -rf crates/wasm-libraries/target
 	rm -f crates/wasm-libraries/soft-float/soft-float.wasm
 	rm -f crates/wasm-libraries/soft-float/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
@@ -396,8 +395,8 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@touch -c $@ # cargo might decide to not rebuild the header
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
-	install crates/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
+	cargo build --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
+	install $(wasm32_unknown)/wasi_stub.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
@@ -439,46 +438,46 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f64_promote_f32
 
 $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
-	install crates/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
+	install $(wasm32_wasi)/host_io.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
-	install crates/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
+	install $(wasm32_wasi)/user_host.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
-	install crates/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
+	install $(wasm32_wasi)/program_exec.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
-	install crates/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
+	install $(wasm32_wasi)/user_test.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
-	install crates/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
+	install $(wasm32_wasi)/arbcompress.wasm $@
 	./scripts/remove_reference_types.sh $@
 
-$(output_latest)/arbkeccak.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
-	cargo build --manifest-path crates/wasm-libraries/Cargo.toml --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbkeccak
-	install crates/wasm-libraries/$(wasm32_wasi)/arbkeccak.wasm $@
+$(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
+	install $(wasm32_wasi)/arbcrypto.wasm $@
 	./scripts/remove_reference_types.sh $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
-	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
+	cargo run --release --package forward -- --path $(forward_dir)/forward.wat
 	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
 
 $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
-	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward_stub.wat --stub
+	cargo run --release --package forward -- --path $(forward_dir)/forward_stub.wat --stub
 	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbkeccak program_exec)
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
