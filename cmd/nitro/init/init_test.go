@@ -1264,7 +1264,7 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 4444
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
-	initDataReader, chainConfig, arbOsInit, err = GetInit(&nodeConfig, executionDB)
+	_, chainConfig, _, err = GetInit(&nodeConfig, executionDB)
 	Require(t, err)
 
 	// Make sure chainConfig that was read from DB still matches expected chainConfig
