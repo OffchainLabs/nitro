@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -21,6 +22,7 @@ type BlockValidationEntryCreator interface {
 
 type ValidatedMELStateFetcher interface {
 	LatestValidatedMELState(ctx context.Context) (*mel.State, error)
+	FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap
 }
 
 type MELEnabledValidationEntryCreator struct {
@@ -56,26 +58,23 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Fetch the mel result from the mel executor and preimages from the mel validator.
-	// melResult, err := m.messageExtractor.MELStateAtCount(ctx, arbutil.MessageIndex(position+1))
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// Construct preimages
 	preimages := make(daprovider.PreimagesMap)
 	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-	msgHash := msg.WithMELRelevantFields().Hash()
-	encodedMsg, err := msg.WithMELRelevantFields().Message.Serialize()
+	// Add MEL state to the preimages map
+	encodedInitialState, err := rlp.EncodeToBytes(melStateForMsg)
 	if err != nil {
 		return nil, err
 	}
-	preimages[arbutil.Keccak256PreimageType][msgHash] = encodedMsg
-	// TODO: Needs the message tree preimages so the unified replay binary can do state.ReadMessage
-	// after the block is produced and we need to advance to the next message in execution.
+	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
+	// Fetch and add the msg releated preimages
+	msgPreimages := m.melValidator.FetchMsgPreimages(melStateForMsg.ParentChainBlockNumber)
+	validator.CopyPreimagesInto(preimages, msgPreimages)
 	endGlobalState := validator.GoGlobalState{
 		BlockHash:    executionResult.BlockHash,
 		SendRoot:     executionResult.SendRoot,
 		MELStateHash: melStateForMsg.Hash(),
-		MELMsgHash:   msgHash,
+		MELMsgHash:   msg.Hash(),
 		PosInBatch:   melStateForMsg.MsgCount, // TODO: Count or an index?
 	}
 	chainConfig := m.txStreamer.ChainConfig()
