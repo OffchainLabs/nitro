@@ -8,6 +8,7 @@ use caller_env::{self, wasip1_stub::Errno, GuestPtr};
 use paste::paste;
 use wee_alloc::WeeAlloc;
 
+#[cfg(target_arch = "wasm32")]
 extern "C" {
     fn wavm_halt_and_set_finished() -> !;
 }
@@ -15,11 +16,13 @@ extern "C" {
 #[global_allocator]
 static ALLOC: WeeAlloc = WeeAlloc::INIT;
 
+#[cfg(target_arch = "wasm32")]
 #[panic_handler]
 unsafe fn panic(_: &core::panic::PanicInfo) -> ! {
     core::arch::wasm32::unreachable()
 }
 
+#[cfg(target_arch = "wasm32")]
 #[no_mangle]
 pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
     if code == 0 {
