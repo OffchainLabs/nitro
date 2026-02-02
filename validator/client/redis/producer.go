@@ -255,13 +255,14 @@ func (br *BOLDRedisExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (br *BOLDRedisExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
-	res, err := br.produce(&server_api.BoldValidationInput{
-		ModuleRoot:        wasmModuleRoot,
-		MachineStartIndex: machineStartIndex,
-		StepSize:          stepSize,
-		NumDesiredLeaves:  maxIterations,
-		ValidationInput:   input,
-	}).Await(ctx)
+	res, err := br.produce(
+		newBoldValidationInput(
+			wasmModuleRoot,
+			machineStartIndex,
+			stepSize,
+			maxIterations,
+			input),
+	).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -274,11 +275,14 @@ func (br *BOLDRedisExecutionClient) GetMachineHashesWithStepSize(ctx context.Con
 }
 
 func (br *BOLDRedisExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
-	res, err := br.produce(&server_api.BoldValidationInput{
-		ModuleRoot:        wasmModuleRoot,
-		MachineStartIndex: position,
-		ValidationInput:   input,
-	}).Await(ctx)
+	res, err := br.produce(
+		newBoldValidationInput(
+			wasmModuleRoot,
+			position,
+			0,
+			0,
+			input),
+	).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -288,4 +292,20 @@ func (br *BOLDRedisExecutionClient) GetProofAt(ctx context.Context, wasmModuleRo
 		return nil, err
 	}
 	return resJson, nil
+}
+
+func newBoldValidationInput(
+	moduleRoot common.Hash,
+	machineStartIndex uint64,
+	stepSize uint64,
+	numDesiredLeaves uint64,
+	entry *validator.ValidationInput,
+) *server_api.BoldValidationInput {
+	return &server_api.BoldValidationInput{
+		ModuleRoot:        moduleRoot,
+		MachineStartIndex: machineStartIndex,
+		StepSize:          stepSize,
+		NumDesiredLeaves:  numDesiredLeaves,
+		ValidationInput:   entry,
+	}
 }

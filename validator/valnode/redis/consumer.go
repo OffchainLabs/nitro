@@ -283,6 +283,8 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					return 0
 				}
 				var res interface{}
+				// BoLD only uses two methods: either getting machine hashes, or one step proofs,
+				// so we can check if the NumDesiredLeaves is > 0 to determine which path to take.
 				if req.Value.NumDesiredLeaves != 0 {
 					res, err = run.GetMachineHashesWithStepSize(
 						req.Value.MachineStartIndex,
