@@ -1,12 +1,21 @@
 [package]
 name = "forward"
 version = "0.1.0"
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "lib.rs"
 
 [[bin]]
 name = "forward"
-path = "bin/mod.rs"
+path = "bin.rs"
 
 [dependencies]
-eyre = "0.6.5"
-structopt = "0.3.26"
+eyre = { workspace = true }
+structopt = { workspace = true }
