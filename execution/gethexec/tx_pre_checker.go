@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -41,10 +42,11 @@ const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
 type TxPreCheckerConfig struct {
-	Strictness             uint  `koanf:"strictness" reload:"hot"`
-	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
-	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
-	ApplyTransactionFilter bool  `koanf:"apply-transaction-filter" reload:"hot"`
+	Strictness             uint                          `koanf:"strictness" reload:"hot"`
+	RequiredStateAge       int64                         `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks uint                          `koanf:"required-state-max-blocks" reload:"hot"`
+	ApplyTransactionFilter bool                          `koanf:"apply-transaction-filter" reload:"hot"`
+	EventFilter            eventfilter.EventFilterConfig `koanf:"event-filter"`
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
@@ -70,14 +72,21 @@ type TxPreChecker struct {
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *ExpressLaneTracker
+	eventFilter        *eventfilter.EventFilter
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) (*TxPreChecker, error) {
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config().EventFilter)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
 		config:               config,
-	}
+		eventFilter:          eventFilter,
+	}, nil
 }
 
 type NonceError struct {
@@ -119,30 +128,23 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func applyTransactionFilterPrecheck(
-	bc *core.BlockChain,
-	chainConfig *params.ChainConfig,
+func (c *TxPreChecker) applyTransactionFilterPrecheck(
+	signer types.Signer,
+	sender common.Address,
 	header *types.Header,
 	statedb *state.StateDB,
 	arbos *arbosState.ArbosState,
 	tx *types.Transaction,
 	stateNonce uint64,
 ) error {
-	signer := types.MakeSigner(
-		chainConfig,
-		header.Number,
-		header.Time,
-		arbos.ArbOSVersion(),
-	)
-
 	snapshot := statedb.Snapshot()
 	defer statedb.RevertToSnapshot(snapshot)
 
-	blockCtx := core.NewEVMBlockContext(header, bc, nil)
+	blockCtx := core.NewEVMBlockContext(header, c.bc, nil)
 	evm := vm.NewEVM(
 		blockCtx,
 		statedb,
-		chainConfig,
+		c.bc.Config(),
 		vm.Config{},
 	)
 
@@ -169,7 +171,14 @@ func applyTransactionFilterPrecheck(
 	// Ignore execution errors
 	_ = err
 
-	// TODO: parse log events, waits https://github.com/OffchainLabs/nitro/pull/4271/
+	if c.eventFilter != nil {
+		logs := statedb.GetCurrentTxLogs()
+		for _, l := range logs {
+			for _, addr := range c.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
+				statedb.TouchAddress(addr)
+			}
+		}
+	}
 
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
@@ -178,7 +187,8 @@ func applyTransactionFilterPrecheck(
 	return nil
 }
 
-func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, config *TxPreCheckerConfig) error {
+func (c *TxPreChecker) PreCheckTx(header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	config := c.config()
 	if config.Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -190,7 +200,9 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
-	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time, arbos.ArbOSVersion()), tx)
+	bcConfig := c.bc.Config()
+	signer := types.MakeSigner(bcConfig, header.Number, header.Time, arbos.ArbOSVersion())
+	sender, err := types.Sender(signer, tx)
 	if err != nil {
 		return err
 	}
@@ -209,7 +221,13 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(
+		tx.Data(), tx.AccessList(),
+		tx.SetCodeAuthorizations(),
+		tx.To() == nil,
+		bcConfig.IsHomestead(header.Number),
+		bcConfig.IsIstanbul(header.Number),
+		bcConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -234,7 +252,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
 				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
 				oldHeader.Number.Uint64() > 0 {
-				previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
+				previousHeader := c.bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
 				if previousHeader == nil {
 					break
 				}
@@ -242,7 +260,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				blocksTraversed++
 			}
 			if !headerreader.HeadersEqual(oldHeader, header) {
-				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
+				secondOldStatedb, err := c.bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
 				}
@@ -257,9 +275,9 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 
 	if config.ApplyTransactionFilter {
-		if err := applyTransactionFilterPrecheck(
-			bc,
-			chainConfig,
+		if err := c.applyTransactionFilterPrecheck(
+			signer,
+			sender,
 			header,
 			statedb,
 			arbos,
@@ -300,7 +318,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, options, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, tx, options)
 	if err != nil {
 		return err
 	}
@@ -329,7 +347,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, msg.Transaction, msg.Options, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, msg.Transaction, msg.Options)
 	if err != nil {
 		return err
 	}
@@ -346,7 +364,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, nil, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, tx, nil)
 	if err != nil {
 		return err
 	}
