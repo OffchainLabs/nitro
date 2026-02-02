@@ -81,40 +81,25 @@ func mainImpl() error {
 		Accounts: accounts,
 	})
 
-	if gen.Config != nil {
-		return errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
-	}
-	if gen.SerializedChainConfig == "" {
-		return errors.New("serialized chain config was not set (`serializedChainConfig`)")
-	}
-	serializedChainConfig := []byte(gen.SerializedChainConfig)
-
-	var chainConfig params.ChainConfig
-	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal chain config: %w", err)
-	}
-	if chainConfig.ChainID == nil {
-		return fmt.Errorf("chain ID was not set (`serializedChainConfig.chainId`)")
+	chainConfig, serializedChainConfig, err := readChainConfig(&gen)
+	if err != nil {
+		return err
 	}
 
 	genesisArbOSInit := gen.ArbOSInit
 	if genesisArbOSInit == nil {
-		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
-	}
-	if genesisArbOSInit.InitialL1BaseFee == nil {
-		return errors.New("initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`)")
+		return errors.New("genesis ArbOS init was not set (`arbOSInit`)")
 	}
 
-	parsedInitMessage := &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      genesisArbOSInit.InitialL1BaseFee,
-		ChainConfig:           &chainConfig,
-		SerializedChainConfig: serializedChainConfig,
+	parsedInitMessage, err := buildInitMessage(genesisArbOSInit, chainConfig, serializedChainConfig)
+	if err != nil {
+		return err
 	}
+
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
 		initDataReader,
-		&chainConfig,
+		chainConfig,
 		genesisArbOSInit,
 		parsedInitMessage,
 		config.AccountsPerSync,
@@ -160,6 +145,38 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 	}
 
 	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
+}
+
+func readChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
+	if gen.Config != nil {
+		return nil, nil, errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
+	}
+	if gen.SerializedChainConfig == "" {
+		return nil, nil, errors.New("serialized chain config was not set (`serializedChainConfig`)")
+	}
+	serializedChainConfig := []byte(gen.SerializedChainConfig)
+
+	var chainConfig params.ChainConfig
+	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal chain config: %w", err)
+	}
+	return &chainConfig, serializedChainConfig, nil
+}
+
+func buildInitMessage(genesisArbOSInit *params.ArbOSInit, chainConfig *params.ChainConfig, serializedChainConfig []byte) (*arbostypes.ParsedInitMessage, error) {
+	if genesisArbOSInit.InitialL1BaseFee == nil {
+		return nil, errors.New("initial L1 base fee was not set (`arbOSInit.initialL1BaseFee`)")
+	}
+	if chainConfig.ChainID == nil {
+		return nil, fmt.Errorf("chain ID was not set (`serializedChainConfig.chainId`)")
+	}
+
+	return &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      genesisArbOSInit.InitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}, nil
 }
 
 type Config struct {
