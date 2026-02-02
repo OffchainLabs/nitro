@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::{
     receive_response, receive_validation_input, send_failure_response, send_successful_response,
     send_validation_input,
