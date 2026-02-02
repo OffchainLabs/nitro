@@ -76,6 +76,7 @@ import (
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -563,6 +564,16 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
+	if b.execConfig == nil {
+		panic("execConfig must be initialised before setting event filter rules")
+	}
+
+	b.execConfig.Sequencer.EventFilter.Rules = rules
+
+	return b
 }
 
 func (b *NodeBuilder) Build(t *testing.T) func() {
