@@ -165,7 +165,11 @@ func validateHeader(content string, birth, update string) validationResult {
 	if match := yearRegex.FindStringSubmatch(searchArea); match == nil {
 		return missingCopyright
 	}
+
 	expectedCopyright := fmt.Sprintf("Copyright %s-%s, %s", birth, update, company)
+	if birth == update {
+		expectedCopyright = fmt.Sprintf("Copyright %s, %s", birth, company)
+	}
 	if !strings.Contains(searchArea, expectedCopyright) {
 		return incorrectYears
 	}
