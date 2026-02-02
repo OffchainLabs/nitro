@@ -18,7 +18,8 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Config:    s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
+				Config:    s3client.Config{Region: "us-east-1"},
+				Bucket:    "test-bucket",
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: false,
@@ -34,7 +35,7 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "missing region",
 			config: Config{
-				Config:    s3client.Config{Bucket: "test-bucket"},
+				Bucket:    "test-bucket",
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: true,
@@ -42,7 +43,8 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "missing object key",
 			config: Config{
-				Config: s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
+				Config: s3client.Config{Region: "us-east-1"},
+				Bucket: "test-bucket",
 			},
 			wantErr: true,
 		},
@@ -51,10 +53,10 @@ func TestConfigValidate(t *testing.T) {
 			config: Config{
 				Config: s3client.Config{
 					Region:    "us-east-1",
-					Bucket:    "test-bucket",
 					AccessKey: "AKIAIOSFODNN7EXAMPLE",
 					SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 				},
+				Bucket:    "test-bucket",
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: false,

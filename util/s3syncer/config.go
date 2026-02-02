@@ -14,6 +14,7 @@ import (
 // Config holds the S3 configuration for syncing data.
 type Config struct {
 	s3client.Config
+	Bucket      string `koanf:"bucket"`
 	ObjectKey   string `koanf:"object-key"`
 	ChunkSizeMB int    `koanf:"chunk-size-mb"`
 	MaxRetries  int    `koanf:"max-retries"`
@@ -23,6 +24,7 @@ type Config struct {
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	s3client.ConfigAddOptions(prefix, f)
+	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket name")
 	f.String(prefix+".object-key", "", "S3 object key (path) to the file")
 	f.Int(prefix+".chunk-size-mb", DefaultS3Config.ChunkSizeMB, "S3 multipart download part size in MB")
 	f.Int(prefix+".concurrency", DefaultS3Config.Concurrency, "S3 multipart download concurrency")
@@ -31,10 +33,10 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // Validate checks that required S3 configuration fields are set.
 func (c *Config) Validate() error {
-	if c.Config.Bucket == "" {
+	if c.Bucket == "" {
 		return errors.New("s3 bucket is required")
 	}
-	if c.Config.Region == "" {
+	if c.Region == "" {
 		return errors.New("s3 region is required")
 	}
 	if c.ObjectKey == "" {

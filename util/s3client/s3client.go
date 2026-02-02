@@ -20,7 +20,6 @@ type Config struct {
 	SecretKey string `koanf:"secret-key"`
 	Region    string `koanf:"region"`
 	Endpoint  string `koanf:"endpoint"`
-	Bucket    string `koanf:"bucket"`
 }
 
 var DefaultConfig = Config{}
@@ -30,7 +29,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".secret-key", DefaultConfig.SecretKey, "S3 secret key")
 	f.String(prefix+".region", DefaultConfig.Region, "S3 region")
 	f.String(prefix+".endpoint", DefaultConfig.Endpoint, "custom S3 endpoint URL (for MinIO, localstack, or other S3-compatible services)")
-	f.String(prefix+".bucket", DefaultConfig.Bucket, "S3 bucket name")
 }
 
 func NewS3FullClientFromConfig(ctx context.Context, config *Config) (FullClient, error) {

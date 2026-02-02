@@ -307,7 +307,8 @@ func TestConfig_Validate(t *testing.T) {
 	validConfig := Config{
 		Enable: true,
 		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
 			ObjectKey: "hashlists/current.json",
 		},
 		PollInterval: 5 * time.Minute,
