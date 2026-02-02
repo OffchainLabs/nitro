@@ -178,8 +178,14 @@ func validateHeader(content string, birth, update string) validationResult {
 
 func applyFix(path, content, birthYear string) error {
 	comment := getCommentStyle(path)
-	header := fmt.Sprintf("%s Copyright %s-%s, %s\n%s For license information, see %s\n",
-		comment, birthYear, currentYear, company, comment, licenseURL)
+
+	rng := fmt.Sprintf("%s-%s", birthYear, currentYear)
+	if birthYear == currentYear {
+		rng = birthYear
+	}
+
+	header := fmt.Sprintf("%s Copyright %s, %s\n%s For license information, see %s\n",
+		comment, rng, company, comment, licenseURL)
 
 	lines := strings.Split(content, "\n")
 	startIdx := 0
