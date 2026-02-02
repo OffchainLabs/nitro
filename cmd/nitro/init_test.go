@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -411,7 +411,7 @@ func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig
 	return &targetConfig
 }
 
-func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
+func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -434,7 +434,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -448,11 +448,11 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	chainDb, blockchain, err = openInitializeChainDb(
+	executionDB, blockchain, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -466,12 +466,12 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeChainDb(
+	_, _, err = openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -679,7 +679,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, otherKeys, true)
 }
 
-func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -700,7 +700,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	chainDb, blockchain, err := openInitializeChainDb(
+	executionDB, blockchain, err := openInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
@@ -714,7 +714,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 	)
 	Require(t, err)
 	blockchain.Stop()
-	err = chainDb.Close()
+	err = executionDB.Close()
 	Require(t, err)
 }
 
@@ -859,10 +859,24 @@ func TestIsWasmDb(t *testing.T) {
 	for _, testCase := range testCases {
 		name := fmt.Sprintf("%q", testCase.path)
 		t.Run(name, func(t *testing.T) {
-			got := isWasmDb(testCase.path)
+			got := isWasmDB(testCase.path)
 			if testCase.want != got {
 				t.Fatalf("want %v, but got %v", testCase.want, got)
 			}
 		})
+	}
+}
+
+func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
+	initConfig := conf.InitConfig{
+		GenesisJsonFile: "./genesis.json",
+		Empty:           true,
+	}
+	err := initConfig.Validate()
+	if err == nil {
+		t.Fatal("expected error when both GenesisJsonFile and Empty are set")
+	}
+	if !strings.Contains(err.Error(), "init config cannot be both empty and have a genesis json file specified") {
+		t.Fatal("expected conflict detection")
 	}
 }

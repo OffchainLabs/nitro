@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // these tests seems to consume too much memory with race detection
@@ -274,7 +274,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	numReimbursed := 0
 	for _, bpAddr := range batchPosterAddresses {
-		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != l1pricing.L1PricerFundsPoolAddress {
+		if bpAddr != l1pricing.BatchPosterAddress && bpAddr != types.L1PricerFundsPoolAddress {
 			numReimbursed++
 			bal, err := builder.L1.Client.BalanceAt(ctx, bpAddr, nil)
 			Require(t, err)

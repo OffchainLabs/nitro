@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
@@ -68,11 +68,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
-	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.BaseFeeWei()
-	state.Restrict(err)
-
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, chainConfig *params.ChainConfig) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
@@ -200,7 +196,7 @@ func ProduceBlockAdvanced(
 	exposeMultiGas bool,
 ) (*types.Block, types.Receipts, error) {
 
-	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +215,17 @@ func ProduceBlockAdvanced(
 
 	chainConfig := chainContext.Config()
 
-	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
+	l2Pricing := arbState.L2PricingState()
+	err = l2Pricing.CommitMultiGasFees()
+	if err != nil {
+		return nil, nil, err
+	}
+	baseFee, err := l2Pricing.BaseFeeWei()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	header := createNewHeader(lastBlockHeader, l1Info, baseFee, chainConfig)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()

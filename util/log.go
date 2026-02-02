@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package util
 
 import (
@@ -46,7 +48,7 @@ func (h *EphemeralErrorHandler) LogLevel(err error, currentLogLevel func(msg str
 		return currentLogLevel
 	}
 
-	if h.FirstOccurrence.Equal((time.Time{})) {
+	if h.FirstOccurrence.Equal(time.Time{}) {
 		*h.FirstOccurrence = time.Now()
 	}
 

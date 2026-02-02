@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -68,6 +68,7 @@ var (
 
 	batchPosterEstimatedBatchBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/estimated_batch_backlog", nil)
 
+	// Metric names keep "da" prefix for backward compatibility with existing dashboards
 	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
 	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
 	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
@@ -104,6 +105,7 @@ type BatchPoster struct {
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -171,9 +173,13 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	ErrorDelay time.Duration `koanf:"error-delay" reload:"hot"`
+	// Deprecated: use CompressionLevels instead. This sets a single compression level for all backlog levels.
+	CompressionLevel int `koanf:"compression-level" reload:"hot"`
+	// CompressionLevels defines adaptive compression based on backlog. Each entry specifies the
+	// compression level and recompression level to use when backlog >= the entry's backlog threshold.
+	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                       string                      `koanf:"redis-url"`
@@ -229,6 +235,12 @@ func (c *BatchPosterConfig) Validate() error {
 	} else {
 		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
 	}
+	// Resolve compression levels from deprecated and new config fields
+	resolved, err := ResolveCompressionLevels(c.CompressionLevel, c.CompressionLevels)
+	if err != nil {
+		return err
+	}
+	c.CompressionLevels = resolved
 	return nil
 }
 
@@ -250,8 +262,12 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
-	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
-	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
+	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "DEPRECATED: use compression-levels instead. batch compression level")
+	f.Var(&parsedCompressionLevelsConf, prefix+".compression-levels",
+		`JSON array of compression level steps. Format: [{"backlog":<int>,"level":<int>,"recompression-level":<int>},...]. `+
+			`First entry must have backlog:0. Both Level and recomp-level must be 0-11, weakly descending. `+
+			`Example: [{"backlog":0,"level":11,"recompression-level":11},{"backlog":21,"level":6,"recompression-level":11}]`)
+	f.Duration(prefix+".anytrust-retention-period", DefaultBatchPosterConfig.AnyTrustRetentionPeriod, "In AnyTrust mode, the period which AnyTrust nodes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
@@ -288,8 +304,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
-	CompressionLevel:               brotli.BestCompression,
-	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
+	AnyTrustRetentionPeriod:        daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
@@ -327,8 +342,9 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ErrorDelay:                         time.Millisecond * 10,
 	MaxDelay:                           0,
 	WaitForMaxDelay:                    false,
-	CompressionLevel:                   2,
-	DASRetentionPeriod:                 daprovider.DefaultDASRetentionPeriod,
+	CompressionLevel:                   0,
+	CompressionLevels:                  CompressionLevelStepList{{Backlog: 0, Level: 2, RecompressionLevel: 2}},
+	AnyTrustRetentionPeriod:            daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
@@ -359,6 +375,7 @@ type BatchPosterOpts struct {
 	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
 	DAPReaders    *daprovider.DAProviderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -405,6 +422,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		inbox:              opts.Inbox,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
 		seqInbox:           seqInbox,
@@ -643,7 +661,7 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	// Rather than checking the latest block, we're going to check a recent
 	// block (5 blocks back) to avoid reorgs.
-	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetBlockNumber := new(big.Int).Sub(latestHeader.Number, big.NewInt(5))
 	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
@@ -903,6 +921,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -962,33 +981,26 @@ func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64,
 		maxSize -= SequencerMessageHeaderSize
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
-	compressionLevel := b.config().CompressionLevel
-	recompressionLevel := b.config().CompressionLevel
-	if b.GetBacklogEstimate() > 20 {
-		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 40 {
-		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 60 {
-		compressionLevel = arbmath.MinInt(compressionLevel, 4)
-	}
-	if recompressionLevel < compressionLevel {
-		// This should never be possible
-		log.Warn(
-			"somehow the recompression level was lower than the compression level",
-			"recompressionLevel", recompressionLevel,
-			"compressionLevel", compressionLevel,
-		)
-		recompressionLevel = compressionLevel
+	// Determine compression levels based on backlog using configured steps
+	compressionLevel := config.CompressionLevels[0].Level
+	recompressionLevel := config.CompressionLevels[0].RecompressionLevel
+	backlog := b.GetBacklogEstimate()
+	for _, step := range config.CompressionLevels {
+		if backlog >= step.Backlog {
+			compressionLevel = step.Level
+			recompressionLevel = step.RecompressionLevel
+		} else {
+			break
+		}
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -1003,8 +1015,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -1014,10 +1026,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
@@ -1762,7 +1774,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		log.Debug("Attempting to store batch with DA writer", "writerIndex", writerIndex, "numWriters", len(b.dapWriters), "batchSize", len(batchData))
 		storeStart := time.Now()
 		// #nosec G115
-		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix())).Await(ctx)
 		storeDuration := time.Since(storeStart)
 
 		if err != nil {
@@ -1928,7 +1940,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)
@@ -2026,7 +2038,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	b.backlog.Store(backlog)
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
-	if config.DataPoster.UseNoOpStorage {
+	if b.dataPoster.UsingNoOpStorage() {
 		receipt, err := b.l1Reader.WaitForTxApproval(ctx, tx)
 		if err != nil {
 			return false, fmt.Errorf("error waiting for tx receipt: %w", err)

@@ -68,7 +68,7 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", DefaultServerConfig.Addr, "JSON rpc server listening interface")
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
-	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
+	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the DA server supports daprovider's writer interface")
 	f.Int(prefix+".rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
@@ -206,6 +206,20 @@ func (s *ReaderServer) CollectPreimages(
 	sequencerMsg hexutil.Bytes,
 ) (*daprovider.PreimagesResult, error) {
 	promise := s.reader.CollectPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (s *ReaderServer) RecoverPayloadAndPreimages(
+	ctx context.Context,
+	batchNum hexutil.Uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg hexutil.Bytes,
+) (*daprovider.PayloadAndPreimagesResult, error) {
+	promise := s.reader.RecoverPayloadAndPreimages(uint64(batchNum), batchBlockHash, sequencerMsg)
 	result, err := promise.Await(ctx)
 	if err != nil {
 		return nil, err

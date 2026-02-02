@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -228,6 +228,18 @@ func (e *EvilDAProvider) CollectPreimages(
 		promise.ProduceResult(result, err)
 	}()
 	return &promise
+}
+
+func (e *EvilDAProvider) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		// Stub implementation: RecoverPayloadAndPreimages is only called
+		// by the MEL validator to gather preimages before validation
+		return daprovider.PayloadAndPreimagesResult{Preimages: make(daprovider.PreimagesMap), Payload: nil}, nil
+	})
 }
 
 // GenerateReadPreimageProof generates proof for evil data if configured, otherwise delegates

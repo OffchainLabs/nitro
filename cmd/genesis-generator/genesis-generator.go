@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -115,7 +117,7 @@ func mainImpl() error {
 	return nil
 }
 
-func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
+func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) (*types.Block, error) {
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	blockNumber, err := initData.GetNextBlockNumber()
@@ -124,17 +126,17 @@ func generateGenesisBlock(chainDb ethdb.Database, cacheConfig *core.BlockChainCo
 	}
 	timestamp := uint64(0)
 	if blockNumber > 0 {
-		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
+		prevHash = rawdb.ReadCanonicalHash(executionDB, blockNumber-1)
 		if prevHash == EmptyHash {
-			return nil, fmt.Errorf("block number %d not found in database", chainDb)
+			return nil, fmt.Errorf("block number %d not found in database", executionDB)
 		}
-		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
+		prevHeader := rawdb.ReadHeader(executionDB, prevHash, blockNumber-1)
 		if prevHeader == nil {
-			return nil, fmt.Errorf("block header for block %d not found in database", chainDb)
+			return nil, fmt.Errorf("block header for block %d not found in database", executionDB)
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, timestamp, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}

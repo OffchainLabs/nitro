@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -22,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/daprovider/das"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
 	dapserver "github.com/offchainlabs/nitro/daprovider/server"
@@ -47,8 +49,8 @@ type Config struct {
 	ParentChain ParentChainConfig `koanf:"parent-chain"`
 
 	// Mode-specific configs
-	Anytrust    das.DataAvailabilityConfig `koanf:"anytrust"`
-	ReferenceDA referenceda.Config         `koanf:"referenceda"`
+	Anytrust    anytrust.Config    `koanf:"anytrust"`
+	ReferenceDA referenceda.Config `koanf:"referenceda"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel string                 `koanf:"log-level"`
@@ -72,7 +74,7 @@ var DefaultConfig = Config{
 	WithDataSigner:   false,
 	DataSignerWallet: arbnode.DefaultBatchPosterL1WalletConfig,
 	ParentChain:      DefaultParentChainConfig,
-	Anytrust:         das.DefaultDataAvailabilityConfig,
+	Anytrust:         anytrust.DefaultConfig,
 	ReferenceDA:      referenceda.DefaultConfig,
 	Conf:             genericconf.ConfConfigDefault,
 	LogLevel:         "INFO",
@@ -111,7 +113,7 @@ func parseDAProvider(args []string) (*Config, error) {
 	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
 
 	// Add mode-specific options
-	das.DataAvailabilityConfigAddDaserverOptions("anytrust", f)
+	anytrust.ConfigAddServerOptions("anytrust", f)
 	referenceda.ConfigAddOptions("referenceda", f)
 
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -121,7 +123,7 @@ func parseDAProvider(args []string) (*Config, error) {
 		return nil, err
 	}
 
-	if err = das.FixKeysetCLIParsing("anytrust.rpc-aggregator.backends", k); err != nil {
+	if err = anytrust.FixKeysetCLIParsing("anytrust.rpc-aggregator.backends", k); err != nil {
 		return nil, err
 	}
 
@@ -158,8 +160,8 @@ func main() {
 }
 
 func startup() error {
-	// Some different defaults to DAS config in a node.
-	das.DefaultDataAvailabilityConfig.Enable = true
+	// Some different defaults to AnyTrust config in a node.
+	anytrust.DefaultConfig.Enable = true
 
 	config, err := parseDAProvider(os.Args[1:])
 	if err != nil {
@@ -220,7 +222,7 @@ func startup() error {
 			return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address")
 		}
 
-		l1Client, err = das.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
+		l1Client, err = anytrust.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}
@@ -231,7 +233,7 @@ func startup() error {
 			return err
 		}
 
-		seqInboxAddrPtr, err := das.OptionalAddressFromString(config.ParentChain.SequencerInboxAddress)
+		seqInboxAddrPtr, err := anytrust.OptionalAddressFromString(config.ParentChain.SequencerInboxAddress)
 		if err != nil {
 			return err
 		}
@@ -253,7 +255,7 @@ func startup() error {
 		if !config.ReferenceDA.Enable {
 			return errors.New("--referenceda.enable is required to start a ReferenceDA provider server")
 		}
-		l1Client, err = das.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
+		l1Client, err = anytrust.GetL1Client(ctx, config.ParentChain.ConnectionAttempts, config.ParentChain.NodeURL)
 		if err != nil {
 			return err
 		}
@@ -268,7 +270,7 @@ func startup() error {
 
 	switch config.Mode {
 	case "anytrust":
-		factory := das.NewFactory(
+		factory := anytrust.NewFactory(
 			&config.Anytrust,
 			dataSigner,
 			l1Client,
@@ -297,7 +299,7 @@ func startup() error {
 				cleanupFuncs = append(cleanupFuncs, writerCleanup)
 			}
 		}
-		headerBytes = das.SupportedHeaderBytes
+		headerBytes = anytrust.SupportedHeaderBytes
 
 	case "referenceda":
 		factory := referenceda.NewFactory(
