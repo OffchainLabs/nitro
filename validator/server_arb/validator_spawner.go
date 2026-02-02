@@ -31,6 +31,7 @@ type ArbitratorSpawnerConfig struct {
 	OutputPath                  string                       `koanf:"output-path" reload:"hot"`
 	Execution                   MachineCacheConfig           `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 	ExecutionRunTimeout         time.Duration                `koanf:"execution-run-timeout" reload:"hot"`
+	MachineConfig               ArbitratorMachineConfig      `koanf:"machine-config" reload:"hot"`
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
@@ -40,6 +41,7 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Workers:                     0,
 	OutputPath:                  "./target/output",
 	Execution:                   DefaultMachineCacheConfig,
+	MachineConfig:               DefaultArbitratorMachineConfig,
 	ExecutionRunTimeout:         time.Minute * 15,
 	RedisValidationServerConfig: redis.DefaultValidationServerConfig,
 }
@@ -49,6 +51,7 @@ func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
+	ArbitratorMachineConfigAddOptions(prefix+".machine-config", f)
 	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
@@ -83,9 +86,10 @@ func WithWrapper(wrapper MachineWrapper) SpawnerOption {
 
 func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFetcher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
+	cfg := config()
 	spawner := &ArbitratorSpawner{
 		locator:         locator,
-		machineLoader:   NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
+		machineLoader:   NewArbMachineLoader(&cfg.MachineConfig, locator),
 		machineWrappers: make([]MachineWrapper, 0),
 		config:          config,
 	}
@@ -121,6 +125,9 @@ func (v *ArbitratorSpawner) loadEntryToMachine(_ context.Context, entry *validat
 		return nil, errors.New("preimage not found")
 	}
 	if err := mach.SetPreimageResolver(resolver); err != nil {
+		return err
+	}
+	if err := mach.SetEndParentChainBlockHash(entry.EndParentChainBlockHash); err != nil {
 		return err
 	}
 	err := mach.SetGlobalState(entry.StartState)

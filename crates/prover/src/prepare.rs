@@ -30,9 +30,22 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     let binary_path = Path::new(&machines);
     let mut mach = Machine::new_from_wavm(binary_path)?;
 
+    let block_hash: [u8; 32] = data.start_state.block_hash.0;
+    let block_hash: Bytes32 = block_hash.into();
+    let send_root: [u8; 32] = data.start_state.send_root.0;
+    let send_root: Bytes32 = send_root.into();
+    // This tool is only used to benchmark bold proving of block execution,
+    // so the final two MEL fields are left as default.
+    let bytes32_vals: [Bytes32; 4] = [
+        block_hash,
+        send_root,
+        Bytes32::default(),
+        Bytes32::default(),
+    ];
+    let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
     let start_state = GlobalState {
-        bytes32_vals: [data.start_state.block_hash, data.start_state.send_root],
-        u64_vals: [data.start_state.batch, data.start_state.pos_in_batch],
+        bytes32_vals,
+        u64_vals,
     };
 
     for (arch, wasm) in data.user_wasms.iter() {
