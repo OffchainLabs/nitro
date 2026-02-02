@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -113,7 +114,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address, params)
+	wasm, err := getWasm(statedb, address, params, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -298,12 +299,12 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams, burner burn.Burner) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(statedb, prefixedWasm, params, true)
+	return getWasmFromContractCode(statedb, prefixedWasm, params, true, burner)
 }
 
-func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, isActivation bool) ([]byte, error) {
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, isActivation bool, burner burn.Burner) ([]byte, error) {
 	if len(prefixedWasm) == 0 {
 		return nil, ProgramNotWasmError()
 	}
@@ -314,7 +315,7 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
 		if state.IsStylusRootProgramPrefix(prefixedWasm) {
-			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
+			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation, burner)
 		}
 
 		if state.IsStylusFragmentPrefix(prefixedWasm) {
@@ -339,7 +340,7 @@ func getWasmFromClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
 }
 
-func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, isActivation bool) ([]byte, error) {
+func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, isActivation bool, burner burn.Burner) ([]byte, error) {
 	root, err := state.NewStylusRoot(data)
 	if err != nil {
 		return nil, err
@@ -361,6 +362,11 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 	var compressedWasm []byte
 	for _, addr := range root.Addresses {
 		fragCode := statedb.GetCode(addr)
+		if isActivation && burner != nil {
+			if err := chargeFragmentReadGas(burner, statedb, addr, uint64(len(fragCode))); err != nil {
+				return nil, err
+			}
+		}
 
 		payload, err := state.StripStylusFragmentPrefix(fragCode)
 		if err != nil {
@@ -385,6 +391,42 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 	}
 
 	return wasm, nil
+}
+
+// chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
+func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
+	if codeSize > 0x1FFFFFFFE0 {
+		return vm.ErrGasUintOverflow
+	}
+	cost := multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
+	var overflow bool
+	if !statedb.AddressInAccessList(addr) {
+		statedb.AddAddressToAccessList(addr)
+		// charge cold account access gas
+		if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, gethParams.ColdAccountAccessCostEIP2929-gethParams.WarmStorageReadCostEIP2929); overflow {
+			return vm.ErrGasUintOverflow
+		}
+	}
+	// charge copy gas
+	words := (codeSize + 31) / 32
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, words*gethParams.CopyGas); overflow {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", words*gethParams.CopyGas)
+		return vm.ErrGasUintOverflow
+	}
+	// charge memory gas
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindComputation, evmMemoryCost(codeSize)); overflow {
+		return vm.ErrGasUintOverflow
+	}
+	for kind := multigas.ResourceKindUnknown; kind < multigas.NumResourceKind; kind++ {
+		amount := cost.Get(kind)
+		if amount == 0 {
+			continue
+		}
+		if err := burner.Burn(kind, amount); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
