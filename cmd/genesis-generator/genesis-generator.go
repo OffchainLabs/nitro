@@ -4,9 +4,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/pflag"
 
@@ -85,18 +85,13 @@ func mainImpl() error {
 		return fmt.Errorf("genesis ArbOS init was not set (`arbOSInit`)")
 	}
 
-	serializedChainConfig := gen.SerializedChainConfig
-	if serializedChainConfig == "" {
-		log.Warn("Serialized chain config was not set (`serializedChainConfig`) - using the `config` field serialization from the genesis file")
-		configSerializationBytes, err := extractSerializedChainConfigFromJSON(genesisJson)
-		if err != nil {
-			return fmt.Errorf("failed to extract serialized chain config from genesis JSON: %w", err)
-		}
-		serializedChainConfig = string(configSerializationBytes)
+	if gen.SerializedChainConfig == "" {
+		return errors.New("serialized chain config was not set (`serializedChainConfig`)")
 	}
+	serializedChainConfig := []byte(gen.SerializedChainConfig)
 
 	var chainConfig params.ChainConfig
-	if err := json.Unmarshal([]byte(serializedChainConfig), &chainConfig); err != nil {
+	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
 		return fmt.Errorf("failed to unmarshal chain config: %w", err)
 	}
 
@@ -114,7 +109,7 @@ func mainImpl() error {
 		ChainId:               chainConfig.ChainID,
 		InitialL1BaseFee:      initialL1BaseFee,
 		ChainConfig:           &chainConfig,
-		SerializedChainConfig: []byte(serializedChainConfig),
+		SerializedChainConfig: serializedChainConfig,
 	}
 	genesisBlock, err := generateGenesisBlock(rawdb.NewMemoryDatabase(),
 		gethexec.DefaultCacheConfigFor(&config.Caching),
@@ -165,25 +160,6 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 	}
 
 	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
-}
-
-func extractSerializedChainConfigFromJSON(genesisJson []byte) ([]byte, error) {
-	jsonStr := string(genesisJson)
-	// Decode with json.NewDecoder
-	decoder := json.NewDecoder(strings.NewReader(jsonStr))
-
-	// Set decoded json feilds to map
-	var result map[string]json.RawMessage
-	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	serializedChainConfig, exists := result["config"]
-	if !exists {
-		return nil, fmt.Errorf("config field not found")
-	}
-
-	return serializedChainConfig, nil
 }
 
 type Config struct {
