@@ -358,12 +358,13 @@ func (d *DelayedSequencer) sequenceWithoutLockoutMsgExtractor(ctx context.Contex
 		}
 		return nil
 	}
-	if d.waitingForFinalizedPos != nil && *d.waitingForFinalizedPos > finalizedPos {
+
+	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
 		return nil
 	}
 
-	// Reset what pos we're waiting for if we've caught up
-	d.waitingForFinalizedPos = nil
+	// Reset what block we're waiting for if we've caught up
+	d.waitingForFinalizedBlock = nil
 
 	dbDelayedCount, err := d.msgExtractor.GetDelayedCount(ctx, 0)
 	if err != nil {
@@ -380,7 +381,7 @@ func (d *DelayedSequencer) sequenceWithoutLockoutMsgExtractor(ctx context.Contex
 	for pos < dbDelayedCount {
 		if pos > finalizedPos {
 			// Message isn't finalized yet; wait for it to be
-			d.waitingForFinalizedPos = &pos
+			d.waitingForFinalizedBlock = &pos
 			break
 		}
 		msg, err := d.msgExtractor.GetDelayedMessage(pos)
