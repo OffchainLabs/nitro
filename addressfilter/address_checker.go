@@ -117,9 +117,9 @@ func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
 	select {
 	case s.checker.workChan <- workItem{addr: addr, state: s}:
 		// ok
-	default:
-		// queue full: process synchronously to avoid dropping
-		s.checker.processAddress(addr, s)
+	case <-s.checker.GetContext().Done():
+		// shutting down, canceling worker
+		s.pending.Done()
 	}
 }
 

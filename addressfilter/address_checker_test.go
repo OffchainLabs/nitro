@@ -64,6 +64,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 		/* workerCount */ 1,
 		/* queueSize */ 0,
 	)
+	overflowChecker.Start(context.Background())
 
 	// Tx 5: synchronous call
 	overflowState := mustState(t, overflowChecker.NewTxState())
