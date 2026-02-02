@@ -11,16 +11,17 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -68,6 +69,18 @@ func main() {
 
 func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 	// TODO: Implement.
+	lastBlockHash := wavmio.GetLastBlockHash()
+	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
+	if err != nil {
+		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
+	}
+	var lastBlockHeader *types.Header
+	var lastBlockStateRoot common.Hash
+	if lastBlockHash != (common.Hash{}) {
+		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
+		lastBlockStateRoot = lastBlockHeader.Root
+	}
+
 	return nil
 }
 
