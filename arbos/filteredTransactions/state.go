@@ -38,3 +38,14 @@ func (s *FilteredTransactionsState) IsFiltered(txHash common.Hash) (bool, error)
 	}
 	return value == presentHash, nil
 }
+
+func (s *FilteredTransactionsState) IsFilteredFree(txHash common.Hash) bool {
+	return s.store.GetFree(txHash) == presentHash
+}
+
+// DeleteFree removes a tx hash from the filter without charging gas.
+// This is called after a filtered tx is executed as a no-op to clean up.
+// The entry is truly deleted from the storage trie (not just set to zero).
+func (s *FilteredTransactionsState) DeleteFree(txHash common.Hash) {
+	s.store.ClearFree(txHash)
+}
