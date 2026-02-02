@@ -15,7 +15,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use crate::engine::config::JitMachineConfig;
-use crate::engine::machine::JitMachine;
+use crate::engine::machine::JitProcessManager;
 
 #[derive(Debug)]
 pub struct ServerState {
@@ -24,7 +24,7 @@ pub struct ServerState {
     pub module_root: Bytes32,
     /// jit machine responsible for computing next GlobalState. Not wrapped
     /// in Arc<> since the caller of ServerState is wrapped in Arc<>
-    pub jit_machine: Option<JitMachine>,
+    pub jit_machine: Option<JitProcessManager>,
     pub available_workers: usize,
 }
 
@@ -36,7 +36,7 @@ impl ServerState {
             InputMode::Continuous => {
                 let config = JitMachineConfig::default();
 
-                let jit_machine = JitMachine::new(&config, Some(module_root))?;
+                let jit_machine = JitProcessManager::new(&config, module_root)?;
 
                 Some(jit_machine)
             }

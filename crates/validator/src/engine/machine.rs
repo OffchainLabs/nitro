@@ -22,18 +22,24 @@
 use crate::engine::config::JitMachineConfig;
 use anyhow::{anyhow, Context, Result};
 use arbutil::Bytes32;
+use std::collections::HashMap;
 use std::net::TcpListener;
 use std::{
     env::{self},
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use tokio::io::AsyncWriteExt;
+use tokio::sync::RwLock;
 use tokio::{
     process::{Child, ChildStdin, Command},
     sync::Mutex,
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use validation::transfer::{receive_response, send_validation_input};
 use validation::{GoGlobalState, ValidationInput};
 
@@ -44,70 +50,14 @@ pub struct JitMachine {
     pub process_stdin: Mutex<Option<ChildStdin>>,
     /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown
     pub process: Mutex<Child>,
-    pub wasm_memory_usage_limit: u64,
 }
 
 impl JitMachine {
-    pub fn new(config: &JitMachineConfig, module_root: Option<Bytes32>) -> Result<Self> {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let root_path: PathBuf = manifest_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf()) // Convert &Path to PathBuf
-            .unwrap_or_else(|| {
-                // This runs only if the parents don't exist
-                env::current_dir().expect("Failed to get current working directory")
-            });
-
-        // TODO: use JitLocator to get jit_path
-        let jit_path = root_path.join("target").join("bin").join("jit");
-        let mut cmd = Command::new(jit_path);
-
-        // TODO: use JitLocator to get bin_path
-        let bin_path = if let Some(module_root) = module_root {
-            root_path
-                .join("target")
-                .join("machines")
-                .join(format!("0x{module_root}"))
-                .join(&config.prover_bin_path)
-        } else {
-            root_path
-                .join("target")
-                .join("machines")
-                .join("latest")
-                .join("replay.wasm")
-        };
-
-        if config.jit_cranelift {
-            cmd.arg("--cranelift");
-        }
-
-        cmd.arg("--binary")
-            .arg(bin_path)
-            .arg("continuous")
-            .stdin(Stdio::piped()) // We must pipe stdin so we can write to it.
-            .stdout(Stdio::inherit()) // Inherit stdout/stderr so logs show up in your main console.
-            .stderr(Stdio::inherit());
-
-        let mut child = cmd.spawn().context("failed to spawn jit binary")?;
-
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
-
-        Ok(Self {
-            process_stdin: Mutex::new(Some(stdin)),
-            process: Mutex::new(child),
-            wasm_memory_usage_limit: config.wasm_memory_usage_limit,
-        })
-    }
-
-    pub async fn is_active(&self) -> bool {
-        self.process_stdin.lock().await.is_some()
-    }
-
-    pub async fn feed_machine(&self, request: &ValidationInput) -> Result<GoGlobalState> {
+    pub async fn feed_machine(
+        &self,
+        wasm_memory_usage_limit: u64,
+        request: &ValidationInput,
+    ) -> Result<GoGlobalState> {
         // 1. Create new TCP connection
         // Binding with a port number of 0 will request that the OS assigns a port to this listener.
         let listener = TcpListener::bind("127.0.0.1:0").context("failed to create TCP listener")?;
@@ -141,10 +91,10 @@ impl JitMachine {
         // 6. Read Response and return new state
         match receive_response(&mut conn)? {
             Ok((new_state, memory_used)) => {
-                if memory_used > self.wasm_memory_usage_limit {
+                if memory_used > wasm_memory_usage_limit {
                     warn!(
                         "WARN: memory used {} exceeds limit {}",
-                        memory_used, self.wasm_memory_usage_limit
+                        memory_used, wasm_memory_usage_limit
                     );
                 }
                 Ok(new_state)
@@ -159,7 +109,6 @@ impl JitMachine {
     pub async fn complete_machine(&self) -> Result<()> {
         // Close stdin. This sends EOF to the child process, signaling it to stop.
         // We take the Option to ensure it's dropped and cannot be used again.
-
         let mut locked_process_stdin = self.process_stdin.lock().await;
         if let Some(stdin) = locked_process_stdin.take() {
             drop(stdin);
@@ -173,4 +122,158 @@ impl JitMachine {
 
         Ok(())
     }
+}
+
+#[derive(Debug)]
+pub struct JitProcessManager {
+    pub wasm_memory_usage_limit: u64,
+    // Using Arc<JitMachine> allows us to clone the Arc and drop the HashMap lock
+    // immediately, avoiding contention during long-running I/O operations.
+    pub machines: RwLock<HashMap<Bytes32, Arc<JitMachine>>>,
+    // Signals that the server is shutting down. When true, new requests are rejected.
+    shutting_down: AtomicBool,
+}
+
+impl JitProcessManager {
+    pub fn new(config: &JitMachineConfig, module_root: Bytes32) -> Result<Self> {
+        // TODO: use JitLocator to get jit_path
+        let sub_machine = create_jit_machine(config, module_root)?;
+
+        let mut machines = HashMap::with_capacity(16);
+        machines.insert(module_root, Arc::new(sub_machine));
+
+        Ok(Self {
+            wasm_memory_usage_limit: config.wasm_memory_usage_limit,
+            machines: RwLock::new(machines),
+            shutting_down: AtomicBool::new(false),
+        })
+    }
+
+    pub async fn is_machine_active(&self, module_root: Bytes32) -> bool {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return false;
+        }
+
+        // Clone the Arc while holding the read lock, then drop the lock immediately
+        // to avoid holding it during the mutex lock operation.
+        let machine_arc = {
+            let machines = self.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+
+        if let Some(machine) = machine_arc {
+            machine.process_stdin.lock().await.is_some()
+        } else {
+            false
+        }
+    }
+
+    pub async fn feed_machine_with_root(
+        &self,
+        request: &ValidationInput,
+        module_root: Bytes32,
+    ) -> Result<GoGlobalState> {
+        // Reject new operations if we're shutting down
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(anyhow!("Server is shutting down"));
+        }
+
+        let machine_exists = {
+            let locked_machine = self.machines.read().await;
+            locked_machine.contains_key(&module_root)
+        };
+
+        // This should not happen and should be handled by availability layer + MachineLocator
+        if !machine_exists {
+            return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"));
+        }
+
+        // Clone the Arc while holding the read lock, then drop the lock immediately.
+        // This allows other threads to access the HashMap while we perform I/O operations.
+        let machine_arc = {
+            let machines = self.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+
+        if let Some(sub_machine) = machine_arc {
+            sub_machine
+                .feed_machine(self.wasm_memory_usage_limit, request)
+                .await
+        } else {
+            Err(anyhow!(
+                "did not find machine with module root {module_root}"
+            ))
+        }
+    }
+
+    pub async fn complete_machines(&self) -> Result<()> {
+        // Signal that we're shutting down to reject new requests
+        self.shutting_down.store(true, Ordering::Release);
+
+        // It's okay and expected to hold the write lock while shutting down since we don't
+        // allow any other requests to be performed on the server
+        let mut locked_machines = self.machines.write().await;
+
+        // Iterate over all machines: for each one, complete it and remove it from the map
+        // while holding the write lock. This ensures no other thread can access machines
+        // during shutdown.
+        while let Some(module_root) = locked_machines.keys().next().cloned() {
+            // We clone the Arc so we can await without borrowing the map
+            if let Some(machine) = locked_machines.get(&module_root).cloned() {
+                info!("Completing machine with module root {module_root}");
+                machine.complete_machine().await?;
+                locked_machines.remove(&module_root);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn create_jit_machine(config: &JitMachineConfig, module_root: Bytes32) -> Result<JitMachine> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root_path: PathBuf = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_path_buf()) // Convert &Path to PathBuf
+        .unwrap_or_else(|| {
+            // This runs only if the parents don't exist
+            env::current_dir().expect("Failed to get current working directory")
+        });
+
+    // TODO: use JitLocator to get jit_path
+    let jit_path = root_path.join("target").join("bin").join("jit");
+    let mut cmd = Command::new(jit_path);
+
+    // TODO: use JitLocator to get bin_path
+    let bin_path = root_path
+        .join("target")
+        .join("machines")
+        .join(format!("0x{module_root}"))
+        .join(&config.prover_bin_path);
+
+    if config.jit_cranelift {
+        cmd.arg("--cranelift");
+    }
+
+    cmd.arg("--binary")
+        .arg(bin_path)
+        .arg("continuous")
+        .stdin(Stdio::piped()) // We must pipe stdin so we can write to it.
+        .stdout(Stdio::inherit()) // Inherit stdout/stderr so logs show up in your main console.
+        .stderr(Stdio::inherit());
+
+    let mut child = cmd.spawn().context("failed to spawn jit binary")?;
+
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
+
+    let sub_machine = JitMachine {
+        process_stdin: Mutex::new(Some(stdin)),
+        process: Mutex::new(child),
+    };
+
+    Ok(sub_machine)
 }
