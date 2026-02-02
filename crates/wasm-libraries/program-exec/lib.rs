@@ -1,6 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#![allow(clippy::missing_safety_doc)]
+
 #[link(wasm_import_module = "hostio")]
 extern "C" {
     fn program_continue(response: u32) -> u32;
