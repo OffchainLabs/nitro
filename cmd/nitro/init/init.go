@@ -1095,16 +1095,16 @@ func GetAndValidateGenesisAssertion(ctx context.Context, l2BlockChain *core.Bloc
 		return err
 	}
 
-	if !isBoldChain {
-		return errors.New("genesis assertion is only valid for bold chains")
+	if isBoldChain {
+		accountsReader, err := initDataReader.GetAccountDataReader()
+		if err != nil {
+			return err
+		}
+
+		return validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, genesisBlock.Hash(), sendRoot, accountsReader.More())
 	}
 
-	accountsReader, err := initDataReader.GetAccountDataReader()
-	if err != nil {
-		return err
-	}
-
-	return validateGenesisAssertion(genesisAssertionCreationInfo, genesisAssertionHash, genesisBlock.Hash(), sendRoot, accountsReader.More())
+	return nil
 }
 
 func validateGenesisAssertion(genesisAssertionCreationInfo *protocol.AssertionCreatedInfo, genesisAssertionHash [32]byte, genesisHash common.Hash, sendRoot common.Hash, initDataReaderHasAccounts bool) error {
