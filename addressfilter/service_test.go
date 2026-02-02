@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
@@ -306,8 +307,7 @@ func TestConfig_Validate(t *testing.T) {
 	validConfig := Config{
 		Enable: true,
 		S3: s3syncer.Config{
-			Bucket:    "test-bucket",
-			Region:    "us-east-1",
+			Config:    s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
 			ObjectKey: "hashlists/current.json",
 		},
 		PollInterval: 5 * time.Minute,

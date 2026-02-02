@@ -5,6 +5,8 @@ package s3syncer
 
 import (
 	"testing"
+
+	"github.com/offchainlabs/nitro/util/s3client"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -16,8 +18,7 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Bucket:    "test-bucket",
-				Region:    "us-east-1",
+				Config:    s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: false,
@@ -25,7 +26,7 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "missing bucket",
 			config: Config{
-				Region:    "us-east-1",
+				Config:    s3client.Config{Region: "us-east-1"},
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: true,
@@ -33,7 +34,7 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "missing region",
 			config: Config{
-				Bucket:    "test-bucket",
+				Config:    s3client.Config{Bucket: "test-bucket"},
 				ObjectKey: "path/to/file.json",
 			},
 			wantErr: true,
@@ -41,19 +42,20 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "missing object key",
 			config: Config{
-				Bucket: "test-bucket",
-				Region: "us-east-1",
+				Config: s3client.Config{Region: "us-east-1", Bucket: "test-bucket"},
 			},
 			wantErr: true,
 		},
 		{
 			name: "valid config with credentials",
 			config: Config{
-				Bucket:    "test-bucket",
-				Region:    "us-east-1",
+				Config: s3client.Config{
+					Region:    "us-east-1",
+					Bucket:    "test-bucket",
+					AccessKey: "AKIAIOSFODNN7EXAMPLE",
+					SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+				},
 				ObjectKey: "path/to/file.json",
-				AccessKey: "AKIAIOSFODNN7EXAMPLE",
-				SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 			},
 			wantErr: false,
 		},

@@ -23,10 +23,12 @@ import (
 	"github.com/offchainlabs/nitro/util/s3client"
 )
 
+// TODO: Refactor to embed util/s3client.Config. Requires CLI flag migration.
 type S3StorageServiceConfig struct {
 	Enable              bool   `koanf:"enable"`
 	AccessKey           string `koanf:"access-key"`
 	Bucket              string `koanf:"bucket"`
+	Endpoint            string `koanf:"endpoint"`
 	ObjectPrefix        string `koanf:"object-prefix"`
 	Region              string `koanf:"region"`
 	SecretKey           string `koanf:"secret-key"`
@@ -39,6 +41,7 @@ func S3ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultS3StorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from an AWS S3 bucket")
 	f.String(prefix+".access-key", DefaultS3StorageServiceConfig.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3StorageServiceConfig.Bucket, "S3 bucket")
+	f.String(prefix+".endpoint", DefaultS3StorageServiceConfig.Endpoint, "custom S3 endpoint URL (for MinIO, localstack, or other S3-compatible services)")
 	f.String(prefix+".object-prefix", DefaultS3StorageServiceConfig.ObjectPrefix, "prefix to add to S3 objects")
 	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
@@ -53,7 +56,7 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) {
-	client, err := s3client.NewS3FullClient(context.Background(), config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClient(context.Background(), config.AccessKey, config.SecretKey, config.Region, config.Endpoint)
 	if err != nil {
 		return nil, err
 	}
