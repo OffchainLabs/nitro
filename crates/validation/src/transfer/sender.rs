@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::primitives::{write_bytes, write_bytes32, write_u32, write_u64, write_u8};
 use crate::transfer::{markers, IOResult};
 use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};

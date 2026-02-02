@@ -53,13 +53,7 @@ RUN apt-get update && \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
 COPY Cargo.* ./
-COPY crates/arbutil crates/arbutil
-COPY crates/brotli crates/brotli
-COPY crates/caller-env crates/caller-env
-COPY crates/prover crates/prover
-COPY crates/validation crates/validation
-COPY crates/wasm-libraries crates/wasm-libraries
-COPY crates/tools/wasmer crates/tools/wasmer
+COPY crates/ crates/
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
@@ -116,17 +110,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     cargo install --force cbindgen --version 0.24.3
 COPY Cargo.* ./
 COPY ./Makefile ./
-COPY crates/arbutil crates/arbutil
-COPY crates/bench crates/bench
-COPY crates/brotli crates/brotli
-COPY crates/caller-env crates/caller-env
-COPY crates/prover crates/prover
-COPY crates/wasm-libraries crates/wasm-libraries
-COPY crates/jit crates/jit
-COPY crates/validation crates/validation
-COPY crates/stylus crates/stylus
-COPY crates/validator crates/validator
-COPY crates/tools/wasmer crates/tools/wasmer
+COPY crates/ crates/
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -147,38 +131,8 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
 COPY Cargo.* ./
-COPY crates/arbutil crates/arbutil
-COPY crates/bench crates/bench
-COPY crates/brotli crates/brotli
-COPY crates/caller-env crates/caller-env
-COPY crates/validation crates/validation
-COPY crates/prover/Cargo.toml crates/prover/
-COPY crates/prover/benches crates/prover/benches
-COPY crates/bench/Cargo.toml crates/bench/
-COPY crates/jit/Cargo.toml crates/jit/
-COPY crates/stylus/Cargo.toml crates/stylus/
-COPY crates/validator/Cargo.toml crates/validator/
-COPY crates/tools/wasmer crates/tools/wasmer
-COPY crates/wasm-libraries/forward crates/wasm-libraries/forward
-COPY crates/wasm-libraries/user-host-trait/Cargo.toml crates/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir crates/{prover,jit,stylus,validator}/src crates/wasm-libraries/user-host-trait/src'
-RUN echo "fn test() {}" > crates/jit/src/lib.rs && \
-    echo "fn test() {}" > crates/prover/src/lib.rs && \
-    echo "fn test() {}" > crates/bench/src/lib.rs && \
-    echo "fn test() {}" > crates/prover/benches/merkle_bench.rs && \
-    echo "fn test() {}" > crates/stylus/src/lib.rs && \
-    echo "fn test() {}" > crates/validator/src/lib.rs && \
-    echo "fn test() {}" > crates/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --release --lib && \
-    rm crates/prover/src/lib.rs crates/jit/src/lib.rs crates/stylus/src/lib.rs && \
-    rm crates/wasm-libraries/user-host-trait/src/lib.rs && \
-    rm crates/prover/benches/merkle_bench.rs && \
-    rm crates/bench/src/lib.rs
+COPY crates/ crates/
 COPY ./Makefile ./
-COPY crates/prover crates/prover
-COPY crates/wasm-libraries crates/wasm-libraries
-COPY crates/jit crates/jit
-COPY crates/stylus crates/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
