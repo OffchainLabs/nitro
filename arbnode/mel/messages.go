@@ -59,14 +59,16 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 }
 
 func (m *DelayedInboxMessage) Hash() common.Hash {
-	encoded, err := rlp.EncodeToBytes(m.WithMELRelevantFields())
+	encoded, err := rlp.EncodeToBytes(m.WithOnlyMELConsensusFields())
 	if err != nil {
 		panic(err)
 	}
 	return crypto.Keccak256Hash(encoded)
 }
 
-func (m *DelayedInboxMessage) WithMELRelevantFields() *DelayedInboxMessage {
+// WithOnlyMELConsensusFields returns a shallow copy of the DelayedInboxMessage with
+// only the fields relevant to MEL consensus being present
+func (m *DelayedInboxMessage) WithOnlyMELConsensusFields() *DelayedInboxMessage {
 	return &DelayedInboxMessage{
 		BlockHash: m.BlockHash,
 		Message: &arbostypes.L1IncomingMessage{
