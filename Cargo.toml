@@ -9,12 +9,24 @@ members = [
     "crates/prover",
     "crates/stylus",
     "crates/validator",
+    "crates/wasm-libraries/arbcompress",
+    "crates/wasm-libraries/arbcrypto",
+    "crates/wasm-libraries/forward",
+    "crates/wasm-libraries/host-io",
+    "crates/wasm-libraries/program-exec",
+    "crates/wasm-libraries/user-host",
+    "crates/wasm-libraries/user-host-trait",
+    "crates/wasm-libraries/user-test",
+    "crates/wasm-libraries/wasi-stub",
+]
+default-members = [
+    "crates/jit",
+    "crates/prover",
 ]
 exclude = [
     "crates/langs",
     "crates/stylus/tests",
     "crates/tools",
-    "crates/wasm-libraries",
     "crates/wasm-testsuite",
 ]
 resolver = "2"
@@ -56,6 +68,7 @@ num_enum = { version = "0.7.2", default-features = false }
 num-traits = { version = "0.2.17" }
 once_cell = { version = "1.19.0" }
 parking_lot = { version = "0.12.1" }
+paste = { version = "1.0.15" }
 rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 rayon = { version = "1.5.1" }
@@ -78,10 +91,12 @@ tracing = { version = "0.1.44" }
 tracing-subscriber = { version = "0.3.22" }
 wasmparser = { version = "0.121" }
 wat = { version = "1.0.56" }
+wee_alloc = { version = "0.4.5" }
 
 arbutil = { path = "crates/arbutil" }
 brotli = { path = "crates/brotli" }
-caller-env = { path = "crates/caller-env" }
+caller-env = { path = "crates/caller-env", default-features = false }
+forward = { path = "crates/wasm-libraries/forward" }
 jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }

@@ -1,4 +1,4 @@
-// Copyright 2026-2026, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -98,7 +98,7 @@ func processFile(path string, stats *stats) error {
 	// 4. Validate existing header
 	switch validateHeader(content, birthYear, lastYear) {
 	case validHeader:
-		colors.PrintGrey(fmt.Sprintf("[✓] %-60s | License years: %s-%s", path, birthYear, lastYear))
+		colors.PrintGrey(fmt.Sprintf("[✓] %-60s | License years: %s", path, yearRangeString(birthYear, lastYear)))
 		stats.Valid++
 		return nil
 	case missingURL:
@@ -106,7 +106,7 @@ func processFile(path string, stats *stats) error {
 	case missingCopyright:
 		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Missing copyright line", path))
 	case incorrectYears:
-		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Incorrect year range (Expected %s-%s)", path, birthYear, lastYear))
+		colors.PrintRed(fmt.Sprintf("[X] %-60s | Reason: Incorrect year range (Expected %s)", path, yearRangeString(birthYear, lastYear)))
 	}
 
 	// 5. Handle inconsistency
@@ -114,7 +114,7 @@ func processFile(path string, stats *stats) error {
 		if err := applyFix(path, content, birthYear); err != nil {
 			return fmt.Errorf("failed to apply fix: %w", err)
 		}
-		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Set license to %s-%s range", path, birthYear, currentYear))
+		colors.PrintYellow(fmt.Sprintf("[+] %-60s | Set license to %s range", path, yearRangeString(birthYear, currentYear)))
 		stats.Fixed++
 	}
 	return nil
@@ -165,7 +165,8 @@ func validateHeader(content string, birth, update string) validationResult {
 	if match := yearRegex.FindStringSubmatch(searchArea); match == nil {
 		return missingCopyright
 	}
-	expectedCopyright := fmt.Sprintf("Copyright %s-%s, %s", birth, update, company)
+
+	expectedCopyright := fmt.Sprintf("Copyright %s, %s", yearRangeString(birth, update), company)
 	if !strings.Contains(searchArea, expectedCopyright) {
 		return incorrectYears
 	}
@@ -174,8 +175,9 @@ func validateHeader(content string, birth, update string) validationResult {
 
 func applyFix(path, content, birthYear string) error {
 	comment := getCommentStyle(path)
-	header := fmt.Sprintf("%s Copyright %s-%s, %s\n%s For license information, see %s\n",
-		comment, birthYear, currentYear, company, comment, licenseURL)
+
+	header := fmt.Sprintf("%s Copyright %s, %s\n%s For license information, see %s\n",
+		comment, yearRangeString(birthYear, currentYear), company, comment, licenseURL)
 
 	lines := strings.Split(content, "\n")
 	startIdx := 0
@@ -207,4 +209,11 @@ func printSummary(s *stats) {
 		colors.PrintRed(fmt.Sprintf("Invalid:        %d (Run with --fix to resolve)", s.Total-s.Valid))
 	}
 	fmt.Println(strings.Repeat("-", 70))
+}
+
+func yearRangeString(start, end string) string {
+	if start == end {
+		return start
+	}
+	return fmt.Sprintf("%s-%s", start, end)
 }
