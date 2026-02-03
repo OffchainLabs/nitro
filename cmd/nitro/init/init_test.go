@@ -1019,7 +1019,6 @@ func TestSimpleGetInit(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1064,7 +1063,6 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1089,6 +1087,7 @@ func TestGetInitWithEmpty(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
+	// needed since ArbOne chain genesis is non zero
 	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
@@ -1136,7 +1135,6 @@ func TestGetInitWithImportFile(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
@@ -1248,7 +1246,6 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 		t.Fatalf("Expected chainConfig to be non nil")
 	}
 
-	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
 	require.Equal(t, expectedChainConfig, chainConfig)
 
 	if arbOsInit != nil {
