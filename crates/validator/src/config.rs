@@ -22,9 +22,9 @@ pub struct ServerState {
     pub mode: InputMode,
     pub binary: PathBuf,
     pub module_root: Bytes32,
-    /// jit machine responsible for computing next GlobalState. Not wrapped
+    /// Jit manager responsible for computing next GlobalState. Not wrapped
     /// in Arc<> since the caller of ServerState is wrapped in Arc<>
-    pub jit_machine: Option<JitProcessManager>,
+    pub jit_manager: Option<JitProcessManager>,
     pub available_workers: usize,
 }
 
@@ -36,9 +36,9 @@ impl ServerState {
             InputMode::Continuous => {
                 let config = JitMachineConfig::default();
 
-                let jit_machine = JitProcessManager::new(&config, module_root)?;
+                let jit_manager = JitProcessManager::new(&config, module_root)?;
 
-                Some(jit_machine)
+                Some(jit_manager)
             }
             InputMode::Native => None,
         };
@@ -46,7 +46,7 @@ impl ServerState {
             mode: config.mode,
             binary: config.binary.clone(),
             module_root,
-            jit_machine,
+            jit_manager: jit_machine,
             available_workers,
         })
     }

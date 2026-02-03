@@ -28,8 +28,8 @@ where
 
     info!("Shutdown signal received. Running cleanup...");
 
-    if let Some(jit_machine) = state.jit_machine.as_ref() {
-        jit_machine.complete_machines().await?;
+    if let Some(jit_manager) = state.jit_manager.as_ref() {
+        jit_manager.complete_machines().await?;
     }
 
     Ok(())
@@ -144,9 +144,9 @@ mod tests {
         let result = test_config.server_handle.await?;
         assert!(result.is_ok(), "Server should exit successfully");
 
-        // 8. Verify jit_machine Cleanup
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
-            assert!(!jit.is_machine_active(module_root).await);
+        // 8. Verify jit_manager Cleanup
+        if let Some(jit_manager) = test_config.state.jit_manager.as_ref() {
+            assert!(!jit_manager.is_machine_active(module_root).await);
         }
 
         // 9. Verify same request from above fails expectadly
@@ -173,8 +173,8 @@ mod tests {
 
         let module_root = config.get_module_root()?;
 
-        // Since we're running in native mode there should not be an active jit_machine
-        assert!(test_config.state.jit_machine.is_none());
+        // Since we're running in native mode there should not be an active jit_manager
+        assert!(test_config.state.jit_manager.is_none());
 
         verify_and_shutdown_server(test_config, module_root)
             .await
@@ -199,10 +199,10 @@ mod tests {
 
         let test_config = spinup_server(&config).await?;
 
-        assert!(test_config.state.jit_machine.is_some());
+        assert!(test_config.state.jit_manager.is_some());
 
         // Check that jit machine is active
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
+        if let Some(jit) = test_config.state.jit_manager.as_ref() {
             assert!(jit.is_machine_active(module_root).await);
         }
 

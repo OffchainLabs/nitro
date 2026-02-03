@@ -35,6 +35,29 @@ pub enum PreimageType {
     DACertificate = 3,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParsePreimageTypeError(String);
+
+impl fmt::Display for ParsePreimageTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown preimage type: '{}'", self.0)
+    }
+}
+
+impl FromStr for PreimageType {
+    type Err = ParsePreimageTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Keccak256" | "0" => Ok(PreimageType::Keccak256),
+            "Sha2_256" | "1" => Ok(PreimageType::Sha2_256),
+            "EthVersionedHash" | "2" => Ok(PreimageType::EthVersionedHash),
+            "DACertificate" | "3" => Ok(PreimageType::DACertificate),
+            _ => Err(ParsePreimageTypeError(s.to_owned())),
+        }
+    }
+}
+
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(C)]
