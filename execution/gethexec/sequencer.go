@@ -66,6 +66,12 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
+	// number of blocks ended because of block gas limit
+	gasFullBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gasfull", nil)
+	// number of blocks ended because of txes data size limit
+	dataFullBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datafull", nil)
+	// number of blocks ended because of exhausting the transactions to sequence
+	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
 )
 
 type SequencerConfig struct {
@@ -1328,9 +1334,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
 	timeboostedTxs := make(map[common.Hash]struct{})
+	maxTxDataSize := s.config().MaxTxDataSize
 	hooks := MakeSequencingHooks(
 		queueItems,
-		s.config().MaxTxDataSize,
+		maxTxDataSize,
 		s.preTxFilter,
 		s.postTxFilter,
 		nil,
@@ -1444,6 +1451,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	madeBlock := false
+	blockLimitReached := false
 	var blockTxSize int64
 	for i, err := range hooks.txErrors {
 		queueItem := queueItems[i]
@@ -1455,6 +1463,15 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			if madeBlock {
+				// make sure that this was last tx processed (it should always be true)
+				if i == len(hooks.txErrors)-1 {
+					if blockTxSize+int64(queueItem.txSize) > int64(maxTxDataSize) {
+						dataFullBlocksCounter.Inc(1)
+					} else {
+						gasFullBlocksCounter.Inc(1)
+					}
+					blockLimitReached = true
+				}
 				// There was already an earlier tx in the block; retry in a fresh block.
 				s.txRetryQueue.Push(queueItem)
 				continue
@@ -1473,6 +1490,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 	if madeBlock {
 		blockTxSizeHistogram.Update(blockTxSize)
+		if !blockLimitReached && hooks.sequencedQueueItemsCount == len(hooks.queueItems) {
+			txExhaustedBlocksCounter.Inc(1)
+		}
 	}
 	return madeBlock
 }
