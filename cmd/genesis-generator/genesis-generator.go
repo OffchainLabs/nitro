@@ -148,19 +148,19 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 }
 
 func readChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
+	// 1. Validate that the correct fields are used
 	if gen.Config != nil {
 		return nil, nil, errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
 	}
 	if gen.SerializedChainConfig == "" {
 		return nil, nil, errors.New("serialized chain config was not set (`serializedChainConfig`)")
 	}
-	serializedChainConfig := []byte(gen.SerializedChainConfig)
-
-	var chainConfig params.ChainConfig
-	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal chain config: %w", err)
+	// 2. Deserialize the chain config
+	chainConfig, err := gen.GetConfig()
+	if err != nil {
+		return nil, nil, err
 	}
-	return &chainConfig, serializedChainConfig, nil
+	return chainConfig, []byte(gen.SerializedChainConfig), nil
 }
 
 func buildInitMessage(genesisArbOSInit *params.ArbOSInit, chainConfig *params.ChainConfig, serializedChainConfig []byte) (*arbostypes.ParsedInitMessage, error) {
