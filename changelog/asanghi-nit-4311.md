@@ -1,2 +1,2 @@
 ### Added
-- Config option genesis-json-file-directory which specifies the directory where genesis json files are located. This will be used to load genesis json files when genesis-json-file is not specified directly.
+- Config option genesis-json-file-directory which specifies the directory where genesis json files are located.
