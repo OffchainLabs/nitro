@@ -557,6 +557,9 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
 	}
+	if n.consensusRPCClient != nil {
+		n.consensusRPCClient.StopAndWait()
+	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
