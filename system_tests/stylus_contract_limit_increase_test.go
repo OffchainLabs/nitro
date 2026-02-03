@@ -668,29 +668,30 @@ func TestArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
 // Utils
 
 func fragmentReadCost(codeSize uint64) uint64 {
-	if codeSize > 0x1FFFFFFFE0 {
+	if codeSize > vm.MaxMemorySize {
 		return 0
 	}
-	words := (codeSize + 31) / 32
+	words := vm.ToWordSize(codeSize)
 	copyGas := words * params.CopyGas
 	memoryGas := memoryExpansionCost(codeSize)
-	coldDelta := params.ColdAccountAccessCostEIP2929 - params.WarmStorageReadCostEIP2929
-	return params.WarmStorageReadCostEIP2929 + coldDelta + copyGas + memoryGas
+	return params.WarmStorageReadCostEIP2929 + params.ColdAccountAccessCostEIP2929 + copyGas + memoryGas
 }
 
 func fragmentReadCostWarmOnly(codeSize uint64) uint64 {
-	if codeSize > 0x1FFFFFFFE0 {
+	if codeSize > vm.MaxMemorySize {
 		return 0
 	}
-	words := (codeSize + 31) / 32
-	return params.WarmStorageReadCostEIP2929 + words*params.CopyGas
+	words := vm.ToWordSize(codeSize)
+	copyGas := words * params.CopyGas
+	memoryGas := memoryExpansionCost(codeSize)
+	return params.WarmStorageReadCostEIP2929 + copyGas + memoryGas
 }
 
 func memoryExpansionCost(size uint64) uint64 {
 	if size == 0 {
 		return 0
 	}
-	words := (size + 31) / 32
+	words := vm.ToWordSize(size)
 	linearCost := words * params.MemoryGas
 	squareCost := (words * words) / params.QuadCoeffDiv
 	return linearCost + squareCost

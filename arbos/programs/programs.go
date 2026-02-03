@@ -293,7 +293,7 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 
 func evmMemoryCost(size uint64) uint64 {
 	// It would take 100GB to overflow this calculation, so no need to worry about that
-	words := (size + 31) / 32
+	words := vm.ToWordSize(size)
 	linearCost := words * gethParams.MemoryGas
 	squareCost := (words * words) / gethParams.QuadCoeffDiv
 	return linearCost + squareCost
@@ -395,7 +395,7 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 
 // chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
 func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
-	if codeSize > 0x1FFFFFFFE0 {
+	if codeSize > vm.MaxMemorySize {
 		return vm.ErrGasUintOverflow
 	}
 	cost := multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
@@ -403,12 +403,12 @@ func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.A
 	if !statedb.AddressInAccessList(addr) {
 		statedb.AddAddressToAccessList(addr)
 		// charge cold account access gas
-		if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, gethParams.ColdAccountAccessCostEIP2929-gethParams.WarmStorageReadCostEIP2929); overflow {
+		if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, gethParams.ColdAccountAccessCostEIP2929); overflow {
 			return vm.ErrGasUintOverflow
 		}
 	}
 	// charge copy gas
-	words := (codeSize + 31) / 32
+	words := vm.ToWordSize(codeSize)
 	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, words*gethParams.CopyGas); overflow {
 		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", words*gethParams.CopyGas)
 		return vm.ErrGasUintOverflow
@@ -417,12 +417,13 @@ func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.A
 	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindComputation, evmMemoryCost(codeSize)); overflow {
 		return vm.ErrGasUintOverflow
 	}
-	for kind := multigas.ResourceKindUnknown; kind < multigas.NumResourceKind; kind++ {
-		amount := cost.Get(kind)
-		if amount == 0 {
-			continue
+	if amount := cost.Get(multigas.ResourceKindStorageAccess); amount != 0 {
+		if err := burner.Burn(multigas.ResourceKindStorageAccess, amount); err != nil {
+			return err
 		}
-		if err := burner.Burn(kind, amount); err != nil {
+	}
+	if amount := cost.Get(multigas.ResourceKindComputation); amount != 0 {
+		if err := burner.Burn(multigas.ResourceKindComputation, amount); err != nil {
 			return err
 		}
 	}
