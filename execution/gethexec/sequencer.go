@@ -48,6 +48,8 @@ var (
 	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
 	sequencerQueueNormalGauge               = metrics.NewRegisteredGauge("arb/sequencer/queue/normal", nil)
 	sequencerQueueTimeboostGauge            = metrics.NewRegisteredGauge("arb/sequencer/queue/timeboost", nil)
+	sequencerQueueNormalHistogram           = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram/normal", nil, metrics.NewBoundedHistogramSample())
+	sequencerQueueTimeboostHistogram        = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram/timeboost", nil, metrics.NewBoundedHistogramSample())
 	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
 	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
@@ -1334,8 +1336,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		nil,
 	)
 
-	sequencerQueueNormalGauge.Update(int64(len(s.txQueue)))
-	sequencerQueueTimeboostGauge.Update(int64(len(s.timeboostAuctionResolutionTxQueue)))
+	txQueueLen := int64(len(s.txQueue))
+	timeboostTxQueueLen := int64(len(s.timeboostAuctionResolutionTxQueue))
+	sequencerQueueNormalGauge.Update(txQueueLen)
+	sequencerQueueNormalHistogram.Update(txQueueLen)
+	sequencerQueueTimeboostGauge.Update(timeboostTxQueueLen)
+	sequencerQueueTimeboostHistogram.Update(timeboostTxQueueLen)
 
 	for _, queueItem := range queueItems {
 		if queueItem.isTimeboosted {
