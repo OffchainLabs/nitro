@@ -554,6 +554,7 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	return b
 }
 
+// WithEventFilterRules configures event-based transaction filtering at the sequencer layer
 func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
 	if b.execConfig == nil {
 		panic("execConfig must be initialised before setting event filter rules")
@@ -561,6 +562,18 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 
 	b.execConfig.Sequencer.EventFilter.Rules = rules
 
+	return b
+}
+
+// WithPreCheckerEventFilter configures event-based transaction filtering at the pre-checker layer.
+// Sets strictness to LikelyCompatible (required for filtering to run) and enables ApplyTransactionFilter.
+func (b *NodeBuilder) WithPreCheckerEventFilter(rules []eventfilter.EventRule) *NodeBuilder {
+	if b.execConfig == nil {
+		panic("execConfig must be initialised before setting pre-checker event filter rules")
+	}
+	b.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
+	b.execConfig.TxPreChecker.ApplyTransactionFilter = true
+	b.execConfig.TxPreChecker.EventFilter.Rules = rules
 	return b
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -73,6 +75,7 @@ type TxPreChecker struct {
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *ExpressLaneTracker
 	eventFilter        *eventfilter.EventFilter
+	addressChecker     state.AddressChecker
 }
 
 func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) (*TxPreChecker, error) {
@@ -128,24 +131,47 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
+func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
+	c.addressChecker = checker
+}
+
 func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	signer types.Signer,
 	sender common.Address,
 	header *types.Header,
 	statedb *state.StateDB,
-	arbos *arbosState.ArbosState,
+	_arbos *arbosState.ArbosState,
 	tx *types.Transaction,
 	stateNonce uint64,
 ) error {
+	if c.addressChecker == nil {
+		return nil // pass through if no address checker is set
+	}
+
+	statedb.SetAddressChecker(c.addressChecker)
+
+	// First, check the sender and recipient addresses
+	statedb.TouchAddress(sender)
+	if tx.To() != nil {
+		statedb.TouchAddress(*tx.To())
+	}
+
 	snapshot := statedb.Snapshot()
 	defer statedb.RevertToSnapshot(snapshot)
 
+	// Next, use tracer hook to track all addresses touched during execution
 	blockCtx := core.NewEVMBlockContext(header, c.bc, nil)
 	evm := vm.NewEVM(
 		blockCtx,
 		statedb,
 		c.bc.Config(),
-		vm.Config{},
+		vm.Config{
+			Tracer: &tracing.Hooks{
+				OnEnter: func(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+					statedb.TouchAddress(to)
+				},
+			},
+		},
 	)
 
 	deadlineCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -171,6 +197,14 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	// Ignore execution errors
 	_ = err
 
+	// TODO: clarify ApplyTransactionWithEVM vs ApplyMessage in this case
+	// gasPool := uint64(50_000_000)
+	// _, _, err = core.ApplyTransactionWithEVM(message, new(core.GasPool).AddGas(message.GasLimit), statedb, header.Number, header.Hash(), header.Time, tx, &(gasPool), evm, nil)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// Last, check event logs
 	if c.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
@@ -183,7 +217,6 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
 	}
-
 	return nil
 }
 

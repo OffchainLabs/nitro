@@ -450,3 +450,84 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
+
+func TestPreCheckerEventFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	selector, _, err := eventfilter.CanonicalSelectorFromEvent("Transfer(address,address,uint256)")
+	Require(t, err)
+
+	rules := []eventfilter.EventRule{{
+		Event:          "Transfer(address,address,uint256)",
+		Selector:       selector,
+		TopicAddresses: []int{1, 2},
+	}}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithPreCheckerEventFilter(rules)
+	builder.isSequencer = true
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	_, contract := deployAddressFilterTestContract(t, ctx, builder)
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+
+	salt := [32]byte{1, 2, 3}
+	create2Addr, err := contract.ComputeCreate2Address(nil, salt)
+	Require(t, err)
+
+	// TODO: use idiomatic way to set filter after https://github.com/OffchainLabs/nitro/pull/4235 merge
+	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr, create2Addr})
+	builder.L2.ExecNode.TxPreChecker.SetAddressChecker(filter)
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	// Direct transfer to filtered address should be rejected
+	directTx := builder.L2Info.PrepareTx("Owner", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
+	err = builder.L2.Client.SendTransaction(ctx, directTx)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject direct transfer to filtered address, got: %v", err)
+	}
+
+	// Transfer event to filtered address should be rejected
+	_, err = contract.EmitTransfer(&auth, auth.From, filteredAddr)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject Transfer to filtered address, got: %v", err)
+	}
+
+	// Transfer event from filtered address should be rejected
+	_, err = contract.EmitTransfer(&auth, filteredAddr, auth.From)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject Transfer event from filtered address, got: %v", err)
+	}
+
+	//  Transfer event to clean address should succeed
+	builder.L2Info.GenerateAccount("CleanUser")
+	cleanAddr := builder.L2Info.GetAddress("CleanUser")
+
+	tx, err := contract.EmitTransfer(&auth, auth.From, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// CALL to filtered address should be rejected
+	_, err = contract.CallTarget(&auth, filteredAddr)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject CALL to filtered address, got: %v", err)
+	}
+
+	// STATICCALL to filtered address should be rejected
+	_, err = contract.StaticcallTargetInTx(&auth, filteredAddr)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject STATICCALL to filtered address, got: %v", err)
+	}
+
+	// CREATE2 to filtered address should be rejected
+	_, err = contract.Create2Contract(&auth, salt)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject CREATE2 to filtered address, got: %v", err)
+	}
+}
