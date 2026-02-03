@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	runtime "runtime"
+	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -277,6 +279,7 @@ func populateEcdsaCaches() {
 }
 
 func main() {
+	debug.SetGCPercent(-1)
 	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
@@ -451,4 +454,8 @@ func main() {
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
 	wavmio.OnFinal()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	fmt.Printf("Completed GC cycles: %v\n", m.NumGC)
 }
