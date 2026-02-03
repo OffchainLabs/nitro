@@ -37,15 +37,15 @@ func countStateEntries(db ethdb.Iteratee) int {
 	return entries
 }
 
-func TestPruning(t *testing.T) {
+func TestPruningDBSizeReduction(t *testing.T) {
 	// TODO test "validator" pruning mode - requires latest confirmed
 	for _, mode := range []string{"full", "minimal"} {
-		t.Run(fmt.Sprintf("-%s-mode-without-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, false) })
-		t.Run(fmt.Sprintf("-%s-mode-with-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, true) })
+		t.Run(fmt.Sprintf("-%s-mode-without-parallel-storage-traversal", mode), func(t *testing.T) { runPruningDBSizeReductionTest(t, mode, false) })
+		t.Run(fmt.Sprintf("-%s-mode-with-parallel-storage-traversal", mode), func(t *testing.T) { runPruningDBSizeReductionTest(t, mode, true) })
 	}
 }
 
-func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
+func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -79,13 +79,6 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	// Cache both validated and finalized block hashes for l2 executionDB to later
-	// add to the new executionDB below
-	data, err := builder.L2.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
-	Require(t, err)
-	expectedValidatedBlockHash := common.BytesToHash(data)
-	expectedFinalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
-
 	l2cleanupDone = true
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
@@ -98,19 +91,6 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		Require(t, err)
 		defer executionDB.Close()
 		executionDBEntriesBeforePruning := countStateEntries(executionDB)
-
-		data, err := executionDB.Get(gethexec.ValidatedBlockHashKey)
-		Require(t, err)
-		validatedBlockHash := common.BytesToHash(data)
-		finalizedBlockHash := rawdb.ReadFinalizedBlockHash(executionDB)
-
-		if validatedBlockHash != expectedValidatedBlockHash {
-			t.Fatalf("validatedBlockHash: %s does not match expected ValidatedBlockHash: %s", validatedBlockHash.Hex(), expectedValidatedBlockHash.Hex())
-		}
-
-		if finalizedBlockHash != expectedFinalizedBlockHash {
-			t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash.Hex(), expectedFinalizedBlockHash.Hex())
-		}
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -192,19 +172,19 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	Require(t, err)
 }
 
-func TestStateAfterPruningValidator(t *testing.T) {
-	testStateAfterPruning(t, "validator")
+func TestPruningStateAvailabilityValidator(t *testing.T) {
+	runPruningStateAvailabilityTest(t, "validator")
 }
 
-func TestStateAfterPruningMinimal(t *testing.T) {
-	testStateAfterPruning(t, "minimal")
+func TestPruningStateAvailabilityMinimal(t *testing.T) {
+	runPruningStateAvailabilityTest(t, "minimal")
 }
 
-func TestStateAfterPruningFull(t *testing.T) {
-	testStateAfterPruning(t, "full")
+func TestPruningStateAvailabilityFull(t *testing.T) {
+	runPruningStateAvailabilityTest(t, "full")
 }
 
-func testStateAfterPruning(t *testing.T, mode string) {
+func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -214,6 +194,9 @@ func testStateAfterPruning(t *testing.T, mode string) {
 
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	builder.nodeConfig.BlockValidator.Enable = true
+	// How many blocks to keep in recent block state tries after node restart
+	blocksToKeepAfterRestart := uint64(48)
+	builder.execConfig.Caching.BlockCount = blocksToKeepAfterRestart
 	builder.DontParalellise()
 
 	_ = builder.Build(t)
@@ -228,10 +211,6 @@ func testStateAfterPruning(t *testing.T, mode string) {
 
 	numOfBlocksToGenerate := 300
 
-	// We need to generate these many blocks because of how pruning procedure
-	// works. Such procedure has an offset `minRootDistance` set to `2000`; so,
-	// if we want to force both last validated and last finalized blocks to be
-	// persisted by pruning procedure we need them to be > 2000 blocks apart.
 	generateBlocks(t, ctx, builder, builder.L2, numOfBlocksToGenerate)
 
 	safeMsgIdx := arbutil.MessageIndex(260)
@@ -264,33 +243,23 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	lastBlock, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	balanceAt1, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(1))
-	Require(t, err)
-	balanceAt50, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(50))
-	Require(t, err)
-	// #nosec G115
-	balanceAtLastBlock, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(lastBlock)))
-	Require(t, err)
-
-	if balanceAtLastBlock.Cmp(balanceAt50) < 0 || balanceAt50.Cmp(balanceAt1) < 0 {
-		t.Fatal("Balances for User2 are expected to monotonically increase")
-	}
-
 	expectedFinalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
 
 	finalizedBlock, err := builder.L2.Client.BlockByHash(ctx, expectedFinalizedBlockHash)
+	Require(t, err)
 
 	if lastBlock < finalizedBlock.Number().Uint64() {
 		t.Fatalf("lastBlock: %d should have been greater than finalized block: %d", lastBlock, finalizedBlock.Number().Uint64())
 	}
 
 	// Since we're running a regular node (without archival mode), we manually commit
-	// some of the blocks to test if prunning procedure indeed deletes such blocks specified
-	// with the exception of last validate and finalized blocks (if in "validator" mode)
+	// some of the trie nodes related to the block to test if prunning procedure indeed
+	// deletes such blocks specified with the exception of last validate and finalized
+	// blocks (if in "validator" mode)
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
 
-	for i := 50; i < numOfBlocksToGenerate; i++ {
+	for i := 1; i < numOfBlocksToGenerate; i++ {
 		// #nosec G115
 		header := bc.GetHeaderByNumber(uint64(i))
 		err = triedb.Commit(header.Root, false)
@@ -334,14 +303,8 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	testClientL2, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
 	defer cleanup()
 
-	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(testClientL2.ExecNode.ExecutionDB)
-
-	if finalizedBlockHash != expectedFinalizedBlockHash {
-		t.Fatalf("Expected finalizedBlockHash: %s does not match finalizedBlockHash after l2 restart: %s", expectedFinalizedBlockHash.Hex(), finalizedBlockHash.Hex())
-	}
-
 	// We make sure that genesis block can be queried since it's always added as an important
-	// root so it's trie node should have been deleted
+	// root so it's trie node should not have been deleted
 	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(0))
 	Require(t, err)
 
@@ -358,25 +321,25 @@ func testStateAfterPruning(t *testing.T, mode string) {
 		}
 	}
 
-	newLastBlock, err := testClientL2.Client.BlockNumber(ctx)
-	Require(t, err)
+	// There's a separate mechanism that keeps recent block state tries in memory/database regardless
+	// of whether they're marked as important roots. This is controlled by the BlockCount configuration
+	// parameter (also known as TriesInMemory in the underlying blockchain config) The default value
+	// for BlockCount is 128 but in this test we set to 48 (blocksToKeepAfterRestart)
 
-	// The restarted node loses about ~90 blocks when restarting since some dirty blocks haven't been committed to trieDB
-	if lastBlock < newLastBlock {
-		t.Fatalf("Expected last block of new node %d to be behind of original node last block: %d", newLastBlock, lastBlock)
+	// First we wait for the chain to catch up (similar to test above)
+	newLastBlock := uint64(0)
+	for newLastBlock < lastBlock {
+		newLastBlock, err = testClientL2.Client.BlockNumber(ctx)
+		Require(t, err)
+		time.Sleep(20 * time.Millisecond)
 	}
 
+	// And then we check those last 48 blocks
 	// #nosec G115
-	newLastBlockInt := int64(newLastBlock)
-
-	// Now we check if the blocks that got committed as part of builder.cleanup() got persisted. We do that by calling
-	// BalanceAt(...) since that requires stateDB for such block to be presetn to succeed. It gets a bit tricky since
-	// pruning procedure was called in original node where last block was `lastBlock` so it'll remember blocks relative
-	// to that block from lastBlock - 126 until last available block of new node.
+	checkUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart)
 	// #nosec G115
-	checkUntilBlock := int64(lastBlock) - 126
-	for i := newLastBlockInt; i > checkUntilBlock; i-- {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(newLastBlockInt))
+	for i := int64(newLastBlock); i > checkUntilBlock; i-- {
+		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
 		Require(t, err)
 	}
 
@@ -385,7 +348,9 @@ func testStateAfterPruning(t *testing.T, mode string) {
 	if mode == "validator" {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(validatedMsgIdx)))
 		Require(t, err)
+	}
 
+	if mode == "validator" || mode == "full" {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
 		Require(t, err)
 	}

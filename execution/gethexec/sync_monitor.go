@@ -29,6 +29,27 @@ type syncDataEntry struct {
 	timestamp       time.Time
 }
 
+type FinalityType int
+
+const (
+	Safe FinalityType = iota
+	Finalized
+	Validated
+)
+
+func (f FinalityType) String() string {
+	switch f {
+	case Safe:
+		return "Safe"
+	case Finalized:
+		return "Finalized"
+	case Validated:
+		return "Validated"
+	default:
+		return "Not defined"
+	}
+}
+
 // syncHistory maintains a time-based sliding window of sync data
 type syncHistory struct {
 	mutex   sync.RWMutex
@@ -239,38 +260,26 @@ func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64
 	return nil, nil
 }
 
-func (s *SyncMonitor) getBlockHeaderForFinalityData(
+func (s *SyncMonitor) checkBlockHashAndGetHeader(
 	finalityData *arbutil.FinalityData,
-	finalityDataType string,
-	modifier func(curr *arbutil.FinalityData) (arbutil.MessageIndex, common.Hash, error),
+	finalityDataType FinalityType,
 ) (*types.Header, error) {
 	if finalityData == nil {
 		return nil, nil
 	}
 
-	msgIdx := finalityData.MsgIdx
-	blockHash := finalityData.BlockHash
-
-	if modifier != nil {
-		var err error
-		msgIdx, blockHash, err = modifier(finalityData)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	blockNumber := s.exec.MessageIndexToBlockNumber(msgIdx)
+	blockNumber := s.exec.MessageIndexToBlockNumber(finalityData.MsgIdx)
 	block := s.exec.bc.GetBlockByNumber(blockNumber)
 	if block == nil {
-		log.Debug("block not found", "finalityDataType", finalityDataType, "blockNumber", blockNumber)
+		log.Debug("block not found", "finalityDataType", finalityDataType.String(), "blockNumber", blockNumber)
 		return nil, nil
 	}
-	if block.Hash() != blockHash {
+	if block.Hash() != finalityData.BlockHash {
 		errorMsg := fmt.Sprintf(
 			"block hash mismatch,finalityDataType=%s blockNumber=%v, block hash provided by consensus=%v, block hash from execution=%v",
-			finalityDataType,
+			finalityDataType.String(),
 			blockNumber,
-			blockHash,
+			finalityData.BlockHash,
 			block.Hash(),
 		)
 		return nil, errors.New(errorMsg)
@@ -282,30 +291,26 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 	waitForBlockValidator bool,
 	validatedFinalityData *arbutil.FinalityData,
 	finalityFinalityData *arbutil.FinalityData,
-	finalityDataType string,
+	finalityDataType FinalityType,
 ) (*types.Header, error) {
 	if finalityFinalityData == nil {
 		return nil, nil
 	}
 
-	finalityMsgIdx := finalityFinalityData.MsgIdx
-	finalityBlockHash := finalityFinalityData.BlockHash
+	targetFinalityData := *finalityFinalityData
 
-	validatorModifier := func(curr *arbutil.FinalityData) (arbutil.MessageIndex, common.Hash, error) {
-		if !waitForBlockValidator {
-			return finalityMsgIdx, finalityBlockHash, nil
-		}
+	if waitForBlockValidator {
 		if validatedFinalityData == nil {
-			return 0, common.Hash{}, errors.New("block validator not set")
+			return nil, errors.New("block validator not set")
 		}
-		// If the finalized index is ahead of the validated one, cap it at the validated one
-		if finalityFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
-			return validatedFinalityData.MsgIdx, validatedFinalityData.BlockHash, nil
+
+		// If the finalized index is ahead of the validated one, cap it
+		if targetFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
+			targetFinalityData = *validatedFinalityData
 		}
-		return finalityMsgIdx, finalityBlockHash, nil
 	}
 
-	return s.getBlockHeaderForFinalityData(finalityFinalityData, finalityDataType, validatorModifier)
+	return s.checkBlockHashAndGetHeader(&targetFinalityData, finalityDataType)
 }
 
 func (s *SyncMonitor) SetFinalityData(
@@ -319,7 +324,7 @@ func (s *SyncMonitor) SetFinalityData(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		validatedFinalityData,
 		finalizedFinalityData,
-		"finalized",
+		Finalized,
 	)
 	if err != nil {
 		return err
@@ -327,10 +332,9 @@ func (s *SyncMonitor) SetFinalityData(
 	s.exec.bc.SetFinalized(finalizedBlockHeader)
 
 	// Check validated blocks
-	validatedBlockHeader, err := s.getBlockHeaderForFinalityData(
+	validatedBlockHeader, err := s.checkBlockHashAndGetHeader(
 		validatedFinalityData,
-		"validated",
-		nil,
+		Validated,
 	)
 	if err != nil {
 		return err
@@ -349,7 +353,7 @@ func (s *SyncMonitor) SetFinalityData(
 		s.config.SafeBlockWaitForBlockValidator,
 		validatedFinalityData,
 		safeFinalityData,
-		"safe",
+		Safe,
 	)
 	if err != nil {
 		return err

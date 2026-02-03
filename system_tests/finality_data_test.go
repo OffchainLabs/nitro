@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -102,11 +103,23 @@ func checksFinalityData(
 	testClient *TestClient,
 	expectedFinalizedMsgIdx arbutil.MessageIndex,
 	expectedSafeMsgIdx arbutil.MessageIndex,
+	l2Node *TestClient,
+	validatedMsgResult *execution.MessageResult,
 ) {
 	expectedFinalizedBlockNumber, err := testClient.ExecNode.MessageIndexToBlockNumber(expectedFinalizedMsgIdx).Await(ctx)
 	Require(t, err)
 	expectedSafeBlockNumber, err := testClient.ExecNode.MessageIndexToBlockNumber(expectedSafeMsgIdx).Await(ctx)
 	Require(t, err)
+
+	if validatedMsgResult != nil && l2Node != nil {
+		data, err := l2Node.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
+		Require(t, err)
+		validatedBlockHash := common.BytesToHash(data)
+
+		if validatedBlockHash != validatedMsgResult.BlockHash {
+			t.Fatalf("validatedBlockHash: %s does not match expected validatedBlockHash: %s", validatedBlockHash.Hex(), validatedMsgResult.BlockHash.Hex())
+		}
+	}
 
 	finalizedBlock, err := testClient.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
 	Require(t, err)
@@ -178,46 +191,31 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
 
-	// Make sure finalized and validated blocks in executionDB match the expected ones for builder.L2
-	data, err := builder.L2.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
-	Require(t, err)
-	validatedBlockHash := common.BytesToHash(data)
 	finalizedBlockHash := rawdb.ReadFinalizedBlockHash(builder.L2.ExecNode.ExecutionDB)
 
-	if validatedBlockHash != validatedMsgResult.BlockHash {
-		t.Fatalf("validatedBlockHash: %s does not match expected validatedBlockHash: %s", validatedBlockHash.Hex(), validatedMsgResult.BlockHash.Hex())
-	}
-
-	// We compare finalizedBlockHash against validated block hash because FinalizedBlockWaitForBlockValidator is
-	// set to true therefore we should expect finalized block hash to match the validated block hash
+	// We compare finalizedBlockHash against validated block hash because FinalizedBlockWaitForBlockValidator is set
+	// to true therefore we should expect finalized block hash to match the validated block hash, since SetFinalityData
+	// will set finalized block to be the same as validated block.
 	if finalizedBlockHash != validatedMsgResult.BlockHash {
 		t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash.Hex(), validatedMsgResult.BlockHash.Hex())
 	}
 
-	// wait for block validator is set to true in second node
-	checksFinalityData(t, "first node", ctx, builder.L2, validatedMsgIdx, validatedMsgIdx)
+	// wait for block validator is set to true in first node
+	checksFinalityData(t, "first node", ctx, builder.L2, validatedMsgIdx, validatedMsgIdx, builder.L2, validatedMsgResult)
 
 	err = testClient2ndNode.ExecNode.SyncMonitor.SetFinalityData(testClient2ndNode.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, &validatedFinalityData)
 	Require(t, err)
 
-	// Make sure finalized and validated blocks in executionDB match the expected ones for second node
-	data, err = testClient2ndNode.ExecNode.ExecutionDB.Get(gethexec.ValidatedBlockHashKey)
-	Require(t, err)
-	validatedBlockHash2ndNode := common.BytesToHash(data)
 	finalizedBlockHash2ndNode := rawdb.ReadFinalizedBlockHash(testClient2ndNode.ExecNode.ExecutionDB)
 
-	if validatedBlockHash2ndNode != validatedMsgResult.BlockHash {
-		t.Fatalf("validatedBlockHash: %s does not match expected validatedBlockHash: %s", validatedBlockHash2ndNode.Hex(), validatedMsgResult.BlockHash.Hex())
-	}
-
-	// Since FinalizedBlockWaitForBlockValidator is set to true for the second node we can
-	// compare finalizedBlockHash with expected finalized block hash
+	// Since FinalizedBlockWaitForBlockValidator is set to false for the second node we compare
+	// finalizedBlockHash with expected finalized block hash
 	if finalizedBlockHash2ndNode != finalizedMsgResult.BlockHash {
 		t.Fatalf("finalizedBlockHash: %s does not match expected finalizedBlockHash: %s", finalizedBlockHash2ndNode.Hex(), finalizedMsgResult.BlockHash.Hex())
 	}
 
 	// wait for block validator is no set to true in second node
-	checksFinalityData(t, "2nd node", ctx, testClient2ndNode, finalizedMsgIdx, safeMsgIdx)
+	checksFinalityData(t, "second node", ctx, testClient2ndNode, finalizedMsgIdx, safeMsgIdx, testClient2ndNode, validatedMsgResult)
 
 	// if validatedFinalityData is nil, error should be returned if waitForBlockValidator is set to true
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, nil)
@@ -280,7 +278,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")
 
 	// if nil is passed finality data should not be set
-	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, nil, nil, nil)
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, nil, nil, nil)
 	Require(t, err)
 	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
 	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
@@ -346,7 +344,7 @@ func TestFinalityAfterReorg(t *testing.T) {
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, nil)
 	Require(t, err)
 
-	checksFinalityData(t, "before reorg", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx)
+	checksFinalityData(t, "before reorg", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx, nil, nil)
 
 	reorgAt := arbutil.MessageIndex(6)
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgAt)
@@ -393,7 +391,7 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 		BlockHash: common.Hash{},
 	}
 
-	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, nil)
+	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(builder.L2.ExecNode.ExecutionDB, &safeFinalityData, &finalizedFinalityData, nil)
 	if err == nil {
 		t.Fatalf("err should not be nil")
 	}
@@ -444,7 +442,7 @@ func TestFinalityDataNodeOutOfSync(t *testing.T) {
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, &safeFinalityData, &finalizedFinalityData, nil)
 	Require(t, err)
 
-	checksFinalityData(t, "before out of sync", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx)
+	checksFinalityData(t, "before out of sync", ctx, builder.L2, finalizedFinalityData.MsgIdx, safeFinalityData.MsgIdx, nil, nil)
 
 	// out of sync node
 	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, nil, nil, nil)
