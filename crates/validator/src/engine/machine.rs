@@ -19,9 +19,8 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
-use crate::engine::config::JitMachineConfig;
+use crate::engine::config::{JitManagerConfig, ModuleRoot};
 use anyhow::{anyhow, Context, Result};
-use arbutil::Bytes32;
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::{
@@ -39,7 +38,7 @@ use tokio::{
     process::{Child, ChildStdin, Command},
     sync::Mutex,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use validation::transfer::{receive_response, send_validation_input};
 use validation::{GoGlobalState, ValidationInput};
 
@@ -129,15 +128,15 @@ pub struct JitProcessManager {
     pub wasm_memory_usage_limit: u64,
     // Using Arc<JitMachine> allows us to clone the Arc and drop the HashMap lock
     // immediately, avoiding contention during long-running I/O operations.
-    pub machines: RwLock<HashMap<Bytes32, Arc<JitMachine>>>,
+    pub machines: RwLock<HashMap<ModuleRoot, Arc<JitMachine>>>,
     // Signals that the server is shutting down. When true, new requests are rejected.
     shutting_down: AtomicBool,
 }
 
 impl JitProcessManager {
-    pub fn new(config: &JitMachineConfig, module_root: Bytes32) -> Result<Self> {
-        // TODO: use JitLocator to get jit_path
-        let sub_machine = create_jit_machine(config, module_root)?;
+    pub fn new(config: &JitManagerConfig, module_root: ModuleRoot) -> Result<Self> {
+        // TODO: use JitLocator to get jit_path (NIT-4347)
+        let sub_machine = create_jit_machine(config)?;
 
         let mut machines = HashMap::with_capacity(16);
         machines.insert(module_root, Arc::new(sub_machine));
@@ -149,7 +148,7 @@ impl JitProcessManager {
         })
     }
 
-    pub async fn is_machine_active(&self, module_root: Bytes32) -> bool {
+    pub async fn is_machine_active(&self, module_root: ModuleRoot) -> bool {
         if self.shutting_down.load(Ordering::Acquire) {
             return false;
         }
@@ -171,7 +170,7 @@ impl JitProcessManager {
     pub async fn feed_machine_with_root(
         &self,
         request: &ValidationInput,
-        module_root: Bytes32,
+        module_root: ModuleRoot,
     ) -> Result<GoGlobalState> {
         // Reject new operations if we're shutting down
         if self.shutting_down.load(Ordering::Acquire) {
@@ -217,20 +216,16 @@ impl JitProcessManager {
         // Iterate over all machines: for each one, complete it and remove it from the map
         // while holding the write lock. This ensures no other thread can access machines
         // during shutdown.
-        while let Some(module_root) = locked_machines.keys().next().cloned() {
-            // We clone the Arc so we can await without borrowing the map
-            if let Some(machine) = locked_machines.get(&module_root).cloned() {
-                info!("Completing machine with module root {module_root}");
-                machine.complete_machine().await?;
-                locked_machines.remove(&module_root);
-            }
+        for (module_root, machine) in locked_machines.drain() {
+            info!("Completing machine with module root {module_root}");
+            machine.complete_machine().await?;
         }
 
         Ok(())
     }
 }
 
-fn create_jit_machine(config: &JitMachineConfig, module_root: Bytes32) -> Result<JitMachine> {
+fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let root_path: PathBuf = manifest_dir
         .parent()
@@ -241,27 +236,23 @@ fn create_jit_machine(config: &JitMachineConfig, module_root: Bytes32) -> Result
             env::current_dir().expect("Failed to get current working directory")
         });
 
-    // TODO: use JitLocator to get jit_path
+    // TODO: use JitLocator to get jit_path (NIT-4347)
     let jit_path = root_path.join("target").join("bin").join("jit");
     let mut cmd = Command::new(jit_path);
-
-    // TODO: use JitLocator to get bin_path
-    let bin_path = root_path
-        .join("target")
-        .join("machines")
-        .join(format!("0x{module_root}"))
-        .join(&config.prover_bin_path);
 
     if config.jit_cranelift {
         cmd.arg("--cranelift");
     }
 
+    // TODO: use JitLocator to get bin_path (NIT-4346)
     cmd.arg("--binary")
-        .arg(bin_path)
+        .arg(&config.prover_bin_path)
         .arg("continuous")
         .stdin(Stdio::piped()) // We must pipe stdin so we can write to it.
         .stdout(Stdio::inherit()) // Inherit stdout/stderr so logs show up in your main console.
         .stderr(Stdio::inherit());
+
+    debug!("Executing JIT command: {:?}", cmd);
 
     let mut child = cmd.spawn().context("failed to spawn jit binary")?;
 

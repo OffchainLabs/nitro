@@ -70,7 +70,6 @@ pub(crate) async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use arbutil::Bytes32;
     use clap::Parser;
     use std::{net::SocketAddr, sync::Arc};
     use tokio::{
@@ -81,6 +80,7 @@ mod tests {
 
     use crate::{
         config::{ServerConfig, ServerState},
+        engine::config::ModuleRoot,
         server::run_server_internal,
     };
 
@@ -92,7 +92,7 @@ mod tests {
     }
 
     async fn spinup_server(config: &ServerConfig) -> Result<TestServerConfig> {
-        let state = Arc::new(ServerState::new(config)?);
+        let state = Arc::new(ServerState::new(config, 4)?);
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
@@ -121,7 +121,7 @@ mod tests {
 
     async fn verify_and_shutdown_server(
         test_config: TestServerConfig,
-        module_root: Bytes32,
+        module_root: ModuleRoot,
     ) -> Result<()> {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();

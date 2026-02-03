@@ -8,20 +8,19 @@
 //! into strongly-typed configuration objects used throughout the application.
 
 use anyhow::Result;
-use arbutil::Bytes32;
 use clap::{Args, Parser, ValueEnum};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use crate::engine::config::JitMachineConfig;
+use crate::engine::config::{JitManagerConfig, ModuleRoot};
 use crate::engine::machine::JitProcessManager;
 
 #[derive(Debug)]
 pub struct ServerState {
     pub mode: InputMode,
     pub binary: PathBuf,
-    pub module_root: Bytes32,
+    pub module_root: ModuleRoot,
     /// Jit manager responsible for computing next GlobalState. Not wrapped
     /// in Arc<> since the caller of ServerState is wrapped in Arc<>
     pub jit_manager: Option<JitProcessManager>,
@@ -29,14 +28,15 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(config: &ServerConfig) -> Result<Self> {
-        let available_workers = config.get_workers()?;
+    pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
+        // TODO: Load multiple module roots via MachineLocator (NIT-4346)
         let module_root = config.get_module_root()?;
         let jit_machine = match config.mode {
             InputMode::Continuous => {
-                let config = JitMachineConfig::default();
+                let mut manager_config = JitManagerConfig::default();
+                manager_config.prover_bin_path = config.binary.clone();
 
-                let jit_manager = JitProcessManager::new(&config, module_root)?;
+                let jit_manager = JitProcessManager::new(&manager_config, module_root)?;
 
                 Some(jit_manager)
             }
@@ -98,7 +98,7 @@ pub struct ServerConfig {
 struct ModuleRootConfig {
     /// Supported module root.
     #[clap(long)]
-    module_root: Option<Bytes32>,
+    module_root: Option<ModuleRoot>,
 
     /// Path to the file containing the module root.
     #[clap(long)]
@@ -106,7 +106,7 @@ struct ModuleRootConfig {
 }
 
 impl ServerConfig {
-    pub fn get_module_root(&self) -> anyhow::Result<Bytes32> {
+    pub fn get_module_root(&self) -> anyhow::Result<ModuleRoot> {
         match (
             self.module_root_config.module_root,
             &self.module_root_config.module_root_path,
@@ -116,7 +116,7 @@ impl ServerConfig {
                 let content = read_to_string(path)?;
                 let root = content
                     .trim()
-                    .parse::<Bytes32>()
+                    .parse::<ModuleRoot>()
                     .map_err(|e| anyhow::anyhow!(e))?;
                 Ok(root)
             }

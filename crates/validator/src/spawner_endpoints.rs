@@ -7,10 +7,9 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
-use crate::engine::config::{TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
+use crate::engine::config::{ModuleRoot, TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
 use crate::engine::execution::{validate_continuous, validate_native};
 use crate::{config::InputMode, ServerState};
-use arbutil::Bytes32;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -37,7 +36,7 @@ pub struct ValidationRequest {
     #[serde(flatten)]
     pub validation_input: ValidationInput,
     #[serde(default, with = "As::<Option<DisplayFromStr>>")]
-    pub module_root: Option<Bytes32>,
+    pub module_root: Option<ModuleRoot>,
 }
 
 pub async fn validate(
