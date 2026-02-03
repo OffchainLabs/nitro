@@ -485,26 +485,26 @@ func TestPreCheckerEventFilter(t *testing.T) {
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	// Direct transfer to filtered address should be rejected
+	// Direct transfer to filtered beneficiary must be rejected by prechecker
 	directTx := builder.L2Info.PrepareTx("Owner", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 	err = builder.L2.Client.SendTransaction(ctx, directTx)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject direct transfer to filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject direct transfer to filtered beneficiary, got: %v", err)
 	}
 
-	// Transfer event to filtered address should be rejected
+	// Transfer event to filtered beneficiary must be rejected by prechecker
 	_, err = contract.EmitTransfer(&auth, auth.From, filteredAddr)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject Transfer to filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject Transfer to filtered beneficiary, got: %v", err)
 	}
 
-	// Transfer event from filtered address should be rejected
+	// Transfer event from filtered beneficiary must be rejected by prechecker
 	_, err = contract.EmitTransfer(&auth, filteredAddr, auth.From)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject Transfer event from filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject Transfer event from filtered beneficiary, got: %v", err)
 	}
 
-	//  Transfer event to clean address should succeed
+	//  Transfer event to clean beneficiary must succeed
 	builder.L2Info.GenerateAccount("CleanUser")
 	cleanAddr := builder.L2Info.GetAddress("CleanUser")
 
@@ -513,21 +513,27 @@ func TestPreCheckerEventFilter(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// CALL to filtered address should be rejected
+	// CALL to filtered beneficiary must be rejected by prechecker
 	_, err = contract.CallTarget(&auth, filteredAddr)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject CALL to filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject CALL to filtered beneficiary, got: %v", err)
 	}
 
-	// STATICCALL to filtered address should be rejected
+	// STATICCALL to filtered beneficiary must be rejected by prechecker
 	_, err = contract.StaticcallTargetInTx(&auth, filteredAddr)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject STATICCALL to filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject STATICCALL to filtered beneficiary, got: %v", err)
 	}
 
-	// CREATE2 to filtered address should be rejected
+	// CREATE2 to filtered beneficiary must be rejected by prechecker
 	_, err = contract.Create2Contract(&auth, salt)
 	if !isFilteredError(err) {
-		t.Fatalf("expected pre-checker to reject CREATE2 to filtered address, got: %v", err)
+		t.Fatalf("expected pre-checker to reject CREATE2 to filtered beneficiary, got: %v", err)
+	}
+
+	// SELFDESTRUCT to filtered beneficiary must be rejected by prechecker
+	_, err = contract.SelfDestructTo(&auth, filteredAddr)
+	if !isFilteredError(err) {
+		t.Fatalf("expected pre-checker to reject SELFDESTRUCT to filtered beneficiary, got: %v", err)
 	}
 }

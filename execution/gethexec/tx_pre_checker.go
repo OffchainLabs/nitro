@@ -43,6 +43,8 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
+const TxPreCheckerMaxAllowedGas uint64 = 50_000_000
+
 type TxPreCheckerConfig struct {
 	Strictness             uint                          `koanf:"strictness" reload:"hot"`
 	RequiredStateAge       int64                         `koanf:"required-state-age" reload:"hot"`
@@ -140,7 +142,6 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	sender common.Address,
 	header *types.Header,
 	statedb *state.StateDB,
-	_arbos *arbosState.ArbosState,
 	tx *types.Transaction,
 	stateNonce uint64,
 ) error {
@@ -150,16 +151,11 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 
 	statedb.SetAddressChecker(c.addressChecker)
 
-	// First, check the sender and recipient addresses
-	statedb.TouchAddress(sender)
-	if tx.To() != nil {
-		statedb.TouchAddress(*tx.To())
-	}
-
 	snapshot := statedb.Snapshot()
 	defer statedb.RevertToSnapshot(snapshot)
 
-	// Next, use tracer hook to track all addresses touched during execution
+	// Use an EVM tracer to record all execution-level address interactions.
+	// Covers from, to, calls, contract creation, and selfdestruct beneficiaries.
 	blockCtx := core.NewEVMBlockContext(header, c.bc, nil)
 	evm := vm.NewEVM(
 		blockCtx,
@@ -169,6 +165,7 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 			Tracer: &tracing.Hooks{
 				OnEnter: func(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
 					statedb.TouchAddress(to)
+					statedb.TouchAddress(from)
 				},
 			},
 		},
@@ -191,18 +188,12 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	}
 	message.Nonce = stateNonce
 
-	gasPool := new(core.GasPool).AddGas(tx.Gas())
+	// Limit the gas used in precheck execution
+	gasPool := new(core.GasPool).AddGas(min(tx.Gas(), TxPreCheckerMaxAllowedGas))
 
 	_, err = core.ApplyMessage(evm, message, gasPool)
-	// Ignore execution errors
+	// Ignore execution errors, since we care only about touched adresses
 	_ = err
-
-	// TODO: clarify ApplyTransactionWithEVM vs ApplyMessage in this case
-	// gasPool := uint64(50_000_000)
-	// _, _, err = core.ApplyTransactionWithEVM(message, new(core.GasPool).AddGas(message.GasLimit), statedb, header.Number, header.Hash(), header.Time, tx, &(gasPool), evm, nil)
-	// if err != nil {
-	// 	return err
-	// }
 
 	// Last, check event logs
 	if c.eventFilter != nil {
@@ -313,7 +304,6 @@ func (c *TxPreChecker) PreCheckTx(header *types.Header, statedb *state.StateDB, 
 			sender,
 			header,
 			statedb,
-			arbos,
 			tx,
 			stateNonce,
 		); err != nil {
