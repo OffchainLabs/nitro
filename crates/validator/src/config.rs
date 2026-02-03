@@ -22,7 +22,8 @@ pub struct ServerState {
     pub binary: PathBuf,
     pub module_root: ModuleRoot,
     /// Jit manager responsible for computing next GlobalState. Not wrapped
-    /// in Arc<> since the caller of ServerState is wrapped in Arc<>
+    /// in Arc<> since the caller of ServerState is wrapped in Arc<>. This field
+    /// is optional because it's only available in continuous InputMode
     pub jit_manager: Option<JitProcessManager>,
     pub available_workers: usize,
 }
