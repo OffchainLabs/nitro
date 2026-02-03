@@ -46,6 +46,8 @@ import (
 
 var (
 	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	sequencerQueueNormalGauge               = metrics.NewRegisteredGauge("arb/sequencer/queue/normal", nil)
+	sequencerQueueTimeboostGauge            = metrics.NewRegisteredGauge("arb/sequencer/queue/timeboost", nil)
 	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
 	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
@@ -624,6 +626,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		firstAppearance: time.Now(),
 		isTimeboosted:   false,
 	}
+	sequencerQueueTimeboostGauge.Update(int64(len(s.timeboostAuctionResolutionTxQueue)))
 	return nil
 }
 
@@ -722,7 +725,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	case <-queueCtx.Done():
 		return queueCtx.Err()
 	}
-
+	sequencerQueueNormalGauge.Update(int64(len(s.txQueue)))
 	return nil
 }
 
@@ -1342,6 +1345,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.postTxFilter,
 		nil,
 	)
+
+	sequencerQueueNormalGauge.Update(int64(len(s.txQueue)))
+	sequencerQueueTimeboostGauge.Update(int64(len(s.timeboostAuctionResolutionTxQueue)))
 
 	for _, queueItem := range queueItems {
 		if queueItem.isTimeboosted {
