@@ -31,6 +31,11 @@ func (c *TransactionFiltererRPCClient) Start(ctx_in context.Context) error {
 	return c.client.Start(ctx)
 }
 
+func (c *TransactionFiltererRPCClient) StopAndWait() {
+	c.StopWaiter.StopAndWait()
+	c.client.Close()
+}
+
 func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
