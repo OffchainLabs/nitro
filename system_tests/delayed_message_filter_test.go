@@ -135,7 +135,7 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	err = transactionFiltererStack.Start()
 	require.NoError(t, err)
 
-	builder.execConfig.TransactionFilteringConfig.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
 	return transactionFiltererStack, transactionFiltererAPI
 }

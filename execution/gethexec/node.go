@@ -164,7 +164,7 @@ type Config struct {
 	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
-	TransactionFilteringConfig  TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
+	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -196,7 +196,7 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
-	if err := c.TransactionFilteringConfig.Validate(); err != nil {
+	if err := c.TransactionFiltering.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -270,7 +270,7 @@ var ConfigDefault = Config{
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
 
-	TransactionFilteringConfig: DefaultTransactionFilteringConfig,
+	TransactionFiltering: DefaultTransactionFilteringConfig,
 }
 
 type ConfigFetcher interface {
@@ -312,9 +312,9 @@ func CreateExecutionNode(
 	config := configFetcher.Get()
 
 	var transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
-	if config.TransactionFilteringConfig.TransactionFiltererRPCClient.URL != "" {
+	if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
 		filtererConfigFetcher := func() *rpcclient.ClientConfig {
-			return &configFetcher.Get().TransactionFilteringConfig.TransactionFiltererRPCClient
+			return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 		}
 		transactionFiltererRPCClient = transactionfiltererclient.NewTransactionFiltererRPCClient(filtererConfigFetcher)
 	}
@@ -400,7 +400,7 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.TransactionFilteringConfig.AddressFilter)
+	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
