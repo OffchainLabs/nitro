@@ -13,12 +13,12 @@ import (
 
 // Config holds the S3 configuration for syncing data.
 type Config struct {
-	s3client.Config
-	Bucket      string `koanf:"bucket"`
-	ObjectKey   string `koanf:"object-key"`
-	ChunkSizeMB int    `koanf:"chunk-size-mb"`
-	MaxRetries  int    `koanf:"max-retries"`
-	Concurrency int    `koanf:"concurrency"`
+	s3client.Config `koanf:",squash"`
+	Bucket          string `koanf:"bucket"`
+	ObjectKey       string `koanf:"object-key"`
+	ChunkSizeMB     int    `koanf:"chunk-size-mb"`
+	MaxRetries      int    `koanf:"max-retries"`
+	Concurrency     int    `koanf:"concurrency"`
 }
 
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
