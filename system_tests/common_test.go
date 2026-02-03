@@ -76,6 +76,7 @@ import (
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -550,6 +551,16 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 
 func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	b.takeOwnership = takeOwnership
+	return b
+}
+
+func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
+	if b.execConfig == nil {
+		panic("execConfig must be initialised before setting event filter rules")
+	}
+
+	b.execConfig.Sequencer.EventFilter.Rules = rules
+
 	return b
 }
 
@@ -2305,10 +2316,11 @@ func setupConfigWithAnyTrust(
 
 // controllableWriter wraps a DA writer and can be controlled to return specific errors
 type controllableWriter struct {
-	mu             sync.RWMutex
-	writer         daprovider.Writer
-	shouldFallback bool
-	customError    error
+	mu              sync.RWMutex
+	writer          daprovider.Writer
+	shouldFallback  bool
+	customError     error
+	overrideMaxSize int // 0 means use underlying writer's max size; if set, Store returns ErrMessageTooLarge for messages exceeding this size
 }
 
 func (w *controllableWriter) SetShouldFallback(val bool) {
@@ -2323,18 +2335,31 @@ func (w *controllableWriter) SetCustomError(err error) {
 	w.customError = err
 }
 
+func (w *controllableWriter) SetMaxMessageSize(size int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.overrideMaxSize = size
+}
+
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	w.mu.RLock()
 	shouldFallback := w.shouldFallback
 	customError := w.customError
+	overrideMaxSize := w.overrideMaxSize
 	w.mu.RUnlock()
 
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback)
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize)
 
 	// Check for custom error first
 	if customError != nil {
 		log.Info("controllableWriter returning custom error", "error", customError)
 		return containers.NewReadyPromise[[]byte](nil, customError)
+	}
+
+	// Check if message exceeds overrideMaxSize (simulates DA provider size limit)
+	if overrideMaxSize > 0 && len(msg) > overrideMaxSize {
+		log.Warn("controllableWriter returning ErrMessageTooLarge", "msgLen", len(msg), "maxSize", overrideMaxSize)
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
 	}
 
 	// Check for fallback signal
@@ -2349,6 +2374,14 @@ func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.Promis
 }
 
 func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	w.mu.RLock()
+	overrideSize := w.overrideMaxSize
+	w.mu.RUnlock()
+
+	if overrideSize > 0 {
+		log.Info("controllableWriter returning override max message size", "size", overrideSize)
+		return containers.NewReadyPromise(overrideSize, nil)
+	}
 	return w.writer.GetMaxMessageSize()
 }
 

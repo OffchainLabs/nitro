@@ -309,12 +309,12 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 	}
 
 	if state.IsStylusClassicProgramPrefix(prefixedWasm) {
-		return handleClassicStylus(prefixedWasm, params.MaxWasmSize)
+		return getWasmFromClassicStylus(prefixedWasm, params.MaxWasmSize)
 	}
 
 	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
 		if state.IsStylusRootProgramPrefix(prefixedWasm) {
-			return handleRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
+			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, isActivation)
 		}
 
 		if state.IsStylusFragmentPrefix(prefixedWasm) {
@@ -325,7 +325,7 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 	return nil, ProgramNotWasmError()
 }
 
-func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
+func getWasmFromClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	wasm, dictByte, err := state.StripStylusPrefix(data)
 	if err != nil {
 		return nil, err
@@ -339,7 +339,7 @@ func handleClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
 }
 
-func handleRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint16, isActivation bool) ([]byte, error) {
+func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, isActivation bool) ([]byte, error) {
 	root, err := state.NewStylusRoot(data)
 	if err != nil {
 		return nil, err
