@@ -92,13 +92,13 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 	// On the other hand, for the latter case, AfterState will be non zero since the chain has been
 	// created on an existing chain. In this test environment, we are simulating the first case where a
 	// chain is deployed from scratch, so we expect genesis assertion to be nil/zero for both BeforeState
-	// and AfterState. On top of that, we have an extra check in GetAndValidateGenesisAssertion to make
-	// sure that nil assertions have no leftover accounts; however, that does not apply to a test
-	// environment, which is why it is safe to remove such account (genesis account) from ArbInitData
-	// before creating initDataReader.
-	l2info.ArbInitData.Accounts = []statetransfer.AccountInitializationInfo{}
-
-	initDataReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
+	// and AfterState. To that end, we'll also simulate the same behaviour as nitro-testnode where
+	// initDataReader is initialized with config.Init.Empty set to true, meaning ArbosInitializationInfo
+	// is initialized like below instead of using l2info.ArbInitData
+	initData := statetransfer.ArbosInitializationInfo{
+		NextBlockNumber: 0,
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&initData)
 	if initDataReader == nil {
 		t.Fatal("initDataReader can't be nil")
 	}
@@ -122,13 +122,13 @@ func TestValidateGenesisAssertionWithBuilder(t *gotesting.T) {
 	// On the other hand, for the latter case, AfterState will be non zero since the chain has been
 	// created on an existing chain. In this test environment, we are simulating the first case where a
 	// chain is deployed from scratch, so we expect genesis assertion to be nil/zero for both BeforeState
-	// and AfterState. On top of that, we have an extra check in GetAndValidateGenesisAssertion to make
-	// sure that nil assertions have no leftover accounts; however, that does not apply to a test
-	// environment, which is why it is safe to remove any account from ArbInitData and in the case of
-	// builder there's 2 (Owner and Faucet) added by NewArbTestInfo
-	builder.L2Info.ArbInitData.Accounts = []statetransfer.AccountInitializationInfo{}
-
-	initDataReader := statetransfer.NewMemoryInitDataReader(&builder.L2Info.ArbInitData)
+	// and AfterState. To that end, we'll also simulate the same behaviour as nitro-testnode where
+	// initDataReader is initialized with config.Init.Empty set to true, meaning ArbosInitializationInfo
+	// is initialized like below instead of using l2info.ArbInitData
+	initData := statetransfer.ArbosInitializationInfo{
+		NextBlockNumber: 0,
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&initData)
 	if initDataReader == nil {
 		t.Fatal("initDataReader can't be nil")
 	}
