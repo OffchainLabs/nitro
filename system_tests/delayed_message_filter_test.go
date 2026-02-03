@@ -282,7 +282,8 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -395,7 +396,8 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.Equal(t, normal2Initial, normal2Mid, "normal user 2 balance should not change while blocked")
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -510,7 +512,8 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.Equal(t, user2Initial, user2Mid, "user2 balance should not change while batch is blocked")
 
 	// Add tx2 hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -680,7 +683,8 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -749,7 +753,8 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -819,7 +824,8 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -887,7 +893,8 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -953,7 +960,8 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
 	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
