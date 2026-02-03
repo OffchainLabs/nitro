@@ -14,6 +14,15 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+var DefaultConfig = rpcclient.ClientConfig{
+	URL:                       "",
+	JWTSecret:                 "",
+	Retries:                   3,
+	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
+	ArgLogLimit:               2048,
+	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+}
+
 type TransactionFiltererRPCClient struct {
 	stopwaiter.StopWaiter
 	client *rpcclient.RpcClient

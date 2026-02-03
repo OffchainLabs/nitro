@@ -246,15 +246,8 @@ var ConfigDefault = Config{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-	AddressFilter: addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient: rpcclient.ClientConfig{
-		URL:                       "",
-		JWTSecret:                 "",
-		Retries:                   3,
-		RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
-		ArgLogLimit:               2048,
-		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
-	},
+	AddressFilter:                addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient: transactionfiltererclient.DefaultConfig,
 }
 
 type ConfigFetcher interface {
