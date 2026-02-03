@@ -171,7 +171,7 @@ type ExecutionEngine struct {
 	runningMaintenance atomic.Bool
 
 	addressChecker               state.AddressChecker
-	transactionFiltererRPCClient atomic.Pointer[transactionfiltererclient.TransactionFiltererRPCClient]
+	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -194,14 +194,14 @@ func NewExecutionEngine(
 	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient,
 ) (*ExecutionEngine, error) {
 	execEngine := &ExecutionEngine{
-		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:  make(chan struct{}, 1),
-		cachedL1PriceData: NewL1PriceData(),
-		exposeMultiGas:    exposeMultiGas,
-		syncTillBlock:     syncTillBlock,
+		bc:                           bc,
+		resequenceChan:               make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:             make(chan struct{}, 1),
+		cachedL1PriceData:            NewL1PriceData(),
+		exposeMultiGas:               exposeMultiGas,
+		syncTillBlock:                syncTillBlock,
+		transactionFiltererRPCClient: transactionFiltererRPCClient,
 	}
-	execEngine.transactionFiltererRPCClient.Store(transactionFiltererRPCClient)
 	return execEngine, nil
 }
 
@@ -855,14 +855,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
 		if len(filteringHooks.FilteredTxHashes) > 0 {
-			transactionFiltererRPCClient := s.transactionFiltererRPCClient.Load()
-			if transactionFiltererRPCClient != nil {
+			if s.transactionFiltererRPCClient != nil {
 				s.LaunchThread(func(ctx context.Context) {
 					// Call transaction-filterer sequentially.
 					// To avoid nonce collisions when adding a tx to ArbFilteredTransactionsManager,
 					// transaction-filterer will process only one Filter call at a time.
 					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
-						_, err := transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
+						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
 						if err != nil {
 							log.Error("error reporting filtered tx to transaction-filterer", "filteredTxHash", filteredTxHash, "err", err)
 						}
@@ -1153,27 +1152,17 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
 }
 
-// Only used for tests
-func (s *ExecutionEngine) SetTransactionFiltererRPCClient(
-	_ *testing.T,
-	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient,
-) {
-	s.transactionFiltererRPCClient.Store(transactionFiltererRPCClient)
-}
-
 func (s *ExecutionEngine) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 
-	transactionFiltererRPCClient := s.transactionFiltererRPCClient.Load()
-	if transactionFiltererRPCClient != nil {
-		transactionFiltererRPCClient.StopAndWait()
+	if s.transactionFiltererRPCClient != nil {
+		s.transactionFiltererRPCClient.StopAndWait()
 	}
 }
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) error {
-	transactionFiltererRPCClient := s.transactionFiltererRPCClient.Load()
-	if transactionFiltererRPCClient != nil {
-		err := transactionFiltererRPCClient.Start(ctx_in)
+	if s.transactionFiltererRPCClient != nil {
+		err := s.transactionFiltererRPCClient.Start(ctx_in)
 		if err != nil {
 			return fmt.Errorf("failed to start transaction filterer RPC client: %w", err)
 		}

@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"sync"
+	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,16 +23,16 @@ import (
 const Namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
-	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+	apiMutex sync.Mutex // avoids concurrent transactions with the same nonce
 
-	txOptsMutex sync.Mutex // avoids concurrent transactions with the same nonce
-	txOpts      *bind.TransactOpts
+	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+	txOpts                         *bind.TransactOpts
 }
 
 // Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
-	t.txOptsMutex.Lock()
-	defer t.txOptsMutex.Unlock()
+	t.apiMutex.Lock()
+	defer t.apiMutex.Unlock()
 
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
@@ -45,6 +46,24 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 		return tx.Hash(), nil
 	}
+}
+
+// Only used for testing.
+// Sequencer and TransactionFiltererAPI depend on each other, as workaround for egg/chicken problem,
+// we set the sequencer client after both are created.
+func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClient *ethclient.Client) error {
+	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
+		types.ArbFilteredTransactionsManagerAddress,
+		sequencerClient,
+	)
+	if err != nil {
+		return err
+	}
+
+	t.apiMutex.Lock()
+	defer t.apiMutex.Unlock()
+	t.arbFilteredTransactionsManager = arbFilteredTransactionsManager
+	return nil
 }
 
 var DefaultStackConfig = node.Config{
@@ -72,10 +91,10 @@ func NewStack(
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,
-) (*node.Node, error) {
+) (*node.Node, *TransactionFiltererAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
@@ -83,7 +102,7 @@ func NewStack(
 		sequencerClient,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	api := &TransactionFiltererAPI{
@@ -98,5 +117,5 @@ func NewStack(
 	}}
 	stack.RegisterAPIs(apis)
 
-	return stack, nil
+	return stack, api, nil
 }
