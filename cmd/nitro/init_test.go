@@ -297,37 +297,39 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		t.Log("running test case", testCase.name)
+		func() {
+			t.Log("running test case", testCase.name)
 
-		// Create latest file
-		serverDir := t.TempDir()
+			// Create latest file
+			serverDir := t.TempDir()
 
-		err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
-		Require(t, err)
-		err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
-		Require(t, err)
+			err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
+			Require(t, err)
+			err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
+			Require(t, err)
 
-		// Start HTTP server
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		addr := "http://" + startFileServer(t, ctx, serverDir)
+			// Start HTTP server
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			addr := "http://" + startFileServer(t, ctx, serverDir)
 
-		// Set latest snapshot URL
-		initConfig := conf.InitConfigDefault
-		initConfig.Latest = snapshotKind
-		initConfig.LatestBase = addr
-		configChain := testCase.chain
-		if configChain == "" {
-			configChain = chain
-		}
-		err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
-		Require(t, err)
+			// Set latest snapshot URL
+			initConfig := conf.InitConfigDefault
+			initConfig.Latest = snapshotKind
+			initConfig.LatestBase = addr
+			configChain := testCase.chain
+			if configChain == "" {
+				configChain = chain
+			}
+			err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
+			Require(t, err)
 
-		// Check url
-		want := testCase.wantUrl(addr)
-		if initConfig.Url != want {
-			t.Fatalf("initConfig.Url = %s; want: %s", initConfig.Url, want)
-		}
+			// Check url
+			want := testCase.wantUrl(addr)
+			if initConfig.Url != want {
+				t.Fatalf("initConfig.Url = %s; want: %s", initConfig.Url, want)
+			}
+		}()
 	}
 }
 
@@ -864,5 +866,19 @@ func TestIsWasmDb(t *testing.T) {
 				t.Fatalf("want %v, but got %v", testCase.want, got)
 			}
 		})
+	}
+}
+
+func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
+	initConfig := conf.InitConfig{
+		GenesisJsonFile: "./genesis.json",
+		Empty:           true,
+	}
+	err := initConfig.Validate()
+	if err == nil {
+		t.Fatal("expected error when both GenesisJsonFile and Empty are set")
+	}
+	if !strings.Contains(err.Error(), "init config cannot be both empty and have a genesis json file specified") {
+		t.Fatal("expected conflict detection")
 	}
 }

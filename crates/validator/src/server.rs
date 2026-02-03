@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use anyhow::Result;
 use std::future::Future;
 use std::sync::Arc;
