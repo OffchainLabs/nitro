@@ -66,6 +66,7 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
+	waitForTxHistogram                      = metrics.NewRegisteredHistogram("arb/sequencer/waitfortx", nil, metrics.NewBoundedHistogramSample())
 	// number of blocks ended because of block gas limit
 	gasFullBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gasfull", nil)
 	// number of blocks ended because of txes data size limit
@@ -1233,10 +1234,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}()
 
 	var startOfReadingFromTxQueue time.Time
-
+	startOfBlockCreation := time.Now()
 	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
+			waitForTxHistogram.Update(int64(time.Since(startOfBlockCreation)))
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
 			break
 		}
