@@ -336,7 +336,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	// And then we check those last 48 blocks
 	// #nosec G115
-	checkUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart)
+	checkUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
 	// #nosec G115
 	for i := int64(newLastBlock); i > checkUntilBlock; i-- {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
