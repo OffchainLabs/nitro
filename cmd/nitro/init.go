@@ -790,6 +790,14 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 		genesisArbOSInit = gen.ArbOSInit
 	}
 
+	// Apply CLI flags to genesisArbOSInit (can override or supplement genesis.json)
+	if config.Init.TransactionFilteringEnabled {
+		if genesisArbOSInit == nil {
+			genesisArbOSInit = &params.ArbOSInit{}
+		}
+		genesisArbOSInit.TransactionFilteringEnabled = true
+	}
+
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {

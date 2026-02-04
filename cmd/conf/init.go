@@ -44,6 +44,7 @@ type InitConfig struct {
 	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
 	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	TransactionFilteringEnabled   bool          `koanf:"transaction-filtering-enabled"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -75,6 +76,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
 	ValidateGenesisAssertion:      true,
+	TransactionFilteringEnabled:   false,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -110,6 +112,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"\"false\"- do not rebuild on startup",
 	)
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
+	f.Bool(prefix+".transaction-filtering-enabled", InitConfigDefault.TransactionFilteringEnabled, "enables transaction filtering feature at genesis (sets TransactionFilteringFromTime to 1)")
 }
 
 func (c *InitConfig) Validate() error {
