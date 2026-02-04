@@ -1,8 +1,9 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -10,12 +11,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode/db-schema"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// Database holds an ethdb.Database underneath and implements StateDatabase interface defined in 'mel'
+// Database holds an ethdb.KeyValueStore underneath and implements StateDatabase interface defined in 'mel'. It implements
+// reading of delayed messages in native mode by also verifying if the read delayed message is part of the delayed msgs seen root
 type Database struct {
 	db ethdb.KeyValueStore
 }
@@ -45,7 +48,7 @@ func (d *Database) SaveState(ctx context.Context, state *mel.State) error {
 }
 
 func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumber uint64, state mel.State) error {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
+	key := read.Key(schema.MelStatePrefix, parentChainBlockNumber)
 	melStateBytes, err := rlp.EncodeToBytes(state)
 	if err != nil {
 		return err
@@ -61,7 +64,7 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 	if err != nil {
 		return err
 	}
-	err = batch.Put(dbschema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
+	err = batch.Put(schema.HeadMelStateBlockNumKey, parentChainBlockNumberBytes)
 	if err != nil {
 		return err
 	}
@@ -69,26 +72,11 @@ func (d *Database) setHeadMelStateBlockNum(batch ethdb.KeyValueWriter, parentCha
 }
 
 func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
-	parentChainBlockNumberBytes, err := d.db.Get(dbschema.HeadMelStateBlockNumKey)
-	if err != nil {
-		return 0, err
-	}
-	var parentChainBlockNumber uint64
-	err = rlp.DecodeBytes(parentChainBlockNumberBytes, &parentChainBlockNumber)
-	if err != nil {
-		return 0, err
-	}
-	return parentChainBlockNumber, nil
+	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
 func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
-	key := dbKey(dbschema.MelStatePrefix, parentChainBlockNumber)
-	data, err := d.db.Get(key)
-	if err != nil {
-		return nil, err
-	}
-	var state mel.State
-	err = rlp.DecodeBytes(data, &state)
+	state, err := read.Value[mel.State](d.db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +90,7 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 	}
 	firstPos := state.BatchCount - uint64(len(batchMetas))
 	for i, batchMetadata := range batchMetas {
-		key := dbKey(dbschema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
+		key := read.Key(schema.MelSequencerBatchMetaPrefix, firstPos+uint64(i)) // #nosec G115
 		batchMetadataBytes, err := rlp.EncodeToBytes(*batchMetadata)
 		if err != nil {
 			return err
@@ -117,13 +105,8 @@ func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMe
 }
 
 func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error) {
-	key := dbKey(dbschema.MelSequencerBatchMetaPrefix, seqNum)
-	batchMetadataBytes, err := d.db.Get(key)
+	batchMetadata, err := read.Value[mel.BatchMetadata](d.db, read.Key(schema.MelSequencerBatchMetaPrefix, seqNum))
 	if err != nil {
-		return nil, err
-	}
-	var batchMetadata mel.BatchMetadata
-	if err = rlp.DecodeBytes(batchMetadataBytes, &batchMetadata); err != nil {
 		return nil, err
 	}
 	return &batchMetadata, nil
@@ -136,7 +119,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 	}
 	firstPos := state.DelayedMessagesSeen - uint64(len(delayedMessages))
 	for i, msg := range delayedMessages {
-		key := dbKey(dbschema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
+		key := read.Key(schema.MelDelayedMessagePrefix, firstPos+uint64(i)) // #nosec G115
 		delayedBytes, err := rlp.EncodeToBytes(*msg)
 		if err != nil {
 			return err
@@ -168,13 +151,8 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 }
 
 func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	key := dbKey(dbschema.MelDelayedMessagePrefix, index)
-	delayedBytes, err := d.db.Get(key)
+	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
-		return nil, err
-	}
-	var delayed mel.DelayedInboxMessage
-	if err = rlp.DecodeBytes(delayedBytes, &delayed); err != nil {
 		return nil, err
 	}
 	return &delayed, nil
@@ -258,13 +236,4 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		return true, nil
 	}
 	return false, nil
-}
-
-func dbKey(prefix []byte, pos uint64) []byte {
-	var key []byte
-	key = append(key, prefix...)
-	data := make([]byte, 8)
-	binary.BigEndian.PutUint64(data, pos)
-	key = append(key, data...)
-	return key
 }

@@ -52,13 +52,8 @@ RUN apt-get update && \
     # pinned rust 1.88.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY brotli brotli
 COPY scripts/build-brotli.sh scripts/
 COPY scripts/remove_reference_types.sh scripts/
@@ -83,8 +78,8 @@ COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./daprovider ./daprovider
-COPY ./daprovider/das/dasutil ./daprovider/das/dasutil
-COPY ./daprovider/das/dastree ./daprovider/das/dastree
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -93,7 +88,6 @@ COPY ./zeroheavy ./zeroheavy
 COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
 COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
 COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
-COPY ./contracts-local/gas-dimensions/ ./contracts-local/gas-dimensions/
 COPY ./contracts-local/lib/ ./contracts-local/lib/
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
@@ -115,17 +109,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
     cargo install --force cbindgen --version 0.24.3
-COPY arbitrator/Cargo.* arbitrator/
+COPY Cargo.* ./
 COPY ./Makefile ./
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY crates/ crates/
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -145,39 +131,13 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
-COPY arbitrator/Cargo.* arbitrator/
-COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/bench arbitrator/bench
-COPY arbitrator/brotli arbitrator/brotli
-COPY arbitrator/caller-env arbitrator/caller-env
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-COPY arbitrator/prover/benches arbitrator/prover/benches
-COPY arbitrator/bench/Cargo.toml arbitrator/bench/
-COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
-COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
-COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
-RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
-    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
-    rm arbitrator/prover/benches/merkle_bench.rs && \
-    rm arbitrator/bench/src/lib.rs
+COPY Cargo.* ./
+COPY crates/ crates/
 COPY ./Makefile ./
-COPY arbitrator/prover arbitrator/prover
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-wasm-export / target/
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
-RUN touch -a -m arbitrator/prover/src/lib.rs
+RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
@@ -194,15 +154,14 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
-COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
-COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
-COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
-COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
-COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
-COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
-COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 COPY ./contracts-legacy ./contracts-legacy
@@ -328,13 +287,16 @@ FROM offchainlabs/nitro-node:v3.7.6-c0fe95e AS nitro-legacy
 FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrustserver  /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrustserver /usr/local/bin/daserver
 COPY --from=node-builder  /workspace/target/bin/daprovider  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/autonomous-auctioneer  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/bidder-client  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/el-proxy  /usr/local/bin/
-COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/anytrusttool    /usr/local/bin/
+RUN ln -s /usr/local/bin/anytrusttool /usr/local/bin/datool
 COPY --from=node-builder  /workspace/target/bin/genesis-generator  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/transaction-filterer  /usr/local/bin/
 COPY --from=contracts-builder  /workspace/contracts/  /contracts/
 COPY --from=contracts-builder  /workspace/contracts-local/  /contracts-local/
 COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines

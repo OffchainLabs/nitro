@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package mel
 
 import (
@@ -161,12 +163,17 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	return nil
 }
 
-func (s *State) GenerateDelayedMessageMerklePartials() error {
+func (s *State) GenerateDelayedMessagesSeenMerklePartialsAndRoot() error {
 	partialsPtrs, err := s.seenDelayedMsgsAcc.GetPartials()
 	if err != nil {
 		return err
 	}
 	s.DelayedMessageMerklePartials = FromPtrSlice(partialsPtrs)
+	root, err := s.seenDelayedMsgsAcc.Root()
+	if err != nil {
+		return err
+	}
+	s.DelayedMessagesSeenRoot = root
 	return nil
 }
 

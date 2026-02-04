@@ -1,0 +1,23 @@
+[package]
+name = "user-host"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+arbutil = { workspace = true }
+caller-env = { workspace = true, features = ["static_caller"] }
+eyre = { workspace = true }
+fnv = { workspace = true }
+hex = { workspace = true }
+prover = { workspace = true }
+user-host-trait = { workspace = true }
+wasmer-types = { workspace = true }

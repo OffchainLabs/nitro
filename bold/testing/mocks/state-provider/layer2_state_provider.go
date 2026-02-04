@@ -1,6 +1,5 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/offchainlabs/nitro/blob/master/LICENSE.md
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // Package stateprovider defines smarter mocks for testing purposes that can
 // simulate a layer 2 state provider and layer 2 state execution.
@@ -19,9 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/bold/api/db"
-	"github.com/offchainlabs/nitro/bold/chain-abstraction"
-	"github.com/offchainlabs/nitro/bold/layer2-state-provider"
-	"github.com/offchainlabs/nitro/bold/state-commitments/history"
+	"github.com/offchainlabs/nitro/bold/commitment/history"
+	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing"
 	"github.com/offchainlabs/nitro/bold/testing/casttest"
 )
@@ -39,7 +38,7 @@ var (
 // L2StateBackend defines a very naive state manager that is initialized from a list of predetermined
 // state roots. It can produce state and history commitments from those roots.
 type L2StateBackend struct {
-	l2stateprovider.HistoryCommitmentProvider
+	state.HistoryCommitmentProvider
 	stateRoots              []common.Hash
 	executionStates         []*protocol.ExecutionState
 	machineAtBlock          func(context.Context, uint64) (Machine, error)
@@ -51,7 +50,7 @@ type L2StateBackend struct {
 	maliciousMachineIndex   uint64
 	numBigSteps             uint64
 	numBatches              uint64
-	challengeLeafHeights    []l2stateprovider.Height
+	challengeLeafHeights    []state.Height
 }
 
 // NewWithMockedStateRoots initialize with a list of predefined state roots, useful for tests and simulations.
@@ -65,7 +64,7 @@ func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBac
 			return nil, errors.New("state manager created with New() cannot provide machines")
 		},
 		numBigSteps: 1,
-		challengeLeafHeights: []l2stateprovider.Height{
+		challengeLeafHeights: []state.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
 			challenge_testing.LevelZeroSmallStepEdgeHeight,
@@ -74,7 +73,7 @@ func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBac
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
+	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
 	s.HistoryCommitmentProvider = *commitmentProvider
 	return s, nil
 }
@@ -120,12 +119,12 @@ func WithForceMachineBlockCompat() Opt {
 
 func WithLayerZeroHeights(heights *protocol.LayerZeroHeights, numBigSteps uint8) Opt {
 	return func(s *L2StateBackend) {
-		challengeLeafHeights := make([]l2stateprovider.Height, 0)
-		challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.BlockChallengeHeight))
+		challengeLeafHeights := make([]state.Height, 0)
+		challengeLeafHeights = append(challengeLeafHeights, state.Height(heights.BlockChallengeHeight))
 		for i := uint8(0); i < numBigSteps; i++ {
-			challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.BigStepChallengeHeight))
+			challengeLeafHeights = append(challengeLeafHeights, state.Height(heights.BigStepChallengeHeight))
 		}
-		challengeLeafHeights = append(challengeLeafHeights, l2stateprovider.Height(heights.SmallStepChallengeHeight))
+		challengeLeafHeights = append(challengeLeafHeights, state.Height(heights.SmallStepChallengeHeight))
 		s.challengeLeafHeights = challengeLeafHeights
 	}
 }
@@ -148,7 +147,7 @@ func NewForSimpleMachine(
 ) (*L2StateBackend, error) {
 	s := &L2StateBackend{
 		maliciousMachineIndex: 0,
-		challengeLeafHeights: []l2stateprovider.Height{
+		challengeLeafHeights: []state.Height{
 			challenge_testing.LevelZeroBlockEdgeHeight,
 			challenge_testing.LevelZeroBigStepEdgeHeight,
 			challenge_testing.LevelZeroSmallStepEdgeHeight,
@@ -158,7 +157,7 @@ func NewForSimpleMachine(
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
+	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
 	s.HistoryCommitmentProvider = *commitmentProvider
 	totalWavmOpcodes := uint64(1)
 	for _, h := range s.challengeLeafHeights[1:] {
@@ -215,7 +214,7 @@ func NewForSimpleMachine(
 }
 
 func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
-	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, database)
+	commitmentProvider := state.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, database)
 	s.HistoryCommitmentProvider = *commitmentProvider
 }
 

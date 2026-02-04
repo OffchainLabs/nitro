@@ -40,7 +40,10 @@ on:
       run-execution-spec-tests:
         required: false
         type: boolean
-      run-pebble:
+      run-pebble-a:
+        required: false
+        type: boolean
+      run-pebble-b:
         required: false
         type: boolean
       run-experimental:
@@ -87,58 +90,43 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
+          --junitfile test-results/junit-pathdb.xml
 
       # --------------------- DEFAULTS MODE ---------------------
 
       - name: run tests without race detection and hash state scheme (A-batch)
         if: inputs.run-defaults-a
-        id: run-tests-defaults-a
-        continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-a.xml --run '^Test[A-L]'
+          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
-        id: run-tests-defaults-b
-        continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-b.xml --skip '^Test[A-L]'
-
-      - name: Process JUnit XML logs
-        if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
-        run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
-
-      - name: Upload Go test Artifacts
-        if: (inputs.run-defaults-a || inputs.run-defaults-b) && always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-reports-go-${{ inputs.run-defaults-a && 'defaults-a' || 'defaults-b' }}
-          path: test-results/junit*.xml
-
-      - name: Fail if tests failed
-        if: (inputs.run-defaults-a && steps.run-tests-defaults-a.outcome == 'failure') || (inputs.run-defaults-b && steps.run-tests-defaults-b.outcome == 'failure')
-        run: |
-          echo "One or more tests failed."
-          exit 1
-
+          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+      
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
+        if: inputs.run-defaults-a
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
+    
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
+        if: inputs.run-defaults-b
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
+      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
           gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
           -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./... -- --test_redis=redis://localhost:6379/0
-
-      - name: Upload coverage to Codecov
-        if: inputs.run-defaults-a || inputs.run-defaults-b
-        uses: codecov/codecov-action@v5
-        with:
-          fail_ci_if_error: false
-          files: ./coverage.txt,./coverage-redis.txt
-          verbose: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: create block input json file
         if: inputs.run-defaults-a
@@ -156,13 +144,46 @@ jobs:
 
       - name: run jit prover on block input json
         if: inputs.run-defaults-a
+        id: jit
         run: |
           make build-jit
-          if [ -n "$(target/bin/jit \
-              --binary target/machines/latest/replay.wasm \
-              --cranelift \
-              --json-inputs='${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')" ]; then
-            echo "Error: Command produced output."
+          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs '${{ github.workspace }}/target/TestProgramStorage/block_inputs.json')
+          
+          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K[a-f0-9]+')
+          echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
+
+      - name: run the Rust validation server on block input json
+        if: inputs.run-defaults-a
+        run: |
+          # 1. Start server in background
+          make build-validation-server
+          target/bin/validator --module-root-path ./target/machines/latest/module-root.txt &
+          SERVER_PID=$!
+          
+          # 2. Wait for server to respond (up to 5 seconds)
+          echo "Waiting for validator to start..."
+          timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'
+          
+          # 3. Send validation request
+          RESPONSE=$(curl -s -X POST http://localhost:4141/validation_validate \
+            -H "Content-Type: application/json" \
+            -d @target/TestProgramStorage/block_inputs.json)
+          
+          # 4. Stop the server
+          kill $SERVER_PID
+
+          # 5. Compare hashes          
+          SERVER_HASH=$(echo "$RESPONSE" | jq -r '.BlockHash')
+          JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+          
+          echo "JIT Hash:    $JIT_HASH"
+          echo "Server Hash: $SERVER_HASH"
+          
+          if [ "$JIT_HASH" == "$SERVER_HASH" ]; then
+            echo "✅ Validation successful"
+          else
+            echo "❌ Validation failed: hashes do not match"
             exit 1
           fi
 
@@ -174,6 +195,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --flaky
+          --junitfile test-results/junit-flaky.xml
 
       # --------------------- CHALLENGE MODES ---------------------
 
@@ -182,18 +204,21 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
           --run TestChallenge --timeout 120m --cover
+          --junitfile test-results/junit-challenge.xml
 
       - name: run L3 challenge tests
         if: inputs.run-l3challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags challengetest --run TestL3Challenge --timeout 120m --cover
+          --junitfile test-results/junit-l3challenge.xml
 
       - name: run legacy challenge tests
         if: inputs.run-legacy-challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags legacychallengetest
           --run TestChallenge --timeout 60m --cover
+          --junitfile test-results/junit-legacy-challenge.xml
 
       # --------------------- STYLUS MODE ---------------------
 
@@ -202,6 +227,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags stylustest --run TestProgramArbitrator --timeout 60m --cover
+          --junitfile test-results/junit-stylus.xml
 
       # --------------------- RACE MODE ---------------------
 
@@ -210,7 +236,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh 
           --race --timeout 90m --test_state_scheme hash
-
+          --junitfile test-results/junit-race.xml
 
       # --------------------- LONG MODE ---------------------
 
@@ -219,6 +245,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags stylustest
           --run TestProgramLong --timeout 60m --cover
+          --junitfile test-results/junit-long.xml
 
       # --------------------- EXECUTION SPEC MODE ---------------------
 
@@ -228,9 +255,38 @@ jobs:
 
       # --------------------- PEBBLE MODE ---------------------
 
-      - name: run pebble tests
-        if: inputs.run-pebble
-        run: ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+      - name: run pebble tests (A-batch)
+        if: inputs.run-pebble-a
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
+
+      - name: run pebble tests (B-batch)
+        if: inputs.run-pebble-b
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
+          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
+
+      # --------------------- PROCESS JUNIT LOGS ---------------------
+
+      - name: Process JUnit XML logs
+        if: always()
+        run: python3 ${{ github.workspace }}/.github/workflows/process_junit.py test-results/
+
+      - name: Upload Go test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-reports-go-${{ inputs.run-name }}
+          path: test-results/junit*.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: false
+          files: ./coverage.txt,./coverage-redis.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
         # --------------------- EXPERIMENTAL MODE --------------------
       - name: run experimental tooling tests
@@ -242,6 +298,7 @@ jobs:
       # --------------------- ARCHIVE LOGS FOR ALL MODES ---------------------
 
       - name: Archive detailed run log
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.run-name }}-full.log

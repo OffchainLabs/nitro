@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -160,6 +160,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriters:    nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -300,6 +301,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				TransactOpts:  &seqTxOpts,
 				DAPWriters:    nil,
 				ParentChainID: parentChainID,
+				ChainConfig:   builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -869,21 +871,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 
+	// Post batch and record L1 heights before and after
 	l1HeightBeforeBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
-	// Do some L2 action (to become the batch content)
-	tx := builder.L2Info.PrepareTx("Faucet", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
-	_ = builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})[0]
+	checkBatchPosting(t, ctx, builder, testClientB.Client)
 
-	// Advance L1 enough to ensure everything is synced
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for the batch to be posted and processed by node B
-	_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-
-	// We assume that `builder.L1.Client` has the L1 block that made `testClientB.Client` notice `tx`.
 	l1HeightAfterBatch, err := builder.L1.Client.BlockNumber(ctx)
 	require.NoError(t, err)
 
