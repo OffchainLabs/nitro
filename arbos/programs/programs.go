@@ -404,7 +404,7 @@ func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.A
 	}
 
 	// charge access gas
-	cost := multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
+	cost := multigas.ZeroGas()
 	if statedb.AddressInAccessList(addr) {
 		cost = multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
 	} else {
