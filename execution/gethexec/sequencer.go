@@ -46,10 +46,8 @@ import (
 
 var (
 	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
-	sequencerQueueNormalGauge               = metrics.NewRegisteredGauge("arb/sequencer/queue/normal", nil)
-	sequencerQueueTimeboostGauge            = metrics.NewRegisteredGauge("arb/sequencer/queue/timeboost", nil)
-	sequencerQueueNormalHistogram           = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram/normal", nil, metrics.NewBoundedHistogramSample())
-	sequencerQueueTimeboostHistogram        = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram/timeboost", nil, metrics.NewBoundedHistogramSample())
+	sequencerQueueGauge                     = metrics.NewRegisteredGauge("arb/sequencer/queue/length", nil)
+	sequencerQueueHistogram                 = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram", nil, metrics.NewBoundedHistogramSample())
 	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
 	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
@@ -626,7 +624,6 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		firstAppearance: time.Now(),
 		isTimeboosted:   false,
 	}
-	sequencerQueueTimeboostGauge.Update(int64(len(s.timeboostAuctionResolutionTxQueue)))
 	return nil
 }
 
@@ -730,7 +727,6 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	case <-queueCtx.Done():
 		return queueCtx.Err()
 	}
-	sequencerQueueNormalGauge.Update(int64(len(s.txQueue)))
 	return nil
 }
 
@@ -1233,12 +1229,20 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
+	sequencerQueueGauge.Update(int64(len(s.txQueue)))
 	var startOfReadingFromTxQueue time.Time
 	startOfBlockCreation := time.Now()
 	for {
 		if len(queueItems) == 1 {
 			startOfReadingFromTxQueue = time.Now()
-			waitForTxHistogram.Update(int64(time.Since(startOfBlockCreation)))
+			waitForFirstTx := time.Since(startOfBlockCreation)
+			if waitForFirstTx < time.Millisecond {
+				// we don't care about the first iteration duration
+				// so to keep history clean we sanitize waits shorter then ms to 0
+				waitForTxHistogram.Update(0)
+			} else {
+				waitForTxHistogram.Update(int64(waitForFirstTx))
+			}
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
 			break
 		}
@@ -1346,11 +1350,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	)
 
 	txQueueLen := int64(len(s.txQueue))
-	timeboostTxQueueLen := int64(len(s.timeboostAuctionResolutionTxQueue))
-	sequencerQueueNormalGauge.Update(txQueueLen)
-	sequencerQueueNormalHistogram.Update(txQueueLen)
-	sequencerQueueTimeboostGauge.Update(timeboostTxQueueLen)
-	sequencerQueueTimeboostHistogram.Update(timeboostTxQueueLen)
+	sequencerQueueGauge.Update(txQueueLen)
+	sequencerQueueHistogram.Update(txQueueLen)
 
 	for _, queueItem := range queueItems {
 		if queueItem.isTimeboosted {
