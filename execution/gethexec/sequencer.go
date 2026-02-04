@@ -973,6 +973,8 @@ type FullSequencingHooks struct {
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+	txSizeLimitReached       bool
+	exhaustedQueueItems      bool
 }
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
@@ -1039,11 +1041,13 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
 		}
 		if s.sequencedQueueItemsCount >= len(s.queueItems) {
+			s.exhaustedQueueItems = true
 			return nil, nil, nil
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 			s.sequencedQueueItemsCount += 1
 			s.InsertLastTxError(core.ErrGasLimitReached)
+			s.txSizeLimitReached = true
 		} else {
 			s.sequencedQueueItemsCount += 1
 			break
@@ -1273,7 +1277,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
-	sequencerQueueGauge.Update(int64(len(s.txQueue)))
+	txQueueLen := int64(len(s.txQueue))
+	sequencerQueueGauge.Update(txQueueLen)
+	sequencerQueueHistogram.Update(txQueueLen)
+
 	var startOfReadingFromTxQueue time.Time
 	startOfBlockCreation := time.Now()
 	for {
@@ -1393,10 +1400,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		nil,
 	)
 
-	txQueueLen := int64(len(s.txQueue))
-	sequencerQueueGauge.Update(txQueueLen)
-	sequencerQueueHistogram.Update(txQueueLen)
-
 	for _, queueItem := range queueItems {
 		if queueItem.isTimeboosted {
 			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
@@ -1498,7 +1501,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	madeBlock := false
-	blockLimitReached := false
 	var blockTxSize int64
 	for i, err := range hooks.txErrors {
 		queueItem := queueItems[i]
@@ -1510,15 +1512,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			if madeBlock {
-				// make sure that this was last tx processed (it should always be true)
-				if i == len(hooks.txErrors)-1 {
-					if blockTxSize+int64(queueItem.txSize) > int64(maxTxDataSize) {
-						dataFullBlocksCounter.Inc(1)
-					} else {
-						gasFullBlocksCounter.Inc(1)
-					}
-					blockLimitReached = true
-				}
 				// There was already an earlier tx in the block; retry in a fresh block.
 				s.txRetryQueue.Push(queueItem)
 				continue
@@ -1537,8 +1530,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 	if madeBlock {
 		blockTxSizeHistogram.Update(blockTxSize)
-		if !blockLimitReached && hooks.sequencedQueueItemsCount == len(hooks.queueItems) {
+		if hooks.txSizeLimitReached {
+			dataFullBlocksCounter.Inc(1)
+		} else if hooks.exhaustedQueueItems {
 			txExhaustedBlocksCounter.Inc(1)
+		} else {
+			gasFullBlocksCounter.Inc(1)
 		}
 	}
 	return madeBlock
