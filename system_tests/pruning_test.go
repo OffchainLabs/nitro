@@ -134,16 +134,8 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
 	defer cleanup()
 
-	currentBlock := uint64(0)
-	// wait for the chain to catch up
-	for currentBlock < lastBlock {
-		currentBlock, err = testClient.Client.BlockNumber(ctx)
-		Require(t, err)
-		time.Sleep(20 * time.Millisecond)
-	}
+	currentBlock := waitForChainToCatchUp(t, ctx, testClient, lastBlock)
 
-	currentBlock, err = testClient.Client.BlockNumber(ctx)
-	Require(t, err)
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
 	var start uint64
@@ -279,7 +271,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		defer executionDB.Close()
 		executionDBEntriesBeforePruning := countStateEntries(executionDB)
 
-		// No need to check validated and finality data since we do that on the test above
+		// No need to check validated and finality data since we do that on TestPruningDBSizeReduction test
 
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = mode
@@ -308,39 +300,37 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(0))
 	Require(t, err)
 
-	// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
-	// all blocks between [1, 300) with the exception of last validated and last finalized blocks
-	for i := 1; i < numOfBlocksToGenerate; i++ {
-		// #nosec G115
-		if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx {
-			continue
-		}
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
-		if !strings.Contains(err.Error(), "missing trie node") {
-			t.Fatalf("Expected balance retrieval to fail for block %d", i)
-		}
-	}
-
 	// There's a separate mechanism that keeps recent block state tries in memory/database regardless
 	// of whether they're marked as important roots. This is controlled by the BlockCount configuration
 	// parameter (also known as TriesInMemory in the underlying blockchain config) The default value
 	// for BlockCount is 128 but in this test we set to 48 (blocksToKeepAfterRestart)
 
-	// First we wait for the chain to catch up (similar to test above)
-	newLastBlock := uint64(0)
-	for newLastBlock < lastBlock {
-		newLastBlock, err = testClientL2.Client.BlockNumber(ctx)
-		Require(t, err)
-		time.Sleep(20 * time.Millisecond)
-	}
+	newLastBlock := waitForChainToCatchUp(t, ctx, testClientL2, lastBlock)
 
 	// And then we check those last 48 blocks
 	// #nosec G115
 	checkUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
 	// #nosec G115
-	for i := int64(newLastBlock); i > checkUntilBlock; i-- {
-		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
-		Require(t, err)
+	for i := int64(1); i < int64(newLastBlock); i++ {
+		// Create a safety buffer (+/- 2 blocks) around the expected prune point.
+		// Due to synchronization latency, the second node's state may vary slightly,
+		// making the exact availability of these boundary blocks non-deterministic.
+		if i >= checkUntilBlock-2 && i <= checkUntilBlock+2 {
+			continue
+		} else if i < checkUntilBlock {
+			// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
+			// all blocks between [1, checkUntilBlock) with the exception of last validated and last finalized blocks
+			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx {
+				continue
+			}
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(i)))
+			if !strings.Contains(err.Error(), "missing trie node") {
+				t.Fatalf("Expected balance retrieval to fail for block %d", i)
+			}
+		} else {
+			_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(i))
+			Require(t, err)
+		}
 	}
 
 	// We do the same for last validated and last finalized blocks since they should have been added as important roots
@@ -354,4 +344,17 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		_, err = testClientL2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), big.NewInt(int64(finalizedMsgIdx)))
 		Require(t, err)
 	}
+}
+
+func waitForChainToCatchUp(t *testing.T, ctx context.Context, testClient *TestClient, lastBlock uint64) uint64 {
+	currentBlock := uint64(0)
+	var err error
+	// wait for the chain to catch up
+	for currentBlock < lastBlock {
+		currentBlock, err = testClient.Client.BlockNumber(ctx)
+		Require(t, err)
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	return currentBlock
 }

@@ -297,7 +297,7 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 		return nil, nil
 	}
 
-	targetFinalityData := *finalityFinalityData
+	targetFinalityData := finalityFinalityData
 
 	if waitForBlockValidator {
 		if validatedFinalityData == nil {
@@ -306,11 +306,11 @@ func (s *SyncMonitor) getFinalityBlockHeader(
 
 		// If the finalized index is ahead of the validated one, cap it
 		if targetFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
-			targetFinalityData = *validatedFinalityData
+			targetFinalityData = validatedFinalityData
 		}
 	}
 
-	return s.checkBlockHashAndGetHeader(&targetFinalityData, finalityDataType)
+	return s.checkBlockHashAndGetHeader(targetFinalityData, finalityDataType)
 }
 
 func (s *SyncMonitor) SetFinalityData(
