@@ -7,7 +7,7 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
-use crate::engine::config::{ModuleRoot, TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
+use crate::engine::config::ModuleRoot;
 use crate::engine::execution::{validate_continuous, validate_native};
 use crate::{config::InputMode, ServerState};
 use axum::extract::State;
@@ -17,16 +17,6 @@ use serde::Deserialize;
 use serde_with::{As, DisplayFromStr};
 use std::sync::Arc;
 use validation::{GoGlobalState, ValidationInput};
-
-pub fn local_target() -> &'static str {
-    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        TARGET_ARM_64
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        TARGET_AMD_64
-    } else {
-        TARGET_HOST
-    }
-}
 
 /// Extended validation request that includes both ValidationInput and module_root.
 /// This struct allows adding module_root to the request without modifying ValidationInput.

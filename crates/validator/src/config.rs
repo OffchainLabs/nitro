@@ -24,7 +24,7 @@ pub struct ServerState {
     /// Jit manager responsible for computing next GlobalState. Not wrapped
     /// in Arc<> since the caller of ServerState is wrapped in Arc<>. This field
     /// is optional because it's only available in continuous InputMode
-    pub jit_manager: Option<JitProcessManager>,
+    pub jit_manager: JitProcessManager,
     pub available_workers: usize,
 }
 
@@ -32,24 +32,19 @@ impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         // TODO: Load multiple module roots via MachineLocator (NIT-4346)
         let module_root = config.get_module_root()?;
-        let jit_machine = match config.mode {
-            InputMode::Continuous => {
-                let manager_config = JitManagerConfig {
-                    prover_bin_path: config.binary.clone(),
-                    ..Default::default()
-                };
-
-                let jit_manager = JitProcessManager::new(&manager_config, module_root)?;
-
-                Some(jit_manager)
-            }
-            InputMode::Native => None,
+        let manager_config = JitManagerConfig {
+            prover_bin_path: config.binary.clone(),
+            ..Default::default()
+        };
+        let jit_manager = match config.mode {
+            InputMode::Continuous => JitProcessManager::new(&manager_config, module_root)?,
+            InputMode::Native => JitProcessManager::new_empty(&manager_config),
         };
         Ok(ServerState {
             mode: config.mode,
             binary: config.binary.clone(),
             module_root,
-            jit_manager: jit_machine,
+            jit_manager,
             available_workers,
         })
     }

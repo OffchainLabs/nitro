@@ -17,12 +17,11 @@
 //!    binary version targeting.
 
 use axum::Json;
-use validation::{BatchInfo, GoGlobalState, ValidationInput};
+use validation::{local_target, BatchInfo, GoGlobalState, ValidationInput};
 
 use crate::{
-    config::ServerState,
-    engine::config::DEFAULT_JIT_CRANELIFT,
-    spawner_endpoints::{local_target, ValidationRequest},
+    config::ServerState, engine::config::DEFAULT_JIT_CRANELIFT,
+    spawner_endpoints::ValidationRequest,
 };
 
 pub async fn validate_native(
@@ -65,25 +64,21 @@ pub async fn validate_continuous(
     server_state: &ServerState,
     request: ValidationRequest,
 ) -> Result<Json<GoGlobalState>, String> {
-    if server_state.jit_manager.is_none() {
-        return Err(format!(
-            "Jit machine is required continuous mode. Requested module root: {}",
-            server_state.module_root
-        ));
-    }
-
     let module_root = request.module_root.unwrap_or(server_state.module_root);
 
-    let jit_manager = server_state.jit_manager.as_ref().unwrap();
-
-    if !jit_manager.is_machine_active(module_root).await {
+    if !server_state
+        .jit_manager
+        .is_machine_active(module_root)
+        .await
+    {
         return Err(format!(
             "Jit machine is not active. Maybe it received a shutdown signal? Requested module root: {}",
             server_state.module_root
         ));
     }
 
-    let new_state = jit_manager
+    let new_state = server_state
+        .jit_manager
         .feed_machine_with_root(&request.validation_input, module_root)
         .await
         .map_err(|error| format!("{error:?}"))?;

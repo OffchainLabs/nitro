@@ -8,10 +8,6 @@ use arbutil::Bytes32;
 // The default for JIT binary, no need for LLVM right now
 pub(crate) const DEFAULT_JIT_CRANELIFT: bool = true;
 
-pub(crate) const TARGET_ARM_64: &str = "arm64";
-pub(crate) const TARGET_AMD_64: &str = "amd64";
-pub(crate) const TARGET_HOST: &str = "host";
-
 pub type ModuleRoot = Bytes32;
 
 #[derive(Clone, Debug)]

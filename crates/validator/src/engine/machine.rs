@@ -134,6 +134,14 @@ pub struct JitProcessManager {
 }
 
 impl JitProcessManager {
+    pub fn new_empty(config: &JitManagerConfig) -> Self {
+        Self {
+            wasm_memory_usage_limit: config.wasm_memory_usage_limit,
+            machines: RwLock::new(HashMap::new()),
+            shutting_down: AtomicBool::new(false),
+        }
+    }
+
     pub fn new(config: &JitManagerConfig, module_root: ModuleRoot) -> Result<Self> {
         // TODO: use JitLocator to get jit_path (NIT-4347)
         let sub_machine = create_jit_machine(config)?;
