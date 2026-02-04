@@ -17,6 +17,7 @@
 [submodule "crates/tools/wasmer"]
 	path = crates/tools/wasmer
 	url = https://github.com/OffchainLabs/wasmer.git
+	branch = wasmer7
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
