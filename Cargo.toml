@@ -38,7 +38,7 @@ homepage = "https://arbitrum.io"
 license = "BSL"
 publish = false
 repository = "https://github.com/OffchainLabs/nitro.git"
-rust-version = "1.88"
+rust-version = "1.93"
 
 [workspace.dependencies]
 anyhow = { version = "1.0.100" }
