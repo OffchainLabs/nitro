@@ -277,7 +277,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	}
 
 	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
-	wasm, err := getWasmFromContractCode(statedb, code, params, false, nil)
+	wasm, err := getWasmFromContractCode(statedb, code, params, nil)
 	if err != nil {
 		log.Error("Failed to reactivate program: getWasm", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
