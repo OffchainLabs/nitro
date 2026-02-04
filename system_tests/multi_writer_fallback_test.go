@@ -1147,7 +1147,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	phase1CustomDABatches := 0
 	var phase1MaxPayloadSize int
 	for _, batch := range phase1Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -1230,7 +1230,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	phase2OversizedBatches := 0
 	var phase2MaxPayloadSize int
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
