@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	runtime "runtime"
+	"runtime"
 	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -278,8 +278,18 @@ func populateEcdsaCaches() {
 	}
 }
 
+var m runtime.MemStats
+
+func printMemStats() {
+	runtime.ReadMemStats(&m)
+	fmt.Printf("Memory Stats: Alloc=%vMB, TotalAlloc=%vMB, Completed GC runs=%v, Next target=%vMB\n",
+		m.Alloc/1024/1024, m.TotalAlloc/1024/1024, m.NumGC, m.NextGC/1024/1024)
+}
+
 func main() {
-	debug.SetGCPercent(-1)
+	debug.SetGCPercent(1000)
+	printMemStats()
+
 	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
@@ -406,7 +416,9 @@ func main() {
 			}
 		}
 
+		printMemStats()
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
+		printMemStats()
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
@@ -454,8 +466,5 @@ func main() {
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
 	wavmio.OnFinal()
-
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	fmt.Printf("Completed GC cycles: %v\n", m.NumGC)
+	printMemStats()
 }
