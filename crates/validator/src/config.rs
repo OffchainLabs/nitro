@@ -34,8 +34,10 @@ impl ServerState {
         let module_root = config.get_module_root()?;
         let jit_machine = match config.mode {
             InputMode::Continuous => {
-                let mut manager_config = JitManagerConfig::default();
-                manager_config.prover_bin_path = config.binary.clone();
+                let manager_config = JitManagerConfig {
+                    prover_bin_path: config.binary.clone(),
+                    ..Default::default()
+                };
 
                 let jit_manager = JitProcessManager::new(&manager_config, module_root)?;
 
