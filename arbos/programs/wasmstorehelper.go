@@ -53,7 +53,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 
 	// Not an activation path, so fragment read gas shouldn't be charged.
 	// Passing nil avoids charging gas through a storage-backed burner here.
-	wasm, err := getWasmFromContractCode(statedb, code, progParams, false, nil)
+	wasm, err := getWasmFromContractCode(statedb, code, progParams, nil)
 	if err != nil {
 		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
