@@ -65,10 +65,10 @@ var (
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
 	waitForTxHistogram                      = metrics.NewRegisteredHistogram("arb/sequencer/waitfortx", nil, metrics.NewBoundedHistogramSample())
-	// number of blocks ended because of block gas limit
-	gasFullBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gasfull", nil)
+	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit)
+	gasLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gaslimited", nil)
 	// number of blocks ended because of txes data size limit
-	dataFullBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datafull", nil)
+	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
 )
@@ -930,7 +930,6 @@ type FullSequencingHooks struct {
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
-	exhaustedQueueItems      bool
 }
 
 func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
@@ -997,7 +996,6 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
 		}
 		if s.sequencedQueueItemsCount >= len(s.queueItems) {
-			s.exhaustedQueueItems = true
 			return nil, nil, nil
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
@@ -1458,6 +1456,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	madeBlock := false
 	var blockTxSize int64
+	blockGasLimitReached := false
 	for i, err := range hooks.txErrors {
 		queueItem := queueItems[i]
 		if err == nil {
@@ -1468,6 +1467,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			if madeBlock {
+				blockGasLimitReached = true
 				// There was already an earlier tx in the block; retry in a fresh block.
 				s.txRetryQueue.Push(queueItem)
 				continue
@@ -1487,11 +1487,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if madeBlock {
 		blockTxSizeHistogram.Update(blockTxSize)
 		if hooks.txSizeLimitReached {
-			dataFullBlocksCounter.Inc(1)
-		} else if hooks.exhaustedQueueItems {
-			txExhaustedBlocksCounter.Inc(1)
+			dataLimitedBlocksCounter.Inc(1)
+		} else if blockGasLimitReached {
+			gasLimitedBlocksCounter.Inc(1)
 		} else {
-			gasFullBlocksCounter.Inc(1)
+			// no transactions were skipped due to block size or gas limit
+			txExhaustedBlocksCounter.Inc(1)
 		}
 	}
 	return madeBlock
