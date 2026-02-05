@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -1013,22 +1014,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if nodeConfig.Init.GenesisJsonFile == "" && nodeConfig.Chain.ID != 0 && nodeConfig.Init.GenesisJsonFileDirectory != "" {
-		files, err := os.ReadDir(nodeConfig.Init.GenesisJsonFileDirectory)
+		genesisJsonFile, err := GetGenesisFileNameFromDirectory(nodeConfig.Init.GenesisJsonFileDirectory, nodeConfig.Chain.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error reading genesis json file directory %s: %w", nodeConfig.Init.GenesisJsonFileDirectory, err)
-		}
-		for _, file := range files {
-			if file.IsDir() {
-				continue
-			}
-			if !strings.Contains(file.Name(), fmt.Sprintf("%d", nodeConfig.Chain.ID)) {
-				continue
-			}
-			fullPath := path.Join(nodeConfig.Init.GenesisJsonFileDirectory, file.Name())
-			nodeConfig.Init.GenesisJsonFile = fullPath
+			log.Error("error getting genesis json file from directory", "err", err)
+		} else {
+			nodeConfig.Init.GenesisJsonFile = genesisJsonFile
 			nodeConfig.Init.Empty = false
-			log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", nodeConfig.Chain.ID)
-			break
 		}
 	}
 
@@ -1037,6 +1028,41 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 	return &nodeConfig, &l2DevWallet, nil
+}
+
+func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
+	files, err := os.ReadDir(genesisFileDirectory)
+	if err != nil {
+		return "", fmt.Errorf("error reading genesis json file directory %s: %w", genesisFileDirectory, err)
+	}
+	requiredFileName := fmt.Sprintf("%d.json", chainId)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if file.Name() != requiredFileName {
+			continue
+		}
+
+		fullPath := path.Join(genesisFileDirectory, file.Name())
+		genesisJson, err := os.ReadFile(fullPath)
+		if err != nil {
+			log.Error("error reading genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			log.Error("error unmarshaling genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		if gen.Config == nil || gen.Config.ChainID == nil || gen.Config.ChainID.Uint64() != chainId {
+			log.Error("genesis json file chain id does not match configured chain id", "file", fullPath, "genesisChainId", gen.Config.ChainID, "configuredChainId", chainId)
+			continue
+		}
+		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", chainId)
+		return fullPath, nil
+	}
+	return "", fmt.Errorf("no genesis json file found for chain id %d in directory %s", chainId, genesisFileDirectory)
 }
 
 func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
