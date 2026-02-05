@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -39,6 +40,7 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -435,15 +437,28 @@ func mainImpl() int {
 		return 1
 	}
 
-	executionDB, l2BlockChain, err := openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
-	if l2BlockChain != nil {
-		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
-	}
-	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
-	if err != nil {
-		pflag.Usage()
-		log.Error("error initializing database", "err", err)
-		return 1
+	// Determine if using local or external execution layer
+	// When using external EL via RPC, we can skip local execution database initialization
+	useLocalExecution := nodeConfig.Node.ExecutionRPCClient.URL == "" ||
+		nodeConfig.Node.ExecutionRPCClient.URL == "self" ||
+		nodeConfig.Node.ExecutionRPCClient.URL == "self-auth"
+
+	var executionDB ethdb.Database
+	var l2BlockChain *core.BlockChain
+	if useLocalExecution {
+		executionDB, l2BlockChain, err = openInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Execution.StylusTarget, tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+		if l2BlockChain != nil {
+			deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
+		}
+		deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
+		if err != nil {
+			pflag.Usage()
+			log.Error("error initializing database", "err", err)
+			return 1
+		}
+	} else {
+		log.Info("Using external execution layer, skipping local execution DB initialization",
+			"url", nodeConfig.Node.ExecutionRPCClient.URL)
 	}
 
 	consensusDB, err := stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
@@ -458,7 +473,11 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
+	if nodeConfig.BlocksReExecutor.Enable {
+		if !useLocalExecution {
+			log.Error("blocks-reexecutor cannot be enabled when using external execution layer")
+			return 1
+		}
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
@@ -487,14 +506,18 @@ func mainImpl() int {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
 	}
-	if err := validateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
-		log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
-		return 1
+	// Only validate blockchain against chain config when using local execution
+	// When using external EL, the external client handles chain validation
+	if l2BlockChain != nil {
+		if err := validateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
+			log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
+			return 1
+		}
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
+	if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
-		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
+		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
 	}
 
@@ -546,7 +569,7 @@ func mainImpl() int {
 		execNode,
 		consensusDB,
 		&ConsensusNodeConfigFetcher{liveNodeConfig},
-		l2BlockChain.Config(),
+		chainInfo.ChainConfig,
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOptsValidator,
