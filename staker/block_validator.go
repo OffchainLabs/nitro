@@ -360,10 +360,10 @@ func NewBlockValidator(
 	statelessBlockValidator *StatelessBlockValidator,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
-	melRunner MELRunnerInterface,
-	melValidator MELValidatorInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
+	melRunner MELRunnerInterface,
+	melValidator MELValidatorInterface,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
