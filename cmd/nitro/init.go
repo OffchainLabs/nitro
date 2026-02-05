@@ -47,7 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -957,7 +957,7 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 	if err != nil {
 		return err
 	}
-	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
+	genesisAssertionCreationInfo, err := staker.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
 	if err != nil {
 		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
 		genesisGlobalState := protocol.GoGlobalState{
@@ -978,7 +978,7 @@ func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address,
 		if err != nil {
 			return err
 		}
-		genesisAssertionCreationInfo, err = bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
+		genesisAssertionCreationInfo, err = staker.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, genesisAssertionHash)
 		if err != nil {
 			return err
 		}

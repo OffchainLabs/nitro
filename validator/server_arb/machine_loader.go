@@ -5,19 +5,26 @@ package server_arb
 import (
 	"context"
 
+	"github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type ArbitratorMachineConfig struct {
-	WavmBinaryPath       string
-	UntilHostIoStatePath string
+	WavmBinaryPath       string `koanf:"wavm-binary-path" reload:"hot"`
+	UntilHostIoStatePath string `koanf:"until-host-io-state-path" reload:"hot"`
 }
 
 var DefaultArbitratorMachineConfig = ArbitratorMachineConfig{
 	WavmBinaryPath:       "machine.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
+}
+
+func ArbitratorMachineConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".wavm-binary-path", DefaultArbitratorMachineConfig.WavmBinaryPath, "path to the machine's wavm binary relative to machine path")
+	f.String(prefix+".until-host-io-state-path", DefaultArbitratorMachineConfig.UntilHostIoStatePath, "path to the machine's until-host-io state file relative to machine path")
 }
 
 type arbMachines struct {
