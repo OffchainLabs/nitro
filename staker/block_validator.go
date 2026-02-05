@@ -360,6 +360,8 @@ func NewBlockValidator(
 	statelessBlockValidator *StatelessBlockValidator,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
+	melRunner MELRunnerInterface,
+	melValidator MELValidatorInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
 ) (*BlockValidator, error) {
@@ -376,7 +378,9 @@ func NewBlockValidator(
 	var validationEntryCreator blockValidationEntryCreator
 	if config().EnableMEL {
 		validationEntryCreator = newMELEnabledValidationEntryCreator(
-			nil, nil, nil,
+			melValidator,
+			streamer,
+			melRunner,
 		)
 	} else {
 		validationEntryCreator = newPreMELValidationEntryCreator(streamer, ret)

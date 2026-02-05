@@ -8,11 +8,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/validator"
 )
+
+type MELRunnerInterface interface {
+	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
+}
 
 type blockValidationEntryCreator interface {
 	createBlockValidationEntry(
@@ -22,21 +25,16 @@ type blockValidationEntryCreator interface {
 	) (*validationEntry, bool, error)
 }
 
-type validatedMELStateFetcher interface {
-	LatestValidatedMELState(ctx context.Context) (*mel.State, error)
-	FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap
-}
-
 type melEnabledValidationEntryCreator struct {
-	melValidator validatedMELStateFetcher
+	melValidator MELValidatorInterface
 	txStreamer   TransactionStreamerInterface
-	melRunner    *melrunner.MessageExtractor
+	melRunner    MELRunnerInterface
 }
 
 func newMELEnabledValidationEntryCreator(
-	melValidator validatedMELStateFetcher,
+	melValidator MELValidatorInterface,
 	txStreamer TransactionStreamerInterface,
-	melRunner *melrunner.MessageExtractor,
+	melRunner MELRunnerInterface,
 ) *melEnabledValidationEntryCreator {
 	return &melEnabledValidationEntryCreator{
 		melValidator: melValidator,
