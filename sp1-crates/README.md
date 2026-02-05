@@ -8,26 +8,18 @@ To build this runner, of course you must be able to build a significant part of 
 
 One major dependency wasmer also requires you to have LLVM 21 installed. Please note that you must have LLVM 21.x.y installed. Wasmer requires this major version.
 
-The code included here requires a SP1 Rust toolchain with riscv64 support. For the moment, you can install a toolchain manually with the following commands:
+The code included here requires a SP1 Rust toolchain with riscv64 support. You can use the following commands:
 
 ```bash
-$ mkdir -p ~/.sp1/toolchains/1.90.0-64bit
-$ cd ~/.sp1/toolchains/1.90.0-64bit
-$ # Note that if you are using other platforms, you might need to adjust the tarball to download
-$ # Refer to https://github.com/succinctlabs/rust/releases/tag/succinct-1.90.0-64bit for a list of tarballs
-$ curl -LO https://github.com/succinctlabs/rust/releases/download/succinct-1.90.0-64bit/rust-toolchain-x86_64-unknown-linux-gnu.tar.gz
-$ tar xzf rust-toolchain-*.tar.gz
-$ rm rust-toolchain-*.tar.gz
-$ rustup toolchain link succinct `pwd`
+$ curl -L https://sp1up.succinct.xyz | bash
+$ sp1up -v v6.0.0-beta.1
 ```
-
-In later versions of SP1 we will streamline this process.
 
 To verify that correct toolchain have been installed, you can run the following 2 commands, and compare output:
 
 ```bash
 $ rustc +succinct --version
-rustc 1.90.0-dev
+rustc 1.93.0-dev
 $ rustc +succinct --print target-list | grep succinct
 riscv32im-succinct-zkvm-elf
 riscv64im-succinct-zkvm-elf
