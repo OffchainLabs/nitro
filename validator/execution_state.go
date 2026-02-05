@@ -25,8 +25,8 @@ type GoGlobalState struct {
 
 func (g GoGlobalState) String() string {
 	return fmt.Sprintf(
-		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d",
-		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch,
+		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d, MELStateHash: %s, MELMsgHash: %s",
+		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch, g.MELStateHash.Hex(), g.MELMsgHash.Hex(),
 	)
 }
 
