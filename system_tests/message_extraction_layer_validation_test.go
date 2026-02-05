@@ -6,14 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -27,6 +23,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	builder.nodeConfig.MELValidator.Enable = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -37,7 +34,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	defer cleanupB()
 	initialBatchCount := GetBatchCount(t, builder)
 	var txs types.Transactions
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		tx, _ := builder.L2.TransferBalance(t, "Faucet", "User2", big.NewInt(1e12), builder.L2Info)
 		txs = append(txs, tx)
 	}
@@ -54,52 +51,24 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	// Post delayed messages
 	forceDelayedBatchPosting(t, ctx, builder, testClientB, 10, 0)
 
-	// MEL Validator: create validation entry
+	// MEL Validator
+	extractedMsgCountToValidate, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled()) // to get unified-module-root
+	Require(t, err)
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
-	config := func() *staker.MELValidatorConfig { return &staker.DefaultMELValidatorConfig }
-	Require(t, config().Validate())
-	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, common.HexToHash("0123"))
-	Require(t, err)
-	extractedMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
-	Require(t, err)
-	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCount))
-	Require(t, err)
 
-	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	config := func() *staker.MELValidatorConfig { return &builder.nodeConfig.MELValidator }
+	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, locator.LatestWasmModuleRoot())
 	Require(t, err)
-	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-		defaultCfg := server_arb.DefaultArbitratorSpawnerConfig
-		defaultCfg.MachineConfig = server_arb.ArbitratorMachineConfig{
-			WavmBinaryPath:       "unified_machine.wavm.br",
-			UntilHostIoStatePath: "unified-until-host-io-state.bin",
-		}
-		return &defaultCfg
+	Require(t, melValidator.Initialize(ctx))
+	entry, _, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCountToValidate))
+	Require(t, err)
+	doneEntry, err := melValidator.SendValidationEntry(ctx, entry)
+	Require(t, err)
+	if !doneEntry.Success {
+		t.Fatal("failed mel validation")
 	}
-	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
-	Require(t, err)
-	Require(t, arbSpawner.Start(ctx))
-	execRunPromise := arbSpawner.CreateExecutionRun(
-		locator.LatestWasmModuleRoot(),
-		&validator.ValidationInput{
-			Id:                      1,
-			HasDelayedMsg:           entry.HasDelayedMsg,
-			DelayedMsgNr:            entry.DelayedMsgNr,
-			Preimages:               entry.Preimages,
-			UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-			BatchInfo:               entry.BatchInfo,
-			DelayedMsg:              entry.DelayedMsg,
-			StartState:              entry.Start,
-			DebugChain:              false,
-			EndParentChainBlockHash: entry.EndParentChainBlockHash,
-		},
-		true, /* use bold machine */
-	)
-	result, err := execRunPromise.Await(ctx)
-	Require(t, err)
-	finalResult, err := result.GetLastStep().Await(ctx)
-	Require(t, err)
-	if finalResult.GlobalState.MELStateHash != entry.End.MELStateHash {
-		t.Fatalf("Expected final mel state hash %s, got %s", entry.End.MELStateHash, finalResult.GlobalState.MELStateHash)
-	}
+	Require(t, melValidator.AdvanceValidations(ctx, doneEntry))
 }

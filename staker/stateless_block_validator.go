@@ -167,8 +167,11 @@ func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.Va
 		BatchInfo:               e.BatchInfo,
 		DelayedMsg:              e.DelayedMsg,
 		StartState:              e.Start,
-		DebugChain:              e.ChainConfig.DebugMode(),
+		DebugChain:              false,
 		EndParentChainBlockHash: e.EndParentChainBlockHash,
+	}
+	if e.ChainConfig != nil {
+		res.DebugChain = e.ChainConfig.DebugMode()
 	}
 	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
 		return nil, fmt.Errorf("stylus support is required")
