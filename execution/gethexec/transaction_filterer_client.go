@@ -34,8 +34,8 @@ func NewTransactionFiltererRPCClient(config rpcclient.ClientConfigFetcher) *Tran
 	}
 }
 
-func (c *TransactionFiltererRPCClient) Start(ctx_in context.Context) error {
-	c.StopWaiter.Start(ctx_in, c)
+func (c *TransactionFiltererRPCClient) Start(ctxIn context.Context) error {
+	c.StopWaiter.Start(ctxIn, c)
 	ctx := c.GetContext()
 	return c.client.Start(ctx)
 }
