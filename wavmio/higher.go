@@ -7,6 +7,7 @@ package wavmio
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -27,7 +28,7 @@ const IDX_POSITION_WITHIN_MESSAGE = 1
 
 // INITIAL_PREIMAGE_ALLOCATION is the initial allocation size. If the preimage is larger than this, more space will be
 // acquired and the remaining data (suffix) will be read.
-const INITIAL_PREIMAGE_ALLOCATION = 1024
+const INITIAL_PREIMAGE_ALLOCATION = 512
 
 func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
@@ -82,6 +83,8 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 
 	// 1. Read the preimage prefix (up to INITIAL_PREIMAGE_ALLOCATION bytes)
 	preimageLen := readPreimage(uint32(ty), hashUnsafe, unsafe.Pointer(&preimage[0]), 0, INITIAL_PREIMAGE_ALLOCATION)
+
+	fmt.Println("preimage length: ", preimageLen)
 
 	// 2. If the preimage fits within the initial allocation, return it
 	if preimageLen <= INITIAL_PREIMAGE_ALLOCATION {
