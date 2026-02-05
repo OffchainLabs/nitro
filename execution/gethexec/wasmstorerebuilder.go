@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -70,6 +71,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 	targets := targetConfig.WasmTargets()
 
 	latestHeader := l2Blockchain.CurrentBlock()
+	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
 	stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
@@ -93,7 +95,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 		codeHashBytes := bytes.TrimPrefix(iter.Key(), rawdb.CodePrefix)
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
-		if state.IsStylusDeployableProgramPrefix(code) {
+		if state.IsStylusDeployableProgramPrefix(code, arbosVersion) {
 			if err := programs.SaveActiveProgramToWasmStore(stateDB, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time, targets); err != nil {
 				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}

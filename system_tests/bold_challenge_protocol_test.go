@@ -58,19 +58,24 @@ import (
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false)
+	testChallengeProtocolBOLD(t, false, false)
 }
 
+func TestChallengeProtocolBOLDWithRedisReadInboxChallenge(t *gotesting.T) {
+	testChallengeProtocolBOLD(t, false, true)
+}
 func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSigner(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, true)
+	testChallengeProtocolBOLD(t, true, false)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
@@ -82,10 +87,10 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, false, opts...)
+	testChallengeProtocolBOLD(t, false, false, opts...)
 }
 
-func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -164,12 +169,15 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, spawnerOp
 	TransferBalanceTo(t, "Faucet", asserterOpts.From, balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
 
-	valCfg := valnode.TestValidationConfig
-	valCfg.UseJit = false
-	_, valStack := createTestValidationNode(t, ctx, &valCfg)
+	redisURL := ""
+	if useRedis {
+		redisURL = redisutil.CreateTestRedis(ctx, t)
+	}
+	valStack := AddValNode(t, ctx, l2nodeConfig, false, redisURL, "")
 	blockValidatorConfig := staker.TestBlockValidatorConfig
-
-	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
+	blockValidatorConfig.RedisValidationClientConfig = redis.TestValidationClientConfig
+	blockValidatorConfig.RedisValidationClientConfig.RedisURL = redisURL
+	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
@@ -185,6 +193,8 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, spawnerOp
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
+	valCfg := valnode.TestValidationConfig
+	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
 	statelessB, err := staker.NewStatelessBlockValidator(
