@@ -371,11 +371,12 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	proof, err := client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
 	Require(t, err)
