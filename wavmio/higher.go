@@ -7,7 +7,6 @@ package wavmio
 
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
