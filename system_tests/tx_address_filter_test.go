@@ -370,7 +370,7 @@ func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
 	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
 
 	// Set up address filter to block FilteredBeneficiary
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test 1: Deploy contract that selfdestructs to filtered address in constructor should fail
