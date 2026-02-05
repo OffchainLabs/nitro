@@ -14,12 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Default parameters for HashedAddressChecker, used in NewDefaultHashedAddressChecker
-const (
-	defaultRestrictedAddrWorkerCount = 4
-	defaultRestrictedAddrQueueSize   = 8192
-)
-
 // HashedAddressChecker is a global, shared address checker that filters
 // transactions using a HashStore. Hashing and caching are delegated to
 // the HashStore; this checker only manages async execution and per-tx
@@ -74,14 +68,6 @@ func (c *HashedAddressChecker) Start(ctx context.Context) {
 	}
 }
 
-func NewDefaultHashedAddressChecker(store *HashStore) *HashedAddressChecker {
-	return NewHashedAddressChecker(
-		store,
-		defaultRestrictedAddrWorkerCount,
-		defaultRestrictedAddrQueueSize,
-	)
-}
-
 func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	return &HashedAddressCheckerState{
 		checker: c,
@@ -108,9 +94,9 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
 	s.pending.Add(1)
 
-	// If the checker is stopped, process synchronously
+	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		s.checker.processAddress(addr, s)
+		s.report(true)
 		return
 	}
 
@@ -118,8 +104,8 @@ func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
 	case s.checker.workChan <- workItem{addr: addr, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
-		// shutting down, canceling worker
-		s.pending.Done()
+		// shutting down, conservatively mark filtered
+		s.report(true)
 	}
 }
 

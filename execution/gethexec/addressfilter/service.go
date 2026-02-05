@@ -45,7 +45,7 @@ func NewFilterService(ctx context.Context, config *Config) (*FilterService, erro
 		config:         config,
 		hashStore:      hashStore,
 		syncMgr:        syncMgr,
-		addressChecker: NewDefaultHashedAddressChecker(hashStore),
+		addressChecker: NewHashedAddressChecker(hashStore, config.AddressCheckerWorkerCount, config.AddressCheckerQueueSize),
 	}, nil
 }
 

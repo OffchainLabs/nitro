@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/addressfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 )
@@ -39,7 +39,7 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 		}
 		store.Store(salt, hashes, "test")
 	}
-	checker := addressfilter.NewDefaultHashedAddressChecker(store)
+	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
 	return checker
 }

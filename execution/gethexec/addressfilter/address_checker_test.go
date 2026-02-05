@@ -34,7 +34,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	hash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
 	store.Store(salt, []common.Hash{hash}, "test")
 
-	checker := NewDefaultHashedAddressChecker(store)
+	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
 
 	// Tx 1: filtered address
@@ -94,7 +94,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	store := NewHashStore(cacheSize)
 	store.Store(salt, filteredHashes, "heavy")
 
-	checker := NewDefaultHashedAddressChecker(store)
+	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
 
 	const txCount = 100
