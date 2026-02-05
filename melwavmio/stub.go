@@ -24,6 +24,7 @@ var (
 	melMsgHash              = common.Hash{}
 	endMelStateHash         = common.Hash{} // This is set by the stubbed SetEndMELStateHash function
 	endParentChainBlockHash = common.Hash{} // This is set by the stubbed GetEndParentChainBlockHash function
+	lastBlockHash           = common.Hash{} // This is set by the stubbed GetLastBlockHash function
 	positionInMEL           = uint64(0)
 )
 
@@ -32,10 +33,12 @@ func StubInit() {
 	startMelRootFlag := flag.String("start-mel-state-hash", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	positionInMELFlag := flag.Uint64("position-in-mel", 0, "positionInMEL")
+	lastBlockHashFlag := flag.String("last-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "lastBlockHash")
 	flag.Parse()
 	endParentChainBlockHash = common.HexToHash(*endParentChainBlockHashFlag)
 	startMelStateHash = common.HexToHash(*startMelRootFlag)
 	positionInMEL = *positionInMELFlag
+	lastBlockHash = common.HexToHash(*lastBlockHashFlag)
 	fileBytes, err := os.ReadFile(*preimagesPath)
 	if err != nil {
 		panic(err)
@@ -47,6 +50,10 @@ func StubInit() {
 
 func StubFinal() {
 	log.Info("endMelStateHash", endMelStateHash.Hex())
+}
+
+func GetLastBlockHash() (hash common.Hash) {
+	return lastBlockHash
 }
 
 func GetMELMsgHash() (hash common.Hash) {
@@ -72,12 +79,19 @@ func SetEndMELRoot(hash common.Hash) {
 	endMelStateHash = hash
 }
 
+func SetLastBlockHash(hash [32]byte) {
+	lastBlockHash = hash
+}
+
 func GetPositionInMEL() uint64 {
 	return positionInMEL
 }
 
 func IncreasePositionInMEL() {
 	positionInMEL++
+}
+
+func SetSendRoot(hash [32]byte) {
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {

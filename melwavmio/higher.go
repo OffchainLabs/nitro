@@ -18,6 +18,8 @@ const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
 
 // bytes32
+const IDX_LAST_BLOCKHASH = 0
+const IDX_SEND_ROOT = 1
 const IDX_MEL_ROOT = 2
 const IDX_MEL_MSG_HASH = 3
 
@@ -44,6 +46,12 @@ func StubInit() {
 }
 
 func StubFinal() {
+}
+
+func GetLastBlockHash() (hash common.Hash) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	getGlobalStateBytes32(IDX_LAST_BLOCKHASH, hashUnsafe)
+	return
 }
 
 func GetMELMsgHash() (hash common.Hash) {
@@ -78,9 +86,20 @@ func GetEndParentChainBlockHash() (hash common.Hash) {
 	return
 }
 
+func SetLastBlockHash(hash [32]byte) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hashUnsafe)
+}
+
 func SetEndMELRoot(hash common.Hash) {
 	hashUnsafe := unsafe.Pointer(&hash[0])
 	setGlobalStateBytes32(IDX_MEL_ROOT, hashUnsafe)
+}
+
+// Note: if a GetSendRoot is ever modified, the validator will need to fill in the previous send root, which it currently does not.
+func SetSendRoot(hash [32]byte) {
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_SEND_ROOT, hashUnsafe)
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
