@@ -307,17 +307,16 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 
 	newLastBlock := waitForChainToCatchUp(t, ctx, testClientL2, lastBlock)
 
-	// And then we check those last 48 blocks
 	// #nosec G115
-	checkUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
+	balanceShouldntExistUntilBlock := int64(newLastBlock) - int64(blocksToKeepAfterRestart) + 1
 	// #nosec G115
 	for i := int64(1); i < int64(newLastBlock); i++ {
 		// Create a safety buffer (+/- 2 blocks) around the expected prune point.
 		// Due to synchronization latency, the second node's state may vary slightly,
 		// making the exact availability of these boundary blocks non-deterministic.
-		if i >= checkUntilBlock-2 && i <= checkUntilBlock+2 {
+		if i >= balanceShouldntExistUntilBlock-2 && i <= balanceShouldntExistUntilBlock+2 {
 			continue
-		} else if i < checkUntilBlock {
+		} else if i < balanceShouldntExistUntilBlock {
 			// Make sure we can't get balance for User2 for the blocks that's been pruned which should be
 			// all blocks between [1, checkUntilBlock) with the exception of last validated and last finalized blocks
 			if arbutil.MessageIndex(i) == validatedMsgIdx || arbutil.MessageIndex(i) == finalizedMsgIdx {
