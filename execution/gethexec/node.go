@@ -118,52 +118,26 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
-type TransactionFilteringConfig struct {
-	AddressFilter                addressfilter.Config   `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient rpcclient.ClientConfig `koanf:"transaction-filterer-rpc-client" reload:"hot"`
-}
-
-func (c *TransactionFilteringConfig) Validate() error {
-	if err := c.AddressFilter.Validate(); err != nil {
-		return fmt.Errorf("error validating address-filter config: %w", err)
-	}
-	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
-		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
-	}
-	return nil
-}
-
-var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
-	AddressFilter:                addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
-}
-
-func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
-	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
-}
-
 type Config struct {
-	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig        `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig         `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig            `koanf:"forwarder"`
-	ForwardingTarget            string                     `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string                   `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig              `koanf:"caching"`
-	RPC                         arbitrum.Config            `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig            `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                       `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig          `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig         `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64                     `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64                     `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig          `koanf:"vmtrace"`
-	ExposeMultiGas              bool                       `koanf:"expose-multi-gas"`
-	RPCServer                   rpcserver.Config           `koanf:"rpc-server"`
-	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
-	TransactionFiltering        TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
+	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase           BlockRecorderConfig    `koanf:"recording-database"`
+	TxPreChecker                TxPreCheckerConfig     `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                   ForwarderConfig        `koanf:"forwarder"`
+	ForwardingTarget            string                 `koanf:"forwarding-target"`
+	SecondaryForwardingTarget   []string               `koanf:"secondary-forwarding-target"`
+	Caching                     CachingConfig          `koanf:"caching"`
+	RPC                         arbitrum.Config        `koanf:"rpc"`
+	TxIndexer                   TxIndexerConfig        `koanf:"tx-indexer"`
+	EnablePrefetchBlock         bool                   `koanf:"enable-prefetch-block"`
+	SyncMonitor                 SyncMonitorConfig      `koanf:"sync-monitor"`
+	StylusTarget                StylusTargetConfig     `koanf:"stylus-target"`
+	BlockMetadataApiCacheSize   uint64                 `koanf:"block-metadata-api-cache-size"`
+	BlockMetadataApiBlocksLimit uint64                 `koanf:"block-metadata-api-blocks-limit"`
+	VmTrace                     LiveTracingConfig      `koanf:"vmtrace"`
+	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
+	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
+	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -195,9 +169,6 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
-	if err := c.TransactionFiltering.Validate(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -221,7 +192,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
-	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 }
 
 type LiveTracingConfig struct {
@@ -268,8 +238,6 @@ var ConfigDefault = Config{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-
-	TransactionFiltering: DefaultTransactionFilteringConfig,
 }
 
 type ConfigFetcher interface {
@@ -311,9 +279,9 @@ func CreateExecutionNode(
 	config := configFetcher.Get()
 
 	var transactionFiltererRPCClient *TransactionFiltererRPCClient
-	if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+	if config.Sequencer.Enable && config.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
 		filtererConfigFetcher := func() *rpcclient.ClientConfig {
-			return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
+			return &configFetcher.Get().Sequencer.TransactionFiltering.TransactionFiltererRPCClient
 		}
 		transactionFiltererRPCClient = NewTransactionFiltererRPCClient(filtererConfigFetcher)
 	}
@@ -399,9 +367,12 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
+	var addressFilterService *addressfilter.FilterService
+	if config.Sequencer.Enable {
+		addressFilterService, err = addressfilter.NewFilterService(ctx, &config.Sequencer.TransactionFiltering.AddressFilter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
+		}
 	}
 
 	execNode := &ExecutionNode{

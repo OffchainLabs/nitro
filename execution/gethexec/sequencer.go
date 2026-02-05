@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -42,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -84,8 +86,34 @@ type SequencerConfig struct {
 	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
 	Dangerous                    DangerousConfig               `koanf:"dangerous"`
 	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
+	TransactionFiltering         TransactionFilteringConfig    `koanf:"transaction-filtering" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type TransactionFilteringConfig struct {
+	AddressFilter                addressfilter.Config   `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient rpcclient.ClientConfig `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+}
+
+func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.AddressFilter.Validate(); err != nil {
+		return fmt.Errorf("error validating address-filter config: %w", err)
+	}
+	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
+	}
+	return nil
+}
+
+var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	AddressFilter:                addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
+}
+
+func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 }
 
 type DangerousConfig struct {
@@ -177,6 +205,10 @@ func (c *SequencerConfig) Validate() error {
 		return fmt.Errorf("invalid event filter config: %w", err)
 	}
 
+	if err := c.TransactionFiltering.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -217,6 +249,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	EventFilter:                  eventfilter.DefaultEventFilterConfig,
+	TransactionFiltering:         DefaultTransactionFilteringConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -245,6 +278,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 }
 
 func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
