@@ -169,7 +169,7 @@ unsafe fn read_full_preimage(preimage_type: u8, hash: MemoryLeaf) -> Vec<u8> {
     let preimage_type = preimage_type.try_into().expect("unsupported preimage type");
     let mut slices = vec![];
     for offset in (0..).step_by(32) {
-        let mut hash = MemoryLeaf(hash.clone());
+        let mut hash = MemoryLeaf(*hash);
         let read = read_preimage_slice(preimage_type, hash.as_mut_ptr(), offset);
         slices.push(hash.0[..read].to_vec());
         if read < 32 {
