@@ -42,7 +42,7 @@ func NewSyncer(
 		handleData: dataHandler,
 	}
 
-	client, err := s3client.NewS3FullClient(ctx, config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClientFromConfig(ctx, &config.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}

@@ -432,7 +432,6 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Enable Redis streams.
 	result, err := s.statelessValidator.BOLDExecutionSpawners()[0].GetMachineHashesWithStepSize(
 		ctx,
 		cfg.AssertionMetadata.WasmModuleRoot,
