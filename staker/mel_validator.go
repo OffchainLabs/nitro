@@ -65,6 +65,11 @@ type MELValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
+
+	// msgPreimagesCache is an LRU mapping a MEL state's parentChainBlockNumber to
+	// the message preimages recorded during validation of the corresponding state
+	msgPreimagesCacheMutex sync.RWMutex
+	msgPreimagesCache      map[uint64]daprovider.PreimagesMap
 }
 
 type MELValidatorConfig struct {
@@ -186,6 +191,7 @@ func NewMELValidator(
 		latestWasmModuleRoot: latestWasmModuleRoot,
 		redisValidator:       redisValClient,
 		executionSpawners:    executionSpawners,
+		msgPreimagesCache:    make(map[uint64]daprovider.PreimagesMap),
 	}, nil
 }
 
@@ -374,9 +380,6 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := currentState.RecordMsgPreimagesTo(preimages); err != nil {
-		return nil, 0, err
-	}
 	melMsgHash := common.Hash{}
 	var endState *mel.State
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
@@ -400,6 +403,11 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err != nil {
 			return nil, 0, err
 		}
+		// Record msg preimages separately in order to make it available for block validation later
+		msgPreimages := make(daprovider.PreimagesMap)
+		if err := currentState.RecordMsgPreimagesTo(msgPreimages); err != nil {
+			return nil, 0, err
+		}
 		var l2Msgs []*arbostypes.MessageWithMetadata
 		endState, l2Msgs, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
 		if err != nil {
@@ -414,6 +422,12 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		}
 		if endState.Hash() != wantState.Hash() {
 			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
+		}
+		if len(msgPreimages[arbutil.Keccak256PreimageType]) > 0 {
+			mv.msgPreimagesCacheMutex.Lock()
+			mv.msgPreimagesCache[currentState.ParentChainBlockNumber] = msgPreimages
+			mv.msgPreimagesCacheMutex.Unlock()
+			validator.CopyPreimagesInto(preimages, msgPreimages)
 		}
 		if endState.MsgCount >= toValidateMsgExtractionCount {
 			break
@@ -439,6 +453,30 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
 	}, 0, nil
+}
+
+func (mv *MELValidator) FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap {
+	mv.msgPreimagesCacheMutex.RLock()
+	defer mv.msgPreimagesCacheMutex.RUnlock()
+	return mv.msgPreimagesCache[parentChainBlockNumber]
+}
+
+// ClearValidatedMsgPreimages trims the msgPreimagesCache by
+func (mv *MELValidator) ClearValidatedMsgPreimages(ctx context.Context, lastValidatedBlockNum, parentChainBlockNumber uint64) {
+	state, err := mv.messageExtractor.GetState(ctx, parentChainBlockNumber)
+	if err != nil {
+		log.Error("Error getting MEL state to clear validated msg preimages", "err", err)
+		return
+	}
+	if lastValidatedBlockNum+1 >= state.MsgCount {
+		mv.msgPreimagesCacheMutex.Lock()
+		defer mv.msgPreimagesCacheMutex.Unlock()
+		for key := range mv.msgPreimagesCache {
+			if key <= parentChainBlockNumber {
+				delete(mv.msgPreimagesCache, parentChainBlockNumber)
+			}
+		}
+	}
 }
 
 func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validationEntry) (*validationDoneEntry, error) {
