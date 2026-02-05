@@ -166,11 +166,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-<<<<<<< HEAD
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider daserver autonomous-auctioneer bidder-client datool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator nitro-experimental)
-=======
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
->>>>>>> origin/master
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer nitro-experimental)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -247,19 +243,11 @@ test-go-redis: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
-<<<<<<< HEAD
-.PHONY: test-go-gas-dimensions
-test-go-gas-dimensions: test-go-deps
-	.github/workflows/gotestsum.sh --timeout 120m --run "TestDim(Log|TxOp)" --tags gasdimensionstest --nolog
-	@printf $(done)
-
 .PHONY: test-go-experimental
 test-go-experimental: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestExperimental --tags debugblock,benchsequencer --nolog
 	@printf $(done)
 
-=======
->>>>>>> origin/master
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -369,14 +357,12 @@ $(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
 
-<<<<<<< HEAD
+$(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
+
 # nitro built with experimental tooling enabled
 $(output_root)/bin/nitro-experimental: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) --tags debugblock,benchsequencer -o $@ "$(CURDIR)/cmd/nitro"
-=======
-$(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
-	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
->>>>>>> origin/master
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

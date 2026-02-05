@@ -37,8 +37,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -65,27 +65,6 @@ var (
 )
 
 type SequencerConfig struct {
-<<<<<<< HEAD
-	Enable                       bool                     `koanf:"enable"`
-	MaxBlockSpeed                time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration            `koanf:"read-from-tx-queue-timeout" reload:"hot"`
-	MaxRevertGasReject           uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string                 `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig          `koanf:"forwarder"`
-	QueueSize                    int                      `koanf:"queue-size"`
-	QueueTimeout                 time.Duration            `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize               int                      `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize                int                      `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize        int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry      time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	ExpectedSurplusGasPriceMode  string                   `koanf:"expected-surplus-gas-price-mode"`
-	ExpectedSurplusSoftThreshold string                   `koanf:"expected-surplus-soft-threshold" reload:"hot"`
-	ExpectedSurplusHardThreshold string                   `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool                     `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig          `koanf:"timeboost"`
-	Dangerous                    SequencerDangerousConfig `koanf:"dangerous"`
-=======
 	Enable                       bool                          `koanf:"enable"`
 	MaxBlockSpeed                time.Duration                 `koanf:"max-block-speed" reload:"hot"`
 	ReadFromTxQueueTimeout       time.Duration                 `koanf:"read-from-tx-queue-timeout" reload:"hot"`
@@ -104,9 +83,8 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string                        `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool                          `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
-	Dangerous                    DangerousConfig               `koanf:"dangerous"`
+	Dangerous                    SequencerDangerousConfig      `koanf:"dangerous"`
 	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
->>>>>>> origin/master
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -238,12 +216,8 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
-<<<<<<< HEAD
 	Dangerous:                    DefaultSequencerDangerousConfig,
-=======
-	Dangerous:                    DefaultDangerousConfig,
 	EventFilter:                  eventfilter.DefaultEventFilterConfig,
->>>>>>> origin/master
 }
 
 var DefaultSequencerDangerousConfig = SequencerDangerousConfig{
@@ -261,7 +235,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	TimeboostAddOptions(prefix+".timeboost", f)
 
 	SequencerDangerousAddOptions(prefix+".dangerous", f)
-	DangerousAddOptions(prefix+".dangerous", f)
 	EventFilterAddOptions(prefix+".event-filter", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")

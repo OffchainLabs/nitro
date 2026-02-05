@@ -35,11 +35,8 @@ import (
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
-<<<<<<< HEAD
-	"github.com/offchainlabs/nitro/experimental/debugblock"
-=======
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
->>>>>>> origin/master
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -123,26 +120,6 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type Config struct {
-<<<<<<< HEAD
-	ParentChainReader           headerreader.Config `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer                   SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase           BlockRecorderConfig `koanf:"recording-database"`
-	TxPreChecker                TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder                   ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTarget            string              `koanf:"forwarding-target"`
-	SecondaryForwardingTarget   []string            `koanf:"secondary-forwarding-target"`
-	Caching                     CachingConfig       `koanf:"caching"`
-	RPC                         arbitrum.Config     `koanf:"rpc"`
-	TxIndexer                   TxIndexerConfig     `koanf:"tx-indexer"`
-	EnablePrefetchBlock         bool                `koanf:"enable-prefetch-block"`
-	SyncMonitor                 SyncMonitorConfig   `koanf:"sync-monitor"`
-	StylusTarget                StylusTargetConfig  `koanf:"stylus-target"`
-	BlockMetadataApiCacheSize   uint64              `koanf:"block-metadata-api-cache-size"`
-	BlockMetadataApiBlocksLimit uint64              `koanf:"block-metadata-api-blocks-limit"`
-	VmTrace                     LiveTracingConfig   `koanf:"vmtrace"`
-	ExposeMultiGas              bool                `koanf:"expose-multi-gas"`
-	Dangerous                   DangerousConfig     `koanf:"dangerous"`
-=======
 	ParentChainReader           headerreader.Config    `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig        `koanf:"sequencer" reload:"hot"`
 	RecordingDatabase           BlockRecorderConfig    `koanf:"recording-database"`
@@ -163,7 +140,7 @@ type Config struct {
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
 	AddressFilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
->>>>>>> origin/master
+	Dangerous                   DangerousConfig        `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -192,16 +169,14 @@ func (c *Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
-<<<<<<< HEAD
-	if err := c.Dangerous.Validate(); err != nil {
-		return err
-=======
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
 	if err := c.AddressFilter.Validate(); err != nil {
 		return fmt.Errorf("error validating addressfilter config: %w", err)
->>>>>>> origin/master
+	}
+	if err := c.Dangerous.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -224,13 +199,10 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
-<<<<<<< HEAD
-	DangerousConfigAddOptions(prefix+".dangerous", f)
-=======
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
->>>>>>> origin/master
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 type LiveTracingConfig struct {
@@ -500,13 +472,6 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
-<<<<<<< HEAD
-	if benchSequencerService != nil {
-		apis = append(apis, rpc.API{
-			Namespace: "benchseq",
-			Service:   benchSequencerService,
-			Public:    false,
-=======
 	if config.RPCServer.Enable {
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
@@ -514,7 +479,13 @@ func CreateExecutionNode(
 			Service:       executionrpcserver.NewServer(execNode, execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
->>>>>>> origin/master
+		})
+	}
+	if benchSequencerService != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "benchseq",
+			Service:   benchSequencerService,
+			Public:    false,
 		})
 	}
 
