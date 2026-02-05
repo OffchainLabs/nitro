@@ -75,6 +75,7 @@ type TransactionStreamerInterface interface {
 
 type MELValidatorInterface interface {
 	LatestValidatedMELState(context.Context) (*mel.State, error)
+	FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap
 }
 
 type InboxReaderInterface interface {
@@ -167,8 +168,11 @@ func (e *validationEntry) ToInput(stylusArchs []rawdb.WasmTarget) (*validator.Va
 		BatchInfo:               e.BatchInfo,
 		DelayedMsg:              e.DelayedMsg,
 		StartState:              e.Start,
-		DebugChain:              e.ChainConfig.DebugMode(),
+		DebugChain:              false,
 		EndParentChainBlockHash: e.EndParentChainBlockHash,
+	}
+	if e.ChainConfig != nil {
+		res.DebugChain = e.ChainConfig.DebugMode()
 	}
 	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
 		return nil, fmt.Errorf("stylus support is required")
@@ -256,6 +260,7 @@ func NewStatelessBlockValidator(
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
 		redisValClient, err = redis.NewValidationClient(&config().RedisValidationClientConfig)
+		boldExecutionSpawners = append(boldExecutionSpawners, redis.NewBOLDRedisExecutionClient(redisValClient))
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
@@ -567,6 +572,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 
 	if v.redisValidator != nil {
+		if err := v.redisValidator.Initialize(ctx_in, []common.Hash{v.GetLatestWasmModuleRoot()}); err != nil {
+			return fmt.Errorf("initializing redis validation client: %w", err)
+		}
 		if err := v.redisValidator.Start(ctx_in); err != nil {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
@@ -590,11 +598,19 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	}
 	v.wasmTargets = wasmTargets
 
+	for _, spawner := range v.boldExecSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (v *StatelessBlockValidator) Stop() {
 	for _, spawner := range v.execSpawners {
+		spawner.Stop()
+	}
+	for _, spawner := range v.boldExecSpawners {
 		spawner.Stop()
 	}
 	if v.redisValidator != nil {

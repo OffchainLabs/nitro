@@ -28,8 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
-	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -50,8 +50,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -72,6 +72,7 @@ type Config struct {
 	MessagePruner     MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
 	MessageExtraction melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
 	BlockValidator    staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
+	MELValidator      staker.MELValidatorConfig         `koanf:"mel-validator" reload:"hot"`
 	Feed              broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
 	Staker            legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	Bold              bold.BoldConfig                   `koanf:"bold"`
@@ -108,6 +109,9 @@ func (c *Config) Validate() error {
 		c.Feed.Input.URL = []string{}
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
+		return err
+	}
+	if err := c.MELValidator.Validate(); err != nil {
 		return err
 	}
 	if err := c.MessageExtraction.Validate(); err != nil {
@@ -156,6 +160,8 @@ func (c *Config) ValidatorRequired() bool {
 	return false
 }
 
+func (c *Config) MELValidatorRequired() bool { return c.MELValidator.Enable }
+
 // MigrateDeprecatedConfig migrates deprecated DataAvailability config to DA.AnyTrust.
 // This allows operators to continue using --node.data-availability.* flags while
 // transitioning to the new --node.da.anytrust.* flags.
@@ -176,6 +182,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
 	melrunner.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
+	staker.MELValidatorConfigAddOptions(prefix+".mel-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	legacystaker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	bold.BoldConfigAddOptions(prefix+".bold", f)
@@ -202,6 +209,7 @@ var ConfigDefault = Config{
 	BatchPoster:              DefaultBatchPosterConfig,
 	MessagePruner:            DefaultMessagePrunerConfig,
 	BlockValidator:           staker.DefaultBlockValidatorConfig,
+	MELValidator:             staker.DefaultMELValidatorConfig,
 	Feed:                     broadcastclient.FeedConfigDefault,
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
 	MessageExtraction:        melrunner.DefaultMessageExtractionConfig,
@@ -251,6 +259,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.MELValidator = staker.TestMELValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.ConsensusExecutionSyncer = TestConsensusExecutionSyncerConfig
 	config.Staker = legacystaker.TestL1ValidatorConfig
@@ -894,6 +903,8 @@ func getBlockValidator(
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
+			nil, // Nil MEL runner
+			nil, // Nil MEL validator
 		)
 		if err != nil {
 			return nil, err
@@ -1532,16 +1543,22 @@ func CreateConsensusNode(
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
+	var executionSequencer execution.ExecutionSequencer
+	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
 		executionClient = rpcClient
 		executionRecorder = rpcClient
+		arbOSVersionGetter = rpcClient
+		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient
+		executionSequencer = fullExecutionClient
+		arbOSVersionGetter = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, executionRecorder, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}

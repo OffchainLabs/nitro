@@ -6,11 +6,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -19,7 +21,11 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
@@ -70,17 +76,106 @@ func main() {
 func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 	// TODO: Implement.
 	lastBlockHash := wavmio.GetLastBlockHash()
-	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
-	if err != nil {
-		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
-	}
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
 	if lastBlockHash != (common.Hash{}) {
 		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
+	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
+	if err != nil {
+		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
+	}
+	var newBlock *types.Block
+	if lastBlockStateRoot != (common.Hash{}) {
+		// ArbOS has already been initialized.
+		// Load the chain config and then produce a block normally.
 
+		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting genesis block number from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfigJson, err := initialArbosState.ChainConfig()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
+		}
+		var chainConfig *params.ChainConfig
+		if len(chainConfigJson) > 0 {
+			chainConfig = &params.ChainConfig{}
+			err = json.Unmarshal(chainConfigJson, chainConfig)
+			if err != nil {
+				panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+			}
+			if chainConfig.ChainID.Cmp(chainId) != 0 {
+				panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+			}
+			if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+				panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+			}
+		} else {
+			log.Info("Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
+
+		chainContext := WavmChainContext{chainConfig: chainConfig}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		// Initialize ArbOS with this init message and create the genesis block.
+
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
+
+		initMessage, err := message.Message.ParseInitMessage()
+		if err != nil {
+			panic(err)
+		}
+		chainConfig := initMessage.ChainConfig
+		if chainConfig == nil {
+			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(initMessage.ChainId, "", 0, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, nil, initMessage)
+		if err != nil {
+			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
+		}
+
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
+
+	}
+
+	newBlockHash := newBlock.Hash()
+
+	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
+
+	extraInfo := types.DeserializeHeaderExtraInformation(newBlock.Header())
+	if extraInfo.ArbOSFormatVersion == 0 {
+		panic(fmt.Sprintf("Error deserializing header extra info: %+v", newBlock.Header()))
+	}
+	wavmio.SetLastBlockHash(newBlockHash)
+	wavmio.SetSendRoot(extraInfo.SendRoot)
+
+	wavmio.OnFinal()
 	return nil
 }
 
