@@ -90,7 +90,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
             "readInboxMessage" => func!(wavmio::read_inbox_message),
             "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "resolvePreImage" => func!(wavmio::read_preimage),
+            "readPreimage" => func!(wavmio::read_preimage),
             "validateCertificate" => func!(wavmio::validate_certificate),
 
             "resolvePreImage" => {

@@ -78,7 +78,7 @@ func AdvanceInboxMessage() {
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 	hashUnsafe := unsafe.Pointer(&hash[0])
-	preimage := make([]byte, 0, INITIAL_PREIMAGE_ALLOCATION)
+	preimage := make([]byte, INITIAL_PREIMAGE_ALLOCATION)
 
 	// 1. Read the preimage prefix (up to INITIAL_PREIMAGE_ALLOCATION bytes)
 	preimageLenOrError := readPreimage(uint32(ty), hashUnsafe, unsafe.Pointer(&preimage[0]), 0, INITIAL_PREIMAGE_ALLOCATION)
