@@ -158,13 +158,9 @@ pub unsafe extern "C" fn wavmio__readPreimage(
 
 /// Read the hash from guest memory into our aligned memory.
 unsafe fn read_hash(hash_ptr: GuestPtr) -> MemoryLeaf {
-    let mut buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
-    buf.copy_from_slice(&hash);
-
+    let mut buf = MemoryLeaf(STATIC_MEM.read_fixed(hash_ptr));
     let our_ptr = buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
-
     buf
 }
 
@@ -174,10 +170,11 @@ unsafe fn read_full_preimage(preimage_type: u8, hash: MemoryLeaf) -> Vec<u8> {
     let mut slices = vec![];
     for offset in (0..).step_by(32) {
         let mut hash = MemoryLeaf(hash.clone());
-        if read_preimage_slice(preimage_type, hash.as_mut_ptr(), offset) < 32 {
+        let read = read_preimage_slice(preimage_type, hash.as_mut_ptr(), offset);
+        slices.push(hash.0[..read].to_vec());
+        if read < 32 {
             break;
         }
-        slices.push(hash.0);
     }
     slices.concat()
 }

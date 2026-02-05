@@ -7,6 +7,7 @@ package wavmio
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -90,7 +91,7 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 
 	// 3. If the preimage fits within the initial allocation, return it
 	if preimageLen <= INITIAL_PREIMAGE_ALLOCATION {
-		return preimage[:preimageLenOrError], nil
+		return preimage[:preimageLen], nil
 	}
 
 	// 4. Reallocate a buffer of the correct size
@@ -102,7 +103,7 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 	if preimageLenOrErrorOnSuffix != preimageLen {
 		return nil, errors.New("reading preimage suffix failed")
 	}
-	return preimage, nil
+	return preimage[:preimageLen], nil
 }
 
 func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
