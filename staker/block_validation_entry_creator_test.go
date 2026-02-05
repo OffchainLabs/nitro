@@ -3,5 +3,5 @@
 
 package staker
 
-var _ blockValidationEntryCreator = (*melEnabledValidationEntryCreator)(nil)
-var _ blockValidationEntryCreator = (*preMELValidationEntryCreator)(nil)
+var _ BlockValidationEntryCreator = (*MELEnabledValidationEntryCreator)(nil)
+var _ BlockValidationEntryCreator = (*PreMELValidationEntryCreator)(nil)

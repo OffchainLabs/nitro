@@ -12,17 +12,21 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -73,13 +77,18 @@ func main() {
 	}
 }
 
-func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
-	// TODO: Implement.
+func produceBlock(currentBlock *types.Block, msgBytes []byte) *types.Block {
+	var message *arbostypes.MessageWithMetadata
+	if err := rlp.DecodeBytes(msgBytes, message); err != nil {
+		panic(fmt.Errorf("error RLP decoding message: %w", err))
+	}
+	raw := rawdb.NewDatabase(PreimageDb{})
+	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 	lastBlockHash := wavmio.GetLastBlockHash()
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
 	if lastBlockHash != (common.Hash{}) {
-		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
+		lastBlockHeader = getHeaderByHash(lastBlockHash)
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
 	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
@@ -90,7 +99,6 @@ func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 	if lastBlockStateRoot != (common.Hash{}) {
 		// ArbOS has already been initialized.
 		// Load the chain config and then produce a block normally.
-
 		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
@@ -128,8 +136,6 @@ func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
-
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
 		if err != nil {
@@ -137,11 +143,6 @@ func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 		}
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
-
-		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
-		// However, the init message is never compressed, so we can safely pass nil here.
-		message := readMessage(false, nil)
-
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
@@ -172,10 +173,9 @@ func produceBlock(currentBlock *types.Block, msg []byte) *types.Block {
 	if extraInfo.ArbOSFormatVersion == 0 {
 		panic(fmt.Sprintf("Error deserializing header extra info: %+v", newBlock.Header()))
 	}
-	wavmio.SetLastBlockHash(newBlockHash)
-	wavmio.SetSendRoot(extraInfo.SendRoot)
+	melwavmio.SetLastBlockHash(newBlockHash)
+	melwavmio.SetSendRoot(extraInfo.SendRoot)
 
-	wavmio.OnFinal()
 	return nil
 }
 
@@ -281,4 +281,44 @@ func readPreimage(hash common.Hash) []byte {
 		panic(fmt.Errorf("error resolving preimage: %w", err))
 	}
 	return preimage
+}
+
+type WavmChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) CurrentHeader() *types.Header {
+	return getLastBlockHeader()
+}
+
+func (c WavmChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	panic("GetHeaderByNumber should not be called in WavmChainContext")
+}
+
+func (c WavmChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return getHeaderByHash(hash)
+}
+
+func (c WavmChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
+
+func (c WavmChainContext) Engine() consensus.Engine {
+	return arbos.Engine{}
+}
+
+func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	header := getHeaderByHash(hash)
+	if !header.Number.IsUint64() || header.Number.Uint64() != num {
+		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
+	}
+	return header
+}
+
+func getLastBlockHeader() *types.Header {
+	lastBlockHash := melwavmio.GetLastBlockHash()
+	if lastBlockHash == (common.Hash{}) {
+		return nil
+	}
+	return getHeaderByHash(lastBlockHash)
 }

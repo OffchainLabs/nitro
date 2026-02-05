@@ -89,7 +89,7 @@ type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
 	melValidator           MELValidatorInterface
-	validationEntryCreator blockValidationEntryCreator
+	validationEntryCreator BlockValidationEntryCreator
 
 	reorgMutex sync.RWMutex
 
@@ -375,15 +375,15 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
-	var validationEntryCreator blockValidationEntryCreator
+	var validationEntryCreator BlockValidationEntryCreator
 	if config().EnableMEL {
-		validationEntryCreator = newMELEnabledValidationEntryCreator(
+		validationEntryCreator = NewMELEnabledValidationEntryCreator(
 			melValidator,
 			streamer,
 			melRunner,
 		)
 	} else {
-		validationEntryCreator = newPreMELValidationEntryCreator(streamer, ret)
+		validationEntryCreator = NewPreMELValidationEntryCreator(streamer, ret)
 	}
 	ret.validationEntryCreator = validationEntryCreator
 	valInputsWriter, err := inputs.NewWriter(
@@ -655,7 +655,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	entry, created, err := v.validationEntryCreator.createBlockValidationEntry(
+	entry, created, err := v.validationEntryCreator.CreateBlockValidationEntry(
 		ctx,
 		v.nextCreateStartGS,
 		pos,

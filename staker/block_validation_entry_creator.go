@@ -13,37 +13,37 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-type MELRunnerInterface interface {
-	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
-}
-
-type blockValidationEntryCreator interface {
-	createBlockValidationEntry(
+type BlockValidationEntryCreator interface {
+	CreateBlockValidationEntry(
 		ctx context.Context,
 		startGlobalState validator.GoGlobalState,
 		position arbutil.MessageIndex,
 	) (*validationEntry, bool, error)
 }
 
-type melEnabledValidationEntryCreator struct {
+type MELRunnerInterface interface {
+	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
+}
+
+type MELEnabledValidationEntryCreator struct {
 	melValidator MELValidatorInterface
 	txStreamer   TransactionStreamerInterface
 	melRunner    MELRunnerInterface
 }
 
-func newMELEnabledValidationEntryCreator(
+func NewMELEnabledValidationEntryCreator(
 	melValidator MELValidatorInterface,
 	txStreamer TransactionStreamerInterface,
 	melRunner MELRunnerInterface,
-) *melEnabledValidationEntryCreator {
-	return &melEnabledValidationEntryCreator{
+) *MELEnabledValidationEntryCreator {
+	return &MELEnabledValidationEntryCreator{
 		melValidator: melValidator,
 		txStreamer:   txStreamer,
 		melRunner:    melRunner,
 	}
 }
 
-func (m *melEnabledValidationEntryCreator) createBlockValidationEntry(
+func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	ctx context.Context,
 	startGlobalState validator.GoGlobalState,
 	position arbutil.MessageIndex,
@@ -105,22 +105,22 @@ func (m *melEnabledValidationEntryCreator) createBlockValidationEntry(
 	}, created, nil
 }
 
-type preMELValidationEntryCreator struct {
+type PreMELValidationEntryCreator struct {
 	streamer       TransactionStreamerInterface
 	blockValidator *BlockValidator
 }
 
-func newPreMELValidationEntryCreator(
+func NewPreMELValidationEntryCreator(
 	streamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-) *preMELValidationEntryCreator {
-	return &preMELValidationEntryCreator{
+) *PreMELValidationEntryCreator {
+	return &PreMELValidationEntryCreator{
 		streamer:       streamer,
 		blockValidator: blockValidator,
 	}
 }
 
-func (p *preMELValidationEntryCreator) createBlockValidationEntry(
+func (p *PreMELValidationEntryCreator) CreateBlockValidationEntry(
 	ctx context.Context,
 	startGlobalState validator.GoGlobalState,
 	position arbutil.MessageIndex,
