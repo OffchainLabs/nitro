@@ -66,37 +66,40 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                       bool                          `koanf:"enable"`
-	MaxBlockSpeed                time.Duration                 `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration                 `koanf:"read-from-tx-queue-timeout" reload:"hot"`
-	MaxRevertGasReject           uint64                        `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration                 `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string                      `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig               `koanf:"forwarder"`
-	QueueSize                    int                           `koanf:"queue-size"`
-	QueueTimeout                 time.Duration                 `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize               int                           `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize                int                           `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize        int                           `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry      time.Duration                 `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	ExpectedSurplusGasPriceMode  string                        `koanf:"expected-surplus-gas-price-mode"`
-	ExpectedSurplusSoftThreshold string                        `koanf:"expected-surplus-soft-threshold" reload:"hot"`
-	ExpectedSurplusHardThreshold string                        `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool                          `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
-	Dangerous                    DangerousConfig               `koanf:"dangerous"`
-	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
-	TransactionFiltering         TransactionFilteringConfig    `koanf:"transaction-filtering" reload:"hot"`
+	Enable                       bool                       `koanf:"enable"`
+	MaxBlockSpeed                time.Duration              `koanf:"max-block-speed" reload:"hot"`
+	ReadFromTxQueueTimeout       time.Duration              `koanf:"read-from-tx-queue-timeout" reload:"hot"`
+	MaxRevertGasReject           uint64                     `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta  time.Duration              `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist              []string                   `koanf:"sender-whitelist"`
+	Forwarder                    ForwarderConfig            `koanf:"forwarder"`
+	QueueSize                    int                        `koanf:"queue-size"`
+	QueueTimeout                 time.Duration              `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize               int                        `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize                int                        `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize        int                        `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry      time.Duration              `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	ExpectedSurplusGasPriceMode  string                     `koanf:"expected-surplus-gas-price-mode"`
+	ExpectedSurplusSoftThreshold string                     `koanf:"expected-surplus-soft-threshold" reload:"hot"`
+	ExpectedSurplusHardThreshold string                     `koanf:"expected-surplus-hard-threshold" reload:"hot"`
+	EnableProfiling              bool                       `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig            `koanf:"timeboost"`
+	Dangerous                    DangerousConfig            `koanf:"dangerous"`
+	TransactionFiltering         TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
 type TransactionFilteringConfig struct {
-	AddressFilter                addressfilter.Config   `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient rpcclient.ClientConfig `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.EventFilter.Validate(); err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
+	}
 	if err := c.AddressFilter.Validate(); err != nil {
 		return fmt.Errorf("error validating address-filter config: %w", err)
 	}
@@ -107,11 +110,13 @@ func (c *TransactionFilteringConfig) Validate() error {
 }
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	EventFilter:                  eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 }
@@ -200,11 +205,6 @@ func (c *SequencerConfig) Validate() error {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
 
-	err = c.EventFilter.Validate()
-	if err != nil {
-		return fmt.Errorf("invalid event filter config: %w", err)
-	}
-
 	if err := c.TransactionFiltering.Validate(); err != nil {
 		return err
 	}
@@ -248,7 +248,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
-	EventFilter:                  eventfilter.DefaultEventFilterConfig,
 	TransactionFiltering:         DefaultTransactionFilteringConfig,
 }
 
@@ -267,7 +266,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	TimeboostAddOptions(prefix+".timeboost", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
-	EventFilterAddOptions(prefix+".event-filter", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -524,7 +522,7 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 
-	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.EventFilter)
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
 	if err != nil {
 		return nil, err
 	}
