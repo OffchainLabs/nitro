@@ -227,6 +227,9 @@ func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
 
 	minDelta := fragmentReadCostWarmOnly(uint64(len(fragmentsTwo[0]))) + fragmentReadCostWarmOnly(uint64(len(fragmentsTwo[1]))) - fragmentReadCostWarmOnly(uint64(len(fragmentsOne[0])))
 	maxDelta := fragmentReadCost(uint64(len(fragmentsTwo[0]))) + fragmentReadCost(uint64(len(fragmentsTwo[1]))) - fragmentReadCost(uint64(len(fragmentsOne[0])))
+	copyDelta := fragmentCopyCost(uint64(len(fragmentsTwo[0]))) + fragmentCopyCost(uint64(len(fragmentsTwo[1]))) - fragmentCopyCost(uint64(len(fragmentsOne[0])))
+	minDelta += copyDelta
+	maxDelta += copyDelta
 
 	_, _, receiptOne := deployAndActivateFragmentedContract(t, builder.ctx, auth, builder.L2.Client, deployConfig{
 		fragmentCount:    1,
@@ -237,12 +240,7 @@ func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
 		expectActivation: true,
 	})
 
-	var absDelta uint64
-	if receiptTwo.GasUsed >= receiptOne.GasUsed {
-		absDelta = receiptTwo.GasUsed - receiptOne.GasUsed
-	} else {
-		absDelta = receiptOne.GasUsed - receiptTwo.GasUsed
-	}
+	absDelta := absDiffUint64(receiptTwo.GasUsed, receiptOne.GasUsed)
 	require.GreaterOrEqual(t, absDelta, minDelta)
 	require.LessOrEqual(t, absDelta, maxDelta)
 }
@@ -683,6 +681,20 @@ func fragmentReadCostWarmOnly(codeSize uint64) uint64 {
 		return 0
 	}
 	return params.WarmStorageReadCostEIP2929
+}
+
+func fragmentCopyCost(codeSize uint64) uint64 {
+	if codeSize > vm.MaxMemorySize {
+		return 0
+	}
+	return vm.ToWordSize(codeSize) * params.CopyGas
+}
+
+func absDiffUint64(left uint64, right uint64) uint64 {
+	if left >= right {
+		return left - right
+	}
+	return right - left
 }
 
 // readFragmentedContractFile reads, compiles, compresses, and fragments a contract.
