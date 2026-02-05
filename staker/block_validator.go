@@ -88,7 +88,8 @@ func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *Throttl
 type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
-	melValidator MELValidatorInterface
+	melValidator           MELValidatorInterface
+	validationEntryCreator blockValidationEntryCreator
 
 	reorgMutex sync.RWMutex
 
@@ -165,6 +166,7 @@ type BlockValidatorConfig struct {
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
+	EnableMEL           bool   `koanf:"enable-mel" reload:"hot"`
 
 	memoryFreeLimit int
 }
@@ -245,6 +247,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Bool(prefix+".enable-mel", DefaultBlockValidatorConfig.EnableMEL, "enables MEL support for the block validator")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -276,6 +279,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RecordingIterLimit:                20,
 	ValidationSentLimit:               1024,
 	ValidationSpawningAllowedAttempts: 1,
+	EnableMEL:                         false,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -296,6 +300,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	BlockInputsFilePath:               "./target/validation_inputs",
 	MemoryFreeLimit:                   "default",
 	ValidationSpawningAllowedAttempts: 1,
+	EnableMEL:                         false,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -368,6 +373,15 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
+	var validationEntryCreator blockValidationEntryCreator
+	if config().EnableMEL {
+		validationEntryCreator = newMELEnabledValidationEntryCreator(
+			nil, nil, nil,
+		)
+	} else {
+		validationEntryCreator = newPreMELValidationEntryCreator(streamer, ret)
+	}
+	ret.validationEntryCreator = validationEntryCreator
 	valInputsWriter, err := inputs.NewWriter(
 		inputs.WithBaseDir(ret.stack.InstanceDir()),
 		inputs.WithSlug("BlockValidator"))
@@ -637,94 +651,16 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	streamerMsgCount, err := v.streamer.GetProcessedMessageCount() // Ask MEL validator LatestValidatedMELState().MsgCount
-	if err != nil {
-		return false, err
-	}
-	if pos >= streamerMsgCount {
-		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
-		return false, nil
-	}
-	if v.melValidator != nil {
-		latestValidatedState, err := v.melValidator.LatestValidatedMELState(ctx)
-		if err != nil {
-			return false, err
-		}
-		if pos >= arbutil.MessageIndex(latestValidatedState.MsgCount) {
-			log.Trace("create validation entry: nothing to do", "pos", pos, "latestMELValidatedMsgCount", latestValidatedState.MsgCount)
-			return false, nil
-		}
-	}
-	msg, err := v.streamer.GetMessage(pos)
-	if err != nil {
-		return false, err
-	}
-	endRes, err := v.streamer.ResultAtMessageIndex(pos)
-	if err != nil {
-		return false, err
-	}
-	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
-		// new batch
-		found, fullBatchInfo, err := v.readFullBatch(ctx, v.nextCreateStartGS.Batch)
-		if !found {
-			return false, err
-		}
-		if v.nextCreateBatch != nil {
-			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
-		}
-		v.nextCreateBatch = fullBatchInfo
-		// #nosec G115
-		validatorMsgCountCurrentBatch.Update(int64(fullBatchInfo.MsgCount))
-		batchCacheLimit := v.config().BatchCacheLimit
-		if len(v.prevBatchCache) > int(batchCacheLimit) {
-			for num := range v.prevBatchCache {
-				if num+uint64(batchCacheLimit) < v.nextCreateStartGS.Batch {
-					delete(v.prevBatchCache, num)
-				}
-			}
-		}
-		v.nextCreateBatchReread = false
-	}
-	endGS := validator.GoGlobalState{
-		BlockHash: endRes.BlockHash,
-		SendRoot:  endRes.SendRoot,
-	}
-	if pos+1 < v.nextCreateBatch.MsgCount {
-		endGS.Batch = v.nextCreateStartGS.Batch
-		endGS.PosInBatch = v.nextCreateStartGS.PosInBatch + 1
-	} else if pos+1 == v.nextCreateBatch.MsgCount {
-		endGS.Batch = v.nextCreateStartGS.Batch + 1
-		endGS.PosInBatch = 0
-	} else {
-		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, pos, endGS.Batch)
-	}
-	chainConfig := v.streamer.ChainConfig()
-	prevBatchNums, err := msg.Message.PastBatchesRequired()
-	if err != nil {
-		return false, err
-	}
-	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
-	// prevBatchNums are only used for batch reports, each is only used once
-	for _, batchNum := range prevBatchNums {
-		data, found := v.prevBatchCache[batchNum]
-		if found {
-			delete(v.prevBatchCache, batchNum)
-		} else {
-			data, err = v.readPostedBatch(ctx, batchNum)
-			if err != nil {
-				return false, err
-			}
-		}
-		prevBatches = append(prevBatches, validator.BatchInfo{
-			Number: batchNum,
-			Data:   data,
-		})
-	}
-	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
+	entry, created, err := v.validationEntryCreator.createBlockValidationEntry(
+		ctx,
+		v.nextCreateStartGS,
+		pos,
 	)
 	if err != nil {
 		return false, err
+	}
+	if !created {
+		return false, nil
 	}
 	status := &validationStatus{
 		Entry:     entry,
@@ -732,8 +668,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
-	v.nextCreateStartGS = endGS
-	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
+	v.nextCreateStartGS = entry.End
+	v.nextCreatePrevDelayed = entry.msg.DelayedMessagesRead
 	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
