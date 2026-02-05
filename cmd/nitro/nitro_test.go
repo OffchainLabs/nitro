@@ -22,10 +22,13 @@ func TestGetGenesisFileNameFromDirectoryWithCorrectFile(t *testing.T) {
 		Config: &params.ChainConfig{
 			ChainID: big.NewInt(int64(chainId)),
 		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
-	err = os.WriteFile(genesisFilePath, genesisBytes, 0644)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
 	Require(t, err)
 	result, err := GetGenesisFileNameFromDirectory(tempDir, chainId)
 	Require(t, err)
@@ -43,10 +46,13 @@ func TestGetGenesisFileNameFromDirectoryWithWrongFileName(t *testing.T) {
 		Config: &params.ChainConfig{
 			ChainID: big.NewInt(int64(chainId)),
 		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
-	err = os.WriteFile(genesisFilePath, genesisBytes, 0644)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
 	Require(t, err)
 	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
 	if err == nil {
@@ -64,10 +70,13 @@ func TestGetGenesisFileNameFromDirectoryWithWrongChainId(t *testing.T) {
 		Config: &params.ChainConfig{
 			ChainID: big.NewInt(int64(wrongChainId)),
 		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
-	err = os.WriteFile(genesisFilePath, genesisBytes, 0644)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
 	Require(t, err)
 	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
 	if err == nil {
