@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
 	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -135,6 +136,17 @@ var DefaultMELValidatorConfig = MELValidatorConfig{
 	ValidationSpawningAllowedAttempts: 1,
 }
 
+var TestMELValidatorConfig = MELValidatorConfig{
+	Enable:                            false,
+	ValidationServerConfigs:           []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	ValidationServer:                  rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig:       redis.DefaultValidationClientConfig,
+	ValidationPoll:                    100 * time.Millisecond,
+	CurrentModuleRoot:                 "latest",
+	PendingUpgradeModuleRoot:          "latest",
+	ValidationSpawningAllowedAttempts: 1,
+}
+
 func NewMELValidator(
 	config MELValidatorConfigFetcher,
 	arbDb ethdb.KeyValueStore,
@@ -206,6 +218,16 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 		}
 	}
 	log.Info("MELValidator initialized", "current", mv.currentWasmModuleRoot, "pending", mv.pendingWasmModuleRoot)
+	if mv.redisValidator != nil {
+		if err := mv.redisValidator.Start(ctx); err != nil {
+			return fmt.Errorf("starting execution spawner: %w", err)
+		}
+	}
+	for _, spawner := range mv.executionSpawners {
+		if err := spawner.Start(ctx); err != nil {
+			return err
+		}
+	}
 	moduleRoots := mv.GetModuleRootsToValidate()
 	// First spawner is always RedisValidationClient if RedisStreams are enabled.
 	if mv.redisValidator != nil {
@@ -355,6 +377,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if err := currentState.RecordMsgPreimagesTo(preimages); err != nil {
 		return nil, 0, err
 	}
+	melMsgHash := common.Hash{}
 	var endState *mel.State
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
@@ -377,9 +400,13 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if err != nil {
 			return nil, 0, err
 		}
-		endState, _, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
+		var l2Msgs []*arbostypes.MessageWithMetadata
+		endState, l2Msgs, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
+		}
+		if len(l2Msgs) > 0 && (melMsgHash == common.Hash{}) {
+			melMsgHash = l2Msgs[0].Hash()
 		}
 		wantState, err := mv.messageExtractor.GetState(ctx, i)
 		if err != nil {
@@ -394,6 +421,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		currentState = endState
 	}
 	return &validationEntry{
+		Stage:     Ready,
 		Preimages: preimages,
 		Start: validator.GoGlobalState{
 			BlockHash:    common.Hash{},
@@ -405,9 +433,9 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		End: validator.GoGlobalState{
 			BlockHash:    common.Hash{},
 			MELStateHash: endState.Hash(),
-			MELMsgHash:   common.Hash{},
+			MELMsgHash:   melMsgHash,
 			Batch:        0,
-			PosInBatch:   0,
+			PosInBatch:   initialState.MsgCount,
 		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
 	}, 0, nil
@@ -422,7 +450,7 @@ func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validati
 		spawner.StopWaiter.Start(ctx, mv)
 		input, err := entry.ToInput(nil)
 		if err != nil && ctx.Err() == nil {
-			return nil, fmt.Errorf("%w: error preparing validation", err)
+			return nil, fmt.Errorf("error preparing validation: %w", err)
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
