@@ -7,7 +7,6 @@ package wavmio
 
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -83,8 +82,6 @@ func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, er
 
 	// 1. Read the preimage prefix (up to INITIAL_PREIMAGE_ALLOCATION bytes)
 	preimageLen := readPreimage(uint32(ty), hashUnsafe, unsafe.Pointer(&preimage[0]), 0, INITIAL_PREIMAGE_ALLOCATION)
-
-	fmt.Println("preimage length: ", preimageLen)
 
 	// 2. If the preimage fits within the initial allocation, return it
 	if preimageLen <= INITIAL_PREIMAGE_ALLOCATION {
