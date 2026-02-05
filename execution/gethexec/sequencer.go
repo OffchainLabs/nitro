@@ -507,10 +507,11 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	eventFilter *eventfilter.EventFilter
+	eventFilter          *eventfilter.EventFilter
+	addressFilterService *addressfilter.FilterService
 }
 
-func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
+func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -526,6 +527,12 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.EventFilter)
 	if err != nil {
 		return nil, err
+	}
+
+	var addressFilterService *addressfilter.FilterService
+	addressFilterService, err = addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
 
 	s := &Sequencer{
@@ -544,6 +551,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		},
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
+		addressFilterService:              addressFilterService,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -1556,6 +1564,13 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 		return err
 	}
 	s.updateLatestParentChainBlock(header)
+
+	if s.addressFilterService != nil {
+		if err = s.addressFilterService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing restricted addr service: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1679,9 +1694,19 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
 	config := s.config()
 	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
+	}
+
+	if s.addressFilterService != nil {
+		s.addressFilterService.Start(ctx)
 	}
 
 	if s.l1Reader != nil {
@@ -1765,6 +1790,9 @@ func (s TxSource) String() string {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
+	if s.addressFilterService != nil {
+		s.addressFilterService.StopAndWait()
+	}
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}

@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -263,7 +262,6 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	addressFilterService     *addressfilter.FilterService
 }
 
 func CreateExecutionNode(
@@ -313,7 +311,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(ctx, execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -367,14 +365,6 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	var addressFilterService *addressfilter.FilterService
-	if config.Sequencer.Enable {
-		addressFilterService, err = addressfilter.NewFilterService(ctx, &config.Sequencer.TransactionFiltering.AddressFilter)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
-		}
-	}
-
 	execNode := &ExecutionNode{
 		ExecutionDB:              executionDB,
 		Backend:                  backend,
@@ -390,7 +380,6 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-		addressFilterService:     addressFilterService,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -483,12 +472,6 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 
-	if n.addressFilterService != nil {
-		if err = n.addressFilterService.Initialize(ctx); err != nil {
-			return fmt.Errorf("error initializing restricted addr service: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -522,9 +505,6 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	if n.addressFilterService != nil {
-		n.addressFilterService.Start(ctx)
-	}
 	return nil
 }
 
@@ -557,9 +537,6 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
-	if n.addressFilterService != nil {
-		n.addressFilterService.StopAndWait()
-	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
