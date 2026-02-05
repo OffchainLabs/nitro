@@ -143,13 +143,11 @@ mod tests {
         assert!(result.is_ok(), "Server should exit successfully");
 
         // 8. Verify jit_manager Cleanup
-        assert!(
-            !test_config
-                .state
-                .jit_manager
-                .is_machine_active(module_root)
-                .await
-        );
+        let machine_arc = {
+            let machines = test_config.state.jit_manager.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+        assert!(machine_arc.is_none());
 
         // 9. Verify same request from above fails expectadly
         let resp = client
@@ -199,13 +197,12 @@ mod tests {
         let test_config = spinup_server(&config).await?;
 
         // Check that jit machine is active
-        assert!(
-            test_config
-                .state
-                .jit_manager
-                .is_machine_active(module_root)
-                .await
-        );
+        let machine_arc = {
+            let machines = test_config.state.jit_manager.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+        assert!(machine_arc.is_some());
+        drop(machine_arc);
 
         verify_and_shutdown_server(test_config, module_root)
             .await

@@ -66,17 +66,6 @@ pub async fn validate_continuous(
 ) -> Result<Json<GoGlobalState>, String> {
     let module_root = request.module_root.unwrap_or(server_state.module_root);
 
-    if !server_state
-        .jit_manager
-        .is_machine_active(module_root)
-        .await
-    {
-        return Err(format!(
-            "Jit machine is not active. Maybe it received a shutdown signal? Requested module root: {}",
-            server_state.module_root
-        ));
-    }
-
     let new_state = server_state
         .jit_manager
         .feed_machine_with_root(&request.validation_input, module_root)

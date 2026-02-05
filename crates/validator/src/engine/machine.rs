@@ -156,25 +156,6 @@ impl JitProcessManager {
         })
     }
 
-    pub async fn is_machine_active(&self, module_root: ModuleRoot) -> bool {
-        if self.shutting_down.load(Ordering::Acquire) {
-            return false;
-        }
-
-        // Clone the Arc while holding the read lock, then drop the lock immediately
-        // to avoid holding it during the mutex lock operation.
-        let machine_arc = {
-            let machines = self.machines.read().await;
-            machines.get(&module_root).cloned()
-        };
-
-        if let Some(machine) = machine_arc {
-            machine.process_stdin.lock().await.is_some()
-        } else {
-            false
-        }
-    }
-
     pub async fn feed_machine_with_root(
         &self,
         request: &ValidationInput,
