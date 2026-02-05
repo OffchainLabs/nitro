@@ -122,7 +122,6 @@ func MELValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".validation-poll", DefaultMELValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.String(prefix+".current-module-root", DefaultMELValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultMELValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
-	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultMELValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
 }
 
