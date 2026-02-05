@@ -82,6 +82,12 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 		return nil, created, err
 	}
 	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
+	// Add the message itself to the preimages map.
+	encodedMsg, err := rlp.EncodeToBytes(msg.WithMELRelevantFields())
+	if err != nil {
+		return nil, created, err
+	}
+	preimages[arbutil.Keccak256PreimageType][msg.WithMELRelevantFields().Hash()] = encodedMsg
 	// Fetch and add the msg releated preimages
 	msgPreimages := m.melValidator.FetchMsgPreimages(melStateForMsg.ParentChainBlockNumber)
 	validator.CopyPreimagesInto(preimages, msgPreimages)
