@@ -139,6 +139,7 @@ type Config struct {
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
 	AddressFilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
+	Dangerous                   DangerousConfig        `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -173,6 +174,9 @@ func (c *Config) Validate() error {
 	if err := c.AddressFilter.Validate(); err != nil {
 		return fmt.Errorf("error validating addressfilter config: %w", err)
 	}
+	if err := c.Dangerous.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -197,6 +201,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 type LiveTracingConfig struct {
@@ -212,6 +217,25 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
 	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
+}
+
+type DangerousConfig struct {
+	BenchSequencer BenchSequencerConfig `koanf:"bench-sequencer"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	BenchSequencer: BenchSequencerConfigDefault,
+}
+
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	BenchSequencerConfigAddOptions(prefix+".bench-sequencer", f)
+}
+
+func (c *DangerousConfig) Validate() error {
+	if err := c.BenchSequencer.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var ConfigDefault = Config{
@@ -244,6 +268,7 @@ var ConfigDefault = Config{
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
 
+	Dangerous:     DefaultDangerousConfig,
 	AddressFilter: addressfilter.DefaultConfig,
 }
 
@@ -309,6 +334,7 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
+	var benchSequencerService interface{}
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
@@ -316,6 +342,9 @@ func CreateExecutionNode(
 			return nil, err
 		}
 		txPublisher = sequencer
+		if config.Dangerous.BenchSequencer.Enable {
+			txPublisher, benchSequencerService = NewBenchSequencer(sequencer)
+		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)
@@ -444,6 +473,14 @@ func CreateExecutionNode(
 			Service:       executionrpcserver.NewServer(execNode, execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
+		})
+	}
+
+	if benchSequencerService != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "benchseq",
+			Service:   benchSequencerService,
+			Public:    false,
 		})
 	}
 
