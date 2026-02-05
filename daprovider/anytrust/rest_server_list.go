@@ -16,6 +16,31 @@ import (
 
 const initialMaxRecurseDepth uint16 = 8
 
+func RestfulServerURLsFromListWithWait(ctx context.Context, listUrl string, connectionWait time.Duration) ([]string, error) {
+	connTimeout := time.After(connectionWait)
+	for {
+		urls, err := RestfulServerURLsFromList(ctx, listUrl)
+		if err == nil {
+			return urls, nil
+		}
+
+		if strings.Contains(err.Error(), "parse") ||
+			strings.Contains(err.Error(), "malformed") {
+			return nil, fmt.Errorf("%w: urls %s", err, urls)
+		}
+
+		select {
+		case <-connTimeout:
+			return nil, fmt.Errorf("timeout trying to connect lastError: %w", err)
+		case <-ctx.Done():
+			// Respect context cancellation during reconnect wait
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+			log.Info("Retrying to connect...")
+		}
+	}
+}
+
 // RestfulServerURLsFromList reads a list of Restful server URLs from a remote URL.
 // The contents at the remote URL are parsed into a series of whitespace-separated words.
 // Each word is interpreted as the URL of a Restful server, except that if a word is "LIST"

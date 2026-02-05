@@ -325,6 +325,54 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	Require(t, err)
 }
 
+// Test the special scenario introduced by EIP-6780
+// Since EIP-6780 behave differently for selfdestruct in constructor vs later calls,
+// we need to test both cases. This test covers selfdestruct in constructor.
+func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Fund sender account
+	builder.L2Info.GenerateAccount("Deployer")
+	builder.L2.TransferBalance(t, "Owner", "Deployer", big.NewInt(1e18), builder.L2Info)
+
+	// Create filtered beneficiary address
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
+
+	// Create non-filtered beneficiary address
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Set up address filter to block FilteredBeneficiary
+	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Test 1: Deploy contract that selfdestructs to filtered address in constructor should fail
+	auth := builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
+	auth.Value = big.NewInt(1e15) // Send some ETH to be transferred on selfdestruct
+	_, _, _, err := localgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, filteredAddr)
+	if err == nil {
+		t.Fatal("expected deployment with selfdestruct to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 2: Deploy contract that selfdestructs to non-filtered address should succeed
+	auth = builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
+	auth.Value = big.NewInt(1e15)
+	_, tx, _, err := localgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
 func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
