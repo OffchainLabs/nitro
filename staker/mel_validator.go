@@ -455,10 +455,25 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	}, endState, 0, nil
 }
 
-func (mv *MELValidator) FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap {
+func (mv *MELValidator) FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error) {
 	mv.msgPreimagesCacheMutex.RLock()
-	defer mv.msgPreimagesCacheMutex.RUnlock()
-	return mv.msgPreimagesCache[parentChainBlockNumber]
+	preimages, found := mv.msgPreimagesCache[parentChainBlockNumber]
+	mv.msgPreimagesCacheMutex.RUnlock()
+	if found {
+		return preimages, nil
+	}
+	// This Records msgPreimages to the msgPreimagesCache
+	_, _, _, err := mv.CreateNextValidationEntry(ctx, parentChainBlockNumber-1, l2BlockNum+1)
+	if err != nil {
+		return nil, err
+	}
+	mv.msgPreimagesCacheMutex.RLock()
+	preimages, found = mv.msgPreimagesCache[parentChainBlockNumber]
+	mv.msgPreimagesCacheMutex.RUnlock()
+	if !found {
+		return nil, errors.New("Couldn't add missing msg preimages to cache")
+	}
+	return preimages, nil
 }
 
 // ClearValidatedMsgPreimages trims the msgPreimagesCache by clearing out entries with parent

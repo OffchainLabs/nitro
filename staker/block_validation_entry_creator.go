@@ -83,7 +83,10 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	}
 	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
 	// Fetch and add the msg releated preimages
-	msgPreimages := m.melValidator.FetchMsgPreimages(melStateForMsg.ParentChainBlockNumber)
+	msgPreimages, err := m.melValidator.FetchMsgPreimages(ctx, uint64(position), melStateForMsg.ParentChainBlockNumber)
+	if err != nil {
+		return nil, created, err
+	}
 	validator.CopyPreimagesInto(preimages, msgPreimages)
 	endGlobalState := validator.GoGlobalState{
 		BlockHash:    executionResult.BlockHash,
