@@ -128,12 +128,7 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
 
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
-    let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
-    our_buf.copy_from_slice(&hash);
 
-    let our_ptr = our_buf.as_mut_ptr();
-    assert_eq!(our_ptr as usize % 32, 0);
     let preimage_type: PreimageType = preimage_type.try_into().expect("unsupported preimage type");
     let preimage_reader = match preimage_type {
         PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
