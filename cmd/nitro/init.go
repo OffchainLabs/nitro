@@ -624,7 +624,7 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 				if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
 					config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
 				}
-				wasmDb, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
+				wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 				if err != nil {
 					return nil, nil, err
 				}
