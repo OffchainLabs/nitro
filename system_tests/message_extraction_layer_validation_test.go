@@ -8,8 +8,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -24,6 +27,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	builder.nodeConfig.MELValidator.Enable = true
+	builder.nodeConfig.BlockValidator.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -71,4 +75,56 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 		t.Fatal("failed mel validation")
 	}
 	Require(t, melValidator.AdvanceValidations(ctx, doneEntry))
+
+	// Check if we have executed all messages.
+
+	// Create block validator.
+	errChan := make(chan error, 1)
+	cfgFetcher := func() *staker.BlockValidatorConfig {
+		cfg := builder.nodeConfig.BlockValidator
+		cfg.Enable = true
+		cfg.EnableMEL = true
+		return &cfg
+	}
+	blockValidator, err := staker.NewBlockValidator(
+		builder.L2.ConsensusNode.StatelessBlockValidator,
+		builder.L2.ConsensusNode.InboxTracker,
+		builder.L2.ConsensusNode.TxStreamer,
+		cfgFetcher,
+		errChan,
+		builder.L2.ConsensusNode.MessageExtractor,
+		melValidator,
+	)
+	Require(t, err)
+
+	// Create an entry.
+	entryCreator := staker.NewMELEnabledValidationEntryCreator(
+		melValidator, builder.L2.ConsensusNode.TxStreamer, builder.L2.ConsensusNode.MessageExtractor,
+	)
+	Require(t, err)
+
+	// Use the block recorder over the entry.
+	blockValidatorEntry, created, err := entryCreator.CreateBlockValidationEntry(ctx, entry.End, arbutil.MessageIndex(entry.End.PosInBatch))
+	Require(t, err)
+	if !created {
+		t.Fatal("validation entry not created")
+	}
+	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
+	Require(t, sbv.ValidationEntryRecord(ctx, blockValidatorEntry))
+
+	// Create a machine loader.
+	spawner, err := server_arb.NewArbitratorSpawner(nil, locator)
+	Require(t, err)
+
+	// Launch an execution run with the entry and await GetLastStep() of execution run.
+	execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), &validator.ValidationInput{}, true)
+
+	// Verify that the final global state matches the block hash of the native node at that message.
+	createdRun, err := execRun.Await(ctx)
+	Require(t, err)
+	lastStep, err := createdRun.GetLastStep().Await(ctx)
+	Require(t, err)
+	_ = lastStep
+	// TODO: Verify the block hash against the native execution of the node.
+	// Check the global MEL fields remain the same, but that we changed the blockhash and pos in batch.
 }
