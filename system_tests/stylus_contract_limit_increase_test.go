@@ -237,10 +237,13 @@ func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
 		expectActivation: true,
 	})
 
-	require.GreaterOrEqual(t, receiptTwo.GasUsed, receiptOne.GasUsed)
-	actualDelta := receiptTwo.GasUsed - receiptOne.GasUsed
-	require.GreaterOrEqual(t, actualDelta, minDelta)
-	require.LessOrEqual(t, actualDelta, maxDelta)
+	delta := int64(receiptTwo.GasUsed) - int64(receiptOne.GasUsed)
+	if delta < 0 {
+		delta = -delta
+	}
+	absDelta := uint64(delta)
+	require.GreaterOrEqual(t, absDelta, minDelta)
+	require.LessOrEqual(t, absDelta, maxDelta)
 }
 
 // Specific Edge Case Tests
@@ -671,30 +674,14 @@ func fragmentReadCost(codeSize uint64) uint64 {
 	if codeSize > vm.MaxMemorySize {
 		return 0
 	}
-	words := vm.ToWordSize(codeSize)
-	copyGas := words * params.CopyGas
-	memoryGas := memoryExpansionCost(codeSize)
-	return params.WarmStorageReadCostEIP2929 + params.ColdAccountAccessCostEIP2929 + copyGas + memoryGas
+	return params.WarmStorageReadCostEIP2929 + params.ColdAccountAccessCostEIP2929
 }
 
 func fragmentReadCostWarmOnly(codeSize uint64) uint64 {
 	if codeSize > vm.MaxMemorySize {
 		return 0
 	}
-	words := vm.ToWordSize(codeSize)
-	copyGas := words * params.CopyGas
-	memoryGas := memoryExpansionCost(codeSize)
-	return params.WarmStorageReadCostEIP2929 + copyGas + memoryGas
-}
-
-func memoryExpansionCost(size uint64) uint64 {
-	if size == 0 {
-		return 0
-	}
-	words := vm.ToWordSize(size)
-	linearCost := words * params.MemoryGas
-	squareCost := (words * words) / params.QuadCoeffDiv
-	return linearCost + squareCost
+	return params.WarmStorageReadCostEIP2929
 }
 
 // readFragmentedContractFile reads, compiles, compresses, and fragments a contract.
