@@ -6,6 +6,7 @@
 package wavmio
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -23,6 +24,10 @@ const IDX_SEND_ROOT = 1
 // u64
 const IDX_INBOX_POSITION = 0
 const IDX_POSITION_WITHIN_MESSAGE = 1
+
+// INITIAL_PREIMAGE_ALLOCATION is the initial allocation size. If the preimage is larger than this, more space will be
+// acquired and the remaining data (suffix) will be read.
+const INITIAL_PREIMAGE_ALLOCATION = 1024
 
 func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
@@ -72,10 +77,32 @@ func AdvanceInboxMessage() {
 }
 
 func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
-		hashUnsafe := unsafe.Pointer(&hash[0])
-		return resolveTypedPreimage(uint32(ty), hashUnsafe, offset, buf)
-	}), nil
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	preimage := make([]byte, 0, INITIAL_PREIMAGE_ALLOCATION)
+
+	// 1. Read the preimage prefix (up to INITIAL_PREIMAGE_ALLOCATION bytes)
+	preimageLenOrError := readPreimage(uint32(ty), hashUnsafe, unsafe.Pointer(&preimage[0]), 0, INITIAL_PREIMAGE_ALLOCATION)
+	// 2. Check for error
+	if preimageLenOrError < 0 {
+		return nil, errors.New("reading preimage failed")
+	}
+	preimageLen := preimageLenOrError
+
+	// 3. If the preimage fits within the initial allocation, return it
+	if preimageLen <= INITIAL_PREIMAGE_ALLOCATION {
+		return preimage[:preimageLenOrError], nil
+	}
+
+	// 4. Reallocate a buffer of the correct size
+	remainingLen := preimageLen - INITIAL_PREIMAGE_ALLOCATION
+	preimage = append(preimage, make([]byte, remainingLen)...)
+
+	// 5. Read the remaining preimage data (the suffix)
+	preimageLenOrErrorOnSuffix := readPreimage(uint32(ty), hashUnsafe, unsafe.Pointer(&preimage[INITIAL_PREIMAGE_ALLOCATION]), INITIAL_PREIMAGE_ALLOCATION, remainingLen)
+	if preimageLenOrErrorOnSuffix != preimageLen {
+		return nil, errors.New("reading preimage suffix failed")
+	}
+	return preimage, nil
 }
 
 func ValidateCertificate(ty arbutil.PreimageType, hash common.Hash) bool {
