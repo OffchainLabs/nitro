@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package client
+package gethexec
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-var DefaultConfig = rpcclient.ClientConfig{
+var DefaultTransactionFiltererRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
 	JWTSecret:                 "",
 	Retries:                   3,

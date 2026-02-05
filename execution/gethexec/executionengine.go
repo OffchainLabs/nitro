@@ -47,7 +47,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
-	transactionfiltererclient "github.com/offchainlabs/nitro/cmd/transaction-filterer/client"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -171,7 +170,7 @@ type ExecutionEngine struct {
 	runningMaintenance atomic.Bool
 
 	addressChecker               state.AddressChecker
-	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
+	transactionFiltererRPCClient *TransactionFiltererRPCClient
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -191,7 +190,7 @@ func NewExecutionEngine(
 	bc *core.BlockChain,
 	syncTillBlock uint64,
 	exposeMultiGas bool,
-	transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient,
+	transactionFiltererRPCClient *TransactionFiltererRPCClient,
 ) (*ExecutionEngine, error) {
 	execEngine := &ExecutionEngine{
 		bc:                           bc,

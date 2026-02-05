@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
-	transactionfiltererclient "github.com/offchainlabs/nitro/cmd/transaction-filterer/client"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
@@ -136,7 +135,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	AddressFilter:                addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient: transactionfiltererclient.DefaultConfig,
+	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -311,12 +310,12 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	var transactionFiltererRPCClient *transactionfiltererclient.TransactionFiltererRPCClient
+	var transactionFiltererRPCClient *TransactionFiltererRPCClient
 	if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
 		filtererConfigFetcher := func() *rpcclient.ClientConfig {
 			return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
 		}
-		transactionFiltererRPCClient = transactionfiltererclient.NewTransactionFiltererRPCClient(filtererConfigFetcher)
+		transactionFiltererRPCClient = NewTransactionFiltererRPCClient(filtererConfigFetcher)
 	}
 
 	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)
