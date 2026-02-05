@@ -237,11 +237,12 @@ func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
 		expectActivation: true,
 	})
 
-	delta := int64(receiptTwo.GasUsed) - int64(receiptOne.GasUsed)
-	if delta < 0 {
-		delta = -delta
+	var absDelta uint64
+	if receiptTwo.GasUsed >= receiptOne.GasUsed {
+		absDelta = receiptTwo.GasUsed - receiptOne.GasUsed
+	} else {
+		absDelta = receiptOne.GasUsed - receiptTwo.GasUsed
 	}
-	absDelta := uint64(delta)
 	require.GreaterOrEqual(t, absDelta, minDelta)
 	require.LessOrEqual(t, absDelta, maxDelta)
 }
