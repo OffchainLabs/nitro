@@ -173,32 +173,19 @@ impl JitProcessManager {
             return Err(anyhow!("Server is shutting down"));
         }
 
-        let machine_exists = {
-            let locked_machine = self.machines.read().await;
-            locked_machine.contains_key(&module_root)
-        };
-
-        // This should not happen and should be handled by availability layer + MachineLocator
-        if !machine_exists {
-            return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"));
-        }
-
-        // Clone the Arc while holding the read lock, then drop the lock immediately.
-        // This allows other threads to access the HashMap while we perform I/O operations.
-        let machine_arc = {
+        let machine = {
             let machines = self.machines.read().await;
-            machines.get(&module_root).cloned()
+            match machines.get(&module_root) {
+                // Clone the Arc while holding the read lock, then drop the lock immediately.
+                // This allows other threads to access the HashMap while we perform I/O operations.
+                Some(machine) => machine.clone(),
+                None => return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"))
+            }
         };
 
-        if let Some(sub_machine) = machine_arc {
-            sub_machine
-                .feed_machine(self.wasm_memory_usage_limit, request)
-                .await
-        } else {
-            Err(anyhow!(
-                "did not find machine with module root {module_root}"
-            ))
-        }
+        machine
+            .feed_machine(self.wasm_memory_usage_limit, request)
+            .await
     }
 
     pub async fn complete_machines(&self) -> Result<()> {
