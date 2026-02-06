@@ -256,7 +256,7 @@ func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 	if err != nil {
 		log.Error("execution run keepalive failed", "err", err)
 	}
-	return time.Minute // TODO: configurable
+	return r.client.client.ExecKeepAliveInterval()
 }
 
 func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
