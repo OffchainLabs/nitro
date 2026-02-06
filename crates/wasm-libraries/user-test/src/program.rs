@@ -44,8 +44,12 @@ impl UserHost<VecReader> for Program {
         Cow::Owned(GLOBAL_STATE.lock().args.clone())
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        unimplemented!()
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Owned(GLOBAL_STATE.lock().outs.clone())
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        GLOBAL_STATE.lock().outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {

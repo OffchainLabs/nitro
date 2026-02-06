@@ -75,7 +75,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type A: EvmApi<DR>;
 
     fn args(&self) -> Cow<[u8]>;
-    fn outs(&mut self) -> &mut Vec<u8>;
+    fn outs(&self) -> Cow<[u8]>;
+    fn set_outs(&mut self, outs: Vec<u8>);
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
@@ -151,7 +152,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_ink(hostio::WRITE_RESULT_BASE_INK)?;
         self.pay_for_read(len)?;
         self.pay_for_read(len)?; // read from geth
-        *self.outs() = self.read_slice(ptr, len)?;
+        self.set_outs(self.read_slice(ptr, len)?);
         trace!("write_result", self, &[], &*self.outs())
     }
 

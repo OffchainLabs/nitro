@@ -234,8 +234,12 @@ impl UserHost<VecReader> for Program {
         Cow::Borrowed(&self.args)
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        &mut self.outs
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.outs)
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        self.outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
