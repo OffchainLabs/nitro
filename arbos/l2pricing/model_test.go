@@ -296,8 +296,12 @@ func allResourceWeights() map[uint8]uint64 {
 func BenchmarkUpdatePricing_Legacy(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
-	_ = pricing.SetSpeedLimitPerSecond(InitialSpeedLimitPerSecondV6)
-	_ = pricing.gasBacklog.Set(benchmarkBacklog)
+	if err := pricing.SetSpeedLimitPerSecond(InitialSpeedLimitPerSecondV6); err != nil {
+		b.Fatal(err)
+	}
+	if err := pricing.gasBacklog.Set(benchmarkBacklog); err != nil {
+		b.Fatal(err)
+	}
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -308,7 +312,9 @@ func BenchmarkUpdatePricing_Legacy(b *testing.B) {
 func BenchmarkUpdatePricing_SingleGas_1Constraint(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
-	_ = pricing.AddGasConstraint(7_000_000, 12, benchmarkBacklog)
+	if err := pricing.AddGasConstraint(7_000_000, 12, benchmarkBacklog); err != nil {
+		b.Fatal(err)
+	}
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -322,7 +328,9 @@ func BenchmarkUpdatePricing_SingleGas_6Constraints(b *testing.B) {
 	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
 	windows := []uint64{9, 52, 329, 2_105, 13_485, 86_400}
 	for i := range targets {
-		_ = pricing.AddGasConstraint(targets[i], windows[i], benchmarkBacklog)
+		if err := pricing.AddGasConstraint(targets[i], windows[i], benchmarkBacklog); err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	b.ResetTimer()
@@ -335,7 +343,9 @@ func BenchmarkUpdatePricing_MultiGas_1Constraint(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
 	weights := allResourceWeights()
-	_ = pricing.AddMultiGasConstraint(7_000_000, 12, benchmarkBacklog, weights)
+	if err := pricing.AddMultiGasConstraint(7_000_000, 12, benchmarkBacklog, weights); err != nil {
+		b.Fatal(err)
+	}
 
 	b.ResetTimer()
 	for b.Loop() {
@@ -350,7 +360,9 @@ func BenchmarkUpdatePricing_MultiGas_6Constraint(b *testing.B) {
 	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
 	windows := []uint32{9, 52, 329, 2_105, 13_485, 86_400}
 	for i := range targets {
-		_ = pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights)
+		if err := pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights); err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	b.ResetTimer()
@@ -369,7 +381,9 @@ func BenchmarkUpdatePricing_MultiGas_42Constraint(b *testing.B) {
 			uint8(resource): 1,
 		}
 		for i := range targets {
-			_ = pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights)
+			if err := pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 
