@@ -63,7 +63,7 @@ impl HostioTest {
     }
 
     fn return_data_size() -> Result<U256> {
-        unsafe { Ok(hostio::return_data_size().try_into().unwrap()) }
+        Ok(hostio::return_data_size().try_into().unwrap())
     }
 
     fn emit_log(data: Bytes, n: i8, t1: B256, t2: B256, t3: B256, t4: B256) -> Result<()> {

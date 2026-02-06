@@ -14,7 +14,6 @@ static mut RNG: Option<Pcg32> = None;
 pub struct StaticMem;
 pub struct StaticExecEnv;
 
-pub static mut STATIC_MEM: StaticMem = StaticMem;
 pub static mut STATIC_ENV: StaticExecEnv = StaticExecEnv;
 
 extern "C" {

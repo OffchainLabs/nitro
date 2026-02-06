@@ -4,7 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // TODO: require safety docs
 #![no_std]
 
-use caller_env::{self, wasip1_stub::Errno, GuestPtr};
+use caller_env::{self, wasip1_stub::Errno, GuestPtr, static_caller::StaticMem};
 use paste::paste;
 use wee_alloc::WeeAlloc;
 
@@ -39,7 +39,7 @@ macro_rules! wrap {
                 #[no_mangle]
                 pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::wasip1_stub::$func_name(
-                        &mut caller_env::static_caller::STATIC_MEM,
+                        &mut StaticMem,
                         &mut caller_env::static_caller::STATIC_ENV,
                         $($arg_name),*
                     )
