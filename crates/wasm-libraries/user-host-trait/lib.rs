@@ -142,7 +142,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_ink(hostio::READ_ARGS_BASE_INK)?;
         self.pay_for_write(self.args().len() as u32)?;
         self.write_slice(ptr, &self.args())?;
-        trace!("read_args", self, &*self.args(), &[])
+        trace!("read_args", self, &[], &*self.args())
     }
 
     /// Writes the final return data. If not called before the program exists, the return data will
@@ -153,7 +153,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.pay_for_read(len)?;
         self.pay_for_read(len)?; // read from geth
         self.set_outs(self.read_slice(ptr, len)?);
-        trace!("write_result", self, &[], &*self.outs())
+        trace!("write_result", self, &*self.outs(), &[])
     }
 
     /// Exits program execution early with the given status code.
