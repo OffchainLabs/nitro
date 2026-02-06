@@ -291,6 +291,8 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 					"txHashes", d.waitingForFilteredTx.TxHashes,
 					"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
 					"waitedFor", time.Since(d.waitingForFilteredTx.FirstSeen))
+				// Ignore error since filterer RPC client could be missing
+				_ = d.exec.UnfilterTxHashes(d.waitingForFilteredTx.TxHashes)
 				d.waitingForFilteredTx = nil
 				delayedSequencerFilteredTxWaitSeconds.Update(0)
 			}

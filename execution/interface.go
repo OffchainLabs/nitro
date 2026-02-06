@@ -86,6 +86,7 @@ type ExecutionSequencer interface {
 	Synced(ctx context.Context) bool
 	FullSyncProgressMap(ctx context.Context) map[string]interface{}
 	IsTxHashInOnchainFilter(txHash common.Hash) (bool, error)
+	UnfilterTxHashes(txHashes []common.Hash) error
 }
 
 // needed for batch poster

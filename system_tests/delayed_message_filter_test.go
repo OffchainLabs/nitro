@@ -310,6 +310,13 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	senderBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
+
+	// Verify tx hash was removed from on-chain filter
+	arbFilteredTxManager, err := precompilesgen.NewArbFilteredTransactionsManager(types.ArbFilteredTransactionsManagerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	isFiltered, err := arbFilteredTxManager.IsTransactionFiltered(nil, txHash)
+	require.NoError(t, err)
+	require.False(t, isFiltered, "tx hash should be removed from on-chain filter after bypass")
 }
 
 // TestDelayedMessageFilterBlocksSubsequent verifies that messages behind filtered one are blocked.
