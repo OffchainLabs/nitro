@@ -4,7 +4,8 @@
 use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
 use rand::RngCore;
-use std::cell::RefCell;
+use core::cell::RefCell;
+use core::cell::OnceCell;
 
 extern crate alloc;
 
@@ -13,9 +14,12 @@ pub struct StaticMem;
 /// Static execution environment for Go runtime in WAVM. Not thread-safe!
 pub struct StaticExecEnv;
 
-thread_local! {
-    static GO_RUNTIME_STATE: RefCell<GoRuntimeState> = RefCell::new(GoRuntimeState::default());
-}
+// This wrapper makes the OnceCell "Sync" so it can live in a static - this is safe, because this is
+// only used in single-threaded environment.
+#[derive(Default)]
+struct GlobalSafe<T>(T);
+unsafe impl<T> Sync for GlobalSafe<T> {}
+static GO_RUNTIME_STATE: GlobalSafe<OnceCell<RefCell<GoRuntimeState>>> = GlobalSafe(OnceCell::new());
 
 extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
@@ -99,17 +103,23 @@ impl MemAccess for StaticMem {
     }
 }
 
+impl StaticExecEnv {
+    fn get_state(&self) -> &RefCell<GoRuntimeState> {
+        GO_RUNTIME_STATE.0.get_or_init(Default::default)
+    }
+}
+
 impl ExecEnv for StaticExecEnv {
     fn advance_time(&mut self, delta: u64) {
-        GO_RUNTIME_STATE.with_borrow_mut(|state| state.time += delta);
+        self.get_state().borrow_mut().time += delta;
     }
 
     fn get_time(&self) -> u64 {
-        GO_RUNTIME_STATE.with_borrow(|state| state.time)
+        self.get_state().borrow().time
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        GO_RUNTIME_STATE.with_borrow_mut(|state| state.rng.next_u32())
+        self.get_state().borrow_mut().rng.next_u32()
     }
 
     fn print_string(&mut self, _data: &[u8]) {
