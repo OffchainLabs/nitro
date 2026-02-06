@@ -53,7 +53,7 @@ jobs:
         run: make -j wasm-ci-build
 
       - name: Prepare replay.wasm env and JIT binary
-        run: make build-replay-wasm && make build-jit
+        run: make build-replay-env && make build-jit
 
       - name: Clippy check
         run: cargo clippy --all -- -D warnings -A static_mut_refs
