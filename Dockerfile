@@ -107,7 +107,7 @@ WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang wabt && \
-    cargo install --force cbindgen --version 0.24.3
+    cargo install --force cbindgen --version 0.29.2
 COPY Cargo.* ./
 COPY ./Makefile ./
 COPY crates/ crates/
