@@ -3,9 +3,9 @@
 
 use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
-use rand::RngCore;
-use core::cell::RefCell;
 use core::cell::OnceCell;
+use core::cell::RefCell;
+use rand::RngCore;
 
 extern crate alloc;
 
@@ -19,7 +19,8 @@ pub struct StaticExecEnv;
 #[derive(Default)]
 struct GlobalSafe<T>(T);
 unsafe impl<T> Sync for GlobalSafe<T> {}
-static GO_RUNTIME_STATE: GlobalSafe<OnceCell<RefCell<GoRuntimeState>>> = GlobalSafe(OnceCell::new());
+static GO_RUNTIME_STATE: GlobalSafe<OnceCell<RefCell<GoRuntimeState>>> =
+    GlobalSafe(OnceCell::new());
 
 extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
