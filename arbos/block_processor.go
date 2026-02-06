@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -246,6 +247,10 @@ func ProduceBlockAdvanced(
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
+
+	if chainConfig.DebugMode() && header.Number.Uint64() == chainConfig.ArbitrumChainParams.DebugBlock {
+		debugblock.DebugBlockStateUpdate(statedb, expectedBalanceDelta, chainConfig)
+	}
 
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order

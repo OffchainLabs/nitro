@@ -94,6 +94,7 @@ COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./go-ethereum ./go-ethereum
+COPY ./experimental/debugblock ./experimental/debugblock
 COPY scripts/remove_reference_types.sh scripts/
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/contracts-local/out/precompiles/ contracts-local/out/precompiles/
@@ -352,6 +353,12 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
+USER user
+
+FROM nitro-node AS nitro-node-experimental
+USER root
+COPY --from=node-builder /workspace/target/bin/nitro-experimental /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/nitro-experimental" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines"]
 USER user
 
 FROM nitro-node AS nitro-node-default
