@@ -290,7 +290,7 @@ func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
 	if err != nil {
 		return nil, err
 	}
-	posInBatch := assumeMessage - prevCount
+	posInBatch := assumeMessage - prevCount + 1
 	return &protocol.GoGlobalState{
 		BlockHash:  result.BlockHash,
 		SendRoot:   result.SendRoot,
