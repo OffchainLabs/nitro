@@ -285,6 +285,14 @@ func setupBenchmarkPricingModel(b *testing.B) *L2PricingState {
 	return OpenL2PricingState(sto, params.ArbosVersion_MultiGasConstraintsVersion)
 }
 
+func allResourceWeights() map[uint8]uint64 {
+	weights := map[uint8]uint64{}
+	for resource := multigas.ResourceKindComputation; resource < multigas.NumResourceKind; resource++ {
+		weights[uint8(resource)] = 1
+	}
+	return weights
+}
+
 func BenchmarkUpdatePricing_Legacy(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
@@ -326,10 +334,7 @@ func BenchmarkUpdatePricing_SingleGas_6Constraints(b *testing.B) {
 func BenchmarkUpdatePricing_MultiGas_1Constraint(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
-	weights := map[uint8]uint64{}
-	for resource := multigas.ResourceKindComputation; resource < multigas.NumResourceKind; resource++ {
-		weights[uint8(resource)] = 1
-	}
+	weights := allResourceWeights()
 	_ = pricing.AddMultiGasConstraint(7_000_000, 12, benchmarkBacklog, weights)
 
 	b.ResetTimer()
@@ -341,10 +346,7 @@ func BenchmarkUpdatePricing_MultiGas_1Constraint(b *testing.B) {
 func BenchmarkUpdatePricing_MultiGas_6Constraint(b *testing.B) {
 	pricing := setupBenchmarkPricingModel(b)
 
-	weights := map[uint8]uint64{}
-	for resource := multigas.ResourceKindComputation; resource < multigas.NumResourceKind; resource++ {
-		weights[uint8(resource)] = 1
-	}
+	weights := allResourceWeights()
 	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
 	windows := []uint32{9, 52, 329, 2_105, 13_485, 86_400}
 	for i := range targets {
