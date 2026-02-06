@@ -165,7 +165,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 /// `request_id` MUST be last request id returned from start_program or send_response.
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
-    let (req_type, len) = Program::current().request_handler().get_request_meta(id);
+    let (req_type, len) = Program::act_on_current(|p|p.request_handler().get_request_meta(id));
     if len_ptr != GuestPtr(0) {
         StaticMem.write_u32(len_ptr, len as u32);
     }
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 /// `data_ptr` MUST point to a buffer of at least the length returned by `get_request`
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
-    let (_, data) = Program::current().request_handler().take_request(id);
+    let (_, data) = Program::act_on_current(|p|p.request_handler().take_request(id));
     StaticMem.write_slice(data_ptr, &data);
 }
 
@@ -196,13 +196,14 @@ pub unsafe extern "C" fn programs__set_response(
     raw_data_ptr: GuestPtr,
     raw_data_len: usize,
 ) {
-    let program = Program::current();
-    program.request_handler().set_response(
-        id,
-        StaticMem.read_slice(result_ptr, result_len),
-        StaticMem.read_slice(raw_data_ptr, raw_data_len),
-        Gas(gas),
-    );
+    Program::act_on_current(|program| {
+        program.request_handler().set_response(
+            id,
+            StaticMem.read_slice(result_ptr, result_len),
+            StaticMem.read_slice(raw_data_ptr, raw_data_len),
+            Gas(gas),
+        )
+    });
 }
 
 // removes the last created program
@@ -217,11 +218,12 @@ pub unsafe extern "C" fn programs__pop() {
 // module MUST be the last one returned from new_program
 #[no_mangle]
 pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
-    let program = Program::current();
-    if program.module != module {
-        panic!("args_len requested for wrong module");
-    }
-    program.args_len()
+    Program::act_on_current(|program| {
+        if program.module != module {
+            panic!("args_len requested for wrong module");
+        }
+        program.args_len()
+    })
 }
 
 /// used by program-exec
@@ -230,36 +232,37 @@ pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
 pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind) -> u32 {
     use UserOutcomeKind::*;
 
-    let program = Program::current();
-    let module = program.module;
-    let mut outs = program.outs.as_slice();
-    let mut ink_left = Ink(program_ink_left(module));
+    Program::act_on_current(|program| {
+        let module = program.module;
+        let mut outs = program.outs.as_slice();
+        let mut ink_left = Ink(program_ink_left(module));
 
-    // apply any early exit codes
-    if let Some(early) = program.early_exit {
-        status = early;
-    }
+        // apply any early exit codes
+        if let Some(early) = program.early_exit {
+            status = early;
+        }
 
-    // check if instrumentation stopped the program
-    if program_ink_status(module) != 0 {
-        status = OutOfInk;
-        outs = &[];
-        ink_left = Ink(0);
-    }
-    if program_stack_left(module) == 0 {
-        status = OutOfStack;
-        outs = &[];
-        ink_left = Ink(0);
-    }
+        // check if instrumentation stopped the program
+        if program_ink_status(module) != 0 {
+            status = OutOfInk;
+            outs = &[];
+            ink_left = Ink(0);
+        }
+        if program_stack_left(module) == 0 {
+            status = OutOfStack;
+            outs = &[];
+            ink_left = Ink(0);
+        }
 
-    let gas_left = program.config.pricing.ink_to_gas(ink_left);
+        let gas_left = program.config.pricing.ink_to_gas(ink_left);
 
-    let mut output = Vec::with_capacity(8 + outs.len());
-    output.extend(gas_left.to_be_bytes());
-    output.extend(outs);
-    program
-        .request_handler()
-        .set_request(status as u32, &output)
+        let mut output = Vec::with_capacity(8 + outs.len());
+        output.extend(gas_left.to_be_bytes());
+        output.extend(outs);
+        program
+            .request_handler()
+            .set_request(status as u32, &output)
+    })
 }
 
 /// Creates a `StylusConfig` from its component parts.

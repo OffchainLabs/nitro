@@ -13,6 +13,7 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
+use std::cell::RefCell;
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
@@ -34,16 +35,18 @@ impl From<MemoryBoundsError> for eyre::ErrReport {
     }
 }
 
-/// The list of active programs. The current program is always the last.
-///
-/// Note that this data-structure may re-alloc while references to [`Program`] are held.
-/// This is sound due to [`Box`] providing a level of indirection.
-///
-/// Normal Rust rules would suggest using a [`Vec`] of cells would be better. The issue is that,
-/// should an error guard recover, this WASM will reset to an earlier state but with the current
-/// memory. This means that stack unwinding won't happen, rendering these primitives unhelpful.
-#[allow(clippy::vec_box)]
-static mut PROGRAMS: Vec<Box<Program>> = vec![];
+thread_local! {
+    /// The list of active programs. The current program is always the last.
+    ///
+    /// Note that this data-structure may re-alloc while references to [`Program`] are held.
+    /// This is sound due to [`Box`] providing a level of indirection.
+    ///
+    /// Normal Rust rules would suggest using a [`Vec`] of cells would be better. The issue is that,
+    /// should an error guard recover, this WASM will reset to an earlier state but with the current
+    /// memory. This means that stack unwinding won't happen, rendering these primitives unhelpful.
+    #[allow(clippy::vec_box)]
+    static PROGRAMS: RefCell<Vec<Box<Program>>> = Default::default();
+}
 
 static mut LAST_REQUEST_ID: u32 = 0x10000;
 
@@ -175,19 +178,20 @@ impl Program {
             config,
             early_exit: None,
         };
-        unsafe { PROGRAMS.push(Box::new(program)) }
+        PROGRAMS.with_borrow_mut(|ps|ps.push(Box::new(program)))
     }
 
     /// Removes the current program
     pub fn pop() {
-        unsafe {
-            PROGRAMS.pop().expect("no program");
-        }
+        PROGRAMS.with_borrow_mut(|ps|ps.pop().expect("no program"));
     }
 
-    /// Provides a reference to the current program.
-    pub fn current() -> &'static mut Self {
-        unsafe { PROGRAMS.last_mut().expect("no program") }
+    /// Performs an action on the current program.
+    pub fn act_on_current<R>(f: impl FnOnce(&mut Program) -> R) -> R {
+        PROGRAMS.with_borrow_mut(|ps|{
+            let current_program = ps.last_mut().expect("no program");
+            f(current_program)
+        })
     }
 
     /// Reads the program's memory size in pages.
