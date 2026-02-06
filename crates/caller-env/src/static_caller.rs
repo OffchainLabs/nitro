@@ -1,16 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{create_pcg, ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
+use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
 use std::cell::RefCell;
 use rand::RngCore;
-use rand_pcg::Pcg32;
 
 extern crate alloc;
-
-static mut TIME: u64 = 0;
-static mut RNG: Option<Pcg32> = None;
 
 pub struct StaticMem;
 pub struct StaticExecEnv;
