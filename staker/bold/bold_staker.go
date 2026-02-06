@@ -267,8 +267,8 @@ func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
 	if b.config.Dangerous.AssumeValid == 0 {
 		return nil, nil
 	}
-	assumeMessage := arbutil.MessageIndex(b.config.Dangerous.AssumeValid)
-	result, err := b.inboxStreamer.ResultAtMessageIndex(assumeMessage)
+	blockMessage := arbutil.MessageIndex(b.config.Dangerous.AssumeValid)
+	result, err := b.inboxStreamer.ResultAtMessageIndex(blockMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +276,8 @@ func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
 	if result.BlockHash != expectedHash {
 		return nil, fmt.Errorf("unexpected assume-valid hash, expected: %v, found: %v", expectedHash, result.BlockHash)
 	}
-	batch, found, err := b.inboxTracker.FindInboxBatchContainingMessage(assumeMessage)
+	afterStateMessage := blockMessage + 1
+	batch, found, err := b.inboxTracker.FindInboxBatchContainingMessage(afterStateMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +291,7 @@ func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
 	if err != nil {
 		return nil, err
 	}
-	posInBatch := assumeMessage - prevCount + 1
+	posInBatch := afterStateMessage - prevCount
 	return &protocol.GoGlobalState{
 		BlockHash:  result.BlockHash,
 		SendRoot:   result.SendRoot,
