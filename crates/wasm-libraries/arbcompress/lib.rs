@@ -4,7 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
 use brotli::{BrotliStatus, Dictionary};
-use caller_env::{self, GuestPtr, static_caller::StaticMem};
+use caller_env::{self, GuestPtr, static_caller::{StaticExecEnv, StaticMem}};
 use paste::paste;
 
 macro_rules! wrap {
@@ -15,7 +15,7 @@ macro_rules! wrap {
                 pub unsafe extern "C" fn [<arbcompress__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::brotli::$func_name(
                         &mut StaticMem,
-                        &mut caller_env::static_caller::STATIC_ENV,
+                        &mut StaticExecEnv,
                         $($arg_name),*
                     )
                 }

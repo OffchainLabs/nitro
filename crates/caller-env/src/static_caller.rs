@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{create_pcg, ExecEnv, GuestPtr, MemAccess};
+use crate::{create_pcg, ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
+use std::cell::RefCell;
 use rand::RngCore;
 use rand_pcg::Pcg32;
 
@@ -14,7 +15,9 @@ static mut RNG: Option<Pcg32> = None;
 pub struct StaticMem;
 pub struct StaticExecEnv;
 
-pub static mut STATIC_ENV: StaticExecEnv = StaticExecEnv;
+thread_local! {
+    static GO_RUNTIME_STATE: RefCell<GoRuntimeState> = RefCell::new(GoRuntimeState::default());
+}
 
 extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
@@ -105,14 +108,14 @@ impl ExecEnv for StaticExecEnv {
     }
 
     fn get_time(&self) -> u64 {
-        unsafe { TIME }
+        GO_RUNTIME_STATE.with_borrow(|state| state.time)
     }
 
     fn advance_time(&mut self, delta: u64) {
-        unsafe { TIME += delta }
+        GO_RUNTIME_STATE.with_borrow_mut(|state| state.time += delta);
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        unsafe { RNG.get_or_insert_with(create_pcg) }.next_u32()
+        GO_RUNTIME_STATE.with_borrow_mut(|state| state.rng.next_u32())
     }
 }
