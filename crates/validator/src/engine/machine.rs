@@ -23,6 +23,8 @@ use crate::engine::config::{JitManagerConfig, ModuleRoot};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::net::TcpListener;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{
     env::{self},
     path::{Path, PathBuf},
@@ -32,8 +34,6 @@ use std::{
         Arc,
     },
 };
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio::{
@@ -48,7 +48,7 @@ use validation::{GoGlobalState, ValidationInput};
 pub struct JitMachine {
     /// Handler to jit binary stdin. Instead of using Mutex<> for the entire
     /// JitMachine we chose to use a more granular Mutex<> to avoid contention
-    pub process_stdin: Mutex<Option<ChildStdin>>,
+    pub process_stdin: Mutex<ChildStdin>,
     /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown
     pub process: Mutex<Child>,
 }
@@ -74,17 +74,12 @@ impl JitMachine {
         let address_str = format!("{addr}\n");
 
         // 3. Send TCP connection via stdin pipe
-        {
-            let mut locked_process_stdin = self.process_stdin.lock().await;
-            if let Some(stdin) = locked_process_stdin.as_mut() {
-                stdin
-                    .write_all(address_str.as_bytes())
-                    .await
-                    .context("failed to write address to jit stdin")?;
-            } else {
-                return Err(anyhow!("JIT machine stdin is not available"));
-            }
-        }
+        self.process_stdin
+            .lock()
+            .await
+            .write_all(address_str.as_bytes())
+            .await
+            .context("failed to write address to jit stdin")?;
 
         // 4. Wait for the child to call us back
         let (mut conn, _) = listener
@@ -114,11 +109,7 @@ impl JitMachine {
 
     pub async fn complete_machine(&self) -> Result<()> {
         // Close stdin. This sends EOF to the child process, signaling it to stop.
-        // We take the Option to ensure it's dropped and cannot be used again.
-        let mut locked_process_stdin = self.process_stdin.lock().await;
-        if let Some(stdin) = locked_process_stdin.take() {
-            drop(stdin);
-        }
+        drop(self.process_stdin.lock().await);
 
         let mut locked_process = self.process.lock().await;
         locked_process
@@ -250,7 +241,7 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
         .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
 
     let sub_machine = JitMachine {
-        process_stdin: Mutex::new(Some(stdin)),
+        process_stdin: Mutex::new(stdin),
         process: Mutex::new(child),
     };
 
@@ -261,6 +252,6 @@ fn ensure_process_is_alive(p: &mut Child) -> Result<()> {
     match p.try_wait() {
         Ok(Some(status)) => Err(anyhow!("JIT process has exited with status: {status}")),
         Ok(None) => Ok(()),
-        Err(err) => Err(anyhow!("failed to check jit process status: {err}"))
+        Err(err) => Err(anyhow!("failed to check jit process status: {err}")),
     }
 }
