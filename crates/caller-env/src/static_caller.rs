@@ -98,20 +98,20 @@ impl MemAccess for StaticMem {
 }
 
 impl ExecEnv for StaticExecEnv {
-    fn print_string(&mut self, _data: &[u8]) {
-        // printing is done by arbitrator machine host_call_hook
-        // capturing the fd_write call directly
+    fn advance_time(&mut self, delta: u64) {
+        GO_RUNTIME_STATE.with_borrow_mut(|state| state.time += delta);
     }
 
     fn get_time(&self) -> u64 {
         GO_RUNTIME_STATE.with_borrow(|state| state.time)
     }
 
-    fn advance_time(&mut self, delta: u64) {
-        GO_RUNTIME_STATE.with_borrow_mut(|state| state.time += delta);
-    }
-
     fn next_rand_u32(&mut self) -> u32 {
         GO_RUNTIME_STATE.with_borrow_mut(|state| state.rng.next_u32())
+    }
+
+    fn print_string(&mut self, _data: &[u8]) {
+        // printing is done by arbitrator machine host_call_hook
+        // capturing the fd_write call directly
     }
 }
