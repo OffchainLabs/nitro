@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, arbcrypto, caller_env::GoRuntimeState, prepare::prepare_env_from_json, program,
+    arbcompress, arbcrypto, prepare::prepare_env_from_json, program,
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
 };
 use arbutil::{Bytes32, PreimageType};
@@ -24,6 +24,7 @@ use wasmer::{
     RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
+use caller_env::GoRuntimeState;
 
 pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let mut store = match opts.validator.cranelift {
