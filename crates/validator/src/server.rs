@@ -160,8 +160,10 @@ mod tests {
             "server",
             "--module-root",
             "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "--binary",
+            "../../target/machines/latest/replay.wasm", // CWD in unit tests is the package dir
         ];
-        if let Some(mut extra) = additional_args {
+        if let Some(extra) = additional_args {
             args = [&args[..], &extra[..]].concat();
         }
 
