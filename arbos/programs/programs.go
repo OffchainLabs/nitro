@@ -418,15 +418,8 @@ func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.A
 		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", words*gethParams.CopyGas)
 		return vm.ErrGasUintOverflow
 	}
-	if amount := cost.Get(multigas.ResourceKindComputation); amount != 0 {
-		if err := burner.Burn(multigas.ResourceKindComputation, amount); err != nil {
-			return err
-		}
-	}
-	if amount := cost.Get(multigas.ResourceKindStorageAccess); amount != 0 {
-		if err := burner.Burn(multigas.ResourceKindStorageAccess, amount); err != nil {
-			return err
-		}
+	if err := burner.BurnMultiGas(cost); err != nil {
+		return err
 	}
 	return nil
 }
