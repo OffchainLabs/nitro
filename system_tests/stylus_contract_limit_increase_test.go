@@ -670,24 +670,15 @@ func TestArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
 // Utils
 
 func fragmentReadCost(codeSize uint64) uint64 {
-	if codeSize > vm.MaxMemorySize {
-		return 0
-	}
 	return params.WarmStorageReadCostEIP2929 + params.ColdAccountAccessCostEIP2929
 }
 
 func fragmentReadCostWarmOnly(codeSize uint64) uint64 {
-	if codeSize > vm.MaxMemorySize {
-		return 0
-	}
 	return params.WarmStorageReadCostEIP2929
 }
 
 func fragmentCopyCost(codeSize uint64) uint64 {
-	if codeSize > vm.MaxMemorySize {
-		return 0
-	}
-	return vm.ToWordSize(codeSize) * params.CopyGas
+	return programs.ToWordSize(codeSize) * params.CopyGas
 }
 
 func absDiffUint64(left uint64, right uint64) uint64 {

@@ -6,10 +6,12 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	gethMath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -291,9 +293,18 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 	}
 }
 
+// toWordSize returns the ceiled word size required for memory expansion.
+func ToWordSize(size uint64) uint64 {
+	if size > math.MaxUint64-31 {
+		return math.MaxUint64/32 + 1
+	}
+
+	return (size + 31) / 32
+}
+
 func evmMemoryCost(size uint64) uint64 {
 	// It would take 100GB to overflow this calculation, so no need to worry about that
-	words := vm.ToWordSize(size)
+	words := ToWordSize(size)
 	linearCost := words * gethParams.MemoryGas
 	squareCost := (words * words) / gethParams.QuadCoeffDiv
 	return linearCost + squareCost
@@ -399,10 +410,6 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 
 // chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
 func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
-	if codeSize > vm.MaxMemorySize {
-		return vm.ErrGasUintOverflow
-	}
-
 	// charge access gas
 	var cost multigas.MultiGas
 	if statedb.AddressInAccessList(addr) {
@@ -412,10 +419,14 @@ func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.A
 		cost = multigas.StorageAccessGas(gethParams.ColdAccountAccessCostEIP2929)
 	}
 	// charge copy gas
-	words := vm.ToWordSize(codeSize)
-	var overflow bool
-	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, words*gethParams.CopyGas); overflow {
-		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", words*gethParams.CopyGas)
+	words := ToWordSize(codeSize)
+	copyGas, overflow := gethMath.SafeMul(words, gethParams.CopyGas)
+	if overflow {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "words", words, "copyGas", gethParams.CopyGas)
+		return vm.ErrGasUintOverflow
+	}
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, copyGas); overflow {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", copyGas)
 		return vm.ErrGasUintOverflow
 	}
 	if err := burner.BurnMultiGas(cost); err != nil {
