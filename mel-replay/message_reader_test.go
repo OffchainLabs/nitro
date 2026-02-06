@@ -1,0 +1,62 @@
+package melreplay_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/mel-replay"
+)
+
+func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
+	ctx := context.Background()
+	var messages []*arbostypes.MessageWithMetadata
+	numMsgs := uint64(10)
+	for i := range numMsgs {
+		messages = append(messages, &arbostypes.MessageWithMetadata{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					BlockNumber: i,
+					RequestId:   &common.Hash{},
+					L1BaseFee:   common.Big0,
+				},
+			},
+			DelayedMessagesRead: i,
+		})
+	}
+	state := &mel.State{}
+	for i := range uint64(5) {
+		require.NoError(t, state.AccumulateMessage(messages[i]))
+		state.MsgCount++
+	}
+	require.NoError(t, state.GenerateMessageMerklePartialsAndRoot())
+	// Simulate extracting of Messages in native mode to record preimages
+	preimages := make(daprovider.PreimagesMap)
+	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
+	newState := state.Clone()
+	for i := uint64(5); i < numMsgs; i++ {
+		require.NoError(t, newState.AccumulateMessage(messages[i]))
+		newState.MsgCount++
+	}
+	require.NoError(t, newState.GenerateMessageMerklePartialsAndRoot())
+
+	// Test reading in wasm mode
+	msgReader := melreplay.NewMessageReader(
+		melreplay.NewTypeBasedPreimageResolver(
+			arbutil.Keccak256PreimageType,
+			preimages,
+		),
+	)
+	for i := uint64(5); i < numMsgs; i++ {
+		msg, err := msgReader.Read(ctx, newState, i)
+		require.NoError(t, err)
+		require.Equal(t, msg.Hash(), messages[i].Hash())
+	}
+}

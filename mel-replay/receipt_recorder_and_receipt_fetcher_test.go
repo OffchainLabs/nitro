@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,17 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/mel-replay"
 )
 
-type mockPreimageResolver struct {
-	preimages map[common.Hash][]byte
-}
-
-func (m *mockPreimageResolver) ResolveTypedPreimage(preimageType arbutil.PreimageType, hash common.Hash) ([]byte, error) {
-	if preimage, exists := m.preimages[hash]; exists {
-		return preimage, nil
-	}
-	return nil, fmt.Errorf("preimage not found for hash: %s", hash.Hex())
-}
-
 func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	ctx := context.Background()
 	blockReader := &mockBlockReader{
@@ -43,7 +31,8 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	blockHeader := &types.Header{}
 	receipts := []*types.Receipt{}
 	txs := make([]*types.Transaction, 0)
-	for i := range uint64(50) {
+	numTxs := uint64(50)
+	for i := range numTxs {
 		txData := &types.DynamicFeeTx{
 			To:        &toAddr,
 			Nonce:     i,
@@ -85,15 +74,12 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 		}
 	}
 	preimages := make(daprovider.PreimagesMap)
-	recorder, err := melrecording.NewReceiptRecorder(blockReader, block.Hash(), preimages)
+	recordedLogsFetcher, err := melrecording.RecordReceipts(ctx, blockReader, block.Hash(), preimages)
 	require.NoError(t, err)
-	require.NoError(t, recorder.Initialize(ctx))
 
 	// Test recording of preimages
-	recordStart := uint(6)
-	recordEnd := uint(20)
-	for i := recordStart; i <= recordEnd; i++ {
-		logs, err := recorder.LogsForTxIndex(ctx, block.Hash(), i)
+	for i := range numTxs {
+		logs, err := recordedLogsFetcher.LogsForTxIndex(ctx, block.Hash(), uint(i))
 		require.NoError(t, err)
 		have, err := logs[0].MarshalJSON()
 		require.NoError(t, err)
@@ -103,8 +89,6 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	}
 
 	// Test reading of logs from the recorded preimages
-	require.NoError(t, recorder.CollectTxIndicesPreimage())
-	require.NoError(t, err)
 	receiptFetcher := melreplay.NewLogsFetcher(
 		block.Header(),
 		melreplay.NewTypeBasedPreimageResolver(
@@ -116,8 +100,8 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 	logs, err := receiptFetcher.LogsForBlockHash(ctx, block.Hash())
 	require.NoError(t, err)
 	// #nosec G115
-	if len(logs) != int(recordEnd-recordStart+1) {
-		t.Fatalf("number of logs from LogsForBlockHash mismatch. Want: %d, Got: %d", recordEnd-recordStart+1, len(logs))
+	if len(logs) != int(numTxs) {
+		t.Fatalf("number of logs from LogsForBlockHash mismatch. Want: %d, Got: %d", numTxs, len(logs))
 	}
 	for _, log := range logs {
 		have, err := log.MarshalJSON()
@@ -127,19 +111,13 @@ func TestRecordingOfReceiptPreimagesAndFetchingLogsFromPreimages(t *testing.T) {
 		require.Equal(t, want, have)
 	}
 	// Test LogsForTxIndex
-	for i := recordStart; i <= recordEnd; i++ {
-		logs, err := receiptFetcher.LogsForTxIndex(ctx, block.Hash(), i)
+	for i := range numTxs {
+		logs, err := receiptFetcher.LogsForTxIndex(ctx, block.Hash(), uint(i))
 		require.NoError(t, err)
 		have, err := logs[0].MarshalJSON()
 		require.NoError(t, err)
 		want, err := receipts[i].Logs[0].MarshalJSON()
 		require.NoError(t, err)
 		require.Equal(t, want, have)
-	}
-
-	// Logs fetching should fail for not recorded ones
-	_, err = receiptFetcher.LogsForTxIndex(ctx, block.Hash(), recordStart-1)
-	if err == nil || !strings.Contains(err.Error(), "preimage not found for hash") {
-		t.Fatalf("failed with unexpected error: %v", err)
 	}
 }
