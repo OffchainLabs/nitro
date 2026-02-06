@@ -49,14 +49,15 @@ pub struct JitMachine {
     /// Handler to jit binary stdin. Instead of using Mutex<> for the entire
     /// JitMachine we chose to use a more granular Mutex<> to avoid contention
     pub process_stdin: Mutex<ChildStdin>,
-    /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown
+    /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown.
+    /// RefCell<> is used for interior mutability when checking process status.
     pub process: Mutex<Child>,
 }
 
 impl JitMachine {
-    pub async fn ensure_alive(&mut self) -> Result<()> {
-        let mut process = self.process.lock().await;
-        ensure_process_is_alive(&mut process)
+    pub async fn ensure_alive(&self) -> Result<()> {
+        let mut child = self.process.lock().await;
+        ensure_process_is_alive(&mut child)
     }
 
     pub async fn feed_machine(
@@ -64,6 +65,9 @@ impl JitMachine {
         wasm_memory_usage_limit: u64,
         request: &ValidationInput,
     ) -> Result<GoGlobalState> {
+        // 0. Ensure process is alive
+        self.ensure_alive().await?;
+
         // 1. Create new TCP connection
         // Binding with a port number of 0 will request that the OS assigns a port to this listener.
         let listener = TcpListener::bind("127.0.0.1:0").context("failed to create TCP listener")?;
@@ -115,9 +119,7 @@ impl JitMachine {
         locked_process
             .kill()
             .await
-            .context("failed to kill jit process")?;
-
-        Ok(())
+            .context("failed to kill jit process")
     }
 }
 
@@ -240,12 +242,10 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
         .take()
         .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
 
-    let sub_machine = JitMachine {
+    Ok(JitMachine {
         process_stdin: Mutex::new(stdin),
         process: Mutex::new(child),
-    };
-
-    Ok(sub_machine)
+    })
 }
 
 fn ensure_process_is_alive(p: &mut Child) -> Result<()> {
