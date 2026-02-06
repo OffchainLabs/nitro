@@ -8,7 +8,9 @@ use rand::RngCore;
 
 extern crate alloc;
 
+/// Static memory access for Go runtime in WAVM. Not thread-safe!
 pub struct StaticMem;
+/// Static execution environment for Go runtime in WAVM. Not thread-safe!
 pub struct StaticExecEnv;
 
 thread_local! {
