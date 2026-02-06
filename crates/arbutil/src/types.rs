@@ -35,6 +35,19 @@ pub enum PreimageType {
     DACertificate = 3,
 }
 
+impl FromStr for PreimageType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Keccak256" | "0" => Ok(PreimageType::Keccak256),
+            "Sha2_256" | "1" => Ok(PreimageType::Sha2_256),
+            "EthVersionedHash" | "2" => Ok(PreimageType::EthVersionedHash),
+            "DACertificate" | "3" => Ok(PreimageType::DACertificate),
+            _ => Err(format!("unknown preimage type: {s}")),
+        }
+    }
+}
+
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(C)]
