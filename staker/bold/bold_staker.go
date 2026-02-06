@@ -87,8 +87,8 @@ type BoldConfig struct {
 }
 
 type DangerousBoldConfig struct {
-	AssumeValidHash string `koanf:"assume-valid-hash"`
-	AssumeValid     uint64 `koanf:"assume-valid"`
+	AssumeValidBlockhash string `koanf:"assume-valid-blockhash"`
+	AssumeValid          uint64 `koanf:"assume-valid"`
 }
 
 func (c *BoldConfig) Validate() error {
@@ -272,7 +272,7 @@ func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
 	if err != nil {
 		return nil, err
 	}
-	expectedHash := common.HexToHash(b.config.Dangerous.AssumeValidHash)
+	expectedHash := common.HexToHash(b.config.Dangerous.AssumeValidBlockhash)
 	if result.BlockHash != expectedHash {
 		return nil, fmt.Errorf("unexpected assume-valid hash, expected: %v, found: %v", expectedHash, result.BlockHash)
 	}
