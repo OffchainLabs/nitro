@@ -68,6 +68,12 @@ func (con ArbOwnerPublic) GetAllTransactionFilterers(c ctx, evm mech) ([]common.
 	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
+// GetFilteredFundsRecipient gets the address that receives funds redirected from filtered transactions.
+// Returns address(0) if not explicitly set (networkFeeAccount is used as fallback at runtime).
+func (con ArbOwnerPublic) GetFilteredFundsRecipient(c ctx, evm mech) (addr, error) {
+	return c.State.FilteredFundsRecipient()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
