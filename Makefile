@@ -166,7 +166,7 @@ all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
 .PHONY: build
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer nitro-experimental)
 	@printf $(done)
 
 .PHONY: build-node-deps
@@ -243,6 +243,11 @@ test-go-redis: test-go-deps
 	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
 	@printf $(done)
 
+.PHONY: test-go-experimental
+test-go-experimental: test-go-deps
+	.github/workflows/gotestsum.sh --timeout 120m --run TestExperimental --tags benchsequencer --nolog
+	@printf $(done)
+
 .PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
@@ -306,6 +311,10 @@ check-license-headers:
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro"
+
+# nitro built with experimental tooling enabled
+$(output_root)/bin/nitro-experimental: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) --tags benchsequencer -o $@ "$(CURDIR)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/deploy"
