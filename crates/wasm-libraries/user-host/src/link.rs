@@ -165,7 +165,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 /// `request_id` MUST be last request id returned from start_program or send_response.
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
-    let (req_type, len) = Program::act_on_current(|p|p.request_handler().get_request_meta(id));
+    let (req_type, len) = Program::act_on_current(|p| p.request_handler().get_request_meta(id));
     if len_ptr != GuestPtr(0) {
         StaticMem.write_u32(len_ptr, len as u32);
     }
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 /// `data_ptr` MUST point to a buffer of at least the length returned by `get_request`
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
-    let (_, data) = Program::act_on_current(|p|p.request_handler().take_request(id));
+    let (_, data) = Program::act_on_current(|p| p.request_handler().take_request(id));
     StaticMem.write_slice(data_ptr, &data);
 }
 

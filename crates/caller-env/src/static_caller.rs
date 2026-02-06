@@ -3,8 +3,8 @@
 
 use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
-use std::cell::RefCell;
 use rand::RngCore;
+use std::cell::RefCell;
 
 extern crate alloc;
 

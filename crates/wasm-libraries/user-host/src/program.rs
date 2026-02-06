@@ -13,10 +13,10 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
-use std::borrow::Cow;
-use std::cell::RefCell;
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
+use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
@@ -179,17 +179,17 @@ impl Program {
             config,
             early_exit: None,
         };
-        PROGRAMS.with_borrow_mut(|ps|ps.push(Box::new(program)))
+        PROGRAMS.with_borrow_mut(|ps| ps.push(Box::new(program)))
     }
 
     /// Removes the current program
     pub fn pop() {
-        PROGRAMS.with_borrow_mut(|ps|ps.pop().expect("no program"));
+        PROGRAMS.with_borrow_mut(|ps| ps.pop().expect("no program"));
     }
 
     /// Performs an action on the current program.
     pub fn act_on_current<R>(f: impl FnOnce(&mut Program) -> R) -> R {
-        PROGRAMS.with_borrow_mut(|ps|{
+        PROGRAMS.with_borrow_mut(|ps| {
             let current_program = ps.last_mut().expect("no program");
             f(current_program)
         })

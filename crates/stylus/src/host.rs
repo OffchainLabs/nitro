@@ -15,11 +15,11 @@ use arbutil::{
 use caller_env::GuestPtr;
 use eyre::Result;
 use prover::value::Value;
+use std::borrow::Cow;
 use std::{
     fmt::Display,
     mem::{self, MaybeUninit},
 };
-use std::borrow::Cow;
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 

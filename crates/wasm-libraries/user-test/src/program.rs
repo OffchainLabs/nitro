@@ -1,8 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::borrow::Cow;
-use std::cell::RefCell;
 use crate::{EVM_DATA, GLOBAL_STATE, KEYS};
 use arbutil::{
     benchmark::Benchmark,
@@ -16,6 +14,7 @@ use arbutil::{
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use eyre::{eyre, Result};
 use prover::programs::memory::MemoryModel;
+use std::borrow::Cow;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 

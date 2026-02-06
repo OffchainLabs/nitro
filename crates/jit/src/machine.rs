@@ -6,6 +6,7 @@ use crate::{
     stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
 };
 use arbutil::{Bytes32, PreimageType};
+use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
@@ -24,7 +25,6 @@ use wasmer::{
     RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
-use caller_env::GoRuntimeState;
 
 pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     let mut store = match opts.validator.cranelift {

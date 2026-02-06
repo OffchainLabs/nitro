@@ -4,7 +4,12 @@
 #![allow(clippy::missing_safety_doc)] // TODO: require safety docs
 #![no_std]
 
-use caller_env::{self, wasip1_stub::Errno, GuestPtr, static_caller::{StaticMem, StaticExecEnv}};
+use caller_env::{
+    self,
+    static_caller::{StaticExecEnv, StaticMem},
+    wasip1_stub::Errno,
+    GuestPtr,
+};
 use paste::paste;
 use wee_alloc::WeeAlloc;
 
