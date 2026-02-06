@@ -14,23 +14,18 @@ pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Resul
     run_server_internal(listener, state, shutdown_signal()).await
 }
 
-async fn run_server_internal<F>(
+async fn run_server_internal(
     listener: TcpListener,
     state: Arc<ServerState>,
-    shutdown: F,
-) -> Result<()>
-where
-    F: Future<Output = ()> + Send + 'static,
-{
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     axum::serve(listener, create_router().with_state(state.clone()))
         .with_graceful_shutdown(shutdown)
         .await?;
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.jit_manager.complete_machines().await?;
-
-    Ok(())
+    state.jit_manager.complete_machines().await
 }
 
 // Listens for Ctrl+C or SIGTERM

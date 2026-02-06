@@ -32,6 +32,8 @@ use std::{
         Arc,
     },
 };
+use std::thread::sleep;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio::{
@@ -52,6 +54,11 @@ pub struct JitMachine {
 }
 
 impl JitMachine {
+    pub async fn ensure_alive(&mut self) -> Result<()> {
+        let mut process = self.process.lock().await;
+        ensure_process_is_alive(&mut process)
+    }
+
     pub async fn feed_machine(
         &self,
         wasm_memory_usage_limit: u64,
@@ -245,6 +252,11 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
 
     let mut child = cmd.spawn().context("failed to spawn jit binary")?;
 
+    // Wait briefly for the OS to allocate resources and for the child process to start up. Then,
+    // check if the child process has already exited, which would indicate a startup failure.
+    sleep(Duration::from_secs(2));
+    ensure_process_is_alive(&mut child)?;
+
     let stdin = child
         .stdin
         .take()
@@ -256,4 +268,12 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
     };
 
     Ok(sub_machine)
+}
+
+fn ensure_process_is_alive(p: &mut Child) -> Result<()> {
+    match p.try_wait() {
+        Ok(Some(status)) => Err(anyhow!("JIT process has exited with status: {status}")),
+        Ok(None) => Ok(()),
+        Err(err) => Err(anyhow!("failed to check jit process status: {err}"))
+    }
 }
