@@ -160,49 +160,30 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_server_lifecycle_native_mode() -> Result<()> {
-        // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
+    async fn test_server_lifecycle(additional_args: Option<Vec<&'static str>>) -> Result<()> {
+        let mut args = vec![
             "server",
             "--module-root",
             "0x0000000000000000000000000000000000000000000000000000000000000000",
-        ])?;
+        ];
+        if let Some(mut extra) = additional_args {
+            args = [&args[..], &extra[..]].concat();
+        }
+
+        let config = ServerConfig::try_parse_from(args)?;
         let test_config = spinup_server(&config).await?;
 
         let module_root = config.get_module_root()?;
+        verify_and_shutdown_server(test_config, module_root).await
+    }
 
-        verify_and_shutdown_server(test_config, module_root)
-            .await?;
-
-        Ok(())
+    #[tokio::test]
+    async fn test_server_lifecycle_native_mode() -> Result<()> {
+        test_server_lifecycle(Some(vec!["--mode", "native"])).await
     }
 
     #[tokio::test]
     async fn test_server_lifecycle_continuous_mode() -> Result<()> {
-        // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "--mode",
-            "continuous",
-        ])?;
-        let module_root = config.get_module_root()?;
-
-        let test_config = spinup_server(&config).await?;
-
-        // Check that jit machine is active
-        let machine_arc = {
-            let machines = test_config.state.jit_manager.machines.read().await;
-            machines.get(&module_root).cloned()
-        };
-        assert!(machine_arc.is_some());
-        drop(machine_arc);
-
-        verify_and_shutdown_server(test_config, module_root)
-            .await?;
-
-        Ok(())
+        test_server_lifecycle(Some(vec!["--mode", "continuous"])).await
     }
 }
