@@ -171,6 +171,12 @@ type BOLDExecutionClient struct {
 	executionSpawner validator.ExecutionSpawner
 }
 
+func (b *BOLDExecutionClient) Start(ctx context.Context) error {
+	return nil
+}
+
+func (b *BOLDExecutionClient) Stop() {}
+
 func NewBOLDExecutionClient(executionSpawner validator.ExecutionSpawner) *BOLDExecutionClient {
 	return &BOLDExecutionClient{
 		executionSpawner: executionSpawner,
