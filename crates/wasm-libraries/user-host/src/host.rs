@@ -13,7 +13,7 @@ extern "C" {
 
 macro_rules! hostio {
     ($($func:tt)*) => {
-        match Program::current().$($func)* {
+        match Program::act_on_current(|p| p.$($func)*) {
             Ok(value) => value,
             Err(_) => {
                 set_trap();
@@ -31,10 +31,11 @@ pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__exit_early(status: u32) {
     hostio!(exit_early(status));
-    Program::current().early_exit = Some(match status {
+    let early_exit = Some(match status {
         0 => UserOutcomeKind::Success,
         _ => UserOutcomeKind::Revert,
     });
+    Program::act_on_current(|p| p.early_exit = early_exit);
     set_trap();
 }
 

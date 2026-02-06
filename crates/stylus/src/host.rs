@@ -15,6 +15,7 @@ use arbutil::{
 use caller_env::GuestPtr;
 use eyre::Result;
 use prover::value::Value;
+use std::borrow::Cow;
 use std::{
     fmt::Display,
     mem::{self, MaybeUninit},
@@ -31,12 +32,16 @@ where
     type MemoryErr = MemoryAccessError;
     type A = A;
 
-    fn args(&self) -> &[u8] {
-        &self.args
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.args)
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        &mut self.outs
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.outs)
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        self.outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
