@@ -11,9 +11,8 @@ use std::io::{Error, Write};
 pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -> IOResult<()> {
     send_global_state(writer, &input.start_state)?;
     send_batches(writer, &input.batch_info)?;
-    if let Some(batch) = input.delayed_msg() {
-        send_batches(writer, &[batch])?;
-    }
+    let batch = input.delayed_msg().map(|b| [b]).unwrap_or_default();
+    send_batches(writer, &batch)?;
     send_preimages(writer, &input.preimages)?;
     send_user_wasms(writer, &input.user_wasms)?;
     finish_sending(writer)
