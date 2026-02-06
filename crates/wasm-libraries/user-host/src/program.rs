@@ -13,6 +13,7 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
@@ -229,8 +230,8 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = EvmApiRequestor<VecReader, UserHostRequester>;
 
-    fn args(&self) -> &[u8] {
-        &self.args
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.args)
     }
 
     fn outs(&mut self) -> &mut Vec<u8> {

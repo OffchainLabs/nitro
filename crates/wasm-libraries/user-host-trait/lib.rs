@@ -1,6 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::borrow::Cow;
 use arbutil::{
     benchmark::Benchmark,
     crypto,
@@ -73,7 +74,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type MemoryErr;
     type A: EvmApi<DR>;
 
-    fn args(&self) -> &[u8];
+    fn args(&self) -> Cow<[u8]>;
     fn outs(&mut self) -> &mut Vec<u8>;
 
     fn evm_api(&mut self) -> &mut Self::A;
@@ -139,8 +140,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn read_args(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
         self.buy_ink(hostio::READ_ARGS_BASE_INK)?;
         self.pay_for_write(self.args().len() as u32)?;
-        self.write_slice(ptr, self.args())?;
-        trace!("read_args", self, &[], self.args())
+        self.write_slice(ptr, &self.args())?;
+        trace!("read_args", self, &*self.args(), &[])
     }
 
     /// Writes the final return data. If not called before the program exists, the return data will
@@ -151,7 +152,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.pay_for_read(len)?;
         self.pay_for_read(len)?; // read from geth
         *self.outs() = self.read_slice(ptr, len)?;
-        trace!("write_result", self, &*self.outs(), &[])
+        trace!("write_result", self, &[], &*self.outs())
     }
 
     /// Exits program execution early with the given status code.
