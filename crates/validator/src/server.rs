@@ -132,7 +132,7 @@ mod tests {
             resp.is_ok(),
             "Failed to connect to validation_capacity endpoint"
         );
-        assert_eq!(resp.unwrap().status(), 200);
+        assert_eq!(resp?.status(), 200);
 
         // 6. Trigger Shutdown
         println!("Sending shutdown signal...");
@@ -167,21 +167,18 @@ mod tests {
             "server",
             "--module-root",
             "0x0000000000000000000000000000000000000000000000000000000000000000",
-        ])
-        .unwrap();
+        ])?;
         let test_config = spinup_server(&config).await?;
 
         let module_root = config.get_module_root()?;
 
         verify_and_shutdown_server(test_config, module_root)
-            .await
-            .unwrap();
+            .await?;
 
         Ok(())
     }
 
     #[tokio::test]
-    #[ignore = "workflow does not have a jit binary available for now"]
     async fn test_server_lifecycle_continuous_mode() -> Result<()> {
         // 1. Setup Config and State. Use dummy module root is okay.
         let config = ServerConfig::try_parse_from([
@@ -190,8 +187,7 @@ mod tests {
             "0x0000000000000000000000000000000000000000000000000000000000000000",
             "--mode",
             "continuous",
-        ])
-        .unwrap();
+        ])?;
         let module_root = config.get_module_root()?;
 
         let test_config = spinup_server(&config).await?;
@@ -205,8 +201,7 @@ mod tests {
         drop(machine_arc);
 
         verify_and_shutdown_server(test_config, module_root)
-            .await
-            .unwrap();
+            .await?;
 
         Ok(())
     }
