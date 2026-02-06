@@ -50,7 +50,6 @@ pub struct JitMachine {
     /// JitMachine we chose to use a more granular Mutex<> to avoid contention
     pub process_stdin: Mutex<ChildStdin>,
     /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown.
-    /// RefCell<> is used for interior mutability when checking process status.
     pub process: Mutex<Child>,
 }
 
