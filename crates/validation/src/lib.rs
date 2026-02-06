@@ -3,7 +3,7 @@
 use arbutil::{Bytes32, PreimageType};
 use brotli::BrotliStatus;
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, As, DisplayFromStr, TryFromInto};
+use serde_with::{base64::Base64, As, DisplayFromStr};
 use std::{
     collections::HashMap,
     io::{self, BufRead},
@@ -89,7 +89,7 @@ pub struct ValidationInput {
     pub delayed_msg_nr: u64,
     #[serde(
         rename = "PreimagesB64",
-        with = "As::<HashMap<TryFromInto<u8>, HashMap<Base64, Base64>>>"
+        with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>"
     )]
     pub preimages: PreimageMap,
     pub batch_info: Vec<BatchInfo>,

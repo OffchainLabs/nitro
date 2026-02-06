@@ -28,9 +28,7 @@ where
 
     info!("Shutdown signal received. Running cleanup...");
 
-    if let Some(jit_machine) = state.jit_machine.as_ref() {
-        jit_machine.complete_machine().await?;
-    }
+    state.jit_manager.complete_machines().await?;
 
     Ok(())
 }
@@ -80,6 +78,7 @@ mod tests {
 
     use crate::{
         config::{ServerConfig, ServerState},
+        engine::config::ModuleRoot,
         server::run_server_internal,
     };
 
@@ -91,7 +90,7 @@ mod tests {
     }
 
     async fn spinup_server(config: &ServerConfig) -> Result<TestServerConfig> {
-        let state = Arc::new(ServerState::new(config)?);
+        let state = Arc::new(ServerState::new(config, 4)?);
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
@@ -118,7 +117,10 @@ mod tests {
         })
     }
 
-    async fn verify_and_shutdown_server(test_config: TestServerConfig) -> Result<()> {
+    async fn verify_and_shutdown_server(
+        test_config: TestServerConfig,
+        module_root: ModuleRoot,
+    ) -> Result<()> {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
@@ -140,10 +142,12 @@ mod tests {
         let result = test_config.server_handle.await?;
         assert!(result.is_ok(), "Server should exit successfully");
 
-        // 8. Verify jit_machine Cleanup
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
-            assert!(!jit.is_active().await);
-        }
+        // 8. Verify jit_manager Cleanup
+        let machine_arc = {
+            let machines = test_config.state.jit_manager.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+        assert!(machine_arc.is_none());
 
         // 9. Verify same request from above fails expectadly
         let resp = client
@@ -167,10 +171,11 @@ mod tests {
         .unwrap();
         let test_config = spinup_server(&config).await?;
 
-        // Since we're running in native mode there should not be an active jit_machine
-        assert!(test_config.state.jit_machine.is_none());
+        let module_root = config.get_module_root()?;
 
-        verify_and_shutdown_server(test_config).await.unwrap();
+        verify_and_shutdown_server(test_config, module_root)
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -187,16 +192,21 @@ mod tests {
             "continuous",
         ])
         .unwrap();
+        let module_root = config.get_module_root()?;
+
         let test_config = spinup_server(&config).await?;
 
-        assert!(test_config.state.jit_machine.is_some());
-
         // Check that jit machine is active
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
-            assert!(jit.is_active().await);
-        }
+        let machine_arc = {
+            let machines = test_config.state.jit_manager.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+        assert!(machine_arc.is_some());
+        drop(machine_arc);
 
-        verify_and_shutdown_server(test_config).await.unwrap();
+        verify_and_shutdown_server(test_config, module_root)
+            .await
+            .unwrap();
 
         Ok(())
     }
