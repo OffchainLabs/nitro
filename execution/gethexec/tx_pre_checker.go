@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -15,13 +16,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -39,10 +43,14 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
+const TxPreCheckerMaxAllowedGas uint64 = 50_000_000
+
 type TxPreCheckerConfig struct {
-	Strictness             uint  `koanf:"strictness" reload:"hot"`
-	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
-	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
+	Strictness             uint                          `koanf:"strictness" reload:"hot"`
+	RequiredStateAge       int64                         `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks uint                          `koanf:"required-state-max-blocks" reload:"hot"`
+	ApplyTransactionFilter bool                          `koanf:"apply-transaction-filter" reload:"hot"`
+	EventFilter            eventfilter.EventFilterConfig `koanf:"event-filter"`
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
@@ -51,6 +59,7 @@ var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
 	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
+	ApplyTransactionFilter: false,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -59,6 +68,7 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"30 = full validation which may reject txs that would succeed")
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
+	f.Bool(prefix+".apply-transaction-filter", DefaultTxPreCheckerConfig.ApplyTransactionFilter, "whether to apply the transaction filter while pre-checking")
 }
 
 type TxPreChecker struct {
@@ -66,14 +76,22 @@ type TxPreChecker struct {
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *ExpressLaneTracker
+	eventFilter        *eventfilter.EventFilter
+	addressChecker     state.AddressChecker
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) (*TxPreChecker, error) {
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config().EventFilter)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
 		config:               config,
-	}
+		eventFilter:          eventFilter,
+	}, nil
 }
 
 type NonceError struct {
@@ -115,7 +133,86 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, config *TxPreCheckerConfig) error {
+func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
+	c.addressChecker = checker
+}
+
+func (c *TxPreChecker) applyTransactionFilterPrecheck(
+	signer types.Signer,
+	sender common.Address,
+	header *types.Header,
+	statedb *state.StateDB,
+	tx *types.Transaction,
+	stateNonce uint64,
+) error {
+	if c.addressChecker == nil {
+		return nil // pass through if no address checker is set
+	}
+
+	statedb.SetAddressChecker(c.addressChecker)
+
+	snapshot := statedb.Snapshot()
+	defer statedb.RevertToSnapshot(snapshot)
+
+	// Use an EVM tracer to record all execution-level address interactions.
+	// Covers from, to, calls, contract creation, and selfdestruct beneficiaries.
+	blockCtx := core.NewEVMBlockContext(header, c.bc, nil)
+	evm := vm.NewEVM(
+		blockCtx,
+		statedb,
+		c.bc.Config(),
+		vm.Config{
+			Tracer: &tracing.Hooks{
+				OnEnter: func(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+					statedb.TouchAddress(to)
+					statedb.TouchAddress(from)
+				},
+			},
+		},
+	)
+
+	deadlineCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	go func() {
+		<-deadlineCtx.Done()
+		if errors.Is(deadlineCtx.Err(), context.DeadlineExceeded) {
+			// Stop evm execution. Note cancellation is not necessarily immediate.
+			evm.Cancel()
+		}
+	}()
+	defer cancel()
+
+	statedb.SetTxContext(tx.Hash(), 1)
+	message, err := core.TransactionToMessage(tx, signer, header.BaseFee, core.NewMessageEthcallContext())
+	if err != nil {
+		return err
+	}
+	message.Nonce = stateNonce
+
+	// Limit the gas used in precheck execution
+	gasPool := new(core.GasPool).AddGas(min(tx.Gas(), TxPreCheckerMaxAllowedGas))
+
+	_, err = core.ApplyMessage(evm, message, gasPool)
+	// Ignore execution errors, since we care only about touched adresses
+	_ = err
+
+	// Last, check event logs
+	if c.eventFilter != nil {
+		logs := statedb.GetCurrentTxLogs()
+		for _, l := range logs {
+			for _, addr := range c.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
+				statedb.TouchAddress(addr)
+			}
+		}
+	}
+
+	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+		return state.ErrArbTxFilter
+	}
+	return nil
+}
+
+func (c *TxPreChecker) PreCheckTx(header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	config := c.config()
 	if config.Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -127,7 +224,9 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
-	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time, arbos.ArbOSVersion()), tx)
+	bcConfig := c.bc.Config()
+	signer := types.MakeSigner(bcConfig, header.Number, header.Time, arbos.ArbOSVersion())
+	sender, err := types.Sender(signer, tx)
 	if err != nil {
 		return err
 	}
@@ -146,7 +245,13 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
+	intrinsic, err := core.IntrinsicGas(
+		tx.Data(), tx.AccessList(),
+		tx.SetCodeAuthorizations(),
+		tx.To() == nil,
+		bcConfig.IsHomestead(header.Number),
+		bcConfig.IsIstanbul(header.Number),
+		bcConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -171,7 +276,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
 				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
 				oldHeader.Number.Uint64() > 0 {
-				previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
+				previousHeader := c.bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
 				if previousHeader == nil {
 					break
 				}
@@ -179,7 +284,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				blocksTraversed++
 			}
 			if !headerreader.HeadersEqual(oldHeader, header) {
-				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
+				secondOldStatedb, err := c.bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
 				}
@@ -192,6 +297,20 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
 		}
 	}
+
+	if config.ApplyTransactionFilter {
+		if err := c.applyTransactionFilterPrecheck(
+			signer,
+			sender,
+			header,
+			statedb,
+			tx,
+			stateNonce,
+		); err != nil {
+			return err
+		}
+	}
+
 	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
 	if arbmath.BigLessThan(balance.ToBig(), cost) {
@@ -222,7 +341,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, options, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, tx, options)
 	if err != nil {
 		return err
 	}
@@ -251,7 +370,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, msg.Transaction, msg.Options, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, msg.Transaction, msg.Options)
 	if err != nil {
 		return err
 	}
@@ -268,7 +387,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, nil, c.config())
+	err = c.PreCheckTx(block, statedb, arbos, tx, nil)
 	if err != nil {
 		return err
 	}

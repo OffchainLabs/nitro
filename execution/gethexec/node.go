@@ -329,7 +329,10 @@ func CreateExecutionNode(
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
-	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	txPreChecker, err := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
+	if err != nil {
+		return nil, err
+	}
 	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
