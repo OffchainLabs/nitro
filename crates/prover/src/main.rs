@@ -256,7 +256,7 @@ fn main() -> Result<()> {
                 opprofile.total_cycles += profile_time;
             }
 
-            if pc.inst == 0 {
+            if func_stack.is_empty() {
                 func_stack.push((pc.module(), pc.func(), SimpleProfile::default()));
                 backtrace_stack.push((pc.module(), pc.func()));
             }
