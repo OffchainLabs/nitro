@@ -200,6 +200,7 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 	var hashSoFar *common.Hash
 	var capacityInHash uint64
 	capacity := uint64(1)
+	var zeroPad [32]byte // reuse instead of allocating in loop
 	for level := uint64(0); level < CalcNumPartials(size); level++ {
 		partial, err := acc.getPartial(level)
 		if err != nil {
@@ -211,12 +212,12 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 				capacityInHash = capacity
 			} else {
 				for capacityInHash < capacity {
-					h, err := acc.KeccakHash(hashSoFar.Bytes(), make([]byte, 32))
+					h, err := acc.KeccakHash(hashSoFar.Bytes(), zeroPad[:])
 					if err != nil {
 						return common.Hash{}, err
 					}
 					if acc.recordPreimages != nil {
-						acc.recordPreimages(h, append(hashSoFar.Bytes(), make([]byte, 32)...))
+						acc.recordPreimages(h, append(hashSoFar.Bytes(), zeroPad[:]...))
 					}
 					hashSoFar = &h
 					capacityInHash *= 2
