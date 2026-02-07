@@ -311,8 +311,10 @@ func TestConfig_Validate(t *testing.T) {
 			Bucket:    "test-bucket",
 			ObjectKey: "hashlists/current.json",
 		},
-		PollInterval: 5 * time.Minute,
-		CacheSize:    10000,
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 10000,
+		AddressCheckerWorkerCount: 4,
+		AddressCheckerQueueSize:   8192,
 	}
 	if err := validConfig.Validate(); err != nil {
 		t.Errorf("valid config should pass validation: %v", err)
