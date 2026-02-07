@@ -90,14 +90,21 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
             "readInboxMessage" => func!(wavmio::read_inbox_message),
             "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
+            "readPreimage" => func!(wavmio::read_preimage),
+            "validateCertificate" => func!(wavmio::validate_certificate),
+
             "resolvePreImage" => {
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
                 {
                     func!(wavmio::resolve_keccak_preimage)
                 }
             },
-            "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
-            "validateCertificate" => func!(wavmio::validate_certificate),
+            "resolveTypedPreimage"  => {
+                #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
+                {
+                    func!(wavmio::resolve_typed_preimage)
+                }
+            },
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),

@@ -5,7 +5,7 @@ use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
-use arbutil::{Color, PreimageType};
+use arbutil::{Bytes32, Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
@@ -118,6 +118,7 @@ pub fn resolve_keccak_preimage(
     resolve_preimage_impl(env, 0, hash_ptr, offset, out_ptr, "wavmio.ResolvePreImage")
 }
 
+#[deprecated] // we're just keeping this around until we no longer need to validate old replay binaries
 pub fn resolve_typed_preimage(
     env: WasmEnvMut,
     preimage_type: u8,
@@ -135,36 +136,24 @@ pub fn resolve_typed_preimage(
     )
 }
 
-pub fn resolve_preimage_impl(
-    mut env: WasmEnvMut,
-    preimage_type: u8,
-    hash_ptr: GuestPtr,
-    offset: u32,
-    out_ptr: GuestPtr,
-    name: &str,
-) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
-    let offset = offset as usize;
+macro_rules! error {
+    ($text:expr $(,$args:expr)*) => {{
+        let text = format!($text $(,$args)*);
+        return Escape::hostio(&text)
+    }};
+}
 
+fn get_preimage<'exec>(
+    exec: &'exec mut WasmEnv,
+    preimage_type: u8,
+    hash: &Bytes32,
+    name: &str,
+) -> Result<&'exec [u8], Escape> {
     let Ok(preimage_type) = preimage_type.try_into() else {
-        eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
-        return Ok(0);
+        error!("Go trying to resolve pre image with unknown type {preimage_type}");
     };
 
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
-    }
-
-    let hash = mem.read_bytes32(hash_ptr);
-
-    let Some(preimage) = exec
-        .preimages
-        .get(&preimage_type)
-        .and_then(|m| m.get(&hash))
-    else {
+    let Some(preimage) = exec.preimages.get(&preimage_type).and_then(|m| m.get(hash)) else {
         let hash_hex = hex::encode(hash);
         error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
@@ -178,10 +167,10 @@ pub fn resolve_preimage_impl(
         let calculated_hash: [u8; 32] = match preimage_type {
             PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
             PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
-            PreimageType::EthVersionedHash => *hash,
-            PreimageType::DACertificate => *hash, // Can't verify DACertificate hash, just accept it
+            PreimageType::EthVersionedHash => **hash,
+            PreimageType::DACertificate => **hash, // Can't verify DACertificate hash, just accept it
         };
-        if calculated_hash != *hash {
+        if calculated_hash != **hash {
             error!(
                 "Calculated hash {} of preimage {} does not match provided hash {}",
                 hex::encode(calculated_hash),
@@ -190,15 +179,57 @@ pub fn resolve_preimage_impl(
             );
         }
     }
+    Ok(preimage)
+}
 
+fn resolve_preimage_impl(
+    mut env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+    name: &str,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+
+    let offset = offset as usize;
     if offset % 32 != 0 {
         error!("bad offset {offset} in {name}")
     };
+
+    let hash = mem.read_bytes32(hash_ptr);
+    let preimage = get_preimage(exec, preimage_type, &hash, name)?;
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
     mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
+}
+
+pub fn read_preimage(
+    mut env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    out_ptr: GuestPtr,
+    preimage_offset: u32,
+    allocated_output_space: u32,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let hash = mem.read_bytes32(hash_ptr);
+
+    let preimage = get_preimage(exec, preimage_type, &hash, "wavmio.ReadPreimage")?;
+    let preimage_len = preimage.len() as u32;
+
+    if preimage_offset >= preimage_len {
+        error!("preimage offset {preimage_offset} is out of bounds for preimage of length {preimage_len} in wavmio.ReadPreimage");
+    }
+
+    let read_len = std::cmp::min(allocated_output_space, preimage_len - preimage_offset);
+    let read_start = preimage_offset as usize;
+    let read_end = read_start + read_len as usize;
+    mem.write_slice(out_ptr, &preimage[read_start..read_end]);
+
+    Ok(preimage_len)
 }
 
 pub fn validate_certificate(

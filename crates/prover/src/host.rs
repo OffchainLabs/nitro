@@ -188,7 +188,7 @@ impl Hostio {
             WavmReadKeccakPreimage           => func!([I32, I32], [I32]),
             WavmReadSha256Preimage           => func!([I32, I32], [I32]),
             WavmReadEthVersionedHashPreimage => func!([I32, I32], [I32]),
-            WavmReadDACertificatePreimage         => func!([I32, I32], [I32]),
+            WavmReadDACertificatePreimage    => func!([I32, I32], [I32]),
             WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
