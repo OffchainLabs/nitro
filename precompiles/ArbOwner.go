@@ -35,6 +35,9 @@ type ArbOwner struct {
 
 	TransactionFiltererRemoved        func(ctx, mech, common.Address) error
 	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
+
+	FilteredFundsRecipientSet        func(ctx, mech, common.Address) error
+	FilteredFundsRecipientSetGasCost func(common.Address) (uint64, error)
 }
 
 const maxGetAllMembers = 65536
@@ -182,6 +185,21 @@ func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool,
 // GetAllTransactionFilterers retrieves the list of transaction filterers
 func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
+}
+
+// SetFilteredFundsRecipient sets the address that receives funds redirected from filtered transactions.
+// Set to address(0) to use the networkFeeAccount as fallback.
+func (con ArbOwner) SetFilteredFundsRecipient(c ctx, evm mech, newRecipient addr) error {
+	if err := c.State.SetFilteredFundsRecipient(newRecipient); err != nil {
+		return err
+	}
+	return con.FilteredFundsRecipientSet(c, evm, newRecipient)
+}
+
+// GetFilteredFundsRecipient gets the address that receives funds redirected from filtered transactions.
+// Returns address(0) if not explicitly set (networkFeeAccount is used as fallback at runtime).
+func (con ArbOwner) GetFilteredFundsRecipient(c ctx, evm mech) (addr, error) {
+	return c.State.FilteredFundsRecipient()
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee
