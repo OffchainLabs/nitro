@@ -1290,7 +1290,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				// so to keep history clean we sanitize waits shorter then ms to 0
 				waitForTxHistogram.Update(0)
 			} else {
-				waitForTxHistogram.Update(int64(waitForFirstTx))
+				waitForTxHistogram.Update(waitForFirstTx.Nanoseconds())
 			}
 		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
 			break
