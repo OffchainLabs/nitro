@@ -14,6 +14,7 @@ import (
 
 type Burner interface {
 	Burn(kind multigas.ResourceKind, amount uint64) error
+	BurnMultiGas(amount multigas.MultiGas) error
 	Burned() uint64
 	GasLeft() uint64 // `SystemBurner`s panic (no notion of GasLeft)
 	BurnOut() error
@@ -38,6 +39,11 @@ func NewSystemBurner(tracingInfo *util.TracingInfo, readOnly bool) *SystemBurner
 
 func (burner *SystemBurner) Burn(kind multigas.ResourceKind, amount uint64) error {
 	burner.gasBurnt.SaturatingIncrementInto(kind, amount)
+	return nil
+}
+
+func (burner *SystemBurner) BurnMultiGas(amount multigas.MultiGas) error {
+	burner.gasBurnt.SaturatingAddInto(amount)
 	return nil
 }
 
