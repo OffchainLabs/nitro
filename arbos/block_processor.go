@@ -116,6 +116,7 @@ type SequencingHooks interface {
 	DiscardInvalidTxsEarly() bool
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	RedeemFilter(*state.StateDB) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	InsertLastTxError(error)
 }
@@ -150,6 +151,10 @@ func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 }
 
 func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
+	return nil
+}
+
+func (n *NoopSequencingHooks) RedeemFilter(db *state.StateDB) error {
 	return nil
 }
 
@@ -254,12 +259,14 @@ func ProduceBlockAdvanced(
 		var options *arbitrum_types.ConditionalOptions
 		var hooks SequencingHooks
 		isUserTx := false
+		isRedeem := false
 		if firstTx != nil {
 			tx = firstTx
 			firstTx = nil
 		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
+			isRedeem = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
@@ -374,6 +381,14 @@ func ProduceBlockAdvanced(
 				func(result *core.ExecutionResult) error {
 					if hooks != nil {
 						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
+					}
+					// hooks is intentionally nil for redeems - it gates sequencer policies
+					// (PreTxFilter, PostTxFilter, nonce checking, error tracking) that don't
+					// apply to protocol-scheduled transactions. RedeemFilter is called on
+					// sequencingHooks directly to get the narrow redeem filtering behavior
+					// without enabling those other policies.
+					if isRedeem {
+						return sequencingHooks.RedeemFilter(statedb)
 					}
 					return nil
 				},

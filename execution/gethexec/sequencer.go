@@ -517,6 +517,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
+	execEngine.SetEventFilter(eventFilter)
 	return s, nil
 }
 
@@ -783,6 +784,7 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 			}
 		}
 	}
+	touchRetryableAddresses(statedb, tx)
 
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
@@ -806,6 +808,14 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 			// Add this transaction (whose nonce is now correct) back into the queue
 			s.txRetryQueue.Push(nonceFailure.queueItem)
 		}
+	}
+	return nil
+}
+
+func (s *Sequencer) redeemFilter(db *state.StateDB) error {
+	applyEventFilter(s.eventFilter, db)
+	if db.IsAddressFiltered() {
+		return state.ErrArbTxFilter
 	}
 	return nil
 }
@@ -962,6 +972,7 @@ type FullSequencingHooks struct {
 	txErrors                 []error
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	redeemFilter             func(*state.StateDB) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 }
 
@@ -1068,6 +1079,13 @@ func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 	return nil
 }
 
+func (s *FullSequencingHooks) RedeemFilter(db *state.StateDB) error {
+	if s.redeemFilter != nil {
+		return s.redeemFilter(db)
+	}
+	return nil
+}
+
 func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	if s.blockFilter != nil {
 		return s.blockFilter(header, db, transactions, receipts)
@@ -1080,6 +1098,7 @@ func MakeSequencingHooks(
 	maxSequencedTxsSize int,
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	redeemFilter func(*state.StateDB) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
@@ -1089,6 +1108,7 @@ func MakeSequencingHooks(
 		maxSequencedTxsSize:      maxSequencedTxsSize,
 		preTxFilter:              preTxFilter,
 		postTxFilter:             postTxFilter,
+		redeemFilter:             redeemFilter,
 		blockFilter:              blockFilter,
 	}
 	return res
@@ -1113,6 +1133,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 		0,
 		preTxFilter,
 		postTxFilter,
+		nil,
 		blockFilter,
 	)
 }
@@ -1370,6 +1391,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.config().MaxTxDataSize,
 		s.preTxFilter,
 		s.postTxFilter,
+		s.redeemFilter,
 		nil,
 	)
 
