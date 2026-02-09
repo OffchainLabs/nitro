@@ -146,7 +146,10 @@ pub unsafe extern "C" fn wavmio__readPreimage(
     let preimage = read_full_preimage(preimage_type, hash);
 
     let preimage_len = preimage.len() as u32;
-    assert!(preimage_offset < preimage_len, "preimage offset must be smaller than preimage length");
+    assert!(
+        preimage_offset < preimage_len,
+        "preimage offset must be smaller than preimage length"
+    );
 
     let read_len = core::cmp::min(allocated_output_space, preimage_len - preimage_offset);
     let read_start = preimage_offset as usize;
