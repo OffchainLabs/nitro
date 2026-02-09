@@ -54,8 +54,36 @@ on:
         type: boolean
 
 jobs:
+  build-setup:
+    name: Build Dependencies
+    runs-on: arbitrator-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: make -j8 build test-go-deps
+
+      - name: Build node dependencies
+        run: make -j8 build-node-deps
+
+      - name: Archive Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-binaries
+          path: |
+            target/
+          retention-days: 1
+
+
   go-tests:
     name: Go tests
+    needs: build-setup
     runs-on: arbitrator-ci
     services:
       redis:
@@ -72,6 +100,12 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-binaries
+          path: .
+
       - name: Set environment variables
         run: |
           mkdir -p target/tmp/deadbeefbee
@@ -79,12 +113,6 @@ jobs:
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
-
-      - name: Build
-        run: make -j8 build test-go-deps
-
-      - name: Build node dependencies
-        run: make -j8 build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 
@@ -113,28 +141,28 @@ jobs:
       
       - name: run tests with consensus and execution nodes connected over json rpc (A-batch 1/4)
         if: inputs.run-defaults-a
-        continue-on-error: true
+        continue-on-error: false
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-F]'
     
       - name: run tests with consensus and execution nodes connected over json rpc (B-batch 2/4)
         if: inputs.run-defaults-b
-        continue-on-error: true
+        continue-on-error: false
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[G-L]'
 
       - name: run tests with consensus and execution nodes connected over json rpc (C-batch 3/4)
         if: inputs.run-defaults-c
-        continue-on-error: true
+        continue-on-error: false
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[M-S]'
 
       - name: run tests with consensus and execution nodes connected over json rpc (D-batch 4/4)
         if: inputs.run-defaults-d
-        continue-on-error: true
+        continue-on-error: false
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-S]'
