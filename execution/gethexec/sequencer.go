@@ -1693,6 +1693,12 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 				return 0, fmt.Errorf("error encountered getting blob base fee while updating expectedSurplus: %w", err)
 			}
 
+			// We want to calculate the following two values:
+			// - l1GasPrice = (blobFeePerByte * blobTxBlobGasPerBlob) / (usableBytesInBlob * 16)
+			// - backlogCost = backlogCallDataUnits * (blobFeePerByte * blobTxBlobGasPerBlob) / (usableBytesInBlob * 16)
+			// If we divide by usableBytesInBlob too early, the value of blobFeePerByte becomes zero because of rounding.
+			// Then even if we multiply with backlogCallDataUnits, the value will still remain zero.
+			// This is why we multiply with backlogCallDataUnits before we divide.
 			if backlogCallDataUnits == 0 {
 				blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 				blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
