@@ -4,17 +4,7 @@ on:
   workflow_call:
 
 jobs:
-  # First build 
-  build-base:
-    uses: ./.github/workflows/_go-tests.yml
-    secrets: inherit
-    with:
-      run-name: "Build-Base"
-      only-build: true
-
-  # Second run the tests
   main:
-    needs: build-base
     strategy:
       fail-fast: false
       matrix:
@@ -32,7 +22,6 @@ jobs:
     secrets: inherit
     with:
       run-name: ${{ matrix.test-mode }}
-      skip-build: true
       run-defaults-a: ${{ matrix.test-mode == 'defaults-A' }}
       run-defaults-b: ${{ matrix.test-mode == 'defaults-B' }}
       run-defaults-c: ${{ matrix.test-mode == 'defaults-C' }}

@@ -7,16 +7,6 @@ on:
         required: true
         type: string
         description: "The name of the test run. It will be used for labeling artifacts."
-      only-build:
-        required: false
-        type: boolean
-        default: false
-        description: "If true, only runs the build steps and uploads artifacts."
-      skip-build:
-        required: false
-        type: boolean
-        default: false
-        description: "If true, skips build steps and downloads artifacts instead."
       run-defaults-a:
         required: false
         type: boolean
@@ -82,45 +72,6 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
-      # -- Build phase
-
-      - name: Build
-        if: inputs.skip-build == false
-        run: make -j8 build test-go-deps
-
-      - name: Build node dependencies
-        if: inputs.skip-build == false
-        run: make -j8 build-node-deps
-
-      - name: Archive Build Artifacts
-        if: inputs.skip-build == false
-        uses: actions/upload-artifact@v4
-        with:
-          name: nitro-binaries
-          path: |
-            target/
-          retention-days: 1
-          overwrite: true
-
-      # -- Download phase
-
-      - name: Download Build Artifacts
-        if: inputs.skip-build == true
-        uses: actions/download-artifact@v4
-        with:
-          name: nitro-binaries
-          path: .
-
-      - name: Fix Artifact Permissions
-        if: inputs.skip-build == true
-        run: chmod -R +x target/* || true
-
-      # --- EARLY EXIT FOR BUILD-ONLY MODE ---
-      
-      - name: Exit if only-build
-        if: inputs.only-build == true
-        run: echo "Build complete. Exiting."; exit 0
-
       - name: Set environment variables
         run: |
           mkdir -p target/tmp/deadbeefbee
@@ -128,6 +79,12 @@ jobs:
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make -j8 build test-go-deps
+
+      - name: Build node dependencies
+        run: make -j8 build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 
