@@ -754,7 +754,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		})
 		chainConfig, err = gen.GetConfig()
 		if err != nil {
-			return executionDB, nil, err
+			return nil, nil, nil, err
 		}
 		genesisArbOSInit = gen.ArbOSInit
 	} else {
