@@ -93,8 +93,7 @@ impl JitMachine {
             Ok((new_state, memory_used)) => {
                 if memory_used > wasm_memory_usage_limit {
                     warn!(
-                        "WARN: memory used {} exceeds limit {}",
-                        memory_used, wasm_memory_usage_limit
+                        "WARN: memory used {memory_used} exceeds limit {wasm_memory_usage_limit}",
                     );
                 }
                 Ok(new_state)

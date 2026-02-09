@@ -94,7 +94,7 @@ mod tests {
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        println!("Test server listening on {}", addr);
+        println!("Test server listening on {addr}");
 
         // 3. Create a channel to simulate Ctrl+C
         let (tx, rx) = oneshot::channel();

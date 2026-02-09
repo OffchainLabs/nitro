@@ -68,7 +68,7 @@ impl MachineLocator {
             let entries = match fs::read_dir(&dir) {
                 Ok(e) => e,
                 Err(e) => {
-                    warn!("Reading directory {:?} error: {}", dir, e);
+                    warn!("Reading directory {dir:?} error: {e:?}");
                     continue;
                 }
             };
@@ -83,7 +83,7 @@ impl MachineLocator {
                 let mr_content = match fs::read_to_string(&mr_file) {
                     Ok(c) => c,
                     Err(e) => {
-                        warn!("Reading module roots file {:?} error: {}", mr_file, e);
+                        warn!("Reading module roots file {mr_file:?} error: {e:?}");
                         continue;
                     }
                 };
@@ -102,7 +102,7 @@ impl MachineLocator {
                 // Go's moduleRoot.Hex() returns "0x" + hex.
                 // Rust Bytes32 Display impl returns raw hex.
                 // We must format it manually to match Go's directory naming convention.
-                let module_root_hex = format!("0x{}", module_root);
+                let module_root_hex = format!("0x{module_root}");
 
                 if dir_name != "latest" && dir_name != module_root_hex {
                     continue;
@@ -147,7 +147,7 @@ impl MachineLocator {
         if module_root == ModuleRoot::default() || module_root == self.latest.module_root {
             self.root_path.join("latest")
         } else {
-            self.root_path.join(format!("0x{}", module_root))
+            self.root_path.join(format!("0x{module_root}"))
         }
     }
 
