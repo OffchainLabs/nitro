@@ -6,11 +6,33 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type MessageWithMetadata struct {
 	Message             *L1IncomingMessage `json:"message"`
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
+}
+
+func (m *MessageWithMetadata) Hash() common.Hash {
+	encoded, err := rlp.EncodeToBytes(m.WithOnlyMELConsensusFields())
+	if err != nil {
+		panic(err)
+	}
+	return crypto.Keccak256Hash(encoded)
+}
+
+// WithOnlyMELConsensusFields returns a shallow copy of the MessageWithMetadata with
+// only the fields relevant to MEL consensus being present
+func (m *MessageWithMetadata) WithOnlyMELConsensusFields() *MessageWithMetadata {
+	return &MessageWithMetadata{
+		Message: &L1IncomingMessage{
+			Header: m.Message.Header,
+			L2msg:  m.Message.L2msg,
+		},
+		DelayedMessagesRead: m.DelayedMessagesRead,
+	}
 }
 
 // lint:require-exhaustive-initialization
