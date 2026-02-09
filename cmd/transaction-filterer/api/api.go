@@ -48,20 +48,20 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 }
 
 // Unfilter removes the given transaction hash from the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
-func (t *TransactionFiltererAPI) Unfilter(ctx context.Context, txHash common.Hash) (common.Hash, error) {
+func (t *TransactionFiltererAPI) Unfilter(ctx context.Context, txHashToUnfilter common.Hash) (common.Hash, error) {
 	t.apiMutex.Lock()
 	defer t.apiMutex.Unlock()
 
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
-	log.Info("Received call to unfilter transaction", "txHash", txHash.Hex())
-	tx, err := t.arbFilteredTransactionsManager.DeleteFilteredTransaction(&txOpts, txHash)
+	log.Info("Received call to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex())
+	tx, err := t.arbFilteredTransactionsManager.DeleteFilteredTransaction(&txOpts, txHashToUnfilter)
 	if err != nil {
-		log.Warn("Failed to unfilter transaction", "txHash", txHash.Hex(), "err", err)
+		log.Warn("Failed to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "err", err)
 		return common.Hash{}, err
 	}
-	log.Info("Submitted unfilter transaction", "txHash", txHash.Hex(), "txHash", tx.Hash().Hex())
+	log.Info("Submitted unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "txHash", tx.Hash().Hex())
 	return tx.Hash(), nil
 }
 
