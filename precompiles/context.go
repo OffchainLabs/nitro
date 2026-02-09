@@ -49,6 +49,17 @@ func (c *Context) Burn(kind multigas.ResourceKind, amount uint64) error {
 	return nil
 }
 
+func (c *Context) BurnMultiGas(amount multigas.MultiGas) error {
+	if c.free {
+		return nil
+	}
+	if c.GasLeft() < amount.SingleGas() {
+		return c.BurnOut()
+	}
+	c.gasUsed.SaturatingAddInto(amount)
+	return nil
+}
+
 //nolint:unused
 func (c *Context) Burned() uint64 {
 	return c.gasUsed.SingleGas()

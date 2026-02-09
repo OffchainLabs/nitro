@@ -1440,16 +1440,22 @@ func CreateConsensusNode(
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
+	var executionSequencer execution.ExecutionSequencer
+	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
 		executionClient = rpcClient
 		executionRecorder = rpcClient
+		arbOSVersionGetter = rpcClient
+		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient
+		executionSequencer = fullExecutionClient
+		arbOSVersionGetter = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, executionRecorder, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}

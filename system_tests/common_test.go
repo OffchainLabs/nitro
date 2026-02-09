@@ -65,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -76,6 +77,7 @@ import (
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -101,6 +103,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type info = *BlockchainTestInfo
@@ -550,6 +553,16 @@ func (b *NodeBuilder) TakeOwnership() *NodeBuilder {
 
 func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	b.takeOwnership = takeOwnership
+	return b
+}
+
+func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
+	if b.execConfig == nil {
+		panic("execConfig must be initialised before setting event filter rules")
+	}
+
+	b.execConfig.Sequencer.EventFilter.Rules = rules
+
 	return b
 }
 
@@ -1598,9 +1611,19 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	err = valnode.Start(ctx)
 	Require(t, err)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.Arbitrator.RedisValidationServerConfig, valnode.GetExec())
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	t.Cleanup(func() {
 		stack.Close()
 		valnode.Stop()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	})
 
 	return valnode, stack
@@ -1644,7 +1667,7 @@ func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.C
 	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
 }
 
-func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) *node.Node {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1658,12 +1681,18 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		}
 		redisStream := server_api.RedisStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
 		createRedisGroup(ctx, t, redisStream, redisClient)
+		redisBoldStream := server_api.RedisBoldStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
+		createRedisGroup(ctx, t, redisBoldStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
+		t.Cleanup(func() {
+			destroyRedisGroup(ctx, t, redisStream, redisClient)
+			destroyRedisGroup(ctx, t, redisBoldStream, redisClient)
+		})
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
+	return valStack
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
@@ -1743,21 +1772,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	l1Client := ethclient.NewClient(rpcClient)
 
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
-}
-
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
-	Require(t, err)
-	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
-	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
-	Require(t, err)
-	if len(messages) == 0 {
-		Fatal(t, "No delayed messages found at rollup creation block")
-	}
-	initMessage, err := messages[0].Message.ParseInitMessage()
-	Require(t, err, "Failed to parse rollup init message")
-
-	return initMessage
 }
 
 var (
@@ -1972,7 +1986,9 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	Require(t, err)
+
 	return addresses, initMessage
 }
 
@@ -2315,10 +2331,11 @@ func setupConfigWithAnyTrust(
 
 // controllableWriter wraps a DA writer and can be controlled to return specific errors
 type controllableWriter struct {
-	mu             sync.RWMutex
-	writer         daprovider.Writer
-	shouldFallback bool
-	customError    error
+	mu              sync.RWMutex
+	writer          daprovider.Writer
+	shouldFallback  bool
+	customError     error
+	overrideMaxSize int // 0 means use underlying writer's max size; if set, Store returns ErrMessageTooLarge for messages exceeding this size
 }
 
 func (w *controllableWriter) SetShouldFallback(val bool) {
@@ -2333,18 +2350,31 @@ func (w *controllableWriter) SetCustomError(err error) {
 	w.customError = err
 }
 
+func (w *controllableWriter) SetMaxMessageSize(size int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.overrideMaxSize = size
+}
+
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	w.mu.RLock()
 	shouldFallback := w.shouldFallback
 	customError := w.customError
+	overrideMaxSize := w.overrideMaxSize
 	w.mu.RUnlock()
 
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback)
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize)
 
 	// Check for custom error first
 	if customError != nil {
 		log.Info("controllableWriter returning custom error", "error", customError)
 		return containers.NewReadyPromise[[]byte](nil, customError)
+	}
+
+	// Check if message exceeds overrideMaxSize (simulates DA provider size limit)
+	if overrideMaxSize > 0 && len(msg) > overrideMaxSize {
+		log.Warn("controllableWriter returning ErrMessageTooLarge", "msgLen", len(msg), "maxSize", overrideMaxSize)
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
 	}
 
 	// Check for fallback signal
@@ -2359,6 +2389,14 @@ func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.Promis
 }
 
 func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	w.mu.RLock()
+	overrideSize := w.overrideMaxSize
+	w.mu.RUnlock()
+
+	if overrideSize > 0 {
+		log.Info("controllableWriter returning override max message size", "size", overrideSize)
+		return containers.NewReadyPromise(overrideSize, nil)
+	}
 	return w.writer.GetMaxMessageSize()
 }
 
@@ -2463,10 +2501,20 @@ func deployContractInitCode(code []byte, revert bool) []byte {
 func deployContract(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
 ) common.Address {
+	address, err := deployContractForwardError(t, ctx, auth, client, code)
+	Require(t, err)
+	return address
+}
+
+func deployContractForwardError(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) (common.Address, error) {
 	deploy := deployContractInitCode(code, false)
 	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		From:      auth.From,
 		GasPrice:  basefee,
@@ -2474,14 +2522,22 @@ func deployContract(
 		Value:     big.NewInt(0),
 		Data:      deploy,
 	})
-	Require(t, err)
+	if err != nil {
+		return common.Address{}, err
+	}
 	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
 	tx, err = auth.Signer(auth.From, tx)
-	Require(t, err)
-	Require(t, client.SendTransaction(ctx, tx))
+	if err != nil {
+		return common.Address{}, err
+	}
+	if err := client.SendTransaction(ctx, tx); err != nil {
+		return common.Address{}, err
+	}
 	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-	return crypto.CreateAddress(auth.From, nonce)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return crypto.CreateAddress(auth.From, nonce), nil
 }
 
 func sendContractCall(
