@@ -68,3 +68,50 @@ func TestContextBurn(t *testing.T) {
 		t.Errorf("wrong computation: got %v, want %v", got, want)
 	}
 }
+
+func TestContextBurnMultiGas(t *testing.T) {
+	ctx := Context{
+		gasSupplied: 1_000,
+		gasUsed:     multigas.ZeroGas(),
+	}
+	if got, want := ctx.GasLeft(), uint64(1000); got != want {
+		t.Errorf("wrong gas left: got %v, want %v", got, want)
+	}
+	if got, want := ctx.Burned(), uint64(0); got != want {
+		t.Errorf("wrong gas burned: got %v, want %v", got, want)
+	}
+
+	gasToBurn := multigas.MultiGasFromPairs(
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 400},
+		multigas.Pair{Kind: multigas.ResourceKindStorageGrowth, Amount: 200},
+	)
+	if err := ctx.BurnMultiGas(gasToBurn); err != nil {
+		t.Errorf("unexpected error from burn: %v", err)
+	}
+	if got, want := ctx.GasLeft(), uint64(400); got != want {
+		t.Errorf("wrong gas left: got %v, want %v", got, want)
+	}
+	if got, want := ctx.Burned(), uint64(600); got != want {
+		t.Errorf("wrong gas burned: got %v, want %v", got, want)
+	}
+
+	if err := ctx.BurnMultiGas(gasToBurn); !errors.Is(err, vm.ErrOutOfGas) {
+		t.Errorf("wrong erro from burn: got %v, want %v", err, vm.ErrOutOfGas)
+	}
+	if got, want := ctx.GasLeft(), uint64(0); got != want {
+		t.Errorf("wrong gas left: got %v, want %v", got, want)
+	}
+	if got, want := ctx.Burned(), uint64(1000); got != want {
+		t.Errorf("wrong gas burned: got %v, want %v", got, want)
+	}
+
+	if got, want := ctx.gasUsed.Get(multigas.ResourceKindStorageAccess), uint64(400); got != want {
+		t.Errorf("wrong storage access: got %v, want %v", got, want)
+	}
+	if got, want := ctx.gasUsed.Get(multigas.ResourceKindStorageGrowth), uint64(200); got != want {
+		t.Errorf("wrong storage growth: got %v, want %v", got, want)
+	}
+	if got, want := ctx.gasUsed.Get(multigas.ResourceKindComputation), uint64(400); got != want {
+		t.Errorf("wrong computation: got %v, want %v", got, want)
+	}
+}
