@@ -17,10 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
-
-const Namespace = "transactionfilterer"
 
 type TransactionFiltererAPI struct {
 	apiMutex sync.Mutex // avoids concurrent transactions with the same nonce
@@ -72,13 +71,13 @@ var DefaultStackConfig = node.Config{
 	AuthAddr:            node.DefaultAuthHost,
 	AuthPort:            node.DefaultAuthPort,
 	AuthVirtualHosts:    node.DefaultAuthVhosts,
-	HTTPModules:         []string{Namespace},
+	HTTPModules:         []string{gethexec.TransactionFiltererNamespace},
 	HTTPHost:            node.DefaultHTTPHost,
 	HTTPVirtualHosts:    []string{"localhost"},
 	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 	WSHost:              node.DefaultWSHost,
 	WSPort:              node.DefaultWSPort,
-	WSModules:           []string{Namespace},
+	WSModules:           []string{gethexec.TransactionFiltererNamespace},
 	GraphQLVirtualHosts: []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr:  "",
@@ -110,7 +109,7 @@ func NewStack(
 		txOpts:                         txOpts,
 	}
 	apis := []rpc.API{{
-		Namespace: Namespace,
+		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",
 		Service:   api,
 		Public:    true,
