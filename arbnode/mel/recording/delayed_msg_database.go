@@ -44,7 +44,58 @@ func NewDelayedMsgDatabase(db ethdb.KeyValueStore, preimages daprovider.Preimage
 	}, nil
 }
 
-func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) error {
+// ReadDelayedMessage allows for retrieving a delayed message that has been observed by MEL but not yet consumed in a batch
+// at a specific index. Underneath the hood, delayed messages are stored in a binary Merkle tree representation to make
+// retrieval possible in WASM mode. In recording mode, reading a delayed message records its access in a preimages mapping
+func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
+	if index == 0 { // Init message
+		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
+		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
+	}
+	if !r.initialized {
+		if err := r.initialize(state); err != nil {
+			return nil, fmt.Errorf("error initializing recording database for MEL validation: %w", err)
+		}
+		r.initialized = true
+	}
+	// Lightweight operation that is needed as state.Clone() clears the seenDelayedMsgsAcc
+	if err := r.initSeenDelayedMsgsAccForRecording(state); err != nil {
+		return nil, fmt.Errorf("error initializing seenDelayedMsgsAcc for recording: %w", err)
+	}
+	delayed, err := fetchDelayedMessage(r.db, index)
+	if err != nil {
+		return nil, err
+	}
+	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithOnlyMELConsensusFields())
+	if err != nil {
+		return nil, err
+	}
+	// Leaves in the Merkle tree are double hashed to prevent against second preimage attacks
+	// or length extension attacks, which is why we need to add both the preimage of the hash
+	// and the preimage of the hash of the hash to the mapping
+	hashDelayedHash := crypto.Keccak256(delayed.Hash().Bytes())
+	r.preimages[common.BytesToHash(hashDelayedHash)] = delayed.Hash().Bytes()
+	r.preimages[delayed.Hash()] = delayedMsgBytes
+	return delayed, nil
+}
+
+func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
+	delayed, err := read.Value[mel.DelayedInboxMessage](db, read.Key(schema.MelDelayedMessagePrefix, index))
+	if err != nil {
+		return nil, err
+	}
+	return &delayed, nil
+}
+
+func getState(db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
+	state, err := read.Value[mel.State](db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
+	if err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func (r *DelayedMsgDatabase) initialize(state *mel.State) error {
 	var acc *merkleAccumulator.MerkleAccumulator
 	for i := state.ParentChainBlockNumber; i > 0; i-- {
 		seenState, err := getState(r.db, i)
@@ -87,6 +138,11 @@ func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) e
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (r *DelayedMsgDatabase) initSeenDelayedMsgsAccForRecording(state *mel.State) error {
+	var err error
 	seenAcc := state.GetSeenDelayedMsgsAcc()
 	if seenAcc == nil {
 		seenAcc, err = merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(mel.ToPtrSlice(state.DelayedMessageMerklePartials))
@@ -97,44 +153,4 @@ func (r *DelayedMsgDatabase) initialize(ctx context.Context, state *mel.State) e
 	seenAcc.RecordPreimagesTo(r.preimages)
 	state.SetSeenDelayedMsgsAcc(seenAcc)
 	return nil
-}
-
-func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
-	if index == 0 { // Init message
-		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
-		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
-	}
-	if !r.initialized {
-		if err := r.initialize(ctx, state); err != nil {
-			return nil, fmt.Errorf("error initializing recording database for MEL validation: %w", err)
-		}
-		r.initialized = true
-	}
-	delayed, err := fetchDelayedMessage(r.db, index)
-	if err != nil {
-		return nil, err
-	}
-	delayedMsgBytes, err := rlp.EncodeToBytes(delayed)
-	if err != nil {
-		return nil, err
-	}
-	hashDelayedHash := crypto.Keccak256(delayed.Hash().Bytes())
-	r.preimages[common.BytesToHash(hashDelayedHash)] = delayedMsgBytes
-	return delayed, nil
-}
-
-func fetchDelayedMessage(db ethdb.KeyValueStore, index uint64) (*mel.DelayedInboxMessage, error) {
-	delayed, err := read.Value[mel.DelayedInboxMessage](db, read.Key(schema.MelDelayedMessagePrefix, index))
-	if err != nil {
-		return nil, err
-	}
-	return &delayed, nil
-}
-
-func getState(db ethdb.KeyValueStore, parentChainBlockNumber uint64) (*mel.State, error) {
-	state, err := read.Value[mel.State](db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
-	if err != nil {
-		return nil, err
-	}
-	return &state, nil
 }
