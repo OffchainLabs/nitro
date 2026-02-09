@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type receiptFetcherForBlock struct {
@@ -24,7 +23,10 @@ type receiptFetcherForBlock struct {
 	preimageResolver PreimageResolver
 }
 
-func NewLogsFetcher(header *types.Header, preimageResolver PreimageResolver) melextraction.LogsFetcher {
+func NewLogsFetcher(
+	header *types.Header,
+	preimageResolver PreimageResolver,
+) melextraction.LogsFetcher {
 	return &receiptFetcherForBlock{header, preimageResolver}
 }
 
@@ -48,34 +50,7 @@ func (rf *receiptFetcherForBlock) LogsForTxIndex(ctx context.Context, parentChai
 	return receipt.Logs, nil
 }
 
-// LogsForBlockHash first gets the txIndexes corresponding to the relevant logs by reading
-// the key `parentChainBlockHash` from the preimages and then fetches logs for each of these txIndexes
 func (rf *receiptFetcherForBlock) LogsForBlockHash(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
-	if rf.header.Hash() != parentChainBlockHash {
-		return nil, errors.New("parentChainBlockHash mismatch")
-	}
-	relevantTxIndicesKey := RelevantTxIndexesKey(rf.header.Hash())
-	txIndexData, err := rf.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, relevantTxIndicesKey)
-	if err != nil {
-		return nil, err
-	}
-	var txIndexes []uint
-	if err := rlp.DecodeBytes(txIndexData, &txIndexes); err != nil {
-		return nil, err
-	}
-	var relevantLogs []*types.Log
-	for _, txIndex := range txIndexes {
-		logs, err := rf.LogsForTxIndex(ctx, parentChainBlockHash, txIndex)
-		if err != nil {
-			return nil, err
-		}
-		relevantLogs = append(relevantLogs, logs...)
-	}
-	return relevantLogs, nil
-}
-
-// TODO: LogsForBlockHashAllLogs is kept, in case we go with an implementation of returning all logs present in a block
-func (rf *receiptFetcherForBlock) LogsForBlockHashAllLogs(ctx context.Context, parentChainBlockHash common.Hash) ([]*types.Log, error) {
 	if rf.header.Hash() != parentChainBlockHash {
 		return nil, errors.New("parentChainBlockHash mismatch")
 	}
@@ -87,20 +62,30 @@ func (rf *receiptFetcherForBlock) LogsForBlockHashAllLogs(ctx context.Context, p
 	if err != nil {
 		return nil, err
 	}
-	entries, indices := collectTrieEntries(receiptsTrie)
+	entries, indices, maxIndex := collectTrieEntries(receiptsTrie)
+	if len(indices) != 0 && uint64(len(indices)) != maxIndex+1 {
+		return nil, fmt.Errorf("incorrect number of receipts in trie, want: %d, have: %d", maxIndex+1, len(indices))
+	}
 	rawReceipts := reconstructOrderedData(entries, indices)
 	receipts, err := decodeReceiptsData(rawReceipts)
 	if err != nil {
 		return nil, err
 	}
 	var relevantLogs []*types.Log
-	for _, receipt := range receipts {
-		relevantLogs = append(relevantLogs, receipt.Logs...)
+	for i, receipt := range receipts {
+		// This is needed to enable fetching corresponding tx from the txFetcher
+		for _, log := range receipt.Logs {
+			// #nosec G115
+			log.TxIndex = uint(i)
+			log.BlockHash = rf.header.Hash()
+			log.BlockNumber = rf.header.Number.Uint64()
+			relevantLogs = append(relevantLogs, log)
+		}
 	}
 	return relevantLogs, nil
 }
 
-func collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64) {
+func collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64, uint64) {
 	nodeIterator, iterErr := txTrie.NodeIterator(nil)
 	if iterErr != nil {
 		panic(iterErr)
@@ -108,6 +93,7 @@ func collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64) {
 
 	var rawValues [][]byte
 	var indexKeys []uint64
+	var maxIndex uint64
 
 	for nodeIterator.Next(true) {
 		if !nodeIterator.Leaf() {
@@ -123,10 +109,11 @@ func collectTrieEntries(txTrie *trie.Trie) ([][]byte, []uint64) {
 		}
 
 		indexKeys = append(indexKeys, decodedIndex)
+		maxIndex = max(maxIndex, decodedIndex)
 		rawValues = append(rawValues, nodeIterator.LeafBlob())
 	}
 
-	return rawValues, indexKeys
+	return rawValues, indexKeys, maxIndex
 }
 
 func reconstructOrderedData(rawValues [][]byte, indices []uint64) []hexutil.Bytes {
