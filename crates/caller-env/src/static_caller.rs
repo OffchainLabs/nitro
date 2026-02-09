@@ -9,9 +9,9 @@ use rand::RngCore;
 
 extern crate alloc;
 
-/// Static memory access for Go runtime in WAVM. Not thread-safe!
+/// Static memory access for Go runtime in WAVM.
 pub struct StaticMem;
-/// Static execution environment for Go runtime in WAVM. Not thread-safe!
+/// Static execution environment for Go runtime in WAVM.
 pub struct StaticExecEnv;
 
 // This wrapper makes the OnceCell "Sync" so it can live in a static - this is safe, because this is
