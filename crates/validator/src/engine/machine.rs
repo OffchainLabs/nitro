@@ -19,7 +19,8 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
-use crate::engine::config::{JitManagerConfig, ModuleRoot};
+use crate::engine::config::{JitManagerConfig, ModuleRoot, REPLAY_WASM};
+use crate::engine::machine_locator::MachineLocator;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::net::TcpListener;
@@ -142,12 +143,20 @@ impl JitProcessManager {
         }
     }
 
-    pub fn new(config: &JitManagerConfig, module_root: ModuleRoot) -> Result<Self> {
-        // TODO: use JitLocator to get jit_path (NIT-4347)
-        let sub_machine = create_jit_machine(config)?;
-
-        let mut machines = HashMap::with_capacity(16);
-        machines.insert(module_root, Arc::new(sub_machine));
+    pub fn new(config: &JitManagerConfig, locator: &MachineLocator) -> Result<Self> {
+        let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
+            .module_roots()
+            .iter()
+            .cloned()
+            .map(|root_meta| {
+                let root_path = root_meta.path.join(REPLAY_WASM);
+                let sub_machine = create_jit_machine(config.jit_cranelift, &root_path)?;
+                Ok::<(ModuleRoot, Arc<JitMachine>), anyhow::Error>((
+                    root_meta.module_root,
+                    Arc::new(sub_machine),
+                ))
+            })
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             wasm_memory_usage_limit: config.wasm_memory_usage_limit,
@@ -214,7 +223,7 @@ impl JitProcessManager {
     }
 }
 
-fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
+fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<JitMachine> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let root_path: PathBuf = manifest_dir
         .parent()
@@ -225,17 +234,16 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
             env::current_dir().expect("Failed to get current working directory")
         });
 
-    // TODO: use JitLocator to get jit_path (NIT-4347)
+    // TODO: use helper to get jit_path (NIT-4347)
     let jit_path = root_path.join("target").join("bin").join("jit");
     let mut cmd = Command::new(jit_path);
 
-    if config.jit_cranelift {
+    if jit_cranelift {
         cmd.arg("--cranelift");
     }
 
-    // TODO: use JitLocator to get bin_path (NIT-4346)
     cmd.arg("--binary")
-        .arg(&config.prover_bin_path)
+        .arg(prover_bin_path)
         .arg("continuous")
         .stdin(Stdio::piped()) // We must pipe stdin so we can write to it.
         .stdout(Stdio::inherit()) // Inherit stdout/stderr so logs show up in your main console.

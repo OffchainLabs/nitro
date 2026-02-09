@@ -29,4 +29,5 @@ tracing-subscriber = { workspace = true, features = [
 validation = { workspace = true }
 
 [dev-dependencies]
+rand = "0.9"
 reqwest = "0.13.1"

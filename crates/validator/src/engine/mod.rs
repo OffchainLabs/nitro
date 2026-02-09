@@ -4,3 +4,4 @@
 pub mod config;
 pub mod execution;
 pub mod machine;
+pub mod machine_locator;

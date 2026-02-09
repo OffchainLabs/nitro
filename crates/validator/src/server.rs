@@ -163,15 +163,14 @@ mod tests {
     #[tokio::test]
     async fn test_server_lifecycle_native_mode() -> Result<()> {
         // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-        ])
-        .unwrap();
+        let config = ServerConfig::try_parse_from(["server"]).unwrap();
         let test_config = spinup_server(&config).await?;
 
-        let module_root = config.get_module_root()?;
+        let module_root = test_config
+            .state
+            .locator
+            .latest_wasm_module_root()
+            .module_root;
 
         verify_and_shutdown_server(test_config, module_root)
             .await
@@ -184,17 +183,15 @@ mod tests {
     #[ignore = "workflow does not have a jit binary available for now"]
     async fn test_server_lifecycle_continuous_mode() -> Result<()> {
         // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "--mode",
-            "continuous",
-        ])
-        .unwrap();
-        let module_root = config.get_module_root()?;
+        let config = ServerConfig::try_parse_from(["server", "--mode", "continuous"]).unwrap();
 
         let test_config = spinup_server(&config).await?;
+
+        let module_root = test_config
+            .state
+            .locator
+            .latest_wasm_module_root()
+            .module_root;
 
         // Check that jit machine is active
         let machine_arc = {
