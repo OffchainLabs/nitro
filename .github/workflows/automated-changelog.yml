@@ -25,13 +25,9 @@ jobs:
             
             const dir = 'changelog';
             
-            // Find the next available number
-            let x = 1;
-            while (fs.existsSync(path.join(dir, `dependabot-${x}.md`))) {
-              x++;
-            }
+            const prNumber = context.payload.pull_request.number;
+            const filename = path.join(dir, `dependabot-${prNumber}.md`);
 
-            const filename = path.join(dir, `dependabot-${x}.md`);
             const title = context.payload.pull_request.title;
             const content = `### Ignored\n- ${title}\n`;
 
