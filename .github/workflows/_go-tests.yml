@@ -13,6 +13,12 @@ on:
       run-defaults-b:
         required: false
         type: boolean
+      run-defaults-c:
+        required: false
+        type: boolean
+      run-defaults-d:
+        required: false
+        type: boolean
       run-flaky:
         required: false
         type: boolean
@@ -91,33 +97,47 @@ jobs:
 
       # --------------------- DEFAULTS MODE ---------------------
 
-      - name: run tests without race detection and hash state scheme (A-batch)
+      - name: run tests without race detection and hash state scheme ([A,B]-batch)
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
 
-      - name: run tests without race detection and hash state scheme (B-batch)
+      - name: run tests without race detection and hash state scheme ([C,D]-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
       
-      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch 1/4)
         if: inputs.run-defaults-a
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-F]'
     
-      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch 2/4)
         if: inputs.run-defaults-b
         continue-on-error: true
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[G-L]'
+
+      - name: run tests with consensus and execution nodes connected over json rpc (C-batch 3/4)
+        if: inputs.run-defaults-c
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[M-S]'
+
+      - name: run tests with consensus and execution nodes connected over json rpc (D-batch 4/4)
+        if: inputs.run-defaults-d
+        continue-on-error: true
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-S]'
       
       - name: run redis tests
         if: inputs.run-defaults-a
