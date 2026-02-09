@@ -233,6 +233,7 @@ fn create_jit_machine(config: &JitManagerConfig) -> Result<JitMachine> {
 
     // Wait briefly for the OS to allocate resources and for the child process to start up. Then,
     // check if the child process has already exited, which would indicate a startup failure.
+    debug!("Waiting for JIT process to come up");
     sleep(Duration::from_secs(2));
     ensure_process_is_alive(&mut child)?;
 
