@@ -1,0 +1,68 @@
+---
+name: nitro-go-tests-rpc
+on:
+  workflow_call:
+    inputs:
+      run-name:
+        required: true
+        type: string
+        description: "The name of the test run. It will be used for labeling artifacts."
+
+
+jobs:
+  go-tests-rpc:
+    name: Go RPC tests
+    runs-on: arbitrator-ci
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Set environment variables
+        run: |
+          mkdir -p target/tmp/deadbeefbee
+          echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
+          echo "GOGC=80" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make -j8 build test-go-deps
+
+      - name: Build node dependencies
+        run: make -j8 build-node-deps
+      
+      - name: run tests with consensus and execution nodes connected over json rpc (A-batch 1/4)
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-F]'
+    
+      - name: run tests with consensus and execution nodes connected over json rpc (B-batch 2/4)
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[G-L]'
+
+      - name: run tests with consensus and execution nodes connected over json rpc (C-batch 3/4)
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[M-S]'
+
+      - name: run tests with consensus and execution nodes connected over json rpc (D-batch 4/4)
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-S]'
+      

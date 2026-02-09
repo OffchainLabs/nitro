@@ -1,0 +1,14 @@
+---
+name: standard-go-rpc-test-suite
+on:
+  workflow_call:
+
+jobs:
+  main:
+    strategy:
+      fail-fast: false
+    uses: ./.github/workflows/_go-tests-rpc.yml
+    secrets: inherit
+    with:
+      run-name: ${{ matrix.test-mode }}
+
