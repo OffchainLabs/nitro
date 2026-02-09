@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -21,12 +23,15 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type mockSpawner struct {
@@ -198,10 +203,20 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 
 	serverAPI.Start(ctx)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.RedisValidationServerConfig, spawner)
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	go func() {
 		<-ctx.Done()
 		stack.Close()
 		serverAPI.StopOnly()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	}()
 
 	return spawner, stack
@@ -282,6 +297,97 @@ func TestValidationServerAPI(t *testing.T) {
 	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
 	}
+
+	hashes := execRun.GetMachineHashesWithStepSize(0, 1, 5)
+	hashesRes, err := hashes.Await(ctx)
+	Require(t, err)
+	if len(hashesRes) != 5 {
+		t.Error("unexpected number of hashes")
+	}
+
+}
+
+// mostly tests translation to/from json and running over network with bold validation redis consumer/producer
+func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var redisBoldValidationClientConfig = &redis.TestValidationClientConfig
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	redisBoldValidationClientConfig.RedisURL = redisUrl
+	redisBoldValidationClientConfig.CreateStreams = true
+	redisValClient, err := redis.NewValidationClient(redisBoldValidationClientConfig)
+	Require(t, err)
+	err = redisValClient.Start(ctx)
+	Require(t, err)
+	err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
+	Require(t, err)
+
+	config := server_arb.DefaultArbitratorSpawnerConfig
+	config.RedisValidationServerConfig = valnoderedis.TestValidationServerConfig
+	config.RedisValidationServerConfig.RedisURL = redisUrl
+	mockWasmModuleRootsStr := make([]string, len(mockWasmModuleRoots))
+	for _, moduleRoot := range mockWasmModuleRoots {
+		mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
+	}
+	config.RedisValidationServerConfig.ModuleRoots = mockWasmModuleRootsStr
+	createMockValidationNode(t, ctx, &config)
+	client := redis.NewBOLDRedisExecutionClient(redisValClient)
+	err = client.Start(ctx)
+	Require(t, err)
+	roots, err := client.WasmModuleRoots()
+
+	Require(t, err)
+	if len(roots) != len(mockWasmModuleRoots) {
+		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
+	}
+
+	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
+	hash2 := common.HexToHash("0x11111111122222223333333444444444")
+
+	startState := validator.GoGlobalState{
+		BlockHash:  hash1,
+		SendRoot:   hash2,
+		Batch:      300,
+		PosInBatch: 3000,
+	}
+	endState := validator.GoGlobalState{
+		BlockHash:  hash2,
+		SendRoot:   hash1,
+		Batch:      3000,
+		PosInBatch: 300,
+	}
+
+	valInput := validator.ValidationInput{
+		Id:            0,
+		HasDelayedMsg: false,
+		DelayedMsgNr:  0,
+		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
+		},
+		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:  []validator.BatchInfo{},
+		DelayedMsg: []byte{},
+		StartState: startState,
+		DebugChain: false,
+	}
+	proof, err := client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
+	Require(t, err)
+	if !bytes.Equal(proof, mockProof) {
+		t.Error("mock proof not expected")
+	}
+
+	hashes, err := client.GetMachineHashesWithStepSize(ctx, mockWasmModuleRoots[0], &valInput, 0, 1, 5)
+	Require(t, err)
+	if len(hashes) != 5 {
+		t.Error("unexpected number of hashes")
+	}
+
 }
 
 func TestThrottledValidationSpawner(t *testing.T) {
@@ -441,18 +547,17 @@ type mockBlockRecorder struct {
 }
 
 func (m *mockBlockRecorder) RecordBlockCreation(
-	ctx context.Context,
 	pos arbutil.MessageIndex,
 	msg *arbostypes.MessageWithMetadata,
 	wasmTargets []rawdb.WasmTarget,
-) (*execution.RecordResult, error) {
+) containers.PromiseInterface[*execution.RecordResult] {
 	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
 	if err != nil {
-		return nil, err
+		return containers.NewReadyPromise[*execution.RecordResult](nil, err)
 	}
 	res, err := m.streamer.ResultAtMessageIndex(pos)
 	if err != nil {
-		return nil, err
+		return containers.NewReadyPromise[*execution.RecordResult](nil, err)
 	}
 	globalState := validator.GoGlobalState{
 		Batch:      globalpos.BatchNumber,
@@ -460,17 +565,17 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 		BlockHash:  res.BlockHash,
 		SendRoot:   res.SendRoot,
 	}
-	return &execution.RecordResult{
+	r := execution.RecordResult{
 		Pos:       pos,
 		BlockHash: res.BlockHash,
 		Preimages: globalstateToTestPreimages(globalState),
 		UserWasms: make(state.UserWasms),
-	}, nil
+	}
+	return containers.NewReadyPromise(&r, err)
 }
 
-func (m *mockBlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {}
-func (m *mockBlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	return nil
+func (m *mockBlockRecorder) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 func newMockRecorder(validator *staker.StatelessBlockValidator, streamer *arbnode.TransactionStreamer) *mockBlockRecorder {

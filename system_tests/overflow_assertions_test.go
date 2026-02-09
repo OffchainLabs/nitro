@@ -1,6 +1,5 @@
-// Copyright 2024, Offchain Labs, Inc.
-// For license information, see:
-// https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
 
@@ -29,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -74,7 +74,9 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, assertionChain, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
+	Require(t, err)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
@@ -100,7 +102,7 @@ func TestOverflowAssertions(t *testing.T) {
 		l2node.InboxTracker,
 		l2node.TxStreamer,
 		l2node.ExecutionRecorder,
-		l2node.ArbDB,
+		l2node.ConsensusDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,

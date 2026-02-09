@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !race
@@ -293,11 +293,11 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
 
+	var cleanup func()
 	testClient := NewTestClient(b.ctx)
-	testClient.Client, testClient.ConsensusNode, testClient.ExecutionConfigFetcher, testClient.ConsensusConfigFetcher =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader)
-	testClient.ExecNode = getExecNode(t, testClient.ConsensusNode)
-	testClient.cleanup = func() { testClient.ConsensusNode.StopAndWait() }
+	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L2.ExecNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader)
+	testClient.cleanup = cleanup
 	testClient.L1BlobReader = blobReader
 
 	return testClient, func() { testClient.cleanup() }

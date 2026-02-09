@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -547,7 +547,7 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("error encoding dummy message: %v", err))
 	}
-	batch := builder.L2.ConsensusNode.ArbDB.NewBatch()
+	batch := builder.L2.ConsensusNode.ConsensusDB.NewBatch()
 	if err := batch.Put(key, msgBytes); err != nil {
 		panic(fmt.Sprintf("error putting dummy message to db: %v", err))
 	}

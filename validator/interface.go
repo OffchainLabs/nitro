@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package validator
 
 import (
@@ -32,6 +34,8 @@ type ExecutionSpawner interface {
 }
 
 type BOLDExecutionSpawner interface {
+	Start(context.Context) error
+	Stop()
 	WasmModuleRoots() ([]common.Hash, error)
 	GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error)
 	GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, position uint64) ([]byte, error)

@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build challengetest && !race
@@ -327,7 +327,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 
 	dp, err := arbnode.StakerDataposter(
 		ctx,
-		rawdb.NewTable(node.ConsensusNode.ArbDB, storage.StakerPrefix),
+		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
 		node.ConsensusNode.L1Reader,
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),

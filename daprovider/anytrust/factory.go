@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package anytrust
@@ -263,16 +263,14 @@ func CreateDAReader(
 
 	var lifecycleManager LifecycleManager
 	var daReader anytrustutil.Reader
-	if config.RestAggregator.Enable {
-		var restAgg *SimpleReaderAggregator
-		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		restAgg.Start(ctx)
-		lifecycleManager.Register(restAgg)
-		daReader = restAgg
+	var restAgg *SimpleReaderAggregator
+	restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	restAgg.Start(ctx)
+	lifecycleManager.Register(restAgg)
+	daReader = restAgg
 
 	var keysetFetcher *KeysetFetcher
 	if seqInboxAddress != nil {

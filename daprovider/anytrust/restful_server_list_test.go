@@ -1,13 +1,15 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package anytrust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -159,4 +161,157 @@ func (h *multiHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	i := h.current % len(h.handlers)
 	h.current++
 	h.handlers[i].ServeHTTP(w, req)
+}
+
+func TestRestfulServerURLsFromListWithWait_Success(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
+	listContents := urlsIn[0] + " \t" + urlsIn[1]
+	port, server := newListHttpServerForTest(t, &stringHandler{listContents})
+
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
+	urls, err := RestfulServerURLsFromListWithWait(ctx, listUrl, 2*time.Second)
+	Require(t, err)
+	if !stringListIsPermutation(urlsIn, urls) {
+		t.Fatal("URLs don't match")
+	}
+
+	err = server.Shutdown(ctx)
+	Require(t, err)
+}
+
+func TestRestfulServerURLsFromListWithWait_RetrySuccess(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
+	listContents := urlsIn[0] + " \t" + urlsIn[1]
+	// Force a few failures to then succeed
+	port, server := newListHttpServerForTest(
+		t,
+		Handlers(
+			&erroringHandler{},
+			&connectionClosingHandler{},
+			&connectionClosingHandler{},
+			&erroringHandler{},
+			&stringHandler{listContents},
+		),
+	)
+
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
+	// Wait up to 6 seconds, should succeed after the few retries
+	urls, err := RestfulServerURLsFromListWithWait(ctx, listUrl, 6*time.Second)
+	Require(t, err)
+	if !stringListIsPermutation(urlsIn, urls) {
+		t.Fatal("URLs don't match")
+	}
+
+	err = server.Shutdown(ctx)
+	Require(t, err)
+}
+
+func TestRestfulServerURLsFromListWithWait_Timeout(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Server always returns errors
+	port, server := newListHttpServerForTest(t, &erroringHandler{})
+
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
+	// Wait only 1 second, should timeout
+	urls, err := RestfulServerURLsFromListWithWait(ctx, listUrl, 1*time.Second)
+	if err == nil {
+		t.Fatal("Expected timeout error")
+	}
+	if urls != nil {
+		t.Fatal("Expected nil URLs on timeout")
+	}
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+
+	err = server.Shutdown(ctx)
+	Require(t, err)
+}
+
+func TestRestfulServerURLsFromListWithWait_ContextCancellation(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Server always returns errors
+	port, server := newListHttpServerForTest(t, &erroringHandler{})
+
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
+
+	// Cancel context after a short delay
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+	}()
+
+	// Wait up to 5 seconds, but context should cancel first
+	urls, err := RestfulServerURLsFromListWithWait(ctx, listUrl, 5*time.Second)
+	if err == nil {
+		t.Fatal("Expected context cancellation error")
+	}
+	if urls != nil {
+		t.Fatal("Expected nil URLs on context cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Expected context.Canceled, got: %v", err)
+	}
+
+	err = server.Shutdown(context.Background())
+	Require(t, err)
+}
+
+func TestRestfulServerURLsFromListWithWait_MalformedURL(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use a malformed URL that will cause a parse error
+	malformedUrl := "://invalid-url"
+	urls, err := RestfulServerURLsFromListWithWait(ctx, malformedUrl, 5*time.Second)
+	if err == nil {
+		t.Fatal("Expected error for malformed URL")
+	}
+	if urls != nil {
+		t.Fatal("Expected nil URLs on parse error")
+	}
+	// Should return immediately without retrying for parse errors
+	if !strings.Contains(err.Error(), "parse") && !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("Expected parse/malformed error, got: %v", err)
+	}
+}
+
+func TestRestfulServerURLsFromListWithWait_ConnectionRefused(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use a URL that will refuse connection
+	listUrl := "http://localhost:99999"
+	urls, err := RestfulServerURLsFromListWithWait(ctx, listUrl, 1*time.Second)
+	if err == nil {
+		t.Fatal("Expected error for connection refused")
+	}
+	if urls != nil {
+		t.Fatal("Expected nil URLs on connection error")
+	}
+	// Should timeout after retrying
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
 }

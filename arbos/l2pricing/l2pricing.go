@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package l2pricing
@@ -48,9 +48,9 @@ var multiGasBaseFeesKey []byte = []byte{2}
 
 const GethBlockGasLimit = 1 << 50
 
-// TODO(NIT-4152): Number of constraints limited because of retryable redeem gas cost calculation.
+// Number of single-gas constraints limited because of retryable redeem gas cost calculation.
+// The limit is ignored starting from ArbOS version 60.
 const GasConstraintsMaxNum = 20
-const MultiGasConstraintsMaxNum = 15
 
 // MaxPricingExponentBips caps the basefee growth: exp(8.5) ~= x5,000 min base fee.
 const MaxPricingExponentBips = arbmath.Bips(85_000)

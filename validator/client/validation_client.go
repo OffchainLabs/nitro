@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package client
@@ -170,6 +170,12 @@ var _ validator.BOLDExecutionSpawner = (*BOLDExecutionClient)(nil)
 type BOLDExecutionClient struct {
 	executionSpawner validator.ExecutionSpawner
 }
+
+func (b *BOLDExecutionClient) Start(ctx context.Context) error {
+	return nil
+}
+
+func (b *BOLDExecutionClient) Stop() {}
 
 func NewBOLDExecutionClient(executionSpawner validator.ExecutionSpawner) *BOLDExecutionClient {
 	return &BOLDExecutionClient{

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -99,14 +100,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	gasCostToReturnResult := params.CopyGas
 
 	// `redeem` must prepay the gas needed by the trailing call to
-	// L2PricingState().AddToGasPool(). GasPoolUpdateCost(ArbOSVersion) returns
-	// that amount based on the storage read/write mix used by AddToGasPool().
-	gasPoolUpdateCost := c.State.L2PricingState().BacklogUpdateCost()
+	// L2PricingState().ShrinkBacklog(). BacklogUpdateCost() returns
+	// that amount based on the storage read/write mix used by ShrinkBacklog().
+	backlogUpdateCost := c.State.L2PricingState().BacklogUpdateCost()
 
-	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	// futureGasCosts contains gas that wasn't charged yet but will be before the end of the transaction.
+	futureGasCosts := eventCost + gasCostToReturnResult + backlogUpdateCost
 	if c.GasLeft() < futureGasCosts {
 		return hash{}, c.Burn(multigas.ResourceKindComputation, futureGasCosts) // this will error
 	}
+
+	// gasToDonate is the remaining gas that will be donated to the retryable execution.
 	gasToDonate := c.GasLeft() - futureGasCosts
 	if gasToDonate < params.TxGas {
 		return hash{}, errors.New("not enough gas to run redeem attempt")
@@ -125,15 +129,32 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
 	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
-	// We burn as much gas as we can, leaving only enough to pay for copying out the return data.
-	if err := c.Burn(multigas.ResourceKindComputation, gasToDonate); err != nil {
+	// We burn as much compute gas as we can, leaving only enough to pay for copying out the return data.
+	const donationResource = multigas.ResourceKindComputation
+	if err := c.Burn(donationResource, gasToDonate); err != nil {
 		return hash{}, err
 	}
 
-	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
-	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	// TODO(NIT-4120): clarify the gas dimension for gasToDonate
-	return retryTxHash, c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.ComputationGas(gasToDonate))
+	// Starting from ArbosVersion_MultiGasConstraintsVersion, charge a fixed amount of gas for the ShrinkBacklog
+	// call because multi-gas constraints may have multiple backlogs and it would be too expensive to the user.
+	// Since these backlogs are manipulated by the system in every transaction, they are already fresh in cache and
+	// we don't need to penalize the user.
+	chargeFixedAmount := c.State.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion
+	if chargeFixedAmount {
+		// Manually charge the fixed amount.
+		if err := c.Burn(multigas.ResourceKindComputation, l2pricing.MultiConstraintStaticBacklogUpdateCost); err != nil {
+			return hash{}, err
+		}
+
+		// Disable metering from now own, turning it back at the end of the function.
+		c.SetUnmeteredGasAccounting(true)
+		defer c.SetUnmeteredGasAccounting(false)
+	}
+
+	// Shrink the computation backlog because the transaction didn't use these resources.
+	// Later, the retryable attempt will use this gas and increase the resource-backlogs it actually uses.
+	// This ensures we don't increase the L2 base fee unnecessarily.
+	return retryTxHash, c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.NewMultiGas(donationResource, gasToDonate))
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation

@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package chaininfo
@@ -38,6 +38,7 @@ func CopyArbitrumChainParams(arbChainParams params.ArbitrumChainParams) params.A
 		GenesisBlockNum:           arbChainParams.GenesisBlockNum,
 		MaxCodeSize:               arbChainParams.MaxCodeSize,
 		MaxInitCodeSize:           arbChainParams.MaxInitCodeSize,
+		MaxUncompressedBatchSize:  arbChainParams.MaxUncompressedBatchSize,
 	}
 }
 

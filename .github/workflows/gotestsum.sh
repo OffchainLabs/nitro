@@ -17,7 +17,9 @@ junitfile=""
 log=true
 race=false
 cover=false
+consensus_execution_in_same_process_use_rpc=false
 flaky=false
+reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -64,6 +66,10 @@ while [[ $# -gt 0 ]]; do
       cover=true
       shift
       ;;
+    --consensus_execution_in_same_process_use_rpc)
+     consensus_execution_in_same_process_use_rpc=true
+      shift
+      ;;
     --nolog)
       log=false
       shift
@@ -76,6 +82,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --flaky)
       flaky=true
+      shift
+      ;;
+    --reduce-parallelism)
+      reduce_parallelism=true
       shift
       ;;
     *)
@@ -131,10 +141,18 @@ if [ "$cover" == true ]; then
   cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
+if [ "$reduce_parallelism" == true ]; then
+  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
+fi
+
 if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
 else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
+    cmd="$cmd --consensus_execution_in_same_process_use_rpc=true"
 fi
 
 if [ "$test_database_engine" != "" ]; then

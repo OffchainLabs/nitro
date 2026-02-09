@@ -1,0 +1,41 @@
+name: Changelog fragments for automated PRs
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  add-changelog:
+    # Only run if the PR is opened by dependabot
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-4
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Create Changelog File
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const dir = 'changelog';
+            
+            const prNumber = context.payload.pull_request.number;
+            const filename = path.join(dir, `dependabot-${prNumber}.md`);
+
+            const title = context.payload.pull_request.title;
+            const content = `### Ignored\n- ${title}\n`;
+
+            fs.writeFileSync(filename, content);
+            console.log(`Created ${filename} for PR: ${title}`);
+
+      - name: Commit and Push
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "Add a changelog entry for dependabot update"
+          file_pattern: 'changelog/dependabot-*.md'

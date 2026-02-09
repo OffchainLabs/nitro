@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -22,10 +22,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -176,27 +175,6 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *AnyTrustServerConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		log.Info("Enabling metrics collection")
-		metrics.Enable()
-		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
-}
-
 func startup() error {
 	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
@@ -223,7 +201,7 @@ func startup() error {
 	glogger.Verbosity(logLevel)
 	log.SetDefault(log.NewLogger(glogger))
 
-	if err := startMetrics(serverConfig); err != nil {
+	if err := util.StartMetrics(serverConfig.Metrics, serverConfig.PProf, &serverConfig.MetricsServer, &serverConfig.PprofCfg); err != nil {
 		return err
 	}
 

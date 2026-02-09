@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -38,7 +39,7 @@ func setupResourceConstraintHandles(
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)
 
-	state.L2PricingState().ArbosVersion = l2pricing.ArbosMultiGasConstraintsVersion
+	state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	arbGasInfo := &ArbGasInfo{}
 	arbOwner := &ArbOwner{}
@@ -374,10 +375,13 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(7_000_000), results[0].TargetPerSec)
 	require.Equal(t, uint64(50_000_000), results[0].Backlog)
 	require.Equal(t, 2, len(results[0].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindComputation), results[0].Resources[0].Resource)
-	require.Equal(t, uint64(5), results[0].Resources[0].Weight)
-	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
-	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
+
+	gotWeights := make(map[uint8]uint64, len(results[0].Resources))
+	for _, r := range results[0].Resources {
+		gotWeights[r.Resource] = r.Weight
+	}
+	require.Equal(t, uint64(5), gotWeights[uint8(multigas.ResourceKindComputation)])
+	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccess)])
 }
 
 func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {

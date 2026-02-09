@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -243,6 +243,18 @@ func (r *DACertificatePreimageReader) CollectPreimages(
 	})
 }
 
+func (r *DACertificatePreimageReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[daprovider.PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (daprovider.PayloadAndPreimagesResult, error) {
+		// Stub implementation: RecoverPayloadAndPreimages is only called
+		// by the MEL validator to gather preimages before validation
+		return daprovider.PayloadAndPreimagesResult{Preimages: make(daprovider.PreimagesMap), Payload: nil}, nil
+	})
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -265,7 +277,7 @@ func populateEcdsaCaches() {
 }
 
 func main() {
-	wavmio.StubInit()
+	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(
@@ -278,6 +290,7 @@ func main() {
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
 
+	wavmio.OnReady()
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	var lastBlockHeader *types.Header
@@ -300,7 +313,7 @@ func main() {
 		}
 		return wavmio.ReadInboxMessage(batchNum), nil
 	}
-	readMessage := func(anyTrustEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func(anyTrustEnabled bool, chainConfig *params.ChainConfig) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -334,7 +347,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register DA Certificate reader: %v", err))
 		}
 
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, chainConfig)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -390,7 +403,7 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, chainConfig)
 
 		chainContext := WavmChainContext{chainConfig: chainConfig}
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
@@ -400,7 +413,9 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		// Currently, the only use of `chainConfig` argument is to get a limit on the uncompressed batch size.
+		// However, the init message is never compressed, so we can safely pass nil here.
+		message := readMessage(false, nil)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
@@ -435,5 +450,5 @@ func main() {
 	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
-	wavmio.StubFinal()
+	wavmio.OnFinal()
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package anytrust
@@ -37,6 +37,7 @@ type RestfulClientAggregatorConfig struct {
 	MaxPerEndpointStats          int                                `koanf:"max-per-endpoint-stats"`
 	SimpleExploreExploitStrategy SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
 	SyncToStorage                SyncToStorageConfig                `koanf:"sync-to-storage"`
+	ConnectionWait               time.Duration                      `koanf:"connection-wait"`
 }
 
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
@@ -49,6 +50,7 @@ var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 	MaxPerEndpointStats:          20,
 	SimpleExploreExploitStrategy: DefaultSimpleExploreExploitStrategyConfig,
 	SyncToStorage:                DefaultSyncToStorageConfig,
+	ConnectionWait:               time.Second,
 }
 
 type SimpleExploreExploitStrategyConfig struct {
@@ -70,6 +72,7 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".strategy-update-interval", DefaultRestfulClientAggregatorConfig.StrategyUpdateInterval, "how frequently to update the strategy with endpoint latency and error rate data")
 	f.Duration(prefix+".wait-before-try-next", DefaultRestfulClientAggregatorConfig.WaitBeforeTryNext, "time to wait until trying the next set of REST endpoints while waiting for a response; the next set of REST endpoints is determined by the strategy selected")
 	f.Int(prefix+".max-per-endpoint-stats", DefaultRestfulClientAggregatorConfig.MaxPerEndpointStats, "number of stats entries (latency and success rate) to keep for each REST endpoint; controls whether strategy is faster or slower to respond to changing conditions")
+	f.Duration(prefix+".connection-wait", DefaultRestfulClientAggregatorConfig.ConnectionWait, "how long to wait for initial connection")
 	SimpleExploreExploitStrategyConfigAddOptions(prefix+".simple-explore-exploit-strategy", f)
 	SyncToStorageConfigAddOptions(prefix+".sync-to-storage", f)
 }
@@ -90,7 +93,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 		combinedUrls[url] = true
 	}
 	if config.OnlineUrlList != DefaultRestfulClientAggregatorConfig.OnlineUrlList {
-		onlineUrls, err := RestfulServerURLsFromList(ctx, config.OnlineUrlList)
+		onlineUrls, err := RestfulServerURLsFromListWithWait(ctx, config.OnlineUrlList, config.ConnectionWait)
 		if err != nil {
 			return nil, err
 		}

@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -42,6 +45,7 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
+	chainConfig               *params.ChainConfig
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
@@ -56,6 +60,7 @@ type MessageExtractor struct {
 // to be used when extracting messages from the parent chain.
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
+	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
@@ -72,6 +77,7 @@ func NewMessageExtractor(
 	}
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
+		chainConfig:               chainConfig,
 		addrs:                     rollupAddrs,
 		melDB:                     melDB,
 		msgConsumer:               msgConsumer,
@@ -179,6 +185,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 			m.melDB,
 			nil, // will be removed when syncing with the core mel runner code as that has been refactored into separate files
 			nil, // will be removed when syncing with the core mel runner code as that has been refactored into separate files
+			m.chainConfig,
 		)
 		if err != nil {
 			return m.retryInterval, err

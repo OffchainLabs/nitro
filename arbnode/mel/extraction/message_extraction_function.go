@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melextraction
 
 import (
@@ -9,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -56,16 +59,18 @@ func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.DAProviderRegistry,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
+	chainConfig *params.ChainConfig,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, []*mel.BatchMetadata, error) {
 	return extractMessagesImpl(
 		ctx,
 		inputState,
 		parentChainHeader,
-		dataProviders,
+		chainConfig,
+		dapReaders,
 		delayedMsgDatabase,
 		txFetcher,
 		logsFetcher,
@@ -86,7 +91,8 @@ func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
 	parentChainHeader *types.Header,
-	dataProviders *daprovider.DAProviderRegistry,
+	chainConfig *params.ChainConfig,
+	dapReaders arbstate.DapReaderSource,
 	delayedMsgDatabase DelayedMessageDatabase,
 	txFetcher TransactionFetcher,
 	logsFetcher LogsFetcher,
@@ -150,6 +156,12 @@ func extractMessagesImpl(
 		}
 		state.DelayedMessagesSeen += 1
 	}
+	if len(delayedMessages) > 0 {
+		// Only need to calculate partials once, after all the delayed messages are `seen`
+		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
 	// always be the same number of reports as there are batches.
@@ -203,8 +215,9 @@ func extractMessagesImpl(
 			batch.SequenceNumber,
 			batch.BlockHash,
 			serialized,
-			dataProviders,
+			dapReaders,
 			daprovider.KeysetValidate,
+			chainConfig,
 		)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -220,10 +233,12 @@ func extractMessagesImpl(
 		}
 		for _, msg := range messagesInBatch {
 			messages = append(messages, msg)
-			state.MsgCount += 1
 			if err = state.AccumulateMessage(msg); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("failed to accumulate message: %w", err)
 			}
+			// Updating of MsgCount is consistent with how DelayedMessagesSeen is updated
+			// i.e after the corresponding message has been accumulated
+			state.MsgCount += 1
 		}
 		state.BatchCount += 1
 		batchMetas = append(batchMetas, &mel.BatchMetadata{
@@ -231,6 +246,12 @@ func extractMessagesImpl(
 			DelayedMessageCount: state.DelayedMessagesRead,
 			ParentChainBlock:    state.ParentChainBlockNumber,
 		})
+	}
+	if len(messages) > 0 {
+		// Only need to calculate partials once, after all the messages are extracted
+		if err := state.GenerateMessageMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
 	}
 	return state, messages, delayedMessages, batchMetas, nil
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -50,6 +50,7 @@ type DataAvailabilityCheckConfig struct {
 	SequencerInboxAddress string        `koanf:"sequencer-inbox-address"`
 	L1BlocksPerRead       uint64        `koanf:"l1-blocks-per-read"`
 	CheckInterval         time.Duration `koanf:"check-interval"`
+	ConnectionWait        time.Duration `koanf:"connection-wait"`
 }
 
 var DefaultDataAvailabilityCheckConfig = DataAvailabilityCheckConfig{
@@ -57,6 +58,7 @@ var DefaultDataAvailabilityCheckConfig = DataAvailabilityCheckConfig{
 	L1ConnectionAttempts: 15,
 	L1BlocksPerRead:      100,
 	CheckInterval:        5 * time.Minute,
+	ConnectionWait:       2 * time.Second,
 }
 
 type DataAvailabilityCheck struct {
@@ -82,7 +84,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	if err != nil {
 		return nil, err
 	}
-	onlineUrls, err := anytrust.RestfulServerURLsFromList(ctx, dataAvailabilityCheckConfig.OnlineUrlList)
+	onlineUrls, err := anytrust.RestfulServerURLsFromListWithWait(ctx, dataAvailabilityCheckConfig.OnlineUrlList, dataAvailabilityCheckConfig.ConnectionWait)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +114,7 @@ func parseDataAvailabilityCheckConfig(args []string) (*DataAvailabilityCheckConf
 	f.String("sequencer-inbox-address", DefaultDataAvailabilityCheckConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 	f.Uint64("l1-blocks-per-read", DefaultDataAvailabilityCheckConfig.L1BlocksPerRead, "max l1 blocks to read per poll")
 	f.Duration("check-interval", DefaultDataAvailabilityCheckConfig.CheckInterval, "interval for running data availability check")
+	f.Duration("connection-wait", DefaultDataAvailabilityCheckConfig.ConnectionWait, "how long to wait for initial connection")
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
