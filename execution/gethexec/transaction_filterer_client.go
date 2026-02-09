@@ -57,7 +57,7 @@ func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) contai
 func (c *TransactionFiltererRPCClient) Unfilter(txHash common.Hash) containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
-		err := c.client.CallContext(ctx, &res, api.Namespace+"_unfilter", txHash)
+		err := c.client.CallContext(ctx, &res, TransactionFiltererNamespace+"_unfilter", txHash)
 		return res, err
 	})
 }
