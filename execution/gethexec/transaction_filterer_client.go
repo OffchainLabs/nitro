@@ -8,11 +8,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+const TransactionFiltererNamespace = "transactionfilterer"
 
 var DefaultTransactionFiltererRPCClientConfig = rpcclient.ClientConfig{
 	URL:                       "",
@@ -48,7 +49,7 @@ func (c *TransactionFiltererRPCClient) StopAndWait() {
 func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
-		err := c.client.CallContext(ctx, &res, api.Namespace+"_filter", txHashToFilter)
+		err := c.client.CallContext(ctx, &res, TransactionFiltererNamespace+"_filter", txHashToFilter)
 		return res, err
 	})
 }
