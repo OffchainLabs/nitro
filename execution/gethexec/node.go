@@ -315,8 +315,8 @@ func CreateExecutionNode(
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
 		classicMsgDb, err := stack.OpenDatabaseWithOptions("classic-msg", node.DatabaseOptions{
 			MetricsNamespace: "classicmsg/",
-			Cache:            16,
-			Handles:          16,
+			Cache:            0, // will be sanitized to minimum
+			Handles:          0, // will be sanitized to minimum
 			ReadOnly:         true,
 			NoFreezer:        true,
 		})
