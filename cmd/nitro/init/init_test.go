@@ -68,7 +68,7 @@ func TestInitializeAndDownloadInit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	addr, server := startFileServer(t, serverDir)
-	defer server.Shutdown(ctx)
+	defer gracefulShutdown(t, ctx, server)
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
@@ -118,7 +118,7 @@ func TestDownloadInitWithoutChecksum(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	addr, server := startFileServer(t, serverDir)
-	defer server.Shutdown(ctx)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -157,7 +157,7 @@ func TestDownloadInitWithChecksum(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	addr, server := startFileServer(t, serverDir)
-	defer server.Shutdown(ctx)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -194,7 +194,7 @@ func TestDownloadInitInPartsWithoutChecksum(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	addr, server := startFileServer(t, serverDir)
-	defer server.Shutdown(ctx)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -243,7 +243,7 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	addr, server := startFileServer(t, serverDir)
-	defer server.Shutdown(ctx)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -324,7 +324,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			addr, server := startFileServer(t, serverDir)
-			defer server.Shutdown(ctx)
+			defer gracefulShutdown(t, ctx, server)
 			addr = "http://" + addr
 
 			// Set latest snapshot URL
@@ -1273,4 +1273,10 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
+}
+
+func gracefulShutdown(t *testing.T, ctx context.Context, server *http.Server) {
+	if err := server.Shutdown(ctx); err != nil {
+		t.Logf("HTTP server shutdown error: %v", err)
+	}
 }
