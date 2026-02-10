@@ -220,19 +220,19 @@ func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type DangerousConfig struct {
-	BenchSequencer BenchSequencerConfig `koanf:"bench-sequencer"`
+	BenchmarkingSequencer BenchmarkingSequencerConfig `koanf:"benchmarking-sequencer"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	BenchSequencer: BenchSequencerConfigDefault,
+	BenchmarkingSequencer: BenchmarkingSequencerConfigDefault,
 }
 
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	BenchSequencerConfigAddOptions(prefix+".bench-sequencer", f)
+	BenchmarkingSequencerConfigAddOptions(prefix+".benchmarking-sequencer", f)
 }
 
 func (c *DangerousConfig) Validate() error {
-	if err := c.BenchSequencer.Validate(); err != nil {
+	if err := c.BenchmarkingSequencer.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -334,7 +334,7 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
-	var benchSequencerService interface{}
+	var benchmarkingSequencerService interface{}
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
@@ -342,8 +342,8 @@ func CreateExecutionNode(
 			return nil, err
 		}
 		txPublisher = sequencer
-		if config.Dangerous.BenchSequencer.Enable {
-			txPublisher, benchSequencerService = NewBenchSequencer(sequencer)
+		if config.Dangerous.BenchmarkingSequencer.Enable {
+			txPublisher, benchmarkingSequencerService = NewBenchmarkingSequencer(sequencer)
 		}
 	} else {
 		if config.Forwarder.RedisUrl != "" {
@@ -476,10 +476,10 @@ func CreateExecutionNode(
 		})
 	}
 
-	if benchSequencerService != nil {
+	if benchmarkingSequencerService != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "benchseq",
-			Service:   benchSequencerService,
+			Service:   benchmarkingSequencerService,
 			Public:    false,
 		})
 	}

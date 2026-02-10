@@ -1,12 +1,15 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 // DANGER! this file is included in all builds
-// DANGER! do not place any of the experimental logic and features here
+// DANGER! do not place any benchmarking-sequencer tag logic here
 
 package gethexec
 
-type BenchSequencerConfig struct {
+type BenchmarkingSequencerConfig struct {
 	Enable bool `koanf:"enable"`
 }
 
-var BenchSequencerConfigDefault = BenchSequencerConfig{
+var BenchmarkingSequencerConfigDefault = BenchmarkingSequencerConfig{
 	Enable: false,
 }

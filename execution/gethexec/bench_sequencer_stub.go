@@ -1,4 +1,7 @@
-//go:build !benchsequencer
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+//go:build !benchmarking-sequencer
 
 package gethexec
 
@@ -8,18 +11,18 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-func BenchSequencerConfigAddOptions(_ string, _ *pflag.FlagSet) {
+func BenchmarkingSequencerConfigAddOptions(_ string, _ *pflag.FlagSet) {
 	// don't add any options
 }
 
-func (c *BenchSequencerConfig) Validate() error {
+func (c *BenchmarkingSequencerConfig) Validate() error {
 	if c.Enable {
-		log.Warn("BenchSequencer is not supported in this build")
+		log.Warn("benchmarking sequencer requested but not supported in this build (missing benchmarking-sequencer build tag)")
 	}
 	return nil
 }
 
-func NewBenchSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
+func NewBenchmarkingSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
 	// do nothing
 	return sequencer, nil
 }

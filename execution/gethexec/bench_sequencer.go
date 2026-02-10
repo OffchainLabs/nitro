@@ -1,4 +1,7 @@
-//go:build benchsequencer
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+//go:build benchmarking-sequencer
 
 package gethexec
 
@@ -11,49 +14,49 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func BenchSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", BenchSequencerConfigDefault.Enable, "enables transaction indexer")
+func BenchmarkingSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", BenchmarkingSequencerConfigDefault.Enable, "enable benchmarking sequencer RPC (manual block creation; requires benchmarking-sequencer build tag)")
 }
 
-func (c *BenchSequencerConfig) Validate() error {
+func (c *BenchmarkingSequencerConfig) Validate() error {
 	if c.Enable {
-		log.Warn("DANGER! BenchSequencer enabled")
+		log.Warn("DANGER! benchmarking sequencer enabled (manual block creation); do not use in production")
 	}
 	return nil
 }
 
-func NewBenchSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
-	benchSequencer := &BenchSequencer{
+func NewBenchmarkingSequencer(sequencer *Sequencer) (TransactionPublisher, interface{}) {
+	benchmarkingSequencer := &BenchmarkingSequencer{
 		Sequencer: sequencer,
 		semaphore: make(chan struct{}, 1),
 	}
-	return benchSequencer, NewBenchSequencerAPI(benchSequencer)
+	return benchmarkingSequencer, NewBenchmarkingSequencerAPI(benchmarkingSequencer)
 }
 
-type BenchSequencer struct {
+type BenchmarkingSequencer struct {
 	*Sequencer
 	semaphore chan struct{}
 }
 
-func (s *BenchSequencer) Start(ctx context.Context) error {
+func (s *BenchmarkingSequencer) Start(ctx context.Context) error {
 	// override Sequencer.Start to not start the inner sequencer
 	s.StopWaiter.Start(ctx, s)
 	s.semaphore <- struct{}{}
 	return nil
 }
 
-func (s *BenchSequencer) TxQueueLength(includeRetryTxQueue bool) int {
+func (s *BenchmarkingSequencer) TxQueueLength(includeRetryTxQueue bool) int {
 	if includeRetryTxQueue {
 		return len(s.Sequencer.txQueue) + s.Sequencer.txRetryQueue.Len()
 	}
 	return len(s.Sequencer.txQueue)
 }
 
-func (s *BenchSequencer) TxRetryQueueLength() int {
+func (s *BenchmarkingSequencer) TxRetryQueueLength() int {
 	return s.Sequencer.txRetryQueue.Len()
 }
 
-func (s *BenchSequencer) CreateBlock() containers.PromiseInterface[bool] {
+func (s *BenchmarkingSequencer) CreateBlock() containers.PromiseInterface[bool] {
 	return stopwaiter.LaunchPromiseThread[bool](s, func(ctx context.Context) (bool, error) {
 		select {
 		// createBlock can't be run in parallel
@@ -69,22 +72,22 @@ func (s *BenchSequencer) CreateBlock() containers.PromiseInterface[bool] {
 	})
 }
 
-type BenchSequencerAPI struct {
-	benchSequencer *BenchSequencer
+type BenchmarkingSequencerAPI struct {
+	benchmarkingSequencer *BenchmarkingSequencer
 }
 
-func (a *BenchSequencerAPI) TxQueueLength(includeRetryTxQueue bool) int {
-	return a.benchSequencer.TxQueueLength(includeRetryTxQueue)
+func (a *BenchmarkingSequencerAPI) TxQueueLength(includeRetryTxQueue bool) int {
+	return a.benchmarkingSequencer.TxQueueLength(includeRetryTxQueue)
 }
 
-func (a *BenchSequencerAPI) TxRetryQueueLength() int {
-	return a.benchSequencer.TxRetryQueueLength()
+func (a *BenchmarkingSequencerAPI) TxRetryQueueLength() int {
+	return a.benchmarkingSequencer.TxRetryQueueLength()
 }
 
-func (a *BenchSequencerAPI) CreateBlock(ctx context.Context) (bool, error) {
-	return a.benchSequencer.CreateBlock().Await(ctx)
+func (a *BenchmarkingSequencerAPI) CreateBlock(ctx context.Context) (bool, error) {
+	return a.benchmarkingSequencer.CreateBlock().Await(ctx)
 }
 
-func NewBenchSequencerAPI(benchSequencer *BenchSequencer) *BenchSequencerAPI {
-	return &BenchSequencerAPI{benchSequencer: benchSequencer}
+func NewBenchmarkingSequencerAPI(benchmarkingSequencer *BenchmarkingSequencer) *BenchmarkingSequencerAPI {
+	return &BenchmarkingSequencerAPI{benchmarkingSequencer: benchmarkingSequencer}
 }

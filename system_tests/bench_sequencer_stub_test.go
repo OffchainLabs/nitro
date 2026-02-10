@@ -1,4 +1,7 @@
-//go:build !benchsequencer
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+//go:build !benchmarking-sequencer
 
 package arbtest
 
@@ -12,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func TestBenchSequencerStub(t *testing.T) {
+func TestBenchmarkingSequencerStub(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.Dangerous.BenchSequencer.Enable = true
+	builder.execConfig.Dangerous.BenchmarkingSequencer.Enable = true
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -51,16 +54,17 @@ func TestBenchSequencerStub(t *testing.T) {
 	Require(t, err)
 	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1), nil)
 	builder.L2.SendWaitTestTransactions(t, types.Transactions{tx})
-	block, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
 	timeout := time.After(5 * time.Second)
-	for block <= startBlock {
+	for {
+		block, err := builder.L2.Client.BlockNumber(ctx)
+		Require(t, err)
+		if block > startBlock {
+			break
+		}
 		select {
 		case <-timeout:
 			Fatal(t, "timeout exceeded while waiting for new block")
 		case <-time.After(20 * time.Millisecond):
 		}
-		block, err = builder.L2.Client.BlockNumber(ctx)
-		Require(t, err)
 	}
 }

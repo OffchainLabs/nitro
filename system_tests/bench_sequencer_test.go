@@ -1,4 +1,7 @@
-//go:build benchsequencer
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+//go:build benchmarking-sequencer
 
 package arbtest
 
@@ -12,14 +15,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func TestExperimentalBenchSequencer(t *testing.T) {
+func TestBenchmarkingSequencer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	// we don't want any txes sent during NodeBuilder.Build as they will hang and timeout due to no blocks beeing created automatically
+	// We don't want any txes sent during NodeBuilder.Build as they will hang and timeout due to no blocks being created automatically.
 	builder = builder.WithTakeOwnership(false)
-	builder.execConfig.Dangerous.BenchSequencer.Enable = true
+	builder.execConfig.Dangerous.BenchmarkingSequencer.Enable = true
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -42,13 +45,14 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 		}()
 
 		// wait for the transaction to be enqueued
-		var txQueueLen int
-		err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
-		Require(t, err)
 		timeout := time.After(5 * time.Second)
-		for txQueueLen < i+1 {
+		for {
+			var txQueueLen int
 			err := rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 			Require(t, err)
+			if txQueueLen >= i+1 {
+				break
+			}
 			select {
 			case <-timeout:
 				Fatal(t, "timeout exceeded while waiting for tx queue to grow")
@@ -60,7 +64,7 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 	block, err := builder.L2.Client.BlockNumber(ctx)
 	Require(t, err)
 	if block != startBlock {
-		Fatal(t, "block have been created even though benchseq_createBlock hasn't been called")
+		Fatal(t, "block has been created even though benchseq_createBlock hasn't been called")
 	}
 
 	var blockCreated bool
@@ -75,24 +79,26 @@ func TestExperimentalBenchSequencer(t *testing.T) {
 	err = rpcClient.CallContext(ctx, &txQueueLen, "benchseq_txQueueLength", false)
 	Require(t, err)
 	if txQueueLen != 0 {
-		Fatal(t, "benchseq_txQueueLenght reported non empty queue, want: 0, have:", txQueueLen)
+		Fatal(t, "benchseq_txQueueLength reported non empty queue, want: 0, have:", txQueueLen)
 	}
 
 	txSendersWg.Wait()
 	for _, tx := range txes {
-		builder.L2.EnsureTxSucceeded(tx)
+		_, err := builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
 	}
 
-	block, err = builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
 	timeout := time.After(5 * time.Second)
-	for block != startBlock+1 {
+	for {
+		block, err := builder.L2.Client.BlockNumber(ctx)
+		Require(t, err)
+		if block >= startBlock+1 {
+			break
+		}
 		select {
 		case <-timeout:
 			Fatal(t, "timeout exceeded while waiting for new block")
 		case <-time.After(20 * time.Millisecond):
 		}
-		block, err = builder.L2.Client.BlockNumber(ctx)
-		Require(t, err)
 	}
 }
