@@ -142,10 +142,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc, 0, false)
-	if err != nil {
-		Fail(t, err)
-	}
+	execEngine := gethexec.NewExecutionEngine(bc, 0, false)
 	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
 	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
 	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {
@@ -183,7 +180,8 @@ func TestTransactionStreamer(t *testing.T) {
 
 	err := inbox.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx)
+	err = exec.Start(ctx)
+	Require(t, err)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))

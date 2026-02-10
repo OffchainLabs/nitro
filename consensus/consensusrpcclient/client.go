@@ -35,6 +35,11 @@ func (c *ConsensusRPCClient) Start(ctx_in context.Context) error {
 	return c.client.Start(ctx)
 }
 
+func (c *ConsensusRPCClient) StopAndWait() {
+	c.client.Close()
+	c.StopWaiter.StopAndWait()
+}
+
 func convertError(err error) error {
 	if err == nil {
 		return nil
