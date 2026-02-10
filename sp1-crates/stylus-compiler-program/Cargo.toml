@@ -1,0 +1,10 @@
+[package]
+name = "stylus-compiler-program"
+description = "SP1 program wrapping wasmer singlepass compiler for provable compilation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sp1-zkvm = { workspace = true }
+wasmer = { workspace = true }
+prover = { workspace = true, features = ["native"] }
