@@ -28,13 +28,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -543,6 +543,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	if n.addressFilterService != nil {
 		n.addressFilterService.Start(ctx)
+		n.ExecEngine.SetAddressChecker(n.addressFilterService.GetAddressChecker())
 	}
 	return nil
 }
