@@ -291,3 +291,26 @@ pub fn activate_v2(
 fn heapify<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
+
+/// program_requires_prepare
+pub fn program_requires_prepare(
+    mut _env: FunctionEnvMut<CustomEnvData>,
+    _module_hash_ptr: WasmPtr<u16>,
+) -> Result<u32, Escape> {
+    Ok(0)
+}
+
+/// program_prepare
+pub fn program_prepare(
+    mut _env: FunctionEnvMut<CustomEnvData>,
+    _wasm_ptr: WasmPtr<u16>,
+    _wasm_size: u64,
+    _module_hash_ptr: WasmPtr<u16>,
+    _code_hash_ptr: WasmPtr<u16>,
+    _max_wasm_size: u32,
+    _page_limit: u32,
+    _debug_mode: u32,
+    _stylus_version: u32,
+) -> MaybeEscape {
+    Ok(())
+}

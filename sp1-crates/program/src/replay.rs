@@ -374,6 +374,8 @@ fn build_imports(
                 "validateCertificate" => func!(wavmio::validate_certificate),
             },
             "programs" => {
+                "program_prepare" => func!(programs::program_prepare),
+                "program_requires_prepare" => func!(programs::program_requires_prepare),
                 "new_program" => func!(programs::new_program),
                 "pop" => func!(programs::pop),
                 "set_response" => func!(programs::set_response),
