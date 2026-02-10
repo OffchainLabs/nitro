@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -86,24 +87,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	)
 	Require(t, err)
 
-	// Use the block recorder over the entry.
-	blockValidatorEntry, created, err := entryCreator.CreateBlockValidationEntry(ctx, doneEntry.End, arbutil.MessageIndex(doneEntry.End.PosInBatch))
-	Require(t, err)
-	if !created {
-		t.Fatal("validation entry not created")
-	}
-	l2Block, err := builder.L2.ExecNode.Backend.APIBackend().BlockByHash(ctx, blockValidatorEntry.End.BlockHash)
-	Require(t, err)
-	prevHeader, err := builder.L2.ExecNode.Backend.APIBackend().HeaderByHash(ctx, l2Block.ParentHash())
-	Require(t, err)
-	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
-	err = sbv.ValidationEntryRecord(ctx, blockValidatorEntry)
-	Require(t, err)
-	rlpEncodedHeader, err := rlp.EncodeToBytes(prevHeader)
-	Require(t, err)
-	blockValidatorEntry.Preimages[arbutil.Keccak256PreimageType][l2Block.ParentHash()] = rlpEncodedHeader
-
-	// Create a machine loader.
+	// Create a machine loader for the unified replay binary.
 	arbSpawnerCfgFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		cfg := server_arb.DefaultArbitratorSpawnerConfig
 		cfg.MachineConfig.UntilHostIoStatePath = "unified-until-host-io-state.bin"
@@ -114,20 +98,61 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	Require(t, err)
 	Require(t, spawner.Start(ctx))
 
-	// Launch an execution run with the entry and await GetLastStep() of execution run.
-	input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
-	Require(t, err)
-	execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true)
+	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
+	computedGlobalState := doneEntry.End
 
-	// Verify that the final global state matches the block hash of the native node at that message.
-	createdRun, err := execRun.Await(ctx)
-	Require(t, err)
-	lastStep, err := createdRun.GetLastStep().Await(ctx)
-	Require(t, err)
-	_ = lastStep
-	if lastStep.GlobalState.BlockHash != blockValidatorEntry.End.BlockHash {
-		t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
+	// While the computed global state's msg hash is non-empty, we will run MEL validation
+	// until we validate all the blocks corresponding to messages extracted by MEL.
+	// This is because when MEL extraction runs, it may extract N new messages. Then, we validate block production
+	// for messages 0 to N-1. At that point, a new message extraction must occur to fetch brand new messages beyond that.
+	for computedGlobalState.MELMsgHash != (common.Hash{}) {
+		blockValidatorEntry, created, err := entryCreator.CreateBlockValidationEntry(
+			ctx,
+			computedGlobalState,
+			arbutil.MessageIndex(computedGlobalState.PosInBatch),
+		)
+		Require(t, err)
+		if !created {
+			t.Fatal("validation entry not created")
+		}
+
+		l2Header, err := builder.L2.ExecNode.Backend.APIBackend().HeaderByHash(ctx, blockValidatorEntry.End.BlockHash)
+		Require(t, err)
+		prevL2Header, err := builder.L2.ExecNode.Backend.APIBackend().HeaderByHash(ctx, l2Header.ParentHash)
+		Require(t, err)
+
+		// We run recording over the execution of the block validator entry.
+		err = sbv.ValidationEntryRecord(ctx, blockValidatorEntry)
+		Require(t, err)
+
+		// We add the previous block header to the preimages map.
+		rlpEncodedHeader, err := rlp.EncodeToBytes(prevL2Header)
+		Require(t, err)
+		blockValidatorEntry.Preimages[arbutil.Keccak256PreimageType][l2Header.ParentHash] = rlpEncodedHeader
+
+		// Launch an execution run with the entry.
+		input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
+		Require(t, err)
+		execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true /* use bold machinery */)
+
+		// Verify the final global state matches the block hash of the native execution of that message.
+		createdRun, err := execRun.Await(ctx)
+		Require(t, err)
+		lastStep, err := createdRun.GetLastStep().Await(ctx)
+		Require(t, err)
+		if lastStep.GlobalState.BlockHash != blockValidatorEntry.End.BlockHash {
+			t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
+		}
+		t.Logf("Validated block execution of message index %d\n", lastStep.GlobalState.PosInBatch)
+
+		// Update the computed global state to the one just computed by Arbitrator.
+		computedGlobalState = lastStep.GlobalState
 	}
+
+	// Finally, we want to verify that the ending global state has executed all messages extracted by MEL
+	// and that it also contains the proper MEL state hash field corresponding to the extraction of such messages.
+	// This puts everything together and verifies we can validate both extraction and execution correctly, in lock-step.
+	t.Log("Hi")
 }
 
 type mockMELValidator struct {

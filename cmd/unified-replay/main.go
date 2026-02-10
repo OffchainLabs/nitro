@@ -53,9 +53,8 @@ func main() {
 	melState := readMELState(startMELStateHash)
 
 	if melMsgHash != (common.Hash{}) {
-		nextBlock := produceBlock(melMsgHash)
+		produceBlock(melMsgHash)
 		melwavmio.IncreasePositionInMEL()
-		wavmio.SetLastBlockHash(nextBlock.Hash())
 	} else {
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
 		// TODO: Read the real chain config.
@@ -77,7 +76,7 @@ func main() {
 	}
 }
 
-func produceBlock(msgHash common.Hash) *types.Block {
+func produceBlock(msgHash common.Hash) {
 	msgBytes := readPreimage(msgHash)
 	message := new(arbostypes.MessageWithMetadata)
 	if err := rlp.DecodeBytes(msgBytes, message); err != nil {
@@ -175,8 +174,6 @@ func produceBlock(msgHash common.Hash) *types.Block {
 	}
 	melwavmio.SetLastBlockHash(newBlockHash)
 	melwavmio.SetSendRoot(extraInfo.SendRoot)
-
-	return nil
 }
 
 // Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
