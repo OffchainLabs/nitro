@@ -925,6 +925,10 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 		return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 	}
 
+	if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
+		config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
+	}
+
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
 		return nil, nil, err

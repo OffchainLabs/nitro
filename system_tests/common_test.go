@@ -1064,6 +1064,10 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
+	chainConfig := blockchain.Config()
+	if b.execConfig.Dangerous.DebugBlock.OverwriteChainConfig {
+		b.execConfig.Dangerous.DebugBlock.Apply(chainConfig)
+	}
 	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
@@ -2654,4 +2658,24 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+
+// will call foo with specified interval, until foo returns true or specified timeout elapses
+// if timeout elapses fails with t.Fatal with timeoutMessage appended to the message
+// note: use pollWithDeadlineDefault if you don't care much about the interval and timeout, should make it easier to globally tune the tests
+func pollWithDeadline(t *testing.T, interval time.Duration, timeout time.Duration, foo func() bool) bool {
+	t.Helper()
+	deadline := time.After(timeout)
+	for !foo() {
+		select {
+		case <-deadline:
+			return false
+		case <-time.After(interval):
+		}
+	}
+	return true
+}
+
+func pollWithDeadlineDefault(t *testing.T, foo func() bool) bool {
+	return pollWithDeadline(t, 20*time.Millisecond, 5*time.Second, foo)
 }
