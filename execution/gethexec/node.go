@@ -276,15 +276,7 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	var transactionFiltererRPCClient *TransactionFiltererRPCClient
-	if config.Sequencer.Enable && config.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
-		filtererConfigFetcher := func() *rpcclient.ClientConfig {
-			return &configFetcher.Get().Sequencer.TransactionFiltering.TransactionFiltererRPCClient
-		}
-		transactionFiltererRPCClient = NewTransactionFiltererRPCClient(filtererConfigFetcher)
-	}
-
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)
+	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}

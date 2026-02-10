@@ -186,20 +186,14 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(
-	bc *core.BlockChain,
-	syncTillBlock uint64,
-	exposeMultiGas bool,
-	transactionFiltererRPCClient *TransactionFiltererRPCClient,
-) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
 	execEngine := &ExecutionEngine{
-		bc:                           bc,
-		resequenceChan:               make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:             make(chan struct{}, 1),
-		cachedL1PriceData:            NewL1PriceData(),
-		exposeMultiGas:               exposeMultiGas,
-		syncTillBlock:                syncTillBlock,
-		transactionFiltererRPCClient: transactionFiltererRPCClient,
+		bc:                bc,
+		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:  make(chan struct{}, 1),
+		cachedL1PriceData: NewL1PriceData(),
+		exposeMultiGas:    exposeMultiGas,
+		syncTillBlock:     syncTillBlock,
 	}
 	return execEngine, nil
 }
@@ -1279,6 +1273,10 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
+	s.transactionFiltererRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {

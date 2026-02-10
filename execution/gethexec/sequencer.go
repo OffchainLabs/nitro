@@ -544,6 +544,14 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
 
+	if config.Enable && config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+		filtererConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher().TransactionFiltering.TransactionFiltererRPCClient
+		}
+		transactionFiltererRPCClient := NewTransactionFiltererRPCClient(filtererConfigFetcher)
+		execEngine.SetTransactionFiltererRPCClient(transactionFiltererRPCClient)
+	}
+
 	s := &Sequencer{
 		execEngine:      execEngine,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
