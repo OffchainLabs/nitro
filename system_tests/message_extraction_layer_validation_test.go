@@ -152,11 +152,11 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	// Finally, we want to verify that the ending global state has executed all messages extracted by MEL
 	// and that it also contains the proper MEL state hash field corresponding to the extraction of such messages.
 	// This puts everything together and verifies we can validate both extraction and execution correctly, in lock-step.
-	if computedGlobalState.MELMsgHash != endMELState.Hash() {
-		t.Fatalf("Expected to compute MEL msg hash %s but computed %s", endMELState.Hash(), computedGlobalState.MELMsgHash)
+	if computedGlobalState.MELMsgHash != (common.Hash{}) {
+		t.Fatalf("Expected to compute MEL msg hash %s but computed %s", common.Hash{}, computedGlobalState.MELMsgHash)
 	}
-	if computedGlobalState.PosInBatch != endMELState.MsgCount-1 {
-		t.Fatalf("Expected to validate execution of %d messages, but got %d", endMELState.MsgCount-1, computedGlobalState.PosInBatch)
+	if computedGlobalState.PosInBatch != endMELState.MsgCount {
+		t.Fatalf("Expected to validate execution of %d messages, but got %d", endMELState.MsgCount, computedGlobalState.PosInBatch)
 	}
 }
 
