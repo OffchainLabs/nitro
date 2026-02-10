@@ -65,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -102,6 +103,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type info = *BlockchainTestInfo
@@ -1605,9 +1607,19 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	err = valnode.Start(ctx)
 	Require(t, err)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.Arbitrator.RedisValidationServerConfig, valnode.GetExec())
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	t.Cleanup(func() {
 		stack.Close()
 		valnode.Stop()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	})
 
 	return valnode, stack
@@ -1651,7 +1663,7 @@ func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.C
 	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
 }
 
-func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) *node.Node {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1665,12 +1677,18 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		}
 		redisStream := server_api.RedisStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
 		createRedisGroup(ctx, t, redisStream, redisClient)
+		redisBoldStream := server_api.RedisBoldStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
+		createRedisGroup(ctx, t, redisBoldStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
+		t.Cleanup(func() {
+			destroyRedisGroup(ctx, t, redisStream, redisClient)
+			destroyRedisGroup(ctx, t, redisBoldStream, redisClient)
+		})
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
+	return valStack
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
@@ -1750,21 +1768,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	l1Client := ethclient.NewClient(rpcClient)
 
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
-}
-
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
-	Require(t, err)
-	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
-	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
-	Require(t, err)
-	if len(messages) == 0 {
-		Fatal(t, "No delayed messages found at rollup creation block")
-	}
-	initMessage, err := messages[0].Message.ParseInitMessage()
-	Require(t, err, "Failed to parse rollup init message")
-
-	return initMessage
 }
 
 var (
@@ -1979,7 +1982,9 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	Require(t, err)
+
 	return addresses, initMessage
 }
 

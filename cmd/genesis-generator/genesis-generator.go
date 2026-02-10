@@ -148,7 +148,7 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 }
 
 func readChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
-	if gen.Config != nil {
+	if gen.Config != nil { //nolint:SA1019
 		return nil, nil, errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
 	}
 	if gen.SerializedChainConfig == "" {
