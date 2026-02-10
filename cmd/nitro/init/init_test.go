@@ -67,7 +67,8 @@ func TestInitializeAndDownloadInit(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
@@ -116,7 +117,8 @@ func TestDownloadInitWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -154,7 +156,8 @@ func TestDownloadInitWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -190,7 +193,8 @@ func TestDownloadInitInPartsWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -238,7 +242,8 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -318,7 +323,9 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			// Start HTTP server
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			addr := "http://" + startFileServer(t, ctx, serverDir)
+			addr, server := startFileServer(t, serverDir)
+			defer gracefulShutdown(t, ctx, server)
+			addr = "http://" + addr
 
 			// Set latest snapshot URL
 			initConfig := conf.InitConfigDefault
@@ -340,7 +347,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	}
 }
 
-func startFileServer(t *testing.T, ctx context.Context, dir string) string {
+func startFileServer(t *testing.T, dir string) (string, *http.Server) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	Require(t, err, "failed to listen")
@@ -356,12 +363,7 @@ func startFileServer(t *testing.T, ctx context.Context, dir string) string {
 			t.Error("failed to shutdown server")
 		}
 	}()
-	go func() {
-		<-ctx.Done()
-		err := server.Shutdown(ctx)
-		Require(t, err, "failed to shutdown server")
-	}()
-	return addr
+	return addr, server
 }
 
 func TestEmptyDatabaseDir(t *testing.T) {
@@ -1271,4 +1273,10 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
+}
+
+func gracefulShutdown(t *testing.T, ctx context.Context, server *http.Server) {
+	if err := server.Shutdown(ctx); err != nil {
+		t.Logf("HTTP server shutdown error: %v", err)
+	}
 }
