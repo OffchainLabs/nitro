@@ -319,6 +319,13 @@ fn build_imports(
                 "brotli_compress" => func!(arbcompress::brotli_compress),
                 "brotli_decompress" => func!(arbcompress::brotli_decompress),
             },
+            "arbcrypto" => {
+                "ecrecovery" => func!(precompiles::ecrecover),
+                "keccak256" => func!(precompiles::keccak256),
+            },
+            "hooks" => {
+                "beforeFirstIO" => func!(precompiles::dump_elf),
+            },
             "wasi_snapshot_preview1" => {
                 "proc_exit" => func!(wasi_stub::proc_exit),
                 "sched_yield" => func!(wasi_stub::sched_yield),
@@ -379,11 +386,6 @@ fn build_imports(
                 "create_evm_data_v2" => func!(programs::create_evm_data_v2),
                 "activate" => func!(programs::activate),
                 "activate_v2" => func!(programs::activate_v2),
-            },
-            "sp1" => {
-                "dump_elf" => func!(precompiles::dump_elf),
-                "ecrecover" => func!(precompiles::ecrecover),
-                "keccak256" => func!(precompiles::keccak256),
             },
         },
         func_env,
