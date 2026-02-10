@@ -20,7 +20,7 @@ use std::{
 use thiserror::Error;
 use validation::BatchInfo;
 use wasmer::{
-    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    imports, sys::CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
     RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
