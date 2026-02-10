@@ -1,4 +1,4 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use anyhow::Result;
@@ -11,7 +11,7 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
-use crate::engine::config::ModuleRoot;
+use crate::engine::ModuleRoot;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleRootMeta {
@@ -29,33 +29,35 @@ pub struct MachineLocator {
 }
 
 impl MachineLocator {
-    pub fn new() -> Result<Self> {
+    pub fn new(root_path: &Option<PathBuf>) -> Result<Self> {
         let mut dirs = Vec::new();
         let mut module_roots_set = HashSet::new();
         let mut latest_module_root = ModuleRootMeta::default();
         let mut final_root_path = PathBuf::new();
 
-        // Use CARGO_MANIFEST_DIR to find the crate root.
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        if let Some(root_path) = root_path {
+            dirs.push(root_path.clone());
+        } else {
+            // Use CARGO_MANIFEST_DIR to find the crate root.
+            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-        // Try to find the workspace root by looking for "target" in common locations
-        // <crate_root>/../../target/machines
-        if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
-            dirs.push(grandparent.join("target").join("machines"));
-        }
-        // <crate_root>/target/machines
-        dirs.push(manifest_dir.join("target").join("machines"));
+            // Try to find the workspace root by looking for "target" in common locations
+            // <crate_root>/../../target/machines
+            if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
+                dirs.push(grandparent.join("target").join("machines"));
+            }
 
-        // Check working directory
-        if let Ok(work_dir) = env::current_dir() {
-            dirs.push(work_dir.join("machines"));
-            dirs.push(work_dir.join("target").join("machines"));
-        }
+            // Check working directory
+            if let Ok(work_dir) = env::current_dir() {
+                dirs.push(work_dir.join("machines"));
+                dirs.push(work_dir.join("target").join("machines"));
+            }
 
-        // Check relative to the executable
-        if let Ok(exec_path) = env::current_exe() {
-            if let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent()) {
-                dirs.push(grandparent_of_exec.join("machines"));
+            // Check relative to the executable
+            if let Ok(exec_path) = env::current_exe() {
+                if let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent()) {
+                    dirs.push(grandparent_of_exec.join("machines"));
+                }
             }
         }
 
@@ -168,9 +170,10 @@ mod tests {
     };
 
     use crate::engine::{
-        config::ModuleRoot,
         machine_locator::{MachineLocator, ModuleRootMeta},
+        ModuleRoot,
     };
+    use anyhow::{anyhow, Result};
     use arbutil::Bytes32;
     use rand::RngCore;
 
@@ -281,9 +284,13 @@ mod tests {
         }
     }
 
-    fn test_machine_locator(root_count: u32) {
+    fn test_machine_locator(root_count: u32, root_path: &Option<PathBuf>) -> Result<()> {
         let file_manager = LocatorSimulator::new(root_count);
-        let machine_locator = MachineLocator::new().unwrap();
+        let machine_locator = MachineLocator::new(root_path)?;
+
+        if machine_locator.module_roots().is_empty() {
+            return Err(anyhow!("empty module roots"));
+        }
 
         assert_eq!(
             machine_locator.latest_wasm_module_root().module_root,
@@ -312,15 +319,43 @@ mod tests {
                     .unwrap()
                     .contains(&format!("0x{mod_root}")));
             });
+
+        Ok(())
     }
 
     #[test]
-    fn test_machine_locator_one_machine() {
-        test_machine_locator(1);
+    fn test_machine_locator_one_machine() -> Result<()> {
+        test_machine_locator(1, &None)
     }
 
     #[test]
-    fn test_machine_locator_many_machines() {
-        test_machine_locator(10);
+    fn test_machine_locator_many_machines() -> Result<()> {
+        test_machine_locator(10, &None)
+    }
+
+    #[test]
+    fn test_machine_locator_with_root_path() -> Result<()> {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let machines_dir = manifest_dir
+            .ancestors()
+            .nth(2)
+            .expect("Failed to navigate to workspace root")
+            .join("target/machines");
+
+        test_machine_locator(2, &Some(machines_dir))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_machine_locator_wrong_root_path() -> Result<()> {
+        let result = test_machine_locator(2, &Some("i/do/not/exist".into()));
+        assert!(result.is_err());
+
+        let error = result.err().unwrap();
+        let err_str = error.to_string();
+        assert!(err_str.contains("empty module roots"));
+
+        Ok(())
     }
 }

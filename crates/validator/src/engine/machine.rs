@@ -19,8 +19,10 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
-use crate::engine::config::{JitManagerConfig, ModuleRoot, REPLAY_WASM};
 use crate::engine::machine_locator::MachineLocator;
+use crate::engine::{
+    replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT,
+};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::net::TcpListener;
@@ -133,22 +135,22 @@ pub struct JitProcessManager {
 }
 
 impl JitProcessManager {
-    pub fn new_empty(config: &JitManagerConfig) -> Self {
+    pub fn new_empty() -> Self {
         Self {
-            wasm_memory_usage_limit: config.wasm_memory_usage_limit,
+            wasm_memory_usage_limit: DEFAULT_WASM_MEMORY_USAGE_LIMIT,
             machines: RwLock::new(HashMap::new()),
             shutting_down: AtomicBool::new(false),
         }
     }
 
-    pub fn new(config: &JitManagerConfig, locator: &MachineLocator) -> Result<Self> {
+    pub fn new(locator: &MachineLocator) -> Result<Self> {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
             .iter()
             .cloned()
             .map(|root_meta| {
-                let root_path = root_meta.path.join(REPLAY_WASM);
-                let sub_machine = create_jit_machine(config.jit_cranelift, &root_path)?;
+                let root_path = replay_binary(root_meta.path);
+                let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;
                 Ok::<(ModuleRoot, Arc<JitMachine>), anyhow::Error>((
                     root_meta.module_root,
                     Arc::new(sub_machine),
@@ -157,7 +159,7 @@ impl JitProcessManager {
             .collect::<Result<_, _>>()?;
 
         Ok(Self {
-            wasm_memory_usage_limit: config.wasm_memory_usage_limit,
+            wasm_memory_usage_limit: DEFAULT_WASM_MEMORY_USAGE_LIMIT,
             machines: RwLock::new(machines),
             shutting_down: AtomicBool::new(false),
         })

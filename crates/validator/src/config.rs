@@ -8,11 +8,10 @@
 //! into strongly-typed configuration objects used throughout the application.
 
 use anyhow::Result;
-use clap::{Args, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use crate::engine::config::{JitManagerConfig, ModuleRoot};
 use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
 
@@ -23,20 +22,18 @@ pub struct ServerState {
     /// a map of module roots to their respective location + binary
     pub locator: MachineLocator,
     /// Jit manager is responsible for computing next GlobalState. Not wrapped
-    /// in Arc<> since the caller of ServerState is wrapped in Arc<>. This field
-    /// is optional because it's only available in continuous InputMode
+    /// in Arc<> since the caller of ServerState is wrapped in Arc<>.
     pub jit_manager: JitProcessManager,
     pub available_workers: usize,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
-        let manager_config = JitManagerConfig::default();
-        let locator = MachineLocator::new()?;
+        let locator = MachineLocator::new(&config.root_path)?;
 
         let jit_manager = match config.mode {
-            InputMode::Continuous => JitProcessManager::new(&manager_config, &locator)?,
-            InputMode::Native => JitProcessManager::new_empty(&manager_config),
+            InputMode::Continuous => JitProcessManager::new(&locator)?,
+            InputMode::Native => JitProcessManager::new_empty(),
         };
         Ok(ServerState {
             mode: config.mode,
@@ -79,18 +76,10 @@ pub struct ServerConfig {
 
     #[clap(long)]
     workers: Option<usize>,
-}
 
-#[derive(Clone, Debug, Args)]
-#[group(required = true, multiple = false)]
-struct ModuleRootConfig {
-    /// Supported module root.
+    /// Root path to where 0x1234.../replay.wasm machines are located
     #[clap(long)]
-    module_root: Option<ModuleRoot>,
-
-    /// Path to the file containing the module root.
-    #[clap(long)]
-    module_root_path: Option<PathBuf>,
+    pub root_path: Option<PathBuf>,
 }
 
 impl ServerConfig {

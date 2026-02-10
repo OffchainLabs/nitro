@@ -22,7 +22,7 @@ use validation::{local_target, BatchInfo, GoGlobalState};
 
 use crate::{
     config::ServerState,
-    engine::config::{DEFAULT_JIT_CRANELIFT, REPLAY_WASM},
+    engine::{replay_binary, DEFAULT_JIT_CRANELIFT},
     spawner_endpoints::ValidationRequest,
 };
 
@@ -47,7 +47,7 @@ pub async fn validate_native(
             .path
             .to_path_buf()
     };
-    let binary = binary_path.join(REPLAY_WASM);
+    let binary = replay_binary(binary_path);
     info!("validate native serving request with module root at {binary:?}");
 
     let opts = jit::Opts {

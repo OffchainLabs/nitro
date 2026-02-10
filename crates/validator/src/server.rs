@@ -73,7 +73,7 @@ mod tests {
 
     use crate::{
         config::{ServerConfig, ServerState},
-        engine::config::ModuleRoot,
+        engine::ModuleRoot,
         server::run_server_internal,
     };
 
@@ -156,9 +156,7 @@ mod tests {
     }
 
     async fn test_server_lifecycle(additional_args: Option<Vec<&'static str>>) -> Result<()> {
-        let mut args = vec![
-            "server",
-        ];
+        let mut args = vec!["server"];
         if let Some(extra) = additional_args {
             args = [&args[..], &extra[..]].concat();
         }
