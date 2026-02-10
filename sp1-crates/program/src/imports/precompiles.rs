@@ -9,9 +9,14 @@ use secp256k1::{
 pub fn ecrecover(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     hash: Ptr,
+    hash_len: u32,
     sig: Ptr,
+    sig_len: u32,
     output: Ptr,
 ) -> Result<u32, Escape> {
+    assert_eq!(hash_len, 32, "Hash length must be 32 bytes");
+    assert_eq!(sig_len, 65, "Signature length must be 65 bytes (64 for signature + 1 for recovery id)");
+
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
