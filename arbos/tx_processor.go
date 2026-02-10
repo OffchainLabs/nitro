@@ -182,6 +182,20 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if to == nil {
 			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
 		}
+		// Check if this deposit tx is in the onchain filter.
+		// Deposits return endTxNow=true so RevertedTxHook (which normally
+		// handles filtered txs) is never reached. We must check here instead.
+		txHash := underlyingTx.Hash()
+		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
+			recipient, err := p.state.FilteredFundsRecipientOrDefault()
+			if err != nil {
+				return true, multigas.ZeroGas(), err, nil
+			}
+			util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
+			defer (startTracer())()
+			core.Transfer(evm.StateDB, from, recipient, uint256.MustFromBig(value))
+			return true, multigas.ZeroGas(), &core.ErrFilteredTx{TxHash: txHash}, nil
+		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
 		// We intentionally use the variant here that doesn't do tracing,
