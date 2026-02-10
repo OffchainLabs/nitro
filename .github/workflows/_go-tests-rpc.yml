@@ -42,6 +42,18 @@ jobs:
       - name: Build node dependencies
         run: make -j8 build-node-deps
       
+      - name: run TestAddressFilterDirectTransfer
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^TestAddressFilterDirectTransfer'
+
+      - name: run TestDelayInboxLong
+        continue-on-error: false
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^TestDelayInboxLong'
+
       - name: run tests with consensus and execution nodes connected over json rpc (A-batch 1/4)
         continue-on-error: false
         run: >-
