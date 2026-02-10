@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
@@ -73,6 +74,10 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	if melStateForMsg.MsgCount == 0 {
 		return nil, created, fmt.Errorf("MEL state for msg at position %d has 0 msg count", position)
 	}
+	prevResult, err := m.txStreamer.ResultAtMessageIndex(arbutil.MessageIndex(position) - 1)
+	if err != nil {
+		return nil, created, err
+	}
 	executionResult, err := m.txStreamer.ResultAtMessageIndex(arbutil.MessageIndex(position))
 	if err != nil {
 		return nil, created, err
@@ -87,8 +92,18 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	}
 	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
 	// Fetch and add the msg releated preimages
-	msgPreimages := m.melValidator.FetchMsgPreimages(melStateForMsg.ParentChainBlockNumber)
+	msgPreimages, err := m.melValidator.FetchMsgPreimages(ctx, uint64(position), melStateForMsg.ParentChainBlockNumber)
+	if err != nil {
+		return nil, created, err
+	}
 	validator.CopyPreimagesInto(preimages, msgPreimages)
+	startGs := validator.GoGlobalState{
+		BlockHash:    prevResult.BlockHash,
+		SendRoot:     prevResult.SendRoot,
+		MELStateHash: melStateForMsg.Hash(),
+		MELMsgHash:   msg.Hash(),
+		PosInBatch:   uint64(position),
+	}
 	endGlobalState := validator.GoGlobalState{
 		BlockHash:    executionResult.BlockHash,
 		SendRoot:     executionResult.SendRoot,
@@ -101,7 +116,7 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	return &validationEntry{
 		Stage:       ReadyForRecord,
 		Pos:         arbutil.MessageIndex(position),
-		Start:       startGlobalState,
+		Start:       startGs,
 		End:         endGlobalState,
 		msg:         msg,
 		ChainConfig: chainConfig,

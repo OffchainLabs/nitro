@@ -455,26 +455,35 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	}, currentState, nil
 }
 
-func (mv *MELValidator) FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap {
+func (mv *MELValidator) FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error) {
 	mv.msgPreimagesCacheMutex.RLock()
-	defer mv.msgPreimagesCacheMutex.RUnlock()
-	return mv.msgPreimagesCache[parentChainBlockNumber]
+	preimages, found := mv.msgPreimagesCache[parentChainBlockNumber]
+	mv.msgPreimagesCacheMutex.RUnlock()
+	if found {
+		return preimages, nil
+	}
+	// This Records msgPreimages to the msgPreimagesCache
+	_, _, err := mv.CreateNextValidationEntry(ctx, parentChainBlockNumber-1, l2BlockNum+1)
+	if err != nil {
+		return nil, err
+	}
+	mv.msgPreimagesCacheMutex.RLock()
+	preimages, found = mv.msgPreimagesCache[parentChainBlockNumber]
+	mv.msgPreimagesCacheMutex.RUnlock()
+	if !found {
+		return nil, errors.New("Couldn't add missing msg preimages to cache")
+	}
+	return preimages, nil
 }
 
-// ClearValidatedMsgPreimages trims the msgPreimagesCache by
-func (mv *MELValidator) ClearValidatedMsgPreimages(ctx context.Context, lastValidatedBlockNum, parentChainBlockNumber uint64) {
-	state, err := mv.messageExtractor.GetState(ctx, parentChainBlockNumber)
-	if err != nil {
-		log.Error("Error getting MEL state to clear validated msg preimages", "err", err)
-		return
-	}
-	if lastValidatedBlockNum+1 >= state.MsgCount {
-		mv.msgPreimagesCacheMutex.Lock()
-		defer mv.msgPreimagesCacheMutex.Unlock()
-		for key := range mv.msgPreimagesCache {
-			if key <= parentChainBlockNumber {
-				delete(mv.msgPreimagesCache, parentChainBlockNumber)
-			}
+// ClearValidatedMsgPreimages trims the msgPreimagesCache by clearing out entries with parent
+// chain block numbers lower than the parent chain block number of the last validated l2 block
+func (mv *MELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockParentChainBlockNumber uint64) {
+	mv.msgPreimagesCacheMutex.Lock()
+	defer mv.msgPreimagesCacheMutex.Unlock()
+	for key := range mv.msgPreimagesCache {
+		if key < lastValidatedL2BlockParentChainBlockNumber {
+			delete(mv.msgPreimagesCache, key)
 		}
 	}
 }

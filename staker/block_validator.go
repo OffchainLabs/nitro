@@ -366,6 +366,7 @@ func NewBlockValidator(
 	melValidator MELValidatorInterface,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
+		melValidator:            melValidator,
 		StatelessBlockValidator: statelessBlockValidator,
 		createNodesChan:         make(chan struct{}, 1),
 		sendRecordChan:          make(chan struct{}, 1),
@@ -377,6 +378,9 @@ func NewBlockValidator(
 	}
 	var validationEntryCreator BlockValidationEntryCreator
 	if config().EnableMEL {
+		if melValidator == nil {
+			return nil, errors.New("enable-mel is set but given MEL validator is nil")
+		}
 		validationEntryCreator = NewMELEnabledValidationEntryCreator(
 			melValidator,
 			streamer,
@@ -1019,6 +1023,14 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 		if err != nil {
 			log.Error("error trying to reorg validation", "pos", *reorg-1, "err", err)
 			v.possiblyFatal(err)
+		}
+	}
+	if v.config().EnableMEL {
+		msg, err := v.streamer.GetMessage(v.validated())
+		if err != nil {
+			log.Error("Couldn't clear msg preimages cache in MEL validator", "err", err)
+		} else {
+			v.melValidator.ClearValidatedMsgPreimages(msg.Message.Header.BlockNumber)
 		}
 	}
 	return v.config().ValidationPoll

@@ -2,9 +2,7 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -89,6 +88,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	// 	return &cfg
 	// }
 	// Create an entry.
+
 	mockMElV := &mockMELValidator{
 		realValidator:        melValidator,
 		latestValidatedState: endMELState,
@@ -114,36 +114,36 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	rlpEncodedHeader, err := rlp.EncodeToBytes(prevHeader)
 	Require(t, err)
 	blockValidatorEntry.Preimages[arbutil.Keccak256PreimageType][l2Block.ParentHash()] = rlpEncodedHeader
-	t.Logf("Last block hash: %s\n", l2Block.ParentHash())
-	t.Logf("Mel msg hash: %s\n", blockValidatorEntry.End.MELMsgHash)
-	t.Logf("Mel state hash: %s\n", blockValidatorEntry.End.MELStateHash)
+	// t.Logf("Last block hash: %s\n", l2Block.ParentHash())
+	// t.Logf("Mel msg hash: %s\n", blockValidatorEntry.End.MELMsgHash)
+	// t.Logf("Mel state hash: %s\n", blockValidatorEntry.End.MELStateHash)
 
-	preimagesJson, err := json.Marshal(blockValidatorEntry.Preimages)
-	Require(t, err)
-	Require(t, os.WriteFile("/tmp/block_preimages.json", preimagesJson, os.ModePerm))
+	// preimagesJson, err := json.Marshal(blockValidatorEntry.Preimages)
+	// Require(t, err)
+	// Require(t, os.WriteFile("/tmp/block_preimages.json", preimagesJson, os.ModePerm))
 
-	t.Log("Hi")
+	// t.Log("Hi")
 	// Create a machine loader.
-	// arbSpawnerCfgFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-	// 	cfg := server_arb.DefaultArbitratorSpawnerConfig
-	// 	cfg.MachineConfig.UntilHostIoStatePath = "unified-until-host-io-state.bin"
-	// 	cfg.MachineConfig.WavmBinaryPath = "unified_machine.wavm.br"
-	// 	return &cfg
-	// }
-	// spawner, err := server_arb.NewArbitratorSpawner(locator, arbSpawnerCfgFetcher)
-	// Require(t, err)
-	// Require(t, spawner.Start(ctx))
+	arbSpawnerCfgFetcher := func() *server_arb.ArbitratorSpawnerConfig {
+		cfg := server_arb.DefaultArbitratorSpawnerConfig
+		cfg.MachineConfig.UntilHostIoStatePath = "unified-until-host-io-state.bin"
+		cfg.MachineConfig.WavmBinaryPath = "unified_machine.wavm.br"
+		return &cfg
+	}
+	spawner, err := server_arb.NewArbitratorSpawner(locator, arbSpawnerCfgFetcher)
+	Require(t, err)
+	Require(t, spawner.Start(ctx))
 
-	// // Launch an execution run with the entry and await GetLastStep() of execution run.
-	// input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
-	// Require(t, err)
-	// execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true)
-	// // Verify that the final global state matches the block hash of the native node at that message.
-	// createdRun, err := execRun.Await(ctx)
-	// Require(t, err)
-	// lastStep, err := createdRun.GetLastStep().Await(ctx)
-	// Require(t, err)
-	// _ = lastStep
+	// Launch an execution run with the entry and await GetLastStep() of execution run.
+	input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
+	Require(t, err)
+	execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true)
+	// Verify that the final global state matches the block hash of the native node at that message.
+	createdRun, err := execRun.Await(ctx)
+	Require(t, err)
+	lastStep, err := createdRun.GetLastStep().Await(ctx)
+	Require(t, err)
+	_ = lastStep
 	// TODO: Verify the block hash against the native execution of the node.
 	// Check the global MEL fields remain the same, but that we changed the blockhash and pos in batch.
 }
@@ -157,6 +157,10 @@ func (m *mockMELValidator) LatestValidatedMELState(ctx context.Context) (*mel.St
 	return m.latestValidatedState, nil
 }
 
-func (m *mockMELValidator) FetchMsgPreimages(parentChainBlockNumber uint64) daprovider.PreimagesMap {
-	return m.realValidator.FetchMsgPreimages(parentChainBlockNumber)
+func (m *mockMELValidator) FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error) {
+	return m.realValidator.FetchMsgPreimages(ctx, l2BlockNum, parentChainBlockNumber)
+}
+
+func (m *mockMELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockParentChainBlockNumber uint64) {
+
 }
