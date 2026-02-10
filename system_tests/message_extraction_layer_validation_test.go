@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
+func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
