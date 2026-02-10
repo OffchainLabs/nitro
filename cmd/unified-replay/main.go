@@ -51,9 +51,7 @@ func main() {
 	melState := readMELState(startMELStateHash)
 
 	if melMsgHash != (common.Hash{}) {
-		msgBytes := readPreimage(melMsgHash)
-		var currentBlock *types.Block
-		nextBlock := produceBlock(currentBlock, msgBytes)
+		nextBlock := produceBlock(melMsgHash)
 		melwavmio.IncreasePositionInMEL()
 		wavmio.SetLastBlockHash(nextBlock.Hash())
 	} else {
@@ -77,14 +75,15 @@ func main() {
 	}
 }
 
-func produceBlock(currentBlock *types.Block, msgBytes []byte) *types.Block {
-	var message *arbostypes.MessageWithMetadata
+func produceBlock(msgHash common.Hash) *types.Block {
+	msgBytes := readPreimage(msgHash)
+	message := new(arbostypes.MessageWithMetadata)
 	if err := rlp.DecodeBytes(msgBytes, message); err != nil {
 		panic(fmt.Errorf("error RLP decoding message: %w", err))
 	}
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
-	lastBlockHash := wavmio.GetLastBlockHash()
+	lastBlockHash := melwavmio.GetLastBlockHash()
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
 	if lastBlockHash != (common.Hash{}) {

@@ -31,6 +31,7 @@ var (
 func StubInit() {
 	endParentChainBlockHashFlag := flag.String("end-parent-chain-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "endParentChainBlockHash")
 	startMelRootFlag := flag.String("start-mel-state-hash", "0000000000000000000000000000000000000000000000000000000000000000", "startMelHash")
+	melMsgHashFlag := flag.String("mel-msg-hash", "0000000000000000000000000000000000000000000000000000000000000000", "melMsgHash")
 	preimagesPath := flag.String("preimages", "", "file to load preimages from")
 	positionInMELFlag := flag.Uint64("position-in-mel", 0, "positionInMEL")
 	lastBlockHashFlag := flag.String("last-block-hash", "0000000000000000000000000000000000000000000000000000000000000000", "lastBlockHash")
@@ -38,6 +39,7 @@ func StubInit() {
 	endParentChainBlockHash = common.HexToHash(*endParentChainBlockHashFlag)
 	startMelStateHash = common.HexToHash(*startMelRootFlag)
 	positionInMEL = *positionInMELFlag
+	melMsgHash = common.HexToHash(*melMsgHashFlag)
 	lastBlockHash = common.HexToHash(*lastBlockHashFlag)
 	fileBytes, err := os.ReadFile(*preimagesPath)
 	if err != nil {

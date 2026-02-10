@@ -53,6 +53,10 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	if err != nil {
 		return nil, created, err
 	}
+	if latestValidatedMELState == nil {
+		log.Trace("create validation entry: no validated MEL state", "pos", position)
+		return nil, created, nil
+	}
 	validatedMsgCount := latestValidatedMELState.MsgCount
 	if uint64(position) >= validatedMsgCount {
 		log.Trace("create validation entry: nothing to do", "pos", position, "validatedMsgCount", validatedMsgCount)
