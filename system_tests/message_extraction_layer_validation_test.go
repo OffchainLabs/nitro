@@ -77,18 +77,6 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	}
 	Require(t, melValidator.AdvanceValidations(ctx, doneEntry))
 
-	// Check if we have executed all messages.
-
-	// Create block validator.
-	// errChan := make(chan error, 1)
-	// cfgFetcher := func() *staker.BlockValidatorConfig {
-	// 	cfg := builder.nodeConfig.BlockValidator
-	// 	cfg.Enable = true
-	// 	cfg.EnableMEL = true
-	// 	return &cfg
-	// }
-	// Create an entry.
-
 	mockMElV := &mockMELValidator{
 		realValidator:        melValidator,
 		latestValidatedState: endMELState,
@@ -114,15 +102,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	rlpEncodedHeader, err := rlp.EncodeToBytes(prevHeader)
 	Require(t, err)
 	blockValidatorEntry.Preimages[arbutil.Keccak256PreimageType][l2Block.ParentHash()] = rlpEncodedHeader
-	// t.Logf("Last block hash: %s\n", l2Block.ParentHash())
-	// t.Logf("Mel msg hash: %s\n", blockValidatorEntry.End.MELMsgHash)
-	// t.Logf("Mel state hash: %s\n", blockValidatorEntry.End.MELStateHash)
 
-	// preimagesJson, err := json.Marshal(blockValidatorEntry.Preimages)
-	// Require(t, err)
-	// Require(t, os.WriteFile("/tmp/block_preimages.json", preimagesJson, os.ModePerm))
-
-	// t.Log("Hi")
 	// Create a machine loader.
 	arbSpawnerCfgFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 		cfg := server_arb.DefaultArbitratorSpawnerConfig
@@ -138,14 +118,16 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 	input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
 	Require(t, err)
 	execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true)
+
 	// Verify that the final global state matches the block hash of the native node at that message.
 	createdRun, err := execRun.Await(ctx)
 	Require(t, err)
 	lastStep, err := createdRun.GetLastStep().Await(ctx)
 	Require(t, err)
 	_ = lastStep
-	// TODO: Verify the block hash against the native execution of the node.
-	// Check the global MEL fields remain the same, but that we changed the blockhash and pos in batch.
+	if lastStep.GlobalState.BlockHash != blockValidatorEntry.End.BlockHash {
+		t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
+	}
 }
 
 type mockMELValidator struct {

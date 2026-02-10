@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/gethhook"
 	melreplay "github.com/offchainlabs/nitro/mel-replay"
 	"github.com/offchainlabs/nitro/melwavmio"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -38,6 +39,7 @@ import (
 
 func main() {
 	melwavmio.StubInit()
+	gethhook.RequireHookedGeth()
 
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -161,7 +163,6 @@ func produceBlock(msgHash common.Hash) *types.Block {
 		}
 
 		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
-
 	}
 
 	newBlockHash := newBlock.Hash()
