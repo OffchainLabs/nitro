@@ -9,7 +9,6 @@
 #[cfg(feature = "native")]
 #[path = "../../../crates/prover/src/binary.rs"]
 pub mod binary;
-#[path = "../../../crates/prover/src/parse_input.rs"]
 pub mod parse_input;
 #[cfg(feature = "native")]
 #[path = "../../../crates/prover/src/programs/mod.rs"]
