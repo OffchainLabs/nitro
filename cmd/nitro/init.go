@@ -759,11 +759,19 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	var chainConfig *params.ChainConfig
 	var genesisArbOSInit *params.ArbOSInit
 
-	if config.Init.GenesisJsonFile != "" {
+	genesisJsonFile := config.Init.GenesisJsonFile
+	if genesisJsonFile == "" {
+		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+		}
+	}
+
+	if genesisJsonFile != "" {
 		if initDataReader != nil {
 			return executionDB, nil, errors.New("multiple init methods supplied")
 		}
-		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
+		genesisJson, err := os.ReadFile(genesisJsonFile)
 		if err != nil {
 			return executionDB, nil, err
 		}
@@ -935,6 +943,41 @@ func openInitializeExecutionDB(ctx context.Context, stack *node.Node, config *No
 	}
 
 	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
+}
+
+func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
+	files, err := os.ReadDir(genesisFileDirectory)
+	if err != nil {
+		return "", fmt.Errorf("error reading genesis json file directory %s: %w", genesisFileDirectory, err)
+	}
+	requiredFileName := fmt.Sprintf("%d.json", chainId)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if file.Name() != requiredFileName {
+			continue
+		}
+
+		fullPath := path.Join(genesisFileDirectory, file.Name())
+		genesisJson, err := os.ReadFile(fullPath)
+		if err != nil {
+			log.Error("error reading genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			log.Error("error unmarshaling genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		if gen.Config == nil || gen.Config.ChainID == nil || gen.Config.ChainID.Uint64() != chainId {
+			log.Error("genesis json file chain id does not match configured chain id", "file", fullPath, "genesisChainId", gen.Config.ChainID, "configuredChainId", chainId)
+			continue
+		}
+		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", chainId)
+		return fullPath, nil
+	}
+	return "", fmt.Errorf("no genesis json file found for chain id %d in directory %s", chainId, genesisFileDirectory)
 }
 
 func validateGenesisAssertion(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesis *types.Block, initDataReaderHasAccounts bool) error {

@@ -25,10 +25,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -880,5 +882,76 @@ func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "init config cannot be both empty and have a genesis json file specified") {
 		t.Fatal("expected conflict detection")
+	}
+}
+
+func TestGetGenesisFileNameFromDirectoryWithCorrectFile(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	genesisFileName := fmt.Sprintf("%d.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	genesis := core.Genesis{
+		Config: &params.ChainConfig{
+			ChainID: big.NewInt(int64(chainId)),
+		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	result, err := GetGenesisFileNameFromDirectory(tempDir, chainId)
+	Require(t, err)
+	if result != genesisFilePath {
+		t.Fatalf("expected %s, got %s", genesisFilePath, result)
+	}
+}
+
+func TestGetGenesisFileNameFromDirectoryWithWrongFileName(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	genesisFileName := fmt.Sprintf("%d_wrong.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	genesis := core.Genesis{
+		Config: &params.ChainConfig{
+			ChainID: big.NewInt(int64(chainId)),
+		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetGenesisFileNameFromDirectoryWithWrongChainId(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	wrongChainId := uint64(42162)
+	genesisFileName := fmt.Sprintf("%d.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	genesis := core.Genesis{
+		Config: &params.ChainConfig{
+			ChainID: big.NewInt(int64(wrongChainId)),
+		},
+		GasLimit:   0,
+		Difficulty: big.NewInt(0),
+		Alloc:      core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
