@@ -92,6 +92,10 @@ type ParentChainReader interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
+type MELValidator interface {
+	Rewind(parentChainBlockNumber uint64)
+}
+
 // Defines a message extraction service for a Nitro node which reads parent chain
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
@@ -109,6 +113,7 @@ type MessageExtractor struct {
 	caughtUpChan             chan struct{}
 	lastBlockToRead          atomic.Uint64
 	stuckCount               uint64
+	melValidator             MELValidator
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -122,6 +127,7 @@ func NewMessageExtractor(
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	melValidator MELValidator,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
@@ -137,6 +143,7 @@ func NewMessageExtractor(
 		dataProviders:     dapRegistry,
 		fsm:               fsm,
 		caughtUpChan:      make(chan struct{}),
+		melValidator:      melValidator,
 	}, nil
 }
 
@@ -252,8 +259,15 @@ func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageInde
 	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
-func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	return d.melDB.fetchDelayedMessage(index)
+func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	if err != nil {
+		return nil, err
+	}
+	if index >= headState.DelayedMessagesSeen {
+		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+	}
+	return m.melDB.fetchDelayedMessage(index)
 }
 
 func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
@@ -271,7 +285,13 @@ func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (u
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
-	// TODO: have a check to error if seqNum is less than headMelState.BatchCount
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	if err != nil {
+		return mel.BatchMetadata{}, err
+	}
+	if seqNum >= headState.BatchCount {
+		return mel.BatchMetadata{}, fmt.Errorf("batchMetadata not available for seqNum: %d greater than head MEL state batch count: %d", seqNum, headState.BatchCount)
+	}
 	batchMetadata, err := m.melDB.fetchBatchMetadata(seqNum)
 	if err != nil {
 		return mel.BatchMetadata{}, err
@@ -306,6 +326,20 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
+}
+
+func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
+	dbBatch := m.melDB.db.NewBatch()
+	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
+		return err
+	}
+	if err := dbBatch.Write(); err != nil {
+		return err
+	}
+	if m.melValidator != nil {
+		m.melValidator.Rewind(parentChainBlockNumber)
+	}
+	return nil
 }
 
 func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {

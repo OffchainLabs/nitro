@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -53,8 +52,9 @@ type MELValidator struct {
 	messageExtractor *melrunner.MessageExtractor
 	dapReaders       arbstate.DapReaderSource
 
+	rewindMutex                     sync.Mutex
 	latestValidatedGS               validator.GoGlobalState
-	latestValidatedParentChainBlock atomic.Uint64
+	latestValidatedParentChainBlock uint64
 
 	latestWasmModuleRoot common.Hash
 	redisValidator       *redis.ValidationClient
@@ -280,10 +280,13 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			return 0
 		}
 
+		mv.rewindMutex.Lock()
+		defer mv.rewindMutex.Unlock()
+
 		// Create validation entry
-		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), latestStakedAssertion.InboxMaxCount.Uint64())
+		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock, latestStakedAssertion.InboxMaxCount.Uint64())
 		if err != nil {
-			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock.Load(), "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
+			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
 			return 0
 		}
 		if entry == nil { // nothing to create, so lets wait for latestStakedAssertion to progress through blockValidator
@@ -300,15 +303,26 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		// Advance validations
 		if err := mv.AdvanceValidations(ctx, doneEntry); err != nil {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
+			return 0
 		}
-		mv.latestValidatedParentChainBlock.Store(endMELState.ParentChainBlockNumber)
+		mv.latestValidatedParentChainBlock = endMELState.ParentChainBlockNumber
 		mv.latestValidatedGS = doneEntry.End
 		return 0
 	})
 }
 
+// Rewind is only called by the MessageExtractor and will always be the first to be called during a reorg
+// either L1 (parent chain reorg) or L2 (InitConfig.ReorgToMessageBatch) or both (parent chain reorg causing L2 reorg)
+func (mv *MELValidator) Rewind(parentChainBlockNumber uint64) {
+	mv.rewindMutex.Lock()
+	defer mv.rewindMutex.Unlock()
+	mv.latestValidatedParentChainBlock = min(mv.latestValidatedParentChainBlock, parentChainBlockNumber)
+}
+
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
-	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock.Load())
+	mv.rewindMutex.Lock()
+	defer mv.rewindMutex.Unlock()
+	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock)
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
