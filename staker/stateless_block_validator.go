@@ -79,6 +79,10 @@ type MELValidatorInterface interface {
 	ClearValidatedMsgPreimages(lastValidatedL2BlockParentChainBlockNumber uint64)
 }
 
+type MELRunnerInterface interface {
+	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
+}
+
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
 	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)

@@ -8,30 +8,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/validator"
 )
 
-type BlockValidationEntryCreator interface {
-	CreateBlockValidationEntry(
-		ctx context.Context,
-		startGlobalState validator.GoGlobalState,
-		position arbutil.MessageIndex,
-	) (*validationEntry, bool, error)
-}
-
-type MELRunnerInterface interface {
-	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
-}
-
+// MELEnabledValidationEntryCreator is responsible for creating validation entries execution of
+// messages whose extraction has been validated by a MEL validator.
 type MELEnabledValidationEntryCreator struct {
 	melValidator MELValidatorInterface
 	txStreamer   TransactionStreamerInterface
 	melRunner    MELRunnerInterface
 }
 
+// NewMELEnabledValidationEntryCreator creates a new instance of MELEnabledValidationEntryCreator.
 func NewMELEnabledValidationEntryCreator(
 	melValidator MELValidatorInterface,
 	txStreamer TransactionStreamerInterface,
@@ -44,6 +34,10 @@ func NewMELEnabledValidationEntryCreator(
 	}
 }
 
+// CreateBlockValidationEntry creates a validation entry for the message at the
+// given position whose extraction has been already validated by the MEL validator.
+// It talks to the MEL validator to figure out if such a message's extraction has already been validated
+// and prepares a validation entry to validate the execution of such a message into a block.
 func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	ctx context.Context,
 	startGlobalState validator.GoGlobalState,
@@ -82,16 +76,18 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	if err != nil {
 		return nil, created, err
 	}
-	// Construct preimages
+	// Construct preimages.
 	preimages := make(daprovider.PreimagesMap)
 	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-	// Add MEL state to the preimages map
+
+	// Add MEL state to the preimages map.
 	encodedInitialState, err := rlp.EncodeToBytes(melStateForMsg)
 	if err != nil {
 		return nil, created, err
 	}
 	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
-	// Fetch and add the msg releated preimages
+
+	// Fetch and add the msg releated preimages.
 	msgPreimages, err := m.melValidator.FetchMsgPreimages(ctx, uint64(position), melStateForMsg.ParentChainBlockNumber)
 	if err != nil {
 		return nil, created, err
@@ -122,109 +118,4 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 		ChainConfig: chainConfig,
 		Preimages:   preimages,
 	}, created, nil
-}
-
-type PreMELValidationEntryCreator struct {
-	streamer       TransactionStreamerInterface
-	blockValidator *BlockValidator
-}
-
-func NewPreMELValidationEntryCreator(
-	streamer TransactionStreamerInterface,
-	blockValidator *BlockValidator,
-) *PreMELValidationEntryCreator {
-	return &PreMELValidationEntryCreator{
-		streamer:       streamer,
-		blockValidator: blockValidator,
-	}
-}
-
-func (p *PreMELValidationEntryCreator) CreateBlockValidationEntry(
-	ctx context.Context,
-	startGlobalState validator.GoGlobalState,
-	position arbutil.MessageIndex,
-) (*validationEntry, bool, error) {
-	created := false
-	pos := arbutil.MessageIndex(position)
-	streamerMsgCount, err := p.streamer.GetProcessedMessageCount()
-	if err != nil {
-		return nil, created, err
-	}
-	if pos >= streamerMsgCount {
-		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
-		return nil, created, nil
-	}
-	msg, err := p.streamer.GetMessage(pos)
-	if err != nil {
-		return nil, created, err
-	}
-	endRes, err := p.streamer.ResultAtMessageIndex(pos)
-	if err != nil {
-		return nil, created, err
-	}
-	if startGlobalState.PosInBatch == 0 || p.blockValidator.nextCreateBatchReread {
-		// new batch
-		found, fullBatchInfo, err := p.blockValidator.readFullBatch(ctx, p.blockValidator.nextCreateStartGS.Batch)
-		if !found {
-			return nil, created, err
-		}
-		if p.blockValidator.nextCreateBatch != nil {
-			p.blockValidator.prevBatchCache[p.blockValidator.nextCreateBatch.Number] = p.blockValidator.nextCreateBatch.PostedData
-		}
-		p.blockValidator.nextCreateBatch = fullBatchInfo
-		// #nosec G115
-		validatorMsgCountCurrentBatch.Update(int64(fullBatchInfo.MsgCount))
-		batchCacheLimit := p.blockValidator.config().BatchCacheLimit
-		if len(p.blockValidator.prevBatchCache) > int(batchCacheLimit) {
-			for num := range p.blockValidator.prevBatchCache {
-				if num+uint64(batchCacheLimit) < p.blockValidator.nextCreateStartGS.Batch {
-					delete(p.blockValidator.prevBatchCache, num)
-				}
-			}
-		}
-		p.blockValidator.nextCreateBatchReread = false
-	}
-	endGS := validator.GoGlobalState{
-		BlockHash: endRes.BlockHash,
-		SendRoot:  endRes.SendRoot,
-	}
-	if position+1 < p.blockValidator.nextCreateBatch.MsgCount {
-		endGS.Batch = startGlobalState.Batch
-		endGS.PosInBatch = startGlobalState.PosInBatch + 1
-	} else if position+1 == p.blockValidator.nextCreateBatch.MsgCount {
-		endGS.Batch = startGlobalState.Batch + 1
-		endGS.PosInBatch = 0
-	} else {
-		return nil, created, fmt.Errorf("illegal batch msg count %d pos %d batch %d", p.blockValidator.nextCreateBatch.MsgCount, position, endGS.Batch)
-	}
-	chainConfig := p.streamer.ChainConfig()
-	prevBatchNums, err := msg.Message.PastBatchesRequired()
-	if err != nil {
-		return nil, created, err
-	}
-	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
-	// prevBatchNums are only used for batch reports, each is only used once
-	for _, batchNum := range prevBatchNums {
-		data, found := p.blockValidator.prevBatchCache[batchNum]
-		if found {
-			delete(p.blockValidator.prevBatchCache, batchNum)
-		} else {
-			data, err = p.blockValidator.readPostedBatch(ctx, batchNum)
-			if err != nil {
-				return nil, created, err
-			}
-		}
-		prevBatches = append(prevBatches, validator.BatchInfo{
-			Number: batchNum,
-			Data:   data,
-		})
-	}
-	entry, err := newValidationEntry(
-		pos, startGlobalState, endGS, msg, p.blockValidator.nextCreateBatch, prevBatches, p.blockValidator.nextCreatePrevDelayed, chainConfig,
-	)
-	if err != nil {
-		return nil, created, err
-	}
-	created = true
-	return entry, created, nil
 }

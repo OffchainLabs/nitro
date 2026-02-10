@@ -89,7 +89,7 @@ type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
 	melValidator           MELValidatorInterface
-	validationEntryCreator BlockValidationEntryCreator
+	melEnabledEntryCreator *MELEnabledValidationEntryCreator
 
 	reorgMutex sync.RWMutex
 
@@ -376,20 +376,17 @@ func NewBlockValidator(
 		fatalErr:                fatalErr,
 		prevBatchCache:          make(map[uint64][]byte),
 	}
-	var validationEntryCreator BlockValidationEntryCreator
 	if config().EnableMEL {
 		if melValidator == nil {
 			return nil, errors.New("enable-mel is set but given MEL validator is nil")
 		}
-		validationEntryCreator = NewMELEnabledValidationEntryCreator(
+		validationEntryCreator := NewMELEnabledValidationEntryCreator(
 			melValidator,
 			streamer,
 			melRunner,
 		)
-	} else {
-		validationEntryCreator = NewPreMELValidationEntryCreator(streamer, ret)
+		ret.melEnabledEntryCreator = validationEntryCreator
 	}
-	ret.validationEntryCreator = validationEntryCreator
 	valInputsWriter, err := inputs.NewWriter(
 		inputs.WithBaseDir(ret.stack.InstanceDir()),
 		inputs.WithSlug("BlockValidator"))
@@ -659,11 +656,22 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	entry, created, err := v.validationEntryCreator.CreateBlockValidationEntry(
-		ctx,
-		v.nextCreateStartGS,
-		pos,
-	)
+	var entry *validationEntry
+	var created bool
+	var err error
+	if v.config().EnableMEL {
+		entry, created, err = v.melEnabledEntryCreator.CreateBlockValidationEntry(
+			ctx,
+			v.nextCreateStartGS,
+			pos,
+		)
+	} else {
+		entry, created, err = v.CreateBlockValidationEntry(
+			ctx,
+			v.nextCreateStartGS,
+			pos,
+		)
+	}
 	if err != nil {
 		return false, err
 	}
@@ -681,6 +689,96 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
+}
+
+func (v *BlockValidator) CreateBlockValidationEntry(
+	ctx context.Context,
+	startGlobalState validator.GoGlobalState,
+	position arbutil.MessageIndex,
+) (*validationEntry, bool, error) {
+	created := false
+	pos := arbutil.MessageIndex(position)
+	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
+	if err != nil {
+		return nil, created, err
+	}
+	if pos >= streamerMsgCount {
+		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
+		return nil, created, nil
+	}
+	msg, err := v.streamer.GetMessage(pos)
+	if err != nil {
+		return nil, created, err
+	}
+	endRes, err := v.streamer.ResultAtMessageIndex(pos)
+	if err != nil {
+		return nil, created, err
+	}
+	if startGlobalState.PosInBatch == 0 || v.nextCreateBatchReread {
+		// new batch
+		found, fullBatchInfo, err := v.readFullBatch(ctx, v.nextCreateStartGS.Batch)
+		if !found {
+			return nil, created, err
+		}
+		if v.nextCreateBatch != nil {
+			v.prevBatchCache[v.nextCreateBatch.Number] = v.nextCreateBatch.PostedData
+		}
+		v.nextCreateBatch = fullBatchInfo
+		// #nosec G115
+		validatorMsgCountCurrentBatch.Update(int64(fullBatchInfo.MsgCount))
+		batchCacheLimit := v.config().BatchCacheLimit
+		if len(v.prevBatchCache) > int(batchCacheLimit) {
+			for num := range v.prevBatchCache {
+				if num+uint64(batchCacheLimit) < v.nextCreateStartGS.Batch {
+					delete(v.prevBatchCache, num)
+				}
+			}
+		}
+		v.nextCreateBatchReread = false
+	}
+	endGS := validator.GoGlobalState{
+		BlockHash: endRes.BlockHash,
+		SendRoot:  endRes.SendRoot,
+	}
+	if position+1 < v.nextCreateBatch.MsgCount {
+		endGS.Batch = startGlobalState.Batch
+		endGS.PosInBatch = startGlobalState.PosInBatch + 1
+	} else if position+1 == v.nextCreateBatch.MsgCount {
+		endGS.Batch = startGlobalState.Batch + 1
+		endGS.PosInBatch = 0
+	} else {
+		return nil, created, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatch.MsgCount, position, endGS.Batch)
+	}
+	chainConfig := v.streamer.ChainConfig()
+	prevBatchNums, err := msg.Message.PastBatchesRequired()
+	if err != nil {
+		return nil, created, err
+	}
+	prevBatches := make([]validator.BatchInfo, 0, len(prevBatchNums))
+	// prevBatchNums are only used for batch reports, each is only used once
+	for _, batchNum := range prevBatchNums {
+		data, found := v.prevBatchCache[batchNum]
+		if found {
+			delete(v.prevBatchCache, batchNum)
+		} else {
+			data, err = v.readPostedBatch(ctx, batchNum)
+			if err != nil {
+				return nil, created, err
+			}
+		}
+		prevBatches = append(prevBatches, validator.BatchInfo{
+			Number: batchNum,
+			Data:   data,
+		})
+	}
+	entry, err := newValidationEntry(
+		pos, startGlobalState, endGS, msg, v.nextCreateBatch, prevBatches, v.nextCreatePrevDelayed, chainConfig,
+	)
+	if err != nil {
+		return nil, created, err
+	}
+	created = true
+	return entry, created, nil
 }
 
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
