@@ -93,13 +93,13 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string                        `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool                          `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
-	Dangerous                    DangerousConfig               `koanf:"dangerous"`
+	Dangerous                    SequencerDangerousConfig      `koanf:"dangerous"`
 	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
 
-type DangerousConfig struct {
+type SequencerDangerousConfig struct {
 	DisableSeqInboxMaxDataSizeCheck bool `koanf:"disable-seq-inbox-max-data-size-check"`
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
@@ -226,11 +226,11 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
-	Dangerous:                    DefaultDangerousConfig,
+	Dangerous:                    DefaultSequencerDangerousConfig,
 	EventFilter:                  eventfilter.DefaultEventFilterConfig,
 }
 
-var DefaultDangerousConfig = DangerousConfig{
+var DefaultSequencerDangerousConfig = SequencerDangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
 }
 
@@ -244,7 +244,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	TimeboostAddOptions(prefix+".timeboost", f)
 
-	DangerousAddOptions(prefix+".dangerous", f)
+	SequencerDangerousAddOptions(prefix+".dangerous", f)
 	EventFilterAddOptions(prefix+".event-filter", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
@@ -271,9 +271,9 @@ func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
 
-func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
-	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+func SequencerDangerousAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultSequencerDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
+	f.Bool(prefix+".disable-blob-base-fee-check", DefaultSequencerDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
