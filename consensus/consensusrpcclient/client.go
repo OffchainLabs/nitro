@@ -36,8 +36,8 @@ func (c *ConsensusRPCClient) Start(ctx_in context.Context) error {
 }
 
 func (c *ConsensusRPCClient) StopAndWait() {
-	c.StopWaiter.StopAndWait()
 	c.client.Close()
+	c.StopWaiter.StopAndWait()
 }
 
 func convertError(err error) error {
