@@ -69,8 +69,11 @@ var (
 	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
-var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-var ResultNotFound = errors.New("result not found")
+var (
+	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+	ResultNotFound                      = errors.New("result not found")
+	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+)
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
@@ -768,7 +771,7 @@ func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
 func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis := s.GetGenesisBlockNumber()
 	if blockNum < genesis {
-		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+		return 0, fmt.Errorf("%w: blockNum %d < genesis %d", BlockNumBeforeGenesis, blockNum, genesis)
 	}
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
