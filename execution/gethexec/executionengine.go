@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
@@ -108,6 +109,14 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
+	}
+	// For tx types that alias the sender (unsigned contract txs, retryables),
+	// also check the original L1 address. The sender in the tx is already
+	// aliased by the L1 bridge, but the restricted address list contains
+	// original (non-aliased) addresses.
+	txType := tx.Type()
+	if arbosutil.DoesTxTypeAlias(&txType) {
+		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 
 	if db.IsAddressFiltered() {

@@ -19,10 +19,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // sendDelayedTx sends a transaction via L1 delayed inbox.
@@ -1137,4 +1139,88 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	receipt2, err := builder.L2.Client.TransactionReceipt(ctx, tx2.Hash())
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusSuccessful, receipt2.Status, "tx2 should have success status")
+}
+
+// TestDelayedMessageFilterAliasedSender verifies that when an unsigned delayed
+// message is sent via sendUnsignedTransaction, the original (non-aliased) L1
+// sender address is checked against the address filter. Without de-aliasing,
+// the filter would only see the aliased L2 address and miss the restricted
+// original address.
+func TestDelayedMessageFilterAliasedSender(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// The L1 sender whose ORIGINAL address will be filtered
+	l1SenderAddr := builder.L1Info.GetAddress("User")
+
+	// Compute the aliased L2 address (what the sender appears as on L2 for unsigned txs)
+	aliasedSenderAddr := arbosutil.RemapL1Address(l1SenderAddr)
+
+	// Fund the aliased address on L2 so the unsigned tx can pay for gas
+	builder.L2.TransferBalanceTo(t, "Owner", aliasedSenderAddr, big.NewInt(1e18), builder.L2Info)
+
+	// Create a recipient account (not filtered)
+	builder.L2Info.GenerateAccount("Recipient")
+	recipientAddr := builder.L2Info.GetAddress("Recipient")
+
+	// Get initial balance
+	initialBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
+	require.NoError(t, err)
+
+	// Set up address filter to block the ORIGINAL L1 address (NOT the aliased one).
+	// Sanctions lists contain original addresses, not aliased derivatives.
+	filter := newHashedChecker([]common.Address{l1SenderAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Get nonce for the aliased address on L2
+	nonce, err := builder.L2.Client.NonceAt(ctx, aliasedSenderAddr, nil)
+	require.NoError(t, err)
+
+	// Create unsigned tx (ArbitrumUnsignedTx) - matches what L2 node creates from delayed msg
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   builder.L2Info.Signer.ChainID(),
+		From:      aliasedSenderAddr,
+		Nonce:     nonce,
+		GasFeeCap: builder.L2Info.GasPrice,
+		Gas:       builder.L2Info.TransferGas,
+		To:        &recipientAddr,
+		Value:     big.NewInt(1e12),
+		Data:      nil,
+	})
+
+	// Send via L1 delayed inbox using sendUnsignedTransaction.
+	// The bridge will alias the sender in _deliverToBridge, so on L2 the
+	// sender is aliasedSenderAddr (not l1SenderAddr).
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+	l1tx, err := delayedInbox.SendUnsignedTransaction(
+		&l1opts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	require.NoError(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	// Advance L1 to trigger delayed message processing
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Verify sequencer is halted on this tx.
+	// The filter catches the original L1 address via de-aliasing in PostTxFilter.
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{unsignedTx.Hash()}, 10*time.Second)
+
+	// Verify recipient balance did NOT change (tx was not processed)
+	finalBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, initialBalance, finalBalance, "recipient balance should not change - sender is filtered")
 }
