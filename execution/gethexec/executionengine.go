@@ -186,8 +186,8 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
-	execEngine := &ExecutionEngine{
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:  make(chan struct{}, 1),
@@ -195,7 +195,6 @@ func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGa
 		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
 	}
-	return execEngine, nil
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
