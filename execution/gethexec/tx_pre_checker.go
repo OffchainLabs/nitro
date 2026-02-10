@@ -43,13 +43,12 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
-const TxPreCheckerMaxAllowedGas uint64 = 50_000_000
-
 type TxPreCheckerConfig struct {
 	Strictness             uint                          `koanf:"strictness" reload:"hot"`
 	RequiredStateAge       int64                         `koanf:"required-state-age" reload:"hot"`
 	RequiredStateMaxBlocks uint                          `koanf:"required-state-max-blocks" reload:"hot"`
 	ApplyTransactionFilter bool                          `koanf:"apply-transaction-filter" reload:"hot"`
+	MaxAllowedGas          uint64                        `koanf:"max-allowed-gas" reload:"hot"`
 	EventFilter            eventfilter.EventFilterConfig `koanf:"event-filter"`
 }
 
@@ -60,6 +59,7 @@ var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
 	ApplyTransactionFilter: false,
+	MaxAllowedGas:          50_000_000,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -69,6 +69,8 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
 	f.Bool(prefix+".apply-transaction-filter", DefaultTxPreCheckerConfig.ApplyTransactionFilter, "whether to apply the transaction filter while pre-checking")
+	f.Uint64(prefix+".max-allowed-gas", DefaultTxPreCheckerConfig.MaxAllowedGas, "max gas allowed for speculative execution during transaction filtering; txs exceeding this are rejected")
+	EventFilterAddOptions(prefix+".event-filter", f)
 }
 
 type TxPreChecker struct {
@@ -138,6 +140,7 @@ func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
 }
 
 func (c *TxPreChecker) applyTransactionFilterPrecheck(
+	config *TxPreCheckerConfig,
 	signer types.Signer,
 	sender common.Address,
 	header *types.Header,
@@ -147,6 +150,12 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 ) error {
 	if c.addressChecker == nil {
 		return nil // pass through if no address checker is set
+	}
+
+	if tx.Gas() > config.MaxAllowedGas {
+		log.Warn("rejecting transaction that exceeds prechecker max gas for filtering",
+			"txHash", tx.Hash(), "txGas", tx.Gas(), "maxAllowedGas", config.MaxAllowedGas)
+		return state.ErrArbTxFilter
 	}
 
 	statedb.SetAddressChecker(c.addressChecker)
@@ -188,11 +197,10 @@ func (c *TxPreChecker) applyTransactionFilterPrecheck(
 	}
 	message.Nonce = stateNonce
 
-	// Limit the gas used in precheck execution
-	gasPool := new(core.GasPool).AddGas(min(tx.Gas(), TxPreCheckerMaxAllowedGas))
+	gasPool := new(core.GasPool).AddGas(config.MaxAllowedGas)
 
 	_, err = core.ApplyMessage(evm, message, gasPool)
-	// Ignore execution errors, since we care only about touched adresses
+	// Ignore execution errors, since we care only about touched addresses
 	_ = err
 
 	// Last, check event logs
@@ -298,8 +306,15 @@ func (c *TxPreChecker) PreCheckTx(header *types.Header, statedb *state.StateDB, 
 		}
 	}
 
+	balance := statedb.GetBalance(sender)
+	cost := tx.Cost()
+	if arbmath.BigLessThan(balance.ToBig(), cost) {
+		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
+	}
+
 	if config.ApplyTransactionFilter {
 		if err := c.applyTransactionFilterPrecheck(
+			config,
 			signer,
 			sender,
 			header,
@@ -309,12 +324,6 @@ func (c *TxPreChecker) PreCheckTx(header *types.Header, statedb *state.StateDB, 
 		); err != nil {
 			return err
 		}
-	}
-
-	balance := statedb.GetBalance(sender)
-	cost := tx.Cost()
-	if arbmath.BigLessThan(balance.ToBig(), cost) {
-		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)

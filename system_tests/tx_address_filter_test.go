@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -547,8 +548,7 @@ func TestPreCheckerEventFilter(t *testing.T) {
 	create2Addr, err := contract.ComputeCreate2Address(nil, salt)
 	Require(t, err)
 
-	// TODO: use idiomatic way to set filter after https://github.com/OffchainLabs/nitro/pull/4235 merge
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr, create2Addr})
+	filter := newHashedChecker([]common.Address{filteredAddr, create2Addr})
 	builder.L2.ExecNode.TxPreChecker.SetAddressChecker(filter)
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -604,4 +604,39 @@ func TestPreCheckerEventFilter(t *testing.T) {
 	if !isFilteredError(err) {
 		t.Fatalf("expected pre-checker to reject SELFDESTRUCT to filtered beneficiary, got: %v", err)
 	}
+}
+
+func TestPreCheckerMaxAllowedGas(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
+	builder.execConfig.TxPreChecker.ApplyTransactionFilter = true
+	builder.execConfig.TxPreChecker.MaxAllowedGas = 500_000
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User")
+	builder.L2.TransferBalance(t, "Owner", "User", big.NewInt(1e18), builder.L2Info)
+
+	filter := newHashedChecker([]common.Address{})
+	builder.L2.ExecNode.TxPreChecker.SetAddressChecker(filter)
+
+	// Transaction with gas exceeding MaxAllowedGas should be rejected
+	highGasTx := builder.L2Info.PrepareTx("User", "Owner", 1_000_000, big.NewInt(1), nil)
+	err := builder.L2.Client.SendTransaction(ctx, highGasTx)
+	if !isFilteredError(err) {
+		t.Fatalf("expected tx with gas exceeding max to be rejected, got: %v", err)
+	}
+	builder.L2Info.GetInfoWithPrivKey("User").Nonce.Store(0)
+
+	// Transaction with gas under MaxAllowedGas should succeed
+	lowGasTx := builder.L2Info.PrepareTx("User", "Owner", 300_000, big.NewInt(1), nil)
+	err = builder.L2.Client.SendTransaction(ctx, lowGasTx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(lowGasTx)
+	Require(t, err)
 }
