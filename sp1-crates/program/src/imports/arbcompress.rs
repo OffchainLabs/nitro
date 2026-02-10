@@ -11,7 +11,7 @@ use std::io::{Cursor, Read, Write};
 use wasmer::FunctionEnvMut;
 
 const STYLUS_DICTIONARY: &[u8] =
-    include_bytes!("../../../../arbitrator/brotli/src/dicts/stylus-program-11.lz");
+    include_bytes!("../../../../crates/brotli/src/dicts/stylus-program-11.lz");
 
 // Following Arbitrum's convention
 pub const BROTLI_SUCCESS: u32 = 1;

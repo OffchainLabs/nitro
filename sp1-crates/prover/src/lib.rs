@@ -7,19 +7,19 @@
 #![allow(unexpected_cfgs)]
 
 #[cfg(feature = "native")]
-#[path = "../../../arbitrator/prover/src/binary.rs"]
+#[path = "../../../crates/prover/src/binary.rs"]
 pub mod binary;
-#[path = "../../../arbitrator/prover/src/parse_input.rs"]
+#[path = "../../../crates/prover/src/parse_input.rs"]
 pub mod parse_input;
 #[cfg(feature = "native")]
-#[path = "../../../arbitrator/prover/src/programs/mod.rs"]
+#[path = "../../../crates/prover/src/programs/mod.rs"]
 pub mod programs;
 #[cfg(feature = "native")]
-#[path = "../../../arbitrator/prover/src/value.rs"]
+#[path = "../../../crates/prover/src/value.rs"]
 pub mod value;
 
 #[cfg(feature = "native")]
-#[path = "../../../arbitrator/arbutil/src/operator.rs"]
+#[path = "../../../crates/arbutil/src/operator.rs"]
 pub mod operator;
 
 pub mod binary_input;
