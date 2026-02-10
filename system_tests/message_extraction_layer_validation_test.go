@@ -143,7 +143,7 @@ func TestMELValidator_Recording_RunsUnifiedReplayBinary(t *testing.T) {
 		if lastStep.GlobalState.BlockHash != blockValidatorEntry.End.BlockHash {
 			t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
 		}
-		t.Logf("Validated block execution of message index %d\n", lastStep.GlobalState.PosInBatch)
+		t.Logf("Validated block execution of message index %+v\n", lastStep.GlobalState)
 
 		// Update the computed global state to the one just computed by Arbitrator.
 		computedGlobalState = lastStep.GlobalState

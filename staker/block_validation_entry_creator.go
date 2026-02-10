@@ -81,11 +81,11 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 
 	// Add MEL state to the preimages map.
-	encodedInitialState, err := rlp.EncodeToBytes(melStateForMsg)
+	encodedInitialState, err := rlp.EncodeToBytes(latestValidatedMELState)
 	if err != nil {
 		return nil, created, err
 	}
-	preimages[arbutil.Keccak256PreimageType][melStateForMsg.Hash()] = encodedInitialState
+	preimages[arbutil.Keccak256PreimageType][latestValidatedMELState.Hash()] = encodedInitialState
 
 	// Fetch and add the msg releated preimages.
 	msgPreimages, err := m.melValidator.FetchMsgPreimages(ctx, uint64(position), melStateForMsg.ParentChainBlockNumber)
@@ -96,14 +96,14 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	startGs := validator.GoGlobalState{
 		BlockHash:    prevResult.BlockHash,
 		SendRoot:     prevResult.SendRoot,
-		MELStateHash: melStateForMsg.Hash(),
+		MELStateHash: latestValidatedMELState.Hash(),
 		MELMsgHash:   msg.Hash(),
 		PosInBatch:   uint64(position),
 	}
 	endGlobalState := validator.GoGlobalState{
 		BlockHash:    executionResult.BlockHash,
 		SendRoot:     executionResult.SendRoot,
-		MELStateHash: melStateForMsg.Hash(),
+		MELStateHash: latestValidatedMELState.Hash(),
 		MELMsgHash:   msg.Hash(),
 		PosInBatch:   uint64(position) + 1,
 	}
