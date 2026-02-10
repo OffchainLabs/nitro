@@ -1,2 +1,2 @@
 ### Ignored
-- Bump bytes from 1.11.0 to 1.11.1
+- Bump bytes from 1.7.0 to 1.11.1 in /crates/wasm-testsuite

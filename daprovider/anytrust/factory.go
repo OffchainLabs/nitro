@@ -263,16 +263,14 @@ func CreateDAReader(
 
 	var lifecycleManager LifecycleManager
 	var daReader anytrustutil.Reader
-	if config.RestAggregator.Enable {
-		var restAgg *SimpleReaderAggregator
-		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		restAgg.Start(ctx)
-		lifecycleManager.Register(restAgg)
-		daReader = restAgg
+	var restAgg *SimpleReaderAggregator
+	restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	restAgg.Start(ctx)
+	lifecycleManager.Register(restAgg)
+	daReader = restAgg
 
 	var keysetFetcher *KeysetFetcher
 	if seqInboxAddress != nil {
