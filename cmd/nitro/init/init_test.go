@@ -1201,7 +1201,8 @@ func TestGetInitWithGenesis(t *testing.T) {
 	var gen core.Genesis
 	err = json.Unmarshal(genesisJson, &gen)
 	Require(t, err)
-	expectedChainConfig := gen.Config
+	expectedChainConfig, err := gen.GetConfig()
+	Require(t, err)
 
 	require.Equal(t, expectedChainConfig, chainConfig)
 
