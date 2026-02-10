@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/addressfilter"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -38,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
