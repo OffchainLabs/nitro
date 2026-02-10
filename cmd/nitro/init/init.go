@@ -47,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
+	cmd_util "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -815,8 +816,14 @@ func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64
 			log.Error("error unmarshaling genesis json file", "file", fullPath, "err", err)
 			continue
 		}
-		if gen.Config == nil || gen.Config.ChainID == nil || gen.Config.ChainID.Uint64() != chainId {
-			log.Error("genesis json file chain id does not match configured chain id", "file", fullPath, "genesisChainId", gen.Config.ChainID, "configuredChainId", chainId)
+
+		chainConfig, _, err := cmd_util.ReadChainConfig(&gen)
+		if err != nil {
+			log.Error("error reading chain config from genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		if chainConfig == nil || chainConfig.ChainID == nil || chainConfig.ChainID.Uint64() != chainId {
+			log.Error("genesis json file chain id does not match configured chain id", "file", fullPath, "genesisChainId", chainConfig.ChainID, "configuredChainId", chainId)
 			continue
 		}
 		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", chainId)
