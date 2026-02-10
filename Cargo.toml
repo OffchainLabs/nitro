@@ -89,7 +89,7 @@ tokio = { version = "1.48.0" }
 tower-http = { version = "0.6.8" }
 tracing = { version = "0.1.44" }
 tracing-subscriber = { version = "0.3.22" }
-wasmparser = { version = "0.121" }
+wasmparser = { version = "0.244.0" }
 wat = { version = "1.0.56" }
 wee_alloc = { version = "0.4.5" }
 

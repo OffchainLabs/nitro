@@ -33,8 +33,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, Target,
-    TypedFunction, Value, WasmTypeList,
+    imports, sys::Target, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages,
+    Store, TypedFunction, Value, WasmTypeList,
 };
 use wasmer_vm::VMExtern;
 
@@ -243,10 +243,11 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let exports = &self.instance.exports;
 
         let mut expect_global = |name| {
-            let VMExtern::Global(sh) = exports.get_extern(name).unwrap().to_vm_extern() else {
+            let VMExtern::Global(sh) = exports.get_extern(name).unwrap().to_vm_extern().into_sys()
+            else {
                 panic!("name not found global");
             };
-            sh.get(store.objects_mut()).vmglobal()
+            sh.get(store.objects_mut().as_sys()).vmglobal()
         };
         let ink_left = expect_global(STYLUS_INK_LEFT);
         let ink_status = expect_global(STYLUS_INK_STATUS);
