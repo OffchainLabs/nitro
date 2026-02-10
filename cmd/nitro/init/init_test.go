@@ -1,7 +1,7 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package nitroinit
 
 import (
 	"archive/tar"
@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +25,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -35,7 +38,9 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -62,7 +67,8 @@ func TestInitializeAndDownloadInit(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
@@ -111,7 +117,8 @@ func TestDownloadInitWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -149,7 +156,8 @@ func TestDownloadInitWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -185,7 +193,8 @@ func TestDownloadInitInPartsWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -233,7 +242,8 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -313,7 +323,9 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			// Start HTTP server
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			addr := "http://" + startFileServer(t, ctx, serverDir)
+			addr, server := startFileServer(t, serverDir)
+			defer gracefulShutdown(t, ctx, server)
+			addr = "http://" + addr
 
 			// Set latest snapshot URL
 			initConfig := conf.InitConfigDefault
@@ -335,7 +347,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	}
 }
 
-func startFileServer(t *testing.T, ctx context.Context, dir string) string {
+func startFileServer(t *testing.T, dir string) (string, *http.Server) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	Require(t, err, "failed to listen")
@@ -351,12 +363,7 @@ func startFileServer(t *testing.T, ctx context.Context, dir string) string {
 			t.Error("failed to shutdown server")
 		}
 	}()
-	go func() {
-		<-ctx.Done()
-		err := server.Shutdown(ctx)
-		Require(t, err, "failed to shutdown server")
-	}()
-	return addr
+	return addr, server
 }
 
 func TestEmptyDatabaseDir(t *testing.T) {
@@ -409,12 +416,6 @@ func TestEmptyDatabaseDir(t *testing.T) {
 	}
 }
 
-func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig {
-	targetConfig := gethexec.DefaultStylusTargetConfig
-	Require(t, targetConfig.Validate())
-	return &targetConfig
-}
-
 func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
@@ -427,7 +428,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
@@ -438,13 +439,12 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	l1Client := ethclient.NewClient(stack.Attach())
 
 	// opening for the first time doesn't error
-	executionDB, blockchain, err := openInitializeExecutionDB(
+	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
-		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
@@ -456,13 +456,12 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	Require(t, err)
 
 	// opening for the second time doesn't error
-	executionDB, blockchain, err = openInitializeExecutionDB(
+	executionDB, _, blockchain, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
-		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
@@ -475,13 +474,12 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 
 	// opening with a different state scheme errors
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
-	_, _, err = openInitializeExecutionDB(
+	_, _, _, err = OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
-		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
@@ -540,7 +538,7 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -621,7 +619,7 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
-	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
 	if err != nil {
 		t.Fatalf("Failed to open test db: %v", err)
 	}
@@ -695,7 +693,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	Require(t, err)
 	defer stack.Close()
 
-	nodeConfig := NodeConfigDefault
+	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
@@ -704,13 +702,12 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	l1Client := ethclient.NewClient(stack.Attach())
 
-	executionDB, blockchain, err := openInitializeExecutionDB(
+	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
-		defaultStylusTargetConfigForTest(t),
 		nil,
 		&nodeConfig.Persistent,
 		l1Client,
@@ -953,5 +950,405 @@ func TestGetGenesisFileNameFromDirectoryWithWrongChainId(t *testing.T) {
 	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestSimpleCheckDBDir(t *testing.T) {
+	t.Parallel()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+
+	err = checkDBDir(stack, &nodeConfig)
+	Require(t, err)
+
+}
+
+func TestCheckDBDirReturnsErrorOnl2chaindataWrongDir(t *testing.T) {
+	t.Parallel()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rootTargetDir := t.TempDir()
+	targetDir := filepath.Join(rootTargetDir, "do_not_exist")
+
+	stackConfig := testhelpers.CreateStackConfigForTest(targetDir)
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	// We create a l2chaindata on the data directory to simulate putting it in the wrong place
+	instdir := filepath.Join(targetDir, "l2chaindata")
+	err = os.MkdirAll(instdir, 0700)
+	Require(t, err)
+
+	nodeConfig := config.NodeConfigDefault
+
+	err = checkDBDir(stack, &nodeConfig)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "have you placed the database in the wrong directory?")
+}
+
+func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+
+	err = checkAndDownloadDB(ctx, stack, &nodeConfig)
+	Require(t, err)
+}
+
+func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	cleanup := func() {
+		stack.Close()
+	}
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = chainID
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	if emptyState {
+		nodeConfig.Init.Empty = emptyState
+	}
+
+	if importFile != "" {
+		nodeConfig.Init.ImportFile = importFile
+	}
+	if genesisJsonFile != "" {
+		nodeConfig.Init.GenesisJsonFile = genesisJsonFile
+	}
+
+	if useDevInit {
+		nodeConfig.Init.DevInit = true
+	}
+
+	nodeConfig.Init.DevInitAddress = ownerAdress
+	nodeConfig.Init.ValidateGenesisAssertion = false
+
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	executionDB, _, _, err := OpenInitializeExecutionDB(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+
+	// This means no init method is supplied to GetInit
+	if skipInitDataReader {
+		nodeConfig.Init.Empty = false
+		nodeConfig.Init.ImportFile = ""
+		nodeConfig.Init.GenesisJsonFile = ""
+		nodeConfig.Init.DevInit = false
+	}
+
+	// We already call getInit once inside openInitializeExecutionDB but calling a
+	// second time is okay since we're just loading configs
+	initDataReader, chainConfig, arbOsInit, err := GetInit(&nodeConfig, executionDB)
+	return initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err
+
+}
+
+func TestSimpleGetInit(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	expectedChainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, false)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
+	}
+
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := initDataReader.GetChainOwner()
+	Require(t, err)
+
+	expectedOwnerAddress := common.HexToAddress(ownerAdress)
+	if chainOwner != expectedOwnerAddress {
+		t.Fatalf("chainOwner address %s does not match expected address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
+	}
+
+	blockNumber, err := initDataReader.GetNextBlockNumber()
+	Require(t, err)
+
+	if blockNumber != 0 {
+		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
+	}
+
+	err = initDataReader.Close()
+	Require(t, err)
+}
+
+// Tests GetInit by not setting any init method. In which case GetInit would
+// return a nil initDataReader with a chainConfig read using TryReadStoredChainConfig
+func TestGetInitSkipInitDataReader(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, true)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
+	}
+
+	if initDataReader != nil {
+		t.Fatalf("initDataReader expected to be nil")
+	}
+}
+
+func TestGetInitWithEmpty(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), true, "", "", false, false)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	// needed since ArbOne chain genesis is non zero
+	expectedChainConfig.ArbitrumChainParams.GenesisBlockNum = config.NodeConfigDefault.Init.DevInitBlockNum
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
+	}
+
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := initDataReader.GetChainOwner()
+	Require(t, err)
+
+	// initData is mostly empty when Init.Empty is set to true therefore we never set owner
+	// address so we should expect it to be the zero address
+	emptyAdress := "0x0000000000000000000000000000000000000000"
+	expectedOwnerAddress := common.HexToAddress(emptyAdress)
+	if chainOwner != expectedOwnerAddress {
+		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
+	}
+
+	blockNumber, err := initDataReader.GetNextBlockNumber()
+	Require(t, err)
+
+	if blockNumber != 0 {
+		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
+	}
+
+	err = initDataReader.Close()
+	Require(t, err)
+}
+
+func TestGetInitWithImportFile(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	importFile := "testdata/initFileContent.json"
+	expectedChainConfig := chaininfo.ArbitrumDevTestAnyTrustChainConfig()
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", false, false)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", chainConfig)
+	}
+
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := initDataReader.GetChainOwner()
+	Require(t, err)
+
+	// JsonInitDataReader always returns empty owner address
+	emptyAdress := "0x0000000000000000000000000000000000000000"
+	expectedOwnerAddress := common.HexToAddress(emptyAdress)
+	if chainOwner != expectedOwnerAddress {
+		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
+	}
+
+	blockNumber, err := initDataReader.GetNextBlockNumber()
+	Require(t, err)
+
+	if blockNumber != 0 {
+		t.Fatalf("GetNextBlockNumber expected to return 100 but returned: %d", blockNumber)
+	}
+
+	err = initDataReader.Close()
+	Require(t, err)
+}
+
+func TestGetInitWithGenesis(t *testing.T) {
+	t.Parallel()
+
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	genesisJsonFile := "testdata/testGenesis.json"
+	expectedChainIdNum := uint64(3503995874084926)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", genesisJsonFile, false, false)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected non nil chainConfig")
+	}
+
+	// First make sure some key fields have the expected value
+	expectedChainId := new(big.Int).SetUint64(expectedChainIdNum)
+	if chainConfig.ChainID.Uint64() != expectedChainId.Uint64() {
+		t.Fatalf("chainConfig chainID %d does not match expected chain ID: %d", chainConfig.ChainID, expectedChainId)
+	}
+	if *chainConfig.CancunTime != 60 {
+		t.Fatalf("expected chainConfig.CancunTime to be 60 but got: %d", *chainConfig.CancunTime)
+	}
+
+	if *chainConfig.PragueTime != 120 {
+		t.Fatalf("expected chainConfig.PragueTime to be 120 but got: %d", *chainConfig.PragueTime)
+	}
+
+	// Make sure getInitHelper read the correct genesis file with all its fields
+	genesisJson, err := os.ReadFile(genesisJsonFile)
+	Require(t, err)
+	var gen core.Genesis
+	err = json.Unmarshal(genesisJson, &gen)
+	Require(t, err)
+	expectedChainConfig, err := gen.GetConfig()
+	Require(t, err)
+
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("arbOsInit expected to be nil")
+	}
+
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+
+	chainOwner, err := initDataReader.GetChainOwner()
+	Require(t, err)
+
+	// We never init owner address when GenesisJsonFile != "", therefore we should expect the zero address
+	emptyAdress := "0x0000000000000000000000000000000000000000"
+	expectedOwnerAddress := common.HexToAddress(emptyAdress)
+	if chainOwner != expectedOwnerAddress {
+		t.Fatalf("chainOwner address %s does not match expected empty address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
+	}
+
+	blockNumber, err := initDataReader.GetNextBlockNumber()
+	Require(t, err)
+
+	if blockNumber != 0 {
+		t.Fatalf("GetNextBlockNumber expected to return 0 but returned: %d", blockNumber)
+	}
+
+	err = initDataReader.Close()
+	Require(t, err)
+}
+
+func TestGetInitWithChainconfigInDB(t *testing.T) {
+	t.Parallel()
+
+	// Force getInitHelper to store chainConfig to DB (similar to TestGetInitSkipInitDataReader)
+	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
+	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, true)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected chainConfig to be non nil")
+	}
+
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("Expected nil arbOsInit but got  = %v", arbOsInit)
+	}
+
+	if initDataReader != nil {
+		t.Fatalf("initDataReader expected to be nil")
+	}
+
+	// Call GetInit with a different chainID and make sure we still read chainConfig from DB
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 4444
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	_, chainConfig, _, err = GetInit(&nodeConfig, executionDB)
+	Require(t, err)
+
+	// Make sure chainConfig that was read from DB still matches expected chainConfig
+	require.Equal(t, expectedChainConfig, chainConfig)
+}
+
+func Require(t *testing.T, err error, text ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func gracefulShutdown(t *testing.T, ctx context.Context, server *http.Server) {
+	if err := server.Shutdown(ctx); err != nil {
+		t.Logf("HTTP server shutdown error: %v", err)
 	}
 }
