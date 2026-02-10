@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/malicious"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
@@ -45,7 +44,7 @@ type StatelessBlockValidator struct {
 	inboxTracker         InboxTrackerInterface
 	streamer             TransactionStreamerInterface
 	db                   ethdb.Database
-	dapReaders           *daprovider.ReaderRegistry
+	dapReaders           *daprovider.DAProviderRegistry
 	stack                *node.Node
 	latestWasmModuleRoot common.Hash
 }
@@ -207,7 +206,7 @@ func newValidationEntry(
 	}
 	valBatches = append(valBatches, prevBatches...)
 
-	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
+	validator.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -237,8 +236,8 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
-	arbdb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	consensusDB ethdb.Database,
+	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -279,7 +278,7 @@ func NewStatelessBlockValidator(
 		inboxReader:          inboxReader,
 		inboxTracker:         inbox,
 		streamer:             streamer,
-		db:                   arbdb,
+		db:                   consensusDB,
 		dapReaders:           dapReaders,
 		execSpawners:         executionSpawners,
 		boldExecSpawners:     boldExecutionSpawners,
@@ -327,14 +326,17 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
-		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
+		dapReader := v.dapReaders.GetReader(headerByte)
+		if dapReader != nil {
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(headerByte) {
+				if daprovider.IsAnyTrustMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
+				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
+					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 				} else {
 					return false, nil, err
 				}
@@ -343,8 +345,8 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(headerByte) {
-				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+			if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
+				log.Error("No AnyTrust Reader configured for AnyTrust message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
 				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
@@ -361,17 +363,6 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	return true, &fullInfo, nil
 }
 
-func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
-	for piType, piMap := range source {
-		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(piMap))
-		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
-	}
-}
-
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -381,27 +372,18 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(wasmTargets) == 0 {
 			wasmTargets = v.wasmTargets
 		}
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg, wasmTargets).Await(ctx)
 		if err != nil {
 			return err
 		}
 		if recording.BlockHash != e.End.BlockHash {
-			if malicious.Enabled() {
-				log.Warn(
-					"malicious-mode: recording blockhash mismatch ignored",
-					"pos", e.Pos,
-					"expected", e.End.BlockHash,
-					"got", recording.BlockHash,
-				)
-			} else {
-				return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
-			}
+			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
 		}
 		if recording.Preimages != nil {
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
 				arbutil.Keccak256PreimageType: recording.Preimages,
 			}
-			copyPreimagesInto(e.Preimages, recordingPreimages)
+			validator.CopyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}

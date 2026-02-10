@@ -1,0 +1,1707 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Challenge Manager Flow Demo</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          "Noto Sans", "Liberation Sans", sans-serif;
+        background: #0f1115;
+        color: #e8e8e8;
+      }
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px 20px 40px;
+      }
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      header p {
+        margin: 0;
+        color: #b6b6b6;
+        line-height: 1.5;
+      }
+      .controls {
+        margin: 20px 0 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .controls button,
+      .controls select {
+        background: #1d2430;
+        color: #f5f5f5;
+        border: 1px solid #2a3343;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .controls button[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .flow {
+        border: 1px solid #202636;
+        background: #141924;
+        padding: 14px;
+        border-radius: 10px;
+        margin-bottom: 16px;
+      }
+      .flow-steps {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .step {
+        border: 1px solid #2a3343;
+        border-radius: 8px;
+        padding: 10px;
+        background: #1a2030;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+      }
+      .step.active {
+        border-color: #6aa7ff;
+        transform: translateY(-2px);
+      }
+      .step.done {
+        border-color: #4cd5a7;
+      }
+      .step h3 {
+        font-size: 14px;
+        margin: 0 0 6px;
+      }
+      .step p {
+        margin: 0;
+        font-size: 12px;
+        color: #bfc6d3;
+        line-height: 1.4;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 16px;
+        align-items: start;
+      }
+      .panel {
+        border: 1px solid #202636;
+        border-radius: 10px;
+        background: #131825;
+        padding: 14px;
+        min-height: 280px;
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+      .tree {
+        grid-column: 1;
+      }
+      .sidebar {
+        grid-column: 2;
+        position: sticky;
+        top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+      }
+      .sidebar .panel {
+        min-height: auto;
+      }
+      .tree ul {
+        list-style: none;
+        padding-left: 16px;
+        margin: 6px 0;
+      }
+      .tree-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .tree-panel {
+        border: 1px solid #1f2635;
+        border-radius: 10px;
+        background: #0f131d;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+        height: 600px;
+      }
+      .tree-panel h3 {
+        margin: 0;
+        font-size: 16px;
+        color: #c7cdd8;
+        font-weight: 600;
+      }
+      .tree-canvas {
+        width: 100%;
+        flex: 1;
+        overflow: hidden;
+      }
+      .tree svg {
+        width: 100%;
+        height: 100%;
+        border: 1px solid #1f2635;
+        border-radius: 8px;
+        background: #0f131d;
+        display: block;
+      }
+      .tree .node rect {
+        fill: #1b2232;
+        stroke: #2a3343;
+        stroke-width: 1.8;
+        rx: 8;
+        ry: 8;
+      }
+      .tree .node text {
+        fill: #d7dbe6;
+        font-size: 14px;
+      }
+      .tree .node.active rect {
+        stroke: #6aa7ff;
+      }
+      .tree .node.bisected rect {
+        stroke: #ffb347;
+      }
+      .tree .node.hasRival rect {
+        stroke: #ff4d4d;
+        stroke-width: 2;
+      }
+      .tree .node.osp rect {
+        stroke: #4cd5a7;
+      }
+      .tree .link {
+        fill: none;
+        stroke: #3a4354;
+        stroke-width: 1.2;
+      }
+      .tree .node-label {
+        font-size: 13px;
+        fill: #aeb7c6;
+      }
+      .tree .hint {
+        font-size: 13px;
+        color: #98a2b3;
+        margin-top: 8px;
+      }
+      .tooltip {
+        position: fixed;
+        display: none;
+        background: #1d2430;
+        border: 2px solid #6aa7ff;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        max-width: 400px;
+        font-size: 13px;
+        color: #e8e8e8;
+        pointer-events: none;
+      }
+      .tooltip.visible {
+        display: block;
+      }
+      .tooltip h4 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        color: #6aa7ff;
+        border-bottom: 1px solid #2a3343;
+        padding-bottom: 8px;
+      }
+      .tooltip .field {
+        margin-bottom: 10px;
+        line-height: 1.6;
+      }
+      .tooltip .field-label {
+        color: #8a93a5;
+        font-weight: 600;
+        margin-right: 8px;
+      }
+      .tooltip .edge-list {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #2a3343;
+      }
+      .tooltip .edge-item {
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        border: 1px solid #2a3343;
+        border-radius: 6px;
+        background: #141924;
+        font-size: 12px;
+      }
+      .tooltip .edge-item-header {
+        font-weight: 600;
+        color: #c7cdd8;
+        margin-bottom: 4px;
+      }
+      .tooltip .edge-item-detail {
+        color: #aeb7c6;
+        font-size: 11px;
+      }
+      .details-hidden {
+        display: none;
+      }
+      .tree-empty {
+        font-size: 12px;
+        color: #8a93a5;
+        text-align: center;
+        padding: 20px 0;
+      }
+      .binary-tree {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 24px;
+      }
+      .binary-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      .binary-children {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+        gap: 18px;
+        width: 100%;
+      }
+      .binary-branch {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .branch-label {
+        font-size: 11px;
+        color: #8a93a5;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .edge-card {
+        min-width: 200px;
+        text-align: center;
+      }
+      .edge-item {
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        border: 1px solid #2a3343;
+        border-radius: 6px;
+        background: #1b2232;
+      }
+      .edge-item.active {
+        border-color: #6aa7ff;
+      }
+      .edge-item.bisected {
+        border-color: #ffb347;
+      }
+      .edge-item.osp {
+        border-color: #4cd5a7;
+      }
+      .edge-meta {
+        font-size: 12px;
+        color: #c0c6d1;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background: #2b3550;
+        color: #dbe4ff;
+        font-size: 11px;
+        margin-left: 6px;
+      }
+      .details {
+        font-size: 13px;
+        line-height: 1.5;
+        color: #d7dbe6;
+      }
+      .details .label {
+        color: #8a93a5;
+      }
+      .log ol {
+        padding-left: 18px;
+        margin: 0;
+      }
+      .log li {
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: #c7cdd8;
+      }
+      .log li.current {
+        color: #ffffff;
+      }
+      .note {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #98a2b3;
+      }
+      .legend {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+        font-size: 12px;
+      }
+      .legend span {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #1d2430;
+        border: 1px solid #2a3343;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>Challenge Manager Flow (On-chain Logs)</h1>
+        <p>
+          Replay of real logs from Arbitrum Sepolia for ChallengeManager
+          0x4DF4C4180DdB74F4d217FD7384120F0840A7802f, blocks 236463371–236470698.
+        </p>
+      </header>
+
+      <section class="controls">
+        <button id="playBtn">Play</button>
+        <button id="nextBtn">Next</button>
+        <button id="resetBtn">Reset</button>
+        <label>
+          Speed
+          <select id="speedSelect">
+            <option value="1800">0.5x</option>
+            <option value="1200" selected>1x</option>
+            <option value="800">1.5x</option>
+            <option value="500">2x</option>
+          </select>
+        </label>
+        <span id="progressText">0 / 0</span>
+      </section>
+
+      <section class="flow">
+        <div id="flowSteps" class="flow-steps"></div>
+      </section>
+
+      <section class="grid">
+        <div class="panel tree">
+          <h2>Edge Tree</h2>
+          <div id="edgeTree"></div>
+          <div class="legend">
+            <span>Blue: active edge</span>
+            <span>Orange: bisected</span>
+            <span>Red: hasRival</span>
+            <span>Green: OSP confirmed</span>
+          </div>
+          <div class="hint">Tip: drag to pan, scroll to zoom, click nodes to view details, double-click to expand/collapse.</div>
+        </div>
+        <div class="sidebar">
+          <div class="panel log">
+            <h2>Event Timeline</h2>
+            <ol id="eventLog"></ol>
+          </div>
+          <div class="panel details-hidden">
+            <h2>Active Edge Details</h2>
+            <div id="edgeDetails" class="details"></div>
+            <p class="note">
+              Note: a layerzero edge has a claim and staker. Bisect splits into lower/upper children.
+              When length becomes 1, the flow enters OSP.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div id="nodeTooltip" class="tooltip"></div>
+
+    <script src="./vendor/d3.v7.min.js"></script>
+    <script>
+      (() => {
+        const RPC_URL =
+          "https://arb-sepolia.g.alchemy.com/v2/A9Awdfc74bkIT_CzQkOcyM036BSQxyk4";
+        const CHALLENGE_MANAGER = "0x4DF4C4180DdB74F4d217FD7384120F0840A7802f";
+        const BLOCK_RANGE = { from: 236463371, to: 236470698 };
+
+        const EDGE_ADDED_TOPIC =
+          "0xaa4b66b1ce938c06e2a3f8466bae10ef62e747630e3859889f4719fc6427b5a4";
+        const EDGE_BISECTED_TOPIC =
+          "0x7340510d24b7ec9b5c100f5500d93429d80d00d46f0d18e4e85d0c4cc22b9924";
+        const EDGE_OSP_TOPIC =
+          "0xe11db4b27bc8c6ea5943ecbb205ae1ca8d56c42c719717aaf8a53d43d0cee7c2";
+        const GET_EDGE_SELECTOR = "0xfda2892e";
+
+        const flowSteps = [
+          {
+            id: "create",
+            title: "Create LayerZero Edge",
+            desc: "EdgeAdded (layerzero)",
+          },
+          {
+            id: "bisect1",
+            title: "Bisect Edge",
+            desc: "EdgeBisected",
+          },
+          {
+            id: "layerzeroChild",
+            title: "LayerZero Child Edge",
+            desc: "EdgeAdded (child layerzero)",
+          },
+          {
+            id: "bisect2",
+            title: "Further Bisect",
+            desc: "EdgeBisected (deeper)",
+          },
+          {
+            id: "osp",
+            title: "One Step Proof",
+            desc: "EdgeConfirmedByOneStepProof",
+          },
+        ];
+
+        let events = [];
+        let parentByChild = new Map();
+        let childOrderByParent = new Map();
+        let milestones = null;
+        let edgeInfoById = new Map();
+        let edgeInfoLoading = false;
+        let collapsedSet = new Set();
+        let expandedSet = new Set();
+        let d3Trees = new Map();
+        let currentIndex = -1;
+        let timer = null;
+        let intervalMs = 1200;
+        let isLoading = true;
+        let loadError = null;
+
+        const elements = {
+          flowSteps: document.getElementById("flowSteps"),
+          edgeTree: document.getElementById("edgeTree"),
+          edgeDetails: document.getElementById("edgeDetails"),
+          eventLog: document.getElementById("eventLog"),
+          playBtn: document.getElementById("playBtn"),
+          nextBtn: document.getElementById("nextBtn"),
+          resetBtn: document.getElementById("resetBtn"),
+          speedSelect: document.getElementById("speedSelect"),
+          progressText: document.getElementById("progressText"),
+          nodeTooltip: document.getElementById("nodeTooltip"),
+        };
+
+        const toHex = (value) => `0x${value.toString(16)}`;
+        const normalizeHex = (value) => `0x${String(value || "").replace(/^0x/, "").toLowerCase()}`;
+        const strip0x = (value) => String(value || "").replace(/^0x/, "");
+        const shortHex = (value, lead = 6, tail = 4) => {
+          const hex = normalizeHex(value);
+          if (hex.length <= 2 + lead + tail) return hex;
+          return `${hex.slice(0, 2 + lead)}…${hex.slice(-tail)}`;
+        };
+        const chunks32 = (data) => {
+          const hex = String(data || "0x").replace(/^0x/, "");
+          const chunks = [];
+          for (let i = 0; i < hex.length; i += 64) {
+            const part = hex.slice(i, i + 64);
+            if (part) chunks.push(part);
+          }
+          return chunks;
+        };
+        const decodeUint = (word) => (word ? BigInt(`0x${word}`).toString() : "0");
+        const decodeBool = (word) => (word ? BigInt(`0x${word}`) !== 0n : false);
+        const decodeBytes32 = (word) => (word ? `0x${word}` : "0x");
+        const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+        const decodeAddress = (word) => {
+          const hex = String(word || "").padStart(64, "0");
+          return normalizeHex(`0x${hex.slice(-40)}`);
+        };
+        const isZeroAddress = (value) => normalizeHex(value) === ZERO_ADDRESS;
+
+        const encodeGetEdgeData = (edgeId) =>
+          `${GET_EDGE_SELECTOR}${strip0x(edgeId).padStart(64, "0")}`;
+
+        async function rpcCall(method, params) {
+          const response = await fetch(RPC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          });
+          const payload = await response.json();
+          if (payload.error) {
+            throw new Error(payload.error.message || "RPC error");
+          }
+          return payload.result;
+        }
+
+        async function fetchEdgeInfo(edgeId) {
+          const data = encodeGetEdgeData(edgeId);
+          const result = await rpcCall("eth_call", [
+            {
+              to: CHALLENGE_MANAGER,
+              data,
+            },
+            "latest",
+          ]);
+          if (!result || result === "0x") return null;
+          const words = chunks32(result);
+          if (words.length < 15) return null;
+          return {
+            originId: decodeBytes32(words[0]),
+            startHeight: decodeUint(words[2]),
+            endHeight: decodeUint(words[4]),
+            lowerChildId: decodeBytes32(words[5]),
+            upperChildId: decodeBytes32(words[6]),
+            claimId: decodeBytes32(words[7]),
+            staker: decodeAddress(words[8]),
+            level: Number(decodeUint(words[12])),
+          };
+        }
+
+        async function loadEdgeInfos(edgeIds) {
+          if (!edgeIds.length) return;
+          edgeInfoLoading = true;
+          renderAll();
+
+          const ids = Array.from(new Set(edgeIds.map(normalizeHex)));
+          const concurrency = 6;
+          let cursor = 0;
+
+          async function worker() {
+            while (cursor < ids.length) {
+              const id = ids[cursor];
+              cursor += 1;
+              if (edgeInfoById.has(id)) continue;
+              try {
+                const info = await fetchEdgeInfo(id);
+                if (info) edgeInfoById.set(id, info);
+              } catch (error) {
+                edgeInfoById.set(id, null);
+              }
+              renderAll();
+            }
+          }
+
+          const workers = Array.from({ length: concurrency }, () => worker());
+          await Promise.all(workers);
+          edgeInfoLoading = false;
+          renderAll();
+        }
+
+        function decodeLog(log) {
+          const topic0 = normalizeHex(log.topics?.[0]);
+          const base = {
+            type: "Unknown",
+            blockNumber: parseInt(log.blockNumber, 16),
+            logIndex: parseInt(log.logIndex, 16),
+            txHash: normalizeHex(log.transactionHash),
+          };
+          const topics = (log.topics || []).map(normalizeHex);
+          const dataWords = chunks32(log.data);
+
+          if (topic0 === EDGE_ADDED_TOPIC) {
+            return {
+              ...base,
+              type: "EdgeAdded",
+              edgeId: topics[1],
+              mutualId: topics[2],
+              originId: topics[3],
+              claimId: dataWords[0] ? `0x${dataWords[0]}` : "0x",
+              length: decodeUint(dataWords[1]),
+              level: Number(decodeUint(dataWords[2])),
+              hasRival: decodeBool(dataWords[3]),
+              isLayerZero: decodeBool(dataWords[4]),
+            };
+          }
+          if (topic0 === EDGE_BISECTED_TOPIC) {
+            return {
+              ...base,
+              type: "EdgeBisected",
+              edgeId: topics[1],
+              lowerChildId: topics[2],
+              upperChildId: topics[3],
+              lowerChildAlreadyExists: decodeBool(dataWords[0]),
+            };
+          }
+          if (topic0 === EDGE_OSP_TOPIC) {
+            return {
+              ...base,
+              type: "EdgeConfirmedByOneStepProof",
+              edgeId: topics[1],
+              mutualId: topics[2],
+            };
+          }
+          return base;
+        }
+
+        function buildParentMap(allEvents) {
+          const map = new Map();
+          allEvents.forEach((ev) => {
+            if (ev.type === "EdgeBisected") {
+              if (ev.lowerChildId) map.set(ev.lowerChildId, ev.edgeId);
+              if (ev.upperChildId) map.set(ev.upperChildId, ev.edgeId);
+            }
+          });
+          return map;
+        }
+
+        function buildChildOrderMap(allEvents) {
+          const map = new Map();
+          allEvents.forEach((ev) => {
+            if (ev.type === "EdgeBisected") {
+              map.set(ev.edgeId, {
+                lowerChildId: ev.lowerChildId,
+                upperChildId: ev.upperChildId,
+              });
+            }
+          });
+          return map;
+        }
+
+        function getRangeKey(edge) {
+          if (!edge) return null;
+          if (edge.level === "-" || edge.startHeight == null || edge.endHeight == null) {
+            return null;
+          }
+          return `${edge.level}:${edge.startHeight}:${edge.endHeight}`;
+        }
+
+        function buildRangeIndex(state) {
+          const rangeNodes = new Map();
+          const ensureNode = (edge) => {
+            const rangeKey = getRangeKey(edge) ?? `edge:${edge.id}`;
+            let node = rangeNodes.get(rangeKey);
+            if (!node) {
+              node = {
+                rangeKey,
+                level: edge.level ?? "-",
+                startHeight: edge.startHeight ?? null,
+                endHeight: edge.endHeight ?? null,
+                edges: [],
+                edgeIds: new Set(),
+                hasRival: false,
+                bisected: false,
+                ospConfirmed: false,
+                lowerChildKey: null,
+                upperChildKey: null,
+                childKeys: new Set(),
+              };
+              rangeNodes.set(rangeKey, node);
+            }
+            if (!node.edgeIds.has(edge.id)) {
+              node.edgeIds.add(edge.id);
+              node.edges.push({
+                id: edge.id,
+                hasRival: edge.hasRival === true || edge.hasRival === "true",
+              });
+            }
+            if (edge.hasRival === true || edge.hasRival === "true") {
+              node.hasRival = true;
+            }
+            if (edge.bisected) node.bisected = true;
+            if (edge.ospConfirmed) node.ospConfirmed = true;
+            if (node.startHeight == null) node.startHeight = edge.startHeight ?? null;
+            if (node.endHeight == null) node.endHeight = edge.endHeight ?? null;
+            if (node.level === "-" && edge.level !== "-") node.level = edge.level;
+            return rangeKey;
+          };
+
+          state.edges.forEach((edge) => {
+            ensureNode(edge);
+          });
+
+          state.edges.forEach((edge) => {
+            const order = childOrderByParent.get(edge.id);
+            if (!order) return;
+            const parentKey = ensureNode(edge);
+            const parentNode = rangeNodes.get(parentKey);
+            const lowerEdge = order.lowerChildId ? state.edges.get(order.lowerChildId) : null;
+            const upperEdge = order.upperChildId ? state.edges.get(order.upperChildId) : null;
+            const lowerKey = lowerEdge ? ensureNode(lowerEdge) : null;
+            const upperKey = upperEdge ? ensureNode(upperEdge) : null;
+
+            if (lowerKey && lowerKey !== parentKey) {
+              parentNode.childKeys.add(lowerKey);
+              if (!parentNode.lowerChildKey) parentNode.lowerChildKey = lowerKey;
+            }
+            if (upperKey && upperKey !== parentKey) {
+              parentNode.childKeys.add(upperKey);
+              if (!parentNode.upperChildKey) parentNode.upperChildKey = upperKey;
+            }
+          });
+
+          const hasParent = new Set();
+          rangeNodes.forEach((node) => {
+            node.childKeys.forEach((childKey) => hasParent.add(childKey));
+          });
+
+          const rootKeys = [];
+          rangeNodes.forEach((node, key) => {
+            if (!hasParent.has(key)) rootKeys.push(key);
+          });
+
+          return { rangeNodes, rootKeys };
+        }
+
+        function computeRootKeys(rangeNodes) {
+          const hasParent = new Set();
+          rangeNodes.forEach((node) => {
+            node.childKeys.forEach((childKey) => {
+              if (rangeNodes.has(childKey)) {
+                hasParent.add(childKey);
+              }
+            });
+          });
+          const rootKeys = [];
+          rangeNodes.forEach((_node, key) => {
+            if (!hasParent.has(key)) rootKeys.push(key);
+          });
+          return rootKeys;
+        }
+
+        function buildLevelGroups(rangeIndex) {
+          const allNodes = rangeIndex.rangeNodes;
+          let maxLevel = null;
+          allNodes.forEach((node) => {
+            if (Number.isFinite(node.level)) {
+              maxLevel = maxLevel == null ? node.level : Math.max(maxLevel, node.level);
+            }
+          });
+          const bigStepLabel =
+            maxLevel != null && maxLevel > 1 ? `BigStep (L1–L${maxLevel - 1})` : "BigStep";
+          const groups = [
+            {
+              id: "level0",
+              label: "Level 0 (Block)",
+              filter: (node) => node.level === 0,
+            },
+            {
+              id: "bigstep",
+              label: bigStepLabel,
+              filter: (node) => Number.isFinite(node.level) && node.level > 0 && node.level < maxLevel,
+            },
+            {
+              id: "smallstep",
+              label: maxLevel != null ? `SmallStep (L${maxLevel})` : "SmallStep",
+              filter: (node) => maxLevel != null && maxLevel > 0 && node.level === maxLevel,
+            },
+          ];
+
+          return groups.map((group) => {
+            const rangeNodes = new Map();
+            allNodes.forEach((node, key) => {
+              if (group.filter(node)) {
+                rangeNodes.set(key, node);
+              }
+            });
+            const rootKeys = computeRootKeys(rangeNodes);
+            return { ...group, rangeNodes, rootKeys };
+          });
+        }
+
+        function applyAutoCollapse(groups) {
+          const maxDepth = 2;
+          groups.forEach((group) => {
+            const visit = (rangeKey, depth) => {
+              if (!rangeKey) return;
+              if (depth > maxDepth && !expandedSet.has(rangeKey)) {
+                collapsedSet.add(rangeKey);
+              }
+              const node = group.rangeNodes.get(rangeKey);
+              if (!node) return;
+              const childKeys = Array.from(node.childKeys).filter((key) => group.rangeNodes.has(key));
+              childKeys.forEach((childKey) => visit(childKey, depth + 1));
+            };
+            group.rootKeys.forEach((rootKey) => visit(rootKey, 0));
+          });
+        }
+
+        function buildTreeData(group) {
+          const buildNode = (rangeKey) => {
+            const node = group.rangeNodes.get(rangeKey);
+            if (!node) return null;
+            const orderedChildren = [];
+            if (node.lowerChildKey && group.rangeNodes.has(node.lowerChildKey)) {
+              orderedChildren.push(node.lowerChildKey);
+            }
+            if (
+              node.upperChildKey &&
+              node.upperChildKey !== node.lowerChildKey &&
+              group.rangeNodes.has(node.upperChildKey)
+            ) {
+              orderedChildren.push(node.upperChildKey);
+            }
+            node.childKeys.forEach((childKey) => {
+              if (group.rangeNodes.has(childKey) && !orderedChildren.includes(childKey)) {
+                orderedChildren.push(childKey);
+              }
+            });
+            const children = orderedChildren.map(buildNode).filter(Boolean);
+            const result = {
+              id: rangeKey,
+              rangeKey: node.rangeKey,
+              level: node.level,
+              startHeight: node.startHeight,
+              endHeight: node.endHeight,
+              edges: node.edges,
+              hasRival: node.hasRival,
+              bisected: node.bisected,
+              ospConfirmed: node.ospConfirmed,
+              children,
+            };
+            if (collapsedSet.has(rangeKey) && children.length > 0) {
+              result._children = children;
+              result.children = [];
+            }
+            return result;
+          };
+          const roots = group.rootKeys.map(buildNode).filter(Boolean);
+          if (roots.length === 1) return roots[0];
+          return { id: `${group.id}-root`, rangeKey: null, edges: [], children: roots };
+        }
+
+        function computeMilestones(allEvents, parentMap) {
+          const findAfter = (start, predicate) => {
+            for (let i = Math.max(start, 0); i < allEvents.length; i += 1) {
+              if (predicate(allEvents[i], i)) return i;
+            }
+            return -1;
+          };
+
+          const create = findAfter(0, (ev) => ev.type === "EdgeAdded" && ev.isLayerZero);
+          const bisect1 = create >= 0 ? findAfter(create + 1, (ev) => ev.type === "EdgeBisected") : -1;
+          const layerzeroChild =
+            bisect1 >= 0
+              ? findAfter(
+                  bisect1 + 1,
+                  (ev) => ev.type === "EdgeAdded" && ev.isLayerZero && parentMap.has(ev.edgeId)
+                )
+              : -1;
+          const bisect2 =
+            layerzeroChild >= 0
+              ? findAfter(layerzeroChild + 1, (ev) => ev.type === "EdgeBisected")
+              : -1;
+          const osp =
+            bisect2 >= 0
+              ? findAfter(bisect2 + 1, (ev) => ev.type === "EdgeConfirmedByOneStepProof")
+              : -1;
+          return [create, bisect1, layerzeroChild, bisect2, osp];
+        }
+
+        function stepIndexFor(index) {
+          if (!milestones) return -1;
+          let stepIndex = -1;
+          milestones.forEach((milestone, idx) => {
+            if (milestone >= 0 && index >= milestone) stepIndex = idx;
+          });
+          return stepIndex;
+        }
+
+        function formatEvent(ev) {
+          const info = edgeInfoById.get(normalizeHex(ev.edgeId));
+          const rangeText =
+            info && info.startHeight && info.endHeight
+              ? `${info.startHeight} → ${info.endHeight}`
+              : edgeInfoLoading
+                ? "loading..."
+                : "unknown";
+          if (ev.type === "EdgeAdded") {
+            return `EdgeAdded ${shortHex(ev.edgeId)} (level=${ev.level}, range=${rangeText}, layerZero=${ev.isLayerZero})`;
+          }
+          if (ev.type === "EdgeBisected") {
+            return `EdgeBisected ${shortHex(ev.edgeId)} → ${shortHex(ev.lowerChildId)} / ${shortHex(
+              ev.upperChildId
+            )}`;
+          }
+          if (ev.type === "EdgeConfirmedByOneStepProof") {
+            return `EdgeConfirmedByOneStepProof ${shortHex(ev.edgeId)}`;
+          }
+          return ev.type;
+        }
+
+        function emptyState() {
+          return {
+            edges: new Map(),
+            roots: [],
+            activeEdgeId: null,
+            appliedEvents: [],
+            currentStepIndex: -1,
+          };
+        }
+
+        function applyEvents(upTo) {
+          const state = emptyState();
+          const pendingChildren = new Map();
+
+          function attachChild(parentId, childId) {
+            const parent = state.edges.get(parentId);
+            if (parent) {
+              // Ensure children is always an array
+              if (!Array.isArray(parent.children)) {
+                parent.children = parent.children instanceof Set 
+                  ? Array.from(parent.children) 
+                  : [];
+              }
+              if (!parent.children.includes(childId)) {
+                parent.children.push(childId);
+              }
+              return;
+            }
+            if (!pendingChildren.has(parentId)) {
+              pendingChildren.set(parentId, []);
+            }
+            if (!pendingChildren.get(parentId).includes(childId)) {
+              pendingChildren.get(parentId).push(childId);
+            }
+          }
+
+          function computeLength(info) {
+            if (!info?.startHeight || !info?.endHeight) return null;
+            try {
+              return (BigInt(info.endHeight) - BigInt(info.startHeight)).toString();
+            } catch (error) {
+              return null;
+            }
+          }
+
+          function ensureEdge(edgeId, parentId) {
+            if (!edgeId) return;
+            const normalized = normalizeHex(edgeId);
+            const info = edgeInfoById.get(normalized);
+            const existing = state.edges.get(edgeId);
+            if (existing) {
+              // Ensure children is always an array
+              if (!Array.isArray(existing.children)) {
+                existing.children = existing.children instanceof Set 
+                  ? Array.from(existing.children) 
+                  : [];
+              }
+              if (parentId && !existing.parentId) {
+                existing.parentId = parentId;
+                attachChild(parentId, edgeId);
+              }
+              if (info) {
+                existing.startHeight = info.startHeight || existing.startHeight;
+                existing.endHeight = info.endHeight || existing.endHeight;
+                existing.level = Number.isFinite(existing.level) ? existing.level : info.level ?? existing.level;
+                existing.staker = info.staker || existing.staker;
+                if (!existing.length) {
+                  const computed = computeLength(info);
+                  if (computed) existing.length = computed;
+                }
+              }
+              return;
+            }
+            const computedLength = computeLength(info);
+            const edge = {
+              id: edgeId,
+              parentId: parentId || null,
+              level: info?.level ?? "-",
+              length: computedLength || null,
+              hasRival: "-",
+              isLayerZero: false,
+              originId: info?.originId,
+              mutualId: null,
+              claimId: info?.claimId,
+              staker: info?.staker,
+              startHeight: info?.startHeight || null,
+              endHeight: info?.endHeight || null,
+              children: [],
+              bisected: false,
+              ospConfirmed: false,
+            };
+            state.edges.set(edgeId, edge);
+            if (edge.parentId) {
+              attachChild(edge.parentId, edgeId);
+            } else {
+              state.roots.push(edgeId);
+            }
+          }
+
+          for (let i = 0; i <= upTo; i += 1) {
+            const ev = events[i];
+            if (!ev) continue;
+            state.appliedEvents.push(ev);
+
+            if (ev.type === "EdgeAdded") {
+              const info = edgeInfoById.get(normalizeHex(ev.edgeId));
+              const existing = state.edges.get(ev.edgeId);
+              const inferredParent = parentByChild.get(ev.edgeId) || null;
+              // Ensure children is always an array
+              let childrenArray = [];
+              if (existing?.children) {
+                if (Array.isArray(existing.children)) {
+                  childrenArray = existing.children;
+                } else if (existing.children instanceof Set) {
+                  childrenArray = Array.from(existing.children);
+                }
+              }
+              const edge = {
+                id: ev.edgeId,
+                parentId: inferredParent || existing?.parentId || null,
+                level: Number.isFinite(ev.level) ? ev.level : info?.level ?? existing?.level ?? "-",
+                length: ev.length ?? existing?.length ?? null,
+                hasRival: ev.hasRival ?? existing?.hasRival ?? "-",
+                isLayerZero: ev.isLayerZero ?? existing?.isLayerZero ?? false,
+                originId: ev.originId ?? existing?.originId ?? info?.originId,
+                mutualId: ev.mutualId ?? existing?.mutualId ?? null,
+                claimId: ev.claimId ?? existing?.claimId ?? info?.claimId,
+                staker: info?.staker ?? existing?.staker ?? null,
+                startHeight: info?.startHeight || existing?.startHeight || null,
+                endHeight: info?.endHeight || existing?.endHeight || null,
+                children: childrenArray,
+                bisected: existing?.bisected || false,
+                ospConfirmed: existing?.ospConfirmed || false,
+                lowerChildId: existing?.lowerChildId || null,
+                upperChildId: existing?.upperChildId || null,
+              };
+              state.edges.set(ev.edgeId, edge);
+              if (edge.parentId) {
+                attachChild(edge.parentId, ev.edgeId);
+              } else {
+                state.roots.push(ev.edgeId);
+              }
+              if (pendingChildren.has(ev.edgeId)) {
+                // Ensure children is array before pushing
+                if (!Array.isArray(edge.children)) {
+                  edge.children = edge.children instanceof Set 
+                    ? Array.from(edge.children) 
+                    : [];
+                }
+                for (const childId of pendingChildren.get(ev.edgeId)) {
+                  if (!edge.children.includes(childId)) {
+                    edge.children.push(childId);
+                  }
+                }
+                pendingChildren.delete(ev.edgeId);
+              }
+              state.activeEdgeId = ev.edgeId;
+            }
+
+            if (ev.type === "EdgeBisected") {
+              ensureEdge(ev.edgeId, parentByChild.get(ev.edgeId) || null);
+              ensureEdge(ev.lowerChildId, ev.edgeId);
+              ensureEdge(ev.upperChildId, ev.edgeId);
+              const edge = state.edges.get(ev.edgeId);
+              if (edge) {
+                edge.bisected = true;
+                edge.lowerChildId = ev.lowerChildId || edge.lowerChildId;
+                edge.upperChildId = ev.upperChildId || edge.upperChildId;
+                // Ensure children is array and contains the bisected children
+                if (!Array.isArray(edge.children)) {
+                  edge.children = edge.children instanceof Set 
+                    ? Array.from(edge.children) 
+                    : [];
+                }
+                // Add children if they don't exist
+                if (ev.lowerChildId && !edge.children.includes(ev.lowerChildId)) {
+                  edge.children.push(ev.lowerChildId);
+                }
+                if (ev.upperChildId && !edge.children.includes(ev.upperChildId)) {
+                  edge.children.push(ev.upperChildId);
+                }
+              }
+              state.activeEdgeId = ev.edgeId;
+            }
+
+            if (ev.type === "EdgeConfirmedByOneStepProof") {
+              const edge = state.edges.get(ev.edgeId);
+              if (edge) {
+                edge.ospConfirmed = true;
+              }
+              state.activeEdgeId = ev.edgeId;
+            }
+          }
+
+          state.currentStepIndex = stepIndexFor(upTo);
+          return state;
+        }
+
+        function renderFlow(state) {
+          elements.flowSteps.innerHTML = "";
+          flowSteps.forEach((step, index) => {
+            const div = document.createElement("div");
+            div.className = "step";
+            if (index === state.currentStepIndex) div.classList.add("active");
+            if (index < state.currentStepIndex) div.classList.add("done");
+            const h3 = document.createElement("h3");
+            h3.textContent = step.title;
+            const p = document.createElement("p");
+            p.textContent = step.desc;
+            div.appendChild(h3);
+            div.appendChild(p);
+            elements.flowSteps.appendChild(div);
+          });
+        }
+
+        function showTooltip(event, nodeData, state) {
+          const tooltip = elements.nodeTooltip;
+          const node = nodeData.data;
+          
+          if (!node.rangeKey) return;
+          
+          const rangeText =
+            node.startHeight != null && node.endHeight != null
+              ? `${node.startHeight} → ${node.endHeight}`
+              : edgeInfoLoading
+                ? "loading..."
+                : "unknown";
+          
+          const levelText = node.level !== "-" ? `Level ${node.level}` : "Level ?";
+          const rivalStatus = node.hasRival ? "Yes" : "No";
+          
+          let edgesHtml = "";
+          if (node.edges && node.edges.length > 0) {
+            edgesHtml = '<div class="edge-list"><strong>Edges:</strong>';
+            node.edges.forEach((edge) => {
+              const edgeInfo = edgeInfoById.get(normalizeHex(edge.id));
+              const edgeStatus = state.edges.get(edge.id);
+              const isLayerZero = edgeStatus?.isLayerZero === true;
+              let status = "Active";
+              if (edgeStatus?.ospConfirmed) status = "OSP Confirmed";
+              else if (edgeStatus?.bisected) status = "Bisected";
+              
+              // Get staker from edgeInfo (only layerzero edges have a staker)
+              const stakerAddress = edgeInfo?.staker || edgeStatus?.staker;
+              let staker = "-";
+              if (isLayerZero) {
+                if (stakerAddress) {
+                  staker = shortHex(stakerAddress, 6, 4);
+                  if (isZeroAddress(stakerAddress)) {
+                    staker = `${staker} (zero address)`;
+                  }
+                } else if (edgeInfoLoading) {
+                  staker = "loading...";
+                } else {
+                  staker = "unknown";
+                }
+              } else {
+                staker = "n/a (child edge)";
+              }
+              const hasRival = edge.hasRival || edgeStatus?.hasRival || false;
+              
+              edgesHtml += `
+                <div class="edge-item">
+                  <div class="edge-item-header">Edge ID: ${shortHex(edge.id)}</div>
+                  <div class="edge-item-detail">LayerZero: ${isLayerZero ? "Yes" : "No"}</div>
+                  <div class="edge-item-detail">Staker: ${staker}</div>
+                  <div class="edge-item-detail">Status: ${status}${hasRival ? " (hasRival)" : ""}</div>
+                </div>
+              `;
+            });
+            edgesHtml += "</div>";
+          } else {
+            edgesHtml = '<div class="edge-list"><em>No edges</em></div>';
+          }
+          
+          tooltip.innerHTML = `
+            <h4>Node Details</h4>
+            <div class="field"><span class="field-label">Range:</span>${rangeText}</div>
+            <div class="field"><span class="field-label">Level:</span>${levelText}</div>
+            <div class="field"><span class="field-label">Rival Status:</span>${rivalStatus}</div>
+            ${edgesHtml}
+          `;
+          
+          tooltip.classList.add("visible");
+          
+          // Position tooltip near cursor
+          const x = event.pageX + 15;
+          const y = event.pageY + 15;
+          tooltip.style.left = `${x}px`;
+          tooltip.style.top = `${y}px`;
+          
+          // Adjust if tooltip goes off screen
+          setTimeout(() => {
+            const rect = tooltip.getBoundingClientRect();
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            if (rect.right > windowWidth) {
+              tooltip.style.left = `${event.pageX - rect.width - 15}px`;
+            }
+            if (rect.bottom > windowHeight) {
+              tooltip.style.top = `${event.pageY - rect.height - 15}px`;
+            }
+          }, 0);
+        }
+        
+        function hideTooltip() {
+          elements.nodeTooltip.classList.remove("visible");
+        }
+        
+        function resetTreeCanvas(message) {
+          elements.edgeTree.innerHTML = "";
+          if (message) {
+            elements.edgeTree.textContent = message;
+          }
+          if (d3Trees.size > 0) {
+            d3Trees.forEach((ctx) => {
+              if (ctx?.svg) ctx.svg.remove();
+            });
+            d3Trees = new Map();
+          }
+        }
+
+        function getTreeContext(container, key) {
+          let ctx = d3Trees.get(key);
+          if (!ctx) {
+            const svg = d3.select(container).append("svg");
+            const g = svg.append("g");
+            const zoom = d3
+              .zoom()
+              .scaleExtent([0.2, 2])
+              .on("zoom", (event) => {
+                ctx.transform = event.transform;
+                g.attr("transform", ctx.transform);
+                hideTooltip();
+              });
+            svg.call(zoom);
+            ctx = { svg, g, zoom, transform: d3.zoomIdentity };
+            d3Trees.set(key, ctx);
+          }
+          return ctx;
+        }
+
+        function renderD3Tree(container, group, state) {
+          if (group.rootKeys.length === 0) {
+            const ctx = d3Trees.get(group.id);
+            if (ctx?.svg) {
+              ctx.svg.remove();
+            }
+            d3Trees.delete(group.id);
+            container.innerHTML = "<div class=\"tree-empty\">No nodes</div>";
+            return;
+          }
+
+          if (container.querySelector(".tree-empty")) {
+            container.innerHTML = "";
+          }
+
+          const treeData = buildTreeData(group);
+          const root = d3.hierarchy(treeData, (d) => d.children);
+          const nodeSize = [180, 400];
+          const treeLayout = d3.tree().nodeSize(nodeSize);
+          treeLayout(root);
+
+          let x0 = Infinity;
+          let x1 = -Infinity;
+          root.each((d) => {
+            if (d.x < x0) x0 = d.x;
+            if (d.x > x1) x1 = d.x;
+          });
+
+          const margin = { top: 24, right: 30, bottom: 24, left: 30 };
+          const panelWidth = container.clientWidth || 360;
+          const height = Math.max(360, x1 - x0 + margin.top + margin.bottom);
+          const viewWidth = Math.max(panelWidth, root.height * nodeSize[1] + margin.left + margin.right);
+
+          root.each((d) => {
+            d.x = d.x - x0 + margin.top;
+            d.y = d.y + margin.left;
+          });
+
+          const ctx = getTreeContext(container, group.id);
+          ctx.svg.attr("width", panelWidth).attr("height", height).attr("viewBox", `0 0 ${viewWidth} ${height}`);
+          ctx.g.attr("transform", ctx.transform || d3.zoomIdentity);
+          ctx.g.selectAll("*").remove();
+
+          const linkPath = d3
+            .linkHorizontal()
+            .x((d) => d.y)
+            .y((d) => d.x);
+
+          ctx.g
+            .append("g")
+            .selectAll("path")
+            .data(root.links())
+            .join("path")
+            .attr("class", "link")
+            .attr("d", linkPath);
+
+          const nodeWidth = 320;
+          const textLineHeight = 16;
+          const textPadding = 12;
+          const indexToLabel = (index) => {
+            if (index < 26) return String.fromCharCode(65 + index);
+            return `E${index + 1}`;
+          };
+          const buildNodeLines = (nodeData) => {
+            if (!nodeData?.rangeKey) return [];
+            const rangeText =
+              nodeData.startHeight != null && nodeData.endHeight != null
+                ? `${nodeData.startHeight} → ${nodeData.endHeight}`
+                : edgeInfoLoading
+                  ? "loading..."
+                  : "unknown";
+            const levelText = nodeData.level !== "-" ? `L${nodeData.level}` : "L?";
+            const lines = [`${levelText} range ${rangeText}`, `hasRival: ${nodeData.hasRival}`];
+            const edges = nodeData.edges || [];
+            const displayEdges = edges.slice(0, 3);
+            displayEdges.forEach((edge, idx) => {
+              const label = indexToLabel(idx);
+              const rivalMark = edge.hasRival ? " (rival)" : "";
+              lines.push(`${label}: ${shortHex(edge.id, 4, 2)}${rivalMark}`);
+            });
+            if (edges.length > displayEdges.length) {
+              lines.push(`... +${edges.length - displayEdges.length}`);
+            }
+            return lines;
+          };
+          const nodeHeight = (d) => {
+            const lineCount = Math.max(buildNodeLines(d.data).length, 1);
+            return lineCount * textLineHeight + textPadding * 2;
+          };
+
+          const node = ctx.g
+            .append("g")
+            .selectAll("g")
+            .data(root.descendants())
+            .join("g")
+            .attr("class", (d) => {
+              if (!d.data.rangeKey) return "node";
+              const classes = ["node"];
+              if (d.data.edges?.some((edge) => edge.id === state.activeEdgeId)) {
+                classes.push("active");
+              }
+              if (d.data.hasRival) classes.push("hasRival");
+              if (d.data.bisected) classes.push("bisected");
+              if (d.data.ospConfirmed) classes.push("osp");
+              return classes.join(" ");
+            })
+            .attr("transform", (d) => `translate(${d.y},${d.x})`)
+            .style("cursor", (d) => (d.data.rangeKey ? "pointer" : "default"))
+            .on("click", (event, d) => {
+              if (!d.data.rangeKey) return;
+              event.stopPropagation();
+              // Show tooltip on single click
+              showTooltip(event, d, state);
+            })
+            .on("dblclick", (event, d) => {
+              if (!d.data.rangeKey) return;
+              event.stopPropagation();
+              // Toggle collapse/expand on double click
+              if (collapsedSet.has(d.data.rangeKey)) {
+                collapsedSet.delete(d.data.rangeKey);
+                expandedSet.add(d.data.rangeKey);
+              } else {
+                collapsedSet.add(d.data.rangeKey);
+                expandedSet.delete(d.data.rangeKey);
+              }
+              renderTree(state);
+            })
+            .on("mouseenter", (event, d) => {
+              if (d.data.rangeKey) {
+                event.target.style.opacity = "0.8";
+              }
+            })
+            .on("mouseleave", (event, d) => {
+              if (d.data.rangeKey) {
+                event.target.style.opacity = "1";
+              }
+            });
+
+          node
+            .filter((d) => d.data.rangeKey)
+            .append("rect")
+            .attr("x", -nodeWidth / 2)
+            .attr("y", (d) => -nodeHeight(d) / 2)
+            .attr("width", nodeWidth)
+            .attr("height", (d) => nodeHeight(d));
+
+          node
+            .filter((d) => d.data.rangeKey)
+            .append("text")
+            .attr("text-anchor", "middle")
+            .each(function (d) {
+              const lines = buildNodeLines(d.data);
+              const height = nodeHeight(d);
+              const textStartY = -height / 2 + textPadding + textLineHeight - 2;
+              const text = d3.select(this);
+              text.attr("y", textStartY);
+              lines.forEach((line, idx) => {
+                text
+                  .append("tspan")
+                  .attr("x", 0)
+                  .attr("dy", idx === 0 ? 0 : textLineHeight)
+                  .attr("class", idx === 0 ? null : "node-label")
+                  .text(line);
+              });
+            });
+
+          node
+            .filter((d) => d.data.rangeKey && (d.children?.length || d.data._children?.length))
+            .append("text")
+            .attr("x", nodeWidth / 2 - 10)
+            .attr("y", (d) => -nodeHeight(d) / 2 + 12)
+            .attr("text-anchor", "end")
+            .attr("class", "node-label")
+            .text((d) => (collapsedSet.has(d.data.rangeKey) ? "+" : "-"));
+        }
+
+        function renderTree(state) {
+          if (isLoading) {
+            resetTreeCanvas("Loading logs...");
+            return;
+          }
+          if (loadError) {
+            resetTreeCanvas(`Failed to load logs: ${loadError}`);
+            return;
+          }
+          if (state.roots.length === 0) {
+            resetTreeCanvas("No edges found in this block range.");
+            return;
+          }
+
+          const rangeIndex = buildRangeIndex(state);
+          const groups = buildLevelGroups(rangeIndex);
+          applyAutoCollapse(groups);
+
+          let grid = elements.edgeTree.querySelector(".tree-grid");
+          if (!grid) {
+            elements.edgeTree.innerHTML = "";
+            grid = document.createElement("div");
+            grid.className = "tree-grid";
+            elements.edgeTree.appendChild(grid);
+          }
+
+          groups.forEach((group) => {
+            let panel = grid.querySelector(`[data-group="${group.id}"]`);
+            if (!panel) {
+              panel = document.createElement("div");
+              panel.className = "tree-panel";
+              panel.dataset.group = group.id;
+              const title = document.createElement("h3");
+              title.textContent = group.label;
+              const canvas = document.createElement("div");
+              canvas.className = "tree-canvas";
+              panel.appendChild(title);
+              panel.appendChild(canvas);
+              grid.appendChild(panel);
+            } else {
+              const title = panel.querySelector("h3");
+              if (title) title.textContent = group.label;
+            }
+            const canvas = panel.querySelector(".tree-canvas");
+            renderD3Tree(canvas, group, state);
+          });
+        }
+
+        function renderDetails(state) {
+          if (isLoading) {
+            elements.edgeDetails.innerHTML = "<p>Loading logs...</p>";
+            return;
+          }
+          if (loadError) {
+            elements.edgeDetails.innerHTML = `<p>Failed to load logs: ${loadError}</p>`;
+            return;
+          }
+          const edge = state.edges.get(state.activeEdgeId);
+          if (!edge) {
+            elements.edgeDetails.innerHTML = "<p>No active edge.</p>";
+            return;
+          }
+          const status = edge.ospConfirmed
+            ? "OSP confirmed"
+            : edge.bisected
+              ? "Bisected"
+              : "Active";
+          const latestEvent = state.appliedEvents[state.appliedEvents.length - 1];
+          const rangeText =
+            edge.startHeight && edge.endHeight
+              ? `${edge.startHeight} → ${edge.endHeight}`
+              : edgeInfoLoading
+                ? "loading..."
+                : "unknown";
+          const stakerText = edge.staker
+            ? `${shortHex(edge.staker, 6, 4)}${isZeroAddress(edge.staker) ? " (zero address)" : ""}`
+            : "-";
+
+          elements.edgeDetails.innerHTML = `
+            <div><span class="label">EdgeId:</span> ${shortHex(edge.id)}</div>
+            <div><span class="label">Level:</span> ${edge.level}</div>
+            <div><span class="label">Range:</span> ${rangeText}</div>
+            <div><span class="label">StartHeight:</span> ${edge.startHeight ?? "-"}</div>
+            <div><span class="label">EndHeight:</span> ${edge.endHeight ?? "-"}</div>
+            <div><span class="label">Length:</span> ${edge.length ?? "-"}</div>
+            <div><span class="label">LayerZero:</span> ${edge.isLayerZero}</div>
+            <div><span class="label">HasRival:</span> ${edge.hasRival ?? "-"}</div>
+            <div><span class="label">Status:</span> ${status}</div>
+            <div><span class="label">Children:</span> ${edge.children.length}</div>
+            <div><span class="label">OriginId:</span> ${shortHex(edge.originId)}</div>
+            <div><span class="label">MutualId:</span> ${shortHex(edge.mutualId)}</div>
+            <div><span class="label">ClaimId:</span> ${shortHex(edge.claimId)}</div>
+            <div><span class="label">Staker:</span> ${stakerText}</div>
+            <div><span class="label">LastEvent:</span> ${latestEvent ? latestEvent.type : "-"}</div>
+            <div><span class="label">Block:</span> ${latestEvent ? latestEvent.blockNumber : "-"}</div>
+            <div><span class="label">Tx:</span> ${latestEvent ? shortHex(latestEvent.txHash, 8, 6) : "-"}</div>
+          `;
+        }
+
+        function renderLog(state) {
+          elements.eventLog.innerHTML = "";
+          if (isLoading) {
+            elements.eventLog.innerHTML = "<li>Loading logs...</li>";
+            return;
+          }
+          if (loadError) {
+            elements.eventLog.innerHTML = `<li>Failed to load logs: ${loadError}</li>`;
+            return;
+          }
+          state.appliedEvents.forEach((ev, index) => {
+            const li = document.createElement("li");
+            li.textContent = `${index + 1}. [${ev.blockNumber}/${ev.logIndex}] ${formatEvent(ev)}`;
+            if (index === currentIndex) {
+              li.classList.add("current");
+            }
+            elements.eventLog.appendChild(li);
+          });
+        }
+
+        function renderControls() {
+          if (isLoading) {
+            elements.progressText.textContent = "Loading...";
+          } else if (loadError) {
+            elements.progressText.textContent = "Load failed";
+          } else {
+            elements.progressText.textContent = `${Math.max(currentIndex + 1, 0)} / ${events.length}`;
+          }
+          const hasEvents = events.length > 0 && !isLoading && !loadError;
+          elements.nextBtn.disabled = !hasEvents || currentIndex >= events.length - 1;
+          elements.playBtn.disabled = !hasEvents;
+          elements.resetBtn.disabled = !hasEvents;
+          elements.playBtn.textContent = timer ? "Pause" : "Play";
+        }
+
+        function renderAll() {
+          const state = applyEvents(currentIndex);
+          renderFlow(state);
+          renderTree(state);
+          renderDetails(state);
+          renderLog(state);
+          renderControls();
+        }
+
+        function pause() {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          renderControls();
+        }
+
+        function play() {
+          if (timer) return;
+          timer = setInterval(() => {
+            if (currentIndex < events.length - 1) {
+              currentIndex += 1;
+              renderAll();
+            } else {
+              pause();
+            }
+          }, intervalMs);
+          renderControls();
+        }
+
+        elements.playBtn.addEventListener("click", () => {
+          if (timer) {
+            pause();
+          } else {
+            play();
+          }
+        });
+
+        elements.nextBtn.addEventListener("click", () => {
+          if (currentIndex < events.length - 1) {
+            currentIndex += 1;
+            renderAll();
+          }
+        });
+
+        elements.resetBtn.addEventListener("click", () => {
+          currentIndex = -1;
+          pause();
+          renderAll();
+        });
+
+        elements.speedSelect.addEventListener("change", (event) => {
+          intervalMs = Number(event.target.value);
+          if (timer) {
+            pause();
+            play();
+          }
+        });
+        
+        // Hide tooltip when clicking outside
+        document.addEventListener("click", (event) => {
+          if (!elements.nodeTooltip.contains(event.target)) {
+            // Check if click is not on a node or SVG element
+            const isNodeClick = event.target.closest(".node") || event.target.closest("svg");
+            if (!isNodeClick) {
+              hideTooltip();
+            }
+          }
+        });
+        
+        // Hide tooltip on scroll
+        window.addEventListener("scroll", hideTooltip);
+
+        async function loadEvents() {
+          isLoading = true;
+          loadError = null;
+          collapsedSet = new Set();
+          expandedSet = new Set();
+          renderAll();
+          try {
+            const logs = await rpcCall("eth_getLogs", [
+              {
+                fromBlock: toHex(BLOCK_RANGE.from),
+                toBlock: toHex(BLOCK_RANGE.to),
+                address: CHALLENGE_MANAGER,
+              },
+            ]);
+            const filtered = logs.filter((log) => {
+              const topic0 = normalizeHex(log.topics?.[0]);
+              return (
+                topic0 === EDGE_ADDED_TOPIC ||
+                topic0 === EDGE_BISECTED_TOPIC ||
+                topic0 === EDGE_OSP_TOPIC
+              );
+            });
+            filtered.sort(
+              (a, b) =>
+                parseInt(a.blockNumber, 16) - parseInt(b.blockNumber, 16) ||
+                parseInt(a.logIndex, 16) - parseInt(b.logIndex, 16)
+            );
+            events = filtered.map(decodeLog);
+            parentByChild = buildParentMap(events);
+            childOrderByParent = buildChildOrderMap(events);
+            milestones = computeMilestones(events, parentByChild);
+            const edgeIds = [];
+            events.forEach((ev) => {
+              if (ev.edgeId) edgeIds.push(ev.edgeId);
+              if (ev.lowerChildId) edgeIds.push(ev.lowerChildId);
+              if (ev.upperChildId) edgeIds.push(ev.upperChildId);
+            });
+            loadEdgeInfos(edgeIds);
+          } catch (error) {
+            loadError = error?.message || "Unknown error";
+          } finally {
+            isLoading = false;
+            currentIndex = events.length ? -1 : -1;
+            renderAll();
+          }
+        }
+
+        renderAll();
+        loadEvents();
+      })();
+    </script>
+  </body>
+</html>
