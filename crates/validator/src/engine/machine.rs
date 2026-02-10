@@ -24,6 +24,8 @@ use crate::engine::machine_locator::MachineLocator;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::net::TcpListener;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{
     env::{self},
     path::{Path, PathBuf},
@@ -47,17 +49,25 @@ use validation::{GoGlobalState, ValidationInput};
 pub struct JitMachine {
     /// Handler to jit binary stdin. Instead of using Mutex<> for the entire
     /// JitMachine we chose to use a more granular Mutex<> to avoid contention
-    pub process_stdin: Mutex<Option<ChildStdin>>,
-    /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown
+    pub process_stdin: Mutex<ChildStdin>,
+    /// Handler to jit binary process. Needs a Mutex<> to force quit on server shutdown.
     pub process: Mutex<Child>,
 }
 
 impl JitMachine {
+    pub async fn ensure_alive(&self) -> Result<()> {
+        let mut child = self.process.lock().await;
+        ensure_process_is_alive(&mut child)
+    }
+
     pub async fn feed_machine(
         &self,
         wasm_memory_usage_limit: u64,
         request: &ValidationInput,
     ) -> Result<GoGlobalState> {
+        // 0. Ensure process is alive
+        self.ensure_alive().await?;
+
         // 1. Create new TCP connection
         // Binding with a port number of 0 will request that the OS assigns a port to this listener.
         let listener = TcpListener::bind("127.0.0.1:0").context("failed to create TCP listener")?;
@@ -68,17 +78,12 @@ impl JitMachine {
         let address_str = format!("{addr}\n");
 
         // 3. Send TCP connection via stdin pipe
-        {
-            let mut locked_process_stdin = self.process_stdin.lock().await;
-            if let Some(stdin) = locked_process_stdin.as_mut() {
-                stdin
-                    .write_all(address_str.as_bytes())
-                    .await
-                    .context("failed to write address to jit stdin")?;
-            } else {
-                return Err(anyhow!("JIT machine stdin is not available"));
-            }
-        }
+        self.process_stdin
+            .lock()
+            .await
+            .write_all(address_str.as_bytes())
+            .await
+            .context("failed to write address to jit stdin")?;
 
         // 4. Wait for the child to call us back
         let (mut conn, _) = listener
@@ -107,19 +112,13 @@ impl JitMachine {
 
     pub async fn complete_machine(&self) -> Result<()> {
         // Close stdin. This sends EOF to the child process, signaling it to stop.
-        // We take the Option to ensure it's dropped and cannot be used again.
-        let mut locked_process_stdin = self.process_stdin.lock().await;
-        if let Some(stdin) = locked_process_stdin.take() {
-            drop(stdin);
-        }
+        drop(self.process_stdin.lock().await);
 
         let mut locked_process = self.process.lock().await;
         locked_process
             .kill()
             .await
-            .context("failed to kill jit process")?;
-
-        Ok(())
+            .context("failed to kill jit process")
     }
 }
 
@@ -174,32 +173,19 @@ impl JitProcessManager {
             return Err(anyhow!("Server is shutting down"));
         }
 
-        let machine_exists = {
-            let locked_machine = self.machines.read().await;
-            locked_machine.contains_key(&module_root)
-        };
-
-        // This should not happen and should be handled by availability layer + MachineLocator
-        if !machine_exists {
-            return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"));
-        }
-
-        // Clone the Arc while holding the read lock, then drop the lock immediately.
-        // This allows other threads to access the HashMap while we perform I/O operations.
-        let machine_arc = {
+        let machine = {
             let machines = self.machines.read().await;
-            machines.get(&module_root).cloned()
+            match machines.get(&module_root) {
+                // Clone the Arc while holding the read lock, then drop the lock immediately.
+                // This allows other threads to access the HashMap while we perform I/O operations.
+                Some(machine) => machine.clone(),
+                None => return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"))
+            }
         };
 
-        if let Some(sub_machine) = machine_arc {
-            sub_machine
-                .feed_machine(self.wasm_memory_usage_limit, request)
-                .await
-        } else {
-            Err(anyhow!(
-                "did not find machine with module root {module_root}"
-            ))
-        }
+        machine
+            .feed_machine(self.wasm_memory_usage_limit, request)
+            .await
     }
 
     pub async fn complete_machines(&self) -> Result<()> {
@@ -252,15 +238,27 @@ fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<
 
     let mut child = cmd.spawn().context("failed to spawn jit binary")?;
 
+    // Wait briefly for the OS to allocate resources and for the child process to start up. Then,
+    // check if the child process has already exited, which would indicate a startup failure.
+    debug!("Waiting for JIT process to come up");
+    sleep(Duration::from_secs(2));
+    ensure_process_is_alive(&mut child)?;
+
     let stdin = child
         .stdin
         .take()
         .ok_or_else(|| anyhow!("failed to open stdin to jit process"))?;
 
-    let sub_machine = JitMachine {
-        process_stdin: Mutex::new(Some(stdin)),
+    Ok(JitMachine {
+        process_stdin: Mutex::new(stdin),
         process: Mutex::new(child),
-    };
+    })
+}
 
-    Ok(sub_machine)
+fn ensure_process_is_alive(p: &mut Child) -> Result<()> {
+    match p.try_wait() {
+        Ok(Some(status)) => Err(anyhow!("JIT process has exited with status: {status}")),
+        Ok(None) => Ok(()),
+        Err(err) => Err(anyhow!("failed to check jit process status: {err}")),
+    }
 }
