@@ -69,8 +69,8 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		})
 	}
 	// Reorging of MEL states successfully completed, we can now rewind MEL validator
-	if m.melValidator != nil && processAction.prevStepWasReorg {
-		m.melValidator.Rewind(preState.ParentChainBlockNumber)
+	if m.reorgEventsNotifier != nil && processAction.prevStepWasReorg {
+		m.reorgEventsNotifier <- preState.ParentChainBlockNumber
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {

@@ -52,6 +52,7 @@ type MELValidator struct {
 	messageExtractor *melrunner.MessageExtractor
 	dapReaders       arbstate.DapReaderSource
 
+	melReorgDetector                chan uint64
 	rewindMutex                     sync.Mutex
 	latestValidatedGS               validator.GoGlobalState
 	latestValidatedParentChainBlock uint64
@@ -160,6 +161,7 @@ func NewMELValidator(
 	messageExtractor *melrunner.MessageExtractor,
 	dapReaders arbstate.DapReaderSource,
 	latestWasmModuleRoot common.Hash,
+	melReorgDetector chan uint64,
 ) (*MELValidator, error) {
 	var executionSpawners []validator.ExecutionSpawner
 	configs := config().ValidationServerConfigs
@@ -182,6 +184,9 @@ func NewMELValidator(
 	if latestWasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("latestWasmModuleRoot not set")
 	}
+	if melReorgDetector == nil {
+		return nil, errors.New("melReorgDetector not set")
+	}
 	return &MELValidator{
 		config:               config,
 		arbDb:                arbDb,
@@ -192,6 +197,7 @@ func NewMELValidator(
 		redisValidator:       redisValClient,
 		executionSpawners:    executionSpawners,
 		msgPreimagesCache:    make(map[uint64]daprovider.PreimagesMap),
+		melReorgDetector:     melReorgDetector,
 	}, nil
 }
 
@@ -264,6 +270,10 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 }
 
 func (mv *MELValidator) Start(ctx context.Context) {
+	mv.StopWaiter.Start(ctx, mv)
+	if mv.melReorgDetector != nil {
+		mv.LaunchThread(mv.rewindOnMELReorgs)
+	}
 	mv.CallIteratively(func(ctx context.Context) time.Duration {
 		latestStaked, err := mv.rollup.LatestStakedAssertion(&bind.CallOpts{}, mv.boldStakerAddr)
 		if err != nil {
@@ -311,12 +321,19 @@ func (mv *MELValidator) Start(ctx context.Context) {
 	})
 }
 
-// Rewind is only called by the MessageExtractor and will always be the first to be called during a reorg
+// rewindOnMELReorgs handles MEL related reorgs and will always be the first to receive a reorg event i.e before the blockvalidator,
 // either L1 (parent chain reorg) or L2 (InitConfig.ReorgToMessageBatch) or both (parent chain reorg causing L2 reorg)
-func (mv *MELValidator) Rewind(parentChainBlockNumber uint64) {
-	mv.rewindMutex.Lock()
-	defer mv.rewindMutex.Unlock()
-	mv.latestValidatedParentChainBlock = min(mv.latestValidatedParentChainBlock, parentChainBlockNumber)
+func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case parentChainBlockNumber := <-mv.melReorgDetector:
+			mv.rewindMutex.Lock()
+			mv.latestValidatedParentChainBlock = min(mv.latestValidatedParentChainBlock, parentChainBlockNumber)
+			mv.rewindMutex.Unlock()
+		}
+	}
 }
 
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {

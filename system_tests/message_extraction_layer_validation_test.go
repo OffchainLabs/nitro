@@ -66,7 +66,7 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
 
 	config := func() *staker.MELValidatorConfig { return &builder.nodeConfig.MELValidator }
-	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, locator.LatestWasmModuleRoot())
+	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, locator.LatestWasmModuleRoot(), make(chan uint64))
 	Require(t, err)
 	Require(t, melValidator.Initialize(ctx))
 	entry, endMELState, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCountToValidate))

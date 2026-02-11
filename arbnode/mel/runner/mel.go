@@ -113,7 +113,7 @@ type MessageExtractor struct {
 	caughtUpChan             chan struct{}
 	lastBlockToRead          atomic.Uint64
 	stuckCount               uint64
-	melValidator             MELValidator
+	reorgEventsNotifier      chan uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -127,23 +127,23 @@ func NewMessageExtractor(
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
-	melValidator MELValidator,
+	reorgEventsNotifier chan uint64,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
 		return nil, err
 	}
 	return &MessageExtractor{
-		config:            config,
-		parentChainReader: parentChainReader,
-		chainConfig:       chainConfig,
-		addrs:             rollupAddrs,
-		melDB:             melDB,
-		msgConsumer:       msgConsumer,
-		dataProviders:     dapRegistry,
-		fsm:               fsm,
-		caughtUpChan:      make(chan struct{}),
-		melValidator:      melValidator,
+		config:              config,
+		parentChainReader:   parentChainReader,
+		chainConfig:         chainConfig,
+		addrs:               rollupAddrs,
+		melDB:               melDB,
+		msgConsumer:         msgConsumer,
+		dataProviders:       dapRegistry,
+		fsm:                 fsm,
+		caughtUpChan:        make(chan struct{}),
+		reorgEventsNotifier: reorgEventsNotifier,
 	}, nil
 }
 
@@ -328,6 +328,7 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
+// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation
 func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
 	dbBatch := m.melDB.db.NewBatch()
 	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
@@ -336,8 +337,8 @@ func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
 	if err := dbBatch.Write(); err != nil {
 		return err
 	}
-	if m.melValidator != nil {
-		m.melValidator.Rewind(parentChainBlockNumber)
+	if m.reorgEventsNotifier != nil {
+		m.reorgEventsNotifier <- parentChainBlockNumber
 	}
 	return nil
 }
