@@ -727,7 +727,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 	}
 
 	genesisJsonFile := config.Init.GenesisJsonFile
-	if genesisJsonFile == "" {
+	if genesisJsonFile == "" && initDataReader != nil {
 		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
 		if err != nil {
 			log.Error("error getting genesis json file from directory", "err", err)

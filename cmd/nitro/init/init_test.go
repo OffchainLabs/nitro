@@ -887,13 +887,15 @@ func TestGetGenesisFileNameFromDirectoryWithCorrectFile(t *testing.T) {
 	chainId := uint64(42161)
 	genesisFileName := fmt.Sprintf("%d.json", chainId)
 	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(chainId)),
+	})
+	Require(t, err)
 	genesis := core.Genesis{
-		Config: &params.ChainConfig{
-			ChainID: big.NewInt(int64(chainId)),
-		},
-		GasLimit:   0,
-		Difficulty: big.NewInt(0),
-		Alloc:      core.GenesisAlloc{},
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
@@ -911,13 +913,15 @@ func TestGetGenesisFileNameFromDirectoryWithWrongFileName(t *testing.T) {
 	chainId := uint64(42161)
 	genesisFileName := fmt.Sprintf("%d_wrong.json", chainId)
 	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(chainId)),
+	})
+	Require(t, err)
 	genesis := core.Genesis{
-		Config: &params.ChainConfig{
-			ChainID: big.NewInt(int64(chainId)),
-		},
-		GasLimit:   0,
-		Difficulty: big.NewInt(0),
-		Alloc:      core.GenesisAlloc{},
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
@@ -935,13 +939,15 @@ func TestGetGenesisFileNameFromDirectoryWithWrongChainId(t *testing.T) {
 	wrongChainId := uint64(42162)
 	genesisFileName := fmt.Sprintf("%d.json", chainId)
 	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(wrongChainId)),
+	})
+	Require(t, err)
 	genesis := core.Genesis{
-		Config: &params.ChainConfig{
-			ChainID: big.NewInt(int64(wrongChainId)),
-		},
-		GasLimit:   0,
-		Difficulty: big.NewInt(0),
-		Alloc:      core.GenesisAlloc{},
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
 	}
 	genesisBytes, err := genesis.MarshalJSON()
 	Require(t, err)
