@@ -17,12 +17,12 @@ jobs:
           submodules: recursive
 
       - name: Install SP1 toolchain
-        run: >-
-          curl -L https://sp1up.succinct.xyz | sh
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
           sp1up -v v6.0.0-beta.1
 
       - name: Print versions
-        run: >-
+        run: |
           rustc +succinct --version
           rustc +succinct --print target-list | grep succinct
 
