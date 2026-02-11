@@ -28,3 +28,38 @@ jobs:
 
       - name: Build binaries and record block
         run: ./sp1-crates/build.sh
+
+      - name: Run validation
+        run: >-
+          SP1_HASH=$(./target/sp1/sp1-runner \
+            --program target/sp1/dumped_replay_wasm.elf \
+            --stylus-compiler-program target/sp1/stylus-compiler-program \
+            --block-file target/sp1/block_inputs_7.json 2>&1 \
+            | grep "Validation succeeds with hash" \
+            | awk '{print $NF}')
+          
+          if [ -z "$SP1_HASH" ]; then
+              echo "Error: Failed to capture hash."
+              exit 1
+          fi
+          
+          JIT_HASH=$(./target/bin/jit \
+            --debug --cranelift \
+            --binary target/machines/latest/replay.wasm \
+            json --inputs=target/sp1/block_inputs_7.json 2>&1 \
+            | grep "Completed in .* with hash" \
+            | awk '{print $NF}' \
+            | sed 's/\.$//')
+          
+          if [ -z "$JIT_HASH" ]; then
+              echo "Error: Failed to capture JIT hash."
+              exit 1
+          fi
+          
+          echo "SP1 Hash: $SP1_HASH"
+          echo "JIT Hash: $JIT_HASH"
+          
+          if [ "$SP1_HASH" != "$JIT_HASH" ]; then
+              echo "Error: Hash mismatch!"
+              exit 1
+          fi
