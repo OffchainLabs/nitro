@@ -30,7 +30,12 @@ jobs:
         run: ./sp1-crates/build.sh
 
       - name: Run validation
-        run: >-
+        run: |
+          # Exit if any command in a pipe fails
+          set -e -o pipefail
+          
+          echo "--- Running SP1 Validation ---"
+          # Extracting only the hex string using grep -o
           SP1_HASH=$(./target/sp1/sp1-runner \
             --program target/sp1/dumped_replay_wasm.elf \
             --stylus-compiler-program target/sp1/stylus-compiler-program \
@@ -43,6 +48,7 @@ jobs:
               exit 1
           fi
           
+          echo "--- Running JIT Validation ---"
           JIT_HASH=$(./target/bin/jit \
             --debug --cranelift \
             --binary target/machines/latest/replay.wasm \
@@ -60,6 +66,8 @@ jobs:
           echo "JIT Hash: $JIT_HASH"
           
           if [ "$SP1_HASH" != "$JIT_HASH" ]; then
-              echo "Error: Hash mismatch!"
+              echo "::error::Hash mismatch detected!"
+              echo "Expected: $SP1_HASH"
+              echo "Actual:   $JIT_HASH"
               exit 1
           fi
