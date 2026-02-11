@@ -39,7 +39,7 @@ pub async fn validate_native(
     };
 
     let binary_path = if let Some(module_root) = request.module_root {
-        server_state.locator.get_machine_path(module_root)
+        server_state.locator.get_machine_path(module_root)?
     } else {
         server_state
             .locator

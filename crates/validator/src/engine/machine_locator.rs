@@ -145,11 +145,20 @@ impl MachineLocator {
         })
     }
 
-    pub fn get_machine_path(&self, module_root: ModuleRoot) -> PathBuf {
-        if module_root == ModuleRoot::default() || module_root == self.latest.module_root {
-            self.root_path.join("latest")
+    pub fn get_machine_path(&self, module_root: ModuleRoot) -> Result<PathBuf, String> {
+        let module_root_path =
+            if module_root == ModuleRoot::default() || module_root == self.latest.module_root {
+                self.root_path.join("latest")
+            } else {
+                self.root_path.join(format!("0x{module_root}"))
+            };
+
+        if !module_root_path.exists() || !module_root_path.is_dir() {
+            Err(format!(
+                "module root path {module_root_path:?} does not exist"
+            ))
         } else {
-            self.root_path.join(format!("0x{module_root}"))
+            Ok(module_root_path)
         }
     }
 
@@ -217,7 +226,7 @@ mod tests {
 
     fn gen_random_module_root() -> ModuleRoot {
         let mut bytes = [0u8; 32];
-        rand::rng().fill_bytes(&mut bytes);
+        rand::thread_rng().fill_bytes(&mut bytes);
 
         Bytes32(bytes)
     }
@@ -313,7 +322,7 @@ mod tests {
             .for_each(|root_meta_wrapper| {
                 // let root_meta_wrapper = file_manager.root_metas.first().unwrap();
                 let mod_root = root_meta_wrapper.root_meta.module_root;
-                let module_root = machine_locator.get_machine_path(mod_root);
+                let module_root = machine_locator.get_machine_path(mod_root).unwrap();
                 assert!(module_root
                     .to_str()
                     .unwrap()
@@ -355,6 +364,42 @@ mod tests {
         let error = result.err().unwrap();
         let err_str = error.to_string();
         assert!(err_str.contains("empty module roots"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_machine_path() -> Result<()> {
+        let file_manager = LocatorSimulator::new(1);
+        let machine_locator = MachineLocator::new(&None)?;
+        let root_meta_wrapper = file_manager.root_metas.first().unwrap();
+
+        let result = machine_locator.get_machine_path(root_meta_wrapper.root_meta.module_root);
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_machine_path_wrong_path() -> Result<()> {
+        let machine_locator = MachineLocator::new(&None)?;
+
+        let random_module_root = gen_random_module_root();
+        let result = machine_locator.get_machine_path(random_module_root);
+        assert!(result.is_err());
+
+        let error = result.err().unwrap();
+        let err_str = error.to_string();
+
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let machines_dir = manifest_dir
+            .ancestors()
+            .nth(2)
+            .expect("Failed to navigate to workspace root")
+            .join("target/machines");
+        let expected_path = machines_dir.join(format!("0x{random_module_root}"));
+        let expected_error = format!("module root path {expected_path:?} does not exist");
+        assert_eq!(err_str, expected_error);
 
         Ok(())
     }
