@@ -92,10 +92,6 @@ type ParentChainReader interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
-type MELValidator interface {
-	Rewind(parentChainBlockNumber uint64)
-}
-
 // Defines a message extraction service for a Nitro node which reads parent chain
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
