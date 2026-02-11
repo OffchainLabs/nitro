@@ -25,6 +25,11 @@ jobs:
       - name: Install protobuf-compiler
         run: sudo apt install -y protobuf-compiler
 
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 21
+
       - name: Install SP1 toolchain
         run: |
           curl -L https://sp1up.succinct.xyz | bash
