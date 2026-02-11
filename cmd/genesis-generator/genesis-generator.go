@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -81,7 +82,7 @@ func mainImpl() error {
 		Accounts: accounts,
 	})
 
-	chainConfig, serializedChainConfig, err := readChainConfig(&gen)
+	chainConfig, serializedChainConfig, err := util.ReadChainConfig(&gen)
 	if err != nil {
 		return err
 	}
@@ -145,22 +146,6 @@ func generateGenesisBlock(executionDB ethdb.Database, cacheConfig *core.BlockCha
 	}
 
 	return arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig), nil
-}
-
-func readChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
-	if gen.Config != nil {
-		return nil, nil, errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
-	}
-	if gen.SerializedChainConfig == "" {
-		return nil, nil, errors.New("serialized chain config was not set (`serializedChainConfig`)")
-	}
-	serializedChainConfig := []byte(gen.SerializedChainConfig)
-
-	var chainConfig params.ChainConfig
-	if err := json.Unmarshal(serializedChainConfig, &chainConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal chain config: %w", err)
-	}
-	return &chainConfig, serializedChainConfig, nil
 }
 
 func buildInitMessage(genesisArbOSInit *params.ArbOSInit, chainConfig *params.ChainConfig, serializedChainConfig []byte) (*arbostypes.ParsedInitMessage, error) {

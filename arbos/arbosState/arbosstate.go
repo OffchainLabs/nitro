@@ -68,6 +68,7 @@ type ArbosState struct {
 	brotliCompressionLevel          storage.StorageBackedUint64 // brotli compression level used for pricing
 	nativeTokenEnabledTime          storage.StorageBackedUint64
 	transactionFilteringEnabledTime storage.StorageBackedUint64
+	filteredFundsRecipient          storage.StorageBackedAddress
 	backingStorage                  *storage.Storage
 	Burner                          burn.Burner
 }
@@ -108,6 +109,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		brotliCompressionLevel:          backingStorage.OpenStorageBackedUint64(uint64(brotliCompressionLevelOffset)),
 		nativeTokenEnabledTime:          backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
 		transactionFilteringEnabledTime: backingStorage.OpenStorageBackedUint64(uint64(transactionFilteringEnabledFromTimeOffset)),
+		filteredFundsRecipient:          backingStorage.OpenStorageBackedAddress(uint64(filteredFundsRecipientOffset)),
 		backingStorage:                  backingStorage,
 		Burner:                          burner,
 	}, nil
@@ -180,6 +182,7 @@ const (
 	brotliCompressionLevelOffset
 	nativeTokenEnabledFromTimeOffset
 	transactionFilteringEnabledFromTimeOffset
+	filteredFundsRecipientOffset
 )
 
 type SubspaceID []byte
@@ -479,6 +482,8 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(p.Save())
 			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
+			// filteredFundsRecipient defaults to zero address (falls back to networkFeeAccount).
+			// No explicit initialization needed -- uninitialized storage reads as zero.
 
 		default:
 			return fmt.Errorf(
@@ -644,6 +649,25 @@ func (state *ArbosState) InfraFeeAccount() (common.Address, error) {
 
 func (state *ArbosState) SetInfraFeeAccount(account common.Address) error {
 	return state.infraFeeAccount.Set(account)
+}
+
+func (state *ArbosState) FilteredFundsRecipient() (common.Address, error) {
+	return state.filteredFundsRecipient.Get()
+}
+
+func (state *ArbosState) SetFilteredFundsRecipient(account common.Address) error {
+	return state.filteredFundsRecipient.Set(account)
+}
+
+func (state *ArbosState) FilteredFundsRecipientOrDefault() (common.Address, error) {
+	recipient, err := state.filteredFundsRecipient.Get()
+	if err != nil {
+		return common.Address{}, err
+	}
+	if recipient == (common.Address{}) {
+		return state.networkFeeAccount.Get()
+	}
+	return recipient, nil
 }
 
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
