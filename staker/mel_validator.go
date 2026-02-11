@@ -452,7 +452,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			PosInBatch:   initialState.MsgCount,
 		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
-	}, currentState, nil
+	}, endState, nil
 }
 
 func (mv *MELValidator) FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error) {
