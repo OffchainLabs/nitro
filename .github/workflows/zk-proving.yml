@@ -19,6 +19,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
       - name: Install SP1 toolchain
         run: |
           curl -L https://sp1up.succinct.xyz | bash
