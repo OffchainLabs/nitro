@@ -22,6 +22,9 @@ jobs:
       - name: Setup CI
         uses: ./.github/actions/ci-setup
 
+      - name: Install protobuf-compiler
+        run: sudo apt install -y protobuf-compiler
+
       - name: Install SP1 toolchain
         run: |
           curl -L https://sp1up.succinct.xyz | bash
