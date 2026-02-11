@@ -69,8 +69,11 @@ var (
 	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
-var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-var ResultNotFound = errors.New("result not found")
+var (
+	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+	ResultNotFound                      = errors.New("result not found")
+	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+)
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
@@ -178,7 +181,8 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker state.AddressChecker
+	addressChecker               state.AddressChecker
+	transactionFiltererRPCClient *TransactionFiltererRPCClient
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -194,7 +198,7 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
@@ -202,7 +206,7 @@ func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGa
 		cachedL1PriceData: NewL1PriceData(),
 		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
-	}, nil
+	}
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -768,7 +772,7 @@ func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
 func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis := s.GetGenesisBlockNumber()
 	if blockNum < genesis {
-		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+		return 0, fmt.Errorf("%w: blockNum %d < genesis %d", BlockNumBeforeGenesis, blockNum, genesis)
 	}
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
@@ -855,6 +859,20 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
 		if len(filteringHooks.FilteredTxHashes) > 0 {
+			if s.transactionFiltererRPCClient != nil {
+				s.LaunchThread(func(ctx context.Context) {
+					// Call transaction-filterer sequentially.
+					// To avoid nonce collisions when adding a tx to ArbFilteredTransactionsManager,
+					// transaction-filterer will process only one Filter call at a time.
+					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
+						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
+						if err != nil {
+							log.Error("error reporting filtered tx to transaction-filterer", "filteredTxHash", filteredTxHash, "err", err)
+						}
+					}
+				})
+			}
+
 			return nil, nil, nil, &ErrFilteredDelayedMessage{
 				TxHashes:      filteringHooks.FilteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
@@ -1138,8 +1156,27 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
 }
 
-func (s *ExecutionEngine) Start(ctx_in context.Context) {
-	s.StopWaiter.Start(ctx_in, s)
+func (s *ExecutionEngine) StopAndWait() {
+	if s.transactionFiltererRPCClient != nil {
+		s.transactionFiltererRPCClient.StopAndWait()
+	}
+	s.StopWaiter.StopAndWait()
+}
+
+func (s *ExecutionEngine) Start(ctxIn context.Context) error {
+	s.StopWaiter.Start(ctxIn, s)
+
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
+	if s.transactionFiltererRPCClient != nil {
+		err := s.transactionFiltererRPCClient.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction filterer RPC client: %w", err)
+		}
+	}
 
 	s.LaunchThread(func(ctx context.Context) {
 		for {
@@ -1195,6 +1232,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		})
 	}
+
+	return nil
 }
 
 func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenance time.Duration) bool {
@@ -1245,6 +1284,10 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
+	s.transactionFiltererRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
