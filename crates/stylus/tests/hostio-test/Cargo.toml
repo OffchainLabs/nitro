@@ -14,4 +14,7 @@ lto = true
 panic = "abort"
 opt-level = "s"
 
+[features]
+contract-client-gen = []
+
 [workspace]

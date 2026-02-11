@@ -7,6 +7,7 @@ use stylus_sdk::{
     alloy_primitives::{b256, Address},
     call::RawCall,
     console, contract,
+    host::VM,
     prelude::*,
 };
 
@@ -18,7 +19,7 @@ macro_rules! error {
 }
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, _vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let mut call_data = input.as_slice();
     let mut read = || {
         let x = usize::from_be_bytes(call_data[..4].try_into().unwrap());

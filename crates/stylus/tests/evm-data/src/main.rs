@@ -9,13 +9,15 @@ use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
     block,
     call::RawCall,
-    contract, evm, msg,
+    contract,
+    host::VM,
+    msg,
     prelude::*,
     tx,
 };
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let balance_check_addr = Address::try_from(&input[..20]).unwrap();
     let eth_precompile_addr = Address::try_from(&input[20..40]).unwrap();
     let arb_test_addr = Address::try_from(&input[40..60]).unwrap();
@@ -50,8 +52,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     block_number -= 1;
 
     // Call burnArbGas
-    let gas_left_before = evm::gas_left();
-    let ink_left_before = evm::ink_left();
+    let gas_left_before = vm.gas_left();
+    let ink_left_before = vm.ink_left();
     RawCall::new().call(arb_test_addr, burn_call_data)?;
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();

@@ -3,14 +3,13 @@
 
 #![no_main]
 
+extern crate alloc;
+
 use stylus_sdk::{
     alloy_primitives::{Address, Signed, Uint, B256, I32, U16, U256, U64, U8},
+    host::VM,
     prelude::*,
 };
-use mini_alloc::MiniAlloc;
-
-#[global_allocator]
-static ALLOC: MiniAlloc = MiniAlloc::INIT;
 
 sol_storage! {
     pub struct Contract {
@@ -59,8 +58,8 @@ sol_storage! {
 }
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let contract = unsafe { Contract::new(U256::ZERO, 0) };
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
+    let contract = unsafe { Contract::new(U256::ZERO, 0, vm) };
     let selector = u32::from_be_bytes(input[0..4].try_into().unwrap());
     match selector {
         0xf809f205 => populate(contract),
@@ -291,7 +290,9 @@ fn remove(mut contract: Contract) {
     while nested.len() > 2 {
         nested.erase_last();
     }
-    nested.shrink().map(|mut x| x.erase());
+    unsafe {
+        nested.shrink().map(|mut x| x.erase());
+    }
 
     // erase map elements
     let maps = contract.maps;

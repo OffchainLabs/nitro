@@ -7,11 +7,8 @@
 extern crate alloc;
 
 use crate::erc20::{Erc20, Erc20Params};
-use alloc::{string::String, vec::Vec};
-use stylus_sdk::{alloy_primitives::U256, call, msg, prelude::*};
-
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+use alloc::{string::String, vec, vec::Vec};
+use stylus_sdk::{alloy_primitives::U256, call::transfer::transfer_eth, prelude::*};
 
 mod erc20;
 
@@ -36,24 +33,25 @@ sol_storage! {
 // Another contract we'd like to call
 sol_interface! {
     interface IMath {
-        function sumValues(uint256[] values) pure returns (string, uint256);
+        function sumValues(uint256[] values) external pure returns (string, uint256);
     }
 }
 
-#[external]
+#[public]
 #[inherit(Erc20<WethParams>)]
 impl Weth {
     #[payable]
     pub fn mint(&mut self) -> Result<(), Vec<u8>> {
-        self.erc20.mint(msg::sender(), msg::value());
+        self.erc20
+            .mint(self.vm().msg_sender(), self.vm().msg_value());
         Ok(())
     }
 
     pub fn burn(&mut self, amount: U256) -> Result<(), Vec<u8>> {
-        self.erc20.burn(msg::sender(), amount)?;
+        self.erc20.burn(self.vm().msg_sender(), amount)?;
 
         // send the user their funds
-        call::transfer_eth(self, msg::sender(), amount)
+        transfer_eth(self.vm(), self.vm().msg_sender(), amount)
     }
 
     // sums numbers
@@ -63,7 +61,7 @@ impl Weth {
 
     // calls the sum_values() method from the interface
     pub fn sum_with_helper(&self, helper: IMath, values: Vec<U256>) -> Result<U256, Vec<u8>> {
-        let (text, sum) = helper.sum_values(self, values)?;
+        let (text, sum) = helper.sum_values(self.vm(), Call::new(), values)?;
         assert_eq!(&text, "sum");
         Ok(sum)
     }
