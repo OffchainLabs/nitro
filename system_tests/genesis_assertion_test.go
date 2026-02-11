@@ -326,7 +326,7 @@ func createL2NodeWithRollupAddresses(
 	)
 	Require(t, err)
 
-	l2client = ClientForStack(t, l2stack)
+	l2client = ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 

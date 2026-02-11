@@ -37,11 +37,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -75,28 +77,59 @@ var (
 )
 
 type SequencerConfig struct {
-	Enable                       bool                          `koanf:"enable"`
-	MaxBlockSpeed                time.Duration                 `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration                 `koanf:"read-from-tx-queue-timeout" reload:"hot"`
-	MaxRevertGasReject           uint64                        `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta  time.Duration                 `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              []string                      `koanf:"sender-whitelist"`
-	Forwarder                    ForwarderConfig               `koanf:"forwarder"`
-	QueueSize                    int                           `koanf:"queue-size"`
-	QueueTimeout                 time.Duration                 `koanf:"queue-timeout" reload:"hot"`
-	NonceCacheSize               int                           `koanf:"nonce-cache-size" reload:"hot"`
-	MaxTxDataSize                int                           `koanf:"max-tx-data-size" reload:"hot"`
-	NonceFailureCacheSize        int                           `koanf:"nonce-failure-cache-size" reload:"hot"`
-	NonceFailureCacheExpiry      time.Duration                 `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	ExpectedSurplusGasPriceMode  string                        `koanf:"expected-surplus-gas-price-mode"`
-	ExpectedSurplusSoftThreshold string                        `koanf:"expected-surplus-soft-threshold" reload:"hot"`
-	ExpectedSurplusHardThreshold string                        `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool                          `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig               `koanf:"timeboost"`
-	Dangerous                    DangerousConfig               `koanf:"dangerous"`
-	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
+	Enable                       bool                       `koanf:"enable"`
+	MaxBlockSpeed                time.Duration              `koanf:"max-block-speed" reload:"hot"`
+	ReadFromTxQueueTimeout       time.Duration              `koanf:"read-from-tx-queue-timeout" reload:"hot"`
+	MaxRevertGasReject           uint64                     `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta  time.Duration              `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist              []string                   `koanf:"sender-whitelist"`
+	Forwarder                    ForwarderConfig            `koanf:"forwarder"`
+	QueueSize                    int                        `koanf:"queue-size"`
+	QueueTimeout                 time.Duration              `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize               int                        `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize                int                        `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize        int                        `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry      time.Duration              `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	ExpectedSurplusGasPriceMode  string                     `koanf:"expected-surplus-gas-price-mode"`
+	ExpectedSurplusSoftThreshold string                     `koanf:"expected-surplus-soft-threshold" reload:"hot"`
+	ExpectedSurplusHardThreshold string                     `koanf:"expected-surplus-hard-threshold" reload:"hot"`
+	EnableProfiling              bool                       `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig            `koanf:"timeboost"`
+	Dangerous                    DangerousConfig            `koanf:"dangerous"`
+	TransactionFiltering         TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type TransactionFilteringConfig struct {
+	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+}
+
+func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.EventFilter.Validate(); err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
+	}
+	if err := c.AddressFilter.Validate(); err != nil {
+		return fmt.Errorf("error validating address-filter config: %w", err)
+	}
+	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
+	}
+	return nil
+}
+
+var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	EventFilter:                  eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
+}
+
+func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	EventFilterAddOptions(prefix+".event-filter", f)
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 }
 
 type DangerousConfig struct {
@@ -183,9 +216,8 @@ func (c *SequencerConfig) Validate() error {
 		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
 	}
 
-	err = c.EventFilter.Validate()
-	if err != nil {
-		return fmt.Errorf("invalid event filter config: %w", err)
+	if err := c.TransactionFiltering.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -227,7 +259,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 	Timeboost:                    DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
-	EventFilter:                  eventfilter.DefaultEventFilterConfig,
+	TransactionFiltering:         DefaultTransactionFilteringConfig,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -245,7 +277,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	TimeboostAddOptions(prefix+".timeboost", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
-	EventFilterAddOptions(prefix+".event-filter", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -256,6 +287,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 }
 
 func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
@@ -484,10 +516,11 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	eventFilter *eventfilter.EventFilter
+	eventFilter          *eventfilter.EventFilter
+	addressFilterService *addressfilter.FilterService
 }
 
-func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
+func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -500,9 +533,23 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 
-	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.EventFilter)
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
 	if err != nil {
 		return nil, err
+	}
+
+	var addressFilterService *addressfilter.FilterService
+	addressFilterService, err = addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
+	}
+
+	if config.Enable && config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+		filtererConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher().TransactionFiltering.TransactionFiltererRPCClient
+		}
+		transactionFiltererRPCClient := NewTransactionFiltererRPCClient(filtererConfigFetcher)
+		execEngine.SetTransactionFiltererRPCClient(transactionFiltererRPCClient)
 	}
 
 	s := &Sequencer{
@@ -521,6 +568,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		},
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
+		addressFilterService:              addressFilterService,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -1563,6 +1611,13 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 		return err
 	}
 	s.updateLatestParentChainBlock(header)
+
+	if s.addressFilterService != nil {
+		if err = s.addressFilterService.Initialize(ctx); err != nil {
+			return fmt.Errorf("error initializing restricted addr service: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1686,9 +1741,20 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
+
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
 	config := s.config()
 	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
+	}
+
+	if s.addressFilterService != nil {
+		s.addressFilterService.Start(ctx)
+		s.execEngine.SetAddressChecker(s.addressFilterService.GetAddressChecker())
 	}
 
 	if s.l1Reader != nil {
@@ -1772,6 +1838,9 @@ func (s TxSource) String() string {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
+	if s.addressFilterService != nil {
+		s.addressFilterService.StopAndWait()
+	}
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}
