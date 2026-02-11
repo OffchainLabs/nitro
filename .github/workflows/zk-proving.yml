@@ -25,3 +25,6 @@ jobs:
         run: >-
           rustc +succinct --version
           rustc +succinct --print target-list | grep succinct
+
+      - name: Build binaries and record block
+        run: ./sp1-crates/build.sh
