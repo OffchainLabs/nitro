@@ -38,6 +38,18 @@ type ArbOwner struct {
 
 	FilteredFundsRecipientSet        func(ctx, mech, common.Address) error
 	FilteredFundsRecipientSetGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerAdded        func(ctx, mech, common.Address) error
+	ChainOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerRemoved        func(ctx, mech, common.Address) error
+	ChainOwnerRemovedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerAdded        func(ctx, mech, common.Address) error
+	NativeTokenOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerRemoved        func(ctx, mech, common.Address) error
+	NativeTokenOwnerRemovedGasCost func(common.Address) (uint64, error)
 }
 
 const maxGetAllMembers = 65536
