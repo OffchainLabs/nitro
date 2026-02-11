@@ -1,0 +1,244 @@
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package arbtest
+
+import (
+	"context"
+	"math/big"
+	"testing"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/util/testhelpers"
+)
+
+func getL1Confirmations(
+	ctx context.Context,
+	nodeInterface *node_interfacegen.NodeInterface,
+	client *ethclient.Client,
+	block *types.Block,
+) (uint64, uint64, error) {
+	l1ConfsNodeInterface, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, block.Hash())
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var l1ConfsRPC uint64
+	err = client.Client().CallContext(ctx, &l1ConfsRPC, "arb_getL1Confirmations", block.Number())
+
+	return l1ConfsNodeInterface, l1ConfsRPC, err
+}
+
+func testGetL1Confirmations(
+	t *testing.T,
+	ctx context.Context,
+	childChainTestClient *TestClient,
+	parentChainTestClient *TestClient,
+	parentChainTestClientSecondNode *TestClient,
+	parentChainInfo info,
+) {
+	// RPC GetL1Confirmations call needs to read parent chain headers.
+	// This select makes sure that the L1Reader read at least one header before we call GetL1Confirmations RPC API.
+	headerCh, unsubscribe := childChainTestClient.ConsensusNode.L1Reader.Subscribe(true)
+	defer unsubscribe()
+	select {
+	case <-headerCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for L1Reader to read a header")
+	}
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, childChainTestClient.Client)
+	Require(t, err)
+
+	genesisBlock, err := childChainTestClient.Client.BlockByNumber(ctx, big.NewInt(0))
+	Require(t, err)
+
+	l1ConfsNodeInterface, l1ConfsRPC, err := getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
+	Require(t, err)
+
+	numTransactions := 100
+
+	// #nosec G115
+	if l1ConfsNodeInterface >= uint64(numTransactions) || l1ConfsRPC >= uint64(numTransactions) {
+		t.Fatalf("L1Confirmations for latest block %v is already l1ConfsNodeInterface=%v, l1ConfsRPC=%v, which is over %v",
+			genesisBlock.Number(), l1ConfsNodeInterface, l1ConfsRPC, numTransactions)
+	}
+
+	var tx *types.Transaction
+	for i := 0; i < numTransactions; i++ {
+		tx, _ = parentChainTestClient.TransferBalance(t, "User", "User", common.Big0, parentChainInfo)
+		if parentChainTestClientSecondNode != nil {
+			// guarantees that each tx will be included in a different batch
+			_, err = WaitForTx(ctx, parentChainTestClientSecondNode.Client, tx.Hash(), time.Second*5)
+			Require(t, err)
+		}
+	}
+
+	l1ConfsNodeInterface, l1ConfsRPC, err = getL1Confirmations(ctx, nodeInterface, childChainTestClient.Client, genesisBlock)
+	Require(t, err)
+
+	// Allow a gap of 10 for asynchronicity, just in case
+	// #nosec G115
+	if (l1ConfsNodeInterface+10 < uint64(numTransactions)) || (l1ConfsRPC+10 < uint64(numTransactions)) {
+		t.Fatalf("L1Confirmations for latest block %v is only l1ConfsNodeInterface=%v, l1ConfsRPC=%v (did not hit expected %v)",
+			genesisBlock.Number(), l1ConfsNodeInterface, l1ConfsRPC, numTransactions)
+	}
+}
+
+func TestGetL1ConfirmationsForL2(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	testGetL1Confirmations(t, ctx, builder.L2, builder.L1, nil, builder.L1Info)
+}
+
+func TestGetL1ConfirmationsForL3(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlDebug)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	cleanupL1AndL2 := builder.Build(t)
+	defer cleanupL1AndL2()
+
+	l2SecondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	testClientL2SecondNode, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: l2SecondNodeNodeConfig})
+	defer cleanupL2SecondNode()
+
+	cleanupL3 := builder.BuildL3OnL2(t)
+	defer cleanupL3()
+
+	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, testClientL2SecondNode, builder.L2Info)
+
+	if logHandler.WasLogged(arbnode.FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg) {
+		t.Fatal("FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg was logged unexpectedly")
+	}
+}
+
+func TestGetL1ConfirmationsForL3WithL2WithoutConsensusArbRPC(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlDebug)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+
+	// forces using http RPC instead of direct method call
+	builder.l2StackConfig.HTTPHost = "localhost"
+	builder.l2StackConfig.HTTPPort = getRandomPort(t)
+	// disables arb module on HTTP RPC
+	httpModulesWithoutArb := make([]string, 0)
+	for i, module := range builder.l2StackConfig.HTTPModules {
+		if module != "arb" {
+			httpModulesWithoutArb = append(httpModulesWithoutArb, builder.l2StackConfig.HTTPModules[i])
+		}
+	}
+	builder.l2StackConfig.HTTPModules = httpModulesWithoutArb
+
+	cleanupL1AndL2 := builder.Build(t)
+	defer cleanupL1AndL2()
+
+	l2SecondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	l2SecondNodeStackConfig := builder.l2StackConfig
+	l2SecondNodeStackConfig.DataDir = t.TempDir()
+	l2SecondNodeStackConfig.HTTPPort = getRandomPort(t)
+	testClientL2SecondNode, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: l2SecondNodeNodeConfig, stackConfig: l2SecondNodeStackConfig})
+	defer cleanupL2SecondNode()
+
+	builder.l3Config.stackConfig.HTTPHost = "localhost"
+	builder.l3Config.stackConfig.HTTPPort = getRandomPort(t)
+	cleanupL3 := builder.BuildL3OnL2(t)
+	defer cleanupL3()
+
+	testGetL1Confirmations(t, ctx, builder.L3, builder.L2, testClientL2SecondNode, builder.L2Info)
+
+	if !logHandler.WasLogged(arbnode.FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg) {
+		t.Fatal("FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg was not logged")
+	}
+}
+
+func TestFindBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder.nodeConfig.MessageExtraction.Enable = false
+	l1Info := builder.L1Info
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	l1Info.GenerateGenesisAccount("deployer", initialBalance)
+	l1Info.GenerateGenesisAccount("asserter", initialBalance)
+	l1Info.GenerateGenesisAccount("challenger", initialBalance)
+	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
+
+	conf := builder.nodeConfig
+	conf.BlockValidator.Enable = false
+	conf.BatchPoster.Enable = false
+
+	builder.BuildL1(t)
+
+	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, builder.L1Info, builder.L1.Client, builder.chainConfig)
+	builder.addresses.Bridge = bridgeAddr
+	builder.addresses.SequencerInbox = seqInboxAddr
+
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err)
+	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("sequencer", ctx)
+
+	builder.L2Info.GenerateAccount("Destination")
+	const numBatches = 3
+	for i := 0; i < numBatches; i++ {
+		makeBatch(t, builder.L2.ConsensusNode, builder.L2Info, builder.L1.Client, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	}
+
+	for blockNum := uint64(0); blockNum < uint64(makeBatch_MsgsPerBatch)*3; blockNum++ {
+		callOpts := bind.CallOpts{Context: ctx}
+		gotBatchNumNodeInterface, err := nodeInterface.FindBatchContainingBlock(&callOpts, blockNum)
+		Require(t, err)
+		var gotBatchNumRPC uint64
+		err = builder.L2.Client.Client().CallContext(ctx, &gotBatchNumRPC, "arb_findBatchContainingBlock", blockNum)
+		Require(t, err)
+		if gotBatchNumNodeInterface != gotBatchNumRPC {
+			Fatal(t, "mismatched results from arb_findBatchContainingBlock and NodeInterface. blocknum ", blockNum, " nodeinterface ", gotBatchNumNodeInterface, " rpc ", gotBatchNumRPC)
+		}
+		gotBatchNum := gotBatchNumNodeInterface
+
+		expBatchNum := uint64(0)
+		if blockNum > 0 {
+			expBatchNum = 1 + (blockNum-1)/uint64(makeBatch_MsgsPerBatch)
+		}
+		if expBatchNum != gotBatchNum {
+			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
+		}
+		batchL1Block, err := builder.L2.ConsensusNode.InboxTracker.GetBatchParentChainBlock(gotBatchNum)
+		Require(t, err)
+		blockHeader, err := builder.L2.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		Require(t, err)
+		blockHash := blockHeader.Hash()
+
+		minCurrentL1Block, err := builder.L1.Client.BlockNumber(ctx)
+		Require(t, err)
+		gotConfirmations, err := nodeInterface.GetL1Confirmations(&callOpts, blockHash)
+		Require(t, err)
+		maxCurrentL1Block, err := builder.L1.Client.BlockNumber(ctx)
+		Require(t, err)
+
+		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
+			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
+		}
+	}
+}

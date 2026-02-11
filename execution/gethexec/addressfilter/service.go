@@ -18,9 +18,10 @@ import (
 // copy for efficient address filtering.
 type FilterService struct {
 	stopwaiter.StopWaiter
-	config    *Config
-	hashStore *HashStore
-	syncMgr   *S3SyncManager
+	config         *Config
+	hashStore      *HashStore
+	syncMgr        *S3SyncManager
+	addressChecker *HashedAddressChecker
 }
 
 // NewFilterService creates a new address-filteress service.
@@ -41,9 +42,10 @@ func NewFilterService(ctx context.Context, config *Config) (*FilterService, erro
 	}
 
 	return &FilterService{
-		config:    config,
-		hashStore: hashStore,
-		syncMgr:   syncMgr,
+		config:         config,
+		hashStore:      hashStore,
+		syncMgr:        syncMgr,
+		addressChecker: NewHashedAddressChecker(hashStore, config.AddressCheckerWorkerCount, config.AddressCheckerQueueSize),
 	}, nil
 }
 
@@ -81,6 +83,8 @@ func (s *FilterService) Start(ctx context.Context) {
 		return s.config.PollInterval
 	})
 
+	s.addressChecker.Start(ctx)
+
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,
 	)
@@ -113,4 +117,11 @@ func (s *FilterService) GetHashStore() *HashStore {
 		return nil
 	}
 	return s.hashStore
+}
+
+func (s *FilterService) GetAddressChecker() *HashedAddressChecker {
+	if !s.config.Enable {
+		return nil
+	}
+	return s.addressChecker
 }

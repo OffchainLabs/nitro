@@ -44,6 +44,9 @@ func NewDelayedMsgDatabase(db ethdb.KeyValueStore, preimages daprovider.Preimage
 	}, nil
 }
 
+// ReadDelayedMessage allows for retrieving a delayed message that has been observed by MEL but not yet consumed in a batch
+// at a specific index. Underneath the hood, delayed messages are stored in a binary Merkle tree representation to make
+// retrieval possible in WASM mode. In recording mode, reading a delayed message records its access in a preimages mapping
 func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
 		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
@@ -63,10 +66,13 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 	if err != nil {
 		return nil, err
 	}
-	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithMELRelevantFields())
+	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithOnlyMELConsensusFields())
 	if err != nil {
 		return nil, err
 	}
+	// Leaves in the Merkle tree are double hashed to prevent against second preimage attacks
+	// or length extension attacks, which is why we need to add both the preimage of the hash
+	// and the preimage of the hash of the hash to the mapping
 	hashDelayedHash := crypto.Keccak256(delayed.Hash().Bytes())
 	r.preimages[common.BytesToHash(hashDelayedHash)] = delayed.Hash().Bytes()
 	r.preimages[delayed.Hash()] = delayedMsgBytes

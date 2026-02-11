@@ -16,14 +16,16 @@ type MessageWithMetadata struct {
 }
 
 func (m *MessageWithMetadata) Hash() common.Hash {
-	encoded, err := rlp.EncodeToBytes(m.WithMELRelevantFields())
+	encoded, err := rlp.EncodeToBytes(m.WithOnlyMELConsensusFields())
 	if err != nil {
 		panic(err)
 	}
 	return crypto.Keccak256Hash(encoded)
 }
 
-func (m *MessageWithMetadata) WithMELRelevantFields() *MessageWithMetadata {
+// WithOnlyMELConsensusFields returns a shallow copy of the MessageWithMetadata with
+// only the fields relevant to MEL consensus being present
+func (m *MessageWithMetadata) WithOnlyMELConsensusFields() *MessageWithMetadata {
 	return &MessageWithMetadata{
 		Message: &L1IncomingMessage{
 			Header: m.Message.Header,

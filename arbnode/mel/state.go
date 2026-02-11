@@ -153,7 +153,6 @@ func (s *State) Clone() *State {
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	if s.msgsAcc == nil {
-		log.Debug("Initializing MelState's msgsAcc")
 		// This is very low cost hence better to reconstruct msgsAcc from fresh partals instead of risking using a dirty acc
 		acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(ToPtrSlice(s.MessageMerklePartials))
 		if err != nil {
@@ -168,7 +167,7 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 			}
 		}
 	}
-	msgBytes, err := rlp.EncodeToBytes(msg.WithMELRelevantFields())
+	msgBytes, err := rlp.EncodeToBytes(msg.WithOnlyMELConsensusFields())
 	if err != nil {
 		return err
 	}

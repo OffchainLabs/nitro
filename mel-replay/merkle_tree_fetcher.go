@@ -23,8 +23,8 @@ func fetchObjectFromMerkleTree[T any](merkleRoot common.Hash, merkleDepth int, m
 		if err != nil {
 			return nil, err
 		}
-		if len(result) != 64 {
-			return nil, fmt.Errorf("invalid preimage result length: %d, wanted 64", len(result))
+		if len(result) != 2*common.HashLength {
+			return nil, fmt.Errorf("invalid preimage result length: %d, wanted %d", len(result), 2*common.HashLength)
 		}
 		// Split result into left and right halves.
 		mid := len(result) / 2

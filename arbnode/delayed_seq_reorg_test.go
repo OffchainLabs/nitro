@@ -26,7 +26,8 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 
 	err = streamer.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx)
+	err = exec.Start(ctx)
+	Require(t, err)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 
@@ -226,7 +227,8 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 
 	err = streamer.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx)
+	err = exec.Start(ctx)
+	Require(t, err)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 

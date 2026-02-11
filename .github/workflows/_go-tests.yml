@@ -105,20 +105,6 @@ jobs:
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
       
-      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
-        if: inputs.run-defaults-a
-        continue-on-error: true
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
-    
-      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
-        if: inputs.run-defaults-b
-        continue-on-error: true
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
-      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -150,39 +136,71 @@ jobs:
           JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K[a-f0-9]+')
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
-      - name: run the Rust validation server on block input json
+      - name: run Rust validation server (Native & Continuous)
         if: inputs.run-defaults-a
         run: |
-          # 1. Start server in background
+          # 0. Build once
           make build-validation-server
-          target/bin/validator --module-root-path ./target/machines/latest/module-root.txt &
-          SERVER_PID=$!
           
-          # 2. Wait for server to respond (up to 5 seconds)
-          echo "Waiting for validator to start..."
-          timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'
-          
-          # 3. Send validation request
-          RESPONSE=$(curl -s -X POST http://localhost:4141/validation_validate \
-            -H "Content-Type: application/json" \
-            -d @target/TestProgramStorage/block_inputs.json)
-          
-          # 4. Stop the server
-          kill $SERVER_PID
-
-          # 5. Compare hashes          
-          SERVER_HASH=$(echo "$RESPONSE" | jq -r '.BlockHash')
+          # Capture the expected hash once
           JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+
+          validate_mode() {
+            local MODE_NAME=$1
+            local SERVER_ARGS=$2
+
+            echo "::group::Testing Mode: $MODE_NAME"
+            
+            # 1. Start server in background
+            echo "Starting server ($MODE_NAME)..."
+            target/bin/validator --module-root-path ./target/machines/latest/module-root.txt $SERVER_ARGS &
+            SERVER_PID=$!
+
+            # 2. Wait for server to respond (up to 5 seconds)
+            echo "Waiting for validator ($MODE_NAME) to start..."
+            if ! timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
+              echo "❌ Server ($MODE_NAME) failed to start within timeout"
+              kill $SERVER_PID
+              exit 1
+            fi
+
+            # 3. Send 2 validation requests
+            RESPONSE1=$(curl -s -X POST http://localhost:4141/validation_validate \
+              -H "Content-Type: application/json" \
+              -d @target/TestProgramStorage/block_inputs.json)
+
+            RESPONSE2=$(curl -s -X POST http://localhost:4141/validation_validate \
+              -H "Content-Type: application/json" \
+              -d @target/TestProgramStorage/block_inputs.json)
+
+            # 4. Stop the server
+            kill $SERVER_PID
+            wait $SERVER_PID 2>/dev/null || true
+
+            # 5. Compare hashes      
+            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.BlockHash')
+            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.BlockHash')
+            
+            echo "JIT Hash:    $JIT_HASH"
+            echo "Server response 1 Hash: $SERVER_HASH1"
+            echo "Server response 2 Hash: $SERVER_HASH2"
+
+            if [ "$JIT_HASH" == "$SERVER_HASH1" ] && [ "$JIT_HASH" == "$SERVER_HASH2" ]; then
+              echo "✅ $MODE_NAME Validation successful"
+            else
+              echo "❌ $MODE_NAME Validation failed: hashes do not match"
+              exit 1
+            fi
+            echo "::endgroup::"
+          }
+
+          # --- RUN TESTS ---
           
-          echo "JIT Hash:    $JIT_HASH"
-          echo "Server Hash: $SERVER_HASH"
-          
-          if [ "$JIT_HASH" == "$SERVER_HASH" ]; then
-            echo "✅ Validation successful"
-          else
-            echo "❌ Validation failed: hashes do not match"
-            exit 1
-          fi
+          # Run Validator in Native mode
+          validate_mode "Native" ""
+
+          # Run Validator in Continuous mode
+          validate_mode "Continuous" "--mode continuous"
 
       # --------------------- FLAKY MODE --------------------------
 

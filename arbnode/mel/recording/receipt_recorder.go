@@ -18,13 +18,13 @@ import (
 )
 
 // Implements a hasher that captures preimages of hashes as it computes them.
-type preimageRecordingHasher struct {
+type preimageRecordingTrieHasher struct {
 	trie            *trie.StackTrie
 	recordPreimages daprovider.PreimageRecorder
 }
 
-func newRecordingHasher(recordPreimages daprovider.PreimageRecorder) *preimageRecordingHasher {
-	h := &preimageRecordingHasher{
+func newPreimageRecordingTrieHasher(recordPreimages daprovider.PreimageRecorder) *preimageRecordingTrieHasher {
+	h := &preimageRecordingTrieHasher{
 		recordPreimages: recordPreimages,
 	}
 	// OnTrieNode callback captures all trie nodes.
@@ -37,20 +37,20 @@ func newRecordingHasher(recordPreimages daprovider.PreimageRecorder) *preimageRe
 	return h
 }
 
-func (h *preimageRecordingHasher) Reset() {
+func (h *preimageRecordingTrieHasher) Reset() {
 	onTrieNode := func(path []byte, hash common.Hash, blob []byte) {
 		h.recordPreimages(hash, common.CopyBytes(blob), arbutil.Keccak256PreimageType)
 	}
 	h.trie = trie.NewStackTrie(onTrieNode)
 }
 
-func (h *preimageRecordingHasher) Update(key, value []byte) error {
+func (h *preimageRecordingTrieHasher) Update(key, value []byte) error {
 	valueHash := crypto.Keccak256Hash(value)
 	h.recordPreimages(valueHash, common.CopyBytes(value), arbutil.Keccak256PreimageType)
 	return h.trie.Update(key, value)
 }
 
-func (h *preimageRecordingHasher) Hash() common.Hash {
+func (h *preimageRecordingTrieHasher) Hash() common.Hash {
 	return h.trie.Hash()
 }
 
@@ -83,7 +83,7 @@ func RecordReceipts(ctx context.Context, parentChainReader BlockReader, parentCh
 		receipts = append(receipts, receipt)
 		logs = append(logs, receipt.Logs...)
 	}
-	hasher := newRecordingHasher(daprovider.RecordPreimagesTo(preimages))
+	hasher := newPreimageRecordingTrieHasher(daprovider.RecordPreimagesTo(preimages))
 	receiptsRoot := types.DeriveSha(types.Receipts(receipts), hasher)
 	if receiptsRoot != block.ReceiptHash() {
 		return nil, fmt.Errorf("computed root %s doesn't match header root %s", receiptsRoot.Hex(), block.ReceiptHash().Hex())
