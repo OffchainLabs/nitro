@@ -157,7 +157,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Fast-path: check if all filtered tx hashes are now in the onchain filter
 			allInFilter := true
 			for _, txHash := range d.waitingForFilteredTx.TxHashes {
-				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash)
+				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash).Await(ctx)
 				if err != nil {
 					log.Error("error checking onchain filter", "err", err, "txHash", txHash)
 					allInFilter = false

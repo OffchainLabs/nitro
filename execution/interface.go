@@ -85,7 +85,7 @@ type ExecutionSequencer interface {
 	NextDelayedMessageNumber() containers.PromiseInterface[uint64]
 	Synced() containers.PromiseInterface[bool]
 	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
-	IsTxHashInOnchainFilter(txHash common.Hash) (bool, error)
+	IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool]
 }
 
 // needed for batch poster

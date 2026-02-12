@@ -86,7 +86,11 @@ func (w *execClientWrapper) Synced() containers.PromiseInterface[bool] {
 }
 func (w *execClientWrapper) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
 	w.t.Error("not supported")
-	return nil
+	return containers.NewReadyPromise(make(map[string]interface{}), nil)
+}
+func (w *execClientWrapper) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(false, nil)
 }
 func (w *execClientWrapper) SetFinalityData(
 	safeFinalityData *arbutil.FinalityData,

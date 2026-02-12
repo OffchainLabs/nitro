@@ -545,8 +545,8 @@ func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[u
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise(struct{}{}, n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum))
 }
-func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
-	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
+func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.ExecEngine.IsTxHashInOnchainFilter(txHash))
 }
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
