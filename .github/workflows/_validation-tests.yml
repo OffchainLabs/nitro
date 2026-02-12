@@ -1,0 +1,102 @@
+---
+name: validation-tests
+on:
+  workflow_call:
+
+jobs:
+  validation-tests:
+    name: Block validation tests
+    runs-on: arbitrator-ci
+    env:
+      INPUT_FILE: ${{ github.workspace }}/.github/workflows/testdata/block_inputs.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Build
+        run: |
+          make build-replay-env
+          make build-prover-bin
+          make build-jit
+          make build-validation-server
+
+      - name: Run arbitrator prover on block input json
+        run: |
+          target/bin/prover target/machines/latest/machine.wavm.br -b \
+          --json-inputs="${{ env.INPUT_FILE }}"
+
+      - name: Run jit prover on block input json
+        id: jit
+        run: |
+          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs "${{ env.INPUT_FILE }}")
+          
+          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K[a-f0-9]+')
+          echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
+
+      - name: Run Rust validation server (Native & Continuous)
+        run: |
+          # Capture the expected hash once
+          JIT_HASH="${{ steps.jit.outputs.jit_hash }}"
+
+          validate_mode() {
+            local MODE_NAME=$1
+            local SERVER_ARGS=$2
+
+            echo "::group::Testing Mode: $MODE_NAME"
+            
+            # 1. Start server in background
+            echo "Starting server ($MODE_NAME)..."
+            target/bin/validator $SERVER_ARGS &
+            SERVER_PID=$!
+
+            # 2. Wait for server to respond (up to 5 seconds)
+            echo "Waiting for validator ($MODE_NAME) to start..."
+            if ! timeout 5s bash -c 'until curl -s localhost:4141 > /dev/null; do sleep 1; done'; then
+              echo "❌ Server ($MODE_NAME) failed to start within timeout"
+              kill $SERVER_PID
+              exit 1
+            fi
+
+            # 3. Send 2 validation requests
+            RESPONSE1=$(curl -s -X POST http://localhost:4141/validation_validate \
+              -H "Content-Type: application/json" \
+              -d @${{ env.INPUT_FILE }})
+
+            RESPONSE2=$(curl -s -X POST http://localhost:4141/validation_validate \
+              -H "Content-Type: application/json" \
+              -d @${{ env.INPUT_FILE }})
+
+            # 4. Stop the server
+            kill $SERVER_PID
+            wait $SERVER_PID 2>/dev/null || true
+
+            # 5. Compare hashes      
+            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.BlockHash')
+            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.BlockHash')
+            
+            echo "JIT Hash:               $JIT_HASH"
+            echo "Server response 1 Hash: $SERVER_HASH1"
+            echo "Server response 2 Hash: $SERVER_HASH2"
+
+            if [ "$JIT_HASH" == "$SERVER_HASH1" ] && [ "$JIT_HASH" == "$SERVER_HASH2" ]; then
+              echo "✅ $MODE_NAME Validation successful"
+            else
+              echo "❌ $MODE_NAME Validation failed: hashes do not match"
+              exit 1
+            fi
+            echo "::endgroup::"
+          }
+
+          # --- RUN TESTS ---
+          
+          # Run Validator in Native mode
+          validate_mode "Native" ""
+
+          # Run Validator in Continuous mode
+          validate_mode "Continuous" "--mode continuous"
