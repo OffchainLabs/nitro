@@ -54,6 +54,7 @@ jobs:
 
   # --- Ensure changelog is updated (required by can_proceed) ---
   changelog:
+    if: github.base_ref == 'master'
     needs: changes
     uses: ./.github/workflows/_changelog.yml
     secrets: inherit
