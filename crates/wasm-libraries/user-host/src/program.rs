@@ -177,17 +177,28 @@ impl Program {
             config,
             early_exit: None,
         };
-        PROGRAMS.lock().expect("lock poisoned").push(Box::new(program));
+        PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .push(Box::new(program));
     }
 
     /// Removes the current program
     pub fn pop() {
-        PROGRAMS.lock().expect("lock poisoned").pop().expect("no program");
+        PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .pop()
+            .expect("no program");
     }
 
     /// Performs an action on the current program.
     pub fn act_on_current<R>(f: impl FnOnce(&mut Program) -> R) -> R {
-        f(PROGRAMS.lock().expect("lock poisoned").last_mut().expect("no program"))
+        f(PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .last_mut()
+            .expect("no program"))
     }
 
     /// Reads the program's memory size in pages.
@@ -205,7 +216,7 @@ impl Program {
         self.args.len()
     }
 
-    /// Ensures an access is within bounds
+    /// Ensures access is within bounds
     fn check_memory_access(&self, ptr: GuestPtr, bytes: u32) -> Result<(), MemoryBoundsError> {
         let end = ptr.to_u64() + bytes as u64;
         if end > self.memory_size_bytes() {

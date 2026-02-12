@@ -196,13 +196,12 @@ pub unsafe extern "C" fn programs__set_response(
     raw_data_ptr: GuestPtr,
     raw_data_len: usize,
 ) {
+    let result = StaticMem.read_slice(result_ptr, result_len);
+    let raw_data = StaticMem.read_slice(raw_data_ptr, raw_data_len);
     Program::act_on_current(|program| {
-        program.request_handler().set_response(
-            id,
-            StaticMem.read_slice(result_ptr, result_len),
-            StaticMem.read_slice(raw_data_ptr, raw_data_len),
-            Gas(gas),
-        )
+        program
+            .request_handler()
+            .set_response(id, result, raw_data, Gas(gas))
     });
 }
 
