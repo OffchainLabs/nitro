@@ -101,10 +101,15 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 }
 
+type DangerousTransactionFilteringConfig struct {
+	EnableDelayedSequencingFilter bool `koanf:"enable-delayed-sequencing-filter" reload:"hot"`
+}
+
 type TransactionFilteringConfig struct {
-	EventFilter                  eventfilter.EventFilterConfig `koanf:"event-filter"`
-	AddressFilter                addressfilter.Config          `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	Dangerous                    DangerousTransactionFilteringConfig `koanf:"dangerous" reload:"hot"`
+	EventFilter                  eventfilter.EventFilterConfig       `koanf:"event-filter"`
+	AddressFilter                addressfilter.Config                `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient rpcclient.ClientConfig              `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -120,13 +125,23 @@ func (c *TransactionFilteringConfig) Validate() error {
 	return nil
 }
 
+var DefaultDangerousTransactionFilteringConfig = DangerousTransactionFilteringConfig{
+	EnableDelayedSequencingFilter: true,
+}
+
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	Dangerous:                    DefaultDangerousTransactionFilteringConfig,
 	EventFilter:                  eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
 }
 
+func DangerousTransactionFilteringAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable-delayed-sequencing-filter", DefaultDangerousTransactionFilteringConfig.EnableDelayedSequencingFilter, "DANGEROUS! if false delayed sequencing filter will be disabled")
+}
+
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	DangerousTransactionFilteringAddOptions(prefix+".dangerous", f)
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
