@@ -192,9 +192,9 @@ func createNodeBWithSharedContracts(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2executionDB, err := l2stack.OpenDatabaseWithOptions("chaindb", core.DatabaseOptions{})
+	l2executionDB, err := l2stack.OpenDatabaseWithOptions("chaindb", node.DatabaseOptions{})
 	Require(t, err)
-	l2consensusDB, err := l2stack.OpenDatabaseWithOptions("arbdb", core.DatabaseOptions{NoFreezer: True})
+	l2consensusDB, err := l2stack.OpenDatabaseWithOptions("arbdb", node.DatabaseOptions{NoFreezer: true})
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
