@@ -5,6 +5,7 @@ package rpcserver
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -107,4 +108,8 @@ func (c *Server) Synced(ctx context.Context) (bool, error) {
 
 func (c *Server) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
 	return c.client.FullSyncProgressMap().Await(ctx)
+}
+
+func (c *Server) IsTxHashInOnchainFilter(ctx context.Context, txHash common.Hash) (bool, error) {
+	return c.client.IsTxHashInOnchainFilter(txHash).Await(ctx)
 }

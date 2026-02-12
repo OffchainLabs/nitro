@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
 
@@ -158,6 +159,14 @@ func (c *Client) FullSyncProgressMap() containers.PromiseInterface[map[string]in
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (map[string]interface{}, error) {
 		var res map[string]interface{}
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_fullSyncProgressMap")
+		return res, convertError(err)
+	})
+}
+
+func (c *Client) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (bool, error) {
+		var res bool
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_isTxHashInOnchainFilter", txHash)
 		return res, convertError(err)
 	})
 }
