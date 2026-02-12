@@ -118,6 +118,10 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
 	}
+	// For tx types that alias the sender (unsigned contract txs, retryables),
+	// also check the original L1 address. The sender in the tx is already
+	// aliased by the L1 bridge, but the restricted address list contains
+	// original (non-aliased) addresses.
 	txType := tx.Type()
 	if arbosutil.DoesTxTypeAlias(&txType) {
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
@@ -145,6 +149,17 @@ func (f *DelayedFilteringSequencingHooks) RedeemFilter(db *state.StateDB) error 
 		return state.ErrArbTxFilter
 	}
 	return nil
+}
+
+// ReportGroupRevert extracts the originating tx hash from ErrFilteredCascadingRedeem
+// and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the existing
+// check at executionengine.go fires ErrFilteredDelayedMessage, causing the delayed
+// sequencer to halt and the transaction-filterer to add the hash to the onchain filter.
+func (f *DelayedFilteringSequencingHooks) ReportGroupRevert(err error) {
+	var cascadingErr *arbos.ErrFilteredCascadingRedeem
+	if errors.As(err, &cascadingErr) {
+		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
+	}
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {

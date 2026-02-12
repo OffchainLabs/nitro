@@ -214,8 +214,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// already handled by the onchain filter and skip halting.
 		var filteredErr error
 		isFiltered := false
-		if p.state.ArbOSVersion() >= params.ArbosVersion_TransactionFiltering &&
-			p.state.FilteredTransactions().IsFilteredFree(ticketId) {
+		if p.state.FilteredTransactions().IsFilteredFree(ticketId) {
 			recipient, err := p.state.FilteredFundsRecipientOrDefault()
 			if err != nil {
 				return true, multigas.ZeroGas(), err, nil

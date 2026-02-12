@@ -842,7 +842,6 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 			}
 		}
 	}
-	touchRetryableAddresses(statedb, tx)
 
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
@@ -1151,6 +1150,20 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 		return s.blockFilter(header, db, transactions, receipts)
 	}
 	return nil
+}
+
+// ReportGroupRevert replaces the last txErrors entry with the group revert
+// error. Redeems don't get txErrors entries (only user txs from
+// NextTxToSequence do), so a group (user tx + all its redeems) has exactly
+// one entry - the originating user tx's nil. Replacing it with the error
+// excludes the tx from the block (MessageFromTxes skips non-nil entries)
+// and returns the error to the RPC caller via resultChan.
+func (s *FullSequencingHooks) ReportGroupRevert(err error) {
+	if len(s.txErrors) > 0 {
+		s.txErrors[len(s.txErrors)-1] = err
+	} else {
+		log.Error("ReportGroupRevert called with empty txErrors")
+	}
 }
 
 func MakeSequencingHooks(
