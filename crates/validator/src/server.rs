@@ -14,25 +14,18 @@ pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Resul
     run_server_internal(listener, state, shutdown_signal()).await
 }
 
-async fn run_server_internal<F>(
+async fn run_server_internal(
     listener: TcpListener,
     state: Arc<ServerState>,
-    shutdown: F,
-) -> Result<()>
-where
-    F: Future<Output = ()> + Send + 'static,
-{
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     axum::serve(listener, create_router().with_state(state.clone()))
         .with_graceful_shutdown(shutdown)
         .await?;
 
     info!("Shutdown signal received. Running cleanup...");
 
-    if let Some(jit_machine) = state.jit_machine.as_ref() {
-        jit_machine.complete_machine().await?;
-    }
-
-    Ok(())
+    state.jit_manager.complete_machines().await
 }
 
 // Listens for Ctrl+C or SIGTERM
@@ -80,6 +73,7 @@ mod tests {
 
     use crate::{
         config::{ServerConfig, ServerState},
+        engine::ModuleRoot,
         server::run_server_internal,
     };
 
@@ -91,11 +85,11 @@ mod tests {
     }
 
     async fn spinup_server(config: &ServerConfig) -> Result<TestServerConfig> {
-        let state = Arc::new(ServerState::new(config)?);
+        let state = Arc::new(ServerState::new(config, 4)?);
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        println!("Test server listening on {}", addr);
+        println!("Test server listening on {addr}");
 
         // 3. Create a channel to simulate Ctrl+C
         let (tx, rx) = oneshot::channel();
@@ -118,7 +112,10 @@ mod tests {
         })
     }
 
-    async fn verify_and_shutdown_server(test_config: TestServerConfig) -> Result<()> {
+    async fn verify_and_shutdown_server(
+        test_config: TestServerConfig,
+        module_root: ModuleRoot,
+    ) -> Result<()> {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
@@ -130,7 +127,7 @@ mod tests {
             resp.is_ok(),
             "Failed to connect to validation_capacity endpoint"
         );
-        assert_eq!(resp.unwrap().status(), 200);
+        assert_eq!(resp?.status(), 200);
 
         // 6. Trigger Shutdown
         println!("Sending shutdown signal...");
@@ -140,10 +137,12 @@ mod tests {
         let result = test_config.server_handle.await?;
         assert!(result.is_ok(), "Server should exit successfully");
 
-        // 8. Verify jit_machine Cleanup
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
-            assert!(!jit.is_active().await);
-        }
+        // 8. Verify jit_manager Cleanup
+        let machine_arc = {
+            let machines = test_config.state.jit_manager.machines.read().await;
+            machines.get(&module_root).cloned()
+        };
+        assert!(machine_arc.is_none());
 
         // 9. Verify same request from above fails expectadly
         let resp = client
@@ -156,48 +155,30 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_server_lifecycle_native_mode() -> Result<()> {
-        // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-        ])
-        .unwrap();
+    async fn test_server_lifecycle(additional_args: Option<Vec<&'static str>>) -> Result<()> {
+        let mut args = vec!["server"];
+        if let Some(extra) = additional_args {
+            args = [&args[..], &extra[..]].concat();
+        }
+
+        let config = ServerConfig::try_parse_from(args)?;
         let test_config = spinup_server(&config).await?;
 
-        // Since we're running in native mode there should not be an active jit_machine
-        assert!(test_config.state.jit_machine.is_none());
-
-        verify_and_shutdown_server(test_config).await.unwrap();
-
-        Ok(())
+        let module_root = test_config
+            .state
+            .locator
+            .latest_wasm_module_root()
+            .module_root;
+        verify_and_shutdown_server(test_config, module_root).await
     }
 
     #[tokio::test]
-    #[ignore = "workflow does not have a jit binary available for now"]
+    async fn test_server_lifecycle_native_mode() -> Result<()> {
+        test_server_lifecycle(Some(vec!["--mode", "native"])).await
+    }
+
+    #[tokio::test]
     async fn test_server_lifecycle_continuous_mode() -> Result<()> {
-        // 1. Setup Config and State. Use dummy module root is okay.
-        let config = ServerConfig::try_parse_from([
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "--mode",
-            "continuous",
-        ])
-        .unwrap();
-        let test_config = spinup_server(&config).await?;
-
-        assert!(test_config.state.jit_machine.is_some());
-
-        // Check that jit machine is active
-        if let Some(jit) = test_config.state.jit_machine.as_ref() {
-            assert!(jit.is_active().await);
-        }
-
-        verify_and_shutdown_server(test_config).await.unwrap();
-
-        Ok(())
+        test_server_lifecycle(Some(vec!["--mode", "continuous"])).await
     }
 }

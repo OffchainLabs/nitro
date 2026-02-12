@@ -65,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -102,6 +103,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
+	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
 type info = *BlockchainTestInfo
@@ -559,7 +561,7 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 		panic("execConfig must be initialised before setting event filter rules")
 	}
 
-	b.execConfig.Sequencer.EventFilter.Rules = rules
+	b.execConfig.Sequencer.TransactionFiltering.EventFilter.Rules = rules
 
 	return b
 }
@@ -744,6 +746,10 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
+func clientForStackUseHTTP(stackConfig *node.Config) bool {
+	return stackConfig.HTTPHost != ""
+}
+
 func buildOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -818,7 +824,7 @@ func buildOnParentChain(
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainTestClient.Stack, execNode, chainTestClient.ConsensusNode)
 	Require(t, err)
 
-	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
@@ -1004,7 +1010,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, b.L2.Stack, execNode, b.L2.ConsensusNode)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	b.L2.Client = ClientForStack(t, b.L2.Stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -1067,7 +1073,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
 	Require(t, err)
-	client := ClientForStack(t, stack)
+	client := ClientForStack(t, stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
 
@@ -1605,9 +1611,19 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	err = valnode.Start(ctx)
 	Require(t, err)
 
+	var redisConsumer *valnoderedis.ValidationServer
+	if config.Arbitrator.RedisValidationServerConfig.Enabled() {
+		redisConsumer, err = valnoderedis.NewValidationServer(&config.Arbitrator.RedisValidationServerConfig, valnode.GetExec())
+		Require(t, err)
+		redisConsumer.Start(ctx)
+	}
+
 	t.Cleanup(func() {
 		stack.Close()
 		valnode.Stop()
+		if redisConsumer != nil {
+			redisConsumer.StopOnly()
+		}
 	})
 
 	return valnode, stack
@@ -1651,7 +1667,7 @@ func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.C
 	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
 }
 
-func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) *node.Node {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1665,12 +1681,18 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 		}
 		redisStream := server_api.RedisStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
 		createRedisGroup(ctx, t, redisStream, redisClient)
+		redisBoldStream := server_api.RedisBoldStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
+		createRedisGroup(ctx, t, redisBoldStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
+		t.Cleanup(func() {
+			destroyRedisGroup(ctx, t, redisStream, redisClient)
+			destroyRedisGroup(ctx, t, redisBoldStream, redisClient)
+		})
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
+	return valStack
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
@@ -1750,21 +1772,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	l1Client := ethclient.NewClient(rpcClient)
 
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
-}
-
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
-	Require(t, err)
-	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
-	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
-	Require(t, err)
-	if len(messages) == 0 {
-		Fatal(t, "No delayed messages found at rollup creation block")
-	}
-	initMessage, err := messages[0].Message.ParseInitMessage()
-	Require(t, err, "Failed to parse rollup init message")
-
-	return initMessage
 }
 
 var (
@@ -1979,7 +1986,9 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	Require(t, err)
+
 	return addresses, initMessage
 }
 
@@ -2036,9 +2045,15 @@ func createNonL1BlockChainWithStackConfig(
 	return info, stack, executionDB, consensusDB, blockchain
 }
 
-func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient := backend.Attach()
-	return ethclient.NewClient(rpcClient)
+func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.Client {
+	if useHTTP {
+		ethClient, err := ethclient.Dial(backend.HTTPEndpoint())
+		if err != nil {
+			t.Fatalf("Failed to create client for stack with HTTP: %v", err)
+		}
+		return ethClient
+	}
+	return ethclient.NewClient(backend.Attach())
 }
 
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
@@ -2161,7 +2176,7 @@ func Create2ndNodeWithConfig(
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
 	Require(t, err)
-	chainClient := ClientForStack(t, chainStack)
+	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
@@ -2316,10 +2331,11 @@ func setupConfigWithAnyTrust(
 
 // controllableWriter wraps a DA writer and can be controlled to return specific errors
 type controllableWriter struct {
-	mu             sync.RWMutex
-	writer         daprovider.Writer
-	shouldFallback bool
-	customError    error
+	mu              sync.RWMutex
+	writer          daprovider.Writer
+	shouldFallback  bool
+	customError     error
+	overrideMaxSize int // 0 means use underlying writer's max size; if set, Store returns ErrMessageTooLarge for messages exceeding this size
 }
 
 func (w *controllableWriter) SetShouldFallback(val bool) {
@@ -2334,18 +2350,31 @@ func (w *controllableWriter) SetCustomError(err error) {
 	w.customError = err
 }
 
+func (w *controllableWriter) SetMaxMessageSize(size int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.overrideMaxSize = size
+}
+
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
 	w.mu.RLock()
 	shouldFallback := w.shouldFallback
 	customError := w.customError
+	overrideMaxSize := w.overrideMaxSize
 	w.mu.RUnlock()
 
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback)
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize)
 
 	// Check for custom error first
 	if customError != nil {
 		log.Info("controllableWriter returning custom error", "error", customError)
 		return containers.NewReadyPromise[[]byte](nil, customError)
+	}
+
+	// Check if message exceeds overrideMaxSize (simulates DA provider size limit)
+	if overrideMaxSize > 0 && len(msg) > overrideMaxSize {
+		log.Warn("controllableWriter returning ErrMessageTooLarge", "msgLen", len(msg), "maxSize", overrideMaxSize)
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
 	}
 
 	// Check for fallback signal
@@ -2360,6 +2389,14 @@ func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.Promis
 }
 
 func (w *controllableWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
+	w.mu.RLock()
+	overrideSize := w.overrideMaxSize
+	w.mu.RUnlock()
+
+	if overrideSize > 0 {
+		log.Info("controllableWriter returning override max message size", "size", overrideSize)
+		return containers.NewReadyPromise(overrideSize, nil)
+	}
 	return w.writer.GetMaxMessageSize()
 }
 

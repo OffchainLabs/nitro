@@ -7,6 +7,7 @@ package programs
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -124,18 +125,14 @@ func programRequiresPrepare(
 
 //go:wasmimport programs program_prepare
 func ProgramPrepare(
-	statedbPtr unsafe.Pointer,
+	wasmPtr unsafe.Pointer,
+	wasmSize uint64,
 	moduleHashPtr unsafe.Pointer,
-	addressForLoggingPtr unsafe.Pointer,
-	codePtr unsafe.Pointer,
-	codeSize uint64,
 	codehashPtr unsafe.Pointer,
 	maxWasmSize uint32,
 	pagelimit uint32,
-	time uint64,
 	debugMode uint32,
-	programPtr unsafe.Pointer,
-	runCtxPtr unsafe.Pointer,
+	stylusVersion uint32,
 )
 
 //go:wasmimport programs pop
@@ -164,21 +161,24 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			debugInt = 1
 		}
 
-		codeSize := uint64(len(code))
+		// Not an activation path here, so fragment read gas shouldn't be charged.
+		// Passing nil avoids charging gas through a storage-backed burner here.
+		wasm, err := getWasmFromContractCode(statedb, code, params, nil)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get wasm for program, program address: %v, err: %v", addressForLogging.Hex(), err))
+		}
+
+		wasmSize := uint64(len(wasm))
 
 		ProgramPrepare(
-			unsafe.Pointer(&statedb),
+			unsafe.Pointer(&wasm),
+			wasmSize,
 			unsafe.Pointer(&moduleHash),
-			unsafe.Pointer(&addressForLogging),
-			unsafe.Pointer(&code),
-			codeSize,
 			unsafe.Pointer(&codehash),
 			params.MaxWasmSize,
 			uint32(params.PageLimit),
-			time,
 			debugInt,
-			unsafe.Pointer(&program),
-			unsafe.Pointer(runCtx),
+			uint32(params.Version),
 		)
 	}
 

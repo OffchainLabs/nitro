@@ -7,28 +7,31 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
-use crate::engine::config::{TARGET_AMD_64, TARGET_ARM_64, TARGET_HOST};
 use crate::engine::execution::{validate_continuous, validate_native};
+use crate::engine::ModuleRoot;
 use crate::{config::InputMode, ServerState};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
+use serde::Deserialize;
+use serde_with::{As, DisplayFromStr};
 use std::sync::Arc;
 use validation::{GoGlobalState, ValidationInput};
 
-pub fn local_target() -> &'static str {
-    if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        TARGET_ARM_64
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        TARGET_AMD_64
-    } else {
-        TARGET_HOST
-    }
+/// Extended validation request that includes both ValidationInput and module_root.
+/// This struct allows adding module_root to the request without modifying ValidationInput.
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ValidationRequest {
+    #[serde(flatten)]
+    pub validation_input: ValidationInput,
+    #[serde(default, with = "As::<Option<DisplayFromStr>>")]
+    pub module_root: Option<ModuleRoot>,
 }
 
 pub async fn validate(
     State(state): State<Arc<ServerState>>,
-    Json(request): Json<ValidationInput>,
+    Json(request): Json<ValidationRequest>,
 ) -> Result<Json<GoGlobalState>, String> {
     match state.mode {
         InputMode::Native => validate_native(&state, request).await,
@@ -45,5 +48,11 @@ pub async fn name() -> impl IntoResponse {
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("[{:?}]", state.module_root)
+    let module_roots: Vec<String> = state
+        .locator
+        .module_roots()
+        .iter()
+        .map(|root_meta| format!("0x{}", root_meta.module_root))
+        .collect();
+    format!("[{}]", module_roots.join(", "))
 }

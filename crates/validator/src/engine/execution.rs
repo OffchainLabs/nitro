@@ -17,37 +17,52 @@
 //!    binary version targeting.
 
 use axum::Json;
-use validation::{BatchInfo, GoGlobalState, ValidationInput};
+use tracing::info;
+use validation::{local_target, BatchInfo, GoGlobalState};
 
 use crate::{
-    config::ServerState, engine::config::DEFAULT_JIT_CRANELIFT, spawner_endpoints::local_target,
+    config::ServerState,
+    engine::{replay_binary, DEFAULT_JIT_CRANELIFT},
+    spawner_endpoints::ValidationRequest,
 };
 
 pub async fn validate_native(
     server_state: &ServerState,
-    request: ValidationInput,
+    request: ValidationRequest,
 ) -> Result<Json<GoGlobalState>, String> {
-    let delayed_inbox = match request.has_delayed_msg {
+    let delayed_inbox = match request.validation_input.has_delayed_msg {
         true => vec![BatchInfo {
-            number: request.delayed_msg_nr,
-            data: request.delayed_msg,
+            number: request.validation_input.delayed_msg_nr,
+            data: request.validation_input.delayed_msg,
         }],
         false => vec![],
     };
 
+    let binary_path = if let Some(module_root) = request.module_root {
+        server_state.locator.get_machine_path(module_root)?
+    } else {
+        server_state
+            .locator
+            .latest_wasm_module_root()
+            .path
+            .to_path_buf()
+    };
+    let binary = replay_binary(binary_path);
+    info!("validate native serving request with module root at {binary:?}");
+
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
-            binary: server_state.binary.clone(),
+            binary,
             cranelift: DEFAULT_JIT_CRANELIFT,
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
         },
         input_mode: jit::InputMode::Native(jit::NativeInput {
-            old_state: request.start_state.into(),
-            inbox: request.batch_info,
+            old_state: request.validation_input.start_state.into(),
+            inbox: request.validation_input.batch_info,
             delayed_inbox,
-            preimages: request.preimages,
-            programs: request.user_wasms[local_target()].clone(),
+            preimages: request.validation_input.preimages,
+            programs: request.validation_input.user_wasms[local_target()].clone(),
         }),
     };
 
@@ -61,26 +76,17 @@ pub async fn validate_native(
 
 pub async fn validate_continuous(
     server_state: &ServerState,
-    request: ValidationInput,
+    request: ValidationRequest,
 ) -> Result<Json<GoGlobalState>, String> {
-    if server_state.jit_machine.is_none() {
-        return Err(format!(
-            "Jit machine is required continuous mode. Requested module root: {}",
-            server_state.module_root
-        ));
-    }
+    let module_root = request
+        .module_root
+        .unwrap_or_else(|| server_state.locator.latest_wasm_module_root().module_root);
 
-    let jit_machine = server_state.jit_machine.as_ref().unwrap();
+    info!("validate continuous serving request with module_root 0x{module_root}");
 
-    if !jit_machine.is_active().await {
-        return Err(format!(
-            "Jit machine is not active. Maybe it received a shutdown signal? Requested module root: {}",
-            server_state.module_root
-        ));
-    }
-
-    let new_state = jit_machine
-        .feed_machine(&request)
+    let new_state = server_state
+        .jit_manager
+        .feed_machine_with_root(&request.validation_input, module_root)
         .await
         .map_err(|error| format!("{error:?}"))?;
 
