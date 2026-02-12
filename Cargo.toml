@@ -72,6 +72,7 @@ paste = { version = "1.0.15" }
 rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 rayon = { version = "1.5.1" }
+reqwest = { version = "0.13.1" }
 ruint2 = { version = "1.9.0" }
 rustc-demangle = { version = "0.1.21" }
 serde = { version = "1.0.130" }
