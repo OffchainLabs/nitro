@@ -626,7 +626,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -823,7 +823,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
+	if isSequencingDelayedMsg {
+		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
+	} else if isMsgForPrefetch {
 		runCtx = core.NewMessagePrefetchContext()
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
