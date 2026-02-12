@@ -32,6 +32,7 @@ type InitConfig struct {
 	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
 	ImportFile                    string        `koanf:"import-file"`
 	GenesisJsonFile               string        `koanf:"genesis-json-file"`
+	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
 	ThenQuit                      bool          `koanf:"then-quit"`
 	Prune                         string        `koanf:"prune"`
 	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
@@ -62,6 +63,7 @@ var InitConfigDefault = InitConfig{
 	ImportWasm:                    false,
 	ImportFile:                    "",
 	GenesisJsonFile:               "",
+	GenesisJsonFileDirectory:      "",
 	AccountsPerSync:               100000,
 	ThenQuit:                      false,
 	Prune:                         "",
@@ -94,6 +96,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
+	f.String(prefix+".genesis-json-file-directory", InitConfigDefault.GenesisJsonFileDirectory, "directory path for genesis json files - will search for a file named by the chain ID")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Bool(prefix+".prune-parallel-storage-traversal", InitConfigDefault.PruneParallelStorageTraversal, "if true: use parallel pruning per account")
@@ -113,6 +116,9 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func (c *InitConfig) Validate() error {
+	if c.Empty && c.GenesisJsonFile != "" {
+		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
+	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}

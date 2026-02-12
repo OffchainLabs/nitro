@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
@@ -12,8 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
-	"github.com/offchainlabs/nitro/txfilter"
 )
 
 func isFilteredError(err error) bool {
@@ -21,6 +23,25 @@ func isFilteredError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "internal error")
+}
+
+func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
+	const cacheSize = 100
+	store := addressfilter.NewHashStore(cacheSize)
+	if len(addrs) > 0 {
+		salt := []byte("test-salt")
+		hashes := make([]common.Hash, len(addrs))
+		for i, addr := range addrs {
+			salted := make([]byte, len(salt)+common.AddressLength)
+			copy(salted, salt)
+			copy(salted[len(salt):], addr.Bytes())
+			hashes[i] = sha256.Sum256(salted)
+		}
+		store.Store(salt, hashes, "test")
+	}
+	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
+	checker.Start(context.Background())
+	return checker
 }
 
 func TestAddressFilterDirectTransfer(t *testing.T) {
@@ -42,7 +63,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test 1: Transaction TO a filtered address should fail
@@ -105,7 +126,7 @@ func TestAddressFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CALL to filtered address should fail
@@ -143,7 +164,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: STATICCALL to filtered address within a transaction should fail
@@ -180,7 +201,7 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
 	// Set up an empty filter (disabled)
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{})
+	filter := newHashedChecker([]common.Address{})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// All transactions should succeed when filter is disabled
@@ -215,7 +236,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 	Require(t, err)
 
 	// Set up filter to block the computed address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{create2Addr})
+	filter := newHashedChecker([]common.Address{create2Addr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CREATE2 to filtered address should fail
@@ -257,7 +278,7 @@ func TestAddressFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{createAddr})
+	filter := newHashedChecker([]common.Address{createAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: CREATE to filtered address should fail
@@ -272,7 +293,7 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
 	// Clear the filter to allow the next CREATE
-	emptyChecker := txfilter.NewStaticAsyncChecker([]common.Address{})
+	emptyChecker := newHashedChecker([]common.Address{})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(emptyChecker)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -299,7 +320,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
 
 	// Set up filter to block the beneficiary
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Test: SELFDESTRUCT to filtered beneficiary should fail
@@ -319,6 +340,180 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := contract2.SelfDestructTo(&auth, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+// Test the special scenario introduced by EIP-6780
+// Since EIP-6780 behave differently for selfdestruct in constructor vs later calls,
+// we need to test both cases. This test covers selfdestruct in constructor.
+func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Fund sender account
+	builder.L2Info.GenerateAccount("Deployer")
+	builder.L2.TransferBalance(t, "Owner", "Deployer", big.NewInt(1e18), builder.L2Info)
+
+	// Create filtered beneficiary address
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
+
+	// Create non-filtered beneficiary address
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Set up address filter to block FilteredBeneficiary
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Test 1: Deploy contract that selfdestructs to filtered address in constructor should fail
+	auth := builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
+	auth.Value = big.NewInt(1e15) // Send some ETH to be transferred on selfdestruct
+	_, _, _, err := localgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, filteredAddr)
+	if err == nil {
+		t.Fatal("expected deployment with selfdestruct to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 2: Deploy contract that selfdestructs to non-filtered address should succeed
+	auth = builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
+	auth.Value = big.NewInt(1e15)
+	_, tx, _, err := localgen.DeploySelfDestructInConstructorWithDestination(&auth, builder.L2.Client, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+func TestAddressFilterWithFilteredEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	specs := []struct {
+		event          string
+		topicAddresses []int
+	}{
+		{
+			event:          "Transfer(address,address,uint256)",
+			topicAddresses: []int{1, 2},
+		},
+		{
+			event:          "TransferSingle(address,address,address,uint256,uint256)",
+			topicAddresses: []int{2, 3},
+		},
+		{
+			event:          "TransferBatch(address,address,address,uint256[],uint256[])",
+			topicAddresses: []int{2, 3},
+		},
+	}
+
+	rules := make([]eventfilter.EventRule, 0, len(specs))
+	for _, s := range specs {
+		selector, _, err := eventfilter.CanonicalSelectorFromEvent(s.event)
+		Require(t, err)
+
+		rules = append(rules, eventfilter.EventRule{
+			Event:          s.event,
+			Selector:       selector,
+			TopicAddresses: s.topicAddresses,
+		})
+	}
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithEventFilterRules(rules)
+	builder.isSequencer = true
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Deploy test contract
+	_, contract := deployAddressFilterTestContract(t, ctx, builder)
+
+	// Create filtered address
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
+
+	// Create non-filtered address
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Test 1: Transfer to filtered beneficiary should fail
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	_, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransfer to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 2: Transfer from filtered beneficiary should fail
+	_, err = contract.EmitTransfer(&auth, filteredAddr, auth.From)
+	if err == nil {
+		t.Fatal("expected EmitTransfer from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 3: Transfer to and from clean beneficiary should succeed
+	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := contract.EmitTransfer(&auth, auth.From, cleanAddr)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	tx, err = contract.EmitTransfer(&auth, cleanAddr, auth.From)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Test 4: TransferSingle involving filtered beneficiary should fail
+	_, err = contract.EmitTransferSingle(&auth, auth.From, cleanAddr, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferSingle to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	_, err = contract.EmitTransferSingle(&auth, auth.From, filteredAddr, cleanAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferSingle from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 5: TransferBatch involving filtered beneficiary should fail
+	_, err = contract.EmitTransferBatch(&auth, auth.From, cleanAddr, filteredAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferBatch to filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	_, err = contract.EmitTransferBatch(&auth, auth.From, filteredAddr, cleanAddr)
+	if err == nil {
+		t.Fatal("expected EmitTransferBatch from filtered beneficiary to be rejected")
+	}
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error, got: %v", err)
+	}
+
+	// Test 6: UnfilteredEvent should always succeed
+	tx, err = contract.EmitUnfiltered(&auth, filteredAddr)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)

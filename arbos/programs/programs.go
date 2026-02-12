@@ -6,10 +6,12 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
+	gethMath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -113,7 +116,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runCtx *c
 		// already activated and up to date
 		return 0, codeHash, common.Hash{}, nil, false, ProgramUpToDateError()
 	}
-	wasm, err := getWasm(statedb, address, params.MaxWasmSize)
+	wasm, err := getWasm(statedb, address, params, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -224,7 +227,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.MaxWasmSize, params.PageLimit, evm.Context.Time, debugMode, program, runCtx)
+	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
 		arbosVersion:    evm.Context.ArbOSVersion,
@@ -290,38 +293,157 @@ func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
 	}
 }
 
+// toWordSize returns the ceiled word size required for memory expansion.
+func ToWordSize(size uint64) uint64 {
+	if size > math.MaxUint64-31 {
+		return math.MaxUint64/32 + 1
+	}
+
+	return (size + 31) / 32
+}
+
 func evmMemoryCost(size uint64) uint64 {
 	// It would take 100GB to overflow this calculation, so no need to worry about that
-	words := (size + 31) / 32
+	words := ToWordSize(size)
 	linearCost := words * gethParams.MemoryGas
 	squareCost := (words * words) / gethParams.QuadCoeffDiv
 	return linearCost + squareCost
 }
 
-func getWasm(statedb vm.StateDB, program common.Address, maxWasmSize uint32) ([]byte, error) {
+func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams, burner burn.Burner) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmFromContractCode(prefixedWasm, maxWasmSize)
+	return getWasmFromContractCode(statedb, prefixedWasm, params, burner)
 }
 
-func getWasmFromContractCode(prefixedWasm []byte, maxWasmSize uint32) ([]byte, error) {
-	if prefixedWasm == nil {
+// burner is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
+// Only pass a burner if activating the program.
+func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *StylusParams, burner burn.Burner) ([]byte, error) {
+	if len(prefixedWasm) == 0 {
 		return nil, ProgramNotWasmError()
 	}
-	wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
+
+	if state.IsStylusClassicProgramPrefix(prefixedWasm) {
+		return getWasmFromClassicStylus(prefixedWasm, params.MaxWasmSize)
+	}
+
+	if params.arbosVersion >= gethParams.ArbosVersion_StylusContractLimit {
+		if state.IsStylusRootProgramPrefix(prefixedWasm) {
+			return getWasmFromRootStylus(statedb, prefixedWasm, params.MaxWasmSize, params.MaxFragmentCount, burner)
+		}
+
+		if state.IsStylusFragmentPrefix(prefixedWasm) {
+			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
+		}
+	}
+
+	return nil, ProgramNotWasmError()
+}
+
+func getWasmFromClassicStylus(data []byte, maxSize uint32) ([]byte, error) {
+	wasm, dictByte, err := state.StripStylusPrefix(data)
 	if err != nil {
 		return nil, err
 	}
 
-	var dict arbcompress.Dictionary
-	switch dictByte {
-	case 0:
-		dict = arbcompress.EmptyDictionary
-	case 1:
-		dict = arbcompress.StylusProgramDictionary
-	default:
-		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+	dict, err := getStylusCompressionDict(dictByte)
+	if err != nil {
+		return nil, err
 	}
-	return arbcompress.DecompressWithDictionary(wasm, int(maxWasmSize), dict)
+
+	return arbcompress.DecompressWithDictionary(wasm, int(maxSize), dict)
+}
+
+// burner is used to charge gas for reading fragments. If it is present activation is assumed, and activation checks are enforced.
+// Only pass a burner if activating the program.
+func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxFragments uint8, burner burn.Burner) ([]byte, error) {
+	root, err := state.NewStylusRoot(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if burner != nil {
+		if root.DecompressedLength > maxSize {
+			return nil, fmt.Errorf("invalid wasm: decompressedLength %d is greater then MaxWasmSize %d", root.DecompressedLength, maxSize)
+		}
+		if len(root.Addresses) > int(maxFragments) {
+			return nil, fmt.Errorf("invalid wasm: fragment count exceeds limit of %d", maxFragments)
+		}
+	}
+
+	if len(root.Addresses) == 0 {
+		return nil, fmt.Errorf("invalid wasm: fragment count cannot be zero")
+	}
+
+	var compressedWasm []byte
+	for _, addr := range root.Addresses {
+		fragCode := statedb.GetCode(addr)
+		if burner != nil {
+			if err := chargeFragmentReadGas(burner, statedb, addr, uint64(len(fragCode))); err != nil {
+				return nil, err
+			}
+		}
+
+		payload, err := state.StripStylusFragmentPrefix(fragCode)
+		if err != nil {
+			return nil, err
+		}
+
+		compressedWasm = append(compressedWasm, payload...)
+	}
+
+	dict, err := getStylusCompressionDict(root.DictionaryType)
+	if err != nil {
+		return nil, err
+	}
+
+	wasm, err := arbcompress.DecompressWithDictionary(compressedWasm, int(root.DecompressedLength), dict)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(wasm) != int(root.DecompressedLength) {
+		return nil, fmt.Errorf("invalid wasm: decompressed length %d does not match expected length %d", len(wasm), root.DecompressedLength)
+	}
+
+	return wasm, nil
+}
+
+// chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
+func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
+	// charge access gas
+	var cost multigas.MultiGas
+	if statedb.AddressInAccessList(addr) {
+		cost = multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
+	} else {
+		statedb.AddAddressToAccessList(addr)
+		cost = multigas.StorageAccessGas(gethParams.ColdAccountAccessCostEIP2929)
+	}
+	// charge copy gas
+	words := ToWordSize(codeSize)
+	copyGas, overflow := gethMath.SafeMul(words, gethParams.CopyGas)
+	if overflow {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "words", words, "copyGas", gethParams.CopyGas)
+		return vm.ErrGasUintOverflow
+	}
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, copyGas); overflow {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "copyGas", copyGas)
+		return vm.ErrGasUintOverflow
+	}
+	if err := burner.BurnMultiGas(cost); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
+	switch id {
+	case 0:
+		return arbcompress.EmptyDictionary, nil
+	case 1:
+		return arbcompress.StylusProgramDictionary, nil
+	default:
+		return 0, fmt.Errorf("unsupported dictionary type: %d", id)
+	}
 }
 
 // Gets a program entry, which may be expired or not yet activated.

@@ -12,7 +12,7 @@ rust-version.workspace = true
 [dependencies]
 arbutil = { workspace = true }
 brotli = { workspace = true, features = ["wasmer_traits"] }
-caller-env = { workspace = true, features = ["wasmer_traits"] }
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
 clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
@@ -24,9 +24,11 @@ sha2 = { workspace = true }
 sha3 = { workspace = true }
 stylus = { workspace = true }
 thiserror = { workspace = true }
+validation = { workspace = true }
 wasmer = { workspace = true }
 wasmer-compiler-cranelift = { workspace = true }
 wasmer-compiler-llvm = { workspace = true, optional = true }
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]
+cc_brotli = ["brotli/cc_brotli"]

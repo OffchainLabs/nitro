@@ -1,12 +1,70 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::Bytes32;
+//! Server Configuration and CLI Argument Parsing.
+//!
+//! This module defines the command-line interface (CLI) and configuration structures
+//! for the validation server. It utilizes `clap` to parse arguments and environment variables
+//! into strongly-typed configuration objects used throughout the application.
+
+use anyhow::Result;
 use clap::{Args, Parser, ValueEnum};
-use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+
+use crate::engine::config::{JitManagerConfig, ModuleRoot};
+use crate::engine::machine::JitProcessManager;
+
+#[derive(Debug)]
+pub struct ServerState {
+    pub mode: InputMode,
+    pub binary: PathBuf,
+    pub module_root: ModuleRoot,
+    /// Jit manager responsible for computing next GlobalState. Not wrapped
+    /// in Arc<> since the caller of ServerState is wrapped in Arc<>. This field
+    /// is optional because it's only available in continuous InputMode
+    pub jit_manager: JitProcessManager,
+    pub available_workers: usize,
+}
+
+impl ServerState {
+    pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
+        // TODO: Load multiple module roots via MachineLocator (NIT-4346)
+        let module_root = config.get_module_root()?;
+        let manager_config = JitManagerConfig {
+            prover_bin_path: config.binary.clone(),
+            ..Default::default()
+        };
+        let jit_manager = match config.mode {
+            InputMode::Continuous => JitProcessManager::new(&manager_config, module_root)?,
+            InputMode::Native => JitProcessManager::new_empty(&manager_config),
+        };
+        Ok(ServerState {
+            mode: config.mode,
+            binary: config.binary.clone(),
+            module_root,
+            jit_manager,
+            available_workers,
+        })
+    }
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum InputMode {
+    Native,
+    Continuous,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Default)]
+pub enum LoggingFormat {
+    #[default]
+    Text,
+    Json,
+}
+use tracing::warn;
+
+const DEFAULT_NUM_WORKERS: usize = 4;
 
 #[derive(Clone, Debug, Parser)]
 pub struct ServerConfig {
@@ -14,12 +72,23 @@ pub struct ServerConfig {
     #[clap(long, default_value = "0.0.0.0:4141")]
     pub address: SocketAddr,
 
+    /// Path to the `replay.wasm` binary.
+    #[clap(long, default_value = "./target/machines/latest/replay.wasm")]
+    pub binary: PathBuf,
+
     /// Logging format configuration.
     #[clap(long, value_enum, default_value_t = LoggingFormat::Text)]
     pub logging_format: LoggingFormat,
 
+    /// Defines how Validator consumes input
+    #[clap(long, value_enum, default_value_t = InputMode::Native)]
+    pub mode: InputMode,
+
     #[clap(flatten)]
     module_root_config: ModuleRootConfig,
+
+    #[clap(long)]
+    workers: Option<usize>,
 }
 
 #[derive(Clone, Debug, Args)]
@@ -27,7 +96,7 @@ pub struct ServerConfig {
 struct ModuleRootConfig {
     /// Supported module root.
     #[clap(long)]
-    module_root: Option<Bytes32>,
+    module_root: Option<ModuleRoot>,
 
     /// Path to the file containing the module root.
     #[clap(long)]
@@ -35,7 +104,7 @@ struct ModuleRootConfig {
 }
 
 impl ServerConfig {
-    pub fn get_module_root(&self) -> anyhow::Result<Bytes32> {
+    pub fn get_module_root(&self) -> anyhow::Result<ModuleRoot> {
         match (
             self.module_root_config.module_root,
             &self.module_root_config.module_root_path,
@@ -45,7 +114,7 @@ impl ServerConfig {
                 let content = read_to_string(path)?;
                 let root = content
                     .trim()
-                    .parse::<Bytes32>()
+                    .parse::<ModuleRoot>()
                     .map_err(|e| anyhow::anyhow!(e))?;
                 Ok(root)
             }
@@ -54,20 +123,29 @@ impl ServerConfig {
             )),
         }
     }
-}
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Default, ValueEnum, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LoggingFormat {
-    #[default]
-    Text,
-    Json,
+    pub fn get_workers(&self) -> Result<usize> {
+        if let Some(workers) = self.workers {
+            Ok(workers)
+        } else {
+            let workers = match std::thread::available_parallelism() {
+                Ok(count) => count.get(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    warn!("Could not determine machine's available parallelism. Defaulting to {DEFAULT_NUM_WORKERS}.");
+                    DEFAULT_NUM_WORKERS
+                }
+                Err(e) => return Err(e.into()),
+            };
+            Ok(workers)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::ServerConfig;
     use clap::Parser;
+
+    use crate::config::ServerConfig;
 
     #[test]
     fn verify_cli() {
@@ -128,5 +206,19 @@ mod tests {
             ServerConfig::try_parse_from(["server"]).is_err(),
             "Not specifying either module root or module root path should fail"
         );
+    }
+
+    #[test]
+    fn capacity_parsing() {
+        let server_config = ServerConfig::try_parse_from([
+            "server",
+            "--module-root",
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+        ])
+        .unwrap();
+
+        assert!(server_config.workers.is_none());
+        let workers = server_config.get_workers().unwrap();
+        assert!(workers > 0);
     }
 }

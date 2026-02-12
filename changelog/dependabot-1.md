@@ -1,2 +1,2 @@
 ### Ignored
-- Bump lru from 0.12.4 to 0.16.3 in /crates/wasm-libraries
+- Bump bytes from 1.7.0 to 1.11.1 in /crates/wasm-testsuite

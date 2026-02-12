@@ -4,8 +4,6 @@
 package precompiles
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -70,6 +68,12 @@ func (con ArbOwnerPublic) GetAllTransactionFilterers(c ctx, evm mech) ([]common.
 	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
 }
 
+// GetFilteredFundsRecipient gets the address that receives funds redirected from filtered transactions.
+// Returns address(0) if not explicitly set (networkFeeAccount is used as fallback at runtime).
+func (con ArbOwnerPublic) GetFilteredFundsRecipient(c ctx, evm mech) (addr, error) {
+	return c.State.FilteredFundsRecipient()
+}
+
 // GetNetworkFeeAccount gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()
@@ -112,6 +116,10 @@ func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, er
 	return c.State.L1PricingState().ParentGasFloorPerToken()
 }
 
-func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint16, error) {
-	return 0, errors.New("GetMaxStylusContractFragments is not implemented yet")
+func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint8, error) {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return 0, err
+	}
+	return params.MaxFragmentCount, nil
 }

@@ -43,8 +43,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
@@ -67,8 +69,72 @@ var (
 	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
-var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-var ResultNotFound = errors.New("result not found")
+var (
+	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+	ResultNotFound                      = errors.New("result not found")
+	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+)
+
+// ErrFilteredDelayedMessage is returned when a delayed message contains transactions
+// that touch filtered addresses. The sequencer should halt and wait for the tx hashes
+// to be added to the onchain filter before retrying.
+type ErrFilteredDelayedMessage struct {
+	TxHashes      []common.Hash
+	DelayedMsgIdx uint64
+}
+
+func (e *ErrFilteredDelayedMessage) Error() string {
+	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
+		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
+}
+
+// ErrDelayedTxFiltered is an internal error used during block production to signal
+// that a transaction touched a filtered address and is not in the onchain filter.
+var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
+
+// DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
+// for delayed message processing. Collects all tx hashes that touch filtered addresses
+// and are not in the onchain filter. After block production, the caller checks if any
+// hashes were collected and returns ErrFilteredDelayedMessage if so.
+type DelayedFilteringSequencingHooks struct {
+	arbos.NoopSequencingHooks
+	FilteredTxHashes []common.Hash
+}
+
+func NewDelayedFilteringSequencingHooks(txes types.Transactions) *DelayedFilteringSequencingHooks {
+	return &DelayedFilteringSequencingHooks{NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes)}
+}
+
+// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
+// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
+// Does not return an error - the caller checks FilteredTxHashes after block production.
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	db.TouchAddress(sender)
+	if tx.To() != nil {
+		db.TouchAddress(*tx.To())
+	}
+	// For tx types that alias the sender (unsigned contract txs, retryables),
+	// also check the original L1 address. The sender in the tx is already
+	// aliased by the L1 bridge, but the restricted address list contains
+	// original (non-aliased) addresses.
+	txType := tx.Type()
+	if arbosutil.DoesTxTypeAlias(&txType) {
+		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
+	}
+
+	if db.IsAddressFiltered() {
+		// If the STF already handled this tx via the onchain filter mechanism,
+		// the filter entry has been cleaned up and we're done.
+		var filteredErr *core.ErrFilteredTx
+		if errors.As(result.Err, &filteredErr) {
+			return nil
+		}
+		// Otherwise, this tx touched a filtered address but wasn't in the
+		// onchain filter - collect it so the caller can halt.
+		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
+	}
+	return nil
+}
 
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
@@ -115,7 +181,8 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker state.AddressChecker
+	addressChecker               state.AddressChecker
+	transactionFiltererRPCClient *TransactionFiltererRPCClient
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -131,7 +198,7 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
@@ -139,7 +206,7 @@ func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGa
 		cachedL1PriceData: NewL1PriceData(),
 		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
-	}, nil
+	}
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -670,7 +737,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +772,7 @@ func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
 func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis := s.GetGenesisBlockNumber()
 	if blockNum < genesis {
-		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+		return 0, fmt.Errorf("%w: blockNum %d < genesis %d", BlockNumBeforeGenesis, blockNum, genesis)
 	}
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
@@ -715,7 +782,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, applyDelayedFilter bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -735,6 +802,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	// Set up address checker for filtering if configured
+	if s.addressChecker != nil {
+		statedb.SetAddressChecker(s.addressChecker)
+	}
+
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
@@ -755,6 +828,59 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
+
+	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
+	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
+	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
+	// which tx caused the halt.
+	if applyDelayedFilter {
+		chainConfig := s.bc.Config()
+		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
+		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)
+		if err != nil {
+			log.Warn("error parsing incoming message for filtering", "err", err)
+			txes = types.Transactions{}
+		}
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes)
+
+		block, receipts, err := arbos.ProduceBlockAdvanced(
+			msg.Message.Header,
+			msg.DelayedMessagesRead,
+			currentHeader,
+			statedb,
+			s.bc,
+			filteringHooks,
+			isMsgForPrefetch,
+			runCtx,
+			s.exposeMultiGas,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		// Check if any txs touched filtered addresses but are not in the onchain filter
+		if len(filteringHooks.FilteredTxHashes) > 0 {
+			if s.transactionFiltererRPCClient != nil {
+				s.LaunchThread(func(ctx context.Context) {
+					// Call transaction-filterer sequentially.
+					// To avoid nonce collisions when adding a tx to ArbFilteredTransactionsManager,
+					// transaction-filterer will process only one Filter call at a time.
+					for _, filteredTxHash := range filteringHooks.FilteredTxHashes {
+						_, err := s.transactionFiltererRPCClient.Filter(filteredTxHash).Await(ctx)
+						if err != nil {
+							log.Error("error reporting filtered tx to transaction-filterer", "filteredTxHash", filteredTxHash, "err", err)
+						}
+					}
+				})
+			}
+
+			return nil, nil, nil, &ErrFilteredDelayedMessage{
+				TxHashes:      filteringHooks.FilteredTxHashes,
+				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
+			}
+		}
+		return block, statedb, receipts, nil
+	}
+
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -950,14 +1076,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true, false)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1030,8 +1156,27 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
 }
 
-func (s *ExecutionEngine) Start(ctx_in context.Context) {
-	s.StopWaiter.Start(ctx_in, s)
+func (s *ExecutionEngine) StopAndWait() {
+	if s.transactionFiltererRPCClient != nil {
+		s.transactionFiltererRPCClient.StopAndWait()
+	}
+	s.StopWaiter.StopAndWait()
+}
+
+func (s *ExecutionEngine) Start(ctxIn context.Context) error {
+	s.StopWaiter.Start(ctxIn, s)
+
+	ctx, err := s.GetContextSafe()
+	if err != nil {
+		return err
+	}
+
+	if s.transactionFiltererRPCClient != nil {
+		err := s.transactionFiltererRPCClient.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to start transaction filterer RPC client: %w", err)
+		}
+	}
 
 	s.LaunchThread(func(ctx context.Context) {
 		for {
@@ -1087,6 +1232,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		})
 	}
+
+	return nil
 }
 
 func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenance time.Duration) bool {
@@ -1137,4 +1284,28 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
+	s.transactionFiltererRPCClient = client
+}
+
+func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return false, err
+	}
+
+	statedb, err := s.bc.StateAt(currentHeader.Root)
+	if err != nil {
+		return false, err
+	}
+
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return false, err
+	}
+
+	filteredState := filteredTransactions.Open(statedb, arbState.Burner)
+	return filteredState.IsFiltered(txHash)
 }

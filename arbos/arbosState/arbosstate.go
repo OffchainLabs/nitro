@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -26,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/features"
+	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
@@ -54,6 +56,7 @@ type ArbosState struct {
 	chainOwners                     *addressSet.AddressSet
 	nativeTokenOwners               *addressSet.AddressSet
 	transactionFilterers            *addressSet.AddressSet
+	filteredTransactions            *filteredTransactions.FilteredTransactionsState
 	sendMerkle                      *merkleAccumulator.MerkleAccumulator
 	programs                        *programs.Programs
 	features                        *features.Features
@@ -65,6 +68,7 @@ type ArbosState struct {
 	brotliCompressionLevel          storage.StorageBackedUint64 // brotli compression level used for pricing
 	nativeTokenEnabledTime          storage.StorageBackedUint64
 	transactionFilteringEnabledTime storage.StorageBackedUint64
+	filteredFundsRecipient          storage.StorageBackedAddress
 	backingStorage                  *storage.Storage
 	Burner                          burn.Burner
 }
@@ -93,6 +97,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		chainOwners:                     addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		nativeTokenOwners:               addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		transactionFilterers:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(transactionFiltererSubspace)),
+		filteredTransactions:            filteredTransactions.Open(stateDB, burner),
 		sendMerkle:                      merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs:                        programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features:                        features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
@@ -104,6 +109,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		brotliCompressionLevel:          backingStorage.OpenStorageBackedUint64(uint64(brotliCompressionLevelOffset)),
 		nativeTokenEnabledTime:          backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
 		transactionFilteringEnabledTime: backingStorage.OpenStorageBackedUint64(uint64(transactionFilteringEnabledFromTimeOffset)),
+		filteredFundsRecipient:          backingStorage.OpenStorageBackedAddress(uint64(filteredFundsRecipientOffset)),
 		backingStorage:                  backingStorage,
 		Burner:                          burner,
 	}, nil
@@ -176,6 +182,7 @@ const (
 	brotliCompressionLevelOffset
 	nativeTokenEnabledFromTimeOffset
 	transactionFilteringEnabledFromTimeOffset
+	filteredFundsRecipientOffset
 )
 
 type SubspaceID []byte
@@ -324,6 +331,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 
+	transactionFiltererStorage := sto.OpenCachedSubStorage(transactionFiltererSubspace)
+	err = addressSet.Initialize(transactionFiltererStorage)
+	if err != nil {
+		return nil, err
+	}
+
 	aState, err := OpenArbosState(stateDB, burner)
 	if err != nil {
 		return nil, err
@@ -386,7 +399,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// no state changes needed
 		case params.ArbosVersion_10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
-				l1pricing.L1PricerFundsPoolAddress,
+				types.L1PricerFundsPoolAddress,
 			).ToBig()))
 
 		case params.ArbosVersion_11:
@@ -461,9 +474,16 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 52, 53, 54, 55, 56, 57, 58, 59:
 			// these versions are left to Orbit chains for custom upgrades.
 
-		case params.ArbosVersion_TransactionFiltering:
-			// Once the final ArbOS version is locked in, this can be moved to that numeric version.
+		case params.ArbosVersion_60:
+			// Changes for ArbosVersion_StylusContractLimit
+			p, err := state.Programs().Params()
+			ensure(err)
+			ensure(p.UpgradeToArbosVersion(nextArbosVersion))
+			ensure(p.Save())
+			// Changes for ArbosVersion_TransactionFiltering
 			ensure(addressSet.Initialize(state.backingStorage.OpenSubStorage(transactionFiltererSubspace)))
+			// filteredFundsRecipient defaults to zero address (falls back to networkFeeAccount).
+			// No explicit initialization needed -- uninitialized storage reads as zero.
 
 		default:
 			return fmt.Errorf(
@@ -592,6 +612,10 @@ func (state *ArbosState) TransactionFilterers() *addressSet.AddressSet {
 	return state.transactionFilterers
 }
 
+func (state *ArbosState) FilteredTransactions() *filteredTransactions.FilteredTransactionsState {
+	return state.filteredTransactions
+}
+
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
 	if state.sendMerkle == nil {
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenCachedSubStorage(sendMerkleSubspace))
@@ -625,6 +649,25 @@ func (state *ArbosState) InfraFeeAccount() (common.Address, error) {
 
 func (state *ArbosState) SetInfraFeeAccount(account common.Address) error {
 	return state.infraFeeAccount.Set(account)
+}
+
+func (state *ArbosState) FilteredFundsRecipient() (common.Address, error) {
+	return state.filteredFundsRecipient.Get()
+}
+
+func (state *ArbosState) SetFilteredFundsRecipient(account common.Address) error {
+	return state.filteredFundsRecipient.Set(account)
+}
+
+func (state *ArbosState) FilteredFundsRecipientOrDefault() (common.Address, error) {
+	recipient, err := state.filteredFundsRecipient.Get()
+	if err != nil {
+		return common.Address{}, err
+	}
+	if recipient == (common.Address{}) {
+		return state.networkFeeAccount.Get()
+	}
+	return recipient, nil
 }
 
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {

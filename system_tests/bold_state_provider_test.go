@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
+	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution_consensus"
@@ -363,7 +363,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _ := createTestNodeOnL1ForBoldProtocol(
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		false,
