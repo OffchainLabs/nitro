@@ -852,9 +852,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stack.OpenDatabaseWithOptions("chaindb", core.DatabaseOptions{})
+	l2chainDb, err := l2stack.OpenDatabaseWithOptions("chaindb", node.DatabaseOptions{})
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabaseWithOptions("arbdb", core.DatabaseOptions{NoFreezer: true})
+	l2arbDb, err := l2stack.OpenDatabaseWithOptions("arbdb", node.DatabaseOptions{NoFreezer: true})
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
