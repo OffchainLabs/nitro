@@ -263,7 +263,7 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 		if currentKey >= endMinKey {
 			break
 		}
-		if len(prunedKeysRange) == 0 || len(prunedKeysRange) == 1 {
+		if len(prunedKeysRange) < 2 {
 			prunedKeysRange = append(prunedKeysRange, currentKey)
 		} else {
 			prunedKeysRange[1] = currentKey
