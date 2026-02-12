@@ -192,6 +192,18 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 
 	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
+
+	// Sequence number is the same for every client in this broadcast.
+	var seqNum *arbutil.MessageIndex
+	if len(cm.clientPtrMap) > 0 {
+		n := len(bm.Messages)
+		if n == 1 {
+			seqNum = &bm.Messages[0].SequenceNumber
+		} else if n > 1 {
+			return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", n)
+		}
+	}
+
 	for client := range cm.clientPtrMap {
 		var data []byte
 		if client.Compression() {
@@ -210,16 +222,6 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 				clientDeleteList = append(clientDeleteList, client)
 				continue
 			}
-		}
-
-		var seqNum *arbutil.MessageIndex
-		n := len(bm.Messages)
-		if n == 0 {
-			seqNum = nil
-		} else if n == 1 {
-			seqNum = &bm.Messages[0].SequenceNumber
-		} else {
-			return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", n)
 		}
 
 		m := message{
