@@ -855,7 +855,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			if _, err := c.sequencer.Activate().Await(ctx); err != nil {
 				log.Warn("sequencer failed to activate after becoming chosen", "err", err)
-				c.prevChosenSequencer = ""
+				return 0, errors.New("coordinator failed to activate after becoming chosen")
 			} else {
 				c.prevChosenSequencer = c.config.Url()
 			}
