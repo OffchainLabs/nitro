@@ -6,6 +6,10 @@ on:
     branches:
       - zk-prove-any/sp1-runner
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   zk-proving:
     name: Run SP1 runner on `replay.wasm`
