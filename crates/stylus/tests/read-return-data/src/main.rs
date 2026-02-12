@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::{b256, Address},
     call::RawCall,
-    console, contract,
+    console,
     host::VM,
     prelude::*,
 };
@@ -19,7 +19,7 @@ macro_rules! error {
 }
 
 #[entrypoint]
-fn user_main(input: Vec<u8>, _vm: VM) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let mut call_data = input.as_slice();
     let mut read = || {
         let x = usize::from_be_bytes(call_data[..4].try_into().unwrap());
@@ -41,19 +41,23 @@ fn user_main(input: Vec<u8>, _vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let safe_offset = offset.min(call_data.len());
 
     if call_type == 2 {
-        RawCall::new()
-            .limit_return_data(offset, size)
-            .call(precompile, call_data)?;
+        unsafe {
+            RawCall::new(&vm)
+                .limit_return_data(offset, size)
+                .call(precompile, call_data)?;
+        }
     }
 
     for _ in 0..count {
-        let data = match call_type {
-            0 => RawCall::new().call(precompile, call_data)?,
-            1 => RawCall::new()
-                .limit_return_data(offset, size)
-                .call(precompile, call_data)?,
-            2 => contract::read_return_data(offset, Some(size)),
-            _ => error!("unknown call_type {call_type}"),
+        let data = unsafe {
+            match call_type {
+                0 => RawCall::new(&vm).call(precompile, call_data)?,
+                1 => RawCall::new(&vm)
+                    .limit_return_data(offset, size)
+                    .call(precompile, call_data)?,
+                2 => vm.read_return_data(offset, Some(size)),
+                _ => error!("unknown call_type {call_type}"),
+            }
         };
 
         let expected_data = &call_data[safe_offset..][..expected_size];

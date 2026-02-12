@@ -8,7 +8,6 @@ alloy-primitives = "1.0.1"
 alloy-sol-types = "1.0.1"
 stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["reentrant"] }
 hex = "0.4.3"
-wee_alloc = "0.4.5"
 
 [features]
 export-abi = ["stylus-sdk/export-abi"]
