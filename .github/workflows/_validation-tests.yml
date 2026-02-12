@@ -33,7 +33,6 @@ jobs:
       - name: Run jit prover on block input json
         id: jit
         run: |
-          target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug json --inputs "${{ env.INPUT_FILE }}"
           OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
             json --inputs '${{ env.INPUT_FILE }}')
           
