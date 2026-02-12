@@ -47,6 +47,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
+	cmd_util "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
@@ -725,11 +726,19 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	if config.Init.GenesisJsonFile != "" {
+	genesisJsonFile := config.Init.GenesisJsonFile
+	if genesisJsonFile == "" && initDataReader != nil {
+		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+		}
+	}
+
+	if genesisJsonFile != "" {
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
-		genesisJson, err := os.ReadFile(config.Init.GenesisJsonFile)
+		genesisJson, err := os.ReadFile(genesisJsonFile)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -752,7 +761,10 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 			Accounts: accounts,
 		})
-		chainConfig = gen.Config
+		chainConfig, err = gen.GetConfig()
+		if err != nil {
+			return nil, nil, nil, err
+		}
 		genesisArbOSInit = gen.ArbOSInit
 	} else {
 		if initDataReader == nil {
@@ -777,6 +789,47 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 	}
 
 	return initDataReader, chainConfig, genesisArbOSInit, nil
+}
+
+func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
+	files, err := os.ReadDir(genesisFileDirectory)
+	if err != nil {
+		return "", fmt.Errorf("error reading genesis json file directory %s: %w", genesisFileDirectory, err)
+	}
+	requiredFileName := fmt.Sprintf("%d.json", chainId)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if file.Name() != requiredFileName {
+			continue
+		}
+
+		fullPath := path.Join(genesisFileDirectory, file.Name())
+		genesisJson, err := os.ReadFile(fullPath)
+		if err != nil {
+			log.Error("error reading genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			log.Error("error unmarshaling genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+
+		chainConfig, _, err := cmd_util.ReadChainConfig(&gen)
+		if err != nil {
+			log.Error("error reading chain config from genesis json file", "file", fullPath, "err", err)
+			continue
+		}
+		if chainConfig == nil || chainConfig.ChainID == nil || chainConfig.ChainID.Uint64() != chainId {
+			log.Error("genesis json file chain id does not match configured chain id", "file", fullPath, "genesisChainId", chainConfig.ChainID, "configuredChainId", chainId)
+			continue
+		}
+		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", chainId)
+		return fullPath, nil
+	}
+	return "", fmt.Errorf("no genesis json file found for chain id %d in directory %s", chainId, genesisFileDirectory)
 }
 
 func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *config.NodeConfig, initDataReader statetransfer.InitDataReader, chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit, executionDB ethdb.Database, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks) (*core.BlockChain, error) {

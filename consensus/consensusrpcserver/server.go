@@ -21,12 +21,12 @@ func NewConsensusRPCServer(consensus consensus.FullConsensusClient) *ConsensusRP
 	return &ConsensusRPCServer{consensus}
 }
 
-func (a *ConsensusRPCServer) FindInboxBatchContainingMessage(ctx context.Context, message arbutil.MessageIndex) (consensus.InboxBatch, error) {
-	return a.consensus.FindInboxBatchContainingMessage(message).Await(ctx)
+func (a *ConsensusRPCServer) GetL1Confirmations(ctx context.Context, msgIdx arbutil.MessageIndex) (uint64, error) {
+	return a.consensus.GetL1Confirmations(msgIdx).Await(ctx)
 }
 
-func (a *ConsensusRPCServer) GetBatchParentChainBlock(ctx context.Context, seqNum uint64) (uint64, error) {
-	return a.consensus.GetBatchParentChainBlock(seqNum).Await(ctx)
+func (a *ConsensusRPCServer) FindBatchContainingMessage(ctx context.Context, msgIdx arbutil.MessageIndex) (uint64, error) {
+	return a.consensus.FindBatchContainingMessage(msgIdx).Await(ctx)
 }
 
 func (a *ConsensusRPCServer) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {

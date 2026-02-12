@@ -21,8 +21,8 @@ type InboxBatch struct {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[InboxBatch]
-	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
+	FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {

@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
@@ -138,7 +137,6 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
-	AddressFilter               addressfilter.Config   `koanf:"address-filter" reload:"hot"`
 
 	forwardingTarget string
 }
@@ -170,9 +168,6 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
-	if err := c.AddressFilter.Validate(); err != nil {
-		return fmt.Errorf("error validating addressfilter config: %w", err)
-	}
 	return nil
 }
 
@@ -196,7 +191,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
-	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 }
 
 type LiveTracingConfig struct {
@@ -243,8 +237,6 @@ var ConfigDefault = Config{
 		ArgLogLimit:               2048,
 		WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 	},
-
-	AddressFilter: addressfilter.DefaultConfig,
 }
 
 type ConfigFetcher interface {
@@ -270,7 +262,6 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	addressFilterService     *addressfilter.FilterService
 }
 
 func CreateExecutionNode(
@@ -284,20 +275,20 @@ func CreateExecutionNode(
 	syncTillBlock uint64,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
+	var err error
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -311,7 +302,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(ctx, execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -371,11 +362,6 @@ func CreateExecutionNode(
 
 	bulkBlockMetadataFetcher := NewBulkBlockMetadataFetcher(l2BlockChain, execEngine, config.BlockMetadataApiCacheSize, config.BlockMetadataApiBlocksLimit)
 
-	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
-	}
-
 	execNode := &ExecutionNode{
 		ExecutionDB:              executionDB,
 		Backend:                  backend,
@@ -391,7 +377,6 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-		addressFilterService:     addressFilterService,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -484,12 +469,6 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 
-	if n.addressFilterService != nil {
-		if err = n.addressFilterService.Initialize(ctx); err != nil {
-			return fmt.Errorf("error initializing restricted addr service: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -509,12 +488,12 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 			return fmt.Errorf("error starting consensus rpc client: %w", err)
 		}
 	}
-	// TODO after separation
-	// err := n.Stack.Start()
-	// if err != nil {
-	// 	return fmt.Errorf("error starting geth stack: %w", err)
-	// }
-	n.ExecEngine.Start(ctx)
+
+	err = n.ExecEngine.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting execution engine: %w", err)
+	}
+
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
@@ -523,10 +502,6 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	if n.addressFilterService != nil {
-		n.addressFilterService.Start(ctx)
-		n.ExecEngine.SetAddressChecker(n.addressFilterService.GetAddressChecker())
-	}
 	return nil
 }
 
@@ -547,6 +522,9 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
 	}
+	if n.consensusRPCClient != nil {
+		n.consensusRPCClient.StopAndWait()
+	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
@@ -556,9 +534,6 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
-	if n.addressFilterService != nil {
-		n.addressFilterService.StopAndWait()
-	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {

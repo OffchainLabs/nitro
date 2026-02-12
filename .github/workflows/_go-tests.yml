@@ -105,20 +105,6 @@ jobs:
           --tags cionly --timeout 60m --test_state_scheme hash
           --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
       
-      - name: run tests with consensus and execution nodes connected over json rpc (A-batch)
-        if: inputs.run-defaults-a
-        continue-on-error: true
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
-    
-      - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
-        if: inputs.run-defaults-b
-        continue-on-error: true
-        run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
-      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -167,7 +153,7 @@ jobs:
             
             # 1. Start server in background
             echo "Starting server ($MODE_NAME)..."
-            target/bin/validator --module-root-path ./target/machines/latest/module-root.txt $SERVER_ARGS &
+            target/bin/validator $SERVER_ARGS &
             SERVER_PID=$!
 
             # 2. Wait for server to respond (up to 5 seconds)
