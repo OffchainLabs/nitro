@@ -827,6 +827,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			// sequencer is already either paused or forwarding
 			if _, err := c.sequencer.Pause().Await(ctx); err != nil {
 				log.Warn("coordinator failed to pause sequencer", "processedMessages", processedMessages, "localMsgCount", localMsgCount, "err", err)
+				return 0, errors.New("coordinator failed to pause sequencer")
 			}
 			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 			if err != nil {
