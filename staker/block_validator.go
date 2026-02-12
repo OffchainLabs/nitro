@@ -1124,12 +1124,7 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 		}
 	}
 	if v.config().EnableMEL {
-		msg, err := v.streamer.GetMessage(v.validated())
-		if err != nil {
-			log.Error("Couldn't clear msg preimages cache in MEL validator", "err", err)
-		} else {
-			v.melValidator.ClearValidatedMsgPreimages(msg.Message.Header.BlockNumber)
-		}
+		v.melValidator.ClearValidatedMsgPreimages(v.validated())
 	}
 	return v.config().ValidationPoll
 }

@@ -105,7 +105,7 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	// until we validate all the blocks corresponding to messages extracted by MEL.
 	// This is because when MEL extraction runs, it may extract N new messages. Then, we validate block production
 	// for messages 0 to N-1. At that point, a new message extraction must occur to fetch brand new messages beyond that.
-	for computedGlobalState.MELMsgHash != (common.Hash{}) {
+	for computedGlobalState.PosInBatch != endMELState.MsgCount {
 		blockValidatorEntry, created, err := entryCreator.CreateBlockValidationEntry(
 			ctx,
 			computedGlobalState,
@@ -155,8 +155,8 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	if computedGlobalState.MELMsgHash != (common.Hash{}) {
 		t.Fatalf("Expected to compute MEL msg hash %s but computed %s", common.Hash{}, computedGlobalState.MELMsgHash)
 	}
-	if computedGlobalState.PosInBatch != endMELState.MsgCount {
-		t.Fatalf("Expected to validate execution of %d messages, but got %d", endMELState.MsgCount, computedGlobalState.PosInBatch)
+	if computedGlobalState.PosInBatch != uint64(extractedMsgCountToValidate) {
+		t.Fatalf("Expected to validate execution of %d messages, but got %d", extractedMsgCountToValidate, computedGlobalState.PosInBatch)
 	}
 }
 
@@ -169,10 +169,10 @@ func (m *mockMELValidator) LatestValidatedMELState(ctx context.Context) (*mel.St
 	return m.latestValidatedState, nil
 }
 
-func (m *mockMELValidator) FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error) {
-	return m.realValidator.FetchMsgPreimages(ctx, l2BlockNum, parentChainBlockNumber)
+func (m *mockMELValidator) FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*staker.MsgPreimagesAndRelevantState, error) {
+	return m.realValidator.FetchMsgPreimagesAndRelevantState(ctx, l2BlockNum)
 }
 
-func (m *mockMELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockParentChainBlockNumber uint64) {
-
+func (m *mockMELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex) {
+	m.realValidator.ClearValidatedMsgPreimages(lastValidatedL2BlockNumber)
 }
