@@ -107,11 +107,7 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 	return d, nil
 }
 
-func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	ctx, err := d.GetContextSafe()
-	if err != nil {
-		return 0, err
-	}
+func (d *DelayedSequencer) getDelayedMessagesRead(ctx context.Context) (uint64, error) {
 	return d.exec.NextDelayedMessageNumber().Await(ctx)
 }
 
@@ -209,7 +205,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	if err != nil {
 		return err
 	}
-	startPos, err := d.getDelayedMessagesRead()
+	startPos, err := d.getDelayedMessagesRead(ctx)
 	if err != nil {
 		return err
 	}
