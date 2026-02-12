@@ -186,15 +186,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// Deposits return endTxNow=true so RevertedTxHook (which normally
 		// handles filtered txs) is never reached. We must check here instead.
 		txHash := underlyingTx.Hash()
+		var txnErr error
 		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
 			recipient, err := p.state.FilteredFundsRecipientOrDefault()
 			if err != nil {
 				return true, multigas.ZeroGas(), err, nil
 			}
-			util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
-			defer (startTracer())()
-			core.Transfer(evm.StateDB, from, recipient, uint256.MustFromBig(value))
-			return true, multigas.ZeroGas(), &core.ErrFilteredTx{TxHash: txHash}, nil
+			to = &recipient
+			txnErr = &core.ErrFilteredTx{TxHash: txHash}
 		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
@@ -204,7 +203,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
 		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
-		return true, multigas.ZeroGas(), nil, nil
+		return true, multigas.ZeroGas(), txnErr, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
