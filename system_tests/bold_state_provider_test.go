@@ -363,7 +363,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _ := createTestNodeOnL1ForBoldProtocol(
+	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		false,
