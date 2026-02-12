@@ -712,6 +712,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			synced, err := c.sequencer.Synced().Await(ctx)
 			if err != nil {
 				log.Warn("sequencer sync status unavailable", "err", err)
+				break
 			} else if synced {
 				log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
 				break
