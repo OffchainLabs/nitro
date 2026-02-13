@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
 
@@ -108,4 +109,36 @@ func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.M
 
 func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return sendRequest[struct{}](c, "_prepareForRecord", start, end)
+}
+
+func (c *Client) Pause() containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_pause")
+}
+
+func (c *Client) Activate() containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_activate")
+}
+
+func (c *Client) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_forwardTo", url)
+}
+
+func (c *Client) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_sequenceDelayedMessage", message, delayedSeqNum)
+}
+
+func (c *Client) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return sendRequest[uint64](c, "_nextDelayedMessageNumber")
+}
+
+func (c *Client) Synced() containers.PromiseInterface[bool] {
+	return sendRequest[bool](c, "_synced")
+}
+
+func (c *Client) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+	return sendRequest[map[string]interface{}](c, "_fullSyncProgressMap")
+}
+
+func (c *Client) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	return sendRequest[bool](c, "_isTxHashInOnchainFilter", txHash)
 }
