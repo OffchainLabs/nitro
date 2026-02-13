@@ -8,6 +8,10 @@ jobs:
     name: Block validation tests
     runs-on: arbitrator-ci
     env:
+      # The block input JSON can be generated using following command:
+      # `gotestsum --format short-verbose -- -run "TestProgramStorage\$" ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir=target/ --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false`
+      # This will output a JSON file in `system_tests/target/TestProgramStorage`.
+      # IMPORTANT: This has to be done on an x86_64 Linux machine (so that GH runner can use it).
       INPUT_FILE: ${{ github.workspace }}/.github/workflows/testdata/block_inputs.json
     steps:
       - name: Checkout
