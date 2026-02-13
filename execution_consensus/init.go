@@ -28,11 +28,15 @@ func InitAndStartExecutionAndConsensusNodes(ctx context.Context, stack *node.Nod
 			return nil, fmt.Errorf("error starting exec node: %w", err)
 		}
 	}
-	if err := consensusNode.Start(ctx); err != nil {
-		return nil, fmt.Errorf("error starting consensus node: %w", err)
+	if consensusNode != nil {
+		if err := consensusNode.Start(ctx); err != nil {
+			return nil, fmt.Errorf("error starting consensus node: %w", err)
+		}
 	}
 	return func() {
-		consensusNode.StopAndWait()
+		if consensusNode != nil {
+			consensusNode.StopAndWait()
+		}
 		if execNode != nil {
 			execNode.StopAndWait()
 		}
