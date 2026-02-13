@@ -44,6 +44,7 @@ type Config struct {
 	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
 	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
 	Wasm       WasmConfig                         `koanf:"wasm"`
+	MELEnabled bool                               `koanf:"mel-enabled"`
 }
 
 type ValidationConfigFetcher func() *Config
@@ -55,6 +56,7 @@ var DefaultValidationConfig = Config{
 	ApiPublic:  false,
 	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
 	Wasm:       DefaultWasmConfig,
+	MELEnabled: false,
 }
 
 var TestValidationConfig = Config{
@@ -64,6 +66,7 @@ var TestValidationConfig = Config{
 	ApiPublic:  true,
 	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
 	Wasm:       DefaultWasmConfig,
+	MELEnabled: false,
 }
 
 func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -73,6 +76,7 @@ func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
+	f.Bool(prefix+".mel-enabled", DefaultValidationConfig.MELEnabled, "MEL state validation is enabled")
 }
 
 type ValidationNode struct {
@@ -99,7 +103,13 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 
 func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Node, fatalErrChan chan error, spawnerOpts ...server_arb.SpawnerOption) (*ValidationNode, error) {
 	config := configFetcher()
-	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
+	var err error
+	var locator *server_common.MachineLocator
+	if config.MELEnabled {
+		locator, err = server_common.NewMachineLocator(config.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(config.Wasm.RootPath)
+	}
 	if err != nil {
 		return nil, err
 	}

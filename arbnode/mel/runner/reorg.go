@@ -28,6 +28,7 @@ func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[
 	}
 	m.logsAndHeadersPreFetcher.reset()
 	return 0, m.fsm.Do(processNextBlock{
-		melState: previousState,
+		prevStepWasReorg: true,
+		melState:         previousState,
 	})
 }

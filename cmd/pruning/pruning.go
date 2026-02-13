@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/bold"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 )
@@ -260,7 +259,7 @@ func getLatestConfirmedHash(ctx context.Context, rollupAddrs chaininfo.RollupAdd
 		if err != nil {
 			return common.Hash{}, err
 		}
-		assertion, err := bold.ReadBoldAssertionCreationInfo(
+		assertion, err := staker.ReadBoldAssertionCreationInfo(
 			ctx,
 			rollupUserLogic,
 			l1Client,

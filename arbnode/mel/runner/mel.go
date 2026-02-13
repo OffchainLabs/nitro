@@ -109,6 +109,7 @@ type MessageExtractor struct {
 	caughtUpChan             chan struct{}
 	lastBlockToRead          atomic.Uint64
 	stuckCount               uint64
+	reorgEventsNotifier      chan uint64
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -122,21 +123,23 @@ func NewMessageExtractor(
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	reorgEventsNotifier chan uint64,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
 		return nil, err
 	}
 	return &MessageExtractor{
-		config:            config,
-		parentChainReader: parentChainReader,
-		chainConfig:       chainConfig,
-		addrs:             rollupAddrs,
-		melDB:             melDB,
-		msgConsumer:       msgConsumer,
-		dataProviders:     dapRegistry,
-		fsm:               fsm,
-		caughtUpChan:      make(chan struct{}),
+		config:              config,
+		parentChainReader:   parentChainReader,
+		chainConfig:         chainConfig,
+		addrs:               rollupAddrs,
+		melDB:               melDB,
+		msgConsumer:         msgConsumer,
+		dataProviders:       dapRegistry,
+		fsm:                 fsm,
+		caughtUpChan:        make(chan struct{}),
+		reorgEventsNotifier: reorgEventsNotifier,
 	}, nil
 }
 
@@ -240,6 +243,10 @@ func (m *MessageExtractor) GetHeadState(ctx context.Context) (*mel.State, error)
 	return m.melDB.GetHeadMelState(ctx)
 }
 
+func (m *MessageExtractor) GetState(ctx context.Context, parentchainBlocknumber uint64) (*mel.State, error) {
+	return m.melDB.State(ctx, parentchainBlocknumber)
+}
+
 func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {
@@ -248,8 +255,15 @@ func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageInde
 	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
-func (d *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	return d.melDB.fetchDelayedMessage(index)
+func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	if err != nil {
+		return nil, err
+	}
+	if index >= headState.DelayedMessagesSeen {
+		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+	}
+	return m.melDB.fetchDelayedMessage(index)
 }
 
 func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
@@ -267,7 +281,13 @@ func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (u
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
-	// TODO: have a check to error if seqNum is less than headMelState.BatchCount
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	if err != nil {
+		return mel.BatchMetadata{}, err
+	}
+	if seqNum >= headState.BatchCount {
+		return mel.BatchMetadata{}, fmt.Errorf("batchMetadata not available for seqNum: %d greater than head MEL state batch count: %d", seqNum, headState.BatchCount)
+	}
 	batchMetadata, err := m.melDB.fetchBatchMetadata(seqNum)
 	if err != nil {
 		return mel.BatchMetadata{}, err
@@ -302,6 +322,21 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
+}
+
+// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation
+func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
+	dbBatch := m.melDB.db.NewBatch()
+	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
+		return err
+	}
+	if err := dbBatch.Write(); err != nil {
+		return err
+	}
+	if m.reorgEventsNotifier != nil {
+		m.reorgEventsNotifier <- parentChainBlockNumber
+	}
+	return nil
 }
 
 func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
