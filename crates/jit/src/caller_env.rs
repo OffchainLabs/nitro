@@ -5,7 +5,6 @@ use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32};
 use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
-use rand_pcg::Pcg32;
 use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
@@ -130,22 +129,6 @@ impl ExecEnv for JitExecEnv<'_> {
                 let bytes = e.as_bytes();
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
             }
-        }
-    }
-}
-
-pub struct GoRuntimeState {
-    /// An increasing clock used when Go asks for time, measured in nanoseconds.
-    pub time: u64,
-    /// Deterministic source of random data.
-    pub rng: Pcg32,
-}
-
-impl Default for GoRuntimeState {
-    fn default() -> Self {
-        Self {
-            time: 0,
-            rng: caller_env::create_pcg(),
         }
     }
 }

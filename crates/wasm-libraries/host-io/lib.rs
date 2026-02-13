@@ -4,7 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
 use arbutil::PreimageType;
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::convert::TryInto;
 use core::ops::{Deref, DerefMut, Index, RangeTo};
 
@@ -53,14 +53,14 @@ pub unsafe extern "C" fn wavmio__getGlobalStateBytes32(idx: u32, out_ptr: GuestP
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_get_globalstate_bytes32(idx, our_ptr);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..32]);
+    StaticMem.write_slice(out_ptr, &our_buf[..32]);
 }
 
 /// Writes 32-bytes of global state
 #[no_mangle]
 pub unsafe extern "C" fn wavmio__setGlobalStateBytes32(idx: u32, src_ptr: GuestPtr) {
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    let value = STATIC_MEM.read_slice(src_ptr, 32);
+    let value = StaticMem.read_slice(src_ptr, 32);
     our_buf.copy_from_slice(&value);
 
     let our_ptr = our_buf.as_ptr();
@@ -93,7 +93,7 @@ pub unsafe extern "C" fn wavmio__readInboxMessage(
 
     let read = wavm_read_inbox_message(msg_num, our_ptr, offset);
     assert!(read <= 32);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
+    StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
 }
 
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
 
     let read = wavm_read_delayed_inbox_message(msg_num, our_ptr, offset);
     assert!(read <= 32);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
+    StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
 }
 
@@ -123,13 +123,13 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     out_ptr: GuestPtr,
 ) -> usize {
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    let hash = StaticMem.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
 
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    let hash = StaticMem.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
 
     let our_ptr = our_buf.as_mut_ptr();
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     };
     let read = preimage_reader(our_ptr, offset);
     assert!(read <= 32);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
+    StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
 }
 
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
 #[no_mangle]
 pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u8 {
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    let hash = StaticMem.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
 
     let our_ptr = our_buf.as_mut_ptr();

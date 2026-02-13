@@ -11,11 +11,13 @@ use arbutil::{
     },
     Color,
 };
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
+use std::borrow::Cow;
 use std::fmt::Display;
+use std::sync::{LazyLock, Mutex};
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 
@@ -43,7 +45,7 @@ impl From<MemoryBoundsError> for eyre::ErrReport {
 /// should an error guard recover, this WASM will reset to an earlier state but with the current
 /// memory. This means that stack unwinding won't happen, rendering these primitives unhelpful.
 #[allow(clippy::vec_box)]
-static mut PROGRAMS: Vec<Box<Program>> = vec![];
+static PROGRAMS: LazyLock<Mutex<Vec<Box<Program>>>> = LazyLock::new(Default::default);
 
 static mut LAST_REQUEST_ID: u32 = 0x10000;
 
@@ -175,19 +177,28 @@ impl Program {
             config,
             early_exit: None,
         };
-        unsafe { PROGRAMS.push(Box::new(program)) }
+        PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .push(Box::new(program));
     }
 
     /// Removes the current program
     pub fn pop() {
-        unsafe {
-            PROGRAMS.pop().expect("no program");
-        }
+        PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .pop()
+            .expect("no program");
     }
 
-    /// Provides a reference to the current program.
-    pub fn current() -> &'static mut Self {
-        unsafe { PROGRAMS.last_mut().expect("no program") }
+    /// Performs an action on the current program.
+    pub fn act_on_current<R>(f: impl FnOnce(&mut Program) -> R) -> R {
+        f(PROGRAMS
+            .lock()
+            .expect("lock poisoned")
+            .last_mut()
+            .expect("no program"))
     }
 
     /// Reads the program's memory size in pages.
@@ -205,7 +216,7 @@ impl Program {
         self.args.len()
     }
 
-    /// Ensures an access is within bounds
+    /// Ensures access is within bounds
     fn check_memory_access(&self, ptr: GuestPtr, bytes: u32) -> Result<(), MemoryBoundsError> {
         let end = ptr.to_u64() + bytes as u64;
         if end > self.memory_size_bytes() {
@@ -225,12 +236,16 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = EvmApiRequestor<VecReader, UserHostRequester>;
 
-    fn args(&self) -> &[u8] {
-        &self.args
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.args)
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        &mut self.outs
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.outs)
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        self.outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
@@ -251,7 +266,7 @@ impl UserHost<VecReader> for Program {
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
+        Ok(StaticMem.read_slice(ptr, len as usize))
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryBoundsError> {
@@ -261,12 +276,12 @@ impl UserHost<VecReader> for Program {
 
     fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
-        unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
+        Ok(StaticMem.write_u32(ptr, x))
     }
 
     fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
+        Ok(StaticMem.write_slice(ptr, src))
     }
 
     fn say<D: Display>(&self, text: D) {
