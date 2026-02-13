@@ -3798,6 +3798,7 @@ dependencies = [
  "axum",
  "clap 4.5.53",
  "jit",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
