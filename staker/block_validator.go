@@ -383,7 +383,6 @@ func NewBlockValidator(
 		validationEntryCreator := NewMELEnabledValidationEntryCreator(
 			melValidator,
 			streamer,
-			melRunner,
 		)
 		ret.melEnabledEntryCreator = validationEntryCreator
 	}

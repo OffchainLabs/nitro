@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 		latestValidatedState: endMELState,
 	}
 	entryCreator := staker.NewMELEnabledValidationEntryCreator(
-		mockMElV, builder.L2.ConsensusNode.TxStreamer, builder.L2.ConsensusNode.MessageExtractor,
+		mockMElV, builder.L2.ConsensusNode.TxStreamer,
 	)
 	Require(t, err)
 
@@ -144,6 +145,7 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 			t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
 		}
 		t.Logf("Validated block execution of message index %+v\n", lastStep.GlobalState)
+		fmt.Println("Validated block execution of message index ", lastStep.GlobalState.PosInBatch)
 
 		// Update the computed global state to the one just computed by Arbitrator.
 		computedGlobalState = lastStep.GlobalState

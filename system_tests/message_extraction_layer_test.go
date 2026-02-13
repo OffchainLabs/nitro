@@ -289,19 +289,15 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 			numDelayedMessages,
 		)
 	}
+
 	// Start from 1 to ignore the init message.
-	readHelperState := &mel.State{DelayedMessagesSeen: 1}
-	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
-		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
-		readHelperState.DelayedMessagesSeen++
-		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
+		delayedMsg, err := extractor.GetDelayedMessage(i)
 		Require(t, err)
 		// Check the messages we extracted from MEL and the inbox tracker are the same.
-		if !fromInboxTracker.Equals(fromMelDB.Message) {
+		if !fromInboxTracker.Equals(delayedMsg.Message) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 	}
@@ -386,18 +382,13 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	}
 
 	// Start from 1 to ignore the init message.
-	readHelperState := &mel.State{DelayedMessagesSeen: 1}
-	readHelperState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	readHelperState.SetReadCountFromBacklog(numDelayedMessages) // skip checking against accumulator- not the purpose of this test
 	for i := uint64(1); i < numDelayedMessages; i++ {
 		fromInboxTracker, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)
-		Require(t, readHelperState.AccumulateDelayedMessage(&mel.DelayedInboxMessage{Message: fromInboxTracker}))
-		readHelperState.DelayedMessagesSeen++
-		fromMelDB, err := melDB.ReadDelayedMessage(ctx, readHelperState, i)
+		delayedMsg, err := extractor.GetDelayedMessage(i)
 		Require(t, err)
 		// Check the messages we extracted from MEL and the inbox tracker are the same.
-		if !fromInboxTracker.Equals(fromMelDB.Message) {
+		if !fromInboxTracker.Equals(delayedMsg.Message) {
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 	}

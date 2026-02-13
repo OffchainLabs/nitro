@@ -151,16 +151,6 @@ func extractMessagesImpl(
 		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport || delayed.Message.Header.Kind == arbostypes.L1MessageType_Initialize { // Let's consider the init message as a batch posting report, since it is seen as a batch as well, we can later ignore filling its batchGasCost anyway
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
-		if err = state.AccumulateDelayedMessage(delayed); err != nil {
-			return nil, nil, nil, nil, err
-		}
-		state.DelayedMessagesSeen += 1
-	}
-	if len(delayedMessages) > 0 {
-		// Only need to calculate partials once, after all the delayed messages are `seen`
-		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
-			return nil, nil, nil, nil, err
-		}
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
@@ -175,6 +165,7 @@ func extractMessagesImpl(
 
 	var batchMetas []*mel.BatchMetadata
 	var messages []*arbostypes.MessageWithMetadata
+	var serializedBatches [][]byte
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(
@@ -209,7 +200,26 @@ func extractMessagesImpl(
 		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
 			return nil, nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
+		serializedBatches = append(serializedBatches, serialized)
+	}
 
+	// Update the delayed message accumulator in the MEL state.
+	for _, delayed := range delayedMessages {
+		if err = state.AccumulateDelayedMessage(delayed); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		state.DelayedMessagesSeen += 1
+	}
+	if len(delayedMessages) > 0 {
+		// Only need to calculate partials once, after all the delayed messages are `seen`
+		if err := state.GenerateDelayedMessagesSeenMerklePartialsAndRoot(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
+
+	// Extract L2 messages from batches
+	for i, batch := range batches {
+		serialized := serializedBatches[i]
 		rawSequencerMsg, err := parseSequencerMessage(
 			ctx,
 			batch.SequenceNumber,

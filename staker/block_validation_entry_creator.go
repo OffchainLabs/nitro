@@ -17,19 +17,16 @@ import (
 type MELEnabledValidationEntryCreator struct {
 	melValidator MELValidatorInterface
 	txStreamer   TransactionStreamerInterface
-	melRunner    MELRunnerInterface
 }
 
 // NewMELEnabledValidationEntryCreator creates a new instance of MELEnabledValidationEntryCreator.
 func NewMELEnabledValidationEntryCreator(
 	melValidator MELValidatorInterface,
 	txStreamer TransactionStreamerInterface,
-	melRunner MELRunnerInterface,
 ) *MELEnabledValidationEntryCreator {
 	return &MELEnabledValidationEntryCreator{
 		melValidator: melValidator,
 		txStreamer:   txStreamer,
-		melRunner:    melRunner,
 	}
 }
 
@@ -113,7 +110,7 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 	created = true
 	return &validationEntry{
 		Stage:       ReadyForRecord,
-		Pos:         arbutil.MessageIndex(position),
+		Pos:         position,
 		Start:       startGs,
 		End:         endGlobalState,
 		msg:         msg,
