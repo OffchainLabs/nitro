@@ -4,7 +4,7 @@
 use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
 use rand::RngCore;
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use spin::{Lazy, Mutex, MutexGuard};
 
 extern crate alloc;
 
@@ -13,7 +13,7 @@ pub struct StaticMem;
 /// Static execution environment for Go runtime in WAVM.
 pub struct StaticExecEnv;
 
-static GO_RUNTIME_STATE: LazyLock<Mutex<GoRuntimeState>> = LazyLock::new(Default::default);
+static GO_RUNTIME_STATE: Lazy<Mutex<GoRuntimeState>> = Lazy::new(Default::default);
 
 extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
@@ -98,9 +98,7 @@ impl MemAccess for StaticMem {
 }
 
 fn act_on_state<R>(a: impl FnOnce(MutexGuard<'_, GoRuntimeState>) -> R) -> R {
-    a(GO_RUNTIME_STATE
-        .lock()
-        .expect("failed to acquire GO_RUNTIME_STATE"))
+    a(GO_RUNTIME_STATE.lock())
 }
 
 impl ExecEnv for StaticExecEnv {
