@@ -97,8 +97,8 @@ impl MemAccess for StaticMem {
     }
 }
 
-fn act_on_state<R>(a: impl FnOnce(MutexGuard<'_, GoRuntimeState>) -> R) -> R {
-    a(GO_RUNTIME_STATE.lock())
+fn act_on_state<R>(func: impl FnOnce(MutexGuard<'_, GoRuntimeState>) -> R) -> R {
+    func(GO_RUNTIME_STATE.lock())
 }
 
 impl ExecEnv for StaticExecEnv {
