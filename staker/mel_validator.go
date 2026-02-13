@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -58,8 +57,10 @@ type MELValidator struct {
 	messageExtractor *melrunner.MessageExtractor
 	dapReaders       arbstate.DapReaderSource
 
+	melReorgDetector                chan uint64
+	rewindMutex                     sync.Mutex
 	latestValidatedGS               validator.GoGlobalState
-	latestValidatedParentChainBlock atomic.Uint64
+	latestValidatedParentChainBlock uint64
 
 	latestWasmModuleRoot common.Hash
 	redisValidator       *redis.ValidationClient
@@ -165,6 +166,7 @@ func NewMELValidator(
 	messageExtractor *melrunner.MessageExtractor,
 	dapReaders arbstate.DapReaderSource,
 	latestWasmModuleRoot common.Hash,
+	melReorgDetector chan uint64,
 ) (*MELValidator, error) {
 	var executionSpawners []validator.ExecutionSpawner
 	configs := config().ValidationServerConfigs
@@ -187,6 +189,9 @@ func NewMELValidator(
 	if latestWasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("latestWasmModuleRoot not set")
 	}
+	if melReorgDetector == nil {
+		return nil, errors.New("melReorgDetector not set")
+	}
 	return &MELValidator{
 		config:                    config,
 		arbDb:                     arbDb,
@@ -197,6 +202,7 @@ func NewMELValidator(
 		redisValidator:            redisValClient,
 		executionSpawners:         executionSpawners,
 		msgPreimagesAndStateCache: make(map[arbutil.MessageIndex]*MsgPreimagesAndRelevantState),
+		melReorgDetector:          melReorgDetector,
 	}, nil
 }
 
@@ -269,6 +275,10 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 }
 
 func (mv *MELValidator) Start(ctx context.Context) {
+	mv.StopWaiter.Start(ctx, mv)
+	if mv.melReorgDetector != nil {
+		mv.LaunchThread(mv.rewindOnMELReorgs)
+	}
 	mv.CallIteratively(func(ctx context.Context) time.Duration {
 		latestStaked, err := mv.rollup.LatestStakedAssertion(&bind.CallOpts{}, mv.boldStakerAddr)
 		if err != nil {
@@ -285,10 +295,13 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			return 0
 		}
 
+		mv.rewindMutex.Lock()
+		defer mv.rewindMutex.Unlock()
+
 		// Create validation entry
-		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), latestStakedAssertion.InboxMaxCount.Uint64())
+		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock, latestStakedAssertion.InboxMaxCount.Uint64())
 		if err != nil {
-			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock.Load(), "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
+			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
 			return 0
 		}
 		if entry == nil { // nothing to create, so lets wait for latestStakedAssertion to progress through blockValidator
@@ -305,15 +318,33 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		// Advance validations
 		if err := mv.AdvanceValidations(ctx, doneEntry); err != nil {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
+			return 0
 		}
-		mv.latestValidatedParentChainBlock.Store(endMELState.ParentChainBlockNumber)
+		mv.latestValidatedParentChainBlock = endMELState.ParentChainBlockNumber
 		mv.latestValidatedGS = doneEntry.End
 		return 0
 	})
 }
 
+// rewindOnMELReorgs handles MEL related reorgs and will always be the first to receive a reorg event i.e before the blockvalidator,
+// either L1 (parent chain reorg) or L2 (InitConfig.ReorgToMessageBatch) or both (parent chain reorg causing L2 reorg)
+func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case parentChainBlockNumber := <-mv.melReorgDetector:
+			mv.rewindMutex.Lock()
+			mv.latestValidatedParentChainBlock = min(mv.latestValidatedParentChainBlock, parentChainBlockNumber)
+			mv.rewindMutex.Unlock()
+		}
+	}
+}
+
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
-	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock.Load())
+	mv.rewindMutex.Lock()
+	defer mv.rewindMutex.Unlock()
+	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock)
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {

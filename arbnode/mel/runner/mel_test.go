@@ -40,6 +40,7 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 		NewDatabase(rawdb.NewMemoryDatabase()),
 		&mockMessageConsumer{},
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	require.NoError(t, err)
 	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 0)
@@ -79,6 +80,7 @@ func TestMessageExtractor(t *testing.T) {
 		melDB,
 		messageConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	extractor.StopWaiter.Start(ctx, extractor)
 	require.NoError(t, err)

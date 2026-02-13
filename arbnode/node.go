@@ -847,6 +847,7 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapRegistry,
+		nil,
 	)
 	if err != nil {
 		return nil, err
