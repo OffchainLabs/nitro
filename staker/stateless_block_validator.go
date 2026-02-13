@@ -75,8 +75,8 @@ type TransactionStreamerInterface interface {
 
 type MELValidatorInterface interface {
 	LatestValidatedMELState(context.Context) (*mel.State, error)
-	FetchMsgPreimages(ctx context.Context, l2BlockNum, parentChainBlockNumber uint64) (daprovider.PreimagesMap, error)
-	ClearValidatedMsgPreimages(lastValidatedL2BlockParentChainBlockNumber uint64)
+	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
+	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)
 }
 
 type MELRunnerInterface interface {
