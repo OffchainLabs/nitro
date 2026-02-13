@@ -198,7 +198,7 @@ func ProduceBlock(
 	hooks := NewNoopSequencingHooks(txes)
 
 	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas,
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas, false,
 	)
 }
 
@@ -213,6 +213,7 @@ func ProduceBlockAdvanced(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
+	dryRun bool,
 ) (*types.Block, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
@@ -636,6 +637,13 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			userTxsProcessed++
 		}
+	}
+
+	if dryRun {
+		// Filtering decisions are already recorded in the hooks.
+		// Skip all post-loop finalization -- the caller only needs
+		// hooks state, not a valid block.
+		return nil, nil, nil
 	}
 
 	// Flush deferred Finalise for the last clean group

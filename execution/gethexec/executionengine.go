@@ -683,6 +683,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
 		s.exposeMultiGas,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -908,6 +909,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			isMsgForPrefetch,
 			runCtx,
 			s.exposeMultiGas,
+			false,
 		)
 		if err != nil {
 			return nil, nil, nil, err
