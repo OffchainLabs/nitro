@@ -153,7 +153,7 @@ jobs:
             
             # 1. Start server in background
             echo "Starting server ($MODE_NAME)..."
-            target/bin/validator --module-root-path ./target/machines/latest/module-root.txt $SERVER_ARGS &
+            target/bin/validator $SERVER_ARGS &
             SERVER_PID=$!
 
             # 2. Wait for server to respond (up to 5 seconds)

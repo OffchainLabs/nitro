@@ -73,7 +73,7 @@ mod tests {
 
     use crate::{
         config::{ServerConfig, ServerState},
-        engine::config::ModuleRoot,
+        engine::ModuleRoot,
         server::run_server_internal,
     };
 
@@ -89,7 +89,7 @@ mod tests {
         // 2. Bind to random free port
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        println!("Test server listening on {}", addr);
+        println!("Test server listening on {addr}");
 
         // 3. Create a channel to simulate Ctrl+C
         let (tx, rx) = oneshot::channel();
@@ -156,13 +156,7 @@ mod tests {
     }
 
     async fn test_server_lifecycle(additional_args: Option<Vec<&'static str>>) -> Result<()> {
-        let mut args = vec![
-            "server",
-            "--module-root",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "--binary",
-            "../../target/machines/latest/replay.wasm", // CWD in unit tests is the package dir
-        ];
+        let mut args = vec!["server"];
         if let Some(extra) = additional_args {
             args = [&args[..], &extra[..]].concat();
         }
@@ -170,7 +164,11 @@ mod tests {
         let config = ServerConfig::try_parse_from(args)?;
         let test_config = spinup_server(&config).await?;
 
-        let module_root = config.get_module_root()?;
+        let module_root = test_config
+            .state
+            .locator
+            .latest_wasm_module_root()
+            .module_root;
         verify_and_shutdown_server(test_config, module_root).await
     }
 
