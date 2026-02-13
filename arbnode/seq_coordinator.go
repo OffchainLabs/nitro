@@ -827,7 +827,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			// sequencer is already either paused or forwarding
 			if _, err := c.sequencer.Pause().Await(ctx); err != nil {
 				log.Warn("coordinator failed to pause sequencer", "processedMessages", processedMessages, "localMsgCount", localMsgCount, "err", err)
-				return 0, errors.New("coordinator failed to pause sequencer")
+				return c.noRedisError(), errors.New("coordinator failed to pause sequencer")
 			}
 			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 			if err != nil {
@@ -855,10 +855,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			if _, err := c.sequencer.Activate().Await(ctx); err != nil {
 				log.Warn("sequencer failed to activate after becoming chosen", "err", err)
-				return 0, errors.New("coordinator failed to activate after becoming chosen")
-			} else {
-				c.prevChosenSequencer = c.config.Url()
+				return c.noRedisError(), errors.New("coordinator failed to activate after becoming chosen")
 			}
+			c.prevChosenSequencer = c.config.Url()
 			return c.noRedisError(), nil
 		}
 	}
