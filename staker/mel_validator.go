@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -39,6 +38,11 @@ import (
 	"github.com/offchainlabs/nitro/validator/retry_wrapper"
 )
 
+type MsgPreimagesAndRelevantState struct {
+	msgPreimages  daprovider.PreimagesMap
+	relevantState *mel.State
+}
+
 type MELValidator struct {
 	stopwaiter.StopWaiter
 
@@ -53,8 +57,10 @@ type MELValidator struct {
 	messageExtractor *melrunner.MessageExtractor
 	dapReaders       arbstate.DapReaderSource
 
+	melReorgDetector                chan uint64
+	rewindMutex                     sync.Mutex
 	latestValidatedGS               validator.GoGlobalState
-	latestValidatedParentChainBlock atomic.Uint64
+	latestValidatedParentChainBlock uint64
 
 	latestWasmModuleRoot common.Hash
 	redisValidator       *redis.ValidationClient
@@ -65,6 +71,11 @@ type MELValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
+
+	// msgPreimagesAndStateCache is an LRU mapping a MEL state's parentChainBlockNumber to
+	// the message preimages recorded during validation of the corresponding state
+	msgPreimagesAndStateCacheMutex sync.RWMutex
+	msgPreimagesAndStateCache      map[arbutil.MessageIndex]*MsgPreimagesAndRelevantState
 }
 
 type MELValidatorConfig struct {
@@ -155,6 +166,7 @@ func NewMELValidator(
 	messageExtractor *melrunner.MessageExtractor,
 	dapReaders arbstate.DapReaderSource,
 	latestWasmModuleRoot common.Hash,
+	melReorgDetector chan uint64,
 ) (*MELValidator, error) {
 	var executionSpawners []validator.ExecutionSpawner
 	configs := config().ValidationServerConfigs
@@ -177,15 +189,20 @@ func NewMELValidator(
 	if latestWasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("latestWasmModuleRoot not set")
 	}
+	if melReorgDetector == nil {
+		return nil, errors.New("melReorgDetector not set")
+	}
 	return &MELValidator{
-		config:               config,
-		arbDb:                arbDb,
-		l1Client:             l1Client,
-		messageExtractor:     messageExtractor,
-		dapReaders:           dapReaders,
-		latestWasmModuleRoot: latestWasmModuleRoot,
-		redisValidator:       redisValClient,
-		executionSpawners:    executionSpawners,
+		config:                    config,
+		arbDb:                     arbDb,
+		l1Client:                  l1Client,
+		messageExtractor:          messageExtractor,
+		dapReaders:                dapReaders,
+		latestWasmModuleRoot:      latestWasmModuleRoot,
+		redisValidator:            redisValClient,
+		executionSpawners:         executionSpawners,
+		msgPreimagesAndStateCache: make(map[arbutil.MessageIndex]*MsgPreimagesAndRelevantState),
+		melReorgDetector:          melReorgDetector,
 	}, nil
 }
 
@@ -258,6 +275,10 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 }
 
 func (mv *MELValidator) Start(ctx context.Context) {
+	mv.StopWaiter.Start(ctx, mv)
+	if mv.melReorgDetector != nil {
+		mv.LaunchThread(mv.rewindOnMELReorgs)
+	}
 	mv.CallIteratively(func(ctx context.Context) time.Duration {
 		latestStaked, err := mv.rollup.LatestStakedAssertion(&bind.CallOpts{}, mv.boldStakerAddr)
 		if err != nil {
@@ -274,10 +295,13 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			return 0
 		}
 
+		mv.rewindMutex.Lock()
+		defer mv.rewindMutex.Unlock()
+
 		// Create validation entry
-		entry, endGSParentChainBlockNumber, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), latestStakedAssertion.InboxMaxCount.Uint64())
+		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock, latestStakedAssertion.InboxMaxCount.Uint64())
 		if err != nil {
-			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock.Load(), "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
+			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "inboxMaxCount", latestStakedAssertion.InboxMaxCount.Uint64(), "err", err)
 			return 0
 		}
 		if entry == nil { // nothing to create, so lets wait for latestStakedAssertion to progress through blockValidator
@@ -294,15 +318,33 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		// Advance validations
 		if err := mv.AdvanceValidations(ctx, doneEntry); err != nil {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
+			return 0
 		}
-		mv.latestValidatedParentChainBlock.Store(endGSParentChainBlockNumber)
+		mv.latestValidatedParentChainBlock = endMELState.ParentChainBlockNumber
 		mv.latestValidatedGS = doneEntry.End
 		return 0
 	})
 }
 
+// rewindOnMELReorgs handles MEL related reorgs and will always be the first to receive a reorg event i.e before the blockvalidator,
+// either L1 (parent chain reorg) or L2 (InitConfig.ReorgToMessageBatch) or both (parent chain reorg causing L2 reorg)
+func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case parentChainBlockNumber := <-mv.melReorgDetector:
+			mv.rewindMutex.Lock()
+			mv.latestValidatedParentChainBlock = min(mv.latestValidatedParentChainBlock, parentChainBlockNumber)
+			mv.rewindMutex.Unlock()
+		}
+	}
+}
+
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
-	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock.Load())
+	mv.rewindMutex.Lock()
+	defer mv.rewindMutex.Unlock()
+	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock)
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -344,76 +386,90 @@ func (mv *MELValidator) GetModuleRootsToValidate() []common.Hash {
 	return validatingModuleRoots
 }
 
-func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, uint64, error) {
+func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValidatedParentChainBlock, toValidateMsgExtractionCount uint64) (*validationEntry, *mel.State, error) {
 	if lastValidatedParentChainBlock == 0 { // TODO: last validated.
 		// ending position- bold staker latest posted assertion on chain that it agrees with (l1blockhash)-
-		return nil, 0, errors.New("trying to create validation entry for zero block number")
+		return nil, nil, errors.New("trying to create validation entry for zero block number")
 	}
 	currentState, err := mv.messageExtractor.GetState(ctx, lastValidatedParentChainBlock)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	// We have already validated message extraction of messages till count toValidateMsgExtractionCount, so can return early
 	// and wait for block validator to progress the toValidateMsgExtractionCount
 	if currentState.MsgCount >= toValidateMsgExtractionCount {
-		return nil, 0, nil
+		return nil, nil, nil
 	}
 	initialState := currentState.Clone()
 	encodedInitialState, err := rlp.EncodeToBytes(initialState)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	preimages := make(daprovider.PreimagesMap)
 	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 	preimages[arbutil.Keccak256PreimageType][initialState.Hash()] = encodedInitialState
 	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	recordingDAPReaders, err := melrecording.NewDAPReaderSource(ctx, mv.dapReaders, preimages)
 	if err != nil {
-		return nil, 0, err
-	}
-	if err := currentState.RecordMsgPreimagesTo(preimages); err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	melMsgHash := common.Hash{}
 	var endState *mel.State
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		encodedHeader, err := rlp.EncodeToBytes(header)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		preimages[arbutil.Keccak256PreimageType][header.Hash()] = encodedHeader
 		txsRecorder, err := melrecording.NewTransactionRecorder(mv.l1Client, header.Hash(), preimages)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		if err := txsRecorder.Initialize(ctx); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		recordedLogsFetcher, err := melrecording.RecordReceipts(ctx, mv.l1Client, header.Hash(), preimages)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
+		}
+		// Record msg preimages separately in order to make it available for block validation later
+		msgPreimages := make(daprovider.PreimagesMap)
+		if err := currentState.RecordMsgPreimagesTo(msgPreimages); err != nil {
+			return nil, nil, err
 		}
 		var l2Msgs []*arbostypes.MessageWithMetadata
 		endState, l2Msgs, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
 		if err != nil {
-			return nil, 0, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
+			return nil, nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}
 		if len(l2Msgs) > 0 && (melMsgHash == common.Hash{}) {
 			melMsgHash = l2Msgs[0].Hash()
 		}
 		wantState, err := mv.messageExtractor.GetState(ctx, i)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		if endState.Hash() != wantState.Hash() {
-			return nil, 0, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
+			return nil, nil, fmt.Errorf("calculated MEL state hash in recording mode doesn't match the one computed in native mode, parentchainBlocknumber: %d", i)
+		}
+		if len(msgPreimages[arbutil.Keccak256PreimageType]) > 0 {
+			mv.msgPreimagesAndStateCacheMutex.Lock()
+			preimagesAndState := &MsgPreimagesAndRelevantState{
+				msgPreimages:  msgPreimages,
+				relevantState: endState,
+			}
+			for msgIndex := currentState.MsgCount; msgIndex < endState.MsgCount; msgIndex++ {
+				mv.msgPreimagesAndStateCache[arbutil.MessageIndex(msgIndex)] = preimagesAndState
+			}
+			mv.msgPreimagesAndStateCacheMutex.Unlock()
+			validator.CopyPreimagesInto(preimages, msgPreimages)
 		}
 		if endState.MsgCount >= toValidateMsgExtractionCount {
 			break
@@ -438,7 +494,52 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			PosInBatch:   initialState.MsgCount,
 		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
-	}, 0, nil
+	}, endState, nil
+}
+
+func (mv *MELValidator) FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error) {
+	mv.msgPreimagesAndStateCacheMutex.RLock()
+	preimagesAndRelevantState, found := mv.msgPreimagesAndStateCache[l2BlockNum]
+	mv.msgPreimagesAndStateCacheMutex.RUnlock()
+	if found {
+		return preimagesAndRelevantState, nil
+	}
+	// Couldn't find preimages and relevant state, we first find the corresponding parent chain block number to the L2 block
+	batchSeqNum, found, err := mv.messageExtractor.FindInboxBatchContainingMessage(ctx, l2BlockNum)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("error finding parentchainBlockNumber for l2Block: %d", l2BlockNum)
+	}
+	batchMeta, err := mv.messageExtractor.GetBatchMetadata(batchSeqNum)
+	if err != nil {
+		return nil, err
+	}
+	// This Records msgPreimages to the msgPreimagesAndStateCache
+	_, _, err = mv.CreateNextValidationEntry(ctx, batchMeta.ParentChainBlock-1, uint64(l2BlockNum)+1)
+	if err != nil {
+		return nil, err
+	}
+	mv.msgPreimagesAndStateCacheMutex.RLock()
+	preimagesAndRelevantState, found = mv.msgPreimagesAndStateCache[l2BlockNum]
+	mv.msgPreimagesAndStateCacheMutex.RUnlock()
+	if !found {
+		return nil, fmt.Errorf("Couldn't add missing msg preimages to cache. l2BlockNum: %d, parentChainBlockNumber: %d", l2BlockNum, batchMeta.ParentChainBlock)
+	}
+	return preimagesAndRelevantState, nil
+}
+
+// ClearValidatedMsgPreimages trims the msgPreimagesAndStateCache by clearing out entries with
+// keys lower than the last validated l2 block
+func (mv *MELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex) {
+	mv.msgPreimagesAndStateCacheMutex.Lock()
+	defer mv.msgPreimagesAndStateCacheMutex.Unlock()
+	for key := range mv.msgPreimagesAndStateCache {
+		if key < lastValidatedL2BlockNumber {
+			delete(mv.msgPreimagesAndStateCache, key)
+		}
+	}
 }
 
 func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validationEntry) (*validationDoneEntry, error) {

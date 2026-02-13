@@ -75,6 +75,12 @@ type TransactionStreamerInterface interface {
 
 type MELValidatorInterface interface {
 	LatestValidatedMELState(context.Context) (*mel.State, error)
+	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
+	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)
+}
+
+type MELRunnerInterface interface {
+	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
 }
 
 type InboxReaderInterface interface {

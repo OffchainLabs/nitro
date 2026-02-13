@@ -28,8 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
-	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -50,8 +50,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/staker/legacy"
-	"github.com/offchainlabs/nitro/staker/multi_protocol"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
+	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -847,6 +847,7 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapRegistry,
+		nil,
 	)
 	if err != nil {
 		return nil, err
@@ -903,6 +904,8 @@ func getBlockValidator(
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
+			nil, // Nil MEL runner
+			nil, // Nil MEL validator
 		)
 		if err != nil {
 			return nil, err
