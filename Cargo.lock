@@ -429,6 +429,7 @@ dependencies = [
  "k256",
  "rand 0.8.5",
  "rand_pcg",
+ "spin",
  "tiny-keccak",
  "wasmer",
 ]
@@ -3184,6 +3185,15 @@ checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
 ]
 
 [[package]]
