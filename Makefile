@@ -105,6 +105,12 @@ stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(wasm_li
 jit_dir = crates/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files)
 
+validation_crate_dir = crates/validation
+validation_files = $(wildcard $(validation_crate_dir)/*.toml $(validation_crate_dir)/src/*.rs $(validation_crate_dir)/src/*/*.rs) $(rust_arbutil_files)
+
+validator_dir = crates/validator
+validator_files = $(wildcard $(validator_dir)/*.toml $(validator_dir)/src/*.rs $(validator_dir)/src/*/*.rs) $(jit_files) $(validation_files)
+
 wasm32_wasi = target/wasm32-wasip1/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
 
@@ -389,7 +395,7 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	cargo build --release -p jit ${CARGOFLAGS}
 	install target/release/jit $@
 
-$(validation_server): $(DEP_PREDICATE)
+$(validation_server): $(DEP_PREDICATE) $(validator_files)
 	mkdir -p `dirname $(validation_server)`
 	cargo build --release -p validator ${CARGOFLAGS}
 	install target/release/validator $@

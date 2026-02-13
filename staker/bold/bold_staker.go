@@ -68,6 +68,12 @@ type BoldConfig struct {
 	// How long to wait since parent assertion was created to post a new assertion
 	MinimumGapToParentAssertion time.Duration `koanf:"minimum-gap-to-parent-assertion"`
 	blockNum                    rpc.BlockNumber
+	Dangerous                   DangerousBoldConfig `koanf:"dangerous"`
+}
+
+type DangerousBoldConfig struct {
+	AssumeValidBlockhash string `koanf:"assume-valid-blockhash"`
+	AssumeValid          uint64 `koanf:"assume-valid"`
 }
 
 func (c *BoldConfig) Validate() error {
@@ -159,6 +165,7 @@ func BoldConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".auto-increase-allowance", DefaultBoldConfig.AutoIncreaseAllowance, "auto-increase spending allowance of the stake token by the rollup and challenge manager contracts")
 	DelegatedStakingConfigAddOptions(prefix+".delegated-staking", f)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultBoldConfig.EnableFastConfirmation, "enable fast confirmation")
+	DangerousBoldConfigAddOptions(prefix+".dangerous", f)
 }
 
 func StateProviderConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -170,6 +177,11 @@ func StateProviderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func DelegatedStakingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDelegatedStakingConfig.Enable, "enable delegated staking by having the validator call newStake on startup")
 	f.String(prefix+".custom-withdrawal-address", DefaultDelegatedStakingConfig.CustomWithdrawalAddress, "enable a custom withdrawal address for staking on the rollup contract, useful for delegated stakers")
+}
+
+func DangerousBoldConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint64(prefix+".assume-valid", 0, "assume this message index is valid (if blockhash matches)")
+	f.String(prefix+".assume-valid-blockhash", "", "blockhash of the assumed-valid message")
 }
 
 type BOLDStaker struct {
@@ -244,6 +256,43 @@ func NewBOLDStaker(
 	}, nil
 }
 
+func (b *BOLDStaker) initAssumeValid() (*protocol.GoGlobalState, error) {
+	if b.config.Dangerous.AssumeValid == 0 {
+		return nil, nil
+	}
+	blockMessage := arbutil.MessageIndex(b.config.Dangerous.AssumeValid)
+	result, err := b.inboxStreamer.ResultAtMessageIndex(blockMessage)
+	if err != nil {
+		return nil, err
+	}
+	expectedHash := common.HexToHash(b.config.Dangerous.AssumeValidBlockhash)
+	if result.BlockHash != expectedHash {
+		return nil, fmt.Errorf("unexpected assume-valid hash, expected: %v, found: %v", expectedHash, result.BlockHash)
+	}
+	afterStateMessage := blockMessage + 1
+	batch, found, err := b.inboxTracker.FindInboxBatchContainingMessage(afterStateMessage)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("batch not found")
+	}
+	if batch == 0 {
+		return nil, fmt.Errorf("batch is zero")
+	}
+	prevCount, err := b.inboxTracker.GetBatchMessageCount(batch - 1)
+	if err != nil {
+		return nil, err
+	}
+	posInBatch := afterStateMessage - prevCount
+	return &protocol.GoGlobalState{
+		BlockHash:  result.BlockHash,
+		SendRoot:   result.SendRoot,
+		Batch:      batch,
+		PosInBatch: uint64(posInBatch),
+	}, nil
+}
+
 // Initialize Updates the block validator module root.
 // And updates the init state of the block validator if block validator has not started yet.
 func (b *BOLDStaker) Initialize(ctx context.Context) error {
@@ -257,6 +306,11 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 		stakerAddr = b.wallet.DataPoster().Sender()
 	}
 	log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", walletAddressOrZero, "strategy", b.strategy.ToString())
+
+	validState, err := b.initAssumeValid()
+	if err != nil {
+		log.Warn("Assume valid hit problem", "err", err)
+	}
 
 	if b.blockValidator != nil && b.config.StartValidationFromStaked && !b.blockValidator.Started() {
 		rollupUserLogic, err := rollupgen.NewRollupUserLogic(b.rollupAddress, b.client)
@@ -284,10 +338,20 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		afterState := protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
-		return b.blockValidator.InitAssumeValid(validator.GoGlobalState(afterState))
+		onchainValidState := protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
+		if validState == nil {
+			validState = &onchainValidState
+		} else if validState.Batch < onchainValidState.Batch {
+			validState = &onchainValidState
+		} else if validState.Batch == onchainValidState.Batch && validState.PosInBatch < onchainValidState.PosInBatch {
+			validState = &onchainValidState
+		}
 	}
-	return nil
+
+	if validState == nil {
+		return nil
+	}
+	return b.blockValidator.InitAssumeValid(validator.GoGlobalState(*validState))
 }
 
 func (b *BOLDStaker) Start(ctxIn context.Context) {

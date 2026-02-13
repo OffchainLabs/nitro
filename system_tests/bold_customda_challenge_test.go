@@ -36,11 +36,12 @@ import (
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
-	dapserver "github.com/offchainlabs/nitro/daprovider/server"
+	"github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -202,7 +203,8 @@ func createNodeBWithSharedContracts(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
+	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
 	Require(t, execConfig.Validate())
@@ -221,7 +223,7 @@ func createNodeBWithSharedContracts(
 	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	l2client := ClientForStack(t, l2stack)
+	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 
@@ -272,8 +274,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	nodeConfigA.DA.ExternalProvider.Enable = true
 
 	// Set up L1 first to get validator address
-	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1ForBoldProtocol(
-		t, ctx, sconf, l2info, false, nodeConfigA, l2chainConfig, true, // useExternalSigner=false, enableCustomDA=true
+	l1info, _, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1WithRollupAddresses(
+		t, ctx, sconf, false, nodeConfigA, l2chainConfig, true, // useExternalSigner=false, enableCustomDA=true
 	)
 	defer requireClose(t, l1stack)
 
@@ -321,10 +323,9 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	nodeConfigA.DA.ExternalProvider.RPC.URL = providerURLNodeA
 
 	// Create L2 node A
-	l2info, l2nodeA, l2execNodeA, _, l2stackA, assertionChain := createL2NodeForBoldProtocol(
+	l2info, l2nodeA, l2execNodeA, _, l2stackA, assertionChain, _ := createL2NodeWithRollupAddresses(
 		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
-		l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr,
-		false, asserterOpts, signerCfg, // useExternalSigner=false
+		l1info, l1client, addresses, false, asserterOpts, signerCfg,
 	)
 	defer l2nodeA.StopAndWait()
 

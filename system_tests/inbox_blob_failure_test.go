@@ -88,10 +88,10 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 
 	var batchNum uint64
 	for i := 0; i < 30; i++ {
-		batchInfo, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
+		var found bool
+		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
 		Require(t, err)
-		if batchInfo.Found {
-			batchNum = batchInfo.BatchNum
+		if found {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -190,8 +190,8 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
 		if verifyReceipt != nil {
 			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
-			batchInfo, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64())).Await(ctx)
-			if err == nil && batchInfo.Found {
+			_, found, err := builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
+			if err == nil && found {
 				break
 			}
 		}

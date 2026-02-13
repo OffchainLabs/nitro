@@ -246,6 +246,8 @@ func extractMessagesImpl(
 			if err = state.AccumulateMessage(msg); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("failed to accumulate message: %w", err)
 			}
+			// Updating of MsgCount is consistent with how DelayedMessagesSeen is updated
+			// i.e after the corresponding message has been accumulated
 			state.MsgCount += 1
 		}
 		state.BatchCount += 1

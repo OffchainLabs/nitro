@@ -65,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -572,7 +573,7 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 		panic("execConfig must be initialised before setting event filter rules")
 	}
 
-	b.execConfig.Sequencer.EventFilter.Rules = rules
+	b.execConfig.Sequencer.TransactionFiltering.EventFilter.Rules = rules
 
 	return b
 }
@@ -762,6 +763,10 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
+func clientForStackUseHTTP(stackConfig *node.Config) bool {
+	return stackConfig.HTTPHost != ""
+}
+
 func buildOnParentChain(
 	t *testing.T,
 	ctx context.Context,
@@ -836,7 +841,7 @@ func buildOnParentChain(
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainTestClient.Stack, execNode, chainTestClient.ConsensusNode)
 	Require(t, err)
 
-	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack)
+	chainTestClient.Client = ClientForStack(t, chainTestClient.Stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, chainTestClient.ConsensusNode)
 
@@ -1026,7 +1031,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, b.L2.Stack, execNode, b.L2.ConsensusNode)
 	Require(t, err)
 
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
+	b.L2.Client = ClientForStack(t, b.L2.Stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	if b.takeOwnership {
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
@@ -1092,7 +1097,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
 	Require(t, err)
-	client := ClientForStack(t, stack)
+	client := ClientForStack(t, stack, clientForStackUseHTTP(b.l2StackConfig))
 
 	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
 
@@ -1817,21 +1822,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
 }
 
-func getInitMessage(ctx context.Context, t *testing.T, parentChainClient *ethclient.Client, addresses *chaininfo.RollupAddresses) *arbostypes.ParsedInitMessage {
-	bridge, err := arbnode.NewDelayedBridge(parentChainClient, addresses.Bridge, addresses.DeployedAt)
-	Require(t, err)
-	deployedAtBig := arbmath.UintToBig(addresses.DeployedAt)
-	messages, err := bridge.LookupMessagesInRange(ctx, deployedAtBig, deployedAtBig, nil)
-	Require(t, err)
-	if len(messages) == 0 {
-		Fatal(t, "No delayed messages found at rollup creation block")
-	}
-	initMessage, err := messages[0].Message.ParseInitMessage()
-	Require(t, err, "Failed to parse rollup init message")
-
-	return initMessage
-}
-
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
 	bigStepChallengeLeafHeight   = uint64(1 << 10)
@@ -2044,7 +2034,9 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage := getInitMessage(ctx, t, parentChainClient, addresses)
+	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	Require(t, err)
+
 	return addresses, initMessage
 }
 
@@ -2101,9 +2093,15 @@ func createNonL1BlockChainWithStackConfig(
 	return info, stack, executionDB, consensusDB, blockchain
 }
 
-func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
-	rpcClient := backend.Attach()
-	return ethclient.NewClient(rpcClient)
+func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.Client {
+	if useHTTP {
+		ethClient, err := ethclient.Dial(backend.HTTPEndpoint())
+		if err != nil {
+			t.Fatalf("Failed to create client for stack with HTTP: %v", err)
+		}
+		return ethClient
+	}
+	return ethclient.NewClient(backend.Attach())
 }
 
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
@@ -2226,7 +2224,7 @@ func Create2ndNodeWithConfig(
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
 	Require(t, err)
-	chainClient := ClientForStack(t, chainStack)
+	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
 
