@@ -682,7 +682,7 @@ func pruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *no
 		return err
 	}
 
-	return pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
+	return pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), config.Node.MessageExtraction.Enable)
 }
 
 func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
