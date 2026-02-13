@@ -181,8 +181,9 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker               state.AddressChecker
-	transactionFiltererRPCClient *TransactionFiltererRPCClient
+	addressChecker                              state.AddressChecker
+	transactionFiltererRPCClient                *TransactionFiltererRPCClient
+	disableDelayedSequencingFilterConfigFetcher func() bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -198,7 +199,12 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+func NewExecutionEngine(
+	bc *core.BlockChain,
+	syncTillBlock uint64,
+	exposeMultiGas bool,
+	disableDelayedSequencingFilterConfigFetcher func() bool,
+) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                bc,
 		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
@@ -206,6 +212,7 @@ func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGa
 		cachedL1PriceData: NewL1PriceData(),
 		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
+		disableDelayedSequencingFilterConfigFetcher: disableDelayedSequencingFilterConfigFetcher,
 	}
 }
 
@@ -626,7 +633,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -822,18 +829,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
 	defer statedb.StopPrefetcher()
 
-	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
-		runCtx = core.NewMessagePrefetchContext()
-	} else {
-		runCtx = core.NewMessageCommitContext(s.wasmTargets)
-	}
-
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if applyDelayedFilter {
+	if !s.disableDelayedSequencingFilterConfigFetcher() && applyDelayedFilter {
+		runCtx := core.NewMessageSequencingContext(s.wasmTargets)
+
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)
@@ -879,6 +881,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			}
 		}
 		return block, statedb, receipts, nil
+	}
+
+	var runCtx *core.MessageRunContext
+	if isMsgForPrefetch {
+		runCtx = core.NewMessagePrefetchContext()
+	} else {
+		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 
 	block, receipts, err := arbos.ProduceBlock(

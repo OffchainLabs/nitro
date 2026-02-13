@@ -276,7 +276,12 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+	// workaround that considers that this is a hot reloadable Sequencer's config, but used by ExecutionEngine
+	disableDelayedSequencingFilterConfigFetcher := func() bool {
+		return configFetcher.Get().Sequencer.TransactionFiltering.Dangerous.DisableDelayedSequencingFilter
+	}
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, disableDelayedSequencingFilterConfigFetcher)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
