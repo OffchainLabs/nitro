@@ -56,10 +56,13 @@ type saveMessages struct {
 	postState        *mel.State
 	messages         []*arbostypes.MessageWithMetadata
 	delayedMessages  []*mel.DelayedInboxMessage
+	batchMetas       []*mel.BatchMetadata
 }
 
 // An action that transitions the FSM to the reorging state.
-type reorgToOldBlock struct{}
+type reorgToOldBlock struct {
+	melState *mel.State
+}
 
 func (backToStart) String() string {
 	return "back_to_start"
