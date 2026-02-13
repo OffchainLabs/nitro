@@ -320,8 +320,8 @@ func TestEnableDelayedSequencingFilterDangerousConfig(t *testing.T) {
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Even though the transaction will touch a filtered address,
-	// the sequencer will process the delayed msg, since this config is set to false.
-	builder.execConfig.Sequencer.TransactionFiltering.Dangerous.EnableDelayedSequencingFilter = false
+	// the sequencer will process the delayed msg, since this config is set to true.
+	builder.execConfig.Sequencer.TransactionFiltering.Dangerous.DisableDelayedSequencingFilter = true
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")

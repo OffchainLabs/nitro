@@ -181,9 +181,9 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker                             state.AddressChecker
-	transactionFiltererRPCClient               *TransactionFiltererRPCClient
-	enableDelayedSequencingFilterConfigFetcher func() bool
+	addressChecker                              state.AddressChecker
+	transactionFiltererRPCClient                *TransactionFiltererRPCClient
+	disableDelayedSequencingFilterConfigFetcher func() bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -203,7 +203,7 @@ func NewExecutionEngine(
 	bc *core.BlockChain,
 	syncTillBlock uint64,
 	exposeMultiGas bool,
-	enableDelayedSequencingFilterConfigFetcher func() bool,
+	disableDelayedSequencingFilterConfigFetcher func() bool,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                bc,
@@ -212,7 +212,7 @@ func NewExecutionEngine(
 		cachedL1PriceData: NewL1PriceData(),
 		exposeMultiGas:    exposeMultiGas,
 		syncTillBlock:     syncTillBlock,
-		enableDelayedSequencingFilterConfigFetcher: enableDelayedSequencingFilterConfigFetcher,
+		disableDelayedSequencingFilterConfigFetcher: disableDelayedSequencingFilterConfigFetcher,
 	}
 }
 
@@ -833,7 +833,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if s.enableDelayedSequencingFilterConfigFetcher() && applyDelayedFilter {
+	if !s.disableDelayedSequencingFilterConfigFetcher() && applyDelayedFilter {
 		runCtx := core.NewMessageSequencingContext(s.wasmTargets)
 
 		chainConfig := s.bc.Config()

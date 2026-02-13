@@ -102,7 +102,7 @@ type SequencerConfig struct {
 }
 
 type DangerousTransactionFilteringConfig struct {
-	EnableDelayedSequencingFilter bool `koanf:"enable-delayed-sequencing-filter" reload:"hot"`
+	DisableDelayedSequencingFilter bool `koanf:"disable-delayed-sequencing-filter" reload:"hot"`
 }
 
 type TransactionFilteringConfig struct {
@@ -126,7 +126,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 }
 
 var DefaultDangerousTransactionFilteringConfig = DangerousTransactionFilteringConfig{
-	EnableDelayedSequencingFilter: true,
+	DisableDelayedSequencingFilter: false,
 }
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
@@ -137,7 +137,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 }
 
 func DangerousTransactionFilteringAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable-delayed-sequencing-filter", DefaultDangerousTransactionFilteringConfig.EnableDelayedSequencingFilter, "DANGEROUS! if false delayed sequencing filter will be disabled")
+	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultDangerousTransactionFilteringConfig.DisableDelayedSequencingFilter, "DANGEROUS! if true delayed sequencing filter will be disabled")
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
