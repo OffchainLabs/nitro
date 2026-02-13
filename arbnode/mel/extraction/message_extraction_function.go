@@ -142,7 +142,7 @@ func extractMessagesImpl(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	// Update the delayed message accumulator in the MEL state.
+	// Extract batch posting reports from delayed messages
 	batchPostingReports := make([]*mel.DelayedInboxMessage, 0)
 	for _, delayed := range delayedMessages {
 		// If this message is a batch posting report, we save it for later
