@@ -114,7 +114,7 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
     read
 }
 
-/// Retrieves the preimage of the given hash.
+/// Retrieves up to 32 bytes of the preimage of the given hash, at the given offset.
 #[no_mangle]
 pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     preimage_type: u8,
@@ -122,19 +122,75 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     offset: usize,
     out_ptr: GuestPtr,
 ) -> usize {
-    let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
-    our_buf.copy_from_slice(&hash);
+    let mut our_buf = read_hash(hash_ptr);
+    let read = read_preimage_slice(
+        preimage_type.try_into().expect("unsupported preimage type"),
+        our_buf.as_mut_ptr(),
+        offset,
+    );
+    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
+    read
+}
 
-    let our_ptr = our_buf.as_mut_ptr();
-    assert_eq!(our_ptr as usize % 32, 0);
-    let mut our_buf = MemoryLeaf([0u8; 32]);
-    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
-    our_buf.copy_from_slice(&hash);
+/// Retrieves up to the `allocated_output_space` bytes of the preimage of the given hash, at the
+/// given offset.
+#[no_mangle]
+pub unsafe extern "C" fn wavmio__readPreimage(
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    out_ptr: GuestPtr,
+    preimage_offset: u32,
+    allocated_output_space: u32,
+) -> usize {
+    let hash = read_hash(hash_ptr);
+    let preimage = read_full_preimage(preimage_type, hash);
 
-    let our_ptr = our_buf.as_mut_ptr();
+    let preimage_len = preimage.len() as u32;
+    assert!(
+        preimage_offset < preimage_len,
+        "preimage offset must be smaller than preimage length"
+    );
+
+    let read_len = core::cmp::min(allocated_output_space, preimage_len - preimage_offset);
+    let read_start = preimage_offset as usize;
+    let read_end = read_start + read_len as usize;
+    STATIC_MEM.write_slice(out_ptr, &preimage[read_start..read_end]);
+
+    preimage_len as usize
+}
+
+/// Read the hash from guest memory into our aligned memory.
+unsafe fn read_hash(hash_ptr: GuestPtr) -> MemoryLeaf {
+    let mut buf = MemoryLeaf(STATIC_MEM.read_fixed(hash_ptr));
+    let our_ptr = buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
-    let preimage_type: PreimageType = preimage_type.try_into().expect("unsupported preimage type");
+    buf
+}
+
+/// Read the full preimage in chunks of 32 bytes. All done in our memory.
+unsafe fn read_full_preimage(preimage_type: u8, hash: MemoryLeaf) -> Vec<u8> {
+    let preimage_type = preimage_type.try_into().expect("unsupported preimage type");
+    let mut slices = vec![];
+    for offset in (0..).step_by(32) {
+        let mut hash = MemoryLeaf(*hash);
+        let read = read_preimage_slice(preimage_type, hash.as_mut_ptr(), offset);
+        slices.push(hash.0[..read].to_vec());
+        if read < 32 {
+            break;
+        }
+    }
+    slices.concat()
+}
+
+/// Read up to 32 bytes of the preimage of the given hash, at the given offset.  The `our_ptr`
+/// argument initially contains the hash, and will be overwritten with preimage data.
+///
+/// Returns the number of bytes read.
+unsafe fn read_preimage_slice(
+    preimage_type: PreimageType,
+    our_ptr: *mut u8,
+    offset: usize,
+) -> usize {
     let preimage_reader = match preimage_type {
         PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
         PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
@@ -143,7 +199,6 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     };
     let read = preimage_reader(our_ptr, offset);
     assert!(read <= 32);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
     read
 }
 
