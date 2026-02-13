@@ -576,6 +576,7 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
+	execEngine.SetEventFilter(eventFilter)
 	return s, nil
 }
 
@@ -868,6 +869,14 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	return nil
 }
 
+func (s *Sequencer) redeemFilter(db *state.StateDB) error {
+	applyEventFilter(s.eventFilter, db)
+	if db.IsAddressFiltered() {
+		return state.ErrArbTxFilter
+	}
+	return nil
+}
+
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	pauseChan, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
@@ -1020,6 +1029,7 @@ type FullSequencingHooks struct {
 	txErrors                 []error
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	redeemFilter             func(*state.StateDB) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
 }
@@ -1128,6 +1138,13 @@ func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 	return nil
 }
 
+func (s *FullSequencingHooks) RedeemFilter(db *state.StateDB) error {
+	if s.redeemFilter != nil {
+		return s.redeemFilter(db)
+	}
+	return nil
+}
+
 func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	if s.blockFilter != nil {
 		return s.blockFilter(header, db, transactions, receipts)
@@ -1135,11 +1152,26 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
+// ReportGroupRevert replaces the last txErrors entry with the group revert
+// error. Redeems don't get txErrors entries (only user txs from
+// NextTxToSequence do), so a group (user tx + all its redeems) has exactly
+// one entry - the originating user tx's nil. Replacing it with the error
+// excludes the tx from the block (MessageFromTxes skips non-nil entries)
+// and returns the error to the RPC caller via resultChan.
+func (s *FullSequencingHooks) ReportGroupRevert(err error) {
+	if len(s.txErrors) > 0 {
+		s.txErrors[len(s.txErrors)-1] = err
+	} else {
+		log.Error("ReportGroupRevert called with empty txErrors")
+	}
+}
+
 func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	redeemFilter func(*state.StateDB) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
@@ -1149,6 +1181,7 @@ func MakeSequencingHooks(
 		maxSequencedTxsSize:      maxSequencedTxsSize,
 		preTxFilter:              preTxFilter,
 		postTxFilter:             postTxFilter,
+		redeemFilter:             redeemFilter,
 		blockFilter:              blockFilter,
 	}
 	return res
@@ -1173,6 +1206,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 		0,
 		preTxFilter,
 		postTxFilter,
+		nil,
 		blockFilter,
 	)
 }
@@ -1443,6 +1477,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		maxTxDataSize,
 		s.preTxFilter,
 		s.postTxFilter,
+		s.redeemFilter,
 		nil,
 	)
 
