@@ -535,9 +535,9 @@ func (info *TracingInfo) CaptureStylusExit(status uint8, data []byte, err error,
 }
 
 func (info *TracingInfo) captureState(op vm.OpCode, gas uint64, cost uint64, memory []byte, stackValues ...[]byte) {
-	stack := []uint256.Int{}
-	for _, value := range stackValues {
-		stack = append(stack, *uint256.NewInt(0).SetBytes(value))
+	stack := make([]uint256.Int, len(stackValues))
+	for i, value := range stackValues {
+		stack[i].SetBytes(value)
 	}
 	scope := &vm.ScopeContext{
 		Memory:   TracingMemoryFromBytes(memory),
