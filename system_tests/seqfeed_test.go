@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -381,7 +382,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil, params.DefaultMaxL2MessageSize)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
 	hooks.InsertLastTxError(nil)

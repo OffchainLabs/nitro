@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 
@@ -178,9 +179,10 @@ type inboxMultiplexer struct {
 	// but ParseSequencerMessage still needs this to decide whether to panic or log on validation errors.
 	// In replay mode, this allows proper error handling based on the position within the message.
 	keysetValidationMode daprovider.KeysetValidationMode
+	maxL2MessageSize     uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders *daprovider.ReaderRegistry, keysetValidationMode daprovider.KeysetValidationMode, maxL2MessageSize uint64) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:                   backend,
 		delayedMessagesRead:       delayedMessagesRead,
@@ -192,6 +194,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapRe
 		cachedSegmentBlockNumber:  0,
 		cachedSubMessageNumber:    0,
 		keysetValidationMode:      keysetValidationMode,
+		maxL2MessageSize:          maxL2MessageSize,
 	}
 }
 
@@ -346,7 +349,11 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			decompressed, err := arbcompress.Decompress(segment, arbostypes.MaxL2MessageSize)
+			if r.maxL2MessageSize > math.MaxInt {
+				// TODO make sur
+				panic("max l2 message size overflows math.MaxInt")
+			}
+			decompressed, err := arbcompress.Decompress(segment, int(r.maxL2MessageSize))
 			if err != nil {
 				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil
