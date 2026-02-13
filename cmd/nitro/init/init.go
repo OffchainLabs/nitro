@@ -609,7 +609,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return executionDB, l2BlockChain, nil
 }
 
-func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, error) {
+func OpenInitializeExecutionDB(ctx context.Context, consensusNodeEnabled bool, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, error) {
 	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
 	if err != nil {
 		return nil, nil, nil, err
@@ -635,9 +635,24 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return executionDB, nil, nil, err
 		}
 
-		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
-		if err != nil {
-			return executionDB, nil, nil, err
+		var parsedInitMessage *arbostypes.ParsedInitMessage
+		if consensusNodeEnabled {
+			parsedInitMessage, err = GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
+			if err != nil {
+				return executionDB, nil, nil, err
+			}
+		} else {
+			// TODO: What should parsedInitMessage be here? Or how should consensus provide such info to execution?
+			serializedChainConfig, err := json.Marshal(chainConfig)
+			if err != nil {
+				return executionDB, nil, nil, err
+			}
+			parsedInitMessage = &arbostypes.ParsedInitMessage{
+				ChainId:               chainConfig.ChainID,
+				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+				ChainConfig:           chainConfig,
+				SerializedChainConfig: serializedChainConfig,
+			}
 		}
 
 		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, genesisArbOSInit, executionDB, cacheConfig, tracer)
