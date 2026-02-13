@@ -4,71 +4,48 @@ resolver = "3"
 members = ["program", "builder", "stylus-compiler-program", "prover", "runner"]
 
 [workspace.dependencies]
-sp1-build = { version = "6.0.0", features = ["may_dump_elf"] }
-sp1-core-executor = "6.0.0"
-sp1-lib = "6.0.0"
-sp1-primitives = "6.0.0"
-sp1-sdk = { version = "6.0.0", features = ["profiling"] }
-sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"] }
-
 arbutil = { path = "../crates/arbutil" }
 prover = { path = "prover", default-features = false, features = ["sp1"] }
 
-bincode = "1.3.3"
-bytes = "1"
+bincode = { version = "1.3.3" }
+bytes = { version = "1" }
 clap = { version = "4.5.53", features = ["cargo", "derive"] }
-corosensei = "0.3.0"
-derivative = "2.2.0"
-digest = "0.10.7"
-eyre = "0.6.5"
-fnv = "1.0.7"
-hex = "0.4.3"
-lazy_static = "1.4.0"
-nom = "7.0.0"
-num-derive = "0.4.1"
-num-traits = "0.2.17"
-num_enum = "0.7.1"
-once_cell = "1.21.3"
-parking_lot = "0.12.1"
-rand_pcg = { version = "0.3.1", default-features = false }
+corosensei = { version = "0.3.0" }
+derivative = { version = "2.2.0" }
+digest = { version = "0.10.7" }
+eyre = { version = "0.6.5" }
+fnv = { version = "1.0.7" }
+hex = { version = "0.4.3" }
+lazy_static = { version = "1.4.0" }
+nom = { version = "7.0.0" }
+num-derive = { version = "0.4.1" }
+num-traits = { version = "0.2.17" }
+num_enum = { version = "0.7.1" }
+once_cell = { version = "1.21.3" }
+parking_lot = { version = "0.12.1" }
 rand = { version = "0.8.4", default-features = false }
+rand_pcg = { version = "0.3.1", default-features = false }
 rkyv = { version = "0.8.8", features = ["indexmap-2", "bytes-1"] }
-ruint2 = "1.9.0"
-tracing = "0.1.40"
-tokio = "1.42.0"
-serde = "1.0.130"
-serde_json = "1.0.67"
-serde_with = "3.8.1"
-sha3 = "0.10.8"
-thiserror = "1.0.33"
-wasmparser = "0.224.0"
+ruint2 = { version = "1.9.0" }
+serde = { version = "1.0.130" }
+serde_json = { version = "1.0.67" }
+serde_with = { version = "3.8.1" }
+sha3 = { version = "0.10.8" }
+sp1-build = { version = "6.0.0", features = ["may_dump_elf"] }
+sp1-core-executor = { version = "6.0.0" }
+sp1-sdk = { version = "6.0.0", features = ["profiling"] }
+sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"] }
+thiserror = { version = "1.0.33" }
+tokio = { version = "1.42.0" }
+tracing = { version = "0.1.40" }
+wasmparser = { version = "0.224.0" }
 
 brotli = { git = "https://github.com/wakabat/rust-brotli", rev = "37b6403" }
-
-[workspace.dependencies.secp256k1]
-git = "https://github.com/sp1-patches/rust-secp256k1"
-tag = "patch-0.29.1-sp1-6.0.0"
-features = [ "recovery", "global-context" ]
-
-[workspace.dependencies.tiny-keccak]
-git = "https://github.com/sp1-patches/tiny-keccak"
-tag = "patch-2.0.2-sp1-6.0.0"
-features = ["keccak"]
-
-[workspace.dependencies.wasmer]
-git = "https://github.com/wakabat/official-wasmer"
-rev = "e065880"
-default-features = false
-features = ["sys", "compiler", "singlepass", "wasmparser"]
-
-[workspace.dependencies.wasmer-types]
-git = "https://github.com/wakabat/official-wasmer"
-rev = "e065880"
-
-[workspace.dependencies.wasmer-vm]
-git = "https://github.com/wakabat/official-wasmer"
-rev = "e065880"
-features = ["force-baremetal"]
+secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.29.1-sp1-6.0.0", features = ["recovery", "global-context"] }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.0.0", features = ["keccak"] }
+wasmer = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", default-features = false, features = ["sys", "compiler", "singlepass", "wasmparser"] }
+wasmer-types = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880" }
+wasmer-vm = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", features = ["force-baremetal"] }
 
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/wakabat/target-lexicon", branch = "patch-v0.13.3" }
@@ -78,7 +55,5 @@ which = { git = "https://github.com/wakabat/which-rs", branch = "patch-v8.0.0" }
 
 sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
-sp1-lib = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
-sp1-primitives = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
