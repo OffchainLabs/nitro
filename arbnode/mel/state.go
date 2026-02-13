@@ -167,7 +167,7 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 			}
 		}
 	}
-	msgBytes, err := rlp.EncodeToBytes(msg.WithOnlyMELConsensusFields())
+	msgBytes, err := rlp.EncodeToBytes(msg)
 	if err != nil {
 		return err
 	}
