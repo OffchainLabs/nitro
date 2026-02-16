@@ -429,6 +429,7 @@ dependencies = [
  "k256",
  "rand 0.8.5",
  "rand_pcg",
+ "spin",
  "tiny-keccak",
  "wasmer",
 ]
@@ -3187,6 +3188,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3798,6 +3808,7 @@ dependencies = [
  "axum",
  "clap 4.5.53",
  "jit",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
