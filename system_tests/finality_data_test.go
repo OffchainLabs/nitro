@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -74,8 +75,19 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(finalizedBlock.Header())
 	Require(t, err)
 
-	// Wait for freeze operation to be executed
-	time.Sleep(65 * time.Second)
+	// Trigger a freeze cycle synchronously instead of waiting for the 1-minute background timer.
+	// The underlying freezerdb has a Freeze() method for test determinism, but it's buried
+	// under wrapper types (dbWithWasmEntry, closeTrackingDB) that don't forward it.
+	// Unwrap through embedded Database fields to reach it.
+	type freezer interface{ Freeze() error }
+	var innerDB any = builder.L2.ExecNode.ExecutionDB
+	for {
+		if f, ok := innerDB.(freezer); ok {
+			Require(t, f.Freeze())
+			break
+		}
+		innerDB = reflect.ValueOf(innerDB).Elem().FieldByName("Database").Interface()
+	}
 
 	ancients, err = builder.L2.ExecNode.ExecutionDB.Ancients()
 	Require(t, err)
