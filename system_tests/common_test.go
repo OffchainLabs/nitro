@@ -2374,7 +2374,8 @@ type controllableWriter struct {
 	writer          daprovider.Writer
 	shouldFallback  bool
 	customError     error
-	overrideMaxSize int // 0 means use underlying writer's max size; if set, Store returns ErrMessageTooLarge for messages exceeding this size
+	overrideMaxSize int // 0 means use underlying writer's max size; if set, GetMaxMessageSize returns this value and Store rejects messages exceeding it
+	storeRejectSize int // 0 means disabled; when set, Store rejects messages exceeding this size and atomically sets overrideMaxSize to this value
 }
 
 func (w *controllableWriter) SetShouldFallback(val bool) {
@@ -2395,32 +2396,56 @@ func (w *controllableWriter) SetMaxMessageSize(size int) {
 	w.overrideMaxSize = size
 }
 
+// SetStoreRejectSize sets a threshold at which Store() rejects messages with
+// ErrMessageTooLarge. On rejection, overrideMaxSize is atomically set to the
+// reject size — simulating a DA provider that reports its new smaller limit
+// only after the first oversized Store() attempt. GetMaxMessageSize() is
+// unaffected until a rejection occurs.
+func (w *controllableWriter) SetStoreRejectSize(size int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.storeRejectSize = size
+}
+
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
-	w.mu.RLock()
+	w.mu.Lock()
 	shouldFallback := w.shouldFallback
 	customError := w.customError
 	overrideMaxSize := w.overrideMaxSize
-	w.mu.RUnlock()
+	storeRejectSize := w.storeRejectSize
 
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize)
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize, "storeRejectSize", storeRejectSize)
 
 	// Check for custom error first
 	if customError != nil {
+		w.mu.Unlock()
 		log.Info("controllableWriter returning custom error", "error", customError)
 		return containers.NewReadyPromise[[]byte](nil, customError)
 	}
 
+	// Check storeRejectSize first (simulates DA provider that rejects then updates its limit)
+	if storeRejectSize > 0 && len(msg) > storeRejectSize {
+		w.overrideMaxSize = storeRejectSize
+		w.mu.Unlock()
+		log.Warn("controllableWriter Store rejecting and updating overrideMaxSize", "msgLen", len(msg), "storeRejectSize", storeRejectSize)
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
+	}
+
 	// Check if message exceeds overrideMaxSize (simulates DA provider size limit)
 	if overrideMaxSize > 0 && len(msg) > overrideMaxSize {
+		w.mu.Unlock()
 		log.Warn("controllableWriter returning ErrMessageTooLarge", "msgLen", len(msg), "maxSize", overrideMaxSize)
 		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
 	}
 
 	// Check for fallback signal
 	if shouldFallback {
+		w.mu.Unlock()
 		log.Warn("controllableWriter returning ErrFallbackRequested")
 		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrFallbackRequested)
 	}
+
+	w.mu.Unlock()
 
 	// Normal operation
 	log.Info("controllableWriter delegating to underlying writer")

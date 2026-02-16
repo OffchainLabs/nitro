@@ -976,8 +976,20 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 // TestBatchResizingWithoutFallback_MessageTooLarge tests that when a DA provider returns
 // ErrMessageTooLarge, the batch poster rebuilds with a smaller batch size while staying
 // on the same DA provider (no fallback to next writer).
-// This simulates a scenario where a DA provider internally falls back to a backend with
-// a smaller size limit and signals this via ErrMessageTooLarge.
+//
+// The test mechanism uses SetStoreRejectSize rather than SetMaxMessageSize because
+// SetMaxMessageSize changes both Store() rejection and GetMaxMessageSize() simultaneously.
+// The batch poster calls GetMaxMessageSize() before Store(), so it would pick up the new
+// limit before ever building an oversized batch — never triggering ErrMessageTooLarge.
+//
+// SetStoreRejectSize creates the necessary gap: Store() rejects messages >5KB while
+// GetMaxMessageSize() still returns 10KB. The batch poster builds a 10KB batch, Store()
+// rejects it with ErrMessageTooLarge (and atomically updates GetMaxMessageSize() to 5KB),
+// then the batch poster re-queries the limit and rebuilds at 5KB.
+//
+// The test blocks the batch poster during transaction generation (via SetCustomError) so
+// all 250 txs accumulate before batching begins, ensuring batches fill to the size limit
+// rather than posting small batches as messages trickle in.
 func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1019,8 +1031,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	// when receiving ErrMessageTooLarge (it resizes instead), rather than being unable to fall back
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
 
-	// Configure batch posting to use size-based triggers
-	builder.nodeConfig.BatchPoster.MaxDelay = 60 * time.Second
+	// Use default MaxDelay=0 from TestBatchPosterConfig (immediate posting)
 
 	// 4. Build L2
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -1046,51 +1057,60 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanupB()
 
-	// Phase 1: Build and post a large batch with initial max size (10KB)
-	t.Log("Phase 1: Generating transactions to create a ~10KB batch")
+	// Verify the pipeline works before testing resize
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
-	l1BlockBeforePhase1, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
+	// Block the batch poster so transactions accumulate without being consumed
+	// by partial batches (same pattern as TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing)
+	writerControl.SetCustomError(errors.New("blocked for test accumulation"))
 
-	// Generate enough transactions to create a ~10KB batch
-	var phase1LastTxHash common.Hash
+	// Generate enough transactions to exceed 5KB when batched
+	var lastTxHash common.Hash
 	for i := 0; i < 250; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2",
 			builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
-		phase1LastTxHash = tx.Hash()
+		lastTxHash = tx.Hash()
 	}
 
-	t.Log("Phase 1: Generated 250 transactions")
+	// Wait for sequencer to process all transactions into L2 blocks
+	_, err := WaitForTx(ctx, builder.L2.Client, lastTxHash, time.Second*30)
+	Require(t, err)
 
-	// Create L1 blocks to trigger batch posting
+	// Set storeRejectSize: Store() rejects >5KB while GetMaxMessageSize() still returns 10KB.
+	// When Store() rejects, it atomically sets overrideMaxSize=5KB so the batch poster
+	// picks up the new limit on the next GetMaxMessageSize() call.
+	smallerMaxSize := 5_000
+	writerControl.SetStoreRejectSize(smallerMaxSize)
+
+	l1BlockBefore, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Release the batch poster: it builds at 10KB, hits ErrMessageTooLarge from Store(),
+	// queries GetMaxMessageSize() (now returns 5KB), and rebuilds at 5KB
+	writerControl.SetCustomError(nil)
+
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Give batch poster time to post the batch
-	time.Sleep(time.Second * 3)
-
-	// Create more L1 blocks for follower to read and process
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 10)
-
-	// Verify follower synced by waiting for the last transaction
-	_, err = WaitForTx(ctx, l2B.Client, phase1LastTxHash, time.Second*60)
+	// All transactions delivered through resized batches proves data survived the split
+	_, err = WaitForTx(ctx, l2B.Client, lastTxHash, time.Second*30)
 	Require(t, err)
 
-	l1BlockAfterPhase1, err := builder.L1.Client.BlockNumber(ctx)
+	l1BlockAfter, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 
-	// Verify Phase 1 batches and check sizes
+	// Verify batches
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
 
 	// #nosec G115
-	phase1Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase1)), big.NewInt(int64(l1BlockAfterPhase1)))
+	batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBefore)), big.NewInt(int64(l1BlockAfter)))
 	Require(t, err)
 
-	phase1CustomDABatches := 0
-	var phase1MaxPayloadSize int
-	for _, batch := range phase1Batches {
+	var customDABatchSizes []int
+	var totalPayloadSize int
+	for _, batch := range batches {
 		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
 		Require(t, err)
 
@@ -1099,135 +1119,44 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
+
+		if daprovider.IsBrotliMessageHeaderByte(headerByte) {
+			t.Fatalf("Found calldata batch (header=0x%02x); all batches should be CustomDA (no fallback)", headerByte)
+		}
+
 		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
-			phase1CustomDABatches++
-
-			// Recover actual payload size from storage
 			payloadSize := getCustomDAPayloadSize(t, ctx, batch, builder.L1.Client, validatorAddr)
-			t.Logf("Phase 1: Found CustomDA batch, payload size=%d bytes", payloadSize)
-
-			if payloadSize > phase1MaxPayloadSize {
-				phase1MaxPayloadSize = payloadSize
-			}
-
-			// Verify batch is approximately 10KB (8KB-12KB range)
-			if payloadSize < 8_000 || payloadSize > 12_000 {
-				t.Errorf("Phase 1: CustomDA payload size %d outside expected range 8KB-12KB", payloadSize)
-			}
-		} else {
-			t.Fatalf("Phase 1: Expected CustomDA batch but found unexpected batch type (header=0x%02x)", headerByte)
+			customDABatchSizes = append(customDABatchSizes, payloadSize)
+			totalPayloadSize += payloadSize
 		}
 	}
 
-	if phase1CustomDABatches == 0 {
-		t.Fatal("Phase 1: Expected at least one CustomDA batch, found none")
-	}
-	t.Logf("Phase 1: Posted %d CustomDA batch(es), max payload size=%d bytes", phase1CustomDABatches, phase1MaxPayloadSize)
-
-	// Phase 2: Reduce max size to 5KB - batches exceeding this will get ErrMessageTooLarge
-	t.Log("Phase 2: Reducing max size to 5KB")
-
-	smallerMaxSize := 5_000
-	writerControl.SetMaxMessageSize(smallerMaxSize)
-
-	t.Logf("Phase 2: Set max size to %d (batches exceeding this will trigger ErrMessageTooLarge)", smallerMaxSize)
-
-	l1BlockBeforePhase2, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-
-	// Generate more transactions to create another large batch
-	var phase2LastTxHash common.Hash
-	for i := 0; i < 250; i++ {
-		tx := builder.L2Info.PrepareTx("Owner", "User2",
-			builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-		err := builder.L2.Client.SendTransaction(ctx, tx)
-		Require(t, err)
-		phase2LastTxHash = tx.Hash()
+	if len(customDABatchSizes) < 2 {
+		t.Fatalf("Expected at least 2 CustomDA batches (resize required splitting), got %d", len(customDABatchSizes))
 	}
 
-	t.Log("Phase 2: Generated 250 transactions")
+	if totalPayloadSize <= smallerMaxSize {
+		t.Fatalf("Total payload size %d does not exceed smallerMaxSize %d; not enough data to validate resizing",
+			totalPayloadSize, smallerMaxSize)
+	}
 
-	// Create L1 blocks to trigger batch posting attempts
-	// The batch poster will initially try to build a ~10KB batch (based on previous max size),
-	// hit ErrMessageTooLarge, then query GetMaxMessageSize again (getting 5KB), and rebuild smaller batches
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 40)
+	for i, payloadSize := range customDABatchSizes {
+		t.Logf("CustomDA batch %d: payload size=%d bytes", i+1, payloadSize)
 
-	// Give batch poster time to post the batches (may need multiple retries due to resize)
-	time.Sleep(time.Second * 5)
-
-	// Create more L1 blocks for follower to read and process
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 10)
-
-	// Verify follower synced by waiting for the last transaction
-	_, err = WaitForTx(ctx, l2B.Client, phase2LastTxHash, time.Second*60)
-	Require(t, err)
-
-	l1BlockAfterPhase2, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-
-	// Verify Phase 2 batches: should still use CustomDA but with smaller sizes
-	// #nosec G115
-	phase2Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase2)), big.NewInt(int64(l1BlockAfterPhase2)))
-	Require(t, err)
-
-	phase2CustomDABatches := 0
-	phase2OversizedBatches := 0
-	var phase2MaxPayloadSize int
-	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
-		Require(t, err)
-
-		if len(serializedBatch) <= 40 {
-			continue
+		if payloadSize > smallerMaxSize+1000 {
+			t.Errorf("CustomDA batch %d: payload size %d exceeds smallerMaxSize %d (with overhead margin)",
+				i+1, payloadSize, smallerMaxSize)
 		}
 
-		headerByte := serializedBatch[40]
-		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
-			phase2CustomDABatches++
-
-			// Recover actual payload size from storage
-			payloadSize := getCustomDAPayloadSize(t, ctx, batch, builder.L1.Client, validatorAddr)
-			t.Logf("Phase 2: Found CustomDA batch, payload size=%d bytes", payloadSize)
-
-			if payloadSize > phase2MaxPayloadSize {
-				phase2MaxPayloadSize = payloadSize
-			}
-
-			// Track batches exceeding the new limit
-			// The first batch may exceed the limit due to race condition (built before limit change)
-			if payloadSize > 6_000 {
-				phase2OversizedBatches++
-				t.Logf("Phase 2: Batch %d exceeds 6KB limit (expected for first batch due to race)", phase2CustomDABatches)
-			}
-		} else {
-			t.Fatalf("Phase 2: Expected CustomDA batch but found unexpected batch type (header=0x%02x)", headerByte)
+		// Non-final batches should be near-full (same assertion as the calldata resize test)
+		isFinalBatch := i == len(customDABatchSizes)-1
+		if !isFinalBatch && payloadSize < smallerMaxSize*2/3 {
+			t.Errorf("Non-final CustomDA batch %d: payload size %d is below 2/3 of smallerMaxSize %d; "+
+				"batch poster is not filling batches to the size limit",
+				i+1, payloadSize, smallerMaxSize)
 		}
 	}
 
-	// Allow at most 1 oversized batch due to a race condition between changing the max size
-	// and the batch poster's existing work. The batch poster doesn't constantly re-query
-	// GetMaxMessageSize - it queries once, builds batches up to that limit, and only
-	// re-queries after receiving ErrMessageTooLarge. So when we change the limit from 10KB
-	// to 5KB, there may be a batch already built with the old limit. That batch gets posted,
-	// triggers ErrMessageTooLarge, and then the batch poster queries the new limit and
-	// rebuilds subsequent batches to fit within 5KB.
-	if phase2OversizedBatches > 1 {
-		t.Errorf("Phase 2: Expected at most 1 oversized batch (race condition), but found %d", phase2OversizedBatches)
-	}
-
-	if phase2CustomDABatches == 0 {
-		t.Fatal("Phase 2: Expected at least one CustomDA batch after resize, found none")
-	}
-
-	// Verify that Phase 2 batches are smaller than Phase 1
-	if phase2MaxPayloadSize >= phase1MaxPayloadSize {
-		t.Errorf("Phase 2 max payload size (%d) should be smaller than Phase 1 (%d)",
-			phase2MaxPayloadSize, phase1MaxPayloadSize)
-	}
-
-	t.Logf("Phase 2: Posted %d CustomDA batch(es), max payload size=%d bytes", phase2CustomDABatches, phase2MaxPayloadSize)
-	t.Logf("SUCCESS: Batch resizing without fallback worked correctly")
-	t.Logf("Phase 1 max batch: %d bytes, Phase 2 max batch: %d bytes (reduced by %d%%)",
-		phase1MaxPayloadSize, phase2MaxPayloadSize, 100*(phase1MaxPayloadSize-phase2MaxPayloadSize)/phase1MaxPayloadSize)
-	t.Log("ErrMessageTooLarge triggered batch rebuild with smaller size, staying on same DA provider")
+	t.Logf("Batch resizing verified: %d CustomDA batches, total payload=%d bytes (smallerMaxSize=%d)",
+		len(customDABatchSizes), totalPayloadSize, smallerMaxSize)
 }
