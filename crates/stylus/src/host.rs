@@ -19,6 +19,7 @@ use std::{
     fmt::Display,
     mem::{self, MaybeUninit},
 };
+use std::borrow::Cow;
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
@@ -31,12 +32,16 @@ where
     type MemoryErr = MemoryAccessError;
     type A = A;
 
-    fn args(&self) -> &[u8] {
-        &self.args
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.args)
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        &mut self.outs
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.outs)
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        self.outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
