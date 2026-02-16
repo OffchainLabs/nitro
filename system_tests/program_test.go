@@ -1023,6 +1023,12 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	defer func() {
+		close(stopL1)
+		Require(t, <-l1ErrChan)
+	}()
+
 	userWasm := deployWasm(t, ctx, auth, l2client, "../crates/prover/test-cases/user.wat")
 	// Passing input of size 4 invokes $infinite_loop function that calls the infinite loop
 	tx := l2info.PrepareTxTo("Owner", &userWasm, 1000000, nil, make([]byte, 4))
@@ -1032,7 +1038,7 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 		t.Fatalf("transaction should have failed with out of gas error but instead failed with: %v", err)
 	}
 
-	validateBlocks(t, receipt.BlockNumber.Uint64(), jit, builder)
+	validateBlock(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 func TestProgramMemory(t *testing.T) {
