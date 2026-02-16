@@ -9,8 +9,6 @@
 #[cfg(feature = "native")]
 #[path = "../../../arbitrator/prover/src/binary.rs"]
 pub mod binary;
-#[path = "../../../arbitrator/prover/src/parse_input.rs"]
-pub mod parse_input;
 #[cfg(feature = "native")]
 #[path = "../../../arbitrator/prover/src/programs/mod.rs"]
 pub mod programs;

@@ -1,9 +1,9 @@
-use crate::parse_input::{FileData, UserWasm};
 use bytes::{Bytes, BytesMut};
 use std::{
     collections::{BTreeMap, HashMap},
     io::Read,
 };
+use validation::{UserWasm, ValidationInput};
 
 /// This groups components in Arbitrum's WasmEnv that come from FileData.
 /// It helps us maintain a clear separation between Arbitrum inputs, and other
@@ -48,24 +48,22 @@ pub fn decompress_aligned(user_wasm: &UserWasm) -> ModuleAsm {
 
 impl Input {
     /// This takes hint from `arbitrator/jit/src/prepare.rs`
-    pub fn from_file_data(data: FileData) -> eyre::Result<Self> {
-        let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();
-        let send_root: [u8; 32] = data.start_state.send_root.try_into().unwrap();
-        let bytes32_vals: [[u8; 32]; 2] = [block_hash, send_root];
-        let u64_vals: [u64; 2] = [data.start_state.batch, data.start_state.pos_in_batch];
+    pub fn from_file_data(data: ValidationInput) -> eyre::Result<Self> {
+        let large_globals = [data.start_state.block_hash.0, data.start_state.send_root.0];
+        let small_globals = [data.start_state.batch, data.start_state.pos_in_batch];
 
         let mut sequencer_messages = Inbox::default();
         for batch_info in data.batch_info.iter() {
-            sequencer_messages.insert(batch_info.number, batch_info.data_b64.clone());
+            sequencer_messages.insert(batch_info.number, batch_info.data.clone());
         }
 
         let mut delayed_messages = Inbox::default();
-        if data.delayed_msg_nr != 0 && !data.delayed_msg_b64.is_empty() {
-            delayed_messages.insert(data.delayed_msg_nr, data.delayed_msg_b64.clone());
+        if data.delayed_msg_nr != 0 && !data.delayed_msg.is_empty() {
+            delayed_messages.insert(data.delayed_msg_nr, data.delayed_msg.clone());
         }
 
         let mut preimages = Preimages::default();
-        for (preimage_ty, inner_map) in data.preimages_b64 {
+        for (preimage_ty, inner_map) in data.preimages {
             let map = preimages.entry(preimage_ty as u8).or_default();
             for (hash, preimage) in inner_map {
                 map.insert(*hash, preimage);
@@ -80,8 +78,8 @@ impl Input {
         }
 
         Ok(Self {
-            small_globals: u64_vals,
-            large_globals: bytes32_vals,
+            small_globals,
+            large_globals,
             preimages,
             module_asms,
             sequencer_messages,

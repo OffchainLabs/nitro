@@ -519,6 +519,14 @@ dependencies = [
 
 [[package]]
 name = "brotli"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "num_enum 0.7.5",
+]
+
+[[package]]
+name = "brotli"
 version = "8.0.1"
 source = "git+https://github.com/wakabat/rust-brotli?rev=37b6403#37b6403c1075625e15b9355bcedf8b20232bc6c2"
 dependencies = [
@@ -3768,7 +3776,7 @@ name = "program"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "brotli",
+ "brotli 8.0.1",
  "bytes",
  "corosensei",
  "eyre",
@@ -3848,13 +3856,12 @@ name = "prover"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "brotli",
+ "brotli 8.0.1",
  "bytes",
  "derivative",
  "digest",
  "eyre",
  "fnv",
- "hex",
  "lazy_static",
  "nom",
  "num-derive",
@@ -3862,9 +3869,9 @@ dependencies = [
  "parking_lot",
  "rkyv",
  "serde",
- "serde_json",
  "serde_with",
  "sha3",
+ "validation",
  "wasmer",
  "wasmer-types",
  "wasmparser 0.224.1",
@@ -5892,6 +5899,7 @@ dependencies = [
  "sp1-sdk",
  "tokio",
  "tracing",
+ "validation",
 ]
 
 [[package]]
@@ -6735,6 +6743,17 @@ dependencies = [
  "md-5",
  "sha1_smol",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "validation"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "brotli 0.1.0",
+ "serde",
+ "serde_json",
+ "serde_with",
 ]
 
 [[package]]
