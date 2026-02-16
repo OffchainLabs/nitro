@@ -1380,6 +1380,30 @@ func AdvanceL1(
 	}
 }
 
+// KeepL1Advancing produces L1 blocks in the background so the header reader
+// and delayed sequencer keep making progress. Close the returned channel to stop.
+// The error channel returns nil on clean shutdown.
+func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
+	stop := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		defer close(errChan)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(100 * time.Millisecond):
+				tx := builder.L1Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil)
+				if err := builder.L1.Client.SendTransaction(builder.ctx, tx); err != nil {
+					errChan <- err
+					return
+				}
+			}
+		}
+	}()
+	return stop, errChan
+}
+
 func SendSignedTxesInBatchViaL1(
 	t *testing.T,
 	ctx context.Context,

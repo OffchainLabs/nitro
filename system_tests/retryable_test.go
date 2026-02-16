@@ -496,16 +496,17 @@ func insertRetriables(
 		)
 		Require(t, err)
 
-		l1Receipt, err := bld.L1.EnsureTxSucceeded(tx)
+		l1Receipt, err := WaitForTx(bld.ctx, bld.L1.Client, tx.Hash(), time.Second*5)
 		Require(t, err)
 		if l1Receipt.Status != types.ReceiptStatusSuccessful {
 			Fatal(t, fmt.Sprintf("l1Receipt %d indicated failure", i))
 		}
 
-		waitForL1DelayBlocks(t, bld)
-
 		receipts[i] = l1Receipt
 	}
+	// Advance L1 once so all retryables have enough confirmations
+	// for the delayed inbox reader to pick them up.
+	waitForL1DelayBlocks(t, bld)
 	return receipts
 }
 
@@ -571,6 +572,10 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		gasFeeCap,
 		retryableCallData)
 
+	// Keep L1 blocks flowing so the header reader advances and the
+	// delayed sequencer can finalize and process all retryable messages.
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+
 	ticketIds := make([][32]byte, rCnt)
 	for idx, l1Receipt := range reciepts {
 		receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
@@ -581,6 +586,9 @@ func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
 		ticketId := receipt.Logs[0].Topics[1]
 		ticketIds[idx] = ticketId
 	}
+
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	l2FaucetTxOpts := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	l2FaucetTxOpts.GasLimit = uint64(1e8)
