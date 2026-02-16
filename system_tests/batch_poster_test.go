@@ -168,20 +168,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		defer batchPoster.StopAndWait()
 	}
 
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i >= 0; i-- {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-		time.Sleep(500 * time.Millisecond)
-		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
-		if err == nil {
-			break
-		}
-		if i == 0 {
-			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
-		}
-	}
+	_, err = WaitForTx(ctx, testClientB.Client, lastTxHash, 30*time.Second)
+	Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	// TODO: factor this out in separate test case and skip it or delete this
 	// code entirely.
@@ -343,20 +335,12 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	batchPosterA.Start(ctx)
 	defer batchPosterA.StopAndWait()
 
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i >= 0; i-- {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-		time.Sleep(500 * time.Millisecond)
-		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
-		if err == nil {
-			break
-		}
-		if i == 0 {
-			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
-		}
-	}
+	_, err = WaitForTx(ctx, testClientB.Client, lastTxHash, 30*time.Second)
+	Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
