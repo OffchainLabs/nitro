@@ -64,6 +64,7 @@ pub(crate) async fn shutdown_signal() {
 mod tests {
     use anyhow::Result;
     use clap::Parser;
+    use std::path::Path;
     use std::{net::SocketAddr, sync::Arc};
     use tokio::{
         net::TcpListener,
@@ -144,7 +145,7 @@ mod tests {
         };
         assert!(machine_arc.is_none());
 
-        // 9. Verify same request from above fails expectadly
+        // 9. Verify same request from above fails expectedly
         let resp = client
             .get(format!("http://{}/validation_capacity", test_config.addr))
             .send()
@@ -156,7 +157,12 @@ mod tests {
     }
 
     async fn test_server_lifecycle(additional_args: Option<Vec<&'static str>>) -> Result<()> {
-        let mut args = vec!["server"];
+        let machines_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("Failed to navigate to workspace root")
+            .join("target/machines/latest");
+        let mut args = vec!["server", "--root-path", machines_dir.to_str().unwrap()];
         if let Some(extra) = additional_args {
             args = [&args[..], &extra[..]].concat();
         }
