@@ -55,6 +55,7 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 	Require(t, err)
 
 	inboxPos := arbutil.MessageIndex(receipt.BlockNumber.Uint64())
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	for range 40 {
 		time.Sleep(250 * time.Millisecond)
 		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
@@ -64,6 +65,10 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 		if haveMessages >= inboxPos {
 			break
 		}
+	}
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
 	}
 
 	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.LocalTarget(), rawdb.TargetWasm)

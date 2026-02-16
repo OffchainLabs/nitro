@@ -735,11 +735,16 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	writerControl.SetShouldFallback(true)
 	writerControl.SetCustomError(nil)
 
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	// All transactions delivered through resized batches proves data survived the split
 	_, err = WaitForTx(ctx, l2B.Client, lastTxHash, time.Second*30)
 	Require(t, err)
+
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 
 	l1BlockAfter, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
@@ -1091,11 +1096,16 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	// queries GetMaxMessageSize() (now returns 5KB), and rebuilds at 5KB
 	writerControl.SetCustomError(nil)
 
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	// All transactions delivered through resized batches proves data survived the split
 	_, err = WaitForTx(ctx, l2B.Client, lastTxHash, time.Second*30)
 	Require(t, err)
+
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 
 	l1BlockAfter, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)

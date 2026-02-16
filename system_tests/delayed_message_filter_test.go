@@ -66,8 +66,12 @@ func sendDelayedBatch(t *testing.T, ctx context.Context, builder *NodeBuilder, t
 // advanceAndWaitForDelayed advances L1 blocks and waits for delayed message processing.
 func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-	<-time.After(time.Second * 2)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	time.Sleep(500 * time.Millisecond)
+	close(stopL1)
+	if err := <-l1ErrChan; err != nil {
+		Fatal(t, err)
+	}
 }
 
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
@@ -581,9 +585,6 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 
 	// Advance L1 to trigger delayed message processing
 	advanceAndWaitForDelayed(t, ctx, builder)
-
-	// Give some time for processing
-	<-time.After(time.Second)
 
 	// Verify sequencer is NOT halted
 	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)

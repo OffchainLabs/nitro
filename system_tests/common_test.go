@@ -1269,15 +1269,17 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	// Send L2 transaction and wait for execution
 	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
 
-	// Brief pause for inbox reader to process the message
-	time.Sleep(time.Millisecond * 100)
-
-	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	// Background L1 block production triggers batch posting (MaxDelay=0 ensures immediate posting)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	// Ensure the second node successfully processed the batch
 	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
 	Require(t, err)
+
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 
 	recipientBalanceAfter, err := l2clientB.BalanceAt(ctx, recipient, nil)
 	Require(t, err)
@@ -1380,10 +1382,11 @@ func AdvanceL1(
 	}
 }
 
-// KeepL1Advancing produces L1 blocks in the background so the header reader
-// and delayed sequencer keep making progress. Close the returned channel to stop.
-// The error channel returns nil on clean shutdown.
-func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
+// keepL1Advancing is the lower-level helper that produces L1 blocks in the
+// background. It takes (ctx, l1info, l1client) so callers that don't have a
+// *NodeBuilder (e.g. Send*ViaL1 helpers) can use it directly.
+// Close the returned channel to stop. The error channel returns nil on clean shutdown.
+func keepL1Advancing(ctx context.Context, l1info *BlockchainTestInfo, l1client *ethclient.Client) (chan struct{}, chan error) {
 	stop := make(chan struct{})
 	errChan := make(chan error, 1)
 	go func() {
@@ -1393,8 +1396,8 @@ func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
 			case <-stop:
 				return
 			case <-time.After(100 * time.Millisecond):
-				tx := builder.L1Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil)
-				if err := builder.L1.Client.SendTransaction(builder.ctx, tx); err != nil {
+				tx := l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil)
+				if err := l1client.SendTransaction(ctx, tx); err != nil {
 					errChan <- err
 					return
 				}
@@ -1402,6 +1405,13 @@ func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
 		}
 	}()
 	return stop, errChan
+}
+
+// KeepL1Advancing produces L1 blocks in the background so the header reader
+// and delayed sequencer keep making progress. Close the returned channel to stop.
+// The error channel returns nil on clean shutdown.
+func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
+	return keepL1Advancing(builder.ctx, builder.L1Info, builder.L1.Client)
 }
 
 func SendSignedTxesInBatchViaL1(
@@ -1423,12 +1433,16 @@ func SendSignedTxesInBatchViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	var receipts types.Receipts
 	for _, tx := range delayedTxes {
 		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 		receipts = append(receipts, receipt)
+	}
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
 	}
 	return receipts
 }
@@ -1470,9 +1484,13 @@ func SendSignedTxViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, delayedTx)
 	Require(t, err)
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 	return receipt
 }
 
@@ -1516,9 +1534,13 @@ func SendUnsignedTxViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, unsignedTx)
 	Require(t, err)
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 	return receipt
 }
 
