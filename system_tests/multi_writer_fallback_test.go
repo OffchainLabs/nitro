@@ -7,6 +7,7 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -675,12 +676,9 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	// Enable fallback to on-chain
 	builder.nodeConfig.BatchPoster.DisableDapFallbackStoreDataOnChain = false
 
-	// Configure small batch size limits for testing
-	// AltDA batch size: 10KB - large enough for Phase 1 batch (set via maxMessageSize param above)
-	// MaxCalldataBatchSize: 3KB - forces multiple smaller batches in Phase 2
-	// MaxDelay: 60s - safety net (should not be hit, we rely on size-based posting)
+	// AltDA batch size: 10KB (set via maxMessageSize param above)
+	// MaxCalldataBatchSize: 3KB - forces multiple smaller batches during fallback
 	builder.nodeConfig.BatchPoster.MaxCalldataBatchSize = 3_000
-	builder.nodeConfig.BatchPoster.MaxDelay = 60 * time.Second
 
 	// 4. Build L2
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
@@ -706,59 +704,56 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	l2B, cleanupB := builder.Build2ndNode(t, &nodeBParams)
 	defer cleanupB()
 
-	// Phase 1: Build large batch for CustomDA
-	t.Log("Phase 1: Generating transactions to hit MaxAltDABatchSize (10KB)")
+	// Verify the pipeline works with CustomDA before triggering fallback
+	checkBatchPosting(t, ctx, builder, l2B.Client)
 
-	// Record L1 block before Phase 1
-	l1BlockBeforePhase1, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
+	// Block the batch poster with a non-fallback error so transactions accumulate
+	// in the streamer without being consumed by partial batches. This ensures that
+	// when fallback begins, the full message backlog is available and batches fill
+	// to MaxCalldataBatchSize rather than posting tiny batches as messages trickle in.
+	writerControl.SetCustomError(errors.New("blocked for test accumulation"))
 
-	// Generate enough transactions to hit MaxAltDABatchSize
-	// Over-generate to ensure we hit the limit
+	// Generate enough transactions to require multiple calldata batches
+	var lastTxHash common.Hash
 	for i := 0; i < 250; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2",
 			builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
+		lastTxHash = tx.Hash()
 	}
 
-	t.Log("Phase 1: Generated 250 transactions")
-
-	// Create L1 blocks to process messages and trigger batch posting
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, builder.L1.Client, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	t.Log("Phase 1: Created L1 blocks to trigger batch posting")
-
-	// Brief pause to ensure batch is posted
-	time.Sleep(time.Second * 2)
-
-	// Verify follower synced
-	_, err = builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
-	l2BBlockNum, err := l2B.Client.BlockNumber(ctx)
-	Require(t, err)
-	if l2BBlockNum == 0 {
-		t.Fatal("Phase 1: Follower node did not sync")
-	}
-
-	// Record L1 block after Phase 1
-	l1BlockAfterPhase1, err := builder.L1.Client.BlockNumber(ctx)
+	// Wait for the sequencer to process all transactions into L2 blocks
+	_, err := WaitForTx(ctx, builder.L2.Client, lastTxHash, time.Second*30)
 	Require(t, err)
 
-	// Check Phase 1 batches
+	l1BlockBefore, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Release the batch poster and trigger fallback to calldata.
+	// Set shouldFallback first so there's no window where Store succeeds on AltDA.
+	writerControl.SetShouldFallback(true)
+	writerControl.SetCustomError(nil)
+
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+
+	// All transactions delivered through resized batches proves data survived the split
+	_, err = WaitForTx(ctx, l2B.Client, lastTxHash, time.Second*30)
+	Require(t, err)
+
+	l1BlockAfter, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+
 	seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.addresses.SequencerInbox, 0)
 	Require(t, err)
 
 	// #nosec G115
-	phase1Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase1)), big.NewInt(int64(l1BlockAfterPhase1)))
+	batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBefore)), big.NewInt(int64(l1BlockAfter)))
 	Require(t, err)
 
-	var phase1CustomDABatches int
-	for _, batch := range phase1Batches {
+	maxCalldataBatchSize := builder.nodeConfig.BatchPoster.MaxCalldataBatchSize
+	var calldataBatchSizes []int
+	for _, batch := range batches {
 		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
 		Require(t, err)
 
@@ -767,102 +762,52 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 		}
 
 		headerByte := serializedBatch[40]
+
 		if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
-			phase1CustomDABatches++
-
-			// For CustomDA, the sequencer inbox only contains a small certificate.
-			// Recover the actual payload from storage to check its size.
-			payloadSize := getCustomDAPayloadSize(t, ctx, batch, builder.L1.Client, validatorAddr)
-			t.Logf("Phase 1: Found CustomDA batch, actual payload size=%d bytes", payloadSize)
-
-			// Verify batch payload is approximately 10KB (8KB-12KB range)
-			if payloadSize < 8_000 || payloadSize > 12_000 {
-				t.Errorf("Phase 1: CustomDA payload size %d outside expected range 8KB-12KB", payloadSize)
-			}
-		}
-	}
-
-	if phase1CustomDABatches < 1 {
-		t.Fatal("Phase 1: Expected at least 1 CustomDA batch")
-	}
-
-	t.Logf("Phase 1: Posted %d CustomDA batch(es)", phase1CustomDABatches)
-
-	// Phase 2: Trigger explicit fallback and verify batch resizing
-	t.Log("Phase 2: Triggering explicit fallback from CustomDA, testing batch resizing fallback to EthDA")
-
-	// Trigger fallback by setting control handle directly
-	writerControl.SetShouldFallback(true)
-	t.Log("Phase 2: Set fallback flag to true")
-
-	// Record L1 block before Phase 2
-	l1BlockBeforePhase2, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-
-	// Generate more transactions (same count as Phase 1)
-	for i := 0; i < 250; i++ {
-		tx := builder.L2Info.PrepareTx("Owner", "User2",
-			builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-		err := builder.L2.Client.SendTransaction(ctx, tx)
-		Require(t, err)
-	}
-
-	t.Log("Phase 2: Generated 250 transactions")
-
-	// Create L1 blocks to process messages and trigger batch posting
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, builder.L1.Client, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	t.Log("Phase 2: Created L1 blocks to trigger batch posting")
-
-	// Longer pause to allow multiple batches to be posted
-	time.Sleep(time.Second * 3)
-
-	// Record L1 block after Phase 2
-	l1BlockAfterPhase2, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
-
-	// Check Phase 2 batches
-	// #nosec G115
-	phase2Batches, err := seqInbox.LookupBatchesInRange(ctx, big.NewInt(int64(l1BlockBeforePhase2)), big.NewInt(int64(l1BlockAfterPhase2)))
-	Require(t, err)
-
-	var phase2CalldataBatches int
-	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
-		Require(t, err)
-
-		if len(serializedBatch) <= 40 {
-			continue
+			t.Fatalf("Found CustomDA batch during fallback (header byte: 0x%02x); all batches should be calldata", headerByte)
 		}
 
-		headerByte := serializedBatch[40]
 		if daprovider.IsBrotliMessageHeaderByte(headerByte) {
-			phase2CalldataBatches++
-			batchSize := len(serializedBatch)
-			t.Logf("Phase 2: Found Calldata batch, size=%d bytes", batchSize)
-
-			// Verify batch is small (~3KB, max 4KB)
-			if batchSize > 4_000 {
-				t.Errorf("Phase 2: Calldata batch size %d exceeds expected max 4KB", batchSize)
-			}
+			calldataBatchSizes = append(calldataBatchSizes, len(serializedBatch))
 		}
 	}
 
-	// Expect at least 3 calldata batches for resize (250 txs should split into 4-5 batches)
-	if phase2CalldataBatches < 3 {
-		t.Fatalf("Phase 2: Expected at least 3 calldata batches for resize, got %d", phase2CalldataBatches)
+	if len(calldataBatchSizes) < 3 {
+		t.Fatalf("Expected at least 3 calldata batches, got %d", len(calldataBatchSizes))
 	}
 
-	t.Logf("Phase 2: Posted %d calldata batch(es)", phase2CalldataBatches)
+	var totalCalldataSize int
+	for _, size := range calldataBatchSizes {
+		totalCalldataSize += size
+	}
+	if totalCalldataSize <= maxCalldataBatchSize {
+		t.Fatalf("Total calldata size %d does not exceed MaxCalldataBatchSize %d; not enough data to validate batch resizing",
+			totalCalldataSize, maxCalldataBatchSize)
+	}
 
-	// Final verification
-	t.Logf("SUCCESS: Test passed - %d CustomDA batch(es) in Phase 1, %d calldata batch(es) in Phase 2",
-		phase1CustomDABatches, phase2CalldataBatches)
-	t.Log("Batch resizing worked correctly: large batch for CustomDA split into multiple smaller batches for EthDA")
+	for i, batchSize := range calldataBatchSizes {
+		t.Logf("Calldata batch %d: size=%d bytes", i+1, batchSize)
+
+		if batchSize > maxCalldataBatchSize+1000 {
+			t.Errorf("Calldata batch %d: size %d exceeds MaxCalldataBatchSize %d (with overhead margin)",
+				i+1, batchSize, maxCalldataBatchSize)
+		}
+
+		// The batch poster fills each batch to the size limit before starting a new
+		// one, so every batch except the final one must be near-full. If non-final
+		// batches are small, the test is measuring message arrival timing rather than
+		// the calldata size constraint — which is what happened before the custom
+		// error accumulation approach was added.
+		isFinalBatch := i == len(calldataBatchSizes)-1
+		if !isFinalBatch && batchSize < maxCalldataBatchSize*2/3 {
+			t.Errorf("Non-final calldata batch %d: size %d is below 2/3 of MaxCalldataBatchSize %d; "+
+				"batch poster is not filling batches to the size limit",
+				i+1, batchSize, maxCalldataBatchSize)
+		}
+	}
+
+	t.Logf("Batch resizing verified: %d calldata batches, total size=%d bytes (MaxCalldataBatchSize=%d)",
+		len(calldataBatchSizes), totalCalldataSize, maxCalldataBatchSize)
 }
 
 // TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure tests that when AnyTrust aggregator
