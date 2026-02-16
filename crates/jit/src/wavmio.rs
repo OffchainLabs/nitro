@@ -5,7 +5,7 @@ use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
-use arbutil::{Color, PreimageType};
+use arbutil::Color;
 use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
@@ -173,6 +173,7 @@ pub fn resolve_preimage_impl(
     {
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
+        use arbutil::PreimageType;
 
         // Check if preimage rehashes to the provided hash. Exclude blob preimages
         let calculated_hash: [u8; 32] = match preimage_type {
