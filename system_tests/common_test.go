@@ -280,6 +280,13 @@ type DeployConfig struct {
 	DeployBold                 bool
 	DeployReferenceDAContracts bool
 	DelayBufferThreshold       uint64
+
+	// Cached creator addresses from the deploy cache. When non-nil, the
+	// deployment skips the expensive creator deployment and reuses these
+	// addresses (which must already be present in the parent chain genesis).
+	// When nil, the full creator deployment runs on the parent chain first.
+	BoldCreator   *setup.CreatorAddresses
+	LegacyCreator *deploy.LegacyCreatorAddresses
 }
 
 type NodeBuilder struct {
@@ -726,6 +733,8 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		DeployBold:                 b.deployBold,
 		DeployReferenceDAContracts: b.deployReferenceDAContracts,
 		DelayBufferThreshold:       b.delayBufferThreshold,
+		BoldCreator:                boldCreatorCache.creator,
+		LegacyCreator:              legacyCreatorCache.creator,
 	}
 	var genesisAlloc types.GenesisAlloc
 	if b.deployBold {
@@ -1947,15 +1956,27 @@ func deployOnParentChain(
 			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 
-		boldAddresses, err := setup.DeployRollup(
-			ctx,
-			parentReader,
-			&parentChainTransactionOpts,
-			parentChainInfo.GetAddress("Sequencer"),
-			cfg,
-			boldCreatorCache.creator,
-			rollupStackConfig,
-		)
+		var boldAddresses *setup.RollupAddresses
+		if deployConfig.BoldCreator != nil {
+			boldAddresses, err = setup.DeployRollup(
+				ctx,
+				parentReader,
+				&parentChainTransactionOpts,
+				parentChainInfo.GetAddress("Sequencer"),
+				cfg,
+				deployConfig.BoldCreator,
+				rollupStackConfig,
+			)
+		} else {
+			boldAddresses, err = setup.DeployFullRollupStack(
+				ctx,
+				parentReader,
+				&parentChainTransactionOpts,
+				parentChainInfo.GetAddress("Sequencer"),
+				cfg,
+				rollupStackConfig,
+			)
+		}
 		Require(t, err)
 		addresses = &chaininfo.RollupAddresses{
 			Bridge:                 boldAddresses.Bridge,
@@ -1970,18 +1991,34 @@ func deployOnParentChain(
 			DeployedAt:             boldAddresses.DeployedAt,
 		}
 	} else {
-		addresses, err = deploy.DeployLegacyRollup(
-			ctx,
-			parentChainReader,
-			&parentChainTransactionOpts,
-			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
-			parentChainInfo.GetAddress("RollupOwner"),
-			0,
-			deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
-			nativeToken,
-			maxDataSize,
-			legacyCreatorCache.creator,
-		)
+		legacyConfig := deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{})
+		if deployConfig.LegacyCreator != nil {
+			addresses, err = deploy.DeployLegacyRollup(
+				ctx,
+				parentChainReader,
+				&parentChainTransactionOpts,
+				[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+				parentChainInfo.GetAddress("RollupOwner"),
+				0,
+				legacyConfig,
+				nativeToken,
+				maxDataSize,
+				deployConfig.LegacyCreator,
+			)
+		} else {
+			addresses, err = deploy.DeployLegacyOnParentChain(
+				ctx,
+				parentChainReader,
+				&parentChainTransactionOpts,
+				[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+				parentChainInfo.GetAddress("RollupOwner"),
+				0,
+				legacyConfig,
+				nativeToken,
+				maxDataSize,
+				chainSupportsBlobs,
+			)
+		}
 	}
 	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)

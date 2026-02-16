@@ -45,7 +45,7 @@ func StartL1Backend(stackConfig *node.Config, l1Genesis *core.Genesis) (*node.No
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.Preimages = true
-	nodeConf.NetworkId = l1Genesis.Config.ChainID.Uint64()
+	nodeConf.NetworkId = l1Genesis.Config.ChainID.Uint64() //nolint:staticcheck // Config is the correct field for non-Arbitrum L1 chains
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1Genesis.Coinbase
 	nodeConf.Miner.PendingFeeRecipient = l1Genesis.Coinbase
@@ -133,7 +133,7 @@ func DeployOnTempL1[T any](deployFn func(ctx context.Context, client *ethclient.
 
 	client := ethclient.NewClient(stack.Attach())
 	deployerAuth, err := bind.NewKeyedTransactorWithChainID(
-		deployerKey, l1Genesis.Config.ChainID,
+		deployerKey, l1Genesis.Config.ChainID, //nolint:staticcheck // Config is the correct field for non-Arbitrum L1 chains
 	)
 	if err != nil {
 		stack.Close()
