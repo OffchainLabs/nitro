@@ -171,9 +171,9 @@ pub fn resolve_preimage_impl(
 
     #[cfg(debug_assertions)]
     {
+        use arbutil::PreimageType;
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
-        use arbutil::PreimageType;
 
         // Check if preimage rehashes to the provided hash. Exclude blob preimages
         let calculated_hash: [u8; 32] = match preimage_type {
