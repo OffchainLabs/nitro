@@ -523,6 +523,16 @@ type RollupAddresses struct {
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
+// CreatorAddresses holds addresses from deploying the rollup creator
+// infrastructure (BridgeCreator, OSPs, EdgeChallengeManager,
+// RollupCreator, etc.). Obtained from DeployCreator.
+type CreatorAddresses struct {
+	RollupCreator          common.Address
+	RollupUserLogic        common.Address
+	ValidatorUtils         common.Address
+	ValidatorWalletCreator common.Address
+}
+
 type RollupStackConfig struct {
 	UseMockBridge          bool
 	UseMockOneStepProver   bool
@@ -531,6 +541,9 @@ type RollupStackConfig struct {
 	CustomDAOsp            common.Address
 }
 
+// DeployFullRollupStack deploys the creator infrastructure and then
+// creates a rollup instance. Equivalent to calling DeployCreator
+// followed by DeployRollup.
 func DeployFullRollupStack(
 	ctx context.Context,
 	backend protocol.ChainBackend,
@@ -539,10 +552,35 @@ func DeployFullRollupStack(
 	config rollupgen.Config,
 	stackConf RollupStackConfig,
 ) (*RollupAddresses, error) {
-	log.Info("Deploying rollup creator")
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, stackConf.UseBlobs, stackConf.UseMockBridge, stackConf.UseMockOneStepProver)
+	creator, err := deployCreatorInternal(
+		ctx, backend, deployAuth,
+		stackConf.UseBlobs,
+		stackConf.UseMockBridge,
+		stackConf.UseMockOneStepProver,
+	)
 	if err != nil {
 		return nil, err
+	}
+	return DeployRollup(
+		ctx, backend, deployAuth, sequencer,
+		config, creator, stackConf,
+	)
+}
+
+// DeployRollup calls CreateRollup on a previously deployed
+// RollupCreator and configures the resulting rollup instance.
+func DeployRollup(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	deployAuth *bind.TransactOpts,
+	sequencer common.Address,
+	config rollupgen.Config,
+	creator *CreatorAddresses,
+	stackConf RollupStackConfig,
+) (*RollupAddresses, error) {
+	rollupCreator, err := rollupgen.NewRollupCreator(creator.RollupCreator, backend)
+	if err != nil {
+		return nil, fmt.Errorf("binding to RollupCreator: %w", err)
 	}
 
 	log.Info("Creating rollup")
@@ -566,7 +604,7 @@ func DeployFullRollupStack(
 			fmt.Println(creationErr)
 			return nil, creationErr
 		}
-		err = challenge_testing.TxSucceeded(ctx, creationTx, rollupCreatorAddress, backend, err)
+		err = challenge_testing.TxSucceeded(ctx, creationTx, creator.RollupCreator, backend, err)
 		if err != nil {
 			return nil, err
 		}
@@ -653,9 +691,9 @@ func DeployFullRollupStack(
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             creationReceipt.BlockNumber.Uint64(),
 		Rollup:                 info.RollupAddress,
-		RollupUserLogic:        rollupUserAddr,
-		ValidatorUtils:         validatorUtils,
-		ValidatorWalletCreator: validatorWalletCreator,
+		RollupUserLogic:        creator.RollupUserLogic,
+		ValidatorUtils:         creator.ValidatorUtils,
+		ValidatorWalletCreator: creator.ValidatorWalletCreator,
 		UpgradeExecutor:        info.UpgradeExecutor,
 	}, nil
 }
@@ -955,6 +993,41 @@ func deployChallengeFactory(
 		return common.Address{}, common.Address{}, err
 	}
 	return ospEntryAddr, edgeChallengeManagerAddr, nil
+}
+
+// DeployCreator deploys all rollup creator infrastructure contracts
+// (BridgeCreator, OSPs, EdgeChallengeManager, RollupCreator, etc.)
+// without calling CreateRollup.
+func DeployCreator(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	auth *bind.TransactOpts,
+	useBlobs bool,
+) (*CreatorAddresses, error) {
+	return deployCreatorInternal(
+		ctx, backend, auth, useBlobs, false, false,
+	)
+}
+
+func deployCreatorInternal(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	auth *bind.TransactOpts,
+	useBlobs bool,
+	useMockBridge bool,
+	useMockOneStepProver bool,
+) (*CreatorAddresses, error) {
+	log.Info("Deploying rollup creator")
+	_, rollupUserAddr, rollupCreatorAddr, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, auth, useBlobs, useMockBridge, useMockOneStepProver)
+	if err != nil {
+		return nil, err
+	}
+	return &CreatorAddresses{
+		RollupCreator:          rollupCreatorAddr,
+		RollupUserLogic:        rollupUserAddr,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
+	}, nil
 }
 
 func deployRollupCreator(

@@ -200,6 +200,35 @@ func deployChallengeFactory(ctx context.Context, parentChainReader *headerreader
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
+// LegacyCreatorAddresses holds addresses from deploying the legacy
+// rollup creator infrastructure. Obtained from DeployCreator.
+type LegacyCreatorAddresses struct {
+	RollupCreator          common.Address
+	ValidatorUtils         common.Address
+	ValidatorWalletCreator common.Address
+}
+
+// DeployCreator deploys all legacy rollup creator infrastructure contracts
+// without calling CreateRollup. Returns addresses suitable for caching and
+// later passing to DeployLegacyRollup.
+func DeployCreator(
+	ctx context.Context,
+	parentChainReader *headerreader.HeaderReader,
+	auth *bind.TransactOpts,
+	maxDataSize *big.Int,
+	chainSupportsBlobs bool,
+) (*LegacyCreatorAddresses, error) {
+	_, rollupCreatorAddr, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, auth, maxDataSize, chainSupportsBlobs)
+	if err != nil {
+		return nil, err
+	}
+	return &LegacyCreatorAddresses{
+		RollupCreator:          rollupCreatorAddr,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
+	}, nil
+}
+
 func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int, chainSupportsBlobs bool) (*rollup_legacy_gen.RollupCreator, common.Address, common.Address, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, parentChainReader, auth, maxDataSize, chainSupportsBlobs)
 	if err != nil {
@@ -273,19 +302,54 @@ func deployRollupCreator(ctx context.Context, parentChainReader *headerreader.He
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
+// DeployLegacyOnParentChain deploys the creator infrastructure and
+// then creates a rollup instance. Equivalent to calling DeployCreator
+// followed by DeployLegacyRollup.
 func DeployLegacyOnParentChain(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollup_legacy_gen.Config, nativeToken common.Address, maxDataSize *big.Int, chainSupportsBlobs bool) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize, chainSupportsBlobs)
+	creator, err := DeployCreator(
+		ctx, parentChainReader, deployAuth,
+		maxDataSize, chainSupportsBlobs,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+	}
+	return DeployLegacyRollup(
+		ctx, parentChainReader, deployAuth,
+		batchPosters, batchPosterManager, authorizeValidators,
+		config, nativeToken, maxDataSize, creator,
+	)
+}
+
+// DeployLegacyRollup calls CreateRollup on a previously deployed
+// legacy RollupCreator and returns the resulting rollup addresses.
+func DeployLegacyRollup(
+	ctx context.Context,
+	parentChainReader *headerreader.HeaderReader,
+	deployAuth *bind.TransactOpts,
+	batchPosters []common.Address,
+	batchPosterManager common.Address,
+	authorizeValidators uint64,
+	config rollup_legacy_gen.Config,
+	nativeToken common.Address,
+	maxDataSize *big.Int,
+	creator *LegacyCreatorAddresses,
+) (*chaininfo.RollupAddresses, error) {
+	if config.WasmModuleRoot == (common.Hash{}) {
+		return nil, errors.New("no machine specified")
+	}
+
+	rollupCreator, err := rollup_legacy_gen.NewRollupCreator(creator.RollupCreator, parentChainReader.Client())
+	if err != nil {
+		return nil, fmt.Errorf("binding to RollupCreator: %w", err)
 	}
 
 	var validatorAddrs []common.Address
 	for i := uint64(1); i <= authorizeValidators; i++ {
-		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(creator.ValidatorWalletCreator, i))
 	}
 
 	deployParams := rollup_legacy_gen.RollupCreatorRollupDeploymentParams{
@@ -323,7 +387,7 @@ func DeployLegacyOnParentChain(ctx context.Context, parentChainReader *headerrea
 		Rollup:                 info.RollupAddress,
 		NativeToken:            nativeToken,
 		UpgradeExecutor:        info.UpgradeExecutor,
-		ValidatorUtils:         validatorUtils,
-		ValidatorWalletCreator: validatorWalletCreator,
+		ValidatorUtils:         creator.ValidatorUtils,
+		ValidatorWalletCreator: creator.ValidatorWalletCreator,
 	}, nil
 }

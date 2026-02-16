@@ -276,7 +276,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	return &config
 }
 
-// DeployConfig contains options for deployOnParentChain
+// DeployConfig contains options for deployOnParentChain.
 type DeployConfig struct {
 	DeployBold                 bool
 	DeployReferenceDAContracts bool
@@ -722,15 +722,22 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
-	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
-	Require(t, err)
+
 	deployConfig := DeployConfig{
 		DeployBold:                 b.deployBold,
 		DeployReferenceDAContracts: b.deployReferenceDAContracts,
 		DelayBufferThreshold:       b.delayBufferThreshold,
 	}
-	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDAContracts=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDAContracts)
+	var genesisAlloc types.GenesisAlloc
+	if b.deployBold {
+		genesisAlloc = boldCreatorCache.alloc
+	} else {
+		genesisAlloc = legacyCreatorCache.alloc
+	}
+
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig, genesisAlloc)
+	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -846,9 +853,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
 	deployConfig := DeployConfig{
-		DeployBold:                 b.deployBold,
-		DeployReferenceDAContracts: false, // L3 doesn't need ReferenceDA
-		DelayBufferThreshold:       0,
+		DeployBold: b.deployBold,
 	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
@@ -1695,7 +1700,47 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	return valStack
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
+// startL1Backend creates a geth node with a simulated beacon from a
+// pre-built genesis config. Caller is responsible for registering
+// additional APIs and calling stack.Close() on shutdown.
+func startL1Backend(stackConfig *node.Config, l1Genesis *core.Genesis) (*node.Node, *eth.Ethereum, *catalyst.SimulatedBeacon, error) {
+	stackConfig.DataDir = ""
+	stack, err := node.New(stackConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	nodeConf := ethconfig.Defaults
+	nodeConf.Preimages = true
+	nodeConf.NetworkId = l1Genesis.Config.ChainID.Uint64()
+	nodeConf.Genesis = l1Genesis
+	nodeConf.Miner.Etherbase = l1Genesis.Coinbase
+	nodeConf.Miner.PendingFeeRecipient = l1Genesis.Coinbase
+	nodeConf.SyncMode = ethconfig.FullSync
+
+	l1backend, err := eth.New(stack, &nodeConf)
+	if err != nil {
+		stack.Close()
+		return nil, nil, nil, err
+	}
+
+	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
+	if err != nil {
+		stack.Close()
+		return nil, nil, nil, err
+	}
+	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
+	stack.RegisterLifecycle(simBeacon)
+
+	stack.RegisterAPIs([]rpc.API{{
+		Namespace: "eth",
+		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
+	}})
+
+	return stack, l1backend, simBeacon, nil
+}
+
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, extraGenesisAlloc types.GenesisAlloc) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1707,14 +1752,9 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
-	stackConfig.DataDir = ""
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
 	faucetAddr := l1info.GetAddress("Faucet")
 	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
+	l1Genesis.Coinbase = faucetAddr
 
 	// Pre-fund with large values some common accounts
 	infoGenesis := l1info.GetGenesisAlloc()
@@ -1730,19 +1770,18 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
 	}
+	// Only inject contract accounts (those with code) from the extra alloc.
+	// EOAs keep their fresh genesis state (nonce 0, large balance) so that
+	// BlockchainTestInfo nonce counters remain in sync with on-chain state.
+	for addr, acct := range extraGenesisAlloc {
+		if len(acct.Code) > 0 {
+			l1Genesis.Alloc[addr] = acct
+		}
+	}
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesis
-	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
-	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
-	nodeConf.SyncMode = ethconfig.FullSync
 
-	l1backend, err := eth.New(stack, &nodeConf)
+	stack, l1backend, simBeacon, err := startL1Backend(stackConfig, l1Genesis)
 	Require(t, err)
-
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	Require(t, err)
-	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	stack.RegisterLifecycle(simBeacon)
 
 	tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
@@ -1754,10 +1793,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 		return l1backend.Stop()
 	}})
 
-	stack.RegisterAPIs([]rpc.API{{
-		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	}})
 	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
 
 	Require(t, stack.Start())
@@ -1946,12 +1981,13 @@ func deployOnParentChain(
 			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 
-		boldAddresses, err := setup.DeployFullRollupStack(
+		boldAddresses, err := setup.DeployRollup(
 			ctx,
 			parentReader,
 			&parentChainTransactionOpts,
 			parentChainInfo.GetAddress("Sequencer"),
 			cfg,
+			boldCreatorCache.creator,
 			rollupStackConfig,
 		)
 		Require(t, err)
@@ -1968,7 +2004,7 @@ func deployOnParentChain(
 			DeployedAt:             boldAddresses.DeployedAt,
 		}
 	} else {
-		addresses, err = deploy.DeployLegacyOnParentChain(
+		addresses, err = deploy.DeployLegacyRollup(
 			ctx,
 			parentChainReader,
 			&parentChainTransactionOpts,
@@ -1978,7 +2014,7 @@ func deployOnParentChain(
 			deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 			nativeToken,
 			maxDataSize,
-			chainSupportsBlobs,
+			legacyCreatorCache.creator,
 		)
 	}
 	Require(t, err)
@@ -2582,6 +2618,9 @@ func initDefaultTestLog() {
 func TestMain(m *testing.M) {
 	initDefaultTestLog()
 	initTestCollection()
+	if err := initCreatorCaches(); err != nil {
+		log.Crit("failed to initialize creator caches", "err", err)
+	}
 	code := m.Run()
 	os.Exit(code)
 }
