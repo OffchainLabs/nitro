@@ -276,28 +276,19 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	var transactionFiltererRPCClient *TransactionFiltererRPCClient
-	if config.Sequencer.Enable && config.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
-		filtererConfigFetcher := func() *rpcclient.ClientConfig {
-			return &configFetcher.Get().Sequencer.TransactionFiltering.TransactionFiltererRPCClient
-		}
-		transactionFiltererRPCClient = NewTransactionFiltererRPCClient(filtererConfigFetcher)
-	}
-
-	execEngine, err := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
 	if config.Caching.DisableStylusCacheMetricsCollection {
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
+	var err error
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)

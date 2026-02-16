@@ -35,8 +35,8 @@ func (c *Client) Start(ctx_in context.Context) error {
 }
 
 func (c *Client) StopAndWait() {
-	c.StopWaiter.StopAndWait()
 	c.client.Close()
+	c.StopWaiter.StopAndWait()
 }
 
 func convertError(err error) error {

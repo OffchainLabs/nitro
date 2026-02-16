@@ -36,8 +36,8 @@ func (c *ConsensusRPCClient) Start(ctx_in context.Context) error {
 }
 
 func (c *ConsensusRPCClient) StopAndWait() {
-	c.StopWaiter.StopAndWait()
 	c.client.Close()
+	c.StopWaiter.StopAndWait()
 }
 
 func convertError(err error) error {
@@ -51,18 +51,18 @@ func convertError(err error) error {
 	return err
 }
 
-func (c *ConsensusRPCClient) FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[consensus.InboxBatch] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (consensus.InboxBatch, error) {
-		var res consensus.InboxBatch
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findInboxBatchContainingMessage", message)
+func (c *ConsensusRPCClient) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getL1Confirmations", msgIdx)
 		return res, convertError(err)
 	})
 }
 
-func (c *ConsensusRPCClient) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
+func (c *ConsensusRPCClient) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (uint64, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_getBatchParentChainBlock", seqNum)
+		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_findBatchContainingMessage", msgIdx)
 		return res, convertError(err)
 	})
 }

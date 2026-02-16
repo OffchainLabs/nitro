@@ -72,6 +72,7 @@ paste = { version = "1.0.15" }
 rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 rayon = { version = "1.5.1" }
+reqwest = { version = "0.13.1" }
 ruint2 = { version = "1.9.0" }
 rustc-demangle = { version = "0.1.21" }
 serde = { version = "1.0.130" }
@@ -81,6 +82,7 @@ sha2 = { version = "0.10.9" }
 sha3 = { version = "0.10.8" }
 siphasher = { version = "0.3.10" }
 smallvec = { version = "1.10.0" }
+spin = { version = "0.10.0" }
 static_assertions = { version = "1.1.0" }
 structopt = { version = "0.3.26" }
 thiserror = { version = "1.0.33" }

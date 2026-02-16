@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
@@ -68,8 +69,11 @@ var (
 	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
 )
 
-var ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-var ResultNotFound = errors.New("result not found")
+var (
+	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
+	ResultNotFound                      = errors.New("result not found")
+	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+)
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
@@ -108,6 +112,14 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
+	}
+	// For tx types that alias the sender (unsigned contract txs, retryables),
+	// also check the original L1 address. The sender in the tx is already
+	// aliased by the L1 bridge, but the restricted address list contains
+	// original (non-aliased) addresses.
+	txType := tx.Type()
+	if arbosutil.DoesTxTypeAlias(&txType) {
+		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 
 	if db.IsAddressFiltered() {
@@ -186,22 +198,15 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(
-	bc *core.BlockChain,
-	syncTillBlock uint64,
-	exposeMultiGas bool,
-	transactionFiltererRPCClient *TransactionFiltererRPCClient,
-) (*ExecutionEngine, error) {
-	execEngine := &ExecutionEngine{
-		bc:                           bc,
-		resequenceChan:               make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:             make(chan struct{}, 1),
-		cachedL1PriceData:            NewL1PriceData(),
-		exposeMultiGas:               exposeMultiGas,
-		syncTillBlock:                syncTillBlock,
-		transactionFiltererRPCClient: transactionFiltererRPCClient,
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+	return &ExecutionEngine{
+		bc:                bc,
+		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:  make(chan struct{}, 1),
+		cachedL1PriceData: NewL1PriceData(),
+		exposeMultiGas:    exposeMultiGas,
+		syncTillBlock:     syncTillBlock,
 	}
-	return execEngine, nil
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -767,7 +772,7 @@ func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
 func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis := s.GetGenesisBlockNumber()
 	if blockNum < genesis {
-		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+		return 0, fmt.Errorf("%w: blockNum %d < genesis %d", BlockNumBeforeGenesis, blockNum, genesis)
 	}
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
@@ -1279,6 +1284,10 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
+	s.transactionFiltererRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {

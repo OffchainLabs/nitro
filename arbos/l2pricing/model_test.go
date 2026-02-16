@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -268,5 +270,125 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 	Require(t, err)
 	if price.Cmp(expectedPrice) != 0 {
 		t.Errorf("Price did not increase after backlog growth: got %v, want > %v", price, expectedPrice)
+	}
+}
+
+// Use huge backlog and zero timePassed to ensure the updatePricingModel re-calculates base-fee
+const benchmarkBacklog = 1_000_000_000
+const benchmarkTimePassed = 0
+
+func setupBenchmarkPricingModel(b *testing.B) *L2PricingState {
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	if err := InitializeL2PricingState(sto); err != nil {
+		b.Fatal(err)
+	}
+	return OpenL2PricingState(sto, params.ArbosVersion_MultiGasConstraintsVersion)
+}
+
+func allResourceWeights() map[uint8]uint64 {
+	weights := map[uint8]uint64{}
+	for resource := multigas.ResourceKindComputation; resource < multigas.NumResourceKind; resource++ {
+		weights[uint8(resource)] = 1
+	}
+	return weights
+}
+
+func BenchmarkUpdatePricing_Legacy(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	if err := pricing.SetSpeedLimitPerSecond(InitialSpeedLimitPerSecondV6); err != nil {
+		b.Fatal(err)
+	}
+	if err := pricing.gasBacklog.Set(benchmarkBacklog); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
+	}
+}
+
+func BenchmarkUpdatePricing_SingleGas_1Constraint(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	if err := pricing.AddGasConstraint(7_000_000, 12, benchmarkBacklog); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
+	}
+}
+
+func BenchmarkUpdatePricing_SingleGas_6Constraints(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
+	windows := []uint64{9, 52, 329, 2_105, 13_485, 86_400}
+	for i := range targets {
+		if err := pricing.AddGasConstraint(targets[i], windows[i], benchmarkBacklog); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
+	}
+}
+
+func BenchmarkUpdatePricing_MultiGas_1Constraint(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	weights := allResourceWeights()
+	if err := pricing.AddMultiGasConstraint(7_000_000, 12, benchmarkBacklog, weights); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
+	}
+}
+
+func BenchmarkUpdatePricing_MultiGas_6Constraint(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	weights := allResourceWeights()
+	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
+	windows := []uint32{9, 52, 329, 2_105, 13_485, 86_400}
+	for i := range targets {
+		if err := pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
+	}
+}
+
+func BenchmarkUpdatePricing_MultiGas_42Constraint(b *testing.B) {
+	pricing := setupBenchmarkPricingModel(b)
+
+	targets := []uint64{60_000_000, 41_000_000, 29_000_000, 20_000_000, 14_000_000, 10_000_000}
+	windows := []uint32{9, 52, 329, 2_105, 13_485, 86_400}
+	for resource := multigas.ResourceKindComputation; resource < multigas.NumResourceKind; resource++ {
+		weights := map[uint8]uint64{
+			uint8(resource): 1,
+		}
+		for i := range targets {
+			if err := pricing.AddMultiGasConstraint(targets[i], windows[i], benchmarkBacklog, weights); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		pricing.UpdatePricingModel(benchmarkTimePassed)
 	}
 }
