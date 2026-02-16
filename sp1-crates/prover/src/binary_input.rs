@@ -23,15 +23,7 @@ pub struct Input {
 // SP1 has additional alignment requirements, we have to decompress the data
 // into aligned bytes
 pub fn decompress_aligned(user_wasm: &UserWasm) -> ModuleAsm {
-    let data = {
-        let mut decompressor =
-            brotli::Decompressor::new(std::io::Cursor::new(user_wasm.as_vec()), 4096);
-        let mut result = vec![];
-        decompressor
-            .read_to_end(&mut result)
-            .expect("decompressing");
-        result
-    };
+    let data = user_wasm.as_ref();
     // This is less ideal but until one of the following happens, we
     // will have to stick with it:
     // * Allocator allocates aligned memory
