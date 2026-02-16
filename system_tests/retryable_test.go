@@ -247,10 +247,11 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}
@@ -320,11 +321,12 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	l2Tx := lookupL2Tx(l1Receipt)
 	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}
@@ -386,10 +388,11 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
 	}
@@ -504,9 +507,6 @@ func insertRetriables(
 
 		receipts[i] = l1Receipt
 	}
-	// Advance L1 once so all retryables have enough confirmations
-	// for the delayed inbox reader to pick them up.
-	waitForL1DelayBlocks(t, bld)
 	return receipts
 }
 
@@ -756,10 +756,11 @@ func TestRetryableExpiry(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
 	}
@@ -822,10 +823,11 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
 	}
@@ -911,10 +913,11 @@ func TestKeepaliveAndCancelRetryable(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(receipt.Logs) != 2 {
 		Fatal(t, len(receipt.Logs))
 	}
@@ -1022,11 +1025,12 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, "Unexpected number of logs:", len(submissionReceipt.Logs))
 	}
@@ -1128,14 +1132,6 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-func waitForL1DelayBlocks(t *testing.T, builder *NodeBuilder) {
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-}
 
 func TestDepositETH(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
@@ -1163,12 +1159,13 @@ func TestDepositETH(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("Got transaction status: %v, want: %v", l1Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	l2Receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded unexpected error: %v", err)
 	}
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	newBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
 	if err != nil {
 		t.Fatalf("BalanceAt(%v) unexpected error: %v", faucetAddr, err)
@@ -1223,11 +1220,13 @@ func TestArbitrumContractTx(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, builder)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	_, err = builder.L2.EnsureTxSucceeded(lookupL2Tx(receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
@@ -1292,11 +1291,13 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, builder)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	receipt, err = builder.L2.EnsureTxSucceeded(unsignedTx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
 	}
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L2 transaction: %v has failed", receipt.TxHash)
 	}
@@ -1344,13 +1345,15 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 
 	elevateL2Basefee(t, ctx, builder)
 
-	waitForL1DelayBlocks(t, builder)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	elevateL2Basefee(t, ctx, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, len(submissionReceipt.Logs))
 	}
@@ -1510,9 +1513,11 @@ func TestRetryableRedeemBlockGasUsage(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
-	waitForL1DelayBlocks(t, builder)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if len(submissionReceipt.Logs) != 2 {
 		Fatal(t, len(submissionReceipt.Logs))
 	}

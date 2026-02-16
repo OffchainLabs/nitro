@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
@@ -34,18 +33,11 @@ func TestSequencerCompensation(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	_, err = WaitForTx(ctx, TestClientB.Client, tx.Hash(), time.Second*5)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	_, err = WaitForTx(ctx, TestClientB.Client, tx.Hash(), time.Second*30)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	// clientB sees balance means sequencer message was sent
 	l2balance, err := TestClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)

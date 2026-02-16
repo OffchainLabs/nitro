@@ -66,15 +66,11 @@ func TestDelayInboxLong(t *testing.T) {
 		Fatal(t, "No delayed messages sent!")
 	}
 
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 100; i++ {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-
-	_, err := WaitForTx(ctx, builder.L2.Client, lastDelayedMessage.Hash(), time.Second*5)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	_, err := WaitForTx(ctx, builder.L2.Client, lastDelayedMessage.Hash(), time.Second*30)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(fundsPerDelayed*delayedMessages)) != 0 {

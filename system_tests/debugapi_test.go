@@ -291,11 +291,12 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("Got transaction status: %v, want: %v", l1Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	l2Tx := lookupL2Tx(l1Receipt)
 	l2Receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	newBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
 	Require(t, err)
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
@@ -395,11 +396,12 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan = KeepL1Advancing(builder)
 	l2Tx = lookupL2Tx(l1Receipt)
 	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}

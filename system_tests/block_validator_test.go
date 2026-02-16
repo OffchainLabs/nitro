@@ -228,15 +228,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
 		})
 
-		// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-		for i := 0; i < 30; i++ {
-			builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-				builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-			})
-		}
-
+		stopL1, l1ErrChan := KeepL1Advancing(builder)
 		_, err := WaitForTx(ctx, testClientB.Client, delayedTx.Hash(), time.Second*30)
 		Require(t, err)
+		close(stopL1)
+		Require(t, <-l1ErrChan)
 	}
 
 	if opts.workload == ethSend {
