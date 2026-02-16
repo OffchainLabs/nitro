@@ -186,6 +186,14 @@ mod tests {
     use arbutil::Bytes32;
     use rand::RngCore;
 
+    fn get_machines_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("Failed to navigate to workspace root")
+            .join("target/machines")
+    }
+
     fn get_or_create_root_path(machines_dir: &PathBuf, root: &str) -> RootMetaWrapper {
         let complete_root_path = machines_dir.join(root);
 
@@ -249,15 +257,9 @@ mod tests {
         // folders with their respective module-root.txt so that MachineLocator
         // can find them
         fn new(root_count: u32) -> Self {
-            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
             assert!(root_count > 0, "there must be at least one module root");
 
-            let machines_dir = manifest_dir
-                .ancestors()
-                .nth(2)
-                .expect("Failed to navigate to workspace root")
-                .join("target/machines");
-
+            let machines_dir = get_machines_dir();
             let mut root_metas = vec![];
 
             for _ in 0..root_count {
@@ -344,16 +346,7 @@ mod tests {
 
     #[test]
     fn test_machine_locator_with_root_path() -> Result<()> {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let machines_dir = manifest_dir
-            .ancestors()
-            .nth(2)
-            .expect("Failed to navigate to workspace root")
-            .join("target/machines");
-
-        test_machine_locator(2, &Some(machines_dir))?;
-
-        Ok(())
+        test_machine_locator(2, &Some(get_machines_dir()))
     }
 
     #[test]
@@ -391,13 +384,7 @@ mod tests {
         let error = result.err().unwrap();
         let err_str = error.to_string();
 
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let machines_dir = manifest_dir
-            .ancestors()
-            .nth(2)
-            .expect("Failed to navigate to workspace root")
-            .join("target/machines");
-        let expected_path = machines_dir.join(format!("0x{random_module_root}"));
+        let expected_path = get_machines_dir().join(format!("0x{random_module_root}"));
         let expected_error = format!("module root path {expected_path:?} does not exist");
         assert_eq!(err_str, expected_error);
 
