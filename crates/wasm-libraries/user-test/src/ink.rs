@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{program::Program, CONFIG};
+use crate::{program::Program, GLOBAL_STATE};
 use arbutil::evm::api::Ink;
 use prover::programs::{
     config::PricingParams,
@@ -34,6 +34,6 @@ impl MeteredMachine for Program {
 
 impl GasMeteredMachine for Program {
     fn pricing(&self) -> PricingParams {
-        unsafe { CONFIG.unwrap().pricing }
+        GLOBAL_STATE.lock().config.unwrap().pricing
     }
 }
