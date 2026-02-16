@@ -1591,7 +1591,9 @@ func TestProgramCacheManager(t *testing.T) {
 	ensure(mock.EvictProgram(&userAuth, testhelpers.RandomAddress()))
 
 	// cache the active program
-	activateWasm(t, ctx, userAuth, l2client, program, "keccak")
+	activateAuth := userAuth
+	activateAuth.GasLimit = 32000000
+	activateWasm(t, ctx, activateAuth, l2client, program, "keccak")
 	ensure(mock.CacheProgram(&userAuth, program))
 	assert(arbWasmCache.CodehashIsCached(nil, codehash))
 

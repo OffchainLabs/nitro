@@ -713,6 +713,11 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	// to MaxCalldataBatchSize rather than posting tiny batches as messages trickle in.
 	writerControl.SetCustomError(errors.New("blocked for test accumulation"))
 
+	// Flush any batch poster L1 txs sent before the block. checkBatchPosting may
+	// have triggered a batch that is still in the L1 mempool; mining a few blocks
+	// ensures it lands before l1BlockBefore so it doesn't contaminate our range.
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
+
 	// Generate enough transactions to require multiple calldata batches
 	var lastTxHash common.Hash
 	for i := 0; i < 250; i++ {
@@ -1068,6 +1073,11 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	// Block the batch poster so transactions accumulate without being consumed
 	// by partial batches (same pattern as TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing)
 	writerControl.SetCustomError(errors.New("blocked for test accumulation"))
+
+	// Flush any batch poster L1 txs sent before the block. checkBatchPosting may
+	// have triggered a batch that is still in the L1 mempool; mining a few blocks
+	// ensures it lands before l1BlockBefore so it doesn't contaminate our range.
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Generate enough transactions to exceed 5KB when batched
 	var lastTxHash common.Hash

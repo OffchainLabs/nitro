@@ -13,6 +13,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -59,8 +60,20 @@ func sendAndTraceTransaction(
 	l2info := builder.L2Info
 	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
 
-	tx := l2info.PrepareTxTo("Owner", &program, l2info.TransferGas, value, data)
-	err := l2client.SendTransaction(ctx, tx)
+	from := l2info.GetAddress("Owner")
+	gas, err := l2client.EstimateGas(ctx, ethereum.CallMsg{
+		From:  from,
+		To:    &program,
+		Value: value,
+		Data:  data,
+	})
+	if err != nil {
+		// Estimation can fail for intentionally-reverting transactions.
+		// Fall back to a generous limit that covers L1 poster costs.
+		gas = 32000000
+	}
+	tx := l2info.PrepareTxTo("Owner", &program, gas, value, data)
+	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	var result logger.ExecutionResult

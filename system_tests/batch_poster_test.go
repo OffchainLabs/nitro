@@ -689,14 +689,18 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	for i := 0; i < numBatches; i++ {
 		// Send transactions using the bridge to generate delay proofs
 		SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
-		// Capture the batch poster transaction, ensuring the batch was closed. If it was not
-		// closed, the select will time out and the test will fail.
+		// Keep L1 advancing so the batch poster sees the delay buffer threshold crossed
+		// and has time to react asynchronously. KeepL1Advancing advances every 100ms,
+		// unlike synchronous AdvanceL1 which completes before the batch poster can process.
+		stopL1, l1ErrChan := KeepL1Advancing(builder)
 		select {
 		case tx := <-batchPosterTxsChan:
 			batchPosterTxs = append(batchPosterTxs, tx)
-		case <-time.After(1 * time.Second):
+		case <-time.After(10 * time.Second):
 			Fatal(t, "Timed out waiting for batch poster tx")
 		}
+		close(stopL1)
+		Require(t, <-l1ErrChan)
 	}
 	select {
 	case <-batchPosterTxsChan:
