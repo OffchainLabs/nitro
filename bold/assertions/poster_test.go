@@ -57,7 +57,7 @@ func TestPostAssertion(t *testing.T) {
 
 	chalManager.Start(ctx)
 
-	// Wait a little for the chain watcher to be ready.
+	// Wait for the chain watcher to be ready.
 	time.Sleep(time.Second)
 
 	preState, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, protocol.GoGlobalState{})
@@ -81,14 +81,20 @@ func TestPostAssertion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, postState, protocol.GoExecutionStateFromSolidity(creationInfo.AfterState))
 
-	// Wait a little and advance the chain to allow the next assertion to be posted.
-	time.Sleep(time.Second * 5)
-	chainSetup.Backend.Commit()
-
 	// Expect a zero ERC20 balance after the first staked assertion was posted.
 	balance, err = erc20.BalanceOf(&bind.CallOpts{}, aliceChain.StakerAddress())
 	require.NoError(t, err)
 	require.True(t, big.NewInt(0).Cmp(balance) == 0)
+
+	// Wait for the chain watcher to process the new assertion so that
+	// latestAgreedAssertion advances past the genesis assertion.
+	// Each poll commits a block so the simulated backend advances and
+	// the chain watcher can discover the assertion event.
+	firstAssertionHash := posted.Unwrap().Id()
+	require.Eventually(t, func() bool {
+		chainSetup.Backend.Commit()
+		return assertionManager.LatestAgreedAssertion() == firstAssertionHash
+	}, 10*time.Second, 50*time.Millisecond)
 
 	posted, err = assertionManager.PostAssertion(ctx)
 	require.NoError(t, err)
@@ -100,9 +106,6 @@ func TestPostAssertion(t *testing.T) {
 
 	// Continue to expect a zero ERC20 balance after the second assertion was posted, as no new
 	// stake was expected for the validator.
-	time.Sleep(time.Second * 5)
-	chainSetup.Backend.Commit()
-
 	balance, err = erc20.BalanceOf(&bind.CallOpts{}, chainSetup.Accounts[0].TxOpts.From)
 	require.NoError(t, err)
 	require.True(t, big.NewInt(0).Cmp(balance) == 0)
@@ -156,9 +159,6 @@ func setupAssertionPosting(t *testing.T) (*setup.ChainSetup, *challenge.Manager,
 	)
 	stateManager, err := stateprovider.NewForSimpleMachine(t, stateManagerOpts...)
 	require.NoError(t, err)
-	// Set MinimumGapToBlockCreationTime as 1 second to verify that a new assertion is only posted after 1 sec has passed
-	// from parent assertion creation. This will make the test run for ~19 seconds as the parent assertion time is
-	// ~18 seconds in the future
 	assertionManager, err := assertions.NewManager(
 		aliceChain,
 		stateManager,

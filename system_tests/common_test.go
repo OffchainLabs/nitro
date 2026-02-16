@@ -43,8 +43,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -94,6 +92,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/deploycache"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
@@ -1704,40 +1703,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 // pre-built genesis config. Caller is responsible for registering
 // additional APIs and calling stack.Close() on shutdown.
 func startL1Backend(stackConfig *node.Config, l1Genesis *core.Genesis) (*node.Node, *eth.Ethereum, *catalyst.SimulatedBeacon, error) {
-	stackConfig.DataDir = ""
-	stack, err := node.New(stackConfig)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	nodeConf := ethconfig.Defaults
-	nodeConf.Preimages = true
-	nodeConf.NetworkId = l1Genesis.Config.ChainID.Uint64()
-	nodeConf.Genesis = l1Genesis
-	nodeConf.Miner.Etherbase = l1Genesis.Coinbase
-	nodeConf.Miner.PendingFeeRecipient = l1Genesis.Coinbase
-	nodeConf.SyncMode = ethconfig.FullSync
-
-	l1backend, err := eth.New(stack, &nodeConf)
-	if err != nil {
-		stack.Close()
-		return nil, nil, nil, err
-	}
-
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	if err != nil {
-		stack.Close()
-		return nil, nil, nil, err
-	}
-	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	stack.RegisterLifecycle(simBeacon)
-
-	stack.RegisterAPIs([]rpc.API{{
-		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	}})
-
-	return stack, l1backend, simBeacon, nil
+	return deploycache.StartL1Backend(stackConfig, l1Genesis)
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, extraGenesisAlloc types.GenesisAlloc) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
