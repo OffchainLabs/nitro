@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package dbstorage
@@ -18,7 +18,7 @@ import (
 
 // Storage implements db based storage for batch poster.
 type Storage struct {
-	db     ethdb.Database
+	db     ethdb.KeyValueStore
 	encDec storage.EncoderDecoderF
 }
 
@@ -31,7 +31,7 @@ var (
 	countKey       = []byte(".count_key")
 )
 
-func New(db ethdb.Database, enc storage.EncoderDecoderF) *Storage {
+func New(db ethdb.KeyValueStore, enc storage.EncoderDecoderF) *Storage {
 	return &Storage{db: db, encDec: enc}
 }
 

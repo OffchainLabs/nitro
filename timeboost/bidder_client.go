@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import (
@@ -154,7 +156,7 @@ func (bd *BidderClient) Deposit(ctx context.Context, amount *big.Int) error {
 
 	if amount.Cmp(allowance) > 0 {
 		log.Info("Spend allowance of bidding token from auction contract is insufficient, increasing allowance", "from", bd.txOpts.From, "auctionContract", bd.auctionContractAddress, "biddingToken", bd.biddingTokenAddress, "amount", amount.Int64())
-		//		defecit := arbmath.BigSub(allowance, amount)
+		//		deficit := arbmath.BigSub(allowance, amount)
 		tx, err := bd.biddingTokenContract.Approve(bd.txOpts, bd.auctionContractAddress, amount)
 		if err != nil {
 			return err

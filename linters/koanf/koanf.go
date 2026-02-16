@@ -1,3 +1,6 @@
+// Copyright 2023-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package koanf
 
 import (
@@ -20,14 +23,7 @@ var (
 var Analyzer = &analysis.Analyzer{
 	Name:       "koanfcheck",
 	Doc:        "check for koanf misconfigurations",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(false, p) },
-	ResultType: reflect.TypeOf(Result{}),
-}
-
-var analyzerForTests = &analysis.Analyzer{
-	Name:       "testkoanfcheck",
-	Doc:        "check for koanf misconfigurations (for tests)",
-	Run:        func(p *analysis.Pass) (interface{}, error) { return run(true, p) },
+	Run:        run,
 	ResultType: reflect.TypeOf(Result{}),
 }
 
@@ -44,7 +40,7 @@ type Result struct {
 	Errors []koanfError
 }
 
-func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	var (
 		ret Result
 		cnt = make(map[string]int)
@@ -86,13 +82,11 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 	for _, err := range ret.Errors {
-		if !dryRun {
-			pass.Report(analysis.Diagnostic{
-				Pos:      err.Pos,
-				Message:  err.Message,
-				Category: "koanf",
-			})
-		}
+		pass.Report(analysis.Diagnostic{
+			Pos:      err.Pos,
+			Message:  err.Message,
+			Category: "koanf",
+		})
 	}
 	return ret, nil
 }

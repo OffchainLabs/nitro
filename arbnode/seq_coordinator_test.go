@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -229,7 +229,7 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 		t.Fatalf("incorrect finalizedMsgCount, want: 5, have: %d", finalized)
 	}
 
-	// Try deleting finalized messages when theres already a finalizedMsgCount
+	// Try deleting finalized messages when there's already a finalizedMsgCount
 	err = coordinator.deleteFinalizedMsgsFromRedis(ctx, 7)
 	Require(t, err)
 	exists, err = coordinator.RedisCoordinator().Client.Exists(ctx, keys[8:12]...).Result()

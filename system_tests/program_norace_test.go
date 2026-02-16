@@ -1,6 +1,7 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 
@@ -111,6 +112,7 @@ func TestProgramEvmData(t *testing.T) {
 
 func testEvmData(t *testing.T, jit bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder.WithPrestateTracerChecks = true
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client

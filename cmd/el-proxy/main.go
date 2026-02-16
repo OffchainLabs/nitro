@@ -1,5 +1,5 @@
-// Copyright 2025, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/nitro/blob/master/LICENSE
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // el-proxy is an example implementation of a Timeboost Express Lane proxy
 // and should only be used for testing purposes. It listens for
@@ -21,11 +21,10 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -33,8 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -55,28 +52,6 @@ func printSampleUsage(name string) {
 
 func main() {
 	os.Exit(mainImpl())
-}
-
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *ExpressLaneProxyConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled() {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		go metrics.CollectProcessMetrics(time.Second)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
 }
 
 type ExpressLaneProxy struct {
@@ -121,15 +96,20 @@ func NewExpressLaneProxy(
 		return nil, err
 	}
 
-	expressLaneTracker := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
 		*roundTimingInfo,
 		time.Millisecond*250,
 		&HeaderProviderAdapter{arbClient},
 		auctionContract,
 		auctionContractAddr,
 		&params.ChainConfig{ChainID: big.NewInt(config.ChainId)},
+		config.MaxTxDataSize,
 		0,
+		nil,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating express lane tracker: %w", err)
+	}
 
 	_, dataSignerFunc, err := util.OpenWallet("el-proxy", &config.Wallet, big.NewInt(config.ChainId))
 	if err != nil {
@@ -333,28 +313,13 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	pathResolver := func(workdir string) func(string) string {
-		if workdir == "" {
-			workdir, err = os.Getwd()
-			if err != nil {
-				log.Warn("Failed to get workdir", "err", err)
-			}
-		}
-		return func(path string) string {
-			if filepath.IsAbs(path) {
-				return path
-			}
-			return filepath.Join(workdir, path)
-		}
-	}
-
-	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, pathResolver(expressLaneProxyConfig.Persistent.LogDir))
+	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(expressLaneProxyConfig.Persistent.GlobalConfig)("jwtsecret")
+		filename := genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -365,10 +330,10 @@ func mainImpl() int {
 	liveNodeConfig := genericconf.NewLiveConfig[*ExpressLaneProxyConfig](args, expressLaneProxyConfig, parseExpressLaneProxyArgs)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ExpressLaneProxyConfig, newCfg *ExpressLaneProxyConfig) error {
 
-		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(expressLaneProxyConfig.Persistent.LogDir))
+		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	})
 
-	if err := startMetrics(expressLaneProxyConfig); err != nil {
+	if err := util.StartMetrics(expressLaneProxyConfig.Metrics, expressLaneProxyConfig.PProf, &expressLaneProxyConfig.MetricsServer, &expressLaneProxyConfig.PprofCfg); err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
@@ -378,7 +343,7 @@ func mainImpl() int {
 	log.Info("Running Arbitrum Express Lane Proxy", "revision", vcsRevision, "vcs.time", vcsTime)
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 	proxy, err := NewExpressLaneProxy(ctx, expressLaneProxyConfig, stack)
@@ -418,7 +383,7 @@ func mainImpl() int {
 }
 
 func parseExpressLaneProxyArgs(ctx context.Context, args []string) (*ExpressLaneProxyConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	ExpressLaneProxyConfigAddOptions(f)
 

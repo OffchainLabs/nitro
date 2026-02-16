@@ -1,0 +1,289 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/headerreader"
+)
+
+type ParentChainConfig struct {
+	NodeURL               string `koanf:"node-url"`
+	ConnectionAttempts    int    `koanf:"connection-attempts"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+}
+
+type AnyTrustServerConfig struct {
+	EnableRPC          bool                                `koanf:"enable-rpc"`
+	RPCAddr            string                              `koanf:"rpc-addr"`
+	RPCPort            uint64                              `koanf:"rpc-port"`
+	RPCServerTimeouts  genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
+
+	EnableREST         bool                                `koanf:"enable-rest"`
+	RESTAddr           string                              `koanf:"rest-addr"`
+	RESTPort           uint64                              `koanf:"rest-port"`
+	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
+
+	ParentChain ParentChainConfig `koanf:"parent-chain"`
+
+	DataAvailability anytrust.Config `koanf:"data-availability"`
+
+	Conf     genericconf.ConfConfig `koanf:"conf"`
+	LogLevel string                 `koanf:"log-level"`
+	LogType  string                 `koanf:"log-type"`
+
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf         bool                            `koanf:"pprof"`
+	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
+}
+
+var DefaultParentChainConfig = ParentChainConfig{
+	NodeURL:               "",
+	ConnectionAttempts:    15,
+	SequencerInboxAddress: "",
+}
+
+var DefaultAnyTrustServerConfig = AnyTrustServerConfig{
+	EnableRPC:          false,
+	RPCAddr:            "localhost",
+	RPCPort:            9876,
+	RPCServerTimeouts:  genericconf.HTTPServerTimeoutConfigDefault,
+	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
+	EnableREST:         false,
+	RESTAddr:           "localhost",
+	RESTPort:           9877,
+	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
+	ParentChain:        DefaultParentChainConfig,
+	DataAvailability:   anytrust.DefaultConfig,
+	Conf:               genericconf.ConfConfigDefault,
+	LogLevel:           "INFO",
+	LogType:            "plaintext",
+	Metrics:            false,
+	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
+}
+
+func main() {
+	if strings.Contains(filepath.Base(os.Args[0]), "daserver") {
+		log.Error("DEPRECATED: 'daserver' binary has been renamed to 'anytrustserver' and will be removed in a future release. Please update your scripts and configurations.")
+	}
+	if err := startup(); err != nil {
+		log.Error("Error running AnyTrust Server", "err", err)
+	}
+}
+
+func printSampleUsage(progname string) {
+	fmt.Printf("\n")
+	fmt.Printf("Sample usage:                  %s --help \n", progname)
+}
+
+func parseAnyTrustServer(args []string) (*AnyTrustServerConfig, error) {
+	f := pflag.NewFlagSet("anytrustserver", pflag.ContinueOnError)
+	f.Bool("enable-rpc", DefaultAnyTrustServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
+	f.String("rpc-addr", DefaultAnyTrustServerConfig.RPCAddr, "HTTP-RPC server listening interface")
+	f.Uint64("rpc-port", DefaultAnyTrustServerConfig.RPCPort, "HTTP-RPC server listening port")
+	f.Int("rpc-server-body-limit", DefaultAnyTrustServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
+	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
+
+	f.Bool("enable-rest", DefaultAnyTrustServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
+	f.String("rest-addr", DefaultAnyTrustServerConfig.RESTAddr, "REST server listening interface")
+	f.Uint64("rest-port", DefaultAnyTrustServerConfig.RESTPort, "REST server listening port")
+	genericconf.HTTPServerTimeoutConfigAddOptions("rest-server-timeouts", f)
+
+	f.Bool("metrics", DefaultAnyTrustServerConfig.Metrics, "enable metrics")
+	genericconf.MetricsServerAddOptions("metrics-server", f)
+
+	f.Bool("pprof", DefaultAnyTrustServerConfig.PProf, "enable pprof")
+	genericconf.PProfAddOptions("pprof-cfg", f)
+
+	f.String("log-level", DefaultAnyTrustServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", DefaultAnyTrustServerConfig.LogType, "log type (plaintext or json)")
+
+	f.String("parent-chain.node-url", DefaultParentChainConfig.NodeURL, "URL for parent chain node")
+	f.Int("parent-chain.connection-attempts", DefaultParentChainConfig.ConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.String("parent-chain.sequencer-inbox-address", DefaultParentChainConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract to use for validating requests to store data. Can be set to \"none\" for testing")
+
+	anytrust.ConfigAddServerOptions("data-availability", f)
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var serverConfig AnyTrustServerConfig
+	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
+		return nil, err
+	}
+	if serverConfig.Conf.Dump {
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
+			"data-availability.key.priv-key": "",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
+		}
+
+		c, err := k.Marshal(json.Parser())
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	return &serverConfig, nil
+}
+
+type L1ReaderCloser struct {
+	l1Reader *headerreader.HeaderReader
+}
+
+func (c *L1ReaderCloser) Close(_ context.Context) error {
+	c.l1Reader.StopOnly()
+	return nil
+}
+
+func (c *L1ReaderCloser) String() string {
+	return "l1 reader closer"
+}
+
+func startup() error {
+	// Some different defaults to AnyTrust config in a node.
+	anytrust.DefaultConfig.Enable = true
+
+	serverConfig, err := parseAnyTrustServer(os.Args[1:])
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
+		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
+	}
+
+	logLevel, err := genericconf.ToSlogLevel(serverConfig.LogLevel)
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+
+	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
+	if err != nil {
+		pflag.Usage()
+		return fmt.Errorf("error parsing log type when creating handler: %w", err)
+	}
+	glogger := log.NewGlogHandler(handler)
+	glogger.Verbosity(logLevel)
+	log.SetDefault(log.NewLogger(glogger))
+
+	if err := util.StartMetrics(serverConfig.Metrics, serverConfig.PProf, &serverConfig.MetricsServer, &serverConfig.PprofCfg); err != nil {
+		return err
+	}
+
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var l1Reader *headerreader.HeaderReader
+	if serverConfig.ParentChain.NodeURL != "" {
+		l1Client, err := anytrust.GetL1Client(ctx, serverConfig.ParentChain.ConnectionAttempts, serverConfig.ParentChain.NodeURL)
+		if err != nil {
+			return err
+		}
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
+		if err != nil {
+			return err
+		}
+	}
+
+	var seqInboxAddress *common.Address
+	if serverConfig.ParentChain.SequencerInboxAddress == "none" {
+		seqInboxAddress = nil
+	} else if len(serverConfig.ParentChain.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = anytrust.OptionalAddressFromString(serverConfig.ParentChain.SequencerInboxAddress)
+		if err != nil {
+			return err
+		}
+		if seqInboxAddress == nil {
+			return errors.New("must provide --parent-chain.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+	} else {
+		return errors.New("--parent-chain.sequencer-inbox-address must be set to a valid L1 contract address, or 'none'")
+	}
+
+	daReader, daWriter, signatureVerifier, daHealthChecker, anyTrustLifecycleManager, err := anytrust.CreateDAComponentsForAnyTrustServer(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
+	if err != nil {
+		return err
+	}
+
+	if l1Reader != nil {
+		l1Reader.Start(ctx)
+		anyTrustLifecycleManager.Register(&L1ReaderCloser{l1Reader})
+	}
+
+	vcsRevision, _, vcsTime := confighelpers.GetVersion()
+	var rpcServer *http.Server
+	if serverConfig.EnableRPC {
+		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
+
+		rpcServer, err = anytrust.StartRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
+		if err != nil {
+			return err
+		}
+	}
+
+	var restServer *anytrust.RestfulServer
+	if serverConfig.EnableREST {
+		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
+
+		restServer, err = anytrust.NewRestfulServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
+		if err != nil {
+			return err
+		}
+	}
+
+	<-sigint
+	anyTrustLifecycleManager.StopAndWaitUntil(2 * time.Second)
+
+	var err1, err2 error
+	if rpcServer != nil {
+		err1 = rpcServer.Shutdown(ctx)
+	}
+
+	if restServer != nil {
+		err2 = restServer.Shutdown()
+	}
+
+	if err1 != nil {
+		return err1
+	}
+	return err2
+}

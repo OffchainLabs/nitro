@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package testhelpers
 
 import (
@@ -22,7 +24,7 @@ func AddrTCPPort(n net.Addr, t *testing.T) int {
 	t.Helper()
 	tcpAddr, ok := n.(*net.TCPAddr)
 	if !ok {
-		t.Fatal("Could not get TCP address net.Addr")
+		t.Fatal("Could not get TCP address from net.Addr")
 	}
 	return tcpAddr.Port
 }

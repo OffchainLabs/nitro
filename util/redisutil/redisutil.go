@@ -1,3 +1,5 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package redisutil
 
 import (
@@ -44,7 +46,7 @@ func RedisClientWithSentinelMasterNameFromURL(redisUrl string) (redis.UniversalC
 }
 
 // Designed using https://github.com/redis/go-redis/blob/a8590e987945b7ba050569cc3b94b8ece49e99e3/options.go#L283 as reference
-// Example Usage :
+// Example Usage:
 //
 //	redis+sentinel://<user>:<password>@<host1>:<port1>,<host2>:<port2>,<host3>:<port3>/<master_name/><db_number>?dial_timeout=3&db=1&read_timeout=6s&max_retries=2
 func parseFailoverRedisUrl(redisUrl string) (*redis.FailoverOptions, error) {
@@ -68,7 +70,7 @@ func parseFailoverRedisUrl(redisUrl string) (*redis.FailoverOptions, error) {
 		o.MasterName = f[0]
 		var err error
 		if o.DB, err = strconv.Atoi(f[1]); err != nil {
-			return nil, fmt.Errorf("redis: invalid database number: %q", f[0])
+			return nil, fmt.Errorf("redis: invalid database number: %q", f[1])
 		}
 	default:
 		return nil, fmt.Errorf("redis: invalid URL path: %s", u.Path)

@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package dbutil
 
 import (
@@ -13,11 +15,11 @@ func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) b
 	stackConf.DBEngine = dbEngine
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		t.Fatalf("Failed to created test stack: %v", err)
+		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
 	readonly := true
-	_, err = stack.OpenDatabaseWithExtraOptions("test", 16, 16, "", readonly, nil)
+	_, err = stack.OpenDatabaseWithOptions("test", node.DatabaseOptions{Cache: 16, Handles: 16, ReadOnly: readonly})
 	if err == nil {
 		t.Fatal("Opening non-existent database did not fail")
 	}

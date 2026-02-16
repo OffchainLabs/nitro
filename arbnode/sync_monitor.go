@@ -1,3 +1,5 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbnode
 
 import (
@@ -5,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -44,7 +46,7 @@ var TestSyncMonitorConfig = SyncMonitorConfig{
 	MsgLag: time.Millisecond * 10,
 }
 
-func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
@@ -63,7 +65,7 @@ func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
 		s.syncTarget = s.nextSyncTarget
 		s.nextSyncTarget = nextSyncTarget
 	} else {
-		log.Warn("failed readin max msg count", "err", err)
+		log.Warn("failed reading max msg count", "err", err)
 		s.nextSyncTarget = 0
 		s.syncTarget = 0
 	}
@@ -82,6 +84,10 @@ func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Message
 		return s.inboxReader.GetFinalizedMsgCount(ctx)
 	}
 	return 0, nil
+}
+
+func (s *SyncMonitor) GetMaxMessageCount() (arbutil.MessageIndex, error) {
+	return s.maxMessageCount()
 }
 
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
@@ -136,7 +142,14 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	}
 
 	syncTarget := s.SyncTargetMessageCount()
-	res["syncTargetMsgCount"] = syncTarget
+	res["consensusSyncTargetMsgCount"] = syncTarget
+
+	maxMsgCount, err := s.maxMessageCount()
+	if err != nil {
+		res["maxMessageCountError"] = err.Error()
+		return res
+	}
+	res["maxMessageCount"] = maxMsgCount
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {

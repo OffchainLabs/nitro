@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -7,7 +9,7 @@ import (
 	"math/big"
 	"os"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -73,7 +75,7 @@ func mainImpl() error {
 }
 
 func parseBidderClientArgs(ctx context.Context, args []string) (*timeboost.BidderClientConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	timeboost.BidderClientConfigAddOptions(f)
 

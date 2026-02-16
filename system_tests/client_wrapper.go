@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// ClientWrapper wraps a RPC client to manipulate inbound requests.
+// ClientWrapper wraps an RPC client to manipulate inbound requests.
 type ClientWrapper struct {
 	mutex                *sync.Mutex
 	innerClient          rpc.ClientInterface

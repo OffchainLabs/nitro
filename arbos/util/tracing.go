@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package util
@@ -55,7 +55,9 @@ func (info *TracingInfo) RecordStorageGet(key common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else if tracer.CaptureArbitrumStorageGet != nil {
+	}
+
+	if tracer.CaptureArbitrumStorageGet != nil {
 		tracer.CaptureArbitrumStorageGet(key, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
@@ -71,7 +73,9 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else if tracer.CaptureArbitrumStorageSet != nil {
+	}
+
+	if tracer.CaptureArbitrumStorageSet != nil {
 		tracer.CaptureArbitrumStorageSet(key, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -70,7 +70,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
-	builder.Build(t)
+	cleanup := builder.Build(t)
 
 	builder.L2Info.GenerateAccount("User2")
 	builder.L2Info.GenerateAccount("Beneficiary")
@@ -102,7 +102,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 			if !msgTypes[message.Message.Header.Kind] {
 				continue
 			}
-			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID)
+			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
 			Require(t, err)
 			for _, tx := range txs {
 				if txTypes[tx.Type()] {
@@ -135,8 +135,7 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 
 		cancel()
 
-		builder.L2.ConsensusNode.StopAndWait()
-		requireClose(t, builder.L1.Stack)
+		cleanup()
 	}
 	return builder, delayedInbox, lookupL2Tx, ctx, teardown
 }
@@ -268,6 +267,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
 		builder.WithArbOSVersion(arbosVersion)
+		builder.WithDatabase(rawdb.DBPebble)
 	})
 	defer teardown()
 
@@ -510,7 +510,9 @@ func insertRetriables(
 }
 
 func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBPebble)
+	})
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 	elevateL2Basefee(t, ctx, builder)
@@ -706,9 +708,9 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := arbos.NoopSequencingHooks()
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, types.Transactions{tx}, hooks, nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
 	Require(t, err)
 	return newL1Timestamp
 }
@@ -1294,7 +1296,9 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
+		b.WithDatabase(rawdb.DBPebble)
+	})
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 
@@ -1304,11 +1308,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	Require(t, err)
 
 	elevateL2Basefee(t, ctx, builder)
-
-	infraBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
-	Require(t, err)
-	networkBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
-	Require(t, err)
 
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -1335,7 +1334,11 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
+	elevateL2Basefee(t, ctx, builder)
+
 	waitForL1DelayBlocks(t, builder)
+
+	elevateL2Basefee(t, ctx, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
@@ -1352,11 +1355,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "first retry tx shouldn't have succeeded")
 	}
 
-	infraBalanceAfterSubmission, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
-	Require(t, err)
-	networkBalanceAfterSubmission, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
-	Require(t, err)
-
 	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
@@ -1372,11 +1370,6 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	if retryReceipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "retry failed")
 	}
-
-	infraBalanceAfterRedeem, err := builder.L2.Client.BalanceAt(ctx, infraFeeAddr, nil)
-	Require(t, err)
-	networkBalanceAfterRedeem, err := builder.L2.Client.BalanceAt(ctx, networkFeeAddr, nil)
-	Require(t, err)
 
 	// verify that the increment happened, so we know the retry succeeded
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -1399,10 +1392,14 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "Unexpected redeemer", parsed.Redeemer, "expected", usertxoptsL2.From)
 	}
 
-	infraSubmissionFee := arbmath.BigSub(infraBalanceAfterSubmission, infraBalanceBefore)
-	networkSubmissionFee := arbmath.BigSub(networkBalanceAfterSubmission, networkBalanceBefore)
-	infraRedeemFee := arbmath.BigSub(infraBalanceAfterRedeem, infraBalanceAfterSubmission)
-	networkRedeemFee := arbmath.BigSub(networkBalanceAfterRedeem, networkBalanceAfterSubmission)
+	infraSubmissionFee, err := builder.L2.BalanceDifferenceAtBlock(infraFeeAddr, submissionReceipt.BlockNumber)
+	Require(t, err)
+	networkSubmissionFee, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, submissionReceipt.BlockNumber)
+	Require(t, err)
+	infraRedeemFee, err := builder.L2.BalanceDifferenceAtBlock(infraFeeAddr, retryReceipt.BlockNumber)
+	Require(t, err)
+	networkRedeemFee, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, retryReceipt.BlockNumber)
+	Require(t, err)
 
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), builder.L2.Client)
 	Require(t, err)

@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package staterecovery
 
 import (
@@ -14,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 )
 
-func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig, startBlock uint64) error {
+func RecreateMissingStates(executionDB ethdb.Database, bc *core.BlockChain, cacheConfig *core.BlockChainConfig, startBlock uint64) error {
 	start := time.Now()
 	currentHeader := bc.CurrentBlock()
 	if currentHeader == nil {
@@ -43,7 +45,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		HashDB:    &hashConfig,
 	}
 
-	database := state.NewDatabase(triedb.NewDatabase(chainDb, trieConfig), nil)
+	database := state.NewDatabase(triedb.NewDatabase(executionDB, trieConfig), nil)
 	defer database.TrieDB().Close()
 	previousState, err := state.New(previousBlock.Root(), database)
 	if err != nil {

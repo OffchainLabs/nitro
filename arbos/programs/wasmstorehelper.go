@@ -1,8 +1,7 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package programs
 
@@ -52,7 +51,9 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return nil
 	}
 
-	wasm, err := getWasmFromContractCode(code, progParams.MaxWasmSize)
+	// Not an activation path, so fragment read gas shouldn't be charged.
+	// Passing nil avoids charging gas through a storage-backed burner here.
+	wasm, err := getWasmFromContractCode(statedb, code, progParams, nil)
 	if err != nil {
 		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)

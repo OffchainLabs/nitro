@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -6,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -18,7 +20,7 @@ import (
 )
 
 func parseDBConv(args []string) (*dbconv.DBConvConfig, error) {
-	f := flag.NewFlagSet("dbconv", flag.ContinueOnError)
+	f := pflag.NewFlagSet("dbconv", pflag.ContinueOnError)
 	dbconv.DBConvConfigAddOptions(f)
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {

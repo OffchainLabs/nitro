@@ -1,9 +1,10 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -38,7 +39,7 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	programs := c.State.Programs()
 
 	// charge a fixed cost up front to begin activation
-	if err := c.Burn(1659168); err != nil {
+	if err := c.Burn(multigas.ResourceKindComputation, 1659168); err != nil {
 		return 0, nil, err
 	}
 	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runCtx, debug)

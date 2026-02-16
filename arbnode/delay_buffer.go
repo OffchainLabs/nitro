@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // This file contains functions related to the delay buffer feature that are used mostly in the
@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -71,7 +71,7 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 }
 
 // GenDelayProof generates the delay proof based on batch's first delayed message and the delayed
-// accumulater from the inbox.
+// accumulator from the inbox.
 func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata, inbox *InboxTracker) (
 	*bridgegen.DelayProof, error) {
 

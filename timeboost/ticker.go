@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import (
@@ -33,10 +35,15 @@ func (t *roundTicker) start(timeBeforeRoundStart time.Duration) {
 			nextTick += t.roundTimingInfo.Round
 		}
 
+		// Use NewTimer instead of time.After to allow cancellation and avoid leaking timers
+		timer := time.NewTimer(nextTick)
 		select {
-		case <-time.After(nextTick):
+		case <-timer.C:
 			t.c <- time.Now()
 		case <-t.done:
+			if !timer.Stop() {
+				<-timer.C
+			}
 			close(t.c)
 			return
 		}

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package validatorwallet
@@ -27,6 +27,8 @@ func NewNoOp(l1Client *ethclient.Client) *NoOp {
 }
 
 func (*NoOp) Initialize(context.Context) error { return nil }
+
+func (*NoOp) InitializeAndCreateSCW(context.Context) error { return nil }
 
 func (*NoOp) Address() *common.Address { return nil }
 

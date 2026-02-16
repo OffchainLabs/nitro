@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package statetransfer
@@ -166,7 +166,7 @@ func (r *JsonInitDataReader) GetAddressTableReader() (AddressReader, error) {
 	}, nil
 }
 
-type JsonAccountDataReaderr struct {
+type JsonAccountDataReader struct {
 	JsonListReader
 }
 
@@ -178,7 +178,7 @@ type AccountInitializationInfoJson struct {
 	ClassicHash  common.Hash
 }
 
-func (r *JsonAccountDataReaderr) GetNext() (*AccountInitializationInfo, error) {
+func (r *JsonAccountDataReader) GetNext() (*AccountInitializationInfo, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
@@ -206,7 +206,7 @@ func (r *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &JsonAccountDataReaderr{
+	return &JsonAccountDataReader{
 		JsonListReader: listreader,
 	}, nil
 }

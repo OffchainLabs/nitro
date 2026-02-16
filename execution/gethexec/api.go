@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -30,18 +31,24 @@ import (
 type ArbAPI struct {
 	txPublisher              TransactionPublisher
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
+	execEngine               *ExecutionEngine
 }
 
-func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher) *ArbAPI {
+func NewArbAPI(publisher TransactionPublisher, bulkBlockMetadataFetcher *BulkBlockMetadataFetcher, execEngine *ExecutionEngine) *ArbAPI {
 	return &ArbAPI{
 		txPublisher:              publisher,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
+		execEngine:               execEngine,
 	}
 }
 
 type NumberAndBlockMetadata struct {
 	BlockNumber uint64        `json:"blockNumber"`
 	RawMetadata hexutil.Bytes `json:"rawMetadata"`
+}
+
+func (a *ArbAPI) MaintenanceStatus(ctx context.Context) execution.MaintenanceStatus {
+	return *a.execEngine.MaintenanceStatus()
 }
 
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
@@ -107,6 +114,7 @@ type PricingModelHistory struct {
 	MinBaseFee       *big.Int   `json:"minBaseFee"`
 	SpeedLimit       uint64     `json:"speedLimit"`
 	PerBlockGasLimit uint64     `json:"perBlockGasLimit"`
+	PerTxGasLimit    uint64     `json:"perTxGasLimit"`
 	PricingInertia   uint64     `json:"pricingInertia"`
 	BacklogTolerance uint64     `json:"backlogTolerance"`
 
@@ -201,6 +209,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		if i == uint64(blocks)-1 {
 			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
 			perBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
+			perTxGasLimit, _ := l2Pricing.PerTxGasLimit()
 			minBaseFee, _ := l2Pricing.MinBaseFeeWei()
 			pricingInertia, _ := l2Pricing.PricingInertia()
 			backlogTolerance, _ := l2Pricing.BacklogTolerance()
@@ -218,6 +227,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 			history.MinBaseFee = minBaseFee
 			history.SpeedLimit = speedLimit
 			history.PerBlockGasLimit = perBlockGasLimit
+			history.PerTxGasLimit = perTxGasLimit
 			history.PricingInertia = pricingInertia
 			history.BacklogTolerance = backlogTolerance
 			history.L1PricingInertia = l1PricingInertia

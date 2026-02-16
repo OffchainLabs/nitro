@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package wsbroadcastserver
@@ -20,7 +20,7 @@ import (
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -36,8 +36,8 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
-	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
-	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
+	upgradeToWSTimer                  = metrics.NewRegisteredHistogram("arb/feed/clients/upgrade/duration", nil, metrics.NewBoundedHistogramSample())
+	startWithHeaderTimer              = metrics.NewRegisteredHistogram("arb/feed/clients/start/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 const (
@@ -80,9 +80,9 @@ func (bc *BroadcasterConfig) Validate() error {
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
 
-func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BroadcasterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
-	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
+	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages with the batch poster wallet")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
 	f.Duration(prefix+".read-timeout", DefaultBroadcasterConfig.ReadTimeout, "duration to wait before timing out reading data (i.e. pings) from clients")
 	f.Duration(prefix+".write-timeout", DefaultBroadcasterConfig.WriteTimeout, "duration to wait before timing out writing data to clients")
@@ -210,7 +210,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	startTime := time.Now()
 	err := s.StartWithHeader(ctx, header)
 	elapsed := time.Since(startTime)
-	startWithHeaderTimer.Update(elapsed)
+	startWithHeaderTimer.Update(elapsed.Nanoseconds())
 	return err
 }
 
@@ -329,7 +329,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		startTime := time.Now()
 		_, err = upgrader.Upgrade(conn)
 		elapsed := time.Since(startTime)
-		upgradeToWSTimer.Update(elapsed)
+		upgradeToWSTimer.Update(elapsed.Nanoseconds())
 
 		if err != nil {
 			if err.Error() != "" {
@@ -534,6 +534,10 @@ func (s *WSBroadcastServer) Started() bool {
 // Broadcast sends batch item to all clients.
 func (s *WSBroadcastServer) Broadcast(bm *m.BroadcastMessage) {
 	s.clientManager.Broadcast(bm)
+}
+
+func (s *WSBroadcastServer) PopulateFeedBacklog(bm *m.BroadcastMessage) error {
+	return s.clientManager.populateFeedBacklog(bm)
 }
 
 func (s *WSBroadcastServer) ClientCount() int32 {

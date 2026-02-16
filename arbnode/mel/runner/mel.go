@@ -1,3 +1,5 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -11,10 +13,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -25,11 +29,15 @@ import (
 const defaultRetryInterval = time.Second
 
 type ParentChainReader interface {
+	Client() rpc.ClientInterface // to make BatchCallContext requests
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error)
 	HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error)
 	TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+	TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error)
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
 // Defines a message extraction service for a Nitro node which reads parent chain
@@ -37,10 +45,11 @@ type ParentChainReader interface {
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
 	parentChainReader         ParentChainReader
+	chainConfig               *params.ChainConfig
 	addrs                     *chaininfo.RollupAddresses
 	melDB                     *Database
 	msgConsumer               mel.MessageConsumer
-	dataProviders             []daprovider.Reader
+	dataProviders             *daprovider.DAProviderRegistry
 	startParentChainBlockHash common.Hash
 	fsm                       *fsm.Fsm[action, FSMState]
 	retryInterval             time.Duration
@@ -51,10 +60,11 @@ type MessageExtractor struct {
 // to be used when extracting messages from the parent chain.
 func NewMessageExtractor(
 	parentChainReader ParentChainReader,
+	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
-	dataProviders []daprovider.Reader,
+	dataProviders *daprovider.DAProviderRegistry,
 	startParentChainBlockHash common.Hash,
 	retryInterval time.Duration,
 ) (*MessageExtractor, error) {
@@ -67,6 +77,7 @@ func NewMessageExtractor(
 	}
 	return &MessageExtractor{
 		parentChainReader:         parentChainReader,
+		chainConfig:               chainConfig,
 		addrs:                     rollupAddrs,
 		melDB:                     melDB,
 		msgConsumer:               msgConsumer,
@@ -97,53 +108,6 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 		},
 		runChan,
 	)
-}
-
-// Instantiates a receipt fetcher for a specific parent chain block.
-type blockReceiptFetcher struct {
-	client           ParentChainReader
-	parentChainBlock *types.Block
-}
-
-func newBlockReceiptFetcher(client ParentChainReader, parentChainBlock *types.Block) *blockReceiptFetcher {
-	return &blockReceiptFetcher{
-		client:           client,
-		parentChainBlock: parentChainBlock,
-	}
-}
-
-func (rf *blockReceiptFetcher) ReceiptForTransactionIndex(
-	ctx context.Context,
-	txIndex uint,
-) (*types.Receipt, error) {
-	tx, err := rf.client.TransactionInBlock(ctx, rf.parentChainBlock.Hash(), txIndex)
-	if err != nil {
-		return nil, err
-	}
-	return rf.client.TransactionReceipt(ctx, tx.Hash())
-}
-
-type blockTxsFetcher struct {
-	client           ParentChainReader
-	parentChainBlock *types.Block
-}
-
-func newBlockTxsFetcher(client ParentChainReader, parentChainBlock *types.Block) *blockTxsFetcher {
-	return &blockTxsFetcher{
-		client:           client,
-		parentChainBlock: parentChainBlock,
-	}
-}
-
-func (tf *blockTxsFetcher) TransactionsByHeader(
-	ctx context.Context,
-	parentChainHeaderHash common.Hash,
-) (types.Transactions, error) {
-	blk, err := tf.client.BlockByHash(ctx, parentChainHeaderHash)
-	if err != nil {
-		return nil, err
-	}
-	return blk.Transactions(), nil
 }
 
 func (m *MessageExtractor) CurrentFSMState() FSMState {
@@ -213,16 +177,15 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 		}
 		// Creates a receipt fetcher for the specific parent chain block, to be used
 		// by the message extraction function.
-		receiptFetcher := newBlockReceiptFetcher(m.parentChainReader, parentChainBlock)
-		txsFetcher := newBlockTxsFetcher(m.parentChainReader, parentChainBlock)
-		postState, msgs, delayedMsgs, err := melextraction.ExtractMessages(
+		postState, msgs, delayedMsgs, _, err := melextraction.ExtractMessages(
 			ctx,
 			preState,
 			parentChainBlock.Header(),
 			m.dataProviders,
 			m.melDB,
-			receiptFetcher,
-			txsFetcher,
+			nil, // will be removed when syncing with the core mel runner code as that has been refactored into separate files
+			nil, // will be removed when syncing with the core mel runner code as that has been refactored into separate files
+			m.chainConfig,
 		)
 		if err != nil {
 			return m.retryInterval, err

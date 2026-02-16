@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package daprovider
 
@@ -49,19 +49,21 @@ var (
 	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
 )
 
+// KeysetValidationMode controls validation of AnyTrust keysets.
+// Used by the AnyTrust reader to verify keyset signatures.
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
 const KeysetPanicIfInvalid KeysetValidationMode = 1
 const KeysetDontValidate KeysetValidationMode = 2
 
-// DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
+// AnyTrustMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
-const DASMessageHeaderFlag byte = 0x80
+const AnyTrustMessageHeaderFlag byte = 0x80
 
-// TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
-// Ignored when DASMessageHeaderFlag is not set.
-const TreeDASMessageHeaderFlag byte = 0x08
+// AnyTrustTreeMessageHeaderFlag indicates that this AnyTrust certificate data employs the new merkelization strategy.
+// Ignored when AnyTrustMessageHeaderFlag is not set.
+const AnyTrustTreeMessageHeaderFlag byte = 0x08
 
 // L1AuthenticatedMessageHeaderFlag indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
@@ -75,10 +77,14 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
-// KnownHeaderBits is all header bits with known meaning to this nitro version
-const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+// DACertificateMessageHeaderFlag indicates that this message uses a custom data availability system.
+// Anytrust uses the legacy AnyTrustTreeMessageHeaderFlag instead despite also having a certificate.
+const DACertificateMessageHeaderFlag byte = 0x01
 
-var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
+// KnownHeaderBits is all header bits with known meaning to this nitro version
+const KnownHeaderBits byte = AnyTrustMessageHeaderFlag | AnyTrustTreeMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | DACertificateMessageHeaderFlag
+
+var DefaultAnyTrustRetentionPeriod time.Duration = time.Hour * 24 * 15
 
 // hasBits returns true if `checking` has all `bits`
 func hasBits(checking byte, bits byte) bool {
@@ -89,12 +95,12 @@ func IsL1AuthenticatedMessageHeaderByte(header byte) bool {
 	return hasBits(header, L1AuthenticatedMessageHeaderFlag)
 }
 
-func IsDASMessageHeaderByte(header byte) bool {
-	return hasBits(header, DASMessageHeaderFlag)
+func IsAnyTrustMessageHeaderByte(header byte) bool {
+	return hasBits(header, AnyTrustMessageHeaderFlag)
 }
 
-func IsTreeDASMessageHeaderByte(header byte) bool {
-	return hasBits(header, TreeDASMessageHeaderFlag)
+func IsAnyTrustTreeMessageHeaderByte(header byte) bool {
+	return hasBits(header, AnyTrustTreeMessageHeaderFlag)
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
@@ -103,6 +109,10 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 
 func IsBlobHashesHeaderByte(header byte) bool {
 	return hasBits(header, BlobHashesHeaderFlag)
+}
+
+func IsDACertificateMessageHeaderByte(header byte) bool {
+	return header == DACertificateMessageHeaderFlag
 }
 
 func IsBrotliMessageHeaderByte(b uint8) bool {

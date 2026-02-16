@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -17,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,33 +27,33 @@ func TestSequencerTxFilter(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, false)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes, hooks, nil)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err) // There shouldn't be any error in block generation
 	if block == nil {
 		t.Fatal("block should be generated as second tx should pass")
 	}
 	if len(block.Transactions()) != 2 {
-		t.Fatalf("expecting two txs found: %d", len(block.Transactions()))
+		t.Fatalf("expecting two txs, found: %d", len(block.Transactions()))
 	}
 	if block.Transactions()[1].Hash() != txes[1].Hash() {
 		t.Fatal("tx hash mismatch, expecting second tx to be present in the block")
 	}
-	if len(hooks.TxErrors) != 2 {
-		t.Fatalf("expected 2 txErrors in hooks, found: %d", len(hooks.TxErrors))
+	if len(hooks.GetTxErrors()) != 2 {
+		t.Fatalf("expected 2 txErrors in hooks, found: %d", len(hooks.GetTxErrors()))
 	}
-	if hooks.TxErrors[0].Error() != state.ErrArbTxFilter.Error() {
-		t.Fatalf("expected ErrArbTxFilter, found: %s", err.Error())
+	if hooks.GetTxErrors()[0].Error() != state.ErrArbTxFilter.Error() {
+		t.Fatalf("expected ErrArbTxFilter, found: %s", hooks.GetTxErrors()[0].Error())
 	}
-	if hooks.TxErrors[1] != nil {
-		t.Fatalf("found a non-nil error for second transaction: %v", hooks.TxErrors[1])
+	if hooks.GetTxErrors()[1] != nil {
+		t.Fatalf("found a non-nil error for second transaction: %v", hooks.GetTxErrors()[1])
 	}
 }
 
 func TestSequencerBlockFilterReject(t *testing.T) {
-	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
+	builder, header, _, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes, hooks, nil)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	if block != nil {
 		t.Fatal("block shouldn't be generated when all txes have failed")
 	}
@@ -65,8 +68,10 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 func TestSequencerBlockFilterAccept(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
-
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, txes[1:], hooks, nil)
+	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
+	Require(t, err)
+	hooks.InsertLastTxError(nil)
+	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {
 		t.Fatal("block should be generated as the tx should pass")
@@ -79,7 +84,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	}
 }
 
-func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *arbostypes.L1IncomingMessageHeader, types.Transactions, *arbos.SequencingHooks, func()) {
+func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *arbostypes.L1IncomingMessageHeader, types.Transactions, *gethexec.FullSequencingHooks, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
@@ -108,29 +113,32 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	txes = append(txes, builder.L2Info.PrepareTx("Owner", "User", builder.L2Info.TransferGas, big.NewInt(1e12), []byte{1, 2, 3}))
 	txes = append(txes, builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil))
 
-	hooks := arbos.NoopSequencingHooks()
+	var preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
+	var postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	var blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+
 	if isBlockFilter {
-		hooks.BlockFilter = func(_ *types.Header, _ *state.StateDB, txes types.Transactions, _ types.Receipts) error {
+		blockFilter = func(_ *types.Header, _ *state.StateDB, txes types.Transactions, _ types.Receipts) error {
 			if len(txes[1].Data()) > 0 {
 				return state.ErrArbTxFilter
 			}
 			return nil
 		}
 	} else {
-		hooks.PreTxFilter = func(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions, _ common.Address, _ *arbos.L1Info) error {
+		preTxFilter = func(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ *arbitrum_types.ConditionalOptions, _ common.Address, _ *arbos.L1Info) error {
 			if len(tx.Data()) > 0 {
 				statedb.FilterTx()
 			}
 			return nil
 		}
-		hooks.PostTxFilter = func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult) error {
+		postTxFilter = func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult) error {
 			if statedb.IsTxFiltered() {
 				return state.ErrArbTxFilter
 			}
 			return nil
 		}
 	}
-
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, preTxFilter, postTxFilter, blockFilter)
 	cleanup := func() {
 		builderCleanup()
 		cancel()

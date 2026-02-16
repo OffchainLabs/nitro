@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
 import (
@@ -44,7 +46,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
 	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.RequireScheme(t, rawdb.HashScheme)
 
@@ -78,10 +80,10 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
+		chainDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
-		defer chainDb.Close()
-		chainDbEntriesBeforePruning := countStateEntries(chainDb)
+		defer chainDB.Close()
+		executionDBEntriesBeforePruning := countStateEntries(chainDB)
 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
@@ -90,11 +92,11 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 			testKeys = append(testKeys, prand.GetHash().Bytes())
 		}
 		for _, key := range testKeys {
-			err = chainDb.Put(key, common.FromHex("0xdeadbeef"))
+			err = chainDB.Put(key, common.FromHex("0xdeadbeef"))
 			Require(t, err)
 		}
 		for _, key := range testKeys {
-			if has, _ := chainDb.Has(key); !has {
+			if has, _ := chainDB.Has(key); !has {
 				Fatal(t, "internal test error - failed to check existence of test key")
 			}
 		}
@@ -102,23 +104,23 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = mode
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
-		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
+		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
+		err = pruning.PruneExecutionDB(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
 		Require(t, err)
 
 		for _, key := range testKeys {
-			if has, _ := chainDb.Has(key); has {
+			if has, _ := chainDB.Has(key); has {
 				Fatal(t, "test key hasn't been pruned as expected")
 			}
 		}
 
-		chainDbEntriesAfterPruning := countStateEntries(chainDb)
-		t.Log("db entries pre-pruning:", chainDbEntriesBeforePruning)
-		t.Log("db entries post-pruning:", chainDbEntriesAfterPruning)
+		executionDBEntriesAfterPruning := countStateEntries(chainDB)
+		t.Log("db entries pre-pruning:", executionDBEntriesBeforePruning)
+		t.Log("db entries post-pruning:", executionDBEntriesAfterPruning)
 
-		if chainDbEntriesAfterPruning >= chainDbEntriesBeforePruning {
-			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", chainDbEntriesBeforePruning, "After:", chainDbEntriesAfterPruning)
+		if executionDBEntriesAfterPruning >= executionDBEntriesBeforePruning {
+			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", executionDBEntriesBeforePruning, "After:", executionDBEntriesAfterPruning)
 		}
 	}()
 

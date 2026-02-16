@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbstate
@@ -12,9 +12,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// lint:require-exhaustive-initialization
 type multiplexerBackend struct {
 	batchSeqNum           uint64
 	batch                 []byte
@@ -69,7 +71,13 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
+		multiplexer := NewInboxMultiplexer(
+			backend,
+			0,
+			nil,
+			daprovider.KeysetValidate,
+			chaininfo.ArbitrumDevTestChainConfig(),
+		)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

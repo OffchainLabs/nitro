@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package redis
 
 import (
@@ -20,7 +22,7 @@ func TestTimeout(t *testing.T) {
 	TestValidationServerConfig.StreamTimeout = 100 * time.Millisecond
 	vs, err := NewValidationServer(&TestValidationServerConfig, nil)
 	if err != nil {
-		t.Fatalf("NewValidationSever() unexpected error: %v", err)
+		t.Fatalf("NewValidationServer() unexpected error: %v", err)
 	}
 	vs.Start(ctx)
 	time.Sleep(time.Second)

@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package conf
 
 import (
@@ -30,6 +32,7 @@ type InitConfig struct {
 	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
 	ImportFile                    string        `koanf:"import-file"`
 	GenesisJsonFile               string        `koanf:"genesis-json-file"`
+	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
 	ThenQuit                      bool          `koanf:"then-quit"`
 	Prune                         string        `koanf:"prune"`
 	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
@@ -41,6 +44,7 @@ type InitConfig struct {
 	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
 	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
 	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -59,6 +63,7 @@ var InitConfigDefault = InitConfig{
 	ImportWasm:                    false,
 	ImportFile:                    "",
 	GenesisJsonFile:               "",
+	GenesisJsonFileDirectory:      "",
 	AccountsPerSync:               100000,
 	ThenQuit:                      false,
 	Prune:                         "",
@@ -71,6 +76,7 @@ var InitConfigDefault = InitConfig{
 	ReorgToBatch:                  -1,
 	ReorgToMessageBatch:           -1,
 	ReorgToBlockBatch:             -1,
+	ValidateGenesisAssertion:      true,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -90,6 +96,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
+	f.String(prefix+".genesis-json-file-directory", InitConfigDefault.GenesisJsonFileDirectory, "directory path for genesis json files - will search for a file named by the chain ID")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Bool(prefix+".prune-parallel-storage-traversal", InitConfigDefault.PruneParallelStorageTraversal, "if true: use parallel pruning per account")
@@ -105,9 +112,13 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"\"force\"- force rebuilding which would commence rebuilding despite the status of previous attempts,\n"+
 		"\"false\"- do not rebuild on startup",
 	)
+	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 }
 
 func (c *InitConfig) Validate() error {
+	if c.Empty && c.GenesisJsonFile != "" {
+		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
+	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}

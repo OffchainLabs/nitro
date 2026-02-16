@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -138,7 +139,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}
@@ -223,10 +224,13 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			for j := uint64(0); j < blocksToPad; j++ {
 				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 				err = builder.L1.Client.SendTransaction(ctx, tx)
-				if err != nil && !strings.Contains(err.Error(), "already known") {
-					t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
+				if err != nil {
+					if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), core.ErrNonceTooLow.Error()) {
+						t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
+					}
+				} else {
+					_, _ = builder.L1.EnsureTxSucceeded(tx)
 				}
-				_, _ = builder.L1.EnsureTxSucceeded(tx)
 			}
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)

@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package jsonapi
@@ -9,7 +9,7 @@ import (
 	"strconv"
 )
 
-// Uint64String is a uint64 that JSON marshals and unmarshals as string in decimal
+// Uint64String is a uint64 that JSON marshals and unmarshals as a string in decimal
 type Uint64String uint64
 
 func (u *Uint64String) UnmarshalJSON(b []byte) error {

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package burn
@@ -6,15 +6,17 @@ package burn
 import (
 	"fmt"
 
-	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type Burner interface {
-	Burn(amount uint64) error
+	Burn(kind multigas.ResourceKind, amount uint64) error
+	BurnMultiGas(amount multigas.MultiGas) error
 	Burned() uint64
-	GasLeft() *uint64 // `SystemBurner`s panic (no notion of GasLeft)
+	GasLeft() uint64 // `SystemBurner`s panic (no notion of GasLeft)
 	BurnOut() error
 	Restrict(err error)
 	HandleError(err error) error
@@ -23,7 +25,7 @@ type Burner interface {
 }
 
 type SystemBurner struct {
-	gasBurnt    uint64
+	gasBurnt    multigas.MultiGas
 	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
@@ -35,26 +37,31 @@ func NewSystemBurner(tracingInfo *util.TracingInfo, readOnly bool) *SystemBurner
 	}
 }
 
-func (burner *SystemBurner) Burn(amount uint64) error {
-	burner.gasBurnt += amount
+func (burner *SystemBurner) Burn(kind multigas.ResourceKind, amount uint64) error {
+	burner.gasBurnt.SaturatingIncrementInto(kind, amount)
+	return nil
+}
+
+func (burner *SystemBurner) BurnMultiGas(amount multigas.MultiGas) error {
+	burner.gasBurnt.SaturatingAddInto(amount)
 	return nil
 }
 
 func (burner *SystemBurner) Burned() uint64 {
-	return burner.gasBurnt
+	return burner.gasBurnt.SingleGas()
 }
 
 func (burner *SystemBurner) BurnOut() error {
 	panic("called BurnOut on a system burner")
 }
 
-func (burner *SystemBurner) GasLeft() *uint64 {
+func (burner *SystemBurner) GasLeft() uint64 {
 	panic("called GasLeft on a system burner")
 }
 
 func (burner *SystemBurner) Restrict(err error) {
 	if err != nil {
-		glog.Error("Restrict() received an error", "err", err)
+		log.Error("Restrict() received an error", "err", err)
 	}
 }
 

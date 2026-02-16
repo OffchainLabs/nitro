@@ -1,10 +1,11 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_arb
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -23,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
+var arbitratorValidationSteps = metrics.NewRegisteredHistogram("crates/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
 	Workers                     int                          `koanf:"workers" reload:"hot"`
@@ -33,7 +34,7 @@ type ArbitratorSpawnerConfig struct {
 	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
-type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
+type ArbitratorSpawnerConfigFetcher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	Workers:                     0,
@@ -57,7 +58,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 // MachineWrapper is a function that wraps a MachineInterface
 //
-// This is a mechanism to allow clients of the AribtratorSpawner to inject
+// This is a mechanism to allow clients of the ArbitratorSpawner to inject
 // functionality around the arbitrator machine. Possible use cases include
 // mocking out the machine for testing purposes, or having the machine behave
 // differently when certain features (like BoLD) are enabled.
@@ -67,12 +68,11 @@ type SpawnerOption func(*ArbitratorSpawner)
 
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
-	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
-	// Oreder of wrappers is important. The first wrapper is the innermost.
+	// Order of wrappers is important. The first wrapper is the innermost.
 	machineWrappers []MachineWrapper
-	config          ArbitratorSpawnerConfigFecher
+	config          ArbitratorSpawnerConfigFetcher
 }
 
 func WithWrapper(wrapper MachineWrapper) SpawnerOption {
@@ -81,7 +81,7 @@ func WithWrapper(wrapper MachineWrapper) SpawnerOption {
 	}
 }
 
-func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFetcher, opts ...SpawnerOption) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:         locator,
@@ -210,15 +210,13 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread(v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *ArbitratorSpawner) Room() int {
+func (v *ArbitratorSpawner) Capacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

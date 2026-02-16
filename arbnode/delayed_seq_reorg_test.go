@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -25,7 +25,8 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 
 	err = streamer.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx)
+	err = exec.Start(ctx)
+	Require(t, err)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 
@@ -225,7 +226,8 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 
 	err = streamer.Start(ctx)
 	Require(t, err)
-	exec.Start(ctx)
+	err = exec.Start(ctx)
+	Require(t, err)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 

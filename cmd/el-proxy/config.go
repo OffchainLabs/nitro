@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package main
 
 import (
@@ -5,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
@@ -31,6 +34,7 @@ type ExpressLaneProxyConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
+	MaxTxDataSize uint64                          `koanf:"max-tx-data-size" reload:"hot"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
@@ -72,6 +76,7 @@ var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
+	MaxTxDataSize: uint64(gethexec.DefaultSequencerConfig.MaxTxDataSize),
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	PProf:         false,
@@ -79,7 +84,7 @@ var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 	PprofCfg:      genericconf.PProfDefault,
 }
 
-func ExpressLaneProxyConfigAddOptions(f *flag.FlagSet) {
+func ExpressLaneProxyConfigAddOptions(f *pflag.FlagSet) {
 	f.String("express-lane-url", ExpressLaneProxyConfigDefault.ExpressLaneURL, "URL to send timeboost_sendExpressLaneTransaction requests to")
 	f.String("rpc-url", ExpressLaneProxyConfigDefault.RPCURL, "URL to proxy to all other RPC requests to")
 	f.Int64("chain-id", ExpressLaneProxyConfigDefault.ChainId, "Chain ID of the chain being proxied to")
@@ -94,6 +99,7 @@ func ExpressLaneProxyConfigAddOptions(f *flag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
+	f.Uint64("max-tx-data-size", ExpressLaneProxyConfigDefault.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Bool("metrics", ExpressLaneProxyConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	f.Bool("pprof", ExpressLaneProxyConfigDefault.PProf, "enable pprof")
@@ -143,6 +149,9 @@ func (c *ExpressLaneProxyConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *ExpressLaneProxyConfig) Validate() error {
+	if err := gethexec.ValidateMaxTxDataSize(c.MaxTxDataSize); err != nil {
+		return err
+	}
 	return nil
 }
 

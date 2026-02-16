@@ -1,12 +1,13 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package server_jit
 
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -21,6 +22,7 @@ type JitSpawnerConfig struct {
 	Workers          int           `koanf:"workers" reload:"hot"`
 	Cranelift        bool          `koanf:"cranelift"`
 	MaxExecutionTime time.Duration `koanf:"max-execution-time" reload:"hot"`
+	JitPath          string        `koanf:"jit-path"`
 
 	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
 	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
@@ -33,18 +35,19 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 	Cranelift:            true,
 	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memory limit
 	MaxExecutionTime:     time.Minute * 10,
+	JitPath:              "", // Empty string means use default path resolution
 }
 
-func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func JitSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
 	f.Duration(prefix+".max-execution-time", DefaultJitSpawnerConfig.MaxExecutionTime, "if execution time used by a jit wasm exceeds this limit, a rpc error is returned")
+	f.String(prefix+".jit-path", DefaultJitSpawnerConfig.JitPath, "path to jit executable, if empty, attempts to find jit executable relative to nitro binary or in PATH")
 }
 
 type JitSpawner struct {
 	stopwaiter.StopWaiter
-	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *JitMachineLoader
 	config        JitSpawnerConfigFecher
@@ -55,6 +58,7 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	machineConfig := DefaultJitMachineConfig
 	machineConfig.JitCranelift = config().Cranelift
 	machineConfig.WasmMemoryUsageLimit = config().WasmMemoryUsageLimit
+	machineConfig.JitPath = config().JitPath
 	maxExecutionTime := config().MaxExecutionTime
 	loader, err := NewJitMachineLoader(&machineConfig, locator, maxExecutionTime, fatalErrChan)
 	if err != nil {
@@ -101,15 +105,13 @@ func (s *JitSpawner) Name() string {
 }
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (v *JitSpawner) Room() int {
+func (v *JitSpawner) Capacity() int {
 	avail := v.config().Workers
 	if avail == 0 {
 		avail = util.GoMaxProcs()

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package redis
@@ -211,7 +211,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		}
 		return err
 	}
-	// WATCH works with sorted sets: https://redis.io/docs/manual/transactions/#using-watch-to-implement-zpop
+	// WATCH works with sorted sets: https://redis.io/docs/latest/develop/clients/redis-py/transpipe/
 	return s.client.Watch(ctx, action, s.key)
 }
 

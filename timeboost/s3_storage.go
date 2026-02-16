@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import (
@@ -21,15 +23,13 @@ import (
 )
 
 type S3StorageServiceConfig struct {
-	Enable         bool          `koanf:"enable"`
-	AccessKey      string        `koanf:"access-key"`
-	Bucket         string        `koanf:"bucket"`
-	ObjectPrefix   string        `koanf:"object-prefix"`
-	Region         string        `koanf:"region"`
-	SecretKey      string        `koanf:"secret-key"`
-	UploadInterval time.Duration `koanf:"upload-interval"`
-	MaxBatchSize   int           `koanf:"max-batch-size"`
-	MaxDbRows      int           `koanf:"max-db-rows"`
+	s3client.Config `koanf:",squash"`
+	Enable          bool          `koanf:"enable"`
+	Bucket          string        `koanf:"bucket"`
+	ObjectPrefix    string        `koanf:"object-prefix"`
+	UploadInterval  time.Duration `koanf:"upload-interval"`
+	MaxBatchSize    int           `koanf:"max-batch-size"`
+	MaxDbRows       int           `koanf:"max-db-rows"`
 }
 
 func (c *S3StorageServiceConfig) Validate() error {
@@ -53,12 +53,10 @@ var DefaultS3StorageServiceConfig = S3StorageServiceConfig{
 }
 
 func S3StorageServiceConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	s3client.ConfigAddOptions(prefix, f)
 	f.Bool(prefix+".enable", DefaultS3StorageServiceConfig.Enable, "enable persisting of validated bids to AWS S3 bucket")
-	f.String(prefix+".access-key", DefaultS3StorageServiceConfig.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3StorageServiceConfig.Bucket, "S3 bucket")
 	f.String(prefix+".object-prefix", DefaultS3StorageServiceConfig.ObjectPrefix, "prefix to add to S3 objects")
-	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
-	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
 	f.Duration(prefix+".upload-interval", DefaultS3StorageServiceConfig.UploadInterval, "frequency at which batches are uploaded to S3")
 	f.Int(prefix+".max-batch-size", DefaultS3StorageServiceConfig.MaxBatchSize, "max size of uncompressed batch in bytes to be uploaded to S3")
 	f.Int(prefix+".max-db-rows", DefaultS3StorageServiceConfig.MaxDbRows, "when the sql db is very large, this enables reading of db in chunks instead of all at once which might cause OOM")
@@ -75,7 +73,7 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config *S3StorageServiceConfig, sqlDB *SqliteDatabase) (*S3StorageService, error) {
-	client, err := s3client.NewS3FullClient(config.AccessKey, config.SecretKey, config.Region)
+	client, err := s3client.NewS3FullClientFromConfig(context.Background(), &config.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +197,7 @@ func (s *S3StorageService) uploadBatches(ctx context.Context) time.Duration {
 			log.Error("error deleting s3-persisted bids from sql db", "round", deletRound, "err", err)
 			s.lastFailedDeleteRound = deletRound
 		} else {
-			// Previously failed deletes dont matter anymore as the recent one (larger round number) succeeded
+			// Previously failed deletes don't matter anymore as the recent one (larger round number) succeeded
 			s.lastFailedDeleteRound = 0
 		}
 		return nil

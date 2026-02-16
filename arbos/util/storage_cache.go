@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package util
@@ -60,7 +60,7 @@ func (s *storageCache) Flush() []storageCacheStores {
 	stores := []storageCacheStores{}
 	for key, entry := range s.cache {
 		if entry.dirty() {
-			v := entry.Value // Create new var to avoid alliasing
+			v := entry.Value // Create new var to avoid aliasing
 			entry.Known = &v
 			s.cache[key] = entry
 			stores = append(stores, storageCacheStores{

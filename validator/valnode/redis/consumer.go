@@ -1,7 +1,10 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package redis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,7 +25,7 @@ import (
 // RedisValidationClient producers.
 type ValidationServer struct {
 	stopwaiter.StopWaiter
-	spawner validator.ValidationSpawner
+	spawner validator.ExecutionSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
 	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
@@ -30,7 +33,7 @@ type ValidationServer struct {
 	config *ValidationServerConfig
 }
 
-func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ValidationSpawner) (*ValidationServer, error) {
+func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ExecutionSpawner) (*ValidationServer, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -56,6 +59,7 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 
 func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
+	s.StartBoldSpawner(ctx_in)
 	// Channel that all consumers use to indicate their readiness.
 	readyStreams := make(chan struct{}, len(s.consumers))
 	type workUnit struct {
@@ -171,7 +175,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				} else {
 					log.Debug("done work", "thread", i, "workid", work.req.ID)
 					err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res)
-					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
+					// Even in error we close ackNotifier as there's no retry mechanism here and closing it will allow other consumers to autoclaim
 					work.req.Ack()
 					if err != nil {
 						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
@@ -186,6 +190,142 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			}
 		})
 	}
+}
+
+func (s *ValidationServer) StartBoldSpawner(ctx context.Context) {
+	boldSpawner, err := NewExecutionSpawner(s.config, s.spawner)
+	if err != nil {
+		log.Error("creating redis execution spawner", "error", err)
+	}
+	boldSpawner.Start(ctx)
+}
+
+type ExecutionSpawner struct {
+	stopwaiter.StopWaiter
+	spawner validator.ExecutionSpawner
+
+	// consumers stores moduleRoot to consumer mapping.
+	consumers map[common.Hash]*pubsub.Consumer[*server_api.BoldValidationInput, []byte]
+	config    *ValidationServerConfig
+}
+
+func NewExecutionSpawner(cfg *ValidationServerConfig, spawner validator.ExecutionSpawner) (*ExecutionSpawner, error) {
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("redis url cannot be empty")
+	}
+	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
+	if err != nil {
+		return nil, err
+	}
+	consumers := make(map[common.Hash]*pubsub.Consumer[*server_api.BoldValidationInput, []byte])
+	for _, hash := range cfg.ModuleRoots {
+		mr := common.HexToHash(hash)
+		c, err := pubsub.NewConsumer[*server_api.BoldValidationInput, []byte](redisClient, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), &cfg.ConsumerConfig)
+		if err != nil {
+			return nil, fmt.Errorf("creating consumer for validation: %w", err)
+		}
+		consumers[mr] = c
+	}
+	return &ExecutionSpawner{
+		consumers: consumers,
+		spawner:   spawner,
+		config:    cfg,
+	}, nil
+}
+
+func (s *ExecutionSpawner) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+	// Channel that all consumers use to indicate their readiness.
+	readyStreams := make(chan struct{}, len(s.consumers))
+	for moduleRoot, c := range s.consumers {
+		c := c
+		moduleRoot := moduleRoot
+		c.Start(ctx_in)
+		// Channel for single consumer, once readiness is indicated in this,
+		// consumer will start consuming iteratively.
+		ready := make(chan struct{}, 1)
+		s.StopWaiter.LaunchThread(func(ctx context.Context) {
+			for {
+				if pubsub.StreamExists(ctx, c.StreamName(), c.RedisClient()) {
+					ready <- struct{}{}
+					readyStreams <- struct{}{}
+					return
+				}
+				select {
+				case <-ctx.Done():
+					log.Info("Context done", "error", ctx.Err().Error())
+					return
+				case <-time.After(time.Millisecond * 100):
+				}
+			}
+		})
+		s.StopWaiter.LaunchThread(func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				log.Info("Context done", "error", ctx.Err().Error())
+				return
+			case <-ready: // Wait until the stream exists and start consuming iteratively.
+			}
+			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				req, err := c.Consume(ctx)
+				if err != nil {
+					log.Error("Consuming request", "error", err)
+					return 0
+				}
+				if req == nil {
+					// There's nothing in the queue.
+					return time.Second
+				}
+				run, err := s.spawner.CreateExecutionRun(moduleRoot,
+					req.Value.ValidationInput, true).Await(ctx)
+				if err != nil {
+					log.Error("Creating BOLD execution", "error", err)
+					return 0
+				}
+				var res interface{}
+				// BoLD only uses two methods: either getting machine hashes, or one step proofs,
+				// so we can check if the NumDesiredLeaves is > 0 to determine which path to take.
+				if req.Value.NumDesiredLeaves != 0 {
+					res, err = run.GetMachineHashesWithStepSize(
+						req.Value.MachineStartIndex,
+						req.Value.StepSize,
+						req.Value.NumDesiredLeaves).Await(ctx)
+				} else {
+					res, err = run.GetProofAt(
+						req.Value.MachineStartIndex,
+					).Await(ctx)
+				}
+				if err != nil {
+					log.Error("Getting machine hashes", "error", err)
+					return 0
+				}
+				jsonRes, err := json.Marshal(res)
+				if err != nil {
+					log.Error("Marshaling result", "error", err)
+					return 0
+				}
+				if err := c.SetResult(ctx, req.ID, jsonRes); err != nil {
+					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
+					return 0
+				}
+				return time.Second
+			})
+		})
+	}
+	s.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-readyStreams:
+				log.Trace("At least one stream is ready")
+				return // Don't block Start if at least one of the stream is ready.
+			case <-time.After(s.config.StreamTimeout):
+				log.Error("Waiting for redis streams timed out")
+			case <-ctx.Done():
+				log.Info("Context expired, failed to start")
+				return
+			}
+		}
+	})
 }
 
 type ValidationServerConfig struct {

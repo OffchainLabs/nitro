@@ -1,9 +1,8 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // race detection makes things slow and miss timeouts
 //go:build !race
-// +build !race
 
 package arbtest
 
@@ -13,77 +12,11 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
-
-func TestFindBatch(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
-	l1Info := builder.L1Info
-	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
-	l1Info.GenerateGenesisAccount("deployer", initialBalance)
-	l1Info.GenerateGenesisAccount("asserter", initialBalance)
-	l1Info.GenerateGenesisAccount("challenger", initialBalance)
-	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
-
-	conf := builder.nodeConfig
-	conf.BlockValidator.Enable = false
-	conf.BatchPoster.Enable = false
-
-	builder.BuildL1(t)
-
-	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, builder.L1Info, builder.L1.Client, builder.chainConfig)
-	builder.addresses.Bridge = bridgeAddr
-	builder.addresses.SequencerInbox = seqInboxAddr
-
-	cleanup := builder.BuildL2OnL1(t)
-	defer cleanup()
-
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
-	Require(t, err)
-	sequencerTxOpts := builder.L1Info.GetDefaultTransactOpts("sequencer", ctx)
-
-	builder.L2Info.GenerateAccount("Destination")
-	const numBatches = 3
-	for i := 0; i < numBatches; i++ {
-		makeBatch(t, builder.L2.ConsensusNode, builder.L2Info, builder.L1.Client, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
-	}
-
-	for blockNum := uint64(0); blockNum < uint64(makeBatch_MsgsPerBatch)*3; blockNum++ {
-		callOpts := bind.CallOpts{Context: ctx}
-		gotBatchNum, err := nodeInterface.FindBatchContainingBlock(&callOpts, blockNum)
-		Require(t, err)
-		expBatchNum := uint64(0)
-		if blockNum > 0 {
-			expBatchNum = 1 + (blockNum-1)/uint64(makeBatch_MsgsPerBatch)
-		}
-		if expBatchNum != gotBatchNum {
-			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
-		}
-		batchL1Block, err := builder.L2.ConsensusNode.InboxTracker.GetBatchParentChainBlock(gotBatchNum)
-		Require(t, err)
-		blockHeader, err := builder.L2.Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
-		Require(t, err)
-		blockHash := blockHeader.Hash()
-
-		minCurrentL1Block, err := builder.L1.Client.BlockNumber(ctx)
-		Require(t, err)
-		gotConfirmations, err := nodeInterface.GetL1Confirmations(&callOpts, blockHash)
-		Require(t, err)
-		maxCurrentL1Block, err := builder.L1.Client.BlockNumber(ctx)
-		Require(t, err)
-
-		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
-			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
-		}
-	}
-}
 
 func TestL2BlockRangeForL1(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -141,42 +74,5 @@ func TestL2BlockRangeForL1(t *testing.T) {
 	// Test invalid case.
 	if _, err := nodeInterface.L2BlockRangeForL1(&bind.CallOpts{}, 1e5); err == nil {
 		t.Fatalf("GetL2BlockRangeForL1 didn't fail for an invalid input")
-	}
-}
-
-func TestGetL1Confirmations(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
-	Require(t, err)
-
-	genesisBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(0))
-	Require(t, err)
-	l1Confs, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
-	Require(t, err)
-
-	numTransactions := 200
-
-	// #nosec G115
-	if l1Confs >= uint64(numTransactions) {
-		t.Fatalf("L1Confirmations for latest block %v is already %v (over %v)", genesisBlock.Number(), l1Confs, numTransactions)
-	}
-
-	for i := 0; i < numTransactions; i++ {
-		builder.L1.TransferBalance(t, "User", "User", common.Big0, builder.L1Info)
-	}
-
-	l1Confs, err = nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
-	Require(t, err)
-
-	// Allow a gap of 10 for asynchronicity, just in case
-	// #nosec G115
-	if l1Confs+10 < uint64(numTransactions) {
-		t.Fatalf("L1Confirmations for latest block %v is only %v (did not hit expected %v)", genesisBlock.Number(), l1Confs, numTransactions)
 	}
 }

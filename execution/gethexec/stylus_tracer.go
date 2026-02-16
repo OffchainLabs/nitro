@@ -1,4 +1,4 @@
-// Copyright 2024, Offchain Labs, Inc.
+// Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package gethexec
@@ -41,13 +41,13 @@ type HostioTraceInfo struct {
 	Name string `json:"name"`
 
 	// Arguments of the HostIO encoded as binary.
-	// For details about the encoding check the HostIO implemenation on
-	// arbitrator/wasm-libraries/user-host-trait.
+	// For details about the encoding check the HostIO implementation on
+	// crates/wasm-libraries/user-host-trait.
 	Args hexutil.Bytes `json:"args"`
 
 	// Outputs of the HostIO encoded as binary.
-	// For details about the encoding check the HostIO implemenation on
-	// arbitrator/wasm-libraries/user-host-trait.
+	// For details about the encoding check the HostIO implementation on
+	// crates/wasm-libraries/user-host-trait.
 	Outs hexutil.Bytes `json:"outs"`
 
 	// Amount of Ink before executing the HostIO.

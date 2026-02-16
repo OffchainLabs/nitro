@@ -1,0 +1,83 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package proofenhancement
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/staker"
+)
+
+type ValidateCertificateProofEnhancer struct {
+	dapRegistry  *daprovider.DAProviderRegistry
+	inboxTracker staker.InboxTrackerInterface
+	inboxReader  staker.InboxReaderInterface
+}
+
+func NewValidateCertificateProofEnhancer(
+	dapRegistry *daprovider.DAProviderRegistry,
+	inboxTracker staker.InboxTrackerInterface,
+	inboxReader staker.InboxReaderInterface,
+) *ValidateCertificateProofEnhancer {
+	return &ValidateCertificateProofEnhancer{
+		dapRegistry:  dapRegistry,
+		inboxTracker: inboxTracker,
+		inboxReader:  inboxReader,
+	}
+}
+
+func (e *ValidateCertificateProofEnhancer) EnhanceProof(ctx context.Context, messageNum arbutil.MessageIndex, proof []byte) ([]byte, error) {
+	// Extract the hash and marker from the proof
+	// Format: [...proof..., certHash(32), marker(1)]
+	minProofSize := CertificateHashSize + MarkerSize
+	if len(proof) < minProofSize {
+		return nil, fmt.Errorf("proof too short for ValidateCertificate enhancement: expected at least %d bytes, got %d", minProofSize, len(proof))
+	}
+
+	markerPos := len(proof) - MarkerSize
+	hashPos := markerPos - CertificateHashSize
+
+	// Verify marker
+	if proof[markerPos] != MarkerCustomDAValidateCertificate {
+		return nil, fmt.Errorf("invalid marker for ValidateCertificate enhancer: 0x%02x", proof[markerPos])
+	}
+
+	// Extract certificate hash
+	var certHash [32]byte
+	copy(certHash[:], proof[hashPos:markerPos])
+
+	certificate, err := retrieveCertificateFromInboxMessage(ctx, messageNum, e.inboxTracker, e.inboxReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve certificate from inbox message %d: %w", messageNum, err)
+	}
+
+	// Verify the certificate hash matches what's requested
+	actualHash := crypto.Keccak256Hash(certificate)
+	if actualHash != common.BytesToHash(certHash[:]) {
+		return nil, fmt.Errorf("certificate hash mismatch: expected %x, got %x", certHash, actualHash)
+	}
+
+	// Get validator for this certificate type
+	validator := e.dapRegistry.GetValidator(certificate[0])
+	if validator == nil {
+		return nil, fmt.Errorf("no validator registered for certificate type 0x%02x", certificate[0])
+	}
+
+	// Generate certificate validity proof
+	promise := validator.GenerateCertificateValidityProof(certificate)
+	result, err := promise.Await(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate certificate validity proof: %w", err)
+	}
+
+	// Remove the marker data (hash + marker) from original proof
+	originalProofLen := hashPos
+	return constructEnhancedProof(proof[:originalProofLen], certificate, result.Proof), nil
+}

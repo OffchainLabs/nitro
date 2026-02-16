@@ -1,10 +1,12 @@
+// Copyright 2022-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package signature
 
 import (
 	"context"
 	"errors"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -25,7 +27,7 @@ type SignVerifyConfig struct {
 	Symmetric         SimpleHmacConfig `koanf:"symmetric"`
 }
 
-func SignVerifyConfigAddOptions(prefix string, f *flag.FlagSet) {
+func SignVerifyConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	FeedVerifierConfigAddOptions(prefix+".ecdsa", f)
 	f.Bool(prefix+".symmetric-fallback", DefaultSignVerifyConfig.SymmetricFallback, "if to fall back to symmetric hmac")
 	f.Bool(prefix+".symmetric-sign", DefaultSignVerifyConfig.SymmetricSign, "if to sign with symmetric hmac")
@@ -33,7 +35,7 @@ func SignVerifyConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultSignVerifyConfig = SignVerifyConfig{
-	ECDSA:             DefultFeedVerifierConfig,
+	ECDSA:             DefaultFeedVerifierConfig,
 	SymmetricFallback: false,
 	SymmetricSign:     false,
 	Symmetric:         EmptySimpleHmacConfig,

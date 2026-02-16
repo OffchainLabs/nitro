@@ -1,10 +1,12 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package dbconv
 
 import (
 	"errors"
 	"fmt"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -34,7 +36,7 @@ var DBConfigDefaultSrc = DBConfig{
 	Namespace: "srcdb/",
 }
 
-func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *DBConfig) {
+func DBConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *DBConfig) {
 	f.String(prefix+".data", defaultConfig.Data, "directory of stored chain state")
 	f.String(prefix+".db-engine", defaultConfig.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
 	f.Int(prefix+".handles", defaultConfig.Handles, "number of files to be open simultaneously")
@@ -69,7 +71,7 @@ var DefaultDBConvConfig = DBConvConfig{
 	MetricsServer:  genericconf.MetricsServerConfigDefault,
 }
 
-func DBConvConfigAddOptions(f *flag.FlagSet) {
+func DBConvConfigAddOptions(f *pflag.FlagSet) {
 	DBConfigAddOptions("src", f, &DefaultDBConvConfig.Src)
 	DBConfigAddOptions("dst", f, &DefaultDBConvConfig.Dst)
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size in bytes")

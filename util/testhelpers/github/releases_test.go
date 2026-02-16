@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package github
 
 import (
@@ -13,8 +15,8 @@ func TestReleases(t *testing.T) {
 	if len(rels) == 0 {
 		t.Error("No releases found")
 	}
-	if len(rels) != 50 {
-		t.Errorf("Expected 50 releases, got %d", len(rels))
+	if len(rels) != 100 {
+		t.Errorf("Expected 100 releases, got %d", len(rels))
 	}
 }
 

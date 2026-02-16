@@ -1,8 +1,7 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build stylustest && !race
-// +build stylustest,!race
 
 package arbtest
 
@@ -100,11 +99,11 @@ func fullRecurseTest() [][]multiCallRecurse {
 }
 
 func TestProgramLongCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), true)
+	testProgramRecursiveCalls(t, fullRecurseTest(), true)
 }
 
 func TestProgramLongArbitratorCall(t *testing.T) {
-	testProgramResursiveCalls(t, fullRecurseTest(), false)
+	testProgramRecursiveCalls(t, fullRecurseTest(), false)
 }
 
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {

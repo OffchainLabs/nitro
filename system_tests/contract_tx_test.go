@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -81,8 +81,9 @@ func TestContractTxDeploy(t *testing.T) {
 						RequestId:   &contractTx.RequestId,
 						L1BaseFee:   &big.Int{},
 					},
-					L2msg:        l2Msg,
-					BatchGasCost: new(uint64),
+					L2msg:              l2Msg,
+					LegacyBatchGasCost: nil,
+					BatchDataStats:     nil,
 				},
 				DelayedMessagesRead: delayedMessagesRead,
 			},

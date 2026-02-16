@@ -1,3 +1,5 @@
+// Copyright 2023-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package rpcclient
 
 import (
@@ -10,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -24,11 +26,11 @@ import (
 type ClientConfig struct {
 	URL                       string        `json:"url,omitempty" koanf:"url"`
 	JWTSecret                 string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
-	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
-	Retries                   uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
+	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout"`
+	Retries                   uint          `json:"retries,omitempty" koanf:"retries"`
 	ConnectionWait            time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
-	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
-	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
+	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit"`
+	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors"`
 	RetryDelay                time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 	WebsocketMessageSizeLimit int64         `json:"websocket-message-size-limit,omitempty" koanf:"websocket-message-size-limit"`
 
@@ -63,13 +65,14 @@ var TestClientConfig = ClientConfig{
 var DefaultClientConfig = ClientConfig{
 	URL:                       "self-auth",
 	JWTSecret:                 "",
+	Timeout:                   10 * time.Second,
 	Retries:                   3,
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
 
-func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientConfig) {
+func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientConfig) {
 	f.String(prefix+".url", defaultConfig.URL, "url of server, use self for loopback websocket, self-auth for loopback with authentication")
 	f.String(prefix+".jwtsecret", defaultConfig.JWTSecret, "path to file with jwtsecret for validation - ignored if url is self or self-auth")
 	f.Duration(prefix+".connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
@@ -93,6 +96,10 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 		config:    config,
 		autoStack: stack,
 	}
+}
+
+func (c *RpcClient) Timeout() time.Duration {
+	return c.config().Timeout
 }
 
 func (c *RpcClient) Close() {
@@ -277,6 +284,9 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		select {
 		case <-connTimeout:
 			return fmt.Errorf("timeout trying to connect lastError: %w", err)
+		case <-ctx_in.Done():
+			// Respect context cancellation during reconnect wait
+			return ctx_in.Err()
 		case <-time.After(time.Second):
 		}
 	}

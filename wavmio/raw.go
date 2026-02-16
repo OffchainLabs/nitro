@@ -1,8 +1,7 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build wasm
-// +build wasm
 
 package wavmio
 
@@ -28,3 +27,9 @@ func readDelayedInboxMessage(seqNum uint64, offset uint32, output unsafe.Pointer
 
 //go:wasmimport wavmio resolveTypedPreimage
 func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32
+
+//go:wasmimport wavmio validateCertificate
+func validateCertificate(ty uint32, hash unsafe.Pointer) uint32
+
+//go:wasmimport hooks beforeFirstIO
+func beforeFirstIO()

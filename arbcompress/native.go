@@ -1,8 +1,7 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build !wasm
-// +build !wasm
 
 package arbcompress
 
@@ -42,7 +41,7 @@ func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error)
 
 	status := C.brotli_compress(inbuf, outbuf, C.Dictionary(dictionary), u32(level))
 	if status != C.BrotliStatus_Success {
-		return nil, fmt.Errorf("failed decompression: %d", status)
+		return nil, fmt.Errorf("failed compression: %d", status)
 	}
 	output = output[:*outbuf.len]
 	return output, nil

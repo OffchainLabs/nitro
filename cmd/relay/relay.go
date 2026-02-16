@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -42,7 +42,7 @@ func startup() error {
 
 	handler, err := genericconf.HandlerFromLogType(relayConfig.LogType, io.Writer(os.Stderr))
 	if err != nil {
-		flag.Usage()
+		pflag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
 	logLevel, err := genericconf.ToSlogLevel(relayConfig.LogLevel)

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package main
@@ -76,6 +76,14 @@ func (db PreimageDb) Close() error {
 }
 
 func (db PreimageDb) Release() {
+}
+
+func (db PreimageDb) SyncAncient() error {
+	return nil // no-op
+}
+
+func (db PreimageDb) SyncKeyValue() error {
+	return nil // no-op
 }
 
 type NopBatcher struct {

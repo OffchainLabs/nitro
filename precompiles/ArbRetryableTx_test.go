@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -7,13 +7,16 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func newMockEVMForTestingWithCurrentRefundTo(currentRefundTo *common.Address) *vm.EVM {
@@ -38,9 +41,8 @@ func TestGetCurrentRedeemer(t *testing.T) {
 	}
 }
 
-func TestRetryableRedeem(t *testing.T) {
-	evm := newMockEVMForTesting()
-	precompileCtx := testContext(common.Address{}, evm)
+func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context, expectedLegacyGas bool) {
+	t.Helper()
 
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := evm.Context.Time + 10000000
@@ -63,15 +65,14 @@ func TestRetryableRedeem(t *testing.T) {
 	)
 	Require(t, err)
 
-	retryABI, err := templates.ArbRetryableTxMetaData.GetAbi()
+	retryABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	Require(t, err)
 	redeemCalldata, err := retryABI.Pack("redeem", id)
 	Require(t, err)
 
 	retryAddress := common.HexToAddress("6e")
-	_, gasLeft, err := Precompiles()[retryAddress].Call(
+	_, gasLeft, _, err := Precompiles()[retryAddress].Call(
 		redeemCalldata,
-		retryAddress,
 		retryAddress,
 		common.Address{},
 		big.NewInt(0),
@@ -81,10 +82,140 @@ func TestRetryableRedeem(t *testing.T) {
 	)
 	Require(t, err)
 
-	if gasLeft != storage.StorageWriteCost-storage.StorageWriteZeroCost {
+	expected := uint64(0)
+	if expectedLegacyGas {
+		expected = storage.StorageWriteCost - storage.StorageWriteZeroCost
+	}
+
+	if gasLeft != expected {
 		// We expect to have some gas left over, because in this test we write a zero, but in other
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.
-		Fail(t, "didn't consume all the expected gas")
+
+		var delta uint64
+		var relation string
+		if gasLeft > expected {
+			delta = gasLeft - expected
+			relation = "more"
+		} else {
+			delta = expected - gasLeft
+			relation = "less"
+		}
+		t.Fatalf("unexpected gas left: got %d, want %d (%d %s than expected)",
+			gasLeft, expected, delta, relation)
 	}
+}
+
+func TestRetryableRedeemLegacy(t *testing.T) {
+	evm := newMockEVMForTesting()
+	precompileCtx := testContext(common.Address{}, evm)
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelLegacy {
+		Fail(t, "should use legacy model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx, true)
+}
+
+func TestRetryableRedeemLegacyArbOS60(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
+	precompileCtx := testContext(common.Address{}, evm)
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelLegacy {
+		Fail(t, "should use legacy model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx, true)
+}
+
+func TestRetryableRedeemWithGasConstraints(t *testing.T) {
+	evm := newMockEVMForTesting()
+	precompileCtx := testContext(common.Address{}, evm)
+
+	for i := range uint64(l2pricing.GasConstraintsMaxNum) {
+		target := (i + 1) * 1000000
+		window := (i + 1) * 10
+		backlog := (i + 1) * 500000
+
+		err := precompileCtx.State.L2PricingState().AddGasConstraint(target, window, backlog)
+		Require(t, err)
+	}
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelSingleGasConstraints {
+		Fail(t, "should use single-gas constraints model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx, true)
+}
+
+func TestRetryableRedeemWithGasConstraintsArbOSMultiGasConstraintsVersion(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
+
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
+
+	for i := range uint64(100) {
+		target := (i + 1) * 1000000
+		window := (i + 1) * 10
+		backlog := (i + 1) * 500000
+
+		err := precompileCtx.State.L2PricingState().AddGasConstraint(target, window, backlog)
+		Require(t, err)
+	}
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelSingleGasConstraints {
+		Fail(t, "should use single-gas constraints model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx, false)
+}
+
+func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
+	arbosVersion := params.ArbosVersion_MultiGasConstraintsVersion
+	evm := newMockEVMForTestingWithVersion(&arbosVersion)
+
+	precompileCtx := testContextWithVersion(common.Address{}, evm, arbosVersion)
+
+	for i := range 100 {
+		// #nosec G115
+		target := uint64((i + 1) * 1000000)
+		// #nosec G115
+		window := uint32((i + 1) * 10)
+		// #nosec G115
+		backlog := uint64((i + 1) * 500000)
+
+		weights := map[uint8]uint64{
+			uint8(multigas.ResourceKindComputation):     1,
+			uint8(multigas.ResourceKindStorageAccess):   2,
+			uint8(multigas.ResourceKindStorageGrowth):   3,
+			uint8(multigas.ResourceKindL1Calldata):      4,
+			uint8(multigas.ResourceKindL2Calldata):      5,
+			uint8(multigas.ResourceKindWasmComputation): 6,
+		}
+
+		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
+		Require(t, err)
+	}
+
+	model, err := precompileCtx.State.L2PricingState().GasModelToUse()
+	Require(t, err)
+
+	if model != l2pricing.GasModelMultiGasConstraints {
+		Fail(t, "should use multi-gas constraints model")
+	}
+
+	testRetryableRedeem(t, evm, precompileCtx, false)
 }

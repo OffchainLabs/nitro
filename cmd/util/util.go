@@ -1,11 +1,16 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package util
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
@@ -36,4 +41,20 @@ func StartMetricsAndPProf(opts *MetricsPProfOpts) error {
 		genericconf.StartPprof(pAddr)
 	}
 	return nil
+}
+
+func ReadChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
+	// 1. Validate that the correct fields are used
+	if gen.Config != nil { //nolint:staticcheck // we want to explicitly check that the deprecated field is not used
+		return nil, nil, errors.New("`config` field is deprecated and not supported; use `serializedChainConfig` instead")
+	}
+	if gen.SerializedChainConfig == "" {
+		return nil, nil, errors.New("serialized chain config was not set (`serializedChainConfig`)")
+	}
+	// 2. Deserialize the chain config
+	chainConfig, err := gen.GetConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	return chainConfig, []byte(gen.SerializedChainConfig), nil
 }

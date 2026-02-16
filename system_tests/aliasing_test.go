@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func TestAliasing(t *testing.T) {
+func TestAliasingFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

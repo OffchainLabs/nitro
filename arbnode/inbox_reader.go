@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -49,7 +49,7 @@ func (c *InboxReaderConfig) Validate() error {
 	return nil
 }
 
-func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
+func InboxReaderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
 	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
@@ -473,7 +473,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if err != nil {
 				return err
 			}
-			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
+			delayedMessages, err := r.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
 					idx := batchNum - sequencerBatches[0].SequenceNumber
 					if idx < uint64(len(sequencerBatches)) {
@@ -481,7 +481,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
-				data, _, err := r.GetSequencerMessageBytes(ctx, batchNum)
+				// Here we pass in the local parentChainBlockNumber as LookupMessagesInRange fetches parentChainBlockNumber from the logs
+				data, _, err := r.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
 				return data, err
 			})
 			if err != nil {
@@ -665,7 +666,7 @@ func (r *InboxReader) getNextBlockToRead(ctx context.Context) (*big.Int, error) 
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, delayedCount-1)
+	parentChainBlockNumber, err := r.tracker.GetParentChainBlockNumberFor(ctx, delayedCount-1)
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +682,11 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	if err != nil {
 		return nil, common.Hash{}, err
 	}
-	blockNum := arbmath.UintToBig(metadata.ParentChainBlock)
+	return r.GetSequencerMessageBytesForParentBlock(ctx, seqNum, metadata.ParentChainBlock)
+}
+
+func (r *InboxReader) GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error) {
+	blockNum := arbmath.UintToBig(parentChainBlock)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
 		return nil, common.Hash{}, err
@@ -694,7 +699,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 		}
 		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
-	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
+	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, parentChainBlock, seenBatches)
 }
 
 func (r *InboxReader) GetLastReadBatchCount() uint64 {

@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -431,7 +431,7 @@ func TestStylusOpcodeTraceCreate(t *testing.T) {
 	checkOpcode(t, result, 11, vm.POP, create2Addr[:])
 }
 
-// TestStylusOpcodeTraceEquivalence compares a Stylus trace with a equivalent Solidity/EVM trace. Notice
+// TestStylusOpcodeTraceEquivalence compares a Stylus trace with an equivalent Solidity/EVM trace. Notice
 // the Stylus trace does not contain all opcodes from the Solidity/EVM trace. Instead, this test
 // only checks that both traces contain the same basic opcodes.
 func TestStylusOpcodeTraceEquivalence(t *testing.T) {
