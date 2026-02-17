@@ -87,7 +87,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml
+          --junitfile test-results/junit-pathdb.xml --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
 
@@ -96,14 +96,14 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
+          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]' --reduce-parallelism
 
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'
+          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]' --reduce-parallelism
       
       - name: run redis tests
         if: inputs.run-defaults-a
@@ -158,9 +158,9 @@ jobs:
       - name: run race tests
         if: inputs.run-race
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh 
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --race --timeout 90m --test_state_scheme hash
-          --junitfile test-results/junit-race.xml
+          --junitfile test-results/junit-race.xml --reduce-parallelism
 
       # --------------------- LONG MODE ---------------------
 
