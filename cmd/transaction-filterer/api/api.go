@@ -55,6 +55,9 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 // Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.
 func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClient *ethclient.Client) error {
+	if sequencerClient == nil {
+		return errors.New("cannot set nil sequencer client")
+	}
 	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
 		types.ArbFilteredTransactionsManagerAddress,
 		sequencerClient,
