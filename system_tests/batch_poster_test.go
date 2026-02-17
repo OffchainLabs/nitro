@@ -683,15 +683,17 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	builder.L1.ClientWrapper.EnableRawTransactionFilter(batchPosterAddress, batchPosterTxsChan)
 
 	builder.L2Info.GenerateAccount("User2")
-	delayedTx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 
 	const numBatches = 3
 	for i := 0; i < numBatches; i++ {
-		// Send transactions using the bridge to generate delay proofs
+		// Create a fresh delayed tx each iteration so SendSignedTxViaL1's
+		// EnsureTxSucceeded waits for a new L2 receipt. Reusing the same tx
+		// causes the receipt lookup to return immediately (from the first call),
+		// which stops L1 block production before the batch poster can react.
+		delayedTx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
-		// Keep L1 advancing so the batch poster sees the delay buffer threshold crossed
-		// and has time to react asynchronously. KeepL1Advancing advances every 100ms,
-		// unlike synchronous AdvanceL1 which completes before the batch poster can process.
+		// Keep L1 advancing so the batch poster sees the delay buffer threshold
+		// crossed and has time to react.
 		stopL1, l1ErrChan := KeepL1Advancing(builder)
 		select {
 		case tx := <-batchPosterTxsChan:
