@@ -303,7 +303,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 			t.Fatal("Messages from MEL and inbox tracker do not match")
 		}
 	}
-
 }
 
 func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
