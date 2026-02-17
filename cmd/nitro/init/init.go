@@ -635,7 +635,12 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return executionDB, nil, nil, err
 		}
 
-		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
+		var parsedInitMessage *arbostypes.ParsedInitMessage
+		if config.Node.ParentChainReader.Enable {
+			parsedInitMessage, err = GetParsedInitMsgFromConsensus(ctx, chainId, l1Client, &rollupAddrs, chainConfig)
+		} else {
+			parsedInitMessage, err = GetParsedInitMsgFromConfig(chainConfig, genesisArbOSInit)
+		}
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
@@ -1033,55 +1038,60 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 	return nil, nil, nil, nil, nil
 }
 
-func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetParsedInitMsgFromConsensus(ctx context.Context, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
 	var parsedInitMessage *arbostypes.ParsedInitMessage
-	if parentChainReaderEnabled {
-		delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+	delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+	}
+	deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
+	delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
+	}
+	var initMessage *arbostypes.L1IncomingMessage
+	for _, msg := range delayedMessages {
+		if msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
+			initMessage = msg.Message
+			break
 		}
-		deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
-		delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
+	}
+	if initMessage == nil {
+		return nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
+	}
+	parsedInitMessage, err = initMessage.ParseInitMessage()
+	if err != nil {
+		return nil, err
+	}
+	if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
+		return nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
+	}
+	if parsedInitMessage.ChainConfig != nil {
+		if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+			return nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 		}
-		var initMessage *arbostypes.L1IncomingMessage
-		for _, msg := range delayedMessages {
-			if msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
-				initMessage = msg.Message
-				break
-			}
-		}
-		if initMessage == nil {
-			return nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
-		}
-		parsedInitMessage, err = initMessage.ParseInitMessage()
-		if err != nil {
-			return nil, err
-		}
-		if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
-			return nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
-		}
-		if parsedInitMessage.ChainConfig != nil {
-			if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
-				return nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
-			}
-		}
-		log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
-	} else {
-		serializedChainConfig, err := json.Marshal(chainConfig)
-		if err != nil {
-			return nil, err
-		}
-		parsedInitMessage = &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedChainConfig,
-		}
-		log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
+	}
+	log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
+	return parsedInitMessage, nil
+}
+
+func GetParsedInitMsgFromConfig(chainConfig *params.ChainConfig, genesisArbOSInit *params.ArbOSInit) (*arbostypes.ParsedInitMessage, error) {
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		return nil, err
 	}
 
+	fee := genesisArbOSInit.InitialL1BaseFee
+	if fee == nil {
+		fee = arbostypes.DefaultInitialL1BaseFee
+	}
+
+	parsedInitMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      fee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
 	return parsedInitMessage, nil
 }
 
