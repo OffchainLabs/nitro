@@ -8,27 +8,23 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
-
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
-func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
+func TestGetParsedInitMsgWithoutConsensus(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	cleanup := builder.Build(t)
 	defer cleanup()
-
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, false, builder.chainConfig.ChainID, nil, &chaininfo.RollupAddresses{}, builder.chainConfig)
-	Require(t, err)
 
 	serializedChainConfig, err := json.Marshal(builder.chainConfig)
 	Require(t, err)
@@ -41,12 +37,28 @@ func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
 		SerializedChainConfig: serializedChainConfig,
 	}
 
+	// 1. From Genesis
+	genesis := &core.Genesis{
+		SerializedChainConfig: string(serializedChainConfig),
+	}
+
+	initMessage, err := nitroinit.GetParsedInitMsgFromGenesis(genesis)
+	Require(t, err)
+
+	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
+		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
+	}
+
+	// 2. Directly from chain config
+	initMessage, err = nitroinit.GetParsedInitMsgFromChainConfig(builder.chainConfig)
+	Require(t, err)
+
 	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
 		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
 	}
 }
 
-func TestGetConsensusParsedInitMsgWithParentChain(t *testing.T) {
+func TestGetParsedInitMsgFromConsensus(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -55,7 +67,7 @@ func TestGetConsensusParsedInitMsgWithParentChain(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromConsensus(ctx, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
 	Require(t, err)
 
 	if success := reflect.DeepEqual(initMessage, builder.initMessage); !success {
