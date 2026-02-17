@@ -85,6 +85,7 @@ smallvec = { version = "1.10.0" }
 spin = { version = "0.10.0" }
 static_assertions = { version = "1.1.0" }
 structopt = { version = "0.3.26" }
+tempdir = { version = "0.3.7" }
 thiserror = { version = "1.0.33" }
 tiny-keccak = { version = "2.0.2" }
 tokio = { version = "1.48.0" }

@@ -5,7 +5,7 @@ use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
-use arbutil::{Color, PreimageType};
+use arbutil::Color;
 use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
@@ -171,6 +171,7 @@ pub fn resolve_preimage_impl(
 
     #[cfg(debug_assertions)]
     {
+        use arbutil::PreimageType;
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
 
