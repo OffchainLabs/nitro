@@ -600,7 +600,7 @@ var globalCollection *testCollection
 // nodeWeight computes the semaphore weight for a given number of node-equivalents.
 // Weights are scaled so that room=GOMAXPROCS allows at most maxConcurrentNodes
 // node-equivalents to run simultaneously, automatically adapting to machine size.
-const maxConcurrentNodes = 8
+const maxConcurrentNodes = 16
 
 func nodeWeight(nodes int) int64 {
 	w := int64(nodes) * int64(util.GoMaxProcs()) / maxConcurrentNodes
