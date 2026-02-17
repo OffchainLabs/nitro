@@ -23,7 +23,8 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 
 	reqNodeVersion := "v3.2.1"
 	reqNodeVersionDate := time.Now().Format(time.RFC3339)
-	upgradeDeadline := time.Now().Add(5 * time.Second).Format(time.RFC3339)
+	// Use a deadline far in the future to avoid races with Build() startup time
+	upgradeDeadline := time.Now().Add(time.Hour).Format(time.RFC3339)
 	msg := "Node version or date is below the minimum requirement, please upgrade"
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
@@ -64,27 +65,31 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 		t.Fatal("minimum required node version message should not be logged for correct versioned nodes")
 	}
 
-	// Node version is above required minimum version but upgrade time is not, but since current time is
-	// below upgrade deadline (5s ahead) we should see an INFO log
+	// Node version is above required minimum version but upgrade time is not.
+	// Deadline is far in the future so now + gracePeriod(0) <= deadline → INFO
 	alerter.NodeVersionTime = alerter.NodeVersionTime.Add(-1 * time.Minute)
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) {
 		t.Fatal("minimum required node version message was not logged at level Info")
 	}
 
-	// Upgrade time is above required minimum version but node version is not, UpgradeGracePeriod will be set enough to exceed
-	// upgrade deadline but since current time is below upgrade deadline (5s ahead) we should see a WARN log
+	// Node version is below required minimum. Set deadline to 5s in the future
+	// and gracePeriod to 10s so now + gracePeriod > deadline → WARN
 	alerter.NodeVersionTime = nodeVersionTime
 	alerter.NodeVersion = "v3.2"
 	alerter.Cfg.UpgradeGracePeriod = 10 * time.Second
+	warnDeadline := time.Now().Add(5 * time.Second).Format(time.RFC3339)
+	builder.nodeConfig.VersionAlerterServer.UpgradeDeadline = warnDeadline
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) {
 		t.Fatal("minimum required node version message was not logged at level Warn")
 	}
 
-	// Same case as above where node version is still below required minimum, time.Sleep is called for enough seconds for now to
-	// exceed upgrade deadline hence we should see an ERRORlog
-	time.Sleep(6 * time.Second)
+	// Set deadline to the past so now > deadline → ERROR
+	pastDeadline := time.Now().Add(-1 * time.Second).Format(time.RFC3339)
+	builder.nodeConfig.VersionAlerterServer.UpgradeDeadline = pastDeadline
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelError) {
 		t.Fatal("minimum required node version message was not logged at level Error")
