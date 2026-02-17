@@ -203,10 +203,10 @@ func mainImpl() int {
 	}
 
 	if consensusNodeEnabled {
-	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
-		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
-		return 1
-	}
+		if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+			log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+			return 1
+		}
 	}
 
 	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
@@ -218,59 +218,59 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 
 	if consensusNodeEnabled {
-	// If sequencer and signing is enabled or batchposter is enabled without
-	// external signing sequencer will need a key.
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
-		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
-	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
-		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
+		// If sequencer and signing is enabled or batchposter is enabled without
+		// external signing sequencer will need a key.
+		sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
+			(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
+		validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
+			(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
-	defaultL1WalletConfig := conf.DefaultL1WalletConfig
-	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultL1WalletConfig := conf.DefaultL1WalletConfig
+		defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
-	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
+		defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
-	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
+		defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			pflag.Usage()
-			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
+		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				pflag.Usage()
+				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
+			}
+			if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+				return 0
+			}
 		}
-		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-			return 0
-		}
-	}
 
-	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			pflag.Usage()
-			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+		if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				pflag.Usage()
+				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+			}
+			if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+				return 0
+			}
 		}
-		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-			return 0
-		}
-	}
 
-	if nodeConfig.Node.Staker.Enable {
-		if !nodeConfig.Node.ParentChainReader.Enable {
-			pflag.Usage()
-			log.Crit("validator must have the parent chain reader enabled")
+		if nodeConfig.Node.Staker.Enable {
+			if !nodeConfig.Node.ParentChainReader.Enable {
+				pflag.Usage()
+				log.Crit("validator must have the parent chain reader enabled")
+			}
+			strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
+			if err != nil {
+				log.Crit("couldn't parse staker strategy", "err", err)
+			}
+			if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+				nodeConfig.Node.BlockValidator.Enable = true
+			}
 		}
-		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
-		if err != nil {
-			log.Crit("couldn't parse staker strategy", "err", err)
-		}
-		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
-			nodeConfig.Node.BlockValidator.Enable = true
-		}
-	}
 	}
 
 	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
@@ -315,9 +315,9 @@ func mainImpl() int {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
 		if consensusNodeEnabled {
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
-		if err != nil {
-			log.Crit("error getting rollup addresses", "err", err)
+			rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
+			if err != nil {
+				log.Crit("error getting rollup addresses", "err", err)
 			}
 		}
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
@@ -442,9 +442,9 @@ func mainImpl() int {
 	}
 
 	if executionNodeEnabled {
-	if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-		log.Error("error populating stylus target cache", "err", err)
-		return 1
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
 		}
 	}
 
@@ -559,50 +559,50 @@ func mainImpl() int {
 	seqInboxMaxDataSize := 117964
 
 	if consensusNodeEnabled {
-	consensusNode, err = arbnode.CreateConsensusNode(
-		ctx,
-		stack,
-		execNode,
-		consensusDB,
-		&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-		l2BlockChain.Config(),
-		l1Client,
-		&rollupAddrs,
-		l1TransactionOptsValidator,
-		l1TransactionOptsBatchPoster,
-		dataSigner,
-		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		blobReader,
-		wasmModuleRoot,
-	)
-	if err != nil {
-		log.Error("failed to create consensus node", "err", err)
-		return 1
-	}
-
-	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
-	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
-	if nodeConfig.Node.ParentChainReader.Enable {
-		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+		consensusNode, err = arbnode.CreateConsensusNode(
+			ctx,
+			stack,
+			execNode,
+			consensusDB,
+			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
+			l2BlockChain.Config(),
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
 		if err != nil {
-			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+			log.Error("failed to create consensus node", "err", err)
 			return 1
 		}
-		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
-		if err == nil {
-			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.IsExecutionReverted(err) {
-			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
-			return 1
+
+		// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
+		// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
+		if nodeConfig.Node.ParentChainReader.Enable {
+			seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+			if err != nil {
+				log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+				return 1
+			}
+			res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
+			if err == nil {
+				seqInboxMaxDataSize = int(res.Int64())
+			} else if !headerreader.IsExecutionReverted(err) {
+				log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
+				return 1
+			}
 		}
-	}
-	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
-	// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
-	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
-		if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
-			log.Error("batchPoster's MaxCalldataBatchSize is too large")
-			return 1
+		// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
+		// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
+		if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
+			if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
+				log.Error("batchPoster's MaxCalldataBatchSize is too large")
+				return 1
 			}
 		}
 	}
@@ -621,25 +621,25 @@ func mainImpl() int {
 	}
 
 	if consensusNodeEnabled {
-	liveNodeConfig.SetOnReloadHook(func(oldCfg *config.NodeConfig, newCfg *config.NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir)); err != nil {
-			return fmt.Errorf("failed to re-init logging: %w", err)
-		}
-		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
-	})
+		liveNodeConfig.SetOnReloadHook(func(oldCfg *config.NodeConfig, newCfg *config.NodeConfig) error {
+			if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+				return fmt.Errorf("failed to re-init logging: %w", err)
+			}
+			return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		})
 
-	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
-		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
-		// we should create our own fake init message.
-		count, err := consensusNode.TxStreamer.GetMessageCount()
-		if err != nil {
-			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
-			count = 0
-		}
-		if count == 0 {
-			err = consensusNode.TxStreamer.AddFakeInitMessage()
+		if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
+			// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
+			// we should create our own fake init message.
+			count, err := consensusNode.TxStreamer.GetMessageCount()
 			if err != nil {
-				panic(err)
+				log.Warn("Getmessagecount failed. Assuming new database", "err", err)
+				count = 0
+			}
+			if count == 0 {
+				err = consensusNode.TxStreamer.AddFakeInitMessage()
+				if err != nil {
+					panic(err)
 				}
 			}
 		}
@@ -689,11 +689,11 @@ func mainImpl() int {
 	}
 
 	if executionNodeEnabled {
-	gqlConf := nodeConfig.GraphQL
-	if execNode != nil && gqlConf.Enable {
-		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
-			log.Error("failed to register the GraphQL service", "err", err)
-			return 1
+		gqlConf := nodeConfig.GraphQL
+		if execNode != nil && gqlConf.Enable {
+			if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+				log.Error("failed to register the GraphQL service", "err", err)
+				return 1
 			}
 		}
 	}
