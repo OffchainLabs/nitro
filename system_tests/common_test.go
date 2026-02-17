@@ -57,6 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -1411,6 +1412,33 @@ func AdvanceL1(
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
+}
+
+// AdvanceL2Time sequences a dummy transaction with a future timestamp, advancing
+// the L2 block time without wall-clock delay. Works with or without L1.
+// Returns the new block timestamp.
+func AdvanceL2Time(t *testing.T, builder *NodeBuilder, ctx context.Context, advanceSeconds uint64) uint64 {
+	t.Helper()
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	var l1BlockNumber uint64
+	if builder.L1 != nil {
+		l1Header, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		l1BlockNumber = l1Header.Number.Uint64()
+	}
+	newTimestamp := hdr.Time + advanceSeconds
+	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1BlockNumber,
+		Timestamp:   newTimestamp,
+	}
+	tx := builder.L2Info.PrepareTx("Faucet", "Faucet", 300000, big.NewInt(1), nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
+	Require(t, err)
+	return newTimestamp
 }
 
 // keepL1Advancing is the lower-level helper that produces L1 blocks in the

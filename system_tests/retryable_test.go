@@ -25,7 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -721,28 +720,6 @@ func TestGetLifetime(t *testing.T) {
 	}
 }
 
-func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, currentL1time, advanceTime uint64) uint64 {
-	t.Log("Warping L1 time...")
-	l1LatestHeader, err := builder.L1.Client.HeaderByNumber(ctx, big.NewInt(int64(rpc.LatestBlockNumber)))
-	Require(t, err)
-	if currentL1time == 0 {
-		currentL1time = l1LatestHeader.Time
-	}
-	newL1Timestamp := currentL1time + advanceTime
-	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
-		Kind:        arbostypes.L1MessageType_L2Message,
-		Poster:      l1pricing.BatchPosterAddress,
-		BlockNumber: l1LatestHeader.Number.Uint64(),
-		Timestamp:   newL1Timestamp,
-		RequestId:   nil,
-		L1BaseFee:   nil,
-	}
-	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
-	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
-	Require(t, err)
-	return newL1Timestamp
-}
 
 func TestRetryableExpiry(t *testing.T) {
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
@@ -802,7 +779,7 @@ func TestRetryableExpiry(t *testing.T) {
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
 
-	_ = warpL1Time(t, builder, ctx, 0, retryables.RetryableLifetimeSeconds)
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
 
 	// check that the ticket no longer exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
@@ -886,13 +863,13 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 		Fatal(t, "expected timeout after keepalive to be", expectedTimeoutAfterKeepAlive, "but got", timeoutAfterKeepalive)
 	}
 
-	currentL1time := warpL1Time(t, builder, ctx, 0, retryables.RetryableLifetimeSeconds)
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
 
 	// check that the ticket still exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
 
-	_ = warpL1Time(t, builder, ctx, currentL1time, retryables.RetryableLifetimeSeconds)
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
 
 	// check that the ticket no longer exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
