@@ -1087,7 +1087,7 @@ func GetParsedInitMsgFromGenesis(genesis *core.Genesis) (*arbostypes.ParsedInitM
 	}
 
 	initialL1BaseFee := arbostypes.DefaultInitialL1BaseFee
-	if genesis.ArbOSInit != nil && genesis.ArbOSInit.InitialL1BaseFee == nil {
+	if genesis.ArbOSInit != nil && genesis.ArbOSInit.InitialL1BaseFee != nil {
 		initialL1BaseFee = genesis.ArbOSInit.InitialL1BaseFee
 	}
 
