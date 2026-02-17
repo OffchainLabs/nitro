@@ -597,6 +597,19 @@ type testCollection struct {
 
 var globalCollection *testCollection
 
+// nodeWeight computes the semaphore weight for a given number of node-equivalents.
+// Weights are scaled so that room=GOMAXPROCS allows at most maxConcurrentNodes
+// node-equivalents to run simultaneously, automatically adapting to machine size.
+const maxConcurrentNodes = 8
+
+func nodeWeight(nodes int) int64 {
+	w := int64(nodes) * int64(util.GoMaxProcs()) / maxConcurrentNodes
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
 func initTestCollection() {
 	if globalCollection != nil {
 		panic("trying to init testCollection twice")
@@ -719,13 +732,17 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
+	start := time.Now()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 2, t.Name())
+	err := WaitAndRun(b.ctx, nodeWeight(2), t.Name())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Logf("BuildL1 waited %s for parallel+semaphore", waited)
 	}
 	b.L1 = NewTestClient(b.ctx)
 
@@ -852,7 +869,7 @@ func buildOnParentChain(
 }
 
 func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	DontWaitAndRun(b.ctx, nodeWeight(1), t.Name())
 	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
 	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
@@ -983,13 +1000,17 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
 		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
+	start := time.Now()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 1, t.Name())
+	err := WaitAndRun(b.ctx, nodeWeight(1), t.Name())
 	if err != nil {
 		Fatal(t, err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Logf("BuildL2 waited %s for parallel+semaphore", waited)
 	}
 	b.L2 = NewTestClient(b.ctx)
 
@@ -1168,7 +1189,7 @@ func build2ndNode(
 }
 
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	DontWaitAndRun(b.ctx, nodeWeight(1), t.Name())
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}
@@ -1197,7 +1218,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 }
 
 func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	DontWaitAndRun(b.ctx, nodeWeight(1), t.Name())
 	if b.L3 == nil {
 		t.Fatal("builder did not previously built an L3 Node")
 	}
@@ -1730,7 +1751,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
-	DontWaitAndRun(ctx, 2, t.Name())
+	DontWaitAndRun(ctx, nodeWeight(2), t.Name())
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig
