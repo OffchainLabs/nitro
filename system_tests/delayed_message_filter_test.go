@@ -1604,7 +1604,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	// Submit a normal delayed transfer behind it
 	transferAmount := big.NewInt(1e12)
 	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalRecipient", builder.L2Info.TransferGas, transferAmount, nil)
-	sendDelayedTx(t, ctx, builder, delayedTx)
+	delayedTxHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
@@ -1625,6 +1625,12 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "filtered retryable should have failed receipt")
+
+	// Wait for the normal delayed transfer to also be processed. The delayed sequencer
+	// may not have sequenced it in the same iteration as the retryable if the inbox
+	// reader hadn't indexed it yet when the sequencer resumed.
+	_, err = WaitForTx(ctx, builder.L2.Client, delayedTxHash, time.Second*10)
+	require.NoError(t, err)
 
 	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
