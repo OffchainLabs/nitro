@@ -11,7 +11,7 @@ use arbutil::{
     },
     Bytes20, Bytes32, Color,
 };
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use eyre::{eyre, Result};
 use prover::programs::memory::MemoryModel;
 use std::fmt::Display;
@@ -64,7 +64,7 @@ impl UserHost<VecReader> for Program {
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
+        Ok(StaticMem.read_slice(ptr, len as usize))
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryBoundsError> {
@@ -74,12 +74,12 @@ impl UserHost<VecReader> for Program {
 
     fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
-        unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
+        Ok(StaticMem.write_u32(ptr, x))
     }
 
     fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
+        Ok(StaticMem.write_slice(ptr, src))
     }
 
     fn say<D: Display>(&self, text: D) {

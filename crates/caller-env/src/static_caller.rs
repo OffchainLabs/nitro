@@ -1,21 +1,19 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{create_pcg, ExecEnv, GuestPtr, MemAccess};
+use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
 use rand::RngCore;
-use rand_pcg::Pcg32;
+use spin::{Lazy, Mutex, MutexGuard};
 
 extern crate alloc;
 
-static mut TIME: u64 = 0;
-static mut RNG: Option<Pcg32> = None;
-
+/// Static memory access for Go runtime in WAVM.
 pub struct StaticMem;
+/// Static execution environment for Go runtime in WAVM.
 pub struct StaticExecEnv;
 
-pub static mut STATIC_MEM: StaticMem = StaticMem;
-pub static mut STATIC_ENV: StaticExecEnv = StaticExecEnv;
+static GO_RUNTIME_STATE: Lazy<Mutex<GoRuntimeState>> = Lazy::new(Default::default);
 
 extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
@@ -99,21 +97,25 @@ impl MemAccess for StaticMem {
     }
 }
 
+fn act_on_state<R>(func: impl FnOnce(MutexGuard<'_, GoRuntimeState>) -> R) -> R {
+    func(GO_RUNTIME_STATE.lock())
+}
+
 impl ExecEnv for StaticExecEnv {
-    fn print_string(&mut self, _data: &[u8]) {
-        // printing is done by arbitrator machine host_call_hook
-        // capturing the fd_write call directly
+    fn advance_time(&mut self, delta: u64) {
+        act_on_state(|mut s| s.time += delta);
     }
 
     fn get_time(&self) -> u64 {
-        unsafe { TIME }
-    }
-
-    fn advance_time(&mut self, delta: u64) {
-        unsafe { TIME += delta }
+        act_on_state(|s| s.time)
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        unsafe { RNG.get_or_insert_with(create_pcg) }.next_u32()
+        act_on_state(|mut s| s.rng.next_u32())
+    }
+
+    fn print_string(&mut self, _data: &[u8]) {
+        // printing is done by arbitrator machine host_call_hook
+        // capturing the fd_write call directly
     }
 }
