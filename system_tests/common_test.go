@@ -604,6 +604,9 @@ func initTestCollection() {
 	globalCollection = &testCollection{}
 	globalCollection.cond = sync.NewCond(&sync.Mutex{})
 	room := int64(util.GoMaxProcs())
+	if *testflag.MaxConcurrentFlag > 0 {
+		room = int64(*testflag.MaxConcurrentFlag)
+	}
 	if room < 2 {
 		room = 2
 	}

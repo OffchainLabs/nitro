@@ -141,14 +141,20 @@ if [ "$cover" == true ]; then
   cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
+max_concurrent=""
 if [ "$reduce_parallelism" == true ]; then
-  cmd="$cmd -parallel $(( $(nproc) > 8 ? $(nproc) / 8 : 1 ))"
+  max_concurrent=$(( $(nproc) > 8 ? $(nproc) / 8 : 1 ))
+  cmd="$cmd -parallel $max_concurrent"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"
 else
     cmd="$cmd -args -- --test_loglevel=8" # Use error log level, which is the value 8 in the slog level enum for tests.
+fi
+
+if [ "$max_concurrent" != "" ]; then
+    cmd="$cmd --test_max_concurrent=$max_concurrent"
 fi
 
 if [ "$consensus_execution_in_same_process_use_rpc" == true ]; then
