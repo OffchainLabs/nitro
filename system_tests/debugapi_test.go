@@ -121,13 +121,18 @@ func TestLiveTracingInNode(t *testing.T) {
 	}
 }
 
-func TestDebugAPI(t *testing.T) {
+func TestDebugTracing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	t.Run("DebugAPI", func(t *testing.T) { testDebugAPI(t, builder, ctx) })
+	t.Run("PrestateTracingSimple", func(t *testing.T) { testPrestateTracingSimple(t, builder, ctx) })
+}
+
+func testDebugAPI(t *testing.T, builder *NodeBuilder, ctx context.Context) {
 	l2rpc := builder.L2.Stack.Attach()
 
 	var dump state.Dump
@@ -215,13 +220,7 @@ type prestateTrace struct {
 	Pre  map[common.Address]*account `json:"pre"`
 }
 
-func TestPrestateTracingSimple(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
+func testPrestateTracingSimple(t *testing.T, builder *NodeBuilder, ctx context.Context) {
 	builder.L2Info.GenerateAccount("User2")
 	sender := builder.L2Info.GetAddress("Owner")
 	receiver := builder.L2Info.GetAddress("User2")

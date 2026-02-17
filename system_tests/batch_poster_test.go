@@ -878,8 +878,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
 
 	for _, batch := range batches {
-		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		sequencerMessageBytes, err := batch.Serialize(ctx, builder.L1.Client)
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])

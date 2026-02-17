@@ -41,6 +41,17 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
+func withRetryableValidation(t *testing.T) func(*NodeBuilder) {
+	return func(builder *NodeBuilder) {
+		builder.RequireScheme(t, rawdb.HashScheme)
+		builder.nodeConfig.Staker.Enable = true
+		valConf := valnode.TestValidationConfig
+		valConf.UseJit = true
+		_, valStack := createTestValidationNode(t, builder.ctx, &valConf)
+		configByValidationNode(builder.nodeConfig, valStack)
+	}
+}
+
 func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	*NodeBuilder,
 	*bridgegen.Inbox,
@@ -54,19 +65,10 @@ func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 		f(builder)
 	}
 
-	// retryableSetup is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.nodeConfig.BlockValidator.Enable = false
-	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.ParentChainReader.Enable = true
 	builder.nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-
-	valConf := valnode.TestValidationConfig
-	valConf.UseJit = true
-	_, valStack := createTestValidationNode(t, ctx, &valConf)
-	configByValidationNode(builder.nodeConfig, valStack)
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
@@ -156,10 +158,31 @@ func TestRetryableNoExist(t *testing.T) {
 	}
 }
 
-func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
-	builder, _, _, ctx, teardown := retryableSetup(t)
+func TestRetryableBasic(t *testing.T) {
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
+	t.Run("EstimateWithNoFunds", func(t *testing.T) {
+		testEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t, builder, ctx)
+	})
+	t.Run("ImmediateSuccess", func(t *testing.T) {
+		testSubmitRetryableImmediateSuccess(t, builder, delayedInbox, lookupL2Tx, ctx)
+	})
+	t.Run("FailThenRetry", func(t *testing.T) {
+		testSubmitRetryableFailThenRetry(t, builder, delayedInbox, lookupL2Tx, ctx)
+	})
+	t.Run("DepositETH", func(t *testing.T) {
+		testDepositETH(t, builder, delayedInbox, lookupL2Tx, ctx)
+	})
+	t.Run("ArbitrumContractTx", func(t *testing.T) {
+		testArbitrumContractTx(t, builder, delayedInbox, lookupL2Tx, ctx)
+	})
+	t.Run("RedeemBlockGasUsage", func(t *testing.T) {
+		testRetryableRedeemBlockGasUsage(t, builder, delayedInbox, lookupL2Tx, ctx)
+	})
+}
+
+func testEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T, builder *NodeBuilder, ctx context.Context) {
 	user2Address := builder.L2Info.GetAddress("User2")
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
 
@@ -187,10 +210,7 @@ func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
 	Require(t, err, "failed to estimate retryable submission")
 }
 
-func TestSubmitRetryableImmediateSuccess(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
-	defer teardown()
-
+func testSubmitRetryableImmediateSuccess(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	user2Address := builder.L2Info.GetAddress("User2")
 	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
 
@@ -215,6 +235,9 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		[]byte{0x32, 0x42, 0x32, 0x88}, // increase the cost to beyond that of params.TxGas
 	)
 	Require(t, err, "failed to estimate retryable submission")
+	// NoSend still signs the tx, which increments the in-memory nonce counter
+	// without sending. Sync it back to the on-chain value.
+	builder.L2Info.SyncNonce("Faucet", builder.L2.Client, ctx)
 	estimate := tx.Gas()
 	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
 	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
@@ -355,10 +378,7 @@ func TestSubmitRetryableEmptyEscrowArbOS30(t *testing.T) {
 	testSubmitRetryableEmptyEscrow(t, 30)
 }
 
-func TestSubmitRetryableFailThenRetry(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
-	defer teardown()
-
+func testSubmitRetryableFailThenRetry(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	usertxopts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -511,9 +531,10 @@ func insertRetriables(
 }
 
 func TestSubmitManyRetryableFailThenRetry(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-	})
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t,
+		withRetryableValidation(t),
+		func(b *NodeBuilder) { b.WithDatabase(rawdb.DBPebble) },
+	)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 	elevateL2Basefee(t, ctx, builder)
@@ -1133,10 +1154,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 }
 
 
-func TestDepositETH(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
-	defer teardown()
-
+func testDepositETH(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	faucetAddr := builder.L1Info.GetAddress("Faucet")
 
 	oldBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
@@ -1176,9 +1194,7 @@ func TestDepositETH(t *testing.T) {
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
 }
 
-func TestArbitrumContractTx(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
-	defer teardown()
+func testArbitrumContractTx(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	faucetL2Addr := util.RemapL1Address(builder.L1Info.GetAddress("Faucet"))
 	builder.L2.TransferBalanceTo(t, "Faucet", faucetL2Addr, big.NewInt(1e18), builder.L2Info)
 
@@ -1195,7 +1211,7 @@ func TestArbitrumContractTx(t *testing.T) {
 	unsignedTx := types.NewTx(&types.ArbitrumContractTx{
 		ChainId:   builder.L2Info.Signer.ChainID(),
 		From:      faucetL2Addr,
-		GasFeeCap: builder.L2Info.GasPrice.Mul(builder.L2Info.GasPrice, big.NewInt(2)),
+		GasFeeCap: new(big.Int).Mul(builder.L2Info.GasPrice, big.NewInt(2)),
 		Gas:       1e6,
 		To:        &l2ContractAddr,
 		Value:     common.Big0,
@@ -1305,9 +1321,10 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 }
 
 func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-	})
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t,
+		withRetryableValidation(t),
+		func(b *NodeBuilder) { b.WithDatabase(rawdb.DBPebble) },
+	)
 	defer teardown()
 	infraFeeAddr, networkFeeAddr := setupFeeAddresses(t, ctx, builder)
 
@@ -1472,9 +1489,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	validateBlocks(t, 1, true, builder)
 }
 
-func TestRetryableRedeemBlockGasUsage(t *testing.T) {
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
-	defer teardown()
+func testRetryableRedeemBlockGasUsage(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
 	l1client := builder.L1.Client

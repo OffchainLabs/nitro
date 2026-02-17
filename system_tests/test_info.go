@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -217,6 +218,20 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 		b.T.Fatal(err)
 	}
 	return tx
+}
+
+// SyncNonce resets the in-memory nonce counter for an account to match
+// the on-chain pending nonce. This is needed when GetDefaultTransactOpts
+// has been used with NoSend=true, which increments the counter via the
+// Signer callback without actually sending a transaction.
+func (b *BlockchainTestInfo) SyncNonce(name string, client *ethclient.Client, ctx context.Context) {
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(name)
+	nonce, err := client.PendingNonceAt(ctx, info.Address)
+	if err != nil {
+		b.T.Fatal("failed to sync nonce for", name, ":", err)
+	}
+	info.Nonce.Store(nonce)
 }
 
 func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.Int, data []byte) *types.Transaction {

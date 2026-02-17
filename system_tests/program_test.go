@@ -363,19 +363,36 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
 }
 
-func TestProgramErrors(t *testing.T) {
-	errorTest(t, true)
-}
-
-func errorTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func TestProgramJIT(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
-	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	defer cleanup()
 
+	// Deploy shared WASMs once
+	multicallAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	storageAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+
+	t.Run("Errors", func(t *testing.T) { errorTest(t, builder, auth, multicallAddr) })
+	t.Run("Storage", func(t *testing.T) { storageTest(t, builder, auth, storageAddr) })
+	t.Run("TransientStorage", func(t *testing.T) { transientStorageTest(t, builder, auth, storageAddr, multicallAddr) })
+	t.Run("Calls", func(t *testing.T) { testCalls(t, builder, auth, multicallAddr, storageAddr, keccakAddr) })
+	t.Run("ReturnData", func(t *testing.T) { testReturnData(t, builder, auth) })
+	t.Run("SdkStorage", func(t *testing.T) { testSdkStorage(t, builder, auth) })
+	t.Run("EarlyExit", func(t *testing.T) { testEarlyExit(t, builder, auth) })
+	t.Run("ActivationLogs", func(t *testing.T) { testActivationLogs(t, builder, auth) })
+	t.Run("CacheManager", func(t *testing.T) { testCacheManager(t, builder, auth) })
+
+	validateBlocks(t, 1, true, builder)
+}
+
+func errorTest(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts, multiAddr common.Address) {
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
@@ -400,21 +417,12 @@ func errorTest(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
-
-	validateBlocks(t, 7, jit, builder)
 }
 
-func TestProgramStorage(t *testing.T) {
-	storageTest(t, true)
-}
-
-func storageTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func storageTest(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts, programAddress common.Address) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -431,26 +439,15 @@ func storageTest(t *testing.T, jit bool) {
 
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	validateBlocks(t, 2, jit, builder)
-
 	// Captures a block_inputs json file for the block that included the
 	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
 	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
 }
 
-func TestProgramTransientStorage(t *testing.T) {
-	transientStorageTest(t, true)
-}
-
-func transientStorageTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func transientStorageTest(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts, storage common.Address, multicall common.Address) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	trans := func(args []byte) []byte {
 		args[0] += 2
@@ -500,21 +497,31 @@ func transientStorageTest(t *testing.T, jit bool) {
 		assertStorageAt(t, ctx, l2client, storage, key, stored[i])
 		assertStorageAt(t, ctx, l2client, multicall, key, zero)
 	}
-
-	validateBlocks(t, 7, jit, builder)
 }
 
-func TestProgramMath(t *testing.T) {
-	fastMathTest(t, true)
-}
-
-func fastMathTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func TestProgramPebble(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
+
+	// Deploy shared WASMs once
+	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
+	multicallAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	t.Run("Math", func(t *testing.T) { fastMathTest(t, builder, auth) })
+	t.Run("Logs", func(t *testing.T) { testLogs(t, builder, auth, logAddr, multicallAddr, false) })
+	t.Run("LogsWithTracing", func(t *testing.T) { testLogs(t, builder, auth, logAddr, multicallAddr, true) })
+	t.Run("ActivateFails", func(t *testing.T) { testActivateFails(t, builder, auth) })
+
+	validateBlocks(t, 1, true, builder)
+}
+
+func fastMathTest(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
+	ctx := builder.ctx
+	l2client := builder.L2.Client
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -529,21 +536,12 @@ func fastMathTest(t *testing.T, jit bool) {
 	_, tx, mock, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 	ensure(mock.MathTest(&auth, program))
-
-	validateBlocks(t, 6, jit, builder)
 }
 
-func TestProgramCalls(t *testing.T) {
-	testCalls(t, true)
-}
-
-func testCalls(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testCalls(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts, callsAddr common.Address, storeAddr common.Address, keccakAddr common.Address) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	// checks that ArbInfo.GetCode works properly
 	codeFromFile, _ := readWasmFile(t, rustFile("multicall"))
@@ -584,8 +582,6 @@ func testCalls(t *testing.T, jit bool) {
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
-	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	mockAddr, tx, _, err := localgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
@@ -742,21 +738,12 @@ func testCalls(t *testing.T, jit bool) {
 	if !arbmath.BigEquals(balance, value) {
 		Fatal(t, balance, value)
 	}
-
-	blocks := []uint64{10}
-	validateBlockRange(t, blocks, jit, builder)
 }
 
-func TestProgramReturnData(t *testing.T) {
-	testReturnData(t, true)
-}
-
-func testReturnData(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testReturnData(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) {
 		t.Helper()
@@ -795,28 +782,12 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 5, 1, 0, 1)
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
-
-	validateBlocks(t, 11, jit, builder)
 }
 
-func TestProgramLogs(t *testing.T) {
-	testLogs(t, true, false)
-}
-
-func TestProgramLogsWithTracing(t *testing.T) {
-	testLogs(t, true, true)
-}
-
-func testLogs(t *testing.T, jit, tracing bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-	})
+func testLogs(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts, logAddr common.Address, multiAddr common.Address, tracing bool) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	type traceLog struct {
 		Address common.Address `json:"address"`
@@ -909,8 +880,6 @@ func testLogs(t *testing.T, jit, tracing bool) {
 	if receipt.Logs[0].Address != multiAddr {
 		Fatal(t, "wrong address", receipt.Logs[0].Address)
 	}
-
-	validateBlocks(t, 11, jit, builder)
 }
 
 func TestProgramCreate(t *testing.T) {
@@ -1202,17 +1171,9 @@ func testMemory(t *testing.T, jit bool) {
 	validateBlocks(t, 3, jit, builder)
 }
 
-func TestProgramActivateFails(t *testing.T) {
-	testActivateFails(t, true)
-}
-
-func testActivateFails(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-	})
+func testActivateFails(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
 	ctx := builder.ctx
 	l2client := builder.L2.Client
-	defer cleanup()
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
@@ -1221,7 +1182,6 @@ func testActivateFails(t *testing.T, jit bool) {
 	auth.GasLimit = 32000000 // skip gas estimation
 	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
 
-	blockToValidate := uint64(0)
 	timed(t, "activate bad-export", func() {
 		auth.Value = oneEth
 		tx, err := arbWasm.ActivateProgram(&auth, badExportAddr)
@@ -1236,22 +1196,13 @@ func testActivateFails(t *testing.T, jit bool) {
 			Fatal(t, "unexpected error: ", gotError)
 		}
 		Require(t, err)
-		blockToValidate = txRes.BlockNumber.Uint64()
 	})
-
-	validateBlockRange(t, []uint64{blockToValidate}, jit, builder)
 }
 
-func TestProgramSdkStorage(t *testing.T) {
-	testSdkStorage(t, true)
-}
-
-func testSdkStorage(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testSdkStorage(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
 
 	rust := deployWasm(t, ctx, auth, l2client, rustFile("sdk-storage"))
 
@@ -1437,11 +1388,9 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 	ensure(arbWasm.CodehashKeepalive(&codehashKeepaliveAuth, codehash))
 }
 
-func TestProgramActivationLogs(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testActivationLogs(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
 	l2client := builder.L2.Client
 	ctx := builder.ctx
-	defer cleanup()
 
 	wasm, _ := readWasmFile(t, watFile("memory"))
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -1476,15 +1425,9 @@ func TestProgramActivationLogs(t *testing.T) {
 	}
 }
 
-func TestProgramEarlyExit(t *testing.T) {
-	testEarlyExit(t, true)
-}
-
-func testEarlyExit(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testEarlyExit(t *testing.T, builder *NodeBuilder, auth bind.TransactOpts) {
 	ctx := builder.ctx
 	l2client := builder.L2.Client
-	defer cleanup()
 
 	earlyAddress := deployWasm(t, ctx, auth, l2client, "../crates/stylus/tests/exit-early/exit-early.wat")
 	panicAddress := deployWasm(t, ctx, auth, l2client, "../crates/stylus/tests/exit-early/panic-after-write.wat")
@@ -1504,16 +1447,12 @@ func testEarlyExit(t *testing.T, jit bool) {
 
 	ensure(mock.CheckRevertData(&auth, earlyAddress, data, data))
 	ensure(mock.CheckRevertData(&auth, panicAddress, data, []byte{}))
-
-	validateBlocks(t, 8, jit, builder)
 }
 
-func TestProgramCacheManager(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+func testCacheManager(t *testing.T, builder *NodeBuilder, ownerAuth bind.TransactOpts) {
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
-	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()

@@ -31,11 +31,44 @@ const HOSTIO_INK uint64 = 8400
 const PTR_INK uint64 = 5040
 const EVM_API_INK uint64 = 59673
 
-func TestSimpleInkUsage(t *testing.T) {
+func TestInkUsage(t *testing.T) {
 	builder := setupGasCostTest(t)
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-	otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	hostioTestAddr := deployWasm(t, ctx, auth, l2client, rustFile("hostio-test"))
+	multicallAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	writeArgsAddr := deployWasm(t, ctx, auth, l2client, watFile("write-args"))
+	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
+	evmHostioTestAddr := deployEvmContract(t, ctx, auth, l2client, localgen.HostioTestMetaData)
+	// Deploy WAT files used by AccountCode subtest at the parent level to avoid
+	// ProgramUpToDate errors (Stylus caches activations by codehash) and to ensure
+	// consistent compression dictionaries (readWasmFile uses t.Name()).
+	accountCodeWats := map[string]common.Address{
+		"add":         deployWasm(t, ctx, auth, l2client, watFile("add")),
+		"memory":      deployWasm(t, ctx, auth, l2client, watFile("memory")),
+		"return-size": deployWasm(t, ctx, auth, l2client, watFile("return-size")),
+		"write-args":  writeArgsAddr,
+	}
+
+	t.Run("Simple", func(t *testing.T) { testSimpleInkUsage(t, builder, hostioTestAddr, multicallAddr) })
+	t.Run("AccountCode", func(t *testing.T) { testAccountCodeInkUsage(t, builder, hostioTestAddr, accountCodeWats) })
+	t.Run("Pow", func(t *testing.T) { testPowInkUsage(t, builder, hostioTestAddr) })
+	t.Run("StorageCost", func(t *testing.T) { testStorageInkCost(t, builder, multicallAddr) })
+	t.Run("Log", func(t *testing.T) { testLogInkUsage(t, builder, hostioTestAddr) })
+	t.Run("ReturnData", func(t *testing.T) { testReturnDataInkUsage(t, builder, multicallAddr, writeArgsAddr) })
+	t.Run("Call", func(t *testing.T) { testCallInkUsage(t, builder, multicallAddr, writeArgsAddr, evmHostioTestAddr) })
+	t.Run("Create", func(t *testing.T) { testCreateInkUsage(t, builder, createAddr) })
+	t.Run("Keccak", func(t *testing.T) { testKeccakInkUsage(t, builder, hostioTestAddr) })
+	t.Run("WriteResult", func(t *testing.T) { testWriteResultInkUsage(t, builder, hostioTestAddr) })
+	t.Run("ReadArgs", func(t *testing.T) { testReadArgsInkUsage(t, builder, hostioTestAddr) })
+	t.Run("MsgReentrant", func(t *testing.T) { testMsgReentrantInkUsage(t, builder, hostioTestAddr) })
+	t.Run("StorageCacheBytes32", func(t *testing.T) { testStorageCacheBytes32InkUsage(t, builder, hostioTestAddr) })
+	t.Run("PayForMemoryGrow", func(t *testing.T) { testPayForMemoryGrowInkUsage(t, builder, hostioTestAddr) })
+}
+
+func testSimpleInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram, otherProgram common.Address) {
 	matchSnake := regexp.MustCompile("_[a-z]")
 
 	for _, tc := range []struct {
@@ -164,11 +197,7 @@ func TestSimpleInkUsage(t *testing.T) {
 	}
 }
 
-func TestAccountCodeInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testAccountCodeInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address, watAddrs map[string]common.Address) {
 	hostio := "account_code"
 
 	for _, tc := range []struct {
@@ -176,24 +205,20 @@ func TestAccountCodeInkUsage(t *testing.T) {
 		expectedInk uint64
 	}{
 		{"add", 33075753},
-		{"memory", 33078333},
+		{"memory", 33077523},
 		{"return-size", 33077523},
-		{"write-args", 33076203},
+		{"write-args", 33075303},
 	} {
 		testName := fmt.Sprintf("%v_%v", hostio, tc.watFile)
 		t.Run(testName, func(t *testing.T) {
-			otherProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile(tc.watFile))
+			otherProgram := watAddrs[tc.watFile]
 			data := encodeHostioTestCalldata(t, "accountCode", []any{otherProgram})
 			checkInkUsage(t, builder, stylusProgram, hostio, testName, data, nil, tc.expectedInk)
 		})
 	}
 }
 
-func TestPowInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testPowInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "math_pow"
 
 	for _, tc := range []struct {
@@ -215,11 +240,7 @@ func TestPowInkUsage(t *testing.T) {
 	}
 }
 
-func TestStorageInkCost(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-
+func testStorageInkCost(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	storeHostio := "storage_flush_cache"
 	loadHostio := "storage_load_bytes32"
 
@@ -302,11 +323,7 @@ func TestStorageInkCost(t *testing.T) {
 	checkInkUsage(t, builder, stylusProgram, loadHostio, testCase, data, nil, expectedInk)
 }
 
-func TestLogInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testLogInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "emit_log"
 
 	for _, tc := range []struct {
@@ -337,12 +354,7 @@ func TestLogInkUsage(t *testing.T) {
 	}
 }
 
-func TestReturnDataInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile("write-args"))
-
+func testReturnDataInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram, otherStylusProgram common.Address) {
 	hostio := "read_return_data"
 
 	for _, tc := range []struct {
@@ -363,12 +375,7 @@ func TestReturnDataInkUsage(t *testing.T) {
 	}
 }
 
-func TestCallInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("multicall"))
-	otherStylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, watFile("write-args"))
-	otherEvmProgram := deployEvmContract(t, builder.ctx, auth, builder.L2.Client, localgen.HostioTestMetaData)
+func testCallInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram, otherStylusProgram, otherEvmProgram common.Address) {
 	otherData := encodeHostioTestCalldata(t, "msgValue", nil)
 
 	for _, tc := range []struct {
@@ -414,10 +421,7 @@ func TestCallInkUsage(t *testing.T) {
 	})
 }
 
-func TestCreateInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("create"))
+func testCreateInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	deployCode := common.FromHex(localgen.ProgramTestMetaData.Bin)
 
 	hostio := "create1"
@@ -436,11 +440,7 @@ func TestCreateInkUsage(t *testing.T) {
 	checkInkUsage(t, builder, stylusProgram, hostio, hostio, data, nil, expectedInk)
 }
 
-func TestKeccakInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testKeccakInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "native_keccak256"
 
 	for _, tc := range []struct {
@@ -461,11 +461,7 @@ func TestKeccakInkUsage(t *testing.T) {
 	}
 }
 
-func TestWriteResultInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testWriteResultInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "write_result"
 
 	// writeResultEmpty doesn't return any value
@@ -489,11 +485,7 @@ func TestWriteResultInkUsage(t *testing.T) {
 	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
 }
 
-func TestReadArgsInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testReadArgsInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "read_args"
 
 	testname := "read_args_0"
@@ -514,22 +506,14 @@ func TestReadArgsInkUsage(t *testing.T) {
 	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
 }
 
-func TestMsgReentrantInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testMsgReentrantInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "msg_reentrant"
 
 	data := encodeHostioFromSignature(t, "writeResultEmpty()", nil)
 	checkInkUsage(t, builder, stylusProgram, hostio, hostio, data, nil, HOSTIO_INK)
 }
 
-func TestStorageCacheBytes32InkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testStorageCacheBytes32InkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "storage_cache_bytes32"
 
 	data := encodeHostioFromSignature(t, "storageCacheBytes32()", nil)
@@ -537,11 +521,7 @@ func TestStorageCacheBytes32InkUsage(t *testing.T) {
 	checkInkUsage(t, builder, stylusProgram, hostio, hostio, data, nil, expectedInk)
 }
 
-func TestPayForMemoryGrowInkUsage(t *testing.T) {
-	builder := setupGasCostTest(t)
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
-	stylusProgram := deployWasm(t, builder.ctx, auth, builder.L2.Client, rustFile("hostio-test"))
-
+func testPayForMemoryGrowInkUsage(t *testing.T, builder *NodeBuilder, stylusProgram common.Address) {
 	hostio := "pay_for_memory_grow"
 	signature := "payForMemoryGrow(uint256)"
 
