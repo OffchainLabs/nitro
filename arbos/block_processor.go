@@ -126,8 +126,7 @@ type SequencingHooks interface {
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	DiscardInvalidTxsEarly() bool
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
-	RedeemFilter(*state.StateDB) error
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	InsertLastTxError(error)
 	ReportGroupRevert(error)
@@ -158,15 +157,11 @@ func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 	return nil
 }
 
-func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, isRedeem bool) error {
 	return nil
 }
 
 func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
-	return nil
-}
-
-func (n *NoopSequencingHooks) RedeemFilter(db *state.StateDB) error {
 	return nil
 }
 
@@ -266,10 +261,11 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	// Group checkpoint state for cascading redeem filtering. We take a state
-	// checkpoint before each user tx and process it with all its redeems
-	// tentatively (skipFinalise). If any redeem hits RedeemFilter, we revert
-	// the entire group. If all redeems are clean, we flush Finalise.
+	// Group checkpoint state for tx groups (a user tx + all its redeems).
+	// We take a state checkpoint before each non-redeem tx and process it
+	// with all its redeems tentatively (skipFinalise). If any tx in the
+	// group errors, we revert the entire group. If all txs in the group
+	// succeed, we flush Finalise.
 	// lint:require-exhaustive-initialization
 	type groupCheckpoint struct {
 		snap                 int
@@ -284,9 +280,10 @@ func ProduceBlockAdvanced(
 	}
 	var activeGroupCP *groupCheckpoint
 
-	// revertToGroupCheckpoint reverts statedb and non-statedb state to the group
-	// checkpoint, reports the cascading redeem error to sequencing hooks, and
-	// deactivates the group. Returns an error only on fatal failures.
+	// revertToGroupCheckpoint reverts statedb and all non-statedb state back
+	// to the group checkpoint and deactivates the group. It does NOT report
+	// the error to sequencing hooks -- callers decide whether to call
+	// ReportGroupRevert separately. Returns an error only on fatal failures.
 	revertToGroupCheckpoint := func() error {
 		statedb.RevertToSnapshot(activeGroupCP.snap)
 		statedb.ClearTxFilter()
@@ -303,9 +300,6 @@ func ProduceBlockAdvanced(
 		if reopenErr != nil {
 			return reopenErr
 		}
-		sequencingHooks.ReportGroupRevert(&ErrFilteredCascadingRedeem{
-			OriginatingTxHash: activeGroupCP.userTxHash,
-		})
 		activeGroupCP = nil
 		return nil
 	}
@@ -324,6 +318,7 @@ func ProduceBlockAdvanced(
 		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
+			hooks = sequencingHooks
 			isRedeem = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
@@ -337,12 +332,6 @@ func ProduceBlockAdvanced(
 				continue
 			}
 		} else {
-			// Flush previous clean group's deferred Finalise before starting new work
-			if activeGroupCP != nil {
-				statedb.Finalise(true)
-				activeGroupCP = nil
-			}
-
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
@@ -356,20 +345,25 @@ func ProduceBlockAdvanced(
 				isUserTx = true
 				options = conditionalOptions
 			}
+		}
 
-			// Take group checkpoint before processing user tx
-			if isUserTx {
-				activeGroupCP = &groupCheckpoint{
-					snap:                 statedb.Snapshot(),
-					headerGasUsed:        header.GasUsed,
-					blockGasLeft:         blockGasLeft,
-					expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
-					completeLen:          len(complete),
-					receiptsLen:          len(receipts),
-					userTxsProcessed:     userTxsProcessed,
-					gethGas:              gethGas,
-					userTxHash:           tx.Hash(),
-				}
+		// Every non-redeem tx starts a new group. Flush the previous clean
+		// group's deferred Finalise, then take a checkpoint so we can revert
+		// the entire group (tx + all its redeems) if any tx in the group errors.
+		if !isRedeem {
+			if activeGroupCP != nil {
+				statedb.Finalise(true)
+			}
+			activeGroupCP = &groupCheckpoint{
+				snap:                 statedb.Snapshot(),
+				headerGasUsed:        header.GasUsed,
+				blockGasLeft:         blockGasLeft,
+				expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
+				completeLen:          len(complete),
+				receiptsLen:          len(receipts),
+				userTxsProcessed:     userTxsProcessed,
+				gethGas:              gethGas,
+				userTxHash:           tx.Hash(),
 			}
 		}
 
@@ -379,13 +373,12 @@ func ProduceBlockAdvanced(
 		// here would cause GasUsed divergence (consensus break). SubRefund
 		// drains the counter to 0, mimicking Finalise. It's journaled, so
 		// group revert undoes it.
+		//
+		// activeGroupCP is always non-nil here: every non-redeem creates one,
+		// and redeems only exist within an active group.
 		startRefund := statedb.GetRefund()
 		if startRefund != 0 {
-			if activeGroupCP != nil {
-				statedb.SubRefund(startRefund)
-			} else {
-				return nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
-			}
+			statedb.SubRefund(startRefund)
 		}
 
 		var sender common.Address
@@ -405,7 +398,7 @@ func ProduceBlockAdvanced(
 			}
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if hooks != nil {
+			if isUserTx {
 				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
@@ -441,7 +434,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if hooks != nil && hooks.DiscardInvalidTxsEarly() {
+				if isUserTx && hooks.DiscardInvalidTxsEarly() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -469,16 +462,8 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if hooks != nil {
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
-					}
-					// hooks is intentionally nil for redeems - it gates sequencer policies
-					// (PreTxFilter, PostTxFilter, nonce checking, error tracking) that don't
-					// apply to protocol-scheduled transactions. RedeemFilter is called on
-					// sequencingHooks directly to get the narrow redeem filtering behavior
-					// without enabling those other policies.
-					if isRedeem {
-						return sequencingHooks.RedeemFilter(statedb)
+					if hooks != nil { // nil only for firstTx (ArbitrumInternalTxType)
+						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result, isRedeem)
 					}
 					return nil
 				},
@@ -486,11 +471,11 @@ func ProduceBlockAdvanced(
 				// promoting dirtyStorage -> pendingStorage, clearing the journal,
 				// and zeroing the refund counter. After that, RevertToSnapshot
 				// can't undo past that boundary (journal gone, pendingStorage not
-				// journaled, snapshot IDs invalidated). We need to revert the
-				// entire group if any redeem is filtered, so we skip Finalise
-				// while a group checkpoint is active. It's flushed at group
-				// boundaries: before the next user tx or at end of block.
-				activeGroupCP != nil,
+				// journaled, snapshot IDs invalidated). We always skip Finalise
+				// here because every tx is in a group (activeGroupCP is always
+				// non-nil). It's flushed at group boundaries: before the next
+				// non-redeem tx or at end of block.
+				true,
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
@@ -510,23 +495,52 @@ func ProduceBlockAdvanced(
 		})()
 
 		// append the err, even if it is nil
-		if hooks != nil {
+		if isUserTx {
 			hooks.InsertLastTxError(err)
 		}
 
 		if err != nil {
-			// Cascading redeem filtering: if a redeem was filtered and we have an
-			// active group checkpoint, revert the entire group (user tx + all redeems)
-			if isRedeem && activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+			// Outer error: the tx was not committed (state already reverted
+			// to its per-tx snapshot by the inner function above).
+			//
+			// activeGroupCP is always non-nil here (every non-redeem creates
+			// one, redeems only exist within an active group), so we always
+			// revert the whole group. There are two sub-cases:
+			//
+			//  Filter errors  -> revert group, report to hooks, continue
+			//                    (skips gas deduction because the user tx's
+			//                    error is already recorded via InsertLastTxError
+			//                    above, or for redeems via ReportGroupRevert).
+			//
+			//  Non-filter errors -> revert group, then fall through to
+			//                       normal gas deduction and logging.
+			if errors.Is(err, state.ErrArbTxFilter) {
+				userTxHash := activeGroupCP.userTxHash
 				if err := revertToGroupCheckpoint(); err != nil {
 					return nil, nil, err
 				}
+				// Only redeems report to hooks; a directly-filtered
+				// user tx already has ErrArbTxFilter recorded by
+				// InsertLastTxError above.
+				if isRedeem {
+					sequencingHooks.ReportGroupRevert(&ErrFilteredCascadingRedeem{
+						OriginatingTxHash: userTxHash,
+					})
+				}
 				continue
 			}
-			// If the user tx itself failed, deactivate the group (no redeems generated)
-			if isUserTx && activeGroupCP != nil {
-				activeGroupCP = nil
+			// Non-filter error: revert the group state and fall through to
+			// gas deduction. For redeems the originating user tx's nil
+			// txErrors entry is left as-is; in practice non-filter outer
+			// errors on redeems are not expected (redeems are internally
+			// constructed and should always pass validation), but if one
+			// did occur the group revert ensures state consistency.
+			if err := revertToGroupCheckpoint(); err != nil {
+				return nil, nil, err
 			}
+
+			// Gas deduction and logging for non-filter errors (filter
+			// errors continue above, bypassing this).
 			logLevel := log.Debug
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn
@@ -534,8 +548,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(hooks != nil && hooks.DiscardInvalidTxsEarly()) {
-				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
+			if !(isUserTx && hooks.DiscardInvalidTxsEarly()) {
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
