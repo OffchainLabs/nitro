@@ -109,13 +109,13 @@ jobs:
         if: inputs.run-defaults-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]'
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --run '^Test[A-L]' --reduce-parallelism
 
       - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]'
+          --tags cionly --timeout 60m --test_state_scheme hash --consensus_execution_in_same_process_use_rpc --skip '^Test[A-L]' --reduce-parallelism
 
       - name: run redis tests
         if: inputs.run-defaults-a
