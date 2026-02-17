@@ -142,7 +142,7 @@ if [ "$cover" == true ]; then
 fi
 
 if [ "$reduce_parallelism" == true ]; then
-  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
+  cmd="$cmd -parallel $(( $(nproc) > 8 ? $(nproc) / 8 : 1 ))"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
