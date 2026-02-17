@@ -1798,14 +1798,26 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	}
 
 	// batches not yet posted have 0 confirmations but no error
-	batchNum, found, err := n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	var batchNum uint64
+	var found bool
+	var err error
+	if n.MessageExtractor != nil {
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+	} else {
+		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	}
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
 	if !found {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
-	parentChainBlockNum, err := n.InboxTracker.GetBatchParentChainBlock(batchNum)
+	var parentChainBlockNum uint64
+	if n.MessageExtractor != nil {
+		parentChainBlockNum, err = n.MessageExtractor.GetBatchParentChainBlock(batchNum)
+	} else {
+		parentChainBlockNum, err = n.InboxTracker.GetBatchParentChainBlock(batchNum)
+	}
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}

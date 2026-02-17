@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -96,26 +96,18 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, msgExtractor *melrunner.MessageExtractor, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
-	var d *DelayedSequencer
-	if msgExtractor != nil {
-		d = &DelayedSequencer{
-			l1Reader:     l1Reader,
-			bridge:       delayedBridge,
-			msgExtractor: msgExtractor,
-			coordinator:  coordinator,
-			exec:         exec,
-			config:       config,
-		}
-	} else {
-		d = &DelayedSequencer{
-			l1Reader:    l1Reader,
-			bridge:      reader.DelayedBridge(),
-			inbox:       reader.Tracker(),
-			reader:      reader,
-			coordinator: coordinator,
-			exec:        exec,
-			config:      config,
-		}
+	d := &DelayedSequencer{
+		l1Reader:     l1Reader,
+		bridge:       delayedBridge,
+		msgExtractor: msgExtractor,
+		reader:       reader,
+		coordinator:  coordinator,
+		exec:         exec,
+		config:       config,
+	}
+	if reader != nil {
+		d.bridge = reader.DelayedBridge()
+		d.inbox = reader.Tracker()
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -130,9 +122,6 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
-	}
-	if d.msgExtractor != nil {
-		return d.sequenceWithoutLockoutMsgExtractor(ctx, lastBlockHeader)
 	}
 
 	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
@@ -220,10 +209,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	// Reset what block we're waiting for if we've caught up
 	d.waitingForFinalizedBlock = nil
 
-	dbDelayedCount, err := d.inbox.GetDelayedCount()
-	if err != nil {
-		return err
+	var dbDelayedCount uint64
+	var err error
+	if d.msgExtractor != nil {
+		dbDelayedCount, err = d.msgExtractor.GetDelayedCount(ctx, 0)
+		if err != nil {
+			return err
+		}
+	} else {
+		dbDelayedCount, err = d.inbox.GetDelayedCount()
+		if err != nil {
+			return err
+		}
 	}
+
 	startPos, err := d.getDelayedMessagesRead()
 	if err != nil {
 		return err
@@ -234,47 +233,69 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, pos)
-		if err != nil {
-			return err
-		}
-		if parentChainBlockNumber > finalized {
-			// Message isn't finalized yet; wait for it to be
-			d.waitingForFinalizedBlock = &parentChainBlockNumber
-			break
-		}
-		if lastDelayedAcc != (common.Hash{}) {
-			// Ensure that there hasn't been a reorg and this message follows the last
-			fullMsg := mel.DelayedInboxMessage{
-				BeforeInboxAcc:         lastDelayedAcc,
-				Message:                msg,
-				ParentChainBlockNumber: parentChainBlockNumber,
+		if d.msgExtractor != nil {
+			finalizedPos, err := d.msgExtractor.GetDelayedCount(ctx, finalized)
+			if err != nil {
+				if !strings.Contains(err.Error(), "not found") {
+					return err
+				}
+				return nil
 			}
-			if fullMsg.AfterInboxAcc() != acc {
-				return errors.New("delayed message accumulator mismatch while sequencing")
+			if pos > finalizedPos {
+				// Message isn't finalized yet; wait for it to be
+				d.waitingForFinalizedBlock = &pos
+				break
 			}
+			msg, err := d.msgExtractor.GetDelayedMessage(pos)
+			if err != nil {
+				return err
+			}
+			messages = append(messages, msg.Message)
+		} else {
+			msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, pos)
+			if err != nil {
+				return err
+			}
+			if parentChainBlockNumber > finalized {
+				// Message isn't finalized yet; wait for it to be
+				d.waitingForFinalizedBlock = &parentChainBlockNumber
+				break
+			}
+			if lastDelayedAcc != (common.Hash{}) {
+				// Ensure that there hasn't been a reorg and this message follows the last
+				fullMsg := mel.DelayedInboxMessage{
+					BeforeInboxAcc:         lastDelayedAcc,
+					Message:                msg,
+					ParentChainBlockNumber: parentChainBlockNumber,
+				}
+				if fullMsg.AfterInboxAcc() != acc {
+					return errors.New("delayed message accumulator mismatch while sequencing")
+				}
+			}
+			lastDelayedAcc = acc
+			err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+				data, _, err := d.reader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
+				return data, err
+			})
+			if err != nil {
+				return err
+			}
+			messages = append(messages, msg)
 		}
-		lastDelayedAcc = acc
-		err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-			data, _, err := d.reader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
-			return data, err
-		})
-		if err != nil {
-			return err
-		}
-		messages = append(messages, msg)
 		pos++
 	}
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
-		if err != nil {
-			return err
-		}
-		if delayedBridgeAcc != lastDelayedAcc {
-			// Probably a reorg that hasn't been picked up by the inbox reader
-			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
+		if d.msgExtractor == nil {
+			delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
+			if err != nil {
+				return err
+			}
+			if delayedBridgeAcc != lastDelayedAcc {
+				// Probably a reorg that hasn't been picked up by the inbox reader
+				return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
+			}
 		}
 		for i, msg := range messages {
 			// #nosec G115
@@ -320,101 +341,11 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	return nil
 }
 
-func (d *DelayedSequencer) sequenceWithoutLockoutMsgExtractor(ctx context.Context, lastBlockHeader *types.Header) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	config := d.config()
-	if !config.Enable {
-		return nil
-	}
-
-	var finalized uint64
-	if config.UseMergeFinality && headerreader.HeaderIndicatesFinalitySupport(lastBlockHeader) {
-		var header *types.Header
-		var err error
-		if config.RequireFullFinality {
-			header, err = d.l1Reader.LatestFinalizedBlockHeader(ctx)
-		} else {
-			header, err = d.l1Reader.LatestSafeBlockHeader(ctx)
-		}
-		if err != nil {
-			return err
-		}
-		finalized = header.Number.Uint64()
-	} else {
-		currentNum := lastBlockHeader.Number.Int64()
-		if currentNum < config.FinalizeDistance {
-			return nil
-		}
-		// #nosec G115
-		finalized = uint64(currentNum - config.FinalizeDistance)
-	}
-
-	finalizedPos, err := d.msgExtractor.GetDelayedCount(ctx, finalized)
-	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
-			return err
-		}
-		return nil
-	}
-
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
-		return nil
-	}
-
-	// Reset what block we're waiting for if we've caught up
-	d.waitingForFinalizedBlock = nil
-
-	dbDelayedCount, err := d.msgExtractor.GetDelayedCount(ctx, 0)
-	if err != nil {
-		return err
-	}
-	startPos, err := d.getDelayedMessagesRead()
-	if err != nil {
-		return err
-	}
-
-	// Retrieve all finalized delayed messages
-	pos := startPos
-	var messages []*arbostypes.L1IncomingMessage
-	for pos < dbDelayedCount {
-		if pos > finalizedPos {
-			// Message isn't finalized yet; wait for it to be
-			d.waitingForFinalizedBlock = &pos
-			break
-		}
-		msg, err := d.msgExtractor.GetDelayedMessage(pos)
-		if err != nil {
-			return err
-		}
-		messages = append(messages, msg.Message)
-		pos++
-	}
-
-	// Sequence the delayed messages, if any
-	if len(messages) > 0 {
-		for i, msg := range messages {
-			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
-			if err != nil {
-				return err
-			}
-		}
-		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
-	}
-
-	return nil
-}
-
 // Dangerous: bypasses lockout check!
 func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
 	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
-	}
-	if d.msgExtractor != nil {
-		return d.sequenceWithoutLockoutMsgExtractor(ctx, lastBlockHeader)
 	}
 	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
 }
