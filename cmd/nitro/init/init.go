@@ -647,7 +647,12 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return executionDB, nil, nil, err
 		}
 
-		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, genesis.ArbOSInit, executionDB, cacheConfig, tracer)
+		var arbosInit *params.ArbOSInit
+		if genesis != nil {
+			arbosInit = genesis.ArbOSInit
+		}
+
+		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, arbosInit, executionDB, cacheConfig, tracer)
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
