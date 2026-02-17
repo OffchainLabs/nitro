@@ -1153,7 +1153,6 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-
 func testDepositETH(t *testing.T, builder *NodeBuilder, delayedInbox *bridgegen.Inbox, lookupL2Tx func(*types.Receipt) *types.Transaction, ctx context.Context) {
 	faucetAddr := builder.L1Info.GetAddress("Faucet")
 

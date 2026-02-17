@@ -15,32 +15,29 @@ func TestProgramArbitratorKeccak(t *testing.T) {
 	keccakTest(t, false)
 }
 
-func TestProgramArbitratorErrors(t *testing.T) {
-	errorTest(t, false)
-}
+func TestProgramArbitrator(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, false)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
 
-func TestProgramArbitratorStorage(t *testing.T) {
-	storageTest(t, false)
-}
+	// Deploy shared WASMs once
+	multicallAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	storageAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 
-func TestProgramArbitratorTransientStorage(t *testing.T) {
-	transientStorageTest(t, false)
-}
+	t.Run("Errors", func(t *testing.T) { errorTest(t, builder, auth, multicallAddr) })
+	t.Run("Storage", func(t *testing.T) { storageTest(t, builder, auth, storageAddr) })
+	t.Run("TransientStorage", func(t *testing.T) { transientStorageTest(t, builder, auth, storageAddr, multicallAddr) })
+	t.Run("Math", func(t *testing.T) { fastMathTest(t, builder, auth) })
+	t.Run("Calls", func(t *testing.T) { testCalls(t, builder, auth, multicallAddr, storageAddr, keccakAddr) })
+	t.Run("ReturnData", func(t *testing.T) { testReturnData(t, builder, auth) })
+	t.Run("Logs", func(t *testing.T) { testLogs(t, builder, auth, logAddr, multicallAddr, false) })
+	t.Run("ActivateFails", func(t *testing.T) { testActivateFails(t, builder, auth) })
+	t.Run("EarlyExit", func(t *testing.T) { testEarlyExit(t, builder, auth) })
 
-func TestProgramArbitratorMath(t *testing.T) {
-	fastMathTest(t, false)
-}
-
-func TestProgramArbitratorCalls(t *testing.T) {
-	testCalls(t, false)
-}
-
-func TestProgramArbitratorReturnData(t *testing.T) {
-	testReturnData(t, false)
-}
-
-func TestProgramArbitratorLogs(t *testing.T) {
-	testLogs(t, false, false)
+	validateBlocks(t, 1, false, builder)
 }
 
 func TestProgramArbitratorCreate(t *testing.T) {
@@ -57,14 +54,6 @@ func TestProgramArbitratorMemory(t *testing.T) {
 
 func TestProgramArbitratorActivateTwice(t *testing.T) {
 	testActivateTwice(t, false)
-}
-
-func TestProgramArbitratorActivateFails(t *testing.T) {
-	testActivateFails(t, false)
-}
-
-func TestProgramArbitratorEarlyExit(t *testing.T) {
-	testEarlyExit(t, false)
 }
 
 func fullRecurseTest() [][]multiCallRecurse {
