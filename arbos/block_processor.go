@@ -261,6 +261,14 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
+	// Group checkpoints are only used when transaction filtering is active
+	// (ArbOS >= 60). For older versions, we use the legacy behavior where
+	// Finalise runs after every committed tx. Enabling skipFinalise on
+	// older versions would break consensus by changing empty-account
+	// lifecycle behavior (CreateZombieIfDeleted depends on intermediate
+	// Finalise calls to populate stateObjectsDestruct).
+	useGroupCheckpoints := arbState.ArbOSVersion() >= params.ArbosVersion_TransactionFiltering
+
 	// Group checkpoint state for tx groups (a user tx + all its redeems).
 	// We take a state checkpoint before each non-redeem tx and process it
 	// with all its redeems tentatively (skipFinalise). If any tx in the
@@ -347,38 +355,45 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		// Every non-redeem tx starts a new group. Flush the previous clean
-		// group's deferred Finalise, then take a checkpoint so we can revert
-		// the entire group (tx + all its redeems) if any tx in the group errors.
-		if !isRedeem {
-			if activeGroupCP != nil {
-				statedb.Finalise(true)
+		if useGroupCheckpoints {
+			// Every non-redeem tx starts a new group. Flush the previous clean
+			// group's deferred Finalise, then take a checkpoint so we can revert
+			// the entire group (tx + all its redeems) if any tx in the group errors.
+			if !isRedeem {
+				if activeGroupCP != nil {
+					statedb.Finalise(true)
+				}
+				activeGroupCP = &groupCheckpoint{
+					snap:                 statedb.Snapshot(),
+					headerGasUsed:        header.GasUsed,
+					blockGasLeft:         blockGasLeft,
+					expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
+					completeLen:          len(complete),
+					receiptsLen:          len(receipts),
+					userTxsProcessed:     userTxsProcessed,
+					gethGas:              gethGas,
+					userTxHash:           tx.Hash(),
+				}
 			}
-			activeGroupCP = &groupCheckpoint{
-				snap:                 statedb.Snapshot(),
-				headerGasUsed:        header.GasUsed,
-				blockGasLeft:         blockGasLeft,
-				expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
-				completeLen:          len(complete),
-				receiptsLen:          len(receipts),
-				userTxsProcessed:     userTxsProcessed,
-				gethGas:              gethGas,
-				userTxHash:           tx.Hash(),
-			}
-		}
 
-		// Without Finalise between txs in a tentative group, the EVM refund
-		// counter leaks across tx boundaries. During replay, Finalise IS called
-		// between txs so each starts with refund=0. A nonzero starting refund
-		// here would cause GasUsed divergence (consensus break). SubRefund
-		// drains the counter to 0, mimicking Finalise. It's journaled, so
-		// group revert undoes it.
-		//
-		// activeGroupCP is always non-nil here: every non-redeem creates one,
-		// and redeems only exist within an active group.
-		startRefund := statedb.GetRefund()
-		if startRefund != 0 {
-			statedb.SubRefund(startRefund)
+			// Without Finalise between txs in a tentative group, the EVM refund
+			// counter leaks across tx boundaries. During replay, Finalise IS called
+			// between txs so each starts with refund=0. A nonzero starting refund
+			// here would cause GasUsed divergence (consensus break). SubRefund
+			// drains the counter to 0, mimicking Finalise. It's journaled, so
+			// group revert undoes it.
+			//
+			// activeGroupCP is always non-nil here: every non-redeem creates one,
+			// and redeems only exist within an active group.
+			startRefund := statedb.GetRefund()
+			if startRefund != 0 {
+				statedb.SubRefund(startRefund)
+			}
+		} else {
+			startRefund := statedb.GetRefund()
+			if startRefund != 0 {
+				return nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
+			}
 		}
 
 		var sender common.Address
@@ -471,11 +486,13 @@ func ProduceBlockAdvanced(
 				// promoting dirtyStorage -> pendingStorage, clearing the journal,
 				// and zeroing the refund counter. After that, RevertToSnapshot
 				// can't undo past that boundary (journal gone, pendingStorage not
-				// journaled, snapshot IDs invalidated). We always skip Finalise
-				// here because every tx is in a group (activeGroupCP is always
-				// non-nil). It's flushed at group boundaries: before the next
-				// non-redeem tx or at end of block.
-				true,
+				// journaled, snapshot IDs invalidated). When group checkpoints are
+				// active (ArbOS >= 60), we skip Finalise after each tx to keep
+				// the journal intact for potential group reverts. Finalise is
+				// flushed at group boundaries (before the next non-redeem tx or
+				// at end of block). For older ArbOS versions, Finalise runs after
+				// every committed tx as before.
+				useGroupCheckpoints,
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
@@ -500,43 +517,41 @@ func ProduceBlockAdvanced(
 		}
 
 		if err != nil {
-			// Outer error: the tx was not committed (state already reverted
-			// to its per-tx snapshot by the inner function above).
-			//
-			// activeGroupCP is always non-nil here (every non-redeem creates
-			// one, redeems only exist within an active group), so we always
-			// revert the whole group. There are two sub-cases:
-			//
-			//  Filter errors  -> revert group, report to hooks, continue
-			//                    (skips gas deduction because the user tx's
-			//                    error is already recorded via InsertLastTxError
-			//                    above, or for redeems via ReportGroupRevert).
-			//
-			//  Non-filter errors -> revert group, then fall through to
-			//                       normal gas deduction and logging.
-			if errors.Is(err, state.ErrArbTxFilter) {
-				userTxHash := activeGroupCP.userTxHash
+			if activeGroupCP != nil {
+				// Group checkpoints active (ArbOS >= 60): revert the entire
+				// group (user tx + all its redeems). Two sub-cases:
+				//
+				//  Filter errors  -> revert group, report to hooks, continue
+				//                    (skips gas deduction because the user tx's
+				//                    error is already recorded via InsertLastTxError
+				//                    above, or for redeems via ReportGroupRevert).
+				//
+				//  Non-filter errors -> revert group, then fall through to
+				//                       normal gas deduction and logging.
+				if errors.Is(err, state.ErrArbTxFilter) {
+					userTxHash := activeGroupCP.userTxHash
+					if err := revertToGroupCheckpoint(); err != nil {
+						return nil, nil, err
+					}
+					// Only redeems report to hooks; a directly-filtered
+					// user tx already has ErrArbTxFilter recorded by
+					// InsertLastTxError above.
+					if isRedeem {
+						sequencingHooks.ReportGroupRevert(&ErrFilteredCascadingRedeem{
+							OriginatingTxHash: userTxHash,
+						})
+					}
+					continue
+				}
+				// Non-filter error: revert the group state and fall through to
+				// gas deduction. For redeems the originating user tx's nil
+				// txErrors entry is left as-is; in practice non-filter outer
+				// errors on redeems are not expected (redeems are internally
+				// constructed and should always pass validation), but if one
+				// did occur the group revert ensures state consistency.
 				if err := revertToGroupCheckpoint(); err != nil {
 					return nil, nil, err
 				}
-				// Only redeems report to hooks; a directly-filtered
-				// user tx already has ErrArbTxFilter recorded by
-				// InsertLastTxError above.
-				if isRedeem {
-					sequencingHooks.ReportGroupRevert(&ErrFilteredCascadingRedeem{
-						OriginatingTxHash: userTxHash,
-					})
-				}
-				continue
-			}
-			// Non-filter error: revert the group state and fall through to
-			// gas deduction. For redeems the originating user tx's nil
-			// txErrors entry is left as-is; in practice non-filter outer
-			// errors on redeems are not expected (redeems are internally
-			// constructed and should always pass validation), but if one
-			// did occur the group revert ensures state consistency.
-			if err := revertToGroupCheckpoint(); err != nil {
-				return nil, nil, err
 			}
 
 			// Gas deduction and logging for non-filter errors (filter
