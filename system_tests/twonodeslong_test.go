@@ -39,7 +39,7 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil

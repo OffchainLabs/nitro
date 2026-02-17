@@ -294,7 +294,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithExtraWeight(2)
 	builder.nodeConfig.SeqCoordinator.Enable = true
 	builder.nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	builder.nodeConfig.BatchPoster.Enable = false
@@ -393,7 +393,7 @@ func TestRedisSwitchover(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}

@@ -59,7 +59,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	defer cancel()
 
 	// Build sequencer with blob posting and delayed sequencer enabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
@@ -268,7 +268,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
 func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader daprovider.BlobReader) (*TestClient, func()) {
 	t.Helper()
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	b.useExtraWeight(t, 1)
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}

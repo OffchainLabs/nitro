@@ -85,7 +85,7 @@ func TestMaintenanceWithSeqCoordinator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1).DontParalellise()
 	builder.nodeConfig.Maintenance.Enable = true
 	builder.execConfig.Caching.TrieTimeLimitBeforeFlushMaintenance = time.Duration(math.MaxInt64) // effectively execution will always suggest to run maintenance
 	builder.nodeConfig.BatchPoster.Enable = false

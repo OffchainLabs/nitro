@@ -87,8 +87,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 90m --cover --test_state_scheme path
-          --junitfile test-results/junit-pathdb.xml --reduce-parallelism
-
+          --junitfile test-results/junit-pathdb.xml
       # --------------------- DEFAULTS MODE ---------------------
 
       - name: run tests without race detection and hash state scheme (A-batch)
@@ -96,15 +95,13 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]' --reduce-parallelism
-
+          --junitfile test-results/junit-defaults-a.xml --run '^Test[A-L]'
       - name: run tests without race detection and hash state scheme (B-batch)
         if: inputs.run-defaults-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme hash
-          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]' --reduce-parallelism
-      
+          --junitfile test-results/junit-defaults-b.xml --skip '^Test[A-L]'      
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
@@ -160,8 +157,7 @@ jobs:
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --race --timeout 90m --test_state_scheme hash
-          --junitfile test-results/junit-race.xml --reduce-parallelism
-
+          --junitfile test-results/junit-race.xml
       # --------------------- LONG MODE ---------------------
 
       - name: run long tests
@@ -183,14 +179,12 @@ jobs:
         if: inputs.run-pebble-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
-
+          --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]'
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
-          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
-
+          --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]'
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
       - name: Process JUnit XML logs

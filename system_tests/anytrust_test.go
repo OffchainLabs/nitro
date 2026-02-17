@@ -109,7 +109,7 @@ func TestAnyTrustRekey(t *testing.T) {
 	defer cancel()
 
 	// Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(2)
 	builder.BuildL1(t)
 
 	// Setup AnyTrust servers
@@ -176,7 +176,7 @@ func TestAnyTrustComplexConfigAndRestMirror(t *testing.T) {
 	defer cancel()
 
 	// Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.BuildL1(t)
 

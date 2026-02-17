@@ -105,7 +105,8 @@ func TestArbos11To32UpgradeWithMcopy(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithArbOSVersion(initialVersion)
+		WithArbOSVersion(initialVersion).
+		WithExtraWeight(1)
 	builder.WithPrestateTracerChecks = true
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -323,7 +324,8 @@ func TestArbos11To32UpgradeWithCalldata(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithArbOSVersion(initialVersion)
+		WithArbOSVersion(initialVersion).
+		WithExtraWeight(1)
 	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
 	cleanup := builder.Build(t)
 	defer cleanup()

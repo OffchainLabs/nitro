@@ -16,7 +16,7 @@ func TestExecutionClientOnly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	seqTestClient := builder.L2

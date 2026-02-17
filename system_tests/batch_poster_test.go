@@ -94,7 +94,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		parallelBatchPosters = 4
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
@@ -227,7 +227,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	err = client.Del(ctx, "data-poster.queue").Err()
 	Require(t, err)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
@@ -354,7 +354,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.execConfig.Sequencer.MaxTxDataSize = 110000
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -427,7 +427,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	defer cancel()
 
 	// creates first node with batch poster disabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false).WithExtraWeight(1)
 	builder.nodeConfig.BatchPoster.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -522,7 +522,8 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithDelayBuffer(threshold)
+		WithDelayBuffer(threshold).
+		WithExtraWeight(1)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
@@ -594,7 +595,8 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	const threshold = 100
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithDelayBuffer(threshold)
+		WithDelayBuffer(threshold).
+		WithExtraWeight(1)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
 	cleanup := builder.Build(t)
@@ -632,7 +634,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 
 	// Build L1 and L2
 	cleanupL1AndL2 := builder.Build(t)
@@ -849,7 +851,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// Turn on unconditional blob posting
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true

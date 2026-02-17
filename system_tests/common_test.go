@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -307,6 +308,10 @@ type NodeBuilder struct {
 	L2Info        info
 	L3Info        info
 
+	// Pre-declared weight for secondary nodes (Build2ndNode, BuildL3OnL2, etc.)
+	extraWeight          int64
+	extraWeightRemaining int64
+
 	// L1, L2, L3 Node parameters
 	dataDir                     string
 	isSequencer                 bool
@@ -572,30 +577,67 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 	return b
 }
 
+func (b *NodeBuilder) WithExtraWeight(w int64) *NodeBuilder {
+	b.extraWeight += w
+	return b
+}
+
+func (b *NodeBuilder) computeWeight() int64 {
+	w := int64(1)
+	if b.withL1 {
+		w = 2
+	}
+	if b.nodeConfig != nil && b.nodeConfig.ValidatorRequired() {
+		w += 2
+	}
+	w += b.extraWeight
+	return w
+}
+
+func (b *NodeBuilder) useExtraWeight(t *testing.T, weight int64) {
+	t.Helper()
+	b.extraWeightRemaining -= weight
+	if b.extraWeightRemaining < 0 {
+		t.Fatalf("Build needs WithExtraWeight: used %d more weight than declared (extraWeight=%d)",
+			-b.extraWeightRemaining, b.extraWeight)
+	}
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	b.CheckConfig(t)
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
+	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
 	if b.withL1 {
-		b.BuildL1(t)
+		b.buildL1Internal(t)
 		if b.withReferenceDAProvider {
 			b.setupReferenceDAServer(t)
 		}
 		return b.BuildL2OnL1(t)
 	}
-	return b.BuildL2(t)
+	return b.buildL2Internal(t)
 }
 
-type testCollection struct {
-	room    atomic.Int64
-	cond    *sync.Cond
-	running map[string]int64
-	waiting map[string]int64
-}
-
-var globalCollection *testCollection
+var testSemaphore *semaphore.Weighted
 
 // nodeWeight computes the semaphore weight for a given number of node-equivalents.
 // Weights are scaled so that room=GOMAXPROCS allows at most maxConcurrentNodes
@@ -611,85 +653,11 @@ func nodeWeight(nodes int) int64 {
 }
 
 func initTestCollection() {
-	if globalCollection != nil {
-		panic("trying to init testCollection twice")
-	}
-	globalCollection = &testCollection{}
-	globalCollection.cond = sync.NewCond(&sync.Mutex{})
 	room := min(int64(util.GoMaxProcs()), maxConcurrentNodes)
 	if room < 2 {
 		room = 2
 	}
-	globalCollection.running = make(map[string]int64)
-	globalCollection.waiting = make(map[string]int64)
-	globalCollection.room.Store(room)
-}
-
-func runningWithContext(ctx context.Context, weight int64, name string) {
-	current := globalCollection.running[name]
-	globalCollection.running[name] = current + weight
-	globalCollection.cond.L.Unlock()
-	go func() {
-		<-ctx.Done()
-		globalCollection.cond.L.Lock()
-		current := globalCollection.running[name]
-		if current-weight <= 0 {
-			delete(globalCollection.running, name)
-		} else {
-			globalCollection.running[name] = current - weight
-		}
-		if globalCollection.room.Add(weight) > 0 {
-			globalCollection.cond.Broadcast()
-		}
-		globalCollection.cond.L.Unlock()
-	}()
-}
-
-func WaitAndRun(ctx context.Context, weight int64, name string) error {
-	globalCollection.cond.L.Lock()
-	current := globalCollection.waiting[name]
-	globalCollection.waiting[name] = current + weight
-	for globalCollection.room.Add(0-weight) < 0 {
-		if globalCollection.room.Add(weight) > 0 {
-			globalCollection.cond.Broadcast()
-		}
-		if ctx.Err() != nil {
-			return fmt.Errorf("Context cancelled while waiting to launch test: %s", name)
-		}
-		globalCollection.cond.Wait()
-	}
-	current = globalCollection.waiting[name]
-	if current-weight <= 0 {
-		delete(globalCollection.waiting, name)
-	} else {
-		globalCollection.waiting[name] = current - weight
-	}
-	runningWithContext(ctx, weight, name)
-	return nil
-}
-
-func DontWaitAndRun(ctx context.Context, weight int64, name string) {
-	globalCollection.room.Add(0 - weight)
-	globalCollection.cond.L.Lock()
-	runningWithContext(ctx, weight, name)
-}
-
-func CurrentlyRunning() (map[string]int64, map[string]int64) {
-	running := make(map[string]int64)
-	waiting := make(map[string]int64)
-	globalCollection.cond.L.Lock()
-	for k, v := range globalCollection.running {
-		if v > 0 {
-			running[k] = v
-		}
-	}
-	for k, v := range globalCollection.waiting {
-		if v > 0 {
-			waiting[k] = v
-		}
-	}
-	globalCollection.cond.L.Unlock()
-	return running, waiting
+	testSemaphore = semaphore.NewWeighted(room)
 }
 
 func (b *NodeBuilder) CheckConfig(t *testing.T) {
@@ -732,18 +700,33 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
-	start := time.Now()
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 2, t.Name())
-	if err != nil {
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
 		t.Fatal(err)
 	}
-	if waited := time.Since(start); waited > time.Second {
-		t.Logf("BuildL1 waited %s for parallel+semaphore", waited)
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
 	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
+	b.buildL1Internal(t)
+}
+
+func (b *NodeBuilder) buildL1Internal(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
 
 	deployConfig := DeployConfig{
@@ -869,7 +852,11 @@ func buildOnParentChain(
 }
 
 func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if b.l3Config.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
 	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
@@ -997,20 +984,35 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
-	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
-	}
-	start := time.Now()
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 1, t.Name())
-	if err != nil {
-		Fatal(t, err)
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
+		t.Fatal(err)
 	}
-	if waited := time.Since(start); waited > time.Second {
-		t.Logf("BuildL2 waited %s for parallel+semaphore", waited)
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
+	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
+	return b.buildL2Internal(t)
+}
+
+func (b *NodeBuilder) buildL2Internal(t *testing.T) func() {
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
 	b.L2 = NewTestClient(b.ctx)
 
@@ -1189,7 +1191,11 @@ func build2ndNode(
 }
 
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if params.nodeConfig != nil && params.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}
@@ -1218,7 +1224,11 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 }
 
 func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if params.nodeConfig != nil && params.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	if b.L3 == nil {
 		t.Fatal("builder did not previously built an L3 Node")
 	}
@@ -1751,7 +1761,6 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
-	DontWaitAndRun(ctx, 2, t.Name())
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig

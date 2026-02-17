@@ -37,7 +37,7 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
@@ -141,7 +141,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -232,7 +232,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -301,7 +301,7 @@ func TestFinalityAfterReorg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -355,7 +355,7 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -399,7 +399,7 @@ func TestFinalityDataNodeOutOfSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.

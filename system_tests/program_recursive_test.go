@@ -118,7 +118,9 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 }
 
 func testProgramRecursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+		b.WithExtraWeight(3)
+	})
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()

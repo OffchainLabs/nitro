@@ -15,7 +15,7 @@ func TestSimpleL3(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(2)
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 

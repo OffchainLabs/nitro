@@ -36,7 +36,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(6)
 
 	// Block validation requires db hash scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme

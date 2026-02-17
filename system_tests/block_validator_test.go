@@ -68,7 +68,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		delayEvery = opts.workloadLoops / 3
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(3)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
 	// For now PathDB is not supported when using block validation
 	builder.RequireScheme(t, rawdb.HashScheme)

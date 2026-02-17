@@ -32,7 +32,7 @@ func TestStaticForwarder(t *testing.T) {
 	defer cancel()
 	ipcPath := tmpPath(t, "test.ipc")
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.l2StackConfig.IPCPath = ipcPath
 	cleanupA := builder.Build(t)
@@ -212,7 +212,7 @@ func TestRedisForwarder(t *testing.T) {
 			ipcPath:              fbNodePath,
 			redisUrl:             redisUrl,
 			enableSecCoordinator: true,
-		})
+		}).WithExtraWeight(6)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	fallbackNode, fallbackClient := builder.L2.ConsensusNode, builder.L2.Client
@@ -283,7 +283,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 			ipcPath:              fallbackIpcPath,
 			redisUrl:             redisUrl,
 			enableSecCoordinator: false,
-		}).WithDatabase(rawdb.DBPebble)
+		}).WithExtraWeight(1).WithDatabase(rawdb.DBPebble)
 	cleanup := builder.Build(t)
 	defer cleanup()
 	fallbackClient := builder.L2.Client

@@ -109,7 +109,7 @@ func TestGetL1ConfirmationsForL3(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithExtraWeight(2)
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
@@ -133,7 +133,7 @@ func TestGetL1ConfirmationsForL3WithL2WithoutConsensusArbRPC(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithExtraWeight(2)
 
 	// forces using http RPC instead of direct method call
 	builder.l2StackConfig.HTTPHost = "localhost"

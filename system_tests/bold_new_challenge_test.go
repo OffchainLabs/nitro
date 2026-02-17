@@ -133,7 +133,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(3)
 
 	// Block validation requires db hash scheme
 	builder.RequireScheme(t, rawdb.HashScheme)

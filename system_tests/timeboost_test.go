@@ -653,7 +653,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.TransactionStreamer.TrackBlockMetadataFrom = 1
 	builder.l2StackConfig.HTTPHost = "localhost"
 	builder.l2StackConfig.HTTPModules = []string{"eth", "arb"}

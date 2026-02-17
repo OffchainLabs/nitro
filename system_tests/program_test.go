@@ -2039,6 +2039,7 @@ func TestWasmRecreate(t *testing.T) {
 func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
+		b.WithExtraWeight(2)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2059,6 +2060,7 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
+		b.WithExtraWeight(2)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2106,6 +2108,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithDatabase(databaseEngine)
+		b.WithExtraWeight(2)
 	})
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -2684,6 +2687,7 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	jit := false
 	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
+		b.WithExtraWeight(1)
 	})
 	ctx := builder.ctx
 	defer cleanup()

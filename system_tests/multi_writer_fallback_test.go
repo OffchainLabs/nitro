@@ -33,7 +33,7 @@ func TestMultiWriterFailure_CustomDAShutdownWithAnyTrustAvailable(t *testing.T) 
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
@@ -171,7 +171,7 @@ func TestMultiWriterFailure_CustomDAShutdownNoFallbackAvailable(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// Use standard dev test config (not AnyTrust) since we're not using AnyTrust
 	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	builder.parallelise = false
@@ -286,7 +286,7 @@ func TestMultiWriterFailure_AnyTrustShutdownFallbackDisabled(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
@@ -414,7 +414,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
@@ -643,7 +643,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	builder.parallelise = false
 
@@ -827,7 +827,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestAnyTrustChainConfig()
 	builder.parallelise = false
 
@@ -1005,7 +1005,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	defer cancel()
 
 	// 1. Setup L1 chain and contracts
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	builder.parallelise = false
 
