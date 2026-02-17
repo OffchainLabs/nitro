@@ -13,9 +13,9 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
-use std::borrow::Cow;
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
+use std::borrow::Cow;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
