@@ -268,7 +268,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
 func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader daprovider.BlobReader) (*TestClient, func()) {
 	t.Helper()
-	DontWaitAndRun(b.ctx, nodeWeight(1), t.Name())
+	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}
