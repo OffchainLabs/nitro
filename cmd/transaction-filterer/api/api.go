@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -37,6 +38,9 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	txOpts.Context = ctx
 
 	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
+	if t.arbFilteredTransactionsManager == nil {
+		return common.Hash{}, errors.New("sequencer client not set yet")
+	}
 	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
@@ -96,12 +100,15 @@ func NewStack(
 		return nil, nil, err
 	}
 
-	arbFilteredTransactionsManager, err := precompilesgen.NewArbFilteredTransactionsManager(
-		types.ArbFilteredTransactionsManagerAddress,
-		sequencerClient,
-	)
-	if err != nil {
-		return nil, nil, err
+	var arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+	if sequencerClient != nil {
+		arbFilteredTransactionsManager, err = precompilesgen.NewArbFilteredTransactionsManager(
+			types.ArbFilteredTransactionsManagerAddress,
+			sequencerClient,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	api := &TransactionFiltererAPI{
