@@ -203,7 +203,7 @@ func createNodeBWithSharedContracts(
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromConsensus(ctx, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
 	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
