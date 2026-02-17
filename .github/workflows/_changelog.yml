@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download unclog binary
         uses: dsaltares/fetch-gh-release-asset@1.1.2
