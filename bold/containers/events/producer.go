@@ -104,6 +104,11 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 	defer ep.RUnlock()
 	for _, sub := range ep.subs {
 		go func(listener *Subscription[T]) {
+			// Recover from sending on a closed channel. This can happen
+			// when a Subscription.Next() closes its events channel due to
+			// context cancellation while a Broadcast goroutine is still
+			// trying to send.
+			defer func() { recover() }()
 			select {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
