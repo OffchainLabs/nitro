@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
@@ -67,6 +67,10 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		return 0, m.fsm.Do(reorgToOldBlock{
 			melState: preState,
 		})
+	}
+	// Reorging of MEL states successfully completed, we can now rewind MEL validator
+	if m.reorgEventsNotifier != nil && processAction.prevStepWasReorg {
+		m.reorgEventsNotifier <- preState.ParentChainBlockNumber
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
