@@ -409,7 +409,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   protocol.Height(bigStepChallengeLeafHeight),
 			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(3)), // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(10000)),
 	)
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())

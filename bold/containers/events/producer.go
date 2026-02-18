@@ -19,10 +19,10 @@ type Producer[T any] struct {
 	sync.RWMutex
 	subscriptionBufferSize int
 	subs                   []*Subscription[T]
-	doneListener           chan subId         // channel to listen for IDs of subscriptions to be remove.
-	broadcastTimeout       time.Duration      // maximum duration to wait for an event to be sent.
-	nextId                 subId              // monotonically increasing id for stable subscription identification
-	stopped                chan struct{}       // closed when the producer shuts down
+	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
+	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
+	nextId                 subId         // monotonically increasing id for stable subscription identification
+	stopped                chan struct{} // closed when the producer shuts down
 }
 
 type ProducerOpt[T any] func(*Producer[T])
