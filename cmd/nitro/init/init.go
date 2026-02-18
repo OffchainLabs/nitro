@@ -837,7 +837,7 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *c
 	txIndexWg := sync.WaitGroup{}
 
 	if initDataReader == nil {
-		l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
+		l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 		if err != nil {
 			return nil, err
 		}
@@ -880,7 +880,7 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *c
 		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
 			return nil, errors.New("it is not possible to force init with non-empty blockchain when using path scheme")
 		}
-		l2BlockChain, err = gethexec.WriteOrTestBlockChain(executionDB, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(executionDB, cacheConfig, initDataReader, chainConfig, genesisArbOSInit, tracer, parsedInitMessage, &config.Execution.TxIndexer, config.Init.AccountsPerSync, config.Execution.ExposeMultiGas)
 		if err != nil {
 			return nil, err
 		}
@@ -1014,7 +1014,7 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 					return nil, nil, nil, chainConfig, err
 				}
 
-				l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer)
+				l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
