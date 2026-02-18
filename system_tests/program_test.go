@@ -1958,7 +1958,21 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	Require(t, err)
 
 	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
-	checkWasmStoreContent(t, wasmDB, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
+	// When the wasm DB is preserved between restarts, entries from the prior
+	// configuration persist alongside newly compiled targets.
+	expectedFinalTargets := nodeBExecConfigAfter.StylusTarget.WasmTargets()
+	if !removeWasmDBBetween {
+		seen := make(map[rawdb.WasmTarget]bool)
+		for _, t := range expectedFinalTargets {
+			seen[t] = true
+		}
+		for _, t := range nodeBExecConfigBefore.StylusTarget.WasmTargets() {
+			if !seen[t] {
+				expectedFinalTargets = append(expectedFinalTargets, t)
+			}
+		}
+	}
+	checkWasmStoreContent(t, wasmDB, expectedFinalTargets, numModules)
 
 	cleanupB()
 	dirContents, err := os.ReadDir(wasmPath)
@@ -1969,117 +1983,40 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	os.RemoveAll(wasmPath)
 }
 
+// TestWasmRecreate is a smoke test verifying that a node can restart with
+// different Stylus target configuration and still execute contracts.
+// The core recompilation logic (getCompiledProgram) is unit-tested in
+// arbos/programs/wasm_recreate_test.go. This test exercises only the
+// end-to-end integration: deploy, restart, execute.
 func TestWasmRecreate(t *testing.T) {
-	testCases := []struct {
-		name                string
-		removeWasmDBBetween bool
-		targetsBefore       []string
-		targetsAfter        []string
-	}{
-		{
-			name:                "with local target only with wasmdb removal",
-			removeWasmDBBetween: true,
-			targetsBefore:       localTargetOnly,
-			targetsAfter:        localTargetOnly,
-		},
-		{
-			name:                "with local target only without wasmdb removal",
-			removeWasmDBBetween: false,
-			targetsBefore:       localTargetOnly,
-			targetsAfter:        localTargetOnly,
-		},
-		{
-			name:                "with all targets with wasmdb removal",
-			removeWasmDBBetween: true,
-			targetsBefore:       allWasmTargets,
-			targetsAfter:        allWasmTargets,
-		},
-		{
-			name:                "with all targets without wasmdb removal",
-			removeWasmDBBetween: false,
-			targetsBefore:       allWasmTargets,
-			targetsAfter:        allWasmTargets,
-		},
-		{
-			name:                "more targets to recreate with wasmdb removal",
-			removeWasmDBBetween: true,
-			targetsBefore:       localTargetOnly,
-			targetsAfter:        allWasmTargets,
-		},
-		{
-			name:                "more targets to recreate without wasmdb removal",
-			removeWasmDBBetween: false,
-			targetsBefore:       localTargetOnly,
-			targetsAfter:        allWasmTargets,
-		},
-		{
-			name:                "less targets to recreate with wasmdb removal",
-			removeWasmDBBetween: true,
-			targetsBefore:       allWasmTargets,
-			targetsAfter:        localTargetOnly,
-		},
-		{
-			name:                "less targets to recreate without wasmdb removal",
-			removeWasmDBBetween: false,
-			targetsBefore:       allWasmTargets,
-			targetsAfter:        localTargetOnly,
-		},
-	}
 	databaseEngine := rawdb.DBPebble
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
-		})
-		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
+	for _, removeWasmDB := range []bool{true, false} {
+		name := "with_wasmdb_removal"
+		if !removeWasmDB {
+			name = "without_wasmdb_removal"
+		}
+		t.Run(name, func(t *testing.T) {
+			builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+				b.WithDatabase(databaseEngine)
+				b.WithExtraWeight(2) // 2 Build2ndNode calls in testWasmRecreate
+			})
+			defer cleanup()
+
+			ctx := builder.ctx
+			l2info := builder.L2Info
+			l2client := builder.L2.Client
+
+			storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+			zero := common.Hash{}
+			val := common.HexToHash("0x121233445566")
+
+			storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+			loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+
+			testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, removeWasmDB, storeTx, loadTx, val[:], databaseEngine)
 		})
 	}
-}
-
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-		b.WithExtraWeight(2)
-	})
-	ctx := builder.ctx
-	l2info := builder.L2Info
-	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-
-	zero := common.Hash{}
-	val := common.HexToHash("0x121233445566")
-
-	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
-	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
-
-	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseEngine)
-}
-
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.WithDatabase(rawdb.DBPebble)
-		b.WithExtraWeight(2)
-	})
-	ctx := builder.ctx
-	l2info := builder.L2Info
-	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-
-	zero := common.Hash{}
-	val := common.HexToHash("0x121233445566")
-
-	data := argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageWrite(zero, val))
-	storeTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
-
-	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
-	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
-
-	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 2, true, storeTx, loadTx, val[:], databaseEngine)
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
