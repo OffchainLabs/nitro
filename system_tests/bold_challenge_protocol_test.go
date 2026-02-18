@@ -18,41 +18,30 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/bold/challenge"
-	modes "github.com/offchainlabs/nitro/bold/challenge/types"
-	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -132,7 +121,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	go keepChainMoving(t, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
-	l2StackB, _, l2nodeB, l2execNodeB, _ := create2ndNodeWithConfigForBoldProtocol(
+	l2StackB, _, l2nodeB, l2execNodeB := create2ndNodeWithConfigForBoldProtocol(
 		t,
 		ctx,
 		l2nodeA,
@@ -140,7 +129,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		l1info,
 		&l2info.ArbInitData,
 		l2nodeConfig,
-		nil,
 		sconf,
 		stakeTokenAddr,
 		asserterOpts,
@@ -189,7 +177,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 	blockValidatorConfigB := staker.TestBlockValidatorConfig
-
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -268,29 +255,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 
 	chalManagerAddr := assertionChain.SpecChallengeManager()
 	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
-	l1ChainId, err := l1client.ChainID(ctx)
-	Require(t, err)
-	dp, err := arbnode.StakerDataposter(
-		ctx,
-		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
-		l2nodeB.L1Reader,
-		&evilOpts,
-		NewCommonConfigFetcher(l2nodeConfig),
-		l2nodeB.SyncMonitor,
-		l1ChainId,
-	)
-	Require(t, err)
-	chainB, err := sol.NewAssertionChain(
-		ctx,
-		assertionChain.RollupAddress(),
-		chalManagerAddr.Address(),
-		&evilOpts,
-		l1client,
-		bold.NewDataPosterTransactor(dp),
-		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
-		sol.WithParentChainBlockCreationTime(10*time.Millisecond),
-	)
-	Require(t, err)
+	chainB := createEvilAssertionChain(t, ctx, assertionChain.RollupAddress(), chalManagerAddr.Address(), l1client, l2nodeB, &evilOpts, l2nodeConfig)
 
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -412,113 +377,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	provider := state.NewHistoryCommitmentProvider(
-		stateManager,
-		stateManager,
-		stateManager,
-		[]state.Height{
-			state.Height(blockChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(smallStepChallengeLeafHeight),
-		},
-		stateManager,
-		nil, // Api db
-	)
-
-	evilProvider := state.NewHistoryCommitmentProvider(
-		stateManagerB,
-		stateManagerB,
-		stateManagerB,
-		[]state.Height{
-			state.Height(blockChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(smallStepChallengeLeafHeight),
-		},
-		stateManagerB,
-		nil, // Api db
-	)
-
-	stackOpts := []challenge.StackOpt{
-		challenge.StackWithName("honest"),
-		challenge.StackWithMode(modes.MakeMode),
-		challenge.StackWithPostingInterval(200 * time.Millisecond),
-		challenge.StackWithPollingInterval(100 * time.Millisecond),
-		challenge.StackWithConfirmationInterval(200 * time.Millisecond),
-		challenge.StackWithMinimumGapToParentAssertion(0),
-		challenge.StackWithAverageBlockCreationTime(100 * time.Millisecond),
-		challenge.StackWithHeaderProvider(l2nodeA.L1Reader),
-	}
-
-	manager, err := challenge.NewChallengeStack(
-		assertionChain,
-		provider,
-		stackOpts...,
-	)
-	Require(t, err)
-
-	evilStackOpts := append(stackOpts,
-		challenge.StackWithName("evil"),
-		challenge.StackWithHeaderProvider(l2nodeB.L1Reader),
-	)
-
-	managerB, err := challenge.NewChallengeStack(
-		chainB,
-		evilProvider,
-		evilStackOpts...,
-	)
-	Require(t, err)
-
-	manager.Start(ctx)
-	managerB.Start(ctx)
-
-	chalManager := assertionChain.SpecChallengeManager()
-	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), l1client)
-	Require(t, err)
-
-	fromBlock := uint64(0)
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			latestBlock, err := l1client.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock == toBlock {
-				continue
-			}
-			filterOpts := &bind.FilterOpts{
-				Start:   fromBlock,
-				End:     &toBlock,
-				Context: ctx,
-			}
-			it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
-			Require(t, err)
-			for it.Next() {
-				if it.Error() != nil {
-					t.Fatalf("Error in filter iterator: %v", it.Error())
-				}
-				t.Log("Received event of OSP confirmation!")
-				tx, _, err := l1client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-				Require(t, err)
-				signer := types.NewCancunSigner(tx.ChainId())
-				address, err := signer.Sender(tx)
-				Require(t, err)
-				if address == asserterOpts.From {
-					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
-					Require(t, it.Close())
-					return
-				}
-			}
-			fromBlock = toBlock
-		case <-ctx.Done():
-			return
-		}
-	}
+	runFastChallengeAndAssertHonestWin(t, ctx, assertionChain, chainB, stateManager, stateManagerB, l2nodeA, l2nodeB, l1client, asserterOpts.From)
 }
 
 // Send L1 transactions to keep the chain moving.
@@ -555,13 +414,11 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
-	stackConfig *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	stakeTokenAddr common.Address,
 	asserterOpts *bind.TransactOpts,
 	enableCustomDA bool,
-) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *sol.AssertionChain) {
-	fatalErrChan := make(chan error, 10)
+) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode) {
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
@@ -577,78 +434,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1info.SetContract("EvilRollup", addresses.Rollup)
 	l1info.SetContract("EvilUpgradeExecutor", addresses.UpgradeExecutor)
 
-	if nodeConfig == nil {
-		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-	}
-	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	if stackConfig == nil {
-		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
-		stackConfig.DBEngine = rawdb.DBPebble
-	}
-	l2stack, err := node.New(stackConfig)
-	Require(t, err)
-
-	l2executionDB, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
-	Require(t, err)
-	l2consensusDB, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
-	Require(t, err)
-
-	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
-
-	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
-	Require(t, err)
-
-	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
-	Require(t, execConfig.Validate())
-	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
-	Require(t, err)
-
-	l1ChainId, err := l1client.ChainID(ctx)
-	Require(t, err)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0)
-	Require(t, err)
-	locator, err := server_common.NewMachineLocator("")
-	Require(t, err)
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
-	Require(t, err)
-
-	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
-
-	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
-
-	rollupUserLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
-	Require(t, err)
-	chalManagerAddr, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{})
-	Require(t, err)
-	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
-	dp, err := arbnode.StakerDataposter(
-		ctx,
-		rawdb.NewTable(l2consensusDB, storage.StakerPrefix),
-		l2node.L1Reader,
-		&evilOpts,
-		NewCommonConfigFetcher(nodeConfig),
-		l2node.SyncMonitor,
-		l1ChainId,
-	)
-	Require(t, err)
-	assertionChain, err := sol.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		chalManagerAddr,
-		&evilOpts,
-		l1client,
-		bold.NewDataPosterTransactor(dp),
-		sol.WithParentChainBlockCreationTime(10*time.Millisecond),
-	)
-	Require(t, err)
-
-	return l2stack, l2client, l2node, execNode, assertionChain
+	return createSecondL2Node(t, ctx, first, l1info, l1client, l2InitData, addresses, nodeConfig, nil)
 }
 
 // createBoldBatchData creates the compressed batch data
