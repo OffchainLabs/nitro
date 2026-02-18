@@ -19,9 +19,10 @@ type Producer[T any] struct {
 	sync.RWMutex
 	subscriptionBufferSize int
 	subs                   []*Subscription[T]
-	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
-	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
-	nextId                 subId         // monotonically increasing id for stable subscription identification
+	doneListener           chan subId         // channel to listen for IDs of subscriptions to be remove.
+	broadcastTimeout       time.Duration      // maximum duration to wait for an event to be sent.
+	nextId                 subId              // monotonically increasing id for stable subscription identification
+	stopped                chan struct{}       // closed when the producer shuts down
 }
 
 type ProducerOpt[T any] func(*Producer[T])
@@ -47,6 +48,7 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 		subscriptionBufferSize: defaultSubscriptionBufferSize,
 		doneListener:           make(chan subId, 100),
 		broadcastTimeout:       defaultBroadcastTimeout,
+		stopped:                make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(producer)
@@ -73,6 +75,7 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			}
 			ep.Unlock()
 		case <-ctx.Done():
+			close(ep.stopped)
 			close(ep.doneListener)
 			ep.subs = nil
 			return
@@ -86,9 +89,10 @@ func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
 	sub := &Subscription[T]{
-		id:     ep.nextId, // Assign a stable, monotonically increasing ID
-		events: make(chan T),
-		done:   ep.doneListener,
+		id:      ep.nextId, // Assign a stable, monotonically increasing ID
+		events:  make(chan T),
+		done:    ep.doneListener,
+		stopped: ep.stopped,
 	}
 	ep.nextId++
 	ep.subs = append(ep.subs, sub)
@@ -106,6 +110,7 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 		go func(listener *Subscription[T]) {
 			select {
 			case listener.events <- event:
+			case <-listener.stopped:
 			case <-time.After(ep.broadcastTimeout):
 			case <-ctx.Done():
 			}
@@ -118,9 +123,10 @@ type subId int
 // Subscription defines a generic handle to a subscription of
 // events from a producer.
 type Subscription[T any] struct {
-	id     subId
-	events chan T
-	done   chan subId
+	id      subId
+	events  chan T
+	done    chan subId
+	stopped <-chan struct{}
 }
 
 // Next waits for the next event or context cancelation, returning the event or an error.
@@ -130,9 +136,10 @@ func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 		select {
 		case ev := <-es.events:
 			return ev, false
+		case <-es.stopped:
+			return zeroVal, true
 		case <-ctx.Done():
 			es.done <- es.id
-			close(es.events)
 			return zeroVal, true
 		}
 	}
