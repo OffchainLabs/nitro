@@ -3774,14 +3774,12 @@ dependencies = [
  "eyre",
  "hex",
  "num-traits",
- "num_enum 0.7.5",
  "once_cell",
  "prover",
  "rand 0.8.5",
  "rand_pcg",
  "ruint2",
  "secp256k1",
- "serde",
  "serde_json",
  "sp1-zkvm",
  "thiserror 1.0.69",
@@ -3854,7 +3852,6 @@ dependencies = [
  "digest",
  "eyre",
  "fnv",
- "hex",
  "lazy_static",
  "nom",
  "num-derive",
@@ -3862,9 +3859,9 @@ dependencies = [
  "parking_lot",
  "rkyv",
  "serde",
- "serde_json",
  "serde_with",
  "sha3",
+ "validation",
  "wasmer",
  "wasmer-types",
  "wasmparser 0.224.1",
@@ -5892,6 +5889,7 @@ dependencies = [
  "sp1-sdk",
  "tokio",
  "tracing",
+ "validation",
 ]
 
 [[package]]
@@ -6735,6 +6733,16 @@ dependencies = [
  "md-5",
  "sha1_smol",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "validation"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "serde",
+ "serde_json",
+ "serde_with",
 ]
 
 [[package]]

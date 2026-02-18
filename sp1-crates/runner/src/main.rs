@@ -1,7 +1,6 @@
 use clap::{ArgAction, Parser, ValueEnum};
 use prover::{
     binary_input::{Input, decompress_aligned},
-    parse_input::FileData,
 };
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
@@ -9,6 +8,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::SystemTime;
+use validation::ValidationInput;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -117,8 +117,8 @@ async fn main() {
 // Build SP1 input from Arbitrum block. It is serialized to Vec<u8>, so
 // we can easily inject debugging code to dump stdin when needed.
 fn build_input(cli: &Cli) -> Vec<u8> {
-    let file_data: FileData =
-        serde_json::from_slice(&std::fs::read(&cli.block_file).expect("read input block"))
+    let file_data =
+        serde_json::from_slice::<ValidationInput>(&std::fs::read(&cli.block_file).expect("read input block"))
             .expect("parse input block");
 
     let mut module_asms = HashMap::default();

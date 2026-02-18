@@ -17,14 +17,12 @@ bytes = { workspace = true }
 corosensei = { workspace = true }
 eyre = { workspace = true }
 hex = { workspace = true }
-num_enum = { workspace = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 rand_pcg = { workspace = true }
 rand = { workspace = true }
 ruint2 = { workspace = true }
 secp256k1 = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
