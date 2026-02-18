@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -99,10 +100,14 @@ var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
 type DelayedFilteringSequencingHooks struct {
 	arbos.NoopSequencingHooks
 	FilteredTxHashes []common.Hash
+	eventFilter      *eventfilter.EventFilter
 }
 
-func NewDelayedFilteringSequencingHooks(txes types.Transactions) *DelayedFilteringSequencingHooks {
-	return &DelayedFilteringSequencingHooks{NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes)}
+func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter) *DelayedFilteringSequencingHooks {
+	return &DelayedFilteringSequencingHooks{
+		NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes),
+		eventFilter:         ef,
+	}
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
@@ -121,6 +126,8 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	if arbosutil.DoesTxTypeAlias(&txType) {
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
+	touchRetryableAddresses(db, tx)
+	applyEventFilter(f.eventFilter, db)
 
 	if db.IsAddressFiltered() {
 		// If the STF already handled this tx via the onchain filter mechanism,
@@ -134,6 +141,34 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
 	}
 	return nil
+}
+
+func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
+	if ef == nil {
+		return
+	}
+	logs := db.GetCurrentTxLogs()
+	for _, l := range logs {
+		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
+			db.TouchAddress(addr)
+		}
+	}
+}
+
+// touchRetryableAddresses touches addresses from retryable inner fields
+// (Beneficiary, FeeRefundAddr, RetryTo) so the address filter can detect them.
+// Also touches de-aliased versions to catch L1 contract addresses that were
+// aliased by the Inbox contract.
+func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
+	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
+		db.TouchAddress(inner.Beneficiary)
+		db.TouchAddress(inner.FeeRefundAddr)
+		if inner.RetryTo != nil {
+			db.TouchAddress(*inner.RetryTo)
+		}
+		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.Beneficiary))
+		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.FeeRefundAddr))
+	}
 }
 
 type L1PriceDataOfMsg struct {
@@ -182,6 +217,7 @@ type ExecutionEngine struct {
 	runningMaintenance atomic.Bool
 
 	addressChecker               state.AddressChecker
+	eventFilter                  *eventfilter.EventFilter
 	transactionFiltererRPCClient *TransactionFiltererRPCClient
 }
 
@@ -841,7 +877,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			log.Warn("error parsing incoming message for filtering", "err", err)
 			txes = types.Transactions{}
 		}
-		filteringHooks := NewDelayedFilteringSequencingHooks(txes)
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
 
 		block, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
@@ -1284,6 +1320,10 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 
 func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 	s.addressChecker = checker
+}
+
+func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
+	s.eventFilter = ef
 }
 
 func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
