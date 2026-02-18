@@ -1133,6 +1133,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	// don't do anything if we already validated past that
 	if !v.validGSIsNew(globalState) {
+		log.Info("block_validator: assume-valid not newer")
 		return nil
 	}
 
@@ -1143,6 +1144,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
 
+	log.Info("block_validator: assume-valid", "blockhash", globalState.BlockHash, "batch", globalState.Batch, "posInBatch", globalState.PosInBatch)
 	return nil
 }
 
