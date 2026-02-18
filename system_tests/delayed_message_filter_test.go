@@ -1141,6 +1141,109 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	require.Equal(t, types.ReceiptStatusSuccessful, receipt2.Status, "tx2 should have success status")
 }
 
+// TestFilteredArbitrumDepositTx verifies that an L1→L2 ETH deposit (ArbitrumDepositTx)
+// to a filtered address is handled correctly when the tx hash is in the onchain filter.
+// The deposit funds should be redirected to FilteredFundsRecipient (or networkFeeAccount
+// as default fallback) instead of the filtered address.
+func TestFilteredArbitrumDepositTx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	// The Faucet on L1 will be the depositor.
+	// depositEth() sends to msg.sender for EOAs, so both From and To are the Faucet address.
+	faucetAddr := builder.L1Info.GetAddress("Faucet")
+
+	// Get the networkFeeAccount (default FilteredFundsRecipient fallback)
+	arbOwnerPub, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	require.NoError(t, err)
+	networkFeeAccount, err := arbOwnerPub.GetNetworkFeeAccount(nil)
+	require.NoError(t, err)
+
+	// Grant Filterer the transaction filterer role
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Set up address filter to block the Faucet's address on L2
+	addrFilter := newHashedChecker([]common.Address{faucetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+
+	// Record initial balances
+	faucetL2BalanceBefore, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
+	require.NoError(t, err)
+	networkFeeBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+
+	// Send ETH deposit from L1
+	depositAmount := big.NewInt(1e16)
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	txOpts.Value = depositAmount
+	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
+	require.NoError(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	// Advance L1 to trigger delayed message processing
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Wait for delayed sequencer to halt on the filtered deposit
+	var depositTxHash common.Hash
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+		if waiting && len(hashes) > 0 {
+			depositTxHash = hashes[0]
+			break
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+	require.NotEqual(t, common.Hash{}, depositTxHash, "sequencer should halt on filtered deposit")
+
+	// Add the deposit tx hash to the onchain filter
+	addTxHashToOnChainFilter(t, ctx, builder, depositTxHash, "Filterer")
+
+	// Wait for delayed sequencer to resume.
+	// BUG: Before fix, this times out because the sequencer is permanently stuck.
+	waitForDelayedSequencerResume(t, ctx, builder, 30*time.Second)
+
+	// Advance L1 again to ensure the deposit block is processed
+	advanceAndWaitForDelayed(t, ctx, builder)
+
+	// Wait for the deposit tx receipt on L2
+	receipt, err := WaitForTx(ctx, builder.L2.Client, depositTxHash, 30*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,
+		"filtered deposit should have failed receipt status")
+
+	// Verify the filtered address (Faucet) did NOT receive the deposit
+	faucetL2BalanceAfter, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, faucetL2BalanceBefore, faucetL2BalanceAfter,
+		"filtered address should NOT receive deposit funds")
+
+	// Verify the networkFeeAccount (default FilteredFundsRecipient) received the deposit
+	networkFeeBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+	expectedMinBalance := new(big.Int).Add(networkFeeBalanceBefore, depositAmount)
+	require.True(t, networkFeeBalanceAfter.Cmp(expectedMinBalance) >= 0,
+		"networkFeeAccount balance should increase by at least deposit amount: before=%s, after=%s, deposit=%s",
+		networkFeeBalanceBefore, networkFeeBalanceAfter, depositAmount)
+}
+
 // TestDelayedMessageFilterAliasedSender verifies that when an unsigned delayed
 // message is sent via sendUnsignedTransaction, the original (non-aliased) L1
 // sender address is checked against the address filter. Without de-aliasing,
