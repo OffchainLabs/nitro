@@ -173,12 +173,24 @@ func TestRetryableBasic(t *testing.T) {
 	t.Run("DepositETH", func(t *testing.T) {
 		testDepositETH(t, builder, delayedInbox, lookupL2Tx, ctx)
 	})
-	t.Run("ArbitrumContractTx", func(t *testing.T) {
-		testArbitrumContractTx(t, builder, delayedInbox, lookupL2Tx, ctx)
-	})
-	t.Run("RedeemBlockGasUsage", func(t *testing.T) {
-		testRetryableRedeemBlockGasUsage(t, builder, delayedInbox, lookupL2Tx, ctx)
-	})
+	// ArbitrumContractTx and RedeemBlockGasUsage are standalone tests below.
+	// They cannot share this node because KeepL1Advancing in the subtests
+	// above accumulates L1 timestamp drift on the simulated backend (each
+	// block adds ~1s but is produced every 100ms). After ~60 minutes of
+	// cumulative drift the sequencer rejects new transactions with
+	// "L1 timestamp too far from local clock time".
+}
+
+func TestArbitrumContractTx(t *testing.T) {
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+	testArbitrumContractTx(t, builder, delayedInbox, lookupL2Tx, ctx)
+}
+
+func TestRetryableRedeemBlockGasUsage(t *testing.T) {
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+	testRetryableRedeemBlockGasUsage(t, builder, delayedInbox, lookupL2Tx, ctx)
 }
 
 func testEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T, builder *NodeBuilder, ctx context.Context) {
