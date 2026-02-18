@@ -643,15 +643,9 @@ func OpenInitializeExecutionDB(ctx context.Context, consensusNodeEnabled bool, s
 			}
 		} else {
 			// TODO: What should parsedInitMessage be here? Or how should consensus provide such info to execution?
-			serializedChainConfig, err := json.Marshal(chainConfig)
+			parsedInitMessage, err = GetConsensusParsedInitMsg(ctx, true, chainId, l1Client, &rollupAddrs, chainConfig)
 			if err != nil {
 				return executionDB, nil, nil, err
-			}
-			parsedInitMessage = &arbostypes.ParsedInitMessage{
-				ChainId:               chainConfig.ChainID,
-				InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-				ChainConfig:           chainConfig,
-				SerializedChainConfig: serializedChainConfig,
 			}
 		}
 
