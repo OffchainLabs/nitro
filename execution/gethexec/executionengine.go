@@ -110,10 +110,20 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 	}
 }
 
-// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
-// Does not return an error - the caller checks FilteredTxHashes after block production.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+// PostTxFilter handles address filtering for both regular delayed txs and redeems.
+// For redeems: applies the event filter and returns ErrArbTxFilter if a filtered
+// address is found (triggering group revert in the block processor).
+// For non-redeems: touches To/From addresses, applies event filter, and collects
+// tx hashes that touch filtered addresses but are not in the onchain filter.
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
+	if isRedeem {
+		applyEventFilter(f.eventFilter, db)
+		if db.IsAddressFiltered() {
+			return state.ErrArbTxFilter
+		}
+		return nil
+	}
+
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
@@ -139,14 +149,6 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		// Otherwise, this tx touched a filtered address but wasn't in the
 		// onchain filter - collect it so the caller can halt.
 		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
-	}
-	return nil
-}
-
-func (f *DelayedFilteringSequencingHooks) RedeemFilter(db *state.StateDB) error {
-	applyEventFilter(f.eventFilter, db)
-	if db.IsAddressFiltered() {
-		return state.ErrArbTxFilter
 	}
 	return nil
 }
