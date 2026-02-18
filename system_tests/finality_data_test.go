@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, ExecutionEngine will not be able to move data to ancients by itself,
@@ -74,8 +75,19 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(finalizedBlock.Header())
 	Require(t, err)
 
-	// Wait for freeze operation to be executed
-	time.Sleep(65 * time.Second)
+	// Trigger a freeze cycle synchronously instead of waiting for the 1-minute background timer.
+	// The underlying freezerdb has a Freeze() method for test determinism, but it's buried
+	// under wrapper types (dbWithWasmEntry, closeTrackingDB) that don't forward it.
+	// Unwrap through embedded Database fields to reach it.
+	type freezer interface{ Freeze() error }
+	var innerDB any = builder.L2.ExecNode.ExecutionDB
+	for {
+		if f, ok := innerDB.(freezer); ok {
+			Require(t, f.Freeze())
+			break
+		}
+		innerDB = reflect.ValueOf(innerDB).Elem().FieldByName("Database").Interface()
+	}
 
 	ancients, err = builder.L2.ExecNode.ExecutionDB.Ancients()
 	Require(t, err)
@@ -129,7 +141,7 @@ func TestFinalityDataWaitForBlockValidator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -220,7 +232,7 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.ParentChainReader.UseFinalityData = false
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -236,46 +248,60 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	ensureFinalizedBlockDoesNotExist(t, ctx, testClient2ndNode, "2nd node before generating blocks")
 	ensureSafeBlockDoesNotExist(t, ctx, testClient2ndNode, "2nd node before generating blocks")
 
-	builder.L2Info.GenerateAccount("User2")
-	generateBlocks(t, ctx, builder, testClient2ndNode, 100)
+	// Keep L1 advancing so finalized block progresses past epoch boundary (every 32 blocks).
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	defer func() {
+		close(stopL1)
+		if err := <-l1ErrChan; err != nil {
+			t.Fatalf("KeepL1Advancing error: %v", err)
+		}
+	}()
 
-	// wait for finality data to be updated in execution side
-	time.Sleep(time.Second * 20)
+	builder.L2Info.GenerateAccount("User2")
+	generateBlocks(t, ctx, builder, testClient2ndNode, 20)
+
+	// Poll until finality data is pushed from consensus to execution on the 2nd node.
+	// The ConsensusExecutionSyncer runs every 5ms in test config, so this converges quickly
+	// once L1 has advanced past the first epoch boundary (every 32 blocks).
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+		if err == nil && finalBlock != nil && finalBlock.NumberU64() > 0 {
+			safeBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+			if err == nil && safeBlock != nil && safeBlock.NumberU64() > 0 {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Verify finality data is set on the 2nd node
+	finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+	Require(t, err)
+	if finalBlock == nil || finalBlock.NumberU64() == 0 {
+		t.Fatal("finalized block should exist with non-zero number on 2nd node")
+	}
+	safeBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+	Require(t, err)
+	if safeBlock == nil || safeBlock.NumberU64() == 0 {
+		t.Fatal("safe block should exist with non-zero number on 2nd node")
+	}
 
 	// finality data usage is disabled in first node, so finality data should not be set in first node
 	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")
 	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")
 
 	// if nil is passed finality data should not be set
-	err := builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, nil, nil)
+	err = builder.L2.ExecNode.SyncMonitor.SetFinalityData(nil, nil, nil)
 	Require(t, err)
 	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
 	ensureSafeBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks and setting finality data to nil")
-
-	// finality data usage is enabled in second node, so finality data should be set in second node
-	finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
-	Require(t, err)
-	if finalBlock == nil {
-		t.Fatalf("finalBlock should not be nil")
-	}
-	if finalBlock.NumberU64() == 0 {
-		t.Fatalf("finalBlock is not correct")
-	}
-	safeBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
-	Require(t, err)
-	if safeBlock == nil {
-		t.Fatalf("safeBlock should not be nil")
-	}
-	if safeBlock.NumberU64() == 0 {
-		t.Fatalf("safeBlock is not correct")
-	}
 }
 
 func TestFinalityAfterReorg(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -329,7 +355,7 @@ func TestSetFinalityBlockHashMismatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.
@@ -373,7 +399,7 @@ func TestFinalityDataNodeOutOfSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// The procedure that periodically pushes finality data, from consensus to execution,
 	// will not be able to get finalized/safe block numbers since UseFinalityData is false.
 	// Therefore, with UseFinalityData set to false, Consensus will not be able to push finalized/safe block numbers to Execution by itself.

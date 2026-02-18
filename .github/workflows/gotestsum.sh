@@ -19,7 +19,6 @@ race=false
 cover=false
 consensus_execution_in_same_process_use_rpc=false
 flaky=false
-reduce_parallelism=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --timeout)
@@ -84,10 +83,6 @@ while [[ $# -gt 0 ]]; do
       flaky=true
       shift
       ;;
-    --reduce-parallelism)
-      reduce_parallelism=true
-      shift
-      ;;
     *)
       echo "Invalid argument: $1"
       exit 1
@@ -141,9 +136,8 @@ if [ "$cover" == true ]; then
   cmd="$cmd -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/..."
 fi
 
-if [ "$reduce_parallelism" == true ]; then
-  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
-fi
+max_parallel=$(( $(nproc) < 16 ? $(nproc) : 16 ))
+cmd="$cmd -parallel $max_parallel"
 
 if [ "$test_state_scheme" != "" ]; then
     cmd="$cmd -args -- --test_state_scheme=$test_state_scheme --test_loglevel=8"

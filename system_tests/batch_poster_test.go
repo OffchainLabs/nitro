@@ -94,7 +94,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		parallelBatchPosters = 4
 	}
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
@@ -168,20 +168,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 		defer batchPoster.StopAndWait()
 	}
 
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i >= 0; i-- {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-		time.Sleep(500 * time.Millisecond)
-		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
-		if err == nil {
-			break
-		}
-		if i == 0 {
-			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
-		}
-	}
+	_, err = WaitForTx(ctx, testClientB.Client, lastTxHash, 30*time.Second)
+	Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	// TODO: factor this out in separate test case and skip it or delete this
 	// code entirely.
@@ -235,7 +227,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	err = client.Del(ctx, "data-poster.queue").Err()
 	Require(t, err)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	if redisutil.IsSharedTestRedisInstance() {
 		builder.DontParalellise()
 	}
@@ -343,20 +335,12 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	batchPosterA.Start(ctx)
 	defer batchPosterA.StopAndWait()
 
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i >= 0; i-- {
-		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-		time.Sleep(500 * time.Millisecond)
-		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
-		if err == nil {
-			break
-		}
-		if i == 0 {
-			Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
-		}
-	}
+	_, err = WaitForTx(ctx, testClientB.Client, lastTxHash, 30*time.Second)
+	Require(t, err, "timed out waiting for last transaction to be included in batch and synced by node B")
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 
 	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -370,7 +354,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.execConfig.Sequencer.MaxTxDataSize = 110000
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -443,7 +427,7 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	defer cancel()
 
 	// creates first node with batch poster disabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false).WithExtraWeight(1)
 	builder.nodeConfig.BatchPoster.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -538,7 +522,8 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithDelayBuffer(threshold)
+		WithDelayBuffer(threshold).
+		WithExtraWeight(1)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
@@ -610,7 +595,8 @@ func TestBatchPosterDelayBufferDontForceNonDelayedMessages(t *testing.T) {
 	const threshold = 100
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithDelayBuffer(threshold)
+		WithDelayBuffer(threshold).
+		WithExtraWeight(1)
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour // set high max-delay so we can test the delay buffer
 	cleanup := builder.Build(t)
@@ -648,7 +634,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 
 	// Build L1 and L2
 	cleanupL1AndL2 := builder.Build(t)
@@ -699,20 +685,26 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	builder.L1.ClientWrapper.EnableRawTransactionFilter(batchPosterAddress, batchPosterTxsChan)
 
 	builder.L2Info.GenerateAccount("User2")
-	delayedTx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 
 	const numBatches = 3
 	for i := 0; i < numBatches; i++ {
-		// Send transactions using the bridge to generate delay proofs
+		// Create a fresh delayed tx each iteration so SendSignedTxViaL1's
+		// EnsureTxSucceeded waits for a new L2 receipt. Reusing the same tx
+		// causes the receipt lookup to return immediately (from the first call),
+		// which stops L1 block production before the batch poster can react.
+		delayedTx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
-		// Capture the batch poster transaction, ensuring the batch was closed. If it was not
-		// closed, the select will time out and the test will fail.
+		// Keep L1 advancing so the batch poster sees the delay buffer threshold
+		// crossed and has time to react.
+		stopL1, l1ErrChan := KeepL1Advancing(builder)
 		select {
 		case tx := <-batchPosterTxsChan:
 			batchPosterTxs = append(batchPosterTxs, tx)
-		case <-time.After(1 * time.Second):
+		case <-time.After(10 * time.Second):
 			Fatal(t, "Timed out waiting for batch poster tx")
 		}
+		close(stopL1)
+		Require(t, <-l1ErrChan)
 	}
 	select {
 	case <-batchPosterTxsChan:
@@ -859,7 +851,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	// Turn on unconditional blob posting
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
@@ -888,8 +880,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
 
 	for _, batch := range batches {
-		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		sequencerMessageBytes, err := batch.Serialize(ctx, builder.L1.Client)
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
@@ -910,6 +901,7 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		WithPreBoldDeployment().
 		TakeOwnership()
 
 	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
@@ -948,14 +940,18 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	// Spin L1 to get batch poster report
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	// Wait for the delayed message's timestamp to become old enough to trigger MaxEmptyBatchDelay.
-	// The batch posting report comes back as a delayed message with an L1 block timestamp.
-	// L1 block timestamps can be up to ~12 seconds ahead of wall clock time (Ethereum PoS block interval).
-	// We need to wait for:
-	// 1. MaxEmptyBatchDelay (1 second) - the configured threshold that triggers batch posting
-	// 2. ~12-13 seconds - to ensure the L1 block timestamp is in the past relative to time.Now()
-	// 3. Extra buffer - for the delayed sequencer to process and make the report available
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 15*time.Second)
+	// The batch posting report's timestamp comes from the L1 block that included it.
+	// In the simulated beacon, block timestamps can race far ahead of wall clock
+	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
+	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
+	// before the batch poster will consider the report old enough to trigger posting.
+	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	l1AheadBy := time.Until(time.Unix(int64(latestHeader.Time), 0)) //#nosec G115
+	if l1AheadBy > 0 {
+		time.Sleep(l1AheadBy)
+	}
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay)
 
 	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)

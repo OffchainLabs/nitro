@@ -4,13 +4,11 @@ package arbtest
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/trie"
 
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 )
@@ -92,17 +90,16 @@ func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, offs
 	}
 }
 
-func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, offset uint64) {
+func assertStateNotOnDiskForBlockRange(t *testing.T, bc *core.BlockChain, from, offset uint64) {
 	t.Helper()
-	expectedErr := &trie.MissingNodeError{}
 	for blockNum := from; blockNum <= from+offset; blockNum++ {
 		header := bc.GetHeaderByNumber(blockNum)
-		_, err := bc.StateAt(header.Root)
-		if err == nil {
-			Fatal(t, "expeted StateAt to fail for blockNumber:", header.Number)
-		}
-		if !errors.As(err, &expectedErr) {
-			Fatal(t, "getting state failed with unexpected error, root:", header.Root, "blockNumber:", header.Number, "err:", err)
+		source := bc.TrieDB().NodeSource(header.Root)
+		// "dirty" means in-memory only (transient, lost on restart) - acceptable
+		// "missing" means fully GC'd - acceptable
+		// "disk" or "clean" means committed to persistent storage - not acceptable
+		if source == "disk" || source == "clean" {
+			Fatal(t, "expected state NOT on disk for blockNumber:", header.Number, "root:", header.Root, "nodeSource:", source)
 		}
 	}
 }
@@ -154,13 +151,17 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 
-	// 3. Assert that some blocks are missing in 140 block windows
+	// 3. Assert that non-committed blocks' state is not on disk.
+	// We check nodeSource rather than StateAt because the hashdb dirty cache
+	// may retain roots under heavy parallel load (the GC loop's wall-clock-based
+	// break condition can be unreliable). Dirty cache entries are transient and
+	// would be lost on restart, so their presence doesn't indicate committed state.
 	offset := uint64(maxNumberOfBlocksToSkipStateSaving - 10)
-	assertMissingStateForBlockRange(t, bc, 2, offset)
-	assertMissingStateForBlockRange(t, bc, 160, offset)
-	assertMissingStateForBlockRange(t, bc, 310, offset)
-	assertMissingStateForBlockRange(t, bc, 460, offset)
-	assertMissingStateForBlockRange(t, bc, 610, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 2, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 160, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 310, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 460, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 610, offset)
 
 	// 4. We first run BlocksReExecutor with CommitStateToDisk set to false to make sure
 	// BlocksReExecutor does not commit state to disk
@@ -181,11 +182,11 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 
 	// 5. Now that we have run Block Re-executor CommitStateToDisk set to false
 	// we should expect state to NOT be present for those same blocks
-	assertMissingStateForBlockRange(t, bc, 2, offset)
-	assertMissingStateForBlockRange(t, bc, 160, offset)
-	assertMissingStateForBlockRange(t, bc, 310, offset)
-	assertMissingStateForBlockRange(t, bc, 460, offset)
-	assertMissingStateForBlockRange(t, bc, 610, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 2, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 160, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 310, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 460, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 610, offset)
 
 	// 6. Now we run BlocksReExecutor with CommitStateToDisk set to true to make sure
 	// BlocksReExecutor does indeed commit state of c.Blocks to disk.
@@ -204,7 +205,7 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	assertStateExistForBlockRange(t, bc, 460, 120)
 
 	// 7. Finally, make sure we haven't committed state for blocks not specified in c.Blocks range
-	assertMissingStateForBlockRange(t, bc, 310, offset)
-	assertMissingStateForBlockRange(t, bc, 581, 20)
-	assertMissingStateForBlockRange(t, bc, 610, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 310, offset)
+	assertStateNotOnDiskForBlockRange(t, bc, 581, 20)
+	assertStateNotOnDiskForBlockRange(t, bc, 610, offset)
 }

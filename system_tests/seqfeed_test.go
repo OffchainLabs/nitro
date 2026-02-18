@@ -200,7 +200,7 @@ func testLyingSequencer(t *testing.T, daModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithExtraWeight(2).WithTakeOwnership(false)
 	builder.nodeConfig = nodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -440,7 +440,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithExtraWeight(1)
 	builder.BuildL1(t)
 
 	userAccount := "User2"

@@ -202,7 +202,7 @@ func setupL1WithRollupAddresses(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	withoutClientWrapper := false
-	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""))
+	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""), nil)
 
 	var err error
 	if useExternalSigner {
@@ -360,6 +360,7 @@ func createL2NodeWithRollupAddresses(
 		l1client,
 		bold.NewDataPosterTransactor(dp),
 		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		sol.WithParentChainBlockCreationTime(10*time.Millisecond),
 	)
 	Require(t, err)
 	assertionChain = assertionChainBindings
@@ -409,7 +410,7 @@ func deployContractsOnly(
 			SmallStepChallengeHeight: protocol.Height(smallStepChallengeLeafHeight),
 		}),
 		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(10000)),
 	)
 	config, err := json.Marshal(chaininfo.ArbitrumDevTestChainConfig())
 	Require(t, err)

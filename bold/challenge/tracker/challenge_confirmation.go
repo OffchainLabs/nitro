@@ -13,7 +13,6 @@ import (
 	"github.com/ccoveille/go-safecast"
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -339,7 +338,7 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 
 	// This is to handle the case where the transaction is mined in a block, but then the block is reorged.
 	// In this case, we want to wait for the transaction to be mined again.
-	receiptLatest, err := bind.WaitMined(ctx, backend, tx)
+	receiptLatest, err := protocol.WaitMined(ctx, backend, tx)
 	if err != nil {
 		return err
 	}

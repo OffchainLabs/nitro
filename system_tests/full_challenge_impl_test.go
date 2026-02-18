@@ -236,7 +236,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().DontParalellise().WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().DontParalellise().WithTakeOwnership(false).WithExtraWeight(1)
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
 	l1Info := builder.L1Info
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
@@ -420,10 +420,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	for i := 0; i < 100; i++ {
 		var tx *types.Transaction
 		var currentCorrect bool
-		// Gas cost is slightly reduced if done in the same timestamp or block as previous call.
-		// This might make gas estimation undersestimate next move.
-		// Invoke a new L1 block, with a new timestamp, before estimating.
-		time.Sleep(time.Second)
+		// Invoke a new L1 block before estimating gas for the next move.
 		SendWaitTestTransactions(t, ctx, l1Backend, []*types.Transaction{
 			l1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})

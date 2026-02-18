@@ -25,7 +25,6 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 	avgDelayedMessagesPerLoop := 10
 	avgTotalL1MessagesPerLoop := 12 // including delayed
 	avgExtraBlocksPerLoop := 20
-	finalPropagateLoops := 15
 
 	fundsPerDelayed := big.NewInt(int64(100000000000000001))
 	fundsPerDirect := big.NewInt(int64(200003))
@@ -40,7 +39,7 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 	chainConfig, l1NodeConfigA, lifecycleManager, _, anyTrustSignerKey := setupConfigWithAnyTrust(t, ctx, daModeStr)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -81,6 +80,7 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
 		Fatal(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
 	}
+	var lastDirectTx *types.Transaction
 	for i := 0; i < largeLoops; i++ {
 		l1TxsThisTime := rand.Int() % (avgTotalL1MessagesPerLoop * 2)
 		l1Txs := make([]*types.Transaction, 0, l1TxsThisTime)
@@ -111,6 +111,9 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 			l2Txs = append(l2Txs, builder.L2Info.PrepareTx("Faucet", "DirectReceiver", builder.L2Info.TransferGas, fundsPerDirect, nil))
 		}
 		builder.L2.SendWaitTestTransactions(t, l2Txs)
+		if len(l2Txs) > 0 {
+			lastDirectTx = l2Txs[len(l2Txs)-1]
+		}
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
 			_, err := builder.L1.EnsureTxSucceeded(l1Txs[len(l1Txs)-1])
@@ -137,27 +140,24 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 		Fatal(t, "No transfers sent!")
 	}
 
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < finalPropagateLoops; i++ {
-		var tx *types.Transaction
-		for j := 0; j < 30; j++ {
-			tx = builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-			err := builder.L1.Client.SendTransaction(ctx, tx)
-			if err != nil {
-				Fatal(t, err)
-			}
-			_, err = builder.L1.EnsureTxSucceeded(tx)
-			if err != nil {
-				Fatal(t, err)
-			}
+	// Keep L1 advancing in the background so delayed inbox messages get enough confirmations.
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	defer func() {
+		close(stopL1)
+		if err := <-l1ErrChan; err != nil {
+			Fatal(t, err)
 		}
-	}
+	}()
 
-	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
-	Require(t, err, "Failed waiting for Tx on main node")
+	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
+	Require(t, err, "Failed waiting for delayed Tx on main node")
 
 	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
-	Require(t, err, "Failed waiting for Tx on secondary node")
+	Require(t, err, "Failed waiting for delayed Tx on secondary node")
+	if lastDirectTx != nil {
+		_, err = WaitForTx(ctx, testClientB.Client, lastDirectTx.Hash(), time.Second*30)
+		Require(t, err, "Failed waiting for direct Tx on secondary node")
+	}
 	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
 	directBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DirectReceiver"), nil)

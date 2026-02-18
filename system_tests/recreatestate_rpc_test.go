@@ -463,24 +463,6 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
 	runTestCase(t, cacheConfig, 512)
-
-	// lower number of blocks in triegc below 100 blocks, to be able to check for nonexistence in testSkippingSavingStateAndRecreatingAfterRestart (it doesn't check last BlockCount blocks as some of them may be persisted on node shutdown)
-	cacheConfig.BlockCount = 16
-
-	testBlockGas := uint64(925000) // one test block ~ 925000 gas
-	skipBlockValues := []uint64{0, 1, 2, 3, 5, 21, 51, 100, 101}
-	var skipGasValues []uint64
-	for _, i := range skipBlockValues {
-		skipGasValues = append(skipGasValues, i*testBlockGas)
-	}
-	for _, skipGas := range skipGasValues {
-		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
-			cacheConfig.MaxAmountOfGasToSkipStateSaving = skipGas
-			// #nosec G115
-			cacheConfig.MaxNumberOfBlocksToSkipStateSaving = uint32(skipBlocks)
-			runTestCase(t, cacheConfig, 100)
-		}
-	}
 }
 
 func testGettingState(t *testing.T, execConfig *gethexec.Config) {

@@ -11,36 +11,18 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// Validate the express_lane_auctiongen.RoundTimingInfo fields.
-// Returns errors in terms of the solidity field names to ease debugging.
 func validateRoundTimingInfo(c *express_lane_auctiongen.RoundTimingInfo) error {
-	roundDuration := arbmath.SaturatingCast[time.Duration](c.RoundDurationSeconds) * time.Second
-	auctionClosing := arbmath.SaturatingCast[time.Duration](c.AuctionClosingSeconds) * time.Second
-	reserveSubmission := arbmath.SaturatingCast[time.Duration](c.ReserveSubmissionSeconds) * time.Second
-
-	// Validate minimum durations
-	if roundDuration < time.Second*10 {
-		return fmt.Errorf("RoundDurationSeconds (%d) must be at least 10 seconds", c.RoundDurationSeconds)
+	if c.RoundDurationSeconds == 0 {
+		return fmt.Errorf("RoundDurationSeconds must be non-zero")
 	}
-
-	if auctionClosing < time.Second*5 {
-		return fmt.Errorf("AuctionClosingSeconds (%d) must be at least 5 seconds", c.AuctionClosingSeconds)
-	}
-
-	if reserveSubmission < time.Second {
-		return fmt.Errorf("ReserveSubmissionSeconds (%d) must be at least 1 second", c.ReserveSubmissionSeconds)
-	}
-
-	// Validate combined auction closing and reserve submission against round duration
-	combinedClosingTime := auctionClosing + reserveSubmission
-	if roundDuration <= combinedClosingTime {
+	combinedClosingSeconds := c.AuctionClosingSeconds + c.ReserveSubmissionSeconds
+	if c.RoundDurationSeconds <= combinedClosingSeconds {
 		return fmt.Errorf("RoundDurationSeconds (%d) must be greater than AuctionClosingSeconds (%d) + ReserveSubmissionSeconds (%d) = %d",
 			c.RoundDurationSeconds,
 			c.AuctionClosingSeconds,
 			c.ReserveSubmissionSeconds,
-			combinedClosingTime/time.Second)
+			combinedClosingSeconds)
 	}
-
 	return nil
 }
 

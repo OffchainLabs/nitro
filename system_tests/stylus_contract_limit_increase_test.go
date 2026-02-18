@@ -399,6 +399,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.WithDatabase(databaseEngine)
+		b.WithExtraWeight(2)
 	})
 	ctx := builder.ctx
 	defer cleanup()

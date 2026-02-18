@@ -78,7 +78,7 @@ func TestLiveTracingInNode(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1).WithTakeOwnership(false)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -121,13 +121,18 @@ func TestLiveTracingInNode(t *testing.T) {
 	}
 }
 
-func TestDebugAPI(t *testing.T) {
+func TestDebugTracing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	t.Run("DebugAPI", func(t *testing.T) { testDebugAPI(t, builder, ctx) })
+	t.Run("PrestateTracingSimple", func(t *testing.T) { testPrestateTracingSimple(t, builder, ctx) })
+}
+
+func testDebugAPI(t *testing.T, builder *NodeBuilder, ctx context.Context) {
 	l2rpc := builder.L2.Stack.Attach()
 
 	var dump state.Dump
@@ -215,13 +220,7 @@ type prestateTrace struct {
 	Pre  map[common.Address]*account `json:"pre"`
 }
 
-func TestPrestateTracingSimple(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
+func testPrestateTracingSimple(t *testing.T, builder *NodeBuilder, ctx context.Context) {
 	builder.L2Info.GenerateAccount("User2")
 	sender := builder.L2Info.GetAddress("Owner")
 	receiver := builder.L2Info.GetAddress("User2")
@@ -291,11 +290,12 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("Got transaction status: %v, want: %v", l1Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	l2Tx := lookupL2Tx(l1Receipt)
 	l2Receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	newBalance, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, l2Receipt.BlockNumber)
 	Require(t, err)
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
@@ -395,11 +395,12 @@ func TestArbTxTypesTracingPrestateTracerAndCallTracer(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, builder)
-
+	stopL1, l1ErrChan = KeepL1Advancing(builder)
 	l2Tx = lookupL2Tx(l1Receipt)
 	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
+	close(stopL1)
+	Require(t, <-l1ErrChan)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
 	}

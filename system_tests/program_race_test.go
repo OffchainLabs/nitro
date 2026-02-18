@@ -22,3 +22,6 @@ func validateBlockRange(
 	builder *NodeBuilder,
 ) {
 }
+
+func validateBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+}

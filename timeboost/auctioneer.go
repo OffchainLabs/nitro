@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/ethutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -585,7 +586,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	}
 
 	roundEndTime := a.roundTimingInfo.TimeOfNextRound()
-	retryInterval := 1 * time.Second
+	retryInterval := 200 * time.Millisecond
 
 	retryLimit := 5
 	for retryCount := 0; ; retryCount++ {
@@ -601,7 +602,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 		// Wait for the transaction to be mined until this round ends
 		waitMinedCtx, cancel := context.WithTimeout(ctx, time.Until(roundEndTime))
-		receipt, err = bind.WaitMined(waitMinedCtx, ethclient.NewClient(sequencerRpc), tx)
+		receipt, err = ethutil.WaitForTx(waitMinedCtx, ethclient.NewClient(sequencerRpc), tx, 200*time.Millisecond)
 		cancel()
 		if err != nil { // error is only returned when context expires i.e the current round has ended so no point in retrying
 			return fmt.Errorf("error waiting for transaction to be mined: %w", err)

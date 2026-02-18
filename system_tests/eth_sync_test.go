@@ -15,7 +15,7 @@ func TestEthSyncing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.L2Info = nil
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -37,11 +37,8 @@ func TestEthSyncing(t *testing.T) {
 		builder.L2.TransferBalance(t, "Owner", "User2", big.NewInt(1e12), builder.L2Info)
 	}
 
-	// Give the inbox reader of testClientB a bit of time to pick up batches from L1 and add it to the consensus db
-	time.Sleep(time.Millisecond * 500)
-
-	// Advance parent chain enough to get the batches in
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	// Background L1 advancement triggers batch posting and gives the inbox reader time to sync
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	attempt := 0
 	for {
@@ -59,6 +56,11 @@ func TestEthSyncing(t *testing.T) {
 		case <-ctx.Done():
 		}
 		attempt++
+	}
+
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
 	}
 
 	progress, err := testClientB.Client.SyncProgress(ctx)

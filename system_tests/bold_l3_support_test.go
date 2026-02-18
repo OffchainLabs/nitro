@@ -14,21 +14,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
-	"github.com/offchainlabs/nitro/bold/challenge"
-	modes "github.com/offchainlabs/nitro/bold/challenge/types"
-	"github.com/offchainlabs/nitro/bold/protocol/sol"
-	"github.com/offchainlabs/nitro/bold/state"
-	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/bold"
 )
 
 func TestL3ChallengeProtocolBOLD(t *testing.T) {
@@ -36,7 +27,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(6)
 
 	// Block validation requires db hash scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
@@ -81,12 +72,18 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	builder.L2Info.GenerateAccount("EvilAsserter")
 	fundL3Staker(t, ctx, builder, builder.L2.Client, "EvilAsserter")
 
-	assertionChain, cleanupHonestChallengeManager := startL3BoldChallengeManager(t, ctx, builder, firstNodeTestClient, "HonestAsserter", nil)
+	l3Params := boldChallengeManagerParams{
+		rollupAddr:   builder.l3Addresses.Rollup,
+		parentClient: builder.L2.Client,
+		parentInfo:   builder.L2Info,
+		l1Reader:     builder.L3.ConsensusNode.L1Reader,
+		nodeConfig:   builder.nodeConfig,
+	}
+
+	assertionChain, cleanupHonestChallengeManager := startBoldChallengeManager(t, ctx, l3Params, firstNodeTestClient, "HonestAsserter", nil)
 	defer cleanupHonestChallengeManager()
 
-	_ = assertionChain
-
-	_, cleanupEvilChallengeManager := startL3BoldChallengeManager(t, ctx, builder, secondNodeTestClient, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
+	_, cleanupEvilChallengeManager := startBoldChallengeManager(t, ctx, l3Params, secondNodeTestClient, "EvilAsserter", func(stateManager BoldStateProviderInterface) BoldStateProviderInterface {
 		return &incorrectBlockStateProvider{
 			honest:              stateManager,
 			chain:               assertionChain,
@@ -99,64 +96,7 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L3Info, builder.L3.Client, ctx)
 
 	// Everything's setup, now just wait for the challenge to complete and ensure the honest party won
-	rollupUserLogic, err := rollupgen.NewRollupUserLogic(builder.l3Addresses.Rollup, builder.L2.Client)
-	Require(t, err)
-	chalManagerAddr, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{Context: ctx})
-	Require(t, err)
-	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManagerAddr, builder.L2.Client)
-	Require(t, err)
-
-	fromBlock := uint64(0)
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			latestBlock, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-			if err != nil {
-				t.Logf("Error getting latest block: %v", err)
-				continue
-			}
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock == toBlock {
-				continue
-			}
-			filterOpts := &bind.FilterOpts{
-				Start:   fromBlock,
-				End:     &toBlock,
-				Context: ctx,
-			}
-			it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
-			if err != nil {
-				t.Logf("Error creating filter: %v", err)
-				continue
-			}
-			for it.Next() {
-				if it.Error() != nil {
-					t.Fatalf("Error in filter iterator: %v", it.Error())
-				}
-				tx, _, err := builder.L2.Client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-				if err != nil {
-					t.Logf("Error getting transaction: %v", err)
-					continue
-				}
-				signer := types.NewCancunSigner(tx.ChainId())
-				address, err := signer.Sender(tx)
-				if err != nil {
-					t.Logf("Error getting sender address: %v", err)
-					continue
-				}
-				if address == builder.L2Info.GetAddress("Validator") {
-					t.Log("Honest party confirmed a challenge edge by one step proof")
-					Require(t, it.Close())
-					return
-				}
-			}
-			fromBlock = toBlock
-		case <-ctx.Done():
-			return
-		}
-	}
+	waitForHonestOSPWin(t, ctx, builder.L2.Client, assertionChain.SpecChallengeManager().Address(), builder.L2Info.GetAddress("Validator"), 30*time.Second)
 }
 
 func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Client *ethclient.Client, name string) {
@@ -191,97 +131,4 @@ func fundL3Staker(t *testing.T, ctx context.Context, builder *NodeBuilder, l2Cli
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-}
-
-func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeBuilder, node *TestClient, addressName string, mockStateProvider func(BoldStateProviderInterface) BoldStateProviderInterface) (*sol.AssertionChain, func()) {
-	if !builder.deployBold {
-		t.Fatal("bold deployment not enabled")
-	}
-
-	var stateManager BoldStateProviderInterface
-	var err error
-	cacheDir := t.TempDir()
-	stateManager, err = bold.NewBOLDStateProvider(
-		node.ConsensusNode.BlockValidator,
-		node.ConsensusNode.StatelessBlockValidator,
-		state.Height(blockChallengeLeafHeight),
-		&bold.StateProviderConfig{
-			ValidatorName:          addressName,
-			MachineLeavesCachePath: cacheDir,
-			CheckBatchFinality:     false,
-		},
-		cacheDir,
-		node.ConsensusNode.InboxTracker,
-		node.ConsensusNode.TxStreamer,
-		node.ConsensusNode.InboxReader,
-		nil,
-	)
-	Require(t, err)
-
-	if mockStateProvider != nil {
-		stateManager = mockStateProvider(stateManager)
-	}
-
-	provider := state.NewHistoryCommitmentProvider(
-		stateManager,
-		stateManager,
-		stateManager,
-		[]state.Height{
-			state.Height(blockChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(smallStepChallengeLeafHeight),
-		},
-		stateManager,
-		nil, // Api db
-	)
-
-	rollupUserLogic, err := rollupgen.NewRollupUserLogic(builder.l3Addresses.Rollup, builder.L2.Client)
-	Require(t, err)
-	chalManagerAddr, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{})
-	Require(t, err)
-
-	txOpts := builder.L2Info.GetDefaultTransactOpts(addressName, ctx)
-
-	dp, err := arbnode.StakerDataposter(
-		ctx,
-		rawdb.NewTable(node.ConsensusNode.ConsensusDB, storage.StakerPrefix),
-		builder.L3.ConsensusNode.L1Reader,
-		&txOpts,
-		NewCommonConfigFetcher(builder.nodeConfig),
-		node.ConsensusNode.SyncMonitor,
-		builder.L2Info.Signer.ChainID(),
-	)
-	Require(t, err)
-
-	assertionChain, err := sol.NewAssertionChain(
-		ctx,
-		builder.l3Addresses.Rollup,
-		chalManagerAddr,
-		&txOpts,
-		builder.L2.Client,
-		bold.NewDataPosterTransactor(dp),
-		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
-	)
-	Require(t, err)
-
-	stackOpts := []challenge.StackOpt{
-		challenge.StackWithName(addressName),
-		challenge.StackWithMode(modes.MakeMode),
-		challenge.StackWithPostingInterval(time.Second * 3),
-		challenge.StackWithPollingInterval(time.Second),
-		challenge.StackWithAverageBlockCreationTime(time.Second),
-		challenge.StackWithMinimumGapToParentAssertion(0),
-	}
-
-	challengeManager, err := challenge.NewChallengeStack(
-		assertionChain,
-		provider,
-		stackOpts...,
-	)
-	Require(t, err)
-
-	challengeManager.Start(ctx)
-	return assertionChain, challengeManager.StopAndWait
 }

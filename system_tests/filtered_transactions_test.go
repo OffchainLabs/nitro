@@ -80,7 +80,7 @@ func TestManageTransactionFilterers(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	warpL1Time(t, builder, ctx, hdr.Time, precompiles.FeatureEnableDelay+1)
+	AdvanceL2Time(t, builder, ctx, precompiles.FeatureEnableDelay+1)
 
 	// Initially neither owner nor user can modify filtered transactions,
 	// but both can read (get) filtered status

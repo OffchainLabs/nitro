@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -43,8 +44,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -58,6 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -94,6 +94,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/deploycache"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
@@ -276,11 +277,18 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	return &config
 }
 
-// DeployConfig contains options for deployOnParentChain
+// DeployConfig contains options for deployOnParentChain.
 type DeployConfig struct {
 	DeployBold                 bool
 	DeployReferenceDAContracts bool
 	DelayBufferThreshold       uint64
+
+	// Cached creator addresses from the deploy cache. When non-nil, the
+	// deployment skips the expensive creator deployment and reuses these
+	// addresses (which must already be present in the parent chain genesis).
+	// When nil, the full creator deployment runs on the parent chain first.
+	BoldCreator   *setup.CreatorAddresses
+	LegacyCreator *deploy.LegacyCreatorAddresses
 }
 
 type NodeBuilder struct {
@@ -300,6 +308,10 @@ type NodeBuilder struct {
 	L1Info        info
 	L2Info        info
 	L3Info        info
+
+	// Pre-declared weight for secondary nodes (Build2ndNode, BuildL3OnL2, etc.)
+	extraWeight          int64
+	extraWeightRemaining int64
 
 	// L1, L2, L3 Node parameters
 	dataDir                     string
@@ -566,111 +578,87 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 	return b
 }
 
+func (b *NodeBuilder) WithExtraWeight(w int64) *NodeBuilder {
+	b.extraWeight += w
+	return b
+}
+
+func (b *NodeBuilder) computeWeight() int64 {
+	w := int64(1)
+	if b.withL1 {
+		w = 2
+	}
+	if b.nodeConfig != nil && b.nodeConfig.ValidatorRequired() {
+		w += 2
+	}
+	w += b.extraWeight
+	return w
+}
+
+func (b *NodeBuilder) useExtraWeight(t *testing.T, weight int64) {
+	t.Helper()
+	b.extraWeightRemaining -= weight
+	if b.extraWeightRemaining < 0 {
+		t.Fatalf("Build needs WithExtraWeight: used %d more weight than declared (extraWeight=%d)",
+			-b.extraWeightRemaining, b.extraWeight)
+	}
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	b.CheckConfig(t)
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
+	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
 	if b.withL1 {
-		b.BuildL1(t)
+		b.buildL1Internal(t)
 		if b.withReferenceDAProvider {
 			b.setupReferenceDAServer(t)
 		}
 		return b.BuildL2OnL1(t)
 	}
-	return b.BuildL2(t)
+	return b.buildL2Internal(t)
 }
 
-type testCollection struct {
-	room    atomic.Int64
-	cond    *sync.Cond
-	running map[string]int64
-	waiting map[string]int64
-}
+var testSemaphore *semaphore.Weighted
 
-var globalCollection *testCollection
+// nodeWeight computes the semaphore weight for a given number of node-equivalents.
+// Weights are scaled so that room=GOMAXPROCS allows at most maxConcurrentNodes
+// node-equivalents to run simultaneously, automatically adapting to machine size.
+const maxConcurrentNodes = 16
+
+func nodeWeight(nodes int) int64 {
+	w := int64(nodes) * int64(util.GoMaxProcs()) / maxConcurrentNodes
+	if w < 1 {
+		return 1
+	}
+	return w
+}
 
 func initTestCollection() {
-	if globalCollection != nil {
-		panic("trying to init testCollection twice")
-	}
-	globalCollection = &testCollection{}
-	globalCollection.cond = sync.NewCond(&sync.Mutex{})
-	room := int64(util.GoMaxProcs())
+	room := min(int64(util.GoMaxProcs()), maxConcurrentNodes)
 	if room < 2 {
 		room = 2
 	}
-	globalCollection.running = make(map[string]int64)
-	globalCollection.waiting = make(map[string]int64)
-	globalCollection.room.Store(room)
-}
-
-func runningWithContext(ctx context.Context, weight int64, name string) {
-	current := globalCollection.running[name]
-	globalCollection.running[name] = current + weight
-	globalCollection.cond.L.Unlock()
-	go func() {
-		<-ctx.Done()
-		globalCollection.cond.L.Lock()
-		current := globalCollection.running[name]
-		if current-weight <= 0 {
-			delete(globalCollection.running, name)
-		} else {
-			globalCollection.running[name] = current - weight
-		}
-		if globalCollection.room.Add(weight) > 0 {
-			globalCollection.cond.Broadcast()
-		}
-		globalCollection.cond.L.Unlock()
-	}()
-}
-
-func WaitAndRun(ctx context.Context, weight int64, name string) error {
-	globalCollection.cond.L.Lock()
-	current := globalCollection.waiting[name]
-	globalCollection.waiting[name] = current + weight
-	for globalCollection.room.Add(0-weight) < 0 {
-		if globalCollection.room.Add(weight) > 0 {
-			globalCollection.cond.Broadcast()
-		}
-		if ctx.Err() != nil {
-			return fmt.Errorf("Context cancelled while waiting to launch test: %s", name)
-		}
-		globalCollection.cond.Wait()
-	}
-	current = globalCollection.waiting[name]
-	if current-weight <= 0 {
-		delete(globalCollection.waiting, name)
-	} else {
-		globalCollection.waiting[name] = current - weight
-	}
-	runningWithContext(ctx, weight, name)
-	return nil
-}
-
-func DontWaitAndRun(ctx context.Context, weight int64, name string) {
-	globalCollection.room.Add(0 - weight)
-	globalCollection.cond.L.Lock()
-	runningWithContext(ctx, weight, name)
-}
-
-func CurrentlyRunning() (map[string]int64, map[string]int64) {
-	running := make(map[string]int64)
-	waiting := make(map[string]int64)
-	globalCollection.cond.L.Lock()
-	for k, v := range globalCollection.running {
-		if v > 0 {
-			running[k] = v
-		}
-	}
-	for k, v := range globalCollection.waiting {
-		if v > 0 {
-			waiting[k] = v
-		}
-	}
-	globalCollection.cond.L.Unlock()
-	return running, waiting
+	testSemaphore = semaphore.NewWeighted(room)
 }
 
 func (b *NodeBuilder) CheckConfig(t *testing.T) {
@@ -713,24 +701,52 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 2, t.Name())
-	if err != nil {
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
 		t.Fatal(err)
 	}
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
+	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
+	b.buildL1Internal(t)
+}
+
+func (b *NodeBuilder) buildL1Internal(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
-	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
-	Require(t, err)
+
 	deployConfig := DeployConfig{
 		DeployBold:                 b.deployBold,
 		DeployReferenceDAContracts: b.deployReferenceDAContracts,
 		DelayBufferThreshold:       b.delayBufferThreshold,
+		BoldCreator:                boldCreatorCache.creator,
+		LegacyCreator:              legacyCreatorCache.creator,
 	}
-	t.Logf("BuildL1 deployConfig: DeployBold=%v, DeployReferenceDAContracts=%v", deployConfig.DeployBold, deployConfig.DeployReferenceDAContracts)
+	var genesisAlloc types.GenesisAlloc
+	if b.deployBold {
+		genesisAlloc = boldCreatorCache.alloc
+	} else {
+		genesisAlloc = legacyCreatorCache.alloc
+	}
+
+	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig, genesisAlloc)
+	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	Require(t, err)
 	b.addresses, b.initMessage = deployOnParentChain(
 		t,
 		b.ctx,
@@ -837,7 +853,11 @@ func buildOnParentChain(
 }
 
 func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if b.l3Config.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
 	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
@@ -846,9 +866,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	parentChainReaderConfig := headerreader.TestConfig
 	parentChainReaderConfig.Dangerous.WaitForTxApprovalSafePoll = 0
 	deployConfig := DeployConfig{
-		DeployBold:                 b.deployBold,
-		DeployReferenceDAContracts: false, // L3 doesn't need ReferenceDA
-		DelayBufferThreshold:       0,
+		DeployBold: b.deployBold,
 	}
 	b.l3Addresses, b.l3InitMessage = deployOnParentChain(
 		t,
@@ -967,16 +985,35 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
-	if *testflag.ConsensusExecutionInSameProcessUseRPC {
-		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
-	}
+	b.CheckConfig(t)
+	weight := b.computeWeight()
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
 	}
-	err := WaitAndRun(b.ctx, 1, t.Name())
-	if err != nil {
-		Fatal(t, err)
+	waitStart := time.Now()
+	if err := testSemaphore.Acquire(b.ctx, weight); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(waitStart); waited > time.Second {
+		t.Logf("semaphore: waited %v for weight %d", waited, weight)
+	}
+	buildStart := time.Now()
+	go func() { <-b.ctx.Done(); testSemaphore.Release(weight) }()
+	b.extraWeightRemaining = b.extraWeight
+	t.Cleanup(func() {
+		if b.extraWeightRemaining != 0 {
+			t.Errorf("WithExtraWeight(%d) too high: %d weight unused; reduce to match actual secondary nodes",
+				b.extraWeight, b.extraWeightRemaining)
+		}
+		t.Logf("test ran for %v (weight %d)", time.Since(buildStart), weight)
+	})
+	return b.buildL2Internal(t)
+}
+
+func (b *NodeBuilder) buildL2Internal(t *testing.T) func() {
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
 	b.L2 = NewTestClient(b.ctx)
 
@@ -1155,7 +1192,11 @@ func build2ndNode(
 }
 
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if params.nodeConfig != nil && params.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}
@@ -1184,7 +1225,11 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 }
 
 func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	weight := int64(1)
+	if params.nodeConfig != nil && params.nodeConfig.ValidatorRequired() {
+		weight += 2
+	}
+	b.useExtraWeight(t, weight)
 	if b.L3 == nil {
 		t.Fatal("builder did not previously built an L3 Node")
 	}
@@ -1256,15 +1301,17 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	// Send L2 transaction and wait for execution
 	builder.L2.SendWaitTestTransactions(t, []*types.Transaction{tx})
 
-	// Brief pause for inbox reader to process the message
-	time.Sleep(time.Millisecond * 100)
-
-	// Create L1 blocks to trigger batch posting (with MaxDelay=0, this ensures immediate posting)
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	// Background L1 block production triggers batch posting (MaxDelay=0 ensures immediate posting)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 
 	// Ensure the second node successfully processed the batch
 	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
 	Require(t, err)
+
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 
 	recipientBalanceAfter, err := l2clientB.BalanceAt(ctx, recipient, nil)
 	Require(t, err)
@@ -1367,6 +1414,65 @@ func AdvanceL1(
 	}
 }
 
+// AdvanceL2Time sequences a dummy transaction with a future timestamp, advancing
+// the L2 block time without wall-clock delay. Works with or without L1.
+// Returns the new block timestamp.
+func AdvanceL2Time(t *testing.T, builder *NodeBuilder, ctx context.Context, advanceSeconds uint64) uint64 {
+	t.Helper()
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	var l1BlockNumber uint64
+	if builder.L1 != nil {
+		l1Header, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		l1BlockNumber = l1Header.Number.Uint64()
+	}
+	newTimestamp := hdr.Time + advanceSeconds
+	timeWarpHeader := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1BlockNumber,
+		Timestamp:   newTimestamp,
+	}
+	tx := builder.L2Info.PrepareTx("Faucet", "Faucet", 300000, big.NewInt(1), nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(timeWarpHeader, hooks, nil)
+	Require(t, err)
+	return newTimestamp
+}
+
+// keepL1Advancing is the lower-level helper that produces L1 blocks in the
+// background. It takes (ctx, l1info, l1client) so callers that don't have a
+// *NodeBuilder (e.g. Send*ViaL1 helpers) can use it directly.
+// Close the returned channel to stop. The error channel returns nil on clean shutdown.
+func keepL1Advancing(ctx context.Context, l1info *BlockchainTestInfo, l1client *ethclient.Client) (chan struct{}, chan error) {
+	stop := make(chan struct{})
+	errChan := make(chan error, 1)
+	go func() {
+		defer close(errChan)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(100 * time.Millisecond):
+				tx := l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil)
+				if err := l1client.SendTransaction(ctx, tx); err != nil {
+					errChan <- err
+					return
+				}
+			}
+		}
+	}()
+	return stop, errChan
+}
+
+// KeepL1Advancing produces L1 blocks in the background so the header reader
+// and delayed sequencer keep making progress. Close the returned channel to stop.
+// The error channel returns nil on clean shutdown.
+func KeepL1Advancing(builder *NodeBuilder) (chan struct{}, chan error) {
+	return keepL1Advancing(builder.ctx, builder.L1Info, builder.L1.Client)
+}
+
 func SendSignedTxesInBatchViaL1(
 	t *testing.T,
 	ctx context.Context,
@@ -1386,12 +1492,16 @@ func SendSignedTxesInBatchViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	var receipts types.Receipts
 	for _, tx := range delayedTxes {
 		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
 		receipts = append(receipts, receipt)
+	}
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
 	}
 	return receipts
 }
@@ -1433,9 +1543,13 @@ func SendSignedTxViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, delayedTx)
 	Require(t, err)
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 	return receipt
 }
 
@@ -1479,9 +1593,13 @@ func SendUnsignedTxViaL1(
 	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
-	AdvanceL1(t, ctx, l1client, l1info, 30)
+	stopL1, l1ErrChan := keepL1Advancing(ctx, l1info, l1client)
 	receipt, err := EnsureTxSucceeded(ctx, l2client, unsignedTx)
 	Require(t, err)
+	close(stopL1)
+	if l1Err := <-l1ErrChan; l1Err != nil {
+		Fatal(t, l1Err)
+	}
 	return receipt
 }
 
@@ -1671,7 +1789,6 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
-	DontWaitAndRun(ctx, 2, t.Name())
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig
@@ -1695,7 +1812,14 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	return valStack
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
+// startL1Backend creates a geth node with a simulated beacon from a
+// pre-built genesis config. Caller is responsible for registering
+// additional APIs and calling stack.Close() on shutdown.
+func startL1Backend(stackConfig *node.Config, l1Genesis *core.Genesis) (*node.Node, *eth.Ethereum, *catalyst.SimulatedBeacon, error) {
+	return deploycache.StartL1Backend(stackConfig, l1Genesis)
+}
+
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, extraGenesisAlloc types.GenesisAlloc) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1707,14 +1831,9 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
-	stackConfig.DataDir = ""
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
 	faucetAddr := l1info.GetAddress("Faucet")
 	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
+	l1Genesis.Coinbase = faucetAddr
 
 	// Pre-fund with large values some common accounts
 	infoGenesis := l1info.GetGenesisAlloc()
@@ -1730,19 +1849,18 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
 	}
+	// Only inject contract accounts (those with code) from the extra alloc.
+	// EOAs keep their fresh genesis state (nonce 0, large balance) so that
+	// BlockchainTestInfo nonce counters remain in sync with on-chain state.
+	for addr, acct := range extraGenesisAlloc {
+		if len(acct.Code) > 0 {
+			l1Genesis.Alloc[addr] = acct
+		}
+	}
 	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesis
-	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
-	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
-	nodeConf.SyncMode = ethconfig.FullSync
 
-	l1backend, err := eth.New(stack, &nodeConf)
+	stack, l1backend, simBeacon, err := startL1Backend(stackConfig, l1Genesis)
 	Require(t, err)
-
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	Require(t, err)
-	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	stack.RegisterLifecycle(simBeacon)
 
 	tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
@@ -1754,10 +1872,6 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 		return l1backend.Stop()
 	}})
 
-	stack.RegisterAPIs([]rpc.API{{
-		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	}})
 	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
 
 	Require(t, stack.Start())
@@ -1946,14 +2060,27 @@ func deployOnParentChain(
 			rollupStackConfig.CustomDAOsp = customOspAddr
 		}
 
-		boldAddresses, err := setup.DeployFullRollupStack(
-			ctx,
-			parentReader,
-			&parentChainTransactionOpts,
-			parentChainInfo.GetAddress("Sequencer"),
-			cfg,
-			rollupStackConfig,
-		)
+		var boldAddresses *setup.RollupAddresses
+		if deployConfig.BoldCreator != nil {
+			boldAddresses, err = setup.DeployRollup(
+				ctx,
+				parentReader,
+				&parentChainTransactionOpts,
+				parentChainInfo.GetAddress("Sequencer"),
+				cfg,
+				deployConfig.BoldCreator,
+				rollupStackConfig,
+			)
+		} else {
+			boldAddresses, err = setup.DeployFullRollupStack(
+				ctx,
+				parentReader,
+				&parentChainTransactionOpts,
+				parentChainInfo.GetAddress("Sequencer"),
+				cfg,
+				rollupStackConfig,
+			)
+		}
 		Require(t, err)
 		addresses = &chaininfo.RollupAddresses{
 			Bridge:                 boldAddresses.Bridge,
@@ -1968,18 +2095,34 @@ func deployOnParentChain(
 			DeployedAt:             boldAddresses.DeployedAt,
 		}
 	} else {
-		addresses, err = deploy.DeployLegacyOnParentChain(
-			ctx,
-			parentChainReader,
-			&parentChainTransactionOpts,
-			[]common.Address{parentChainInfo.GetAddress("Sequencer")},
-			parentChainInfo.GetAddress("RollupOwner"),
-			0,
-			deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
-			nativeToken,
-			maxDataSize,
-			chainSupportsBlobs,
-		)
+		legacyConfig := deploy.GenerateLegacyRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, parentChainInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{})
+		if deployConfig.LegacyCreator != nil {
+			addresses, err = deploy.DeployLegacyRollup(
+				ctx,
+				parentChainReader,
+				&parentChainTransactionOpts,
+				[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+				parentChainInfo.GetAddress("RollupOwner"),
+				0,
+				legacyConfig,
+				nativeToken,
+				maxDataSize,
+				deployConfig.LegacyCreator,
+			)
+		} else {
+			addresses, err = deploy.DeployLegacyOnParentChain(
+				ctx,
+				parentChainReader,
+				&parentChainTransactionOpts,
+				[]common.Address{parentChainInfo.GetAddress("Sequencer")},
+				parentChainInfo.GetAddress("RollupOwner"),
+				0,
+				legacyConfig,
+				nativeToken,
+				maxDataSize,
+				chainSupportsBlobs,
+			)
+		}
 	}
 	Require(t, err)
 	parentChainInfo.SetContract("Bridge", addresses.Bridge)
@@ -2335,7 +2478,8 @@ type controllableWriter struct {
 	writer          daprovider.Writer
 	shouldFallback  bool
 	customError     error
-	overrideMaxSize int // 0 means use underlying writer's max size; if set, Store returns ErrMessageTooLarge for messages exceeding this size
+	overrideMaxSize int // 0 means use underlying writer's max size; if set, GetMaxMessageSize returns this value and Store rejects messages exceeding it
+	storeRejectSize int // 0 means disabled; when set, Store rejects messages exceeding this size and atomically sets overrideMaxSize to this value
 }
 
 func (w *controllableWriter) SetShouldFallback(val bool) {
@@ -2356,32 +2500,56 @@ func (w *controllableWriter) SetMaxMessageSize(size int) {
 	w.overrideMaxSize = size
 }
 
+// SetStoreRejectSize sets a threshold at which Store() rejects messages with
+// ErrMessageTooLarge. On rejection, overrideMaxSize is atomically set to the
+// reject size — simulating a DA provider that reports its new smaller limit
+// only after the first oversized Store() attempt. GetMaxMessageSize() is
+// unaffected until a rejection occurs.
+func (w *controllableWriter) SetStoreRejectSize(size int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.storeRejectSize = size
+}
+
 func (w *controllableWriter) Store(msg []byte, timeout uint64) containers.PromiseInterface[[]byte] {
-	w.mu.RLock()
+	w.mu.Lock()
 	shouldFallback := w.shouldFallback
 	customError := w.customError
 	overrideMaxSize := w.overrideMaxSize
-	w.mu.RUnlock()
+	storeRejectSize := w.storeRejectSize
 
-	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize)
+	log.Info("controllableWriter.Store called", "msgLen", len(msg), "timeout", timeout, "shouldFallback", shouldFallback, "overrideMaxSize", overrideMaxSize, "storeRejectSize", storeRejectSize)
 
 	// Check for custom error first
 	if customError != nil {
+		w.mu.Unlock()
 		log.Info("controllableWriter returning custom error", "error", customError)
 		return containers.NewReadyPromise[[]byte](nil, customError)
 	}
 
+	// Check storeRejectSize first (simulates DA provider that rejects then updates its limit)
+	if storeRejectSize > 0 && len(msg) > storeRejectSize {
+		w.overrideMaxSize = storeRejectSize
+		w.mu.Unlock()
+		log.Warn("controllableWriter Store rejecting and updating overrideMaxSize", "msgLen", len(msg), "storeRejectSize", storeRejectSize)
+		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
+	}
+
 	// Check if message exceeds overrideMaxSize (simulates DA provider size limit)
 	if overrideMaxSize > 0 && len(msg) > overrideMaxSize {
+		w.mu.Unlock()
 		log.Warn("controllableWriter returning ErrMessageTooLarge", "msgLen", len(msg), "maxSize", overrideMaxSize)
 		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrMessageTooLarge)
 	}
 
 	// Check for fallback signal
 	if shouldFallback {
+		w.mu.Unlock()
 		log.Warn("controllableWriter returning ErrFallbackRequested")
 		return containers.NewReadyPromise[[]byte](nil, daprovider.ErrFallbackRequested)
 	}
+
+	w.mu.Unlock()
 
 	// Normal operation
 	log.Info("controllableWriter delegating to underlying writer")
@@ -2582,6 +2750,9 @@ func initDefaultTestLog() {
 func TestMain(m *testing.M) {
 	initDefaultTestLog()
 	initTestCollection()
+	if err := initCreatorCaches(); err != nil {
+		log.Crit("failed to initialize creator caches", "err", err)
+	}
 	code := m.Run()
 	os.Exit(code)
 }

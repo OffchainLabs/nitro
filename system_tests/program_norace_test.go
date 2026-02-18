@@ -106,6 +106,23 @@ func validateBlockRange(
 	}
 }
 
+func validateBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+	t.Helper()
+	waitForSequencer(t, builder, block)
+	wasmModuleRoot := currentRootModule(t)
+	inboxPos := arbutil.MessageIndex(block)
+	now := time.Now()
+	correct, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		builder.ctx, inboxPos, false, wasmModuleRoot,
+	)
+	Require(t, err, "block", block)
+	if correct {
+		colors.PrintMint("yay!! we validated block ", block, " in ", formatTime(time.Since(now)))
+	} else {
+		Fatal(t, "block", block, "failed validation")
+	}
+}
+
 func TestProgramEvmData(t *testing.T) {
 	testEvmData(t, true)
 }

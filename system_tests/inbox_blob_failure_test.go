@@ -59,7 +59,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	defer cancel()
 
 	// Build sequencer with blob posting and delayed sequencer enabled
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1)
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
@@ -70,15 +70,21 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Start background L1 advancement for the entire test
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
+	defer func() {
+		close(stopL1)
+		if l1Err := <-l1ErrChan; l1Err != nil {
+			Fatal(t, l1Err)
+		}
+	}()
+
 	// Send L2 transaction to trigger batch posting
 	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-
-	// Advance L1 to trigger batch posting and delayed message processing
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Wait for batch to be posted
 	txReceipt, err := builder.L2.Client.TransactionReceipt(ctx, tx.Hash())
@@ -97,9 +103,15 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Advance L1 more for batch-posting-report finality
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
-	time.Sleep(time.Second)
+	// Wait for batch-posting-report delayed message to be processed
+	for i := 0; i < 30; i++ {
+		delayed, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+		Require(t, err)
+		if delayed > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Record sequencer state before starting follower
 	seqDelayed, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
@@ -118,14 +130,18 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	}, wrappedBlobReader)
 	defer cleanupB()
 
-	// Wait for follower to attempt sync
-	time.Sleep(2 * time.Second)
-
-	// Check if follower is out of sync
-	follDelayed, err := testClientB.ConsensusNode.InboxTracker.GetDelayedCount()
-	Require(t, err)
-	follBatch, err := testClientB.ConsensusNode.InboxTracker.GetBatchCount()
-	Require(t, err)
+	// Wait for follower to attempt sync (poll until it has picked up something)
+	var follDelayed, follBatch uint64
+	for i := 0; i < 30; i++ {
+		follDelayed, err = testClientB.ConsensusNode.InboxTracker.GetDelayedCount()
+		Require(t, err)
+		follBatch, err = testClientB.ConsensusNode.InboxTracker.GetBatchCount()
+		Require(t, err)
+		if follDelayed > 0 || follBatch > 1 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	if follDelayed == seqDelayed && follBatch < seqBatch {
 		t.Logf("Follower is behind: delayed=%d (same as sequencer) but batches=%d < %d",
@@ -179,10 +195,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(verifyTx)
 	Require(t, err)
 
-	// Advance L1 to post batch
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for batch and advance for finality
+	// Wait for batch to be posted (background L1 advancement handles block production)
 	for i := 0; i < 30; i++ {
 		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
 		if verifyReceipt != nil {
@@ -194,24 +207,20 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Check if follower synced the new transaction
-	time.Sleep(3 * time.Second)
-	follVerifyReceipt, err := WaitForTx(ctx, testClientB.Client, verifyTx.Hash(), 3*time.Second)
+	follVerifyReceipt, err := WaitForTx(ctx, testClientB.Client, verifyTx.Hash(), 15*time.Second)
 	if err != nil || follVerifyReceipt == nil {
 		t.Fatal("Follower did not sync new transaction after re-enabling blobs")
 	}
 	t.Logf("Follower synced new transaction")
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Send delayed message via L1
 	delayedTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(3e12), nil)
 	SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
 
 	// Check if follower synced the delayed message
-	time.Sleep(3 * time.Second)
-	follDelayedReceipt, err := WaitForTx(ctx, testClientB.Client, delayedTx.Hash(), 3*time.Second)
+	follDelayedReceipt, err := WaitForTx(ctx, testClientB.Client, delayedTx.Hash(), 15*time.Second)
 	if err != nil || follDelayedReceipt == nil {
 		t.Fatal("Follower did not sync delayed message")
 	}
@@ -259,7 +268,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.
 func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNodeParams, blobReader daprovider.BlobReader) (*TestClient, func()) {
 	t.Helper()
-	DontWaitAndRun(b.ctx, 1, t.Name())
+	b.useExtraWeight(t, 1)
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build an L2 Node")
 	}

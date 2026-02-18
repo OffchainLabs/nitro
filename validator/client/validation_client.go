@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -167,15 +168,33 @@ func (c *ExecutionClient) CreateExecutionRun(
 
 var _ validator.BOLDExecutionSpawner = (*BOLDExecutionClient)(nil)
 
+// executionRunCacheKey identifies a unique machine execution by its module root
+// and input message, allowing reuse of the same execution run across multiple
+// subchallenge levels that operate on the same block.
+type executionRunCacheKey struct {
+	wasmModuleRoot common.Hash
+	inputId        uint64
+}
+
 type BOLDExecutionClient struct {
 	executionSpawner validator.ExecutionSpawner
+	mu               sync.Mutex
+	cachedRun        validator.ExecutionRun
+	cachedKey        executionRunCacheKey
 }
 
 func (b *BOLDExecutionClient) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *BOLDExecutionClient) Stop() {}
+func (b *BOLDExecutionClient) Stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cachedRun != nil {
+		b.cachedRun.Close()
+		b.cachedRun = nil
+	}
+}
 
 func NewBOLDExecutionClient(executionSpawner validator.ExecutionSpawner) *BOLDExecutionClient {
 	return &BOLDExecutionClient{
@@ -187,12 +206,35 @@ func (b *BOLDExecutionClient) WasmModuleRoots() ([]common.Hash, error) {
 	return b.executionSpawner.WasmModuleRoots()
 }
 
-func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
+// getOrCreateExecRun returns a cached execution run if one exists for the same
+// (wasmModuleRoot, input.Id) pair, or creates a new one. This avoids rebuilding
+// the machine cache from scratch for each subchallenge level, since all levels
+// for a given assertion operate on the same message/block execution.
+func (b *BOLDExecutionClient) getOrCreateExecRun(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := executionRunCacheKey{wasmModuleRoot, input.Id}
+	if b.cachedRun != nil && b.cachedKey == key {
+		return b.cachedRun, nil
+	}
+	if b.cachedRun != nil {
+		b.cachedRun.Close()
+		b.cachedRun = nil
+	}
 	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer execRun.Close()
+	b.cachedRun = execRun
+	b.cachedKey = key
+	return execRun, nil
+}
+
+func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, machineStartIndex, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	execRun, err := b.getOrCreateExecRun(ctx, wasmModuleRoot, input)
+	if err != nil {
+		return nil, err
+	}
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	stepLeaves := execRun.GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations)
@@ -200,11 +242,10 @@ func (b *BOLDExecutionClient) GetMachineHashesWithStepSize(ctx context.Context, 
 }
 
 func (b *BOLDExecutionClient) GetProofAt(ctx context.Context, wasmModuleRoot common.Hash, input *validator.ValidationInput, position uint64) ([]byte, error) {
-	execRun, err := b.executionSpawner.CreateExecutionRun(wasmModuleRoot, input, true).Await(ctx)
+	execRun, err := b.getOrCreateExecRun(ctx, wasmModuleRoot, input)
 	if err != nil {
 		return nil, err
 	}
-	defer execRun.Close()
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(position)

@@ -254,7 +254,19 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	if setp.numAccountsToGen < 3 {
 		setp.numAccountsToGen = 3
 	}
-	accs, backend, err := Accounts(setp.numAccountsToGen)
+
+	// When using mock OSP, use the cached creator deployment to avoid
+	// expensive on-chain deploys that advance simulated time.
+	var extraAlloc types.GenesisAlloc
+	if setp.useMockOneStepProver {
+		alloc, _, err := CachedMockCreator()
+		if err != nil {
+			return nil, fmt.Errorf("getting cached mock creator: %w", err)
+		}
+		extraAlloc = alloc
+	}
+
+	accs, backend, err := Accounts(setp.numAccountsToGen, extraAlloc)
 	if err != nil {
 		return nil, err
 	}
@@ -395,19 +407,37 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		anyTrustFastConfirmer,
 		setp.challengeTestingOpts...,
 	)
-	addresses, err := DeployFullRollupStack(
-		ctx,
-		backend,
-		accs[0].TxOpts,
-		accs[0].TxOpts.From, // Sequencer addr.
-		cfg,
-		RollupStackConfig{
-			UseMockBridge:          setp.useMockBridge,
-			UseMockOneStepProver:   setp.useMockOneStepProver,
-			UseBlobs:               true,
-			MinimumAssertionPeriod: setp.minimumAssertionPeriod,
-		},
-	)
+	var addresses *RollupAddresses
+	stackConf := RollupStackConfig{
+		UseMockBridge:          setp.useMockBridge,
+		UseMockOneStepProver:   setp.useMockOneStepProver,
+		UseBlobs:               true,
+		MinimumAssertionPeriod: setp.minimumAssertionPeriod,
+	}
+	if setp.useMockOneStepProver {
+		_, creator, creatorErr := CachedMockCreator()
+		if creatorErr != nil {
+			return nil, fmt.Errorf("getting cached mock creator: %w", creatorErr)
+		}
+		addresses, err = DeployRollup(
+			ctx,
+			backend,
+			accs[0].TxOpts,
+			accs[0].TxOpts.From,
+			cfg,
+			creator,
+			stackConf,
+		)
+	} else {
+		addresses, err = DeployFullRollupStack(
+			ctx,
+			backend,
+			accs[0].TxOpts,
+			accs[0].TxOpts.From,
+			cfg,
+			stackConf,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +553,16 @@ type RollupAddresses struct {
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
+// CreatorAddresses holds addresses from deploying the rollup creator
+// infrastructure (BridgeCreator, OSPs, EdgeChallengeManager,
+// RollupCreator, etc.). Obtained from DeployCreator.
+type CreatorAddresses struct {
+	RollupCreator          common.Address
+	RollupUserLogic        common.Address
+	ValidatorUtils         common.Address
+	ValidatorWalletCreator common.Address
+}
+
 type RollupStackConfig struct {
 	UseMockBridge          bool
 	UseMockOneStepProver   bool
@@ -531,6 +571,9 @@ type RollupStackConfig struct {
 	CustomDAOsp            common.Address
 }
 
+// DeployFullRollupStack deploys the creator infrastructure and then
+// creates a rollup instance. Equivalent to calling DeployCreator
+// followed by DeployRollup.
 func DeployFullRollupStack(
 	ctx context.Context,
 	backend protocol.ChainBackend,
@@ -539,10 +582,35 @@ func DeployFullRollupStack(
 	config rollupgen.Config,
 	stackConf RollupStackConfig,
 ) (*RollupAddresses, error) {
-	log.Info("Deploying rollup creator")
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth, stackConf.UseBlobs, stackConf.UseMockBridge, stackConf.UseMockOneStepProver)
+	creator, err := deployCreatorInternal(
+		ctx, backend, deployAuth,
+		stackConf.UseBlobs,
+		stackConf.UseMockBridge,
+		stackConf.UseMockOneStepProver,
+	)
 	if err != nil {
 		return nil, err
+	}
+	return DeployRollup(
+		ctx, backend, deployAuth, sequencer,
+		config, creator, stackConf,
+	)
+}
+
+// DeployRollup calls CreateRollup on a previously deployed
+// RollupCreator and configures the resulting rollup instance.
+func DeployRollup(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	deployAuth *bind.TransactOpts,
+	sequencer common.Address,
+	config rollupgen.Config,
+	creator *CreatorAddresses,
+	stackConf RollupStackConfig,
+) (*RollupAddresses, error) {
+	rollupCreator, err := rollupgen.NewRollupCreator(creator.RollupCreator, backend)
+	if err != nil {
+		return nil, fmt.Errorf("binding to RollupCreator: %w", err)
 	}
 
 	log.Info("Creating rollup")
@@ -566,7 +634,7 @@ func DeployFullRollupStack(
 			fmt.Println(creationErr)
 			return nil, creationErr
 		}
-		err = challenge_testing.TxSucceeded(ctx, creationTx, rollupCreatorAddress, backend, err)
+		err = challenge_testing.TxSucceeded(ctx, creationTx, creator.RollupCreator, backend, err)
 		if err != nil {
 			return nil, err
 		}
@@ -622,20 +690,12 @@ func DeployFullRollupStack(
 		}
 		txs[info.SequencerInbox] = append(txs[info.SequencerInbox], setIsBatchPoster)
 	}
+	// Send all UpgradeExecutor transactions, then commit once to batch them
+	// into a single block (reducing simulated time drift on test backends).
 	for addr, items := range txs {
 		for _, item := range items {
-			_, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-				innerTx, err2 := upgradeExecBindings.ExecuteCall(deployAuth, addr, item)
-				if err2 != nil {
-					return nil, err2
-				}
-				if waitErr := challenge_testing.WaitForTx(ctx, backend, innerTx); waitErr != nil {
-					return nil, errors.Wrap(waitErr, "errored waiting for UpgradeExecutor transaction")
-				}
-				return innerTx, nil
-			})
-			if err != nil {
-				return nil, err
+			if _, err = upgradeExecBindings.ExecuteCall(deployAuth, addr, item); err != nil {
+				return nil, fmt.Errorf("sending UpgradeExecutor call: %w", err)
 			}
 		}
 	}
@@ -653,9 +713,9 @@ func DeployFullRollupStack(
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             creationReceipt.BlockNumber.Uint64(),
 		Rollup:                 info.RollupAddress,
-		RollupUserLogic:        rollupUserAddr,
-		ValidatorUtils:         validatorUtils,
-		ValidatorWalletCreator: validatorWalletCreator,
+		RollupUserLogic:        creator.RollupUserLogic,
+		ValidatorUtils:         creator.ValidatorUtils,
+		ValidatorWalletCreator: creator.ValidatorWalletCreator,
 		UpgradeExecutor:        info.UpgradeExecutor,
 	}, nil
 }
@@ -957,6 +1017,54 @@ func deployChallengeFactory(
 	return ospEntryAddr, edgeChallengeManagerAddr, nil
 }
 
+// DeployCreator deploys all rollup creator infrastructure contracts
+// (BridgeCreator, OSPs, EdgeChallengeManager, RollupCreator, etc.)
+// without calling CreateRollup.
+func DeployCreator(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	auth *bind.TransactOpts,
+	useBlobs bool,
+) (*CreatorAddresses, error) {
+	return deployCreatorInternal(
+		ctx, backend, auth, useBlobs, false, false,
+	)
+}
+
+// DeployCreatorWithMockOSP is like DeployCreator but uses the mock
+// one-step prover instead of the real OSP contracts.
+func DeployCreatorWithMockOSP(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	auth *bind.TransactOpts,
+	useBlobs bool,
+) (*CreatorAddresses, error) {
+	return deployCreatorInternal(
+		ctx, backend, auth, useBlobs, false, true,
+	)
+}
+
+func deployCreatorInternal(
+	ctx context.Context,
+	backend protocol.ChainBackend,
+	auth *bind.TransactOpts,
+	useBlobs bool,
+	useMockBridge bool,
+	useMockOneStepProver bool,
+) (*CreatorAddresses, error) {
+	log.Info("Deploying rollup creator")
+	_, rollupUserAddr, rollupCreatorAddr, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, auth, useBlobs, useMockBridge, useMockOneStepProver)
+	if err != nil {
+		return nil, err
+	}
+	return &CreatorAddresses{
+		RollupCreator:          rollupCreatorAddr,
+		RollupUserLogic:        rollupUserAddr,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
+	}, nil
+}
+
 func deployRollupCreator(
 	ctx context.Context,
 	backend protocol.ChainBackend,
@@ -1079,8 +1187,13 @@ type TestAccount struct {
 	TxOpts      *bind.TransactOpts
 }
 
-func Accounts(numAccounts uint64) ([]*TestAccount, *SimulatedBackendWrapper, error) {
+func Accounts(numAccounts uint64, extraAlloc ...types.GenesisAlloc) ([]*TestAccount, *SimulatedBackendWrapper, error) {
 	genesis := make(types.GenesisAlloc)
+	for _, extra := range extraAlloc {
+		for addr, acct := range extra {
+			genesis[addr] = acct
+		}
+	}
 	gasLimit := uint64(100000000)
 
 	accs := make([]*TestAccount, numAccounts)

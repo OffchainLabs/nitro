@@ -11,7 +11,6 @@ import (
 	"slices"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -858,75 +857,62 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 		t.Error("expected adding native token owner to fail")
 	}
 
-	now := time.Now()
-	// #nosec G115
-	sixDaysFromNow := uint64(now.Add(24 * 6 * time.Hour).Unix())
-	// #nosec G115
-	sevenAndAHalfDaysFromNow := uint64(now.Add(24*7*time.Hour + 12*time.Hour).Unix())
-	// #nosec G115
-	eightDaysFromNow := uint64(now.Add(24 * 8 * time.Hour).Unix())
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	now := hdr.Time
+
+	sixDays := uint64(6 * 24 * 60 * 60)
+	sevenDays := uint64(7 * 24 * 60 * 60)
+	sevenAndAHalfDays := uint64(7*24*60*60 + 12*60*60)
+	eightDays := uint64(8 * 24 * 60 * 60)
 
 	// attempts to enable the feature too early (6 days from now, instead of 7)
-	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sixDays)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
 
 	// succeeds to enable the feature enough in the future (8 days from now)
-	tx, err := arbOwner.SetNativeTokenManagementFrom(&authOwner, eightDaysFromNow)
+	tx, err := arbOwner.SetNativeTokenManagementFrom(&authOwner, now+eightDays)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// succeeds to shorten the time to enable the feature as long as it is still
 	// far enough in the future (7.5 days from now)
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenAndAHalfDaysFromNow)
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sevenAndAHalfDays)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// fails to shorten the time to enable the feature if it is too close to
 	// the current time (6 days from now)
-	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sixDaysFromNow)
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sixDays)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}
 
-	// About to test some very specific time-sensitive boundaries. Setting
-	// a new value for now.
-	now = time.Now()
-
-	// succeeds to shorten the time to enable the feature to just 5 seconds more
-	// than 7 days from now.
-	// #nosec G115
-	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	// Set enable time to 7 days + 5 seconds from now
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sevenDays+5)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// Sleep for 15 seconds to ensure that that the time the feature is will be
-	// enabled is <= 7 days from now.
-	time.Sleep(15 * time.Second)
-	// Time to Enable ~ 6.23:59:50
-	// Resetting now after the sleep
-	now = time.Now()
+	// Advance block time by 16 seconds so the stored enable time (now+7d+5s)
+	// is less than 7 days from the new block time.
+	now = AdvanceL2Time(t, builder, ctx, 16)
+	// Stored enable time is now ~(7d - 11s) from the current block time.
 
-	// Now is should be okay to set the time to enable the feature to some time
-	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
-	// less than 7 days from now. ~ 6.23:59:55
-	// #nosec G115
-	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, almostSevenDaysFromNow)
+	// Setting a new time ~(7d - 5s) from now succeeds because it is
+	// greater than the stored time (relative to now) and still in the future.
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sevenDays-5)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// It should not, however, be okay to set the time to an even earlier time.
-	// ~ 6.23:59:40
-	// #nosec G115
-	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
-	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	// Setting an even earlier time fails because it would move backward
+	// from the stored value.
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, now+sevenDays-20)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}

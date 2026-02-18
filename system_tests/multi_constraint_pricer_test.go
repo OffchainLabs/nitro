@@ -306,12 +306,14 @@ func TestMultiGasRefundForRetryableTx(t *testing.T) {
 	require.Equal(t, types.ReceiptStatusSuccessful, l1Receipt.Status)
 
 	elevateL2Basefee(t, ctx, builder)
-	waitForL1DelayBlocks(t, builder)
+	stopL1, l1ErrChan := KeepL1Advancing(builder)
 	elevateL2Basefee(t, ctx, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
 	require.NoError(t, err)
+	close(stopL1)
+	require.NoError(t, <-l1ErrChan)
 	require.Len(t, submissionReceipt.Logs, 2)
 
 	ticketId := submissionReceipt.Logs[0].Topics[1]
