@@ -6,7 +6,7 @@ members = ["program", "builder", "stylus-compiler-program", "prover", "runner"]
 [workspace.dependencies]
 arbutil = { path = "../crates/arbutil" }
 prover = { path = "prover", default-features = false, features = ["sp1"] }
-validation = { path = "../crates/validation" }
+validation = { path = "../crates/validation", default-features = false }
 
 bincode = { version = "1.3.3" }
 bytes = { version = "1" }

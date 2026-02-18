@@ -519,14 +519,6 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "num_enum 0.7.5",
-]
-
-[[package]]
-name = "brotli"
 version = "8.0.1"
 source = "git+https://github.com/wakabat/rust-brotli?rev=37b6403#37b6403c1075625e15b9355bcedf8b20232bc6c2"
 dependencies = [
@@ -3776,20 +3768,18 @@ name = "program"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "brotli 8.0.1",
+ "brotli",
  "bytes",
  "corosensei",
  "eyre",
  "hex",
  "num-traits",
- "num_enum 0.7.5",
  "once_cell",
  "prover",
  "rand 0.8.5",
  "rand_pcg",
  "ruint2",
  "secp256k1",
- "serde",
  "serde_json",
  "sp1-zkvm",
  "thiserror 1.0.69",
@@ -6749,7 +6739,6 @@ name = "validation"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "brotli 0.1.0",
  "serde",
  "serde_json",
  "serde_with",
