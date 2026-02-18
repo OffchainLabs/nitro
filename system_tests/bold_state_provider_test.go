@@ -402,6 +402,8 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		l2node.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		nil,
+		nil,
+		nil,
 	)
 	Require(t, err)
 	Require(t, blockValidator.Initialize(ctx))

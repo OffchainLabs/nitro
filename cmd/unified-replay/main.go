@@ -1,0 +1,321 @@
+// Copyright 2026-2027, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/triedb"
+
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/gethhook"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
+	"github.com/offchainlabs/nitro/melwavmio"
+	"github.com/offchainlabs/nitro/wavmio"
+)
+
+func main() {
+	melwavmio.StubInit()
+	gethhook.RequireHookedGeth()
+
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelError)
+	log.SetDefault(log.NewLogger(glogger))
+
+	wavmio.PopulateEcdsaCaches()
+
+	melMsgHash := melwavmio.GetMELMsgHash()
+	startMELStateHash := melwavmio.GetStartMELRoot()
+	melState := readMELState(startMELStateHash)
+
+	if melMsgHash != (common.Hash{}) {
+		produceBlock(melMsgHash)
+		melwavmio.IncreasePositionInMEL()
+	} else {
+		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
+		// TODO: Read the real chain config.
+		melState = extractMessagesUpTo(nil /* nil chain config */, melState, targetBlockHash)
+		melwavmio.SetEndMELRoot(melState.Hash())
+	}
+
+	positionInMEL := melwavmio.GetPositionInMEL()
+	if melState.MsgCount > positionInMEL {
+		resolver := &wavmPreimageResolver{}
+		msgReader := melreplay.NewMessageReader(resolver)
+		nextMsg, err := msgReader.Read(context.Background(), melState, positionInMEL)
+		if err != nil {
+			panic(fmt.Errorf("error reading message idx %d: %w", positionInMEL, err))
+		}
+		melwavmio.SetMELMsgHash(nextMsg.Hash())
+	} else {
+		melwavmio.SetMELMsgHash(common.Hash{})
+	}
+}
+
+func produceBlock(msgHash common.Hash) {
+	msgBytes := readPreimage(msgHash)
+	message := new(arbostypes.MessageWithMetadata)
+	if err := rlp.DecodeBytes(msgBytes, message); err != nil {
+		panic(fmt.Errorf("error RLP decoding message: %w", err))
+	}
+	raw := rawdb.NewDatabase(PreimageDb{})
+	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
+	lastBlockHash := melwavmio.GetLastBlockHash()
+	var lastBlockHeader *types.Header
+	var lastBlockStateRoot common.Hash
+	if lastBlockHash != (common.Hash{}) {
+		lastBlockHeader = getHeaderByHash(lastBlockHash)
+		lastBlockStateRoot = lastBlockHeader.Root
+	}
+	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
+	if err != nil {
+		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
+	}
+	var newBlock *types.Block
+	if lastBlockStateRoot != (common.Hash{}) {
+		// ArbOS has already been initialized.
+		// Load the chain config and then produce a block normally.
+		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting genesis block number from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfigJson, err := initialArbosState.ChainConfig()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
+		}
+		var chainConfig *params.ChainConfig
+		if len(chainConfigJson) > 0 {
+			chainConfig = &params.ChainConfig{}
+			err = json.Unmarshal(chainConfigJson, chainConfig)
+			if err != nil {
+				panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+			}
+			if chainConfig.ChainID.Cmp(chainId) != 0 {
+				panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+			}
+			if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+				panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+			}
+		} else {
+			log.Info("Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		chainContext := WavmChainContext{chainConfig: chainConfig}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, false, core.NewMessageReplayContext(), false)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		// Initialize ArbOS with this init message and create the genesis block.
+		initMessage, err := message.Message.ParseInitMessage()
+		if err != nil {
+			panic(err)
+		}
+		chainConfig := initMessage.ChainConfig
+		if chainConfig == nil {
+			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
+			chainConfig, err = chaininfo.GetChainConfig(initMessage.ChainId, "", 0, []string{}, "")
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, nil, initMessage)
+		if err != nil {
+			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
+		}
+
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
+	}
+
+	newBlockHash := newBlock.Hash()
+
+	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
+
+	extraInfo := types.DeserializeHeaderExtraInformation(newBlock.Header())
+	if extraInfo.ArbOSFormatVersion == 0 {
+		panic(fmt.Sprintf("Error deserializing header extra info: %+v", newBlock.Header()))
+	}
+	melwavmio.SetLastBlockHash(newBlockHash)
+	melwavmio.SetSendRoot(extraInfo.SendRoot)
+}
+
+// Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
+// block hash, this program will extract all block header hashes in that range, and then run the
+// message extraction algorithm over those block headers, starting from a starting MEL state and processing
+// block headers one-by-one. At the end, a final MEL state is produced, and its hash is set into the
+// machine using a wavmio method.
+func extractMessagesUpTo(
+	chainConfig *params.ChainConfig,
+	startState *mel.State,
+	targetBlockHash common.Hash,
+) *mel.State {
+	resolver := &wavmPreimageResolver{}
+	dapReader := daprovider.NewDAProviderRegistry()
+	blobReader := &BlobPreimageReader{}
+	if err := dapReader.SetupBlobReader(daprovider.NewReaderForBlobReader(blobReader)); err != nil {
+		panic(fmt.Errorf("error setting up blob reader: %w", err))
+	}
+
+	// Extract the relevant header hashes in the range from the
+	// block hash of the start MEL state to the end parent chain block hash.
+	// This is done by walking backwards from the end parent chain block hash
+	// until we reach the block hash of the start MEL state as blocks are
+	// only connected by parent linkages.
+	blockHeaderHashes := walkBackwards(
+		startState.ParentChainBlockHash,
+		targetBlockHash,
+	)
+	currentState := startState
+
+	// Loops backwards over blocks, feeding them one by one into the extract messages function.
+	delayedMsgDatabase := melreplay.NewDelayedMessageDatabase(resolver)
+	ctx := context.Background()
+	for i := len(blockHeaderHashes) - 1; i >= 0; i-- {
+		headerHash := blockHeaderHashes[i]
+		header := getHeaderByHash(headerHash)
+		log.Info("Extracting messages from block", "number", header.Number.Uint64(), "hash", header.Hash().Hex())
+		txsFetcher := melreplay.NewTransactionFetcher(header, resolver)
+		logsFetcher := melreplay.NewLogsFetcher(header, resolver)
+		postState, _, _, _, err := melextraction.ExtractMessages(
+			ctx,
+			currentState,
+			header,
+			dapReader,
+			delayedMsgDatabase,
+			txsFetcher,
+			logsFetcher,
+			chainConfig,
+		)
+		if err != nil {
+			panic(fmt.Errorf("error extracting messages from block %s: %w", header.Hash().Hex(), err))
+		}
+		currentState = postState
+	}
+	return currentState
+}
+
+// Extracts all block header hashes in the range from startHash to endHash.
+func walkBackwards(
+	startHash,
+	endHash common.Hash,
+) []common.Hash {
+	headerHashes := make([]common.Hash, 0)
+	curr := endHash
+	for {
+		header := getHeaderByHash(curr)
+		headerHashes = append(headerHashes, curr)
+		curr = header.ParentHash
+		if curr == startHash {
+			break
+		}
+	}
+	return headerHashes
+}
+
+// Gets a block header by its hash using the preimage resolver.
+func getHeaderByHash(hash common.Hash) *types.Header {
+	enc, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	if err != nil {
+		panic(fmt.Errorf("error resolving preimage: %w", err))
+	}
+	header := &types.Header{}
+	err = rlp.DecodeBytes(enc, &header)
+	if err != nil {
+		panic(fmt.Errorf("error parsing resolved block header: %w", err))
+	}
+	return header
+}
+
+func readMELState(hash common.Hash) *mel.State {
+	startStateBytes := readPreimage(hash)
+	state := new(mel.State)
+	if err := rlp.Decode(bytes.NewBuffer(startStateBytes), &state); err != nil {
+		panic(fmt.Errorf("error decoding MEL state: %w", err))
+	}
+	return state
+}
+
+func readPreimage(hash common.Hash) []byte {
+	preimage, err := melwavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	if err != nil {
+		panic(fmt.Errorf("error resolving preimage: %w", err))
+	}
+	return preimage
+}
+
+type WavmChainContext struct {
+	chainConfig *params.ChainConfig
+}
+
+func (c WavmChainContext) CurrentHeader() *types.Header {
+	return getLastBlockHeader()
+}
+
+func (c WavmChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	panic("GetHeaderByNumber should not be called in WavmChainContext")
+}
+
+func (c WavmChainContext) GetHeaderByHash(hash common.Hash) *types.Header {
+	return getHeaderByHash(hash)
+}
+
+func (c WavmChainContext) Config() *params.ChainConfig {
+	return c.chainConfig
+}
+
+func (c WavmChainContext) Engine() consensus.Engine {
+	return arbos.Engine{}
+}
+
+func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	header := getHeaderByHash(hash)
+	if !header.Number.IsUint64() || header.Number.Uint64() != num {
+		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
+	}
+	return header
+}
+
+func getLastBlockHeader() *types.Header {
+	lastBlockHash := melwavmio.GetLastBlockHash()
+	if lastBlockHash == (common.Hash{}) {
+		return nil
+	}
+	return getHeaderByHash(lastBlockHash)
+}
