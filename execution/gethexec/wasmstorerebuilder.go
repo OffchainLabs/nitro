@@ -74,10 +74,10 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil, nil)
+	stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, false, rebuildingStartHeader, nil, nil)
 	if err != nil {
 		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, latestHeader, nil, nil)
+		stateDB, _, err = arbitrum.StateAndHeaderFromHeader(ctx, executionDB, l2Blockchain, maxRecreateStateDepth, false, latestHeader, nil, nil)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}
