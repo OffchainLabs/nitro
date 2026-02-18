@@ -88,7 +88,7 @@ pub unsafe extern "C" fn wavmio__getEndParentChainBlockHash(out_ptr: GuestPtr) {
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_get_end_parent_chain_block_hash(our_ptr);
-    STATIC_MEM.write_slice(out_ptr, &our_buf[..32]);
+    StaticMem.write_slice(out_ptr, &our_buf[..32]);
 }
 
 /// Reads an inbox message
