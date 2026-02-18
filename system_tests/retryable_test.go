@@ -779,7 +779,10 @@ func TestRetryableExpiry(t *testing.T) {
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
 
-	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
+	// Advance past the retryable's timeout. We add 1 second to avoid landing
+	// exactly on the timeout boundary, where the retryable is still considered
+	// alive (timeout >= currentTimestamp).
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds+1)
 
 	// check that the ticket no longer exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
@@ -863,13 +866,16 @@ func TestKeepaliveAndRetryableExpiry(t *testing.T) {
 		Fatal(t, "expected timeout after keepalive to be", expectedTimeoutAfterKeepAlive, "but got", timeoutAfterKeepalive)
 	}
 
-	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
+	// Advance past the original timeout but not past the keepalive-extended timeout.
+	// We add 1 second to avoid landing exactly on the timeout boundary, where the
+	// retryable is still considered alive (timeout >= currentTimestamp).
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds+1)
 
 	// check that the ticket still exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)
 	Require(t, err)
 
-	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds)
+	_ = AdvanceL2Time(t, builder, ctx, retryables.RetryableLifetimeSeconds+1)
 
 	// check that the ticket no longer exists
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, ticketId)

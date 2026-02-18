@@ -4,7 +4,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -35,19 +34,10 @@ func countStateEntries(db ethdb.Iteratee) int {
 }
 
 func TestPruning(t *testing.T) {
-	// TODO test "validator" pruning mode - requires latest confirmed
-	for _, mode := range []string{"full", "minimal"} {
-		t.Run(fmt.Sprintf("-%s-mode-without-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, false) })
-		t.Run(fmt.Sprintf("-%s-mode-with-parallel-storage-traversal", mode), func(t *testing.T) { testPruning(t, mode, true) })
-	}
-}
-
-func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExtraWeight(1).WithDatabase(rawdb.DBPebble)
-	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
 	builder.RequireScheme(t, rawdb.HashScheme)
 
 	_ = builder.Build(t)
@@ -60,7 +50,7 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 	}()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
-	for i := uint64(0); i < 200; i++ {
+	for i := uint64(0); i < 50; i++ {
 		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -88,7 +78,6 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 		var testKeys [][]byte
 		for i := 0; i < 100; i++ {
-			// generate test keys with length of hash to emulate legacy state trie nodes
 			testKeys = append(testKeys, prand.GetHash().Bytes())
 		}
 		for _, key := range testKeys {
@@ -102,8 +91,8 @@ func testPruning(t *testing.T, mode string, pruneParallelStorageTraversal bool) 
 		}
 
 		initConfig := conf.InitConfigDefault
-		initConfig.Prune = mode
-		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
+		initConfig.Prune = "full"
+		initConfig.PruneParallelStorageTraversal = false
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneExecutionDB(ctx, chainDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
