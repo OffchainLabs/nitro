@@ -29,4 +29,6 @@ tracing-subscriber = { workspace = true, features = [
 validation = { workspace = true }
 
 [dev-dependencies]
-reqwest = "0.13.1"
+rand = { workspace = true, default-features = true }
+reqwest = { workspace = true }
+tempdir = { workspace = true }
