@@ -3846,6 +3846,7 @@ name = "prover"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "brotli",
  "bytes",
  "derivative",
  "digest",

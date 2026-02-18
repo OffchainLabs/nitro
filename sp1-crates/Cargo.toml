@@ -21,7 +21,6 @@ lazy_static = { version = "1.4.0" }
 nom = { version = "7.0.0" }
 num-derive = { version = "0.4.1" }
 num-traits = { version = "0.2.17" }
-num_enum = { version = "0.7.1" }
 once_cell = { version = "1.21.3" }
 parking_lot = { version = "0.12.1" }
 rand = { version = "0.8.4", default-features = false }
