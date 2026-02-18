@@ -28,8 +28,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
-	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -842,6 +842,7 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapRegistry,
+		nil,
 	)
 	if err != nil {
 		return nil, err
