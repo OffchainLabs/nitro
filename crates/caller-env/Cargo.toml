@@ -14,6 +14,7 @@ brotli = { workspace = true, optional = true }
 k256 = { workspace = true, features = ["ecdsa"] }
 rand = { workspace = true }
 rand_pcg = { workspace = true }
+spin = { workspace = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmer = { workspace = true, optional = true }
 

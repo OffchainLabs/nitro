@@ -7,8 +7,8 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
-use crate::engine::config::ModuleRoot;
 use crate::engine::execution::{validate_continuous, validate_native};
+use crate::engine::ModuleRoot;
 use crate::{config::InputMode, ServerState};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -34,7 +34,7 @@ pub async fn validate(
     Json(request): Json<ValidationRequest>,
 ) -> Result<Json<GoGlobalState>, String> {
     match state.mode {
-        InputMode::Native => validate_native(&state, request.validation_input).await,
+        InputMode::Native => validate_native(&state, request).await,
         InputMode::Continuous => validate_continuous(&state, request).await,
     }
 }
@@ -48,5 +48,11 @@ pub async fn name() -> impl IntoResponse {
 }
 
 pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("[{:?}]", state.module_root)
+    let module_roots: Vec<String> = state
+        .locator
+        .module_roots()
+        .iter()
+        .map(|root_meta| format!("0x{}", root_meta.module_root))
+        .collect();
+    format!("[{}]", module_roots.join(", "))
 }

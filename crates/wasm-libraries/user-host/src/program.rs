@@ -11,10 +11,11 @@ use arbutil::{
     },
     Color,
 };
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
+use std::borrow::Cow;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
@@ -225,12 +226,16 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = EvmApiRequestor<VecReader, UserHostRequester>;
 
-    fn args(&self) -> &[u8] {
-        &self.args
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.args)
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        &mut self.outs
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Borrowed(&self.outs)
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        self.outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
@@ -251,7 +256,7 @@ impl UserHost<VecReader> for Program {
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
+        Ok(StaticMem.read_slice(ptr, len as usize))
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryBoundsError> {
@@ -261,12 +266,12 @@ impl UserHost<VecReader> for Program {
 
     fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
-        unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
+        Ok(StaticMem.write_u32(ptr, x))
     }
 
     fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
+        Ok(StaticMem.write_slice(ptr, src))
     }
 
     fn say<D: Display>(&self, text: D) {
