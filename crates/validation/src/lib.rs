@@ -1,7 +1,6 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::{Bytes32, PreimageType};
-use brotli::BrotliStatus;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, As, DisplayFromStr};
 use std::{
@@ -51,7 +50,8 @@ pub struct BatchInfo {
 
 /// `UserWasm` is a wrapper around `Vec<u8>`
 ///
-/// It is useful for decompressing a `brotli`-compressed wasm module.
+/// If the `decompress-user-wasm` feature is on, it contains `brotli`-decompressed wasm module.
+/// Otherwise, it contains the compressed wasm module as-is, and the caller is responsible for decompressing it before use.
 ///
 /// Note: The wrapped `Vec<u8>` is already `Base64` decoded before
 /// `from(Vec<u8>)` is called by `serde`.
@@ -71,12 +71,16 @@ impl AsRef<[u8]> for UserWasm {
     }
 }
 
-/// The `Vec<u8>` is assumed to be compressed using `brotli`, and must be decompressed before use.
 impl TryFrom<Vec<u8>> for UserWasm {
-    type Error = BrotliStatus;
+    #[cfg(feature = "decompress-user-wasm")]
+    type Error = brotli::BrotliStatus;
+    #[cfg(not(feature = "decompress-user-wasm"))]
+    type Error = ();
 
     fn try_from(data: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(Self(brotli::decompress(&data, brotli::Dictionary::Empty)?))
+        #[cfg(feature = "decompress-user-wasm")]
+        let data = brotli::decompress(&data, brotli::Dictionary::Empty)?;
+        Ok(Self(data))
     }
 }
 
