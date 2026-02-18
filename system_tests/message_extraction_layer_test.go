@@ -77,6 +77,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -213,6 +214,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		melDB,
 		mockMsgConsumer,
 		blobReaderRegistry,
+		nil,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -348,6 +350,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -411,6 +414,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	Require(t, err)
 	newExtractor.StopWaiter.Start(ctx, extractor)
@@ -668,6 +672,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
