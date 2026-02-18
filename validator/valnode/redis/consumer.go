@@ -266,6 +266,10 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 				return
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
+			// Cache the execution run to avoid re-creating the machine for
+			// consecutive requests with the same validation input (same block).
+			var cachedRun validator.ExecutionRun
+			var cachedInputId uint64
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
 				req, err := c.Consume(ctx)
 				if err != nil {
@@ -274,24 +278,32 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 				}
 				if req == nil {
 					// There's nothing in the queue.
-					return time.Second
+					return 100 * time.Millisecond
 				}
-				run, err := s.spawner.CreateExecutionRun(moduleRoot,
-					req.Value.ValidationInput, true).Await(ctx)
-				if err != nil {
-					log.Error("Creating BOLD execution", "error", err)
-					return 0
+				inputId := req.Value.ValidationInput.Id
+				if cachedRun == nil || cachedInputId != inputId {
+					if cachedRun != nil {
+						cachedRun.Close()
+					}
+					cachedRun, err = s.spawner.CreateExecutionRun(moduleRoot,
+						req.Value.ValidationInput, true).Await(ctx)
+					if err != nil {
+						log.Error("Creating BOLD execution", "error", err)
+						cachedRun = nil
+						return 0
+					}
+					cachedInputId = inputId
 				}
 				var res interface{}
 				// BoLD only uses two methods: either getting machine hashes, or one step proofs,
 				// so we can check if the NumDesiredLeaves is > 0 to determine which path to take.
 				if req.Value.NumDesiredLeaves != 0 {
-					res, err = run.GetMachineHashesWithStepSize(
+					res, err = cachedRun.GetMachineHashesWithStepSize(
 						req.Value.MachineStartIndex,
 						req.Value.StepSize,
 						req.Value.NumDesiredLeaves).Await(ctx)
 				} else {
-					res, err = run.GetProofAt(
+					res, err = cachedRun.GetProofAt(
 						req.Value.MachineStartIndex,
 					).Await(ctx)
 				}
@@ -308,7 +320,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
 					return 0
 				}
-				return time.Second
+				return 0
 			})
 		})
 	}
