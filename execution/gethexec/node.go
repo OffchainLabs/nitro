@@ -328,7 +328,7 @@ func CreateExecutionNode(
 		}
 	}
 
-	ef, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +399,7 @@ func CreateExecutionNode(
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 		addressFilterService:     addressFilterService,
-		eventFilter:              ef,
+		eventFilter:              eventFilter,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -526,6 +526,8 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.addressFilterService.Start(ctx)
 		checker := n.addressFilterService.GetAddressChecker()
 		if n.Sequencer != nil {
+			// Sequencer filters in the execution engine; don't also
+			// set the prechecker filter to avoid double filtering.
 			n.ExecEngine.SetAddressChecker(checker)
 		} else {
 			n.TxPreChecker.SetAddressChecker(checker)

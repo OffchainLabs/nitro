@@ -305,6 +305,9 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 // mode to detect address filtering. This catches direct address touches,
 // redeems, and contract-triggered redeems.
 func (c *TxPreChecker) dryRunFilter(tx *types.Transaction, statedb *state.StateDB, block *types.Header) error {
+	if c.addressChecker == nil {
+		return nil
+	}
 	statedb.SetAddressChecker(c.addressChecker)
 
 	extraInfo := types.DeserializeHeaderExtraInformation(block)

@@ -50,7 +50,7 @@ func waitForForwarderSync(t *testing.T, ctx context.Context, forwarder *TestClie
 		}
 		select {
 		case <-timeoutCtx.Done():
-			t.Fatalf("forwarder did not reach block %d within timeout", targetBlock)
+			require.NoError(t, timeoutCtx.Err(), "forwarder did not reach block %d within timeout", targetBlock)
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

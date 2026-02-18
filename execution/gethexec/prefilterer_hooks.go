@@ -22,7 +22,6 @@ import (
 type PrefiltererSequencingHooks struct {
 	tx          *types.Transaction
 	delivered   bool
-	txError     error
 	filtered    bool
 	eventFilter *eventfilter.EventFilter
 }
@@ -68,6 +67,7 @@ func (h *PrefiltererSequencingHooks) PostTxFilter(
 	sender common.Address,
 	_ uint64,
 	_ *core.ExecutionResult,
+	_ bool,
 ) error {
 	// Inline event filtering with actual sender, matching the real sequencer's
 	// postTxFilter. Do NOT use applyEventFilter here -- it passes
@@ -100,9 +100,7 @@ func (h *PrefiltererSequencingHooks) RedeemFilter(statedb *state.StateDB) error 
 	return nil
 }
 
-func (h *PrefiltererSequencingHooks) InsertLastTxError(err error) {
-	h.txError = err
-}
+func (h *PrefiltererSequencingHooks) InsertLastTxError(_ error) {}
 
 func (h *PrefiltererSequencingHooks) ReportGroupRevert(err error) {
 	h.filtered = true
