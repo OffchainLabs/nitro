@@ -188,6 +188,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
+	blockValidatorConfigB := staker.TestBlockValidatorConfig
 
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
@@ -196,7 +197,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		l2nodeB.ExecutionRecorder,
 		l2nodeB.ConsensusDB,
 		nil,
-		StaticFetcherFrom(t, &blockValidatorConfig),
+		StaticFetcherFrom(t, &blockValidatorConfigB),
 		valStackB,
 		locator.LatestWasmModuleRoot(),
 	)
@@ -219,7 +220,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		statelessB,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		StaticFetcherFrom(t, &blockValidatorConfig),
+		StaticFetcherFrom(t, &blockValidatorConfigB),
 		nil,
 	)
 	Require(t, err)
@@ -287,6 +288,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		l1client,
 		bold.NewDataPosterTransactor(dp),
 		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
+		sol.WithParentChainBlockCreationTime(10*time.Millisecond),
 	)
 	Require(t, err)
 
@@ -387,13 +389,12 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
 
-	// Wait until the validators have validated the batches.
 	for {
 		lastInfo, err := blockValidatorA.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		t.Log("Validator A:", lastInfo.GlobalState.Batch, "/", totalBatches-1)
 		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
@@ -404,7 +405,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		t.Log("Validator B:", lastInfo.GlobalState.Batch, "/", totalBatches-1)
 		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
@@ -444,10 +445,12 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	stackOpts := []challenge.StackOpt{
 		challenge.StackWithName("honest"),
 		challenge.StackWithMode(modes.MakeMode),
-		challenge.StackWithPostingInterval(time.Second * 3),
-		challenge.StackWithPollingInterval(time.Second),
+		challenge.StackWithPostingInterval(200 * time.Millisecond),
+		challenge.StackWithPollingInterval(100 * time.Millisecond),
+		challenge.StackWithConfirmationInterval(200 * time.Millisecond),
 		challenge.StackWithMinimumGapToParentAssertion(0),
-		challenge.StackWithAverageBlockCreationTime(time.Second),
+		challenge.StackWithAverageBlockCreationTime(100 * time.Millisecond),
+		challenge.StackWithHeaderProvider(l2nodeA.L1Reader),
 	}
 
 	manager, err := challenge.NewChallengeStack(
@@ -457,7 +460,10 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	)
 	Require(t, err)
 
-	evilStackOpts := append(stackOpts, challenge.StackWithName("evil"))
+	evilStackOpts := append(stackOpts,
+		challenge.StackWithName("evil"),
+		challenge.StackWithHeaderProvider(l2nodeB.L1Reader),
+	)
 
 	managerB, err := challenge.NewChallengeStack(
 		chainB,
@@ -474,7 +480,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	Require(t, err)
 
 	fromBlock := uint64(0)
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
@@ -515,9 +521,9 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	}
 }
 
-// Every 3 seconds, send an L1 transaction to keep the chain moving.
+// Send L1 transactions to keep the chain moving.
 func keepChainMoving(t *gotesting.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
-	delay := time.Second * 3
+	delay := 100 * time.Millisecond
 	for {
 		select {
 		case <-ctx.Done():
@@ -638,6 +644,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		&evilOpts,
 		l1client,
 		bold.NewDataPosterTransactor(dp),
+		sol.WithParentChainBlockCreationTime(10*time.Millisecond),
 	)
 	Require(t, err)
 
