@@ -40,7 +40,10 @@ jobs:
               - 'crates/**'
               - 'contracts/**'
               - 'Makefile'
+              - '**.toml'
+              - '**/Cargo.lock'
               - '.github/workflows/_rust-tests.yml'
+              - '.github/workflows/_detect-changes.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
