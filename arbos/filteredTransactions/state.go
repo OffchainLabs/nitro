@@ -24,14 +24,23 @@ func Open(statedb vm.StateDB, burner burn.Burner) *FilteredTransactionsState {
 }
 
 func (s *FilteredTransactionsState) Add(txHash common.Hash) error {
+	if s == nil {
+		return nil
+	}
 	return s.store.Set(txHash, presentHash)
 }
 
 func (s *FilteredTransactionsState) Delete(txHash common.Hash) error {
+	if s == nil {
+		return nil
+	}
 	return s.store.Clear(txHash)
 }
 
 func (s *FilteredTransactionsState) IsFiltered(txHash common.Hash) (bool, error) {
+	if s == nil {
+		return false, nil
+	}
 	value, err := s.store.Get(txHash)
 	if err != nil {
 		return false, err
@@ -40,6 +49,9 @@ func (s *FilteredTransactionsState) IsFiltered(txHash common.Hash) (bool, error)
 }
 
 func (s *FilteredTransactionsState) IsFilteredFree(txHash common.Hash) bool {
+	if s == nil {
+		return false
+	}
 	return s.store.GetFree(txHash) == presentHash
 }
 
@@ -47,5 +59,8 @@ func (s *FilteredTransactionsState) IsFilteredFree(txHash common.Hash) bool {
 // This is called after a filtered tx is executed as a no-op to clean up.
 // The entry is truly deleted from the storage trie (not just set to zero).
 func (s *FilteredTransactionsState) DeleteFree(txHash common.Hash) {
+	if s == nil {
+		return
+	}
 	s.store.ClearFree(txHash)
 }
