@@ -286,7 +286,15 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+	var transactionFiltererRPCClient *TransactionFiltererRPCClient
+	if config.Sequencer.Enable && config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+		filtererConfigFetcher := func() *rpcclient.ClientConfig {
+			return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
+		}
+		transactionFiltererRPCClient = NewTransactionFiltererRPCClient(filtererConfigFetcher)
+	}
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, transactionFiltererRPCClient)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -335,14 +343,6 @@ func CreateExecutionNode(
 	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address filter service: %w", err)
-	}
-
-	if config.Sequencer.Enable && config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
-		filtererConfigFetcher := func() *rpcclient.ClientConfig {
-			return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
-		}
-		transactionFiltererRPCClient := NewTransactionFiltererRPCClient(filtererConfigFetcher)
-		execEngine.SetTransactionFiltererRPCClient(transactionFiltererRPCClient)
 	}
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
