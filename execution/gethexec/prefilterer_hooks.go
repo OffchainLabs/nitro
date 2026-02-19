@@ -91,15 +91,6 @@ func (h *PrefiltererSequencingHooks) PostTxFilter(
 	return nil
 }
 
-func (h *PrefiltererSequencingHooks) RedeemFilter(statedb *state.StateDB) error {
-	applyEventFilter(h.eventFilter, statedb)
-	if statedb.IsAddressFiltered() {
-		h.filtered = true
-		return state.ErrArbTxFilter
-	}
-	return nil
-}
-
 func (h *PrefiltererSequencingHooks) InsertLastTxError(_ error) {}
 
 func (h *PrefiltererSequencingHooks) ReportGroupRevert(err error) {
