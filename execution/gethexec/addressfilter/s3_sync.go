@@ -29,22 +29,21 @@ type S3SyncManager struct {
 	hashStore *HashStore
 }
 
-func NewS3SyncManager(ctx context.Context, config *Config, hashStore *HashStore) (*S3SyncManager, error) {
-	s := &S3SyncManager{
+func NewS3SyncManager(config *Config, hashStore *HashStore) *S3SyncManager {
+	manager := &S3SyncManager{
 		hashStore: hashStore,
 	}
-	syncer, err := s3syncer.NewSyncer(
-		ctx,
+	syncer := s3syncer.NewSyncer(
 		&config.S3,
-		s.handleHashListData,
+		manager.handleHashListData,
 	)
 
-	if err != nil {
-		return nil, err
-	}
+	manager.Syncer = syncer
+	return manager
+}
 
-	s.Syncer = syncer
-	return s, nil
+func (s *S3SyncManager) Initialize(ctx context.Context) error {
+	return s.Syncer.Initialize(ctx)
 }
 
 // handleHashListData parses the downloaded JSON data and loads it into the hashStore.

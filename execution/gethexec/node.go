@@ -302,7 +302,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(ctx, execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
