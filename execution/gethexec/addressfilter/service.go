@@ -90,6 +90,11 @@ func (s *FilterService) Start(ctx context.Context) {
 	)
 }
 
+func (s *FilterService) StopAndWait() {
+	s.addressChecker.StopAndWait()
+	s.StopWaiter.StopAndWait()
+}
+
 func (s *FilterService) GetHashCount() int {
 	if !s.config.Enable {
 		return 0

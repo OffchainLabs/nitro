@@ -116,7 +116,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // tx hashes that touch filtered addresses but are not in the onchain filter.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
 	if isRedeem {
-		applyEventFilter(f.eventFilter, db)
+		applyEventFilter(f.eventFilter, db, common.Address{})
 		if db.IsAddressFiltered() {
 			return state.ErrArbTxFilter
 		}
@@ -136,7 +136,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 	touchRetryableAddresses(db, tx)
-	applyEventFilter(f.eventFilter, db)
+	applyEventFilter(f.eventFilter, db, common.Address{})
 
 	if db.IsAddressFiltered() {
 		// If the STF already handled this tx via the onchain filter mechanism,
@@ -163,13 +163,13 @@ func (f *DelayedFilteringSequencingHooks) ReportGroupRevert(err error) {
 	}
 }
 
-func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
+func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB, sender common.Address) {
 	if ef == nil {
 		return
 	}
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
-		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
+		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
 			db.TouchAddress(addr)
 		}
 	}
@@ -254,14 +254,15 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool, txFiltererRPCClient *TransactionFiltererRPCClient) *ExecutionEngine {
 	return &ExecutionEngine{
-		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:  make(chan struct{}, 1),
-		cachedL1PriceData: NewL1PriceData(),
-		exposeMultiGas:    exposeMultiGas,
-		syncTillBlock:     syncTillBlock,
+		bc:                           bc,
+		resequenceChan:               make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:             make(chan struct{}, 1),
+		cachedL1PriceData:            NewL1PriceData(),
+		exposeMultiGas:               exposeMultiGas,
+		syncTillBlock:                syncTillBlock,
+		transactionFiltererRPCClient: txFiltererRPCClient,
 	}
 }
 
@@ -684,6 +685,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		false,
 		core.NewMessageCommitContext(s.wasmTargets),
 		s.exposeMultiGas,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -909,6 +911,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			isMsgForPrefetch,
 			runCtx,
 			s.exposeMultiGas,
+			false,
 		)
 		if err != nil {
 			return nil, nil, nil, err
@@ -1344,10 +1347,6 @@ func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
 
 func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
 	s.eventFilter = ef
-}
-
-func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
-	s.transactionFiltererRPCClient = client
 }
 
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {

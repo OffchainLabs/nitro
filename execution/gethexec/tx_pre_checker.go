@@ -20,8 +20,11 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -61,11 +64,19 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
 }
 
+// TxPreChecker wraps a TransactionPublisher and validates transactions before
+// forwarding them. The addressChecker and eventFilter fields are set once
+// during node startup via SetAddressChecker/SetEventFilter (called from
+// node.go Start) and read concurrently by the Publish methods. This is safe
+// because the fields are pointer-width and written only during startup before
+// any concurrent reads occur. The same pattern is used for expressLaneTracker.
 type TxPreChecker struct {
 	TransactionPublisher
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *ExpressLaneTracker
+	addressChecker     state.AddressChecker
+	eventFilter        *eventfilter.EventFilter
 }
 
 func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
@@ -226,6 +237,11 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
+	if c.addressChecker != nil {
+		if err := c.dryRunFilter(tx, statedb, block); err != nil {
+			return err
+		}
+	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
 
@@ -255,6 +271,11 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
+	if c.addressChecker != nil {
+		if err := c.dryRunFilter(msg.Transaction, statedb, block); err != nil {
+			return err
+		}
+	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
 
@@ -272,9 +293,71 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	if c.addressChecker != nil {
+		if err := c.dryRunFilter(tx, statedb, block); err != nil {
+			return err
+		}
+	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
+// dryRunFilter runs the candidate tx through ProduceBlockAdvanced in dry-run
+// mode to detect address filtering. This catches direct address touches,
+// redeems, and contract-triggered redeems.
+func (c *TxPreChecker) dryRunFilter(tx *types.Transaction, statedb *state.StateDB, block *types.Header) error {
+	if c.addressChecker == nil {
+		return nil
+	}
+	statedb.SetAddressChecker(c.addressChecker)
+
+	extraInfo := types.DeserializeHeaderExtraInformation(block)
+
+	header := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: extraInfo.L1BlockNumber,
+		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
+		RequestId:   nil,
+		L1BaseFee:   nil,
+	}
+
+	hooks := &PrefiltererSequencingHooks{
+		tx:          tx,
+		eventFilter: c.eventFilter,
+	}
+
+	_, _, err := arbos.ProduceBlockAdvanced(
+		header,
+		block.Nonce.Uint64(),
+		block,
+		statedb,
+		c.bc,
+		hooks,
+		true,
+		core.NewMessagePrefetchContext(),
+		false,
+		true,
+	)
+
+	if hooks.filtered {
+		return state.ErrArbTxFilter
+	}
+
+	if err != nil {
+		log.Warn("prefilterer dry-run failed", "err", err, "tx", tx.Hash())
+	}
+
+	return nil
 }
 
 func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
 	c.expressLaneTracker = tracker
+}
+
+func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
+	c.addressChecker = checker
+}
+
+func (c *TxPreChecker) SetEventFilter(ef *eventfilter.EventFilter) {
+	c.eventFilter = ef
 }
