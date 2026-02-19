@@ -97,7 +97,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		chainOwners:                     addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		nativeTokenOwners:               addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(nativeTokenOwnerSubspace)),
 		transactionFilterers:            addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(transactionFiltererSubspace)),
-		filteredTransactions:            filteredTransactions.Open(stateDB, burner),
+		filteredTransactions:            openFilteredTransactions(arbosVersion, stateDB, burner),
 		sendMerkle:                      merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
 		programs:                        programs.Open(arbosVersion, backingStorage.OpenSubStorage(programsSubspace)),
 		features:                        features.Open(backingStorage.OpenSubStorage(featuresSubspace)),
@@ -113,6 +113,13 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage:                  backingStorage,
 		Burner:                          burner,
 	}, nil
+}
+
+func openFilteredTransactions(arbosVersion uint64, stateDB vm.StateDB, burner burn.Burner) *filteredTransactions.FilteredTransactionsState {
+	if arbosVersion >= params.ArbosVersion_TransactionFiltering {
+		return filteredTransactions.Open(stateDB, burner)
+	}
+	return nil
 }
 
 func OpenSystemArbosState(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) (*ArbosState, error) {
