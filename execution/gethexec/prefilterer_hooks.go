@@ -83,9 +83,7 @@ func (h *PrefiltererSequencingHooks) PostTxFilter(
 
 func (h *PrefiltererSequencingHooks) InsertLastTxError(_ error) {}
 
-func (h *PrefiltererSequencingHooks) ReportGroupRevert(err error) {
-	h.filtered = true
-}
+func (h *PrefiltererSequencingHooks) ReportGroupRevert(err error) {}
 
 func (h *PrefiltererSequencingHooks) BlockFilter(
 	_ *types.Header, _ *state.StateDB, _ types.Transactions, _ types.Receipts,
