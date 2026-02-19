@@ -43,7 +43,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/filteredTransactions"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
@@ -1346,6 +1345,5 @@ func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, err
 		return false, err
 	}
 
-	filteredState := filteredTransactions.Open(statedb, arbState.Burner)
-	return filteredState.IsFiltered(txHash)
+	return arbState.FilteredTransactions().IsFiltered(txHash)
 }
