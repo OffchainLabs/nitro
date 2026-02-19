@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,9 +35,11 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
@@ -58,6 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
@@ -442,29 +446,33 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
+	var executionDB ethdb.Database
+	var initDataReader statetransfer.InitDataReader
+	var l2BlockChain *core.BlockChain
+
 	if executionNodeEnabled {
 		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
 			log.Error("error populating stylus target cache", "err", err)
 			return 1
 		}
-	}
 
-	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, consensusNodeEnabled, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
-	if l2BlockChain != nil {
-		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
-	}
-	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
-	if err != nil {
-		pflag.Usage()
-		log.Error("error initializing database", "err", err)
-		return 1
-	}
+		executionDB, initDataReader, l2BlockChain, err = nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+		if l2BlockChain != nil {
+			deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
+		}
+		deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
+		if err != nil {
+			pflag.Usage()
+			log.Error("error initializing database", "err", err)
+			return 1
+		}
 
-	if consensusNodeEnabled && initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
-		if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
-			log.Error("error trying to validate genesis assertion", "err", err)
-			if !nodeConfig.Init.Force {
-				return 1
+		if initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
+			if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
+				log.Error("error trying to validate genesis assertion", "err", err)
+				if !nodeConfig.Init.Force {
+					return 1
+				}
 			}
 		}
 	}
@@ -507,7 +515,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
+	if executionNodeEnabled && l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
 		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
@@ -560,13 +568,25 @@ func mainImpl() int {
 	seqInboxMaxDataSize := 117964
 
 	if consensusNodeEnabled {
+		// TODO: where will chainConfig come from in the case (consensusNodeEnabled && !executionNodeEnabled) ?
+		var chainConfig *params.ChainConfig
+		if !executionNodeEnabled && l2BlockChain == nil {
+			genesisBlockNr := uint64(0)
+			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, genesisBlockNr, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
+			if err != nil {
+				log.Error("failed to get chainConfig for consensus node", "err", err)
+				return 1
+			}
+		} else {
+			chainConfig = l2BlockChain.Config()
+		}
 		consensusNode, err = arbnode.CreateConsensusNode(
 			ctx,
 			stack,
 			execNode,
 			consensusDB,
 			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			l2BlockChain.Config(),
+			chainConfig,
 			l1Client,
 			&rollupAddrs,
 			l1TransactionOptsValidator,

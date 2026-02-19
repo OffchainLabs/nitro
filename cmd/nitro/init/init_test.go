@@ -441,7 +441,6 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	// opening for the first time doesn't error
 	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
-		true,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
@@ -459,7 +458,6 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	// opening for the second time doesn't error
 	executionDB, _, blockchain, err = OpenInitializeExecutionDB(
 		ctx,
-		true,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
@@ -478,7 +476,6 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
 	_, _, _, err = OpenInitializeExecutionDB(
 		ctx,
-		true,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
@@ -707,7 +704,6 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 
 	executionDB, _, blockchain, err := OpenInitializeExecutionDB(
 		ctx,
-		true,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
@@ -1063,7 +1059,6 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 
 	executionDB, _, _, err := OpenInitializeExecutionDB(
 		ctx,
-		true,
 		stack,
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
