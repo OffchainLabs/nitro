@@ -116,7 +116,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // tx hashes that touch filtered addresses but are not in the onchain filter.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
 	if isRedeem {
-		applyEventFilter(f.eventFilter, db)
+		applyEventFilter(f.eventFilter, db, common.Address{})
 		if db.IsAddressFiltered() {
 			return state.ErrArbTxFilter
 		}
@@ -136,7 +136,7 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 	touchRetryableAddresses(db, tx)
-	applyEventFilter(f.eventFilter, db)
+	applyEventFilter(f.eventFilter, db, common.Address{})
 
 	if db.IsAddressFiltered() {
 		// If the STF already handled this tx via the onchain filter mechanism,
@@ -163,13 +163,13 @@ func (f *DelayedFilteringSequencingHooks) ReportGroupRevert(err error) {
 	}
 }
 
-func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
+func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB, sender common.Address) {
 	if ef == nil {
 		return
 	}
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
-		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
+		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
 			db.TouchAddress(addr)
 		}
 	}

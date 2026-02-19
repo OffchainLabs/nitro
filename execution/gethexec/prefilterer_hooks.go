@@ -69,17 +69,7 @@ func (h *PrefiltererSequencingHooks) PostTxFilter(
 	_ *core.ExecutionResult,
 	_ bool,
 ) error {
-	// Inline event filtering with actual sender, matching the real sequencer's
-	// postTxFilter. Do NOT use applyEventFilter here -- it passes
-	// common.Address{} as sender, which would miss sender-dependent rules.
-	if h.eventFilter != nil {
-		logs := statedb.GetCurrentTxLogs()
-		for _, l := range logs {
-			for _, addr := range h.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(addr)
-			}
-		}
-	}
+	applyEventFilter(h.eventFilter, statedb, sender)
 	// The real sequencer's postTxFilter also checks statedb.IsTxFiltered(),
 	// which is the onchain per-tx-hash filter for delayed messages. We omit
 	// it here because the prechecker only processes RPC-submitted txs, never

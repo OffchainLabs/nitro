@@ -804,14 +804,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 }
 
 func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
-	if s.eventFilter != nil {
-		logs := statedb.GetCurrentTxLogs()
-		for _, l := range logs {
-			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(addr)
-			}
-		}
-	}
+	applyEventFilter(s.eventFilter, statedb, sender)
 
 	if isRedeem {
 		if statedb.IsAddressFiltered() {
