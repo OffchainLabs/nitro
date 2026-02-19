@@ -359,8 +359,11 @@ func TestEnableDelayedSequencingFilterDangerousConfig(t *testing.T) {
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
-	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	// Advance L1 again to ensure all delayed messages are processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	_, err = builder.L2.EnsureTxSucceeded(delayedTx)
+	require.NoError(t, err)
 
 	// Verify filtered address balance changed
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
