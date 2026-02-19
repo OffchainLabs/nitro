@@ -1,0 +1,53 @@
+{
+  "0xb2460c48": {
+    "bucket": "PackedUniV3Swap_ExactInput_or_MarketWithPriceLimit",
+    "confidence": 0.72,
+    "evidence": [
+      "All calls go to 0x27920e8039d2b6e93e36f5d5f53b998e2e631a70 (custom router)",
+      "32-byte packed calldata after selector; marketId at byte[1] maps to UniV3 pools (ETH/ARB, ETH/USDC, ETH/USDT, WBTC/USDT, WBTC/USDC)",
+      "Successful txs emit UniV3 Swap events and ERC20 Transfers; failed txs revert with 0 logs",
+      "Bytecode shows custom bit extraction (non-ABI) at subroutine 0x2b2b"
+    ],
+    "caveats": [
+      "Exact meaning of packed fields (price limit/minOut) not fully recovered without ABI/source"
+    ]
+  },
+  "0x6bfd6286": {
+    "bucket": "PackedUniV3Swap_WithExtraLimitParam",
+    "confidence": 0.68,
+    "evidence": [
+      "Same router 0x27920e80; 64-byte data payload (2 words)",
+      "First word shares packed structure with b2460c48; second word is a small uint (last 4 bytes used) likely limit/trigger",
+      "Transfers show swaps between USDC/WBTC, USDT/WBTC, WETH/USDC markets",
+      "Emits router-specific event (topic 0x40e9cecb...) plus ERC20 Transfers"
+    ],
+    "caveats": [
+      "Exact second-word semantics unclear (limit price vs minOut)."
+    ]
+  },
+  "0xb42ebb63": {
+    "bucket": "PackedUniV3Swap_AlternateSideOrExactOutput",
+    "confidence": 0.66,
+    "evidence": [
+      "Same router; 32-byte packed payload like b2460c48",
+      "Market IDs map to UniV3 pools (WBTC/USDC, WBTC/WETH, WETH/USDC)",
+      "Successful txs emit UniV3 Swap + ERC20 Transfer logs; failures revert with 0 logs",
+      "Likely variant of swap (opposite side or exactOutput) using same packed format"
+    ],
+    "caveats": [
+      "Direction/minOut fields not fully decoded"
+    ]
+  },
+  "0x000000e7": {
+    "bucket": "SinglePoolSwap_CustomExecutor",
+    "confidence": 0.55,
+    "evidence": [
+      "Calls go to 0x96daa0b8a5499ea9323421ed0cda06b345caab73 (custom executor)",
+      "160-byte ABI-like payload: pool address (UniV3 ETH/USDC), direction flag=1, two uint256 params, token address (WETH)",
+      "Successful txs emit UniV3 Swap + ERC20 Transfers"
+    ],
+    "caveats": [
+      "Parameter roles (amount vs priceLimit) not resolved; likely custom wrapper around UniV3 swap"
+    ]
+  }
+}

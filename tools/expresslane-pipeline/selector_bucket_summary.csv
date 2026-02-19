@@ -1,0 +1,5 @@
+selector,bucket,confidence
+0xb2460c48,PackedUniV3Swap_ExactInput_or_MarketWithPriceLimit,0.72
+0x6bfd6286,PackedUniV3Swap_WithExtraLimitParam,0.68
+0xb42ebb63,PackedUniV3Swap_AlternateSideOrExactOutput,0.66
+0x000000e7,SinglePoolSwap_CustomExecutor,0.55
