@@ -278,7 +278,7 @@ func CreateExecutionNode(
 
 	// workaround that considers that this is a hot reloadable Sequencer's config, but used by ExecutionEngine
 	disableDelayedSequencingFilterConfigFetcher := func() bool {
-		return configFetcher.Get().Sequencer.TransactionFiltering.Dangerous.DisableDelayedSequencingFilter
+		return configFetcher.Get().Sequencer.TransactionFiltering.DisableDelayedSequencingFilter
 	}
 
 	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, disableDelayedSequencingFilterConfigFetcher)

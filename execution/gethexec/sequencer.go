@@ -101,15 +101,11 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 }
 
-type DangerousTransactionFilteringConfig struct {
-	DisableDelayedSequencingFilter bool `koanf:"disable-delayed-sequencing-filter" reload:"hot"`
-}
-
 type TransactionFilteringConfig struct {
-	Dangerous                    DangerousTransactionFilteringConfig `koanf:"dangerous" reload:"hot"`
-	EventFilter                  eventfilter.EventFilterConfig       `koanf:"event-filter"`
-	AddressFilter                addressfilter.Config                `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient rpcclient.ClientConfig              `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter" reload:"hot"`
+	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -125,23 +121,15 @@ func (c *TransactionFilteringConfig) Validate() error {
 	return nil
 }
 
-var DefaultDangerousTransactionFilteringConfig = DangerousTransactionFilteringConfig{
-	DisableDelayedSequencingFilter: false,
-}
-
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
-	Dangerous:                    DefaultDangerousTransactionFilteringConfig,
-	EventFilter:                  eventfilter.DefaultEventFilterConfig,
-	AddressFilter:                addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient: DefaultTransactionFiltererRPCClientConfig,
-}
-
-func DangerousTransactionFilteringAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultDangerousTransactionFilteringConfig.DisableDelayedSequencingFilter, "DANGEROUS! if true delayed sequencing filter will be disabled")
+	DisableDelayedSequencingFilter: false,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	DangerousTransactionFilteringAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)

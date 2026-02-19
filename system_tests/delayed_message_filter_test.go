@@ -321,14 +321,14 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
-func TestEnableDelayedSequencingFilterDangerousConfig(t *testing.T) {
+func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Even though the transaction will touch a filtered address,
 	// the sequencer will process the delayed msg, since this config is set to true.
-	builder.execConfig.Sequencer.TransactionFiltering.Dangerous.DisableDelayedSequencingFilter = true
+	builder.execConfig.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter = true
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
