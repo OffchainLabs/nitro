@@ -318,13 +318,12 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		// TODO: do we need rollupAddrs for execution node? We seem to need it for initialzing chainConfig
-		// if consensusNodeEnabled {
+		// TODO: should rollupAddrs be created for consensus or execution node? It's used in both
 		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
-		// }
+
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
 		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
 		if err != nil {
