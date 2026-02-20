@@ -3,6 +3,7 @@
 package staterecovery
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 )
 
-func RecreateMissingStates(executionDB ethdb.Database, bc *core.BlockChain, cacheConfig *core.BlockChainConfig, startBlock uint64) error {
+func RecreateMissingStates(ctx context.Context, executionDB ethdb.Database, bc *core.BlockChain, cacheConfig *core.BlockChainConfig, startBlock uint64) error {
 	start := time.Now()
 	currentHeader := bc.CurrentBlock()
 	if currentHeader == nil {
@@ -68,7 +69,7 @@ func RecreateMissingStates(executionDB ethdb.Database, bc *core.BlockChain, cach
 		}
 		currentState, err := state.New(currentBlock.Root(), database)
 		if err != nil {
-			_, err := bc.Processor().Process(currentBlock, previousState, vm.Config{})
+			_, err := bc.Processor().Process(ctx, currentBlock, previousState, vm.Config{})
 			if err != nil {
 				return fmt.Errorf("processing block %d failed: %w", current, err)
 			}

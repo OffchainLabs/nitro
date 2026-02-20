@@ -64,7 +64,7 @@ func TestRecreateMissingStates(t *testing.T) {
 		cacheConfig := gethexec.DefaultCacheConfigFor(&cachingConfig)
 		bc, err := gethexec.GetBlockChain(executionDB, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer, builder.execConfig.ExposeMultiGas)
 		Require(t, err)
-		err = staterecovery.RecreateMissingStates(executionDB, bc, cacheConfig, 1)
+		err = staterecovery.RecreateMissingStates(ctx, executionDB, bc, cacheConfig, 1)
 		Require(t, err)
 	}()
 
