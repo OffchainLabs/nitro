@@ -72,7 +72,7 @@ contract AddressFilterTest {
     /// @notice Selfdestructs this contract and sends balance to beneficiary
     function selfDestructTo(
         address payable beneficiary
-    ) external {
+    ) external payable {
         selfdestruct(beneficiary);
     }
 
