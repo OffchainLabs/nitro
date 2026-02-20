@@ -1283,10 +1283,25 @@ func submitRetryableViaL1(
 	data []byte,
 ) (*types.Receipt, common.Hash) {
 	t.Helper()
+	gasLimit := big.NewInt(100000)
+	return submitRetryableViaL1WithGasLimit(t, p, l1Sender, destAddr, callValue, beneficiary, feeRefundAddr, data, gasLimit)
+}
+
+func submitRetryableViaL1WithGasLimit(
+	t *testing.T,
+	p *retryableFilterTestParams,
+	l1Sender string,
+	destAddr common.Address,
+	callValue *big.Int,
+	beneficiary common.Address,
+	feeRefundAddr common.Address,
+	data []byte,
+	gasLimit *big.Int,
+) (*types.Receipt, common.Hash) {
+	t.Helper()
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	maxSubmissionCost := big.NewInt(1e16)
-	gasLimit := big.NewInt(100000)
 	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 
 	l1opts := p.builder.L1Info.GetDefaultTransactOpts(l1Sender, p.ctx)
