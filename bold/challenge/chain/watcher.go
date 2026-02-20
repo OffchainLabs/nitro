@@ -975,7 +975,7 @@ func (w *Watcher) saveEdgeToDB(
 	edge protocol.SpecEdge,
 	isRoyal bool,
 ) error {
-	if api.IsNil(w.apiDB) {
+	if util.IsNil(w.apiDB) {
 		return nil
 	}
 	start, startCommit := edge.StartCommitment()

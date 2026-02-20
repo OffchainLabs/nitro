@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util"
 )
 
 func (m *Manager) syncAssertions(ctx context.Context) {
@@ -505,7 +506,7 @@ func (m *Manager) maybePostRivalAssertion(
 }
 
 func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {
-	if api.IsNil(m.apiDB) {
+	if util.IsNil(m.apiDB) {
 		return nil
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)

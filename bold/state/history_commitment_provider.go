@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util"
 )
 
 // MachineHashCollector defines an interface which collects hashes of the state
@@ -288,7 +289,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 		StepSize:          stepSize,
 	}
 	// Requests collecting machine hashes for the specified config.
-	if !api.IsNil(p.apiDB) {
+	if !util.IsNil(p.apiDB) {
 		var rawStepHeights string
 		for i, stepHeight := range cfg.StepHeights {
 			hInt, err := safecast.ToInt(stepHeight)

@@ -51,6 +51,7 @@ import (
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	multiprotocolstaker "github.com/offchainlabs/nitro/staker/multi_protocol"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -1410,7 +1411,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
 		executionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
 	}
-	if executionClient == nil {
+	if util.IsNil(executionClient) {
 		return nil, errors.New("execution client must be non-nil")
 	}
 	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
@@ -1440,7 +1441,6 @@ func CreateConsensusNode(
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
-	var executionSequencer execution.ExecutionSequencer
 	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
@@ -1448,14 +1448,12 @@ func CreateConsensusNode(
 		executionClient = rpcClient
 		executionRecorder = rpcClient
 		arbOSVersionGetter = rpcClient
-		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
 	} else {
 		executionClient = fullExecutionClient
 		executionRecorder = fullExecutionClient
-		executionSequencer = fullExecutionClient
 		arbOSVersionGetter = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, fullExecutionClient, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1470,7 +1468,7 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting exec rpc client: %w", err)
 		}
 	}
-	if n.BlobReader != nil {
+	if !util.IsNil(n.BlobReader) {
 		err = n.BlobReader.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing blob reader: %w", err)
@@ -1517,7 +1515,7 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
-	} else if n.ExecutionSequencer != nil {
+	} else if !util.IsNil(n.ExecutionSequencer) {
 		n.ExecutionSequencer.Activate()
 	}
 	if n.MaintenanceRunner != nil {
@@ -1583,7 +1581,7 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting block metadata fetcher: %w", err)
 		}
 	}
-	if n.configFetcher != nil {
+	if !util.IsNil(n.configFetcher) {
 		n.configFetcher.Start(ctx)
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
@@ -1603,7 +1601,7 @@ func (n *Node) StopAndWait() {
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}
-	if n.configFetcher != nil && n.configFetcher.Started() {
+	if !util.IsNil(n.configFetcher) && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
 	if n.blockMetadataFetcher != nil {
@@ -1658,7 +1656,7 @@ func (n *Node) StopAndWait() {
 	if n.providerServerCloseFn != nil {
 		n.providerServerCloseFn()
 	}
-	if n.ExecutionClient != nil {
+	if !util.IsNil(n.ExecutionClient) {
 		if _, ok := n.ExecutionClient.(*executionrpcclient.Client); ok {
 			n.ExecutionClient.StopAndWait()
 		}

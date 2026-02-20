@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"reflect"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -290,7 +289,7 @@ func CreateExecutionNode(
 
 	var err error
 	var parentChainReader *headerreader.HeaderReader
-	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
+	if !util.IsNil(l1client) {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
 		parentChainReader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
