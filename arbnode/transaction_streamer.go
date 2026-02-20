@@ -54,10 +54,9 @@ type TransactionStreamer struct {
 	prevHeadMsgIdx *arbutil.MessageIndex
 	validator      *staker.BlockValidator
 
-	db             ethdb.Database
-	fatalErrChan   chan<- error
-	config         TransactionStreamerConfigFetcher
-	snapSyncConfig *SnapSyncConfig
+	db           ethdb.Database
+	fatalErrChan chan<- error
+	config       TransactionStreamerConfigFetcher
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
@@ -124,7 +123,6 @@ func NewTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
-	snapSyncConfig *SnapSyncConfig,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		exec:               exec,
@@ -134,7 +132,6 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
-		snapSyncConfig:     snapSyncConfig,
 	}
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
@@ -794,9 +791,6 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(msgIdx arbutil.MessageIndex) (uint64, error) {
-	if s.snapSyncConfig.Enabled && uint64(msgIdx) == s.snapSyncConfig.PrevBatchMessageCount {
-		return s.snapSyncConfig.PrevDelayedRead, nil
-	}
 	var prevDelayedRead uint64
 	if msgIdx > 0 {
 		prevMsg, err := s.GetMessage(msgIdx - 1)
