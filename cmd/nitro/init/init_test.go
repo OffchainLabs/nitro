@@ -1080,7 +1080,13 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 
 	// We already call getInit once inside openInitializeExecutionDB but calling a
 	// second time is okay since we're just loading configs
-	initDataReader, chainConfig, arbOsInit, err := GetInit(&nodeConfig, executionDB)
+	initDataReader, chainConfig, genesis, err := GetInit(&nodeConfig, executionDB)
+
+	var arbOsInit *params.ArbOSInit
+	if genesis != nil {
+		arbOsInit = genesis.ArbOSInit
+	}
+
 	return initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err
 
 }

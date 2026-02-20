@@ -289,7 +289,7 @@ func createL2NodeWithRollupAddresses(
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
 	stackConfig.DBEngine = rawdb.DBPebble
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, l2infoIn.Signer.ChainID(), l1client, addresses, chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromConsensus(ctx, l2infoIn.Signer.ChainID(), l1client, addresses, chainConfig)
 	Require(t, err)
 
 	var l2executionDB ethdb.Database
