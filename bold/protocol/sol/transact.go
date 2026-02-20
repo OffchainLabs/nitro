@@ -101,7 +101,7 @@ func (a *AssertionChain) transact(
 	}
 	ctxWaitMined, cancelWaitMined := context.WithTimeout(ctx, time.Minute)
 	defer cancelWaitMined()
-	receipt, err := bind.WaitMined(ctxWaitMined, backend, tx)
+	receipt, err := protocol.WaitMined(ctxWaitMined, backend, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (a *AssertionChain) waitForTxToBeSafe(
 
 	// This is to handle the case where the transaction is mined in a block, but then the block is reorged.
 	// In this case, we want to wait for the transaction to be mined again.
-	receiptLatest, err := bind.WaitMined(ctx, backend, tx)
+	receiptLatest, err := protocol.WaitMined(ctx, backend, tx)
 	if err != nil {
 		return nil, err
 	}

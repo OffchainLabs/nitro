@@ -141,6 +141,7 @@ func New(
 		o(m)
 	}
 	m.watcher.SetEdgeManager(m)
+	m.watcher.SetBlockNotifier(m.newBlockNotifier)
 	m.assertionManager.SetRivalHandler(m)
 	log.Info("Setting up challenge manager",
 		"name", m.name,

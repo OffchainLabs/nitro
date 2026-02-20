@@ -20,12 +20,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge/tree"
+	"github.com/offchainlabs/nitro/bold/containers/events"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
@@ -87,6 +89,7 @@ type Watcher struct {
 	// Track all if empty / nil.
 	trackChallengeParentAssertionHashes []protocol.AssertionHash
 	maxGetLogBlocks                     uint64
+	blockNotifier                       *events.Producer[*gethtypes.Header]
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -122,6 +125,12 @@ func New(
 // SetEdgeManager sets the EdgeManager that will track the royal edges.
 func (w *Watcher) SetEdgeManager(em EdgeManager) {
 	w.edgeManager = em
+}
+
+// SetBlockNotifier sets a block notifier that the watcher will subscribe to
+// for reactive event polling instead of using a fixed timer interval.
+func (w *Watcher) SetBlockNotifier(notifier *events.Producer[*gethtypes.Header]) {
+	w.blockNotifier = notifier
 }
 
 // AvgBlockTime returns the average time for block creation.
@@ -245,56 +254,73 @@ func (w *Watcher) Start(ctx context.Context) {
 	}
 
 	fromBlock = toBlock
-	ticker := time.NewTicker(w.pollEventsInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			toBlock, err := w.chain.DesiredHeaderU64(ctx)
-			if err != nil {
-				log.Error("Could not get latest header", "err", err)
-				continue
-			}
-			// AssertionChain's rpcHeadBlockNumber is set to finalized and this might occur due to l1 backends of load balancer
-			// not being in consensus wrt finalized. In which case we ignore and continue
-			if fromBlock > toBlock {
-				continue
-			}
-			if fromBlock == toBlock {
-				w.initialSyncCompleted.Store(true)
-				continue
-			}
-			// Get a challenge manager instance and filterer.
-			challengeManager := w.chain.SpecChallengeManager()
-			filterer, err = retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
-				return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
-			})
-			if err != nil {
-				log.Error("Could not get challenge manager filterer", "err", err)
+	w.initialSyncCompleted.Store(true)
+	if w.blockNotifier != nil {
+		sub := w.blockNotifier.Subscribe()
+		for {
+			if _, done := sub.Next(ctx); done {
 				return
 			}
-			filterOpts := &bind.FilterOpts{
-				Start:   fromBlock,
-				End:     &toBlock,
-				Context: ctx,
+			fromBlock = w.processNewBlocks(ctx, fromBlock)
+		}
+	} else {
+		ticker := time.NewTicker(w.pollEventsInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fromBlock = w.processNewBlocks(ctx, fromBlock)
+			case <-ctx.Done():
+				return
 			}
-			if err = w.checkForEdgeAdded(ctx, filterer, filterOpts); err != nil {
-				log.Error("Could not check for edge added", "err", err)
-				continue
-			}
-			if err = w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts); err != nil {
-				log.Error("Could not check for edge confirmed by osp", "err", err)
-				continue
-			}
-			if err = w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts); err != nil {
-				log.Error("Could not check for edge confirmed by time", "err", err)
-				continue
-			}
-			fromBlock = toBlock
-		case <-ctx.Done():
-			return
 		}
 	}
+}
+
+// processNewBlocks polls for new edge events since fromBlock and returns the
+// updated fromBlock value.
+func (w *Watcher) processNewBlocks(ctx context.Context, fromBlock uint64) uint64 {
+	toBlock, err := w.chain.DesiredHeaderU64(ctx)
+	if err != nil {
+		log.Error("Could not get latest header", "err", err)
+		return fromBlock
+	}
+	// AssertionChain's rpcHeadBlockNumber is set to finalized and this might occur due to l1 backends of load balancer
+	// not being in consensus wrt finalized. In which case we ignore and continue
+	if fromBlock > toBlock {
+		return fromBlock
+	}
+	if fromBlock == toBlock {
+		w.initialSyncCompleted.Store(true)
+		return fromBlock
+	}
+	// Get a challenge manager instance and filterer.
+	challengeManager := w.chain.SpecChallengeManager()
+	filterer, err := retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
+		return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
+	})
+	if err != nil {
+		log.Error("Could not get challenge manager filterer", "err", err)
+		return fromBlock
+	}
+	filterOpts := &bind.FilterOpts{
+		Start:   fromBlock,
+		End:     &toBlock,
+		Context: ctx,
+	}
+	if err = w.checkForEdgeAdded(ctx, filterer, filterOpts); err != nil {
+		log.Error("Could not check for edge added", "err", err)
+		return fromBlock
+	}
+	if err = w.checkForEdgeConfirmedByOneStepProof(ctx, filterer, filterOpts); err != nil {
+		log.Error("Could not check for edge confirmed by osp", "err", err)
+		return fromBlock
+	}
+	if err = w.checkForEdgeConfirmedByTime(ctx, filterer, filterOpts); err != nil {
+		log.Error("Could not check for edge confirmed by time", "err", err)
+		return fromBlock
+	}
+	return toBlock
 }
 
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion

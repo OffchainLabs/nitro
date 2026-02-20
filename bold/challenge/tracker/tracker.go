@@ -215,6 +215,11 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		}
 		if err := et.Act(ctx); err != nil {
 			log.Error("Could not act with edge tracker", append(fields, "err", err)...)
+			select {
+			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
