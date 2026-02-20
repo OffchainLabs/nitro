@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -676,9 +677,6 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	cleanupSeq := builder.Build(t)
 	defer cleanupSeq()
 
-	blockMetadataInputFeedPrefix := []byte("t")
-	missingBlockMetadataInputFeedPrefix := []byte("x")
-
 	// Generate blocks until current block is > 20
 	consensusDB := builder.L2.ConsensusNode.ConsensusDB
 	builder.L2Info.GenerateAccount("User")
@@ -700,7 +698,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		blockMetadata := []byte{0, uint8(i)}
 		sampleBulkData = append(sampleBulkData, blockMetadata)
 		// #nosec G115
-		Require(t, consensusDB.Put(dbKey(blockMetadataInputFeedPrefix, uint64(i)), blockMetadata))
+		Require(t, consensusDB.Put(dbKey(schema.BlockMetadataInputFeedPrefix, uint64(i)), blockMetadata))
 	}
 
 	nodecfg := arbnode.ConfigDefaultL1NonSequencerTest()
@@ -712,7 +710,7 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	})
 	defer cleanupNewNode()
 
-	// Wait for second node to catchup via L1, since L1 doesn't have the blockMetadata, we ensure that messages are tracked with missingBlockMetadataInputFeedPrefix prefix
+	// Wait for second node to catchup via L1, since L1 doesn't have the blockMetadata, we ensure that messages are tracked with schema.MissingBlockMetadataInputFeedPrefix prefix
 	_, err = WaitForTx(ctx, newNode.Client, lastTx.Hash(), time.Second*5)
 	Require(t, err)
 
@@ -721,38 +719,38 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	// Introduce fragmentation
 	blocksWithBlockMetadata := []uint64{8, 9, 10, 14, 16}
 	for _, key := range blocksWithBlockMetadata {
-		Require(t, consensusDB.Put(dbKey(blockMetadataInputFeedPrefix, key), sampleBulkData[key-1]))
-		Require(t, consensusDB.Delete(dbKey(missingBlockMetadataInputFeedPrefix, key)))
+		Require(t, consensusDB.Put(dbKey(schema.BlockMetadataInputFeedPrefix, key), sampleBulkData[key-1]))
+		Require(t, consensusDB.Delete(dbKey(schema.MissingBlockMetadataInputFeedPrefix, key)))
 	}
 
-	// Check if all block numbers with missingBlockMetadataInputFeedPrefix are present as keys in consensusDB and that no keys with blockMetadataInputFeedPrefix
-	iter := consensusDB.NewIterator(blockMetadataInputFeedPrefix, nil)
+	// Check if all block numbers with schema.MissingBlockMetadataInputFeedPrefix are present as keys in arbDB and that no keys with schema.BlockMetadataInputFeedPrefix
+	iter := consensusDB.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
 	pos := uint64(0)
 	for iter.Next() {
-		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.BlockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != blocksWithBlockMetadata[pos] {
 			t.Fatalf("unexpected presence of blockMetadata, when blocks are synced via L1. msgSeqNum: %d, expectedMsgSeqNum: %d", binary.BigEndian.Uint64(keyBytes), blocksWithBlockMetadata[pos])
 		}
 		pos++
 	}
 	iter.Release()
-	iter = consensusDB.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
 	pos = trackBlockMetadataFrom
 	i := 0
 	for iter.Next() {
-		// Blocks with blockMetadata present shouldn't have the missingBlockMetadataInputFeedPrefix keys present in consensusDB
+		// Blocks with blockMetadata present shouldn't have the schema.MissingBlockMetadataInputFeedPrefix keys present in arbDB
 		for i < len(blocksWithBlockMetadata) && blocksWithBlockMetadata[i] == pos {
 			i++
 			pos++
 		}
-		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != pos {
-			t.Fatalf("unexpected msgSeqNum with missingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+			t.Fatalf("unexpected msgSeqNum with schema.MissingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
 		}
 		pos++
 	}
 	if pos-1 != latestL2 {
-		t.Fatalf("number of keys with missingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
+		t.Fatalf("number of keys with schema.MissingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
 	}
 	iter.Release()
 
@@ -766,12 +764,12 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 	// Check if all blockMetadata starting from rebuildStartPos was synced from bulk BlockMetadata API via the blockMetadataFetcher and that trackers for missing blockMetadata were cleared
 	// Note that trackers for missing blockMetadata below rebuildStartPos won't be cleared and that is expected since we give user choice to only sync from a certain target instead of syncing
 	// all the missing blockMetadata. Currently this target is set by node to the same value as TrackBlockMetadataFrom flag
-	iter = consensusDB.NewIterator(blockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.BlockMetadataInputFeedPrefix, nil)
 	pos = rebuildStartPos
 	for iter.Next() {
-		keyBytes := bytes.TrimPrefix(iter.Key(), blockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.BlockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != pos {
-			t.Fatalf("unexpected msgSeqNum with blockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+			t.Fatalf("unexpected msgSeqNum with schema.BlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
 		}
 		if !bytes.Equal(sampleBulkData[pos-1], iter.Value()) {
 			t.Fatalf("blockMetadata mismatch for blockNumber: %d. Want: %v, Got: %v", pos, sampleBulkData[pos-1], iter.Value())
@@ -779,20 +777,20 @@ func TestTimeboostBulkBlockMetadataFetcher(t *testing.T) {
 		pos++
 	}
 	if pos-1 != latestL2 {
-		t.Fatalf("number of keys with blockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
+		t.Fatalf("number of keys with schema.BlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", latestL2, pos-1)
 	}
 	iter.Release()
-	iter = consensusDB.NewIterator(missingBlockMetadataInputFeedPrefix, nil)
+	iter = consensusDB.NewIterator(schema.MissingBlockMetadataInputFeedPrefix, nil)
 	pos = trackBlockMetadataFrom
 	for iter.Next() {
-		keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+		keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 		if binary.BigEndian.Uint64(keyBytes) != pos {
-			t.Fatalf("unexpected msgSeqNum with missingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
+			t.Fatalf("unexpected msgSeqNum with schema.MissingBlockMetadataInputFeedPrefix for blockMetadata. Want: %d, Got: %d", pos, binary.BigEndian.Uint64(keyBytes))
 		}
 		pos++
 	}
 	if pos != rebuildStartPos {
-		t.Fatalf("number of keys with missingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", rebuildStartPos-trackBlockMetadataFrom, pos-trackBlockMetadataFrom)
+		t.Fatalf("number of keys with schema.MissingBlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", rebuildStartPos-trackBlockMetadataFrom, pos-trackBlockMetadataFrom)
 	}
 	iter.Release()
 }
