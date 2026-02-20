@@ -127,18 +127,18 @@ Performs block validation. Accepts a JSON-RPC 2.0 request where `params` is an a
 
 Without module root (uses `latest`)
 ```bash
-curl -s -X POST http://localhost:4141/validation_validate \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --slurpfile input system_tests/target/TestProgramStorage/block_inputs.json \
-    '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}')"
+jq -n --slurpfile input system_tests/target/TestProgramStorage/block_inputs.json \
+  '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}' | \
+  curl -s -X POST http://localhost:4141/validation_validate \
+    -H "Content-Type: application/json" -d @-
 ```
 
 With explicit module root
 ```bash
-curl -s -X POST http://localhost:4141/validation_validate \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --slurpfile input system_tests/target/TestProgramStorage/block_inputs.json \
-    '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0], "0xYourModuleRootHere"]}')"
+jq -n --slurpfile input system_tests/target/TestProgramStorage/block_inputs.json \
+  '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0], "0xYourModuleRootHere"]}' | \
+  curl -s -X POST http://localhost:4141/validation_validate \
+    -H "Content-Type: application/json" -d @-
 ```
 
 **Success response:**

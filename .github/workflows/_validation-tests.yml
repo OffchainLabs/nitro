@@ -68,15 +68,15 @@ jobs:
             fi
 
             # 3. Send 2 validation requests
-            RESPONSE1=$(curl -s -X POST http://localhost:4141/validation_validate \
-              -H "Content-Type: application/json" \
-              -d "$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-                '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}')")
+            RESPONSE1=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
+              '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}' | \
+              curl -s -X POST http://localhost:4141/validation_validate \
+                -H "Content-Type: application/json" -d @-)
 
-            RESPONSE2=$(curl -s -X POST http://localhost:4141/validation_validate \
-              -H "Content-Type: application/json" \
-              -d "$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
-                '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0]]}')")
+            RESPONSE2=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
+              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0]]}' | \
+              curl -s -X POST http://localhost:4141/validation_validate \
+                -H "Content-Type: application/json" -d @-)
 
             # 4. Stop the server
             kill $SERVER_PID
