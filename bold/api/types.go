@@ -119,4 +119,3 @@ type JsonCollectMachineHashes struct {
 	StartTime            time.Time   `json:"startTime" db:"StartTime"`
 	FinishTime           *time.Time  `json:"finishTime" db:"FinishTime"`
 }
-
