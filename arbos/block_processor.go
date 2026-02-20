@@ -175,7 +175,7 @@ func ProduceBlock(
 ) (*types.Block, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, chainConfig.MaxL2MessageSize(), lastArbosVersion)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
