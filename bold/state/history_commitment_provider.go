@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/api/db"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
 	"github.com/offchainlabs/nitro/bold/containers/option"
@@ -288,7 +289,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 		StepSize:          stepSize,
 	}
 	// Requests collecting machine hashes for the specified config.
-	if !api.IsNil(p.apiDB) {
+	if !util.IsNil(p.apiDB) {
 		var rawStepHeights string
 		for i, stepHeight := range cfg.StepHeights {
 			hInt, err := safecast.ToInt(stepHeight)

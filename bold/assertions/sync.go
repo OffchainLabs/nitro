@@ -16,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
@@ -505,7 +506,7 @@ func (m *Manager) maybePostRivalAssertion(
 }
 
 func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.AssertionCreatedInfo) error {
-	if api.IsNil(m.apiDB) {
+	if util.IsNil(m.apiDB) {
 		return nil
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
