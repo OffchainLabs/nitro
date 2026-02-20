@@ -13,29 +13,106 @@ use crate::{config::InputMode, ServerState};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
-use serde::Deserialize;
-use serde_with::{As, DisplayFromStr};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use validation::{GoGlobalState, ValidationInput};
 
-/// Extended validation request that includes both ValidationInput and module_root.
-/// This struct allows adding module_root to the request without modifying ValidationInput.
+/// JSON-RPC 2.0 request envelope.
 #[derive(Deserialize)]
-#[serde(rename_all = "PascalCase")]
+pub struct JsonRpcRequest {
+    pub id: serde_json::Value,
+    pub params: Vec<serde_json::Value>,
+}
+
+/// JSON-RPC 2.0 response envelope.
+#[derive(Serialize)]
+pub struct JsonRpcResponse<T: Serialize> {
+    pub jsonrpc: &'static str,
+    pub id: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<JsonRpcError>,
+}
+
+#[derive(Serialize)]
+pub struct JsonRpcError {
+    pub code: i64,
+    pub message: String,
+}
+
+impl<T: Serialize> JsonRpcResponse<T> {
+    fn success(id: serde_json::Value, result: T) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: Some(result),
+            error: None,
+        }
+    }
+
+    fn error(id: serde_json::Value, message: String) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code: -32000,
+                message,
+            }),
+        }
+    }
+}
+
+/// Validation request that includes both ValidationInput and module_root.
 pub struct ValidationRequest {
-    #[serde(flatten)]
     pub validation_input: ValidationInput,
-    #[serde(default, with = "As::<Option<DisplayFromStr>>")]
     pub module_root: Option<ModuleRoot>,
 }
 
 pub async fn validate(
     State(state): State<Arc<ServerState>>,
-    Json(request): Json<ValidationRequest>,
-) -> Result<Json<GoGlobalState>, String> {
-    match state.mode {
+    Json(rpc_request): Json<JsonRpcRequest>,
+) -> Json<JsonRpcResponse<GoGlobalState>> {
+    let id = rpc_request.id;
+
+    let validation_input: ValidationInput = match rpc_request.params.first() {
+        Some(value) => match serde_json::from_value(value.clone()) {
+            Ok(input) => input,
+            Err(e) => {
+                return Json(JsonRpcResponse::error(
+                    id,
+                    format!("Failed to parse validation input: {e}"),
+                ))
+            }
+        },
+        None => {
+            return Json(JsonRpcResponse::error(
+                id,
+                "Missing validation input in params".to_string(),
+            ))
+        }
+    };
+
+    let module_root: Option<ModuleRoot> = rpc_request
+        .params
+        .get(1)
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+
+    let request = ValidationRequest {
+        validation_input,
+        module_root,
+    };
+
+    let result = match state.mode {
         InputMode::Native => validate_native(&state, request).await,
         InputMode::Continuous => validate_continuous(&state, request).await,
+    };
+
+    match result {
+        Ok(Json(global_state)) => Json(JsonRpcResponse::success(id, global_state)),
+        Err(e) => Json(JsonRpcResponse::error(id, e)),
     }
 }
 
