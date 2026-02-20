@@ -833,7 +833,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
@@ -841,6 +841,13 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 				statedb.TouchAddress(addr)
 			}
 		}
+	}
+
+	if isRedeem {
+		if statedb.IsAddressFiltered() {
+			return state.ErrArbTxFilter
+		}
+		return nil
 	}
 
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
@@ -1020,7 +1027,7 @@ type FullSequencingHooks struct {
 	maxSequencedTxsSize      int
 	txErrors                 []error
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
-	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
 }
@@ -1122,9 +1129,9 @@ func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 	return nil
 }
 
-func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, isRedeem bool) error {
 	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result)
+		return s.postTxFilter(header, db, a, transaction, address, u, result, isRedeem)
 	}
 	return nil
 }
@@ -1136,11 +1143,25 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
+// ReportGroupRevert replaces the last txErrors entry with the group revert
+// error. Redeems don't get txErrors entries (only user txs from
+// NextTxToSequence do), so a group (user tx + all its redeems) has exactly
+// one entry - the originating user tx's nil. Replacing it with the error
+// excludes the tx from the block (MessageFromTxes skips non-nil entries)
+// and returns the error to the RPC caller via resultChan.
+func (s *FullSequencingHooks) ReportGroupRevert(err error) {
+	if len(s.txErrors) > 0 {
+		s.txErrors[len(s.txErrors)-1] = err
+	} else {
+		log.Error("ReportGroupRevert called with empty txErrors")
+	}
+}
+
 func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
@@ -1160,7 +1181,7 @@ func MakeSequencingHooks(
 func MakeZeroTxSizeSequencingHooksForTesting(
 	txes types.Transactions,
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
+	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
 ) *FullSequencingHooks {
 	var items []txQueueItem
