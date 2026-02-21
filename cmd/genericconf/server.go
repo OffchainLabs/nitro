@@ -75,7 +75,7 @@ func HTTPServerTimeoutConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".read-timeout", HTTPServerTimeoutConfigDefault.ReadTimeout, "the maximum duration for reading the entire request (http.Server.ReadTimeout)")
 	f.Duration(prefix+".read-header-timeout", HTTPServerTimeoutConfigDefault.ReadHeaderTimeout, "the amount of time allowed to read the request headers (http.Server.ReadHeaderTimeout)")
 	f.Duration(prefix+".write-timeout", HTTPServerTimeoutConfigDefault.WriteTimeout, "the maximum duration before timing out writes of the response (http.Server.WriteTimeout)")
-	f.Duration(prefix+".idle-timeout", HTTPServerTimeoutConfigDefault.IdleTimeout, "the maximum amount of time to wait for the next request when keep-alives are enabled (http.Server.IdleTimeout)")
+	f.Duration(prefix+".idle-timeout", HTTPServerTimeoutConfigDefault.IdleTimeout, "the maximum amount of time to wait for the next request when keep-alive is enabled (http.Server.IdleTimeout)")
 }
 
 type WSConfig struct {

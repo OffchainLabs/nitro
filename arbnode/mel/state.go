@@ -259,7 +259,7 @@ func (s *State) ReorgTo(newState *State) error {
 		return err
 	}
 	newState.delayedMessageBacklog = delayedMessageBacklog
-	// Reset the pre-read delayed messages count since they havent been verified against latest state's merkle root
+	// Reset the pre-read delayed messages count since they haven't been verified against latest state's merkle root
 	newState.readCountFromBacklog = 0
 	return nil
 }

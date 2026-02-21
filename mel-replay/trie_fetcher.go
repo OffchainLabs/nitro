@@ -140,7 +140,7 @@ func decodeBinary[T any](data []byte) (*T, error) {
 	v := new(T)
 	u, ok := any(v).(interface{ UnmarshalBinary([]byte) error })
 	if !ok {
-		return empty, errors.New("decodeBinary is called on a type that doesnt implement UnmarshalBinary")
+		return empty, errors.New("decodeBinary is called on a type that doesn't implement UnmarshalBinary")
 	}
 	if err := u.UnmarshalBinary(data); err != nil {
 		return empty, err

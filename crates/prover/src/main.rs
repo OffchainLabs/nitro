@@ -43,7 +43,7 @@ struct Opts {
     #[structopt(long)]
     /// print wasm module root to the console
     print_wasmmoduleroot: bool,
-    /// profile output instead of generting proofs
+    /// profile output instead of generating proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
     /// simple summary of hot opcodes
@@ -87,7 +87,7 @@ struct Opts {
     skip_until_host_io: bool,
     #[structopt(long)]
     max_steps: Option<u64>,
-    // JSON inputs supercede any of the command-line inputs which could
+    // JSON inputs supersede any of the command-line inputs which could
     // be specified in the JSON file.
     #[structopt(long)]
     json_inputs: Option<PathBuf>,

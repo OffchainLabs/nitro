@@ -40,7 +40,7 @@ echo Usage: "$0" \[OPTIONS..\]
     echo "--src             directory containing source databases (default: \"$DEFAULT_SRC\")"
     echo "--dst             destination directory"
     echo "--force           remove destination directory if it exists"
-    echo "--skip-existing   skip convertion of databases which directories already exist in the destination directory"
+    echo "--skip-existing   skip conversion of databases which directories already exist in the destination directory"
     echo "--clean           sets what should be removed in case of error, possible values:"
     echo "                      \"failed\" - remove database which conversion failed (default)"
     echo "                      \"none\"   - remove nothing, leave unfinished and potentially corrupted databases"

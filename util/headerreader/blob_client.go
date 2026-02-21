@@ -201,7 +201,7 @@ func (b *BlobClient) GetBlobsBySlot(ctx context.Context, slot uint64, versionedH
 	if err != nil {
 		// Create a new HTTP client with a dedicated transport that disables connection reuse.
 		// With the default client (nil Transport), Go reuses the global DefaultTransport and its connection pool,
-		// which may keep using the same problematic backend connection. Disabling keep-alives forces a fresh TCP
+		// which may keep using the same problematic backend connection. Disabling keep-alive forces a fresh TCP
 		// connection on the next request, increasing the chance of hitting a healthy backend behind a load balancer.
 		b.httpClient.Store(&http.Client{Transport: &http.Transport{DisableKeepAlives: true}})
 		return nil, fmt.Errorf("error fetching blobs for slot %d: %w", slot, err)

@@ -1,0 +1,43 @@
+[codespell]
+# Repository-specific configuration for codespell.
+# Keep this in sync with project conventions (generated files, vendored deps, and binary artifacts should be skipped).
+
+# Do not scan generated / third-party / large artifacts
+skip =
+    ./.git,
+    ./Cargo.lock,
+    ./**/Cargo.lock,
+    ./go.sum,
+    ./**/go.sum,
+    ./**/target,
+    ./go-ethereum,
+    ./third_party,
+    ./**/node_modules,
+    ./**/testdata,
+    ./linters/testdata,
+    ./system_tests/testdata,
+    ./arbos/testdata,
+    ./**/test-data,
+    ./system_tests/test-data,
+    ./system_tests,
+    ./validator/server_api/json_test.go,
+    ./**/*.pdf
+
+# Project-specific identifiers that codespell flags but are intentionally named
+ignore-words-list =
+    retryIn,
+    callE,
+    flate,
+    clientA,
+    userA,
+    allEdges,
+    CreateRespone,
+    Succes,
+    oFrom,
+    cummulative,
+    cummulativeCallDataUnits,
+    nd,
+    datas,
+    wast,
+    tipe,
+    tRival

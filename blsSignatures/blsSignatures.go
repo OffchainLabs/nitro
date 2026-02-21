@@ -62,7 +62,7 @@ func PublicKeyFromPrivateKey(privateKey PrivateKey) (PublicKey, error) {
 // KeyValidityProof is the key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
 // that come from untrusted sources. We use the private key to sign the public key, but in the
 // signature algorithm we use a tweaked version of the hash-to-curve function so that the result cannot be
-// re-used as an ordinary signature.
+// reused as an ordinary signature.
 //
 // For a proof that this is sufficient, see Theorem 1 in
 // Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.

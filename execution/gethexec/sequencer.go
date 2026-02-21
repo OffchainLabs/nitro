@@ -227,7 +227,7 @@ func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
 	// tighter limit https://github.com/OffchainLabs/nitro/commit/ed015e752d7d24e59ec9e6f894fe1a26ffa19036
 	// The default block gas limit can fit 1523 txs
 	// Each Tx adds an 8-byte of length prefix.
-	// 50K is enoguh to add 1523 times 8 bytes and still stay in an L2 message
+	// 50K is enough to add 1523 times 8 bytes and still stay in an L2 message
 	const maxConfigurableTxDataSize = arbostypes.MaxL2MessageSize - 50000
 	if maxTxDataSize > maxConfigurableTxDataSize {
 		return fmt.Errorf("max-tx-data-size %d exceeds maximum allowed value of %d", maxTxDataSize, maxConfigurableTxDataSize)

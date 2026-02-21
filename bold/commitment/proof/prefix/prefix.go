@@ -215,7 +215,7 @@ func TreeSize(me []common.Hash) uint64 {
 func AppendCompleteSubTree(
 	me []common.Hash, level uint64, subtreeRoot common.Hash,
 ) ([]common.Hash, error) {
-	// we use number representations of the levels elsewhere, so we need to ensure we're appending a leve
+	// we use number representations of the levels elsewhere, so we need to ensure we're appending a level
 	// that's too high to use in uint
 	if level >= MAX_LEVEL {
 		return nil, ErrLevelTooHigh

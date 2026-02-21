@@ -173,7 +173,7 @@ func (v *ArbitratorSpawner) execute(
 ) (validator.GoGlobalState, error) {
 	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
 	if err != nil {
-		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return validator.GoGlobalState{}, fmt.Errorf("unable to get WASM machine: %w", err)
 	}
 
 	arbMach := basemachine.Clone()

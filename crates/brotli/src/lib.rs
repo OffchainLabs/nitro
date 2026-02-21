@@ -215,13 +215,13 @@ pub fn decompress(input: &[u8], dictionary: Dictionary) -> Result<Vec<u8>, Brotl
         // TODO: consider window and quality check?
         // TODO: fuzz
         if let Some(dict) = dictionary.slice() {
-            let attatched = BrotliDecoderAttachDictionary(
+            let attached = BrotliDecoderAttachDictionary(
                 state,
                 BrotliSharedDictionaryType::Raw,
                 dict.len(),
                 dict.as_ptr(),
             );
-            check!(attatched);
+            check!(attached);
         }
 
         let mut in_len = input.len();
@@ -276,13 +276,13 @@ pub fn decompress_fixed<'a>(
         }
 
         if let Some(dict) = dictionary.slice() {
-            let attatched = BrotliDecoderAttachDictionary(
+            let attached = BrotliDecoderAttachDictionary(
                 state,
                 BrotliSharedDictionaryType::Raw,
                 dict.len(),
                 dict.as_ptr(),
             );
-            check!(attatched == BrotliBool::True);
+            check!(attached == BrotliBool::True);
         }
 
         let mut in_len = input.len();

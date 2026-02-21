@@ -155,7 +155,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
             EvmApiStatus::Success => UserOutcomeKind::Success,
             EvmApiStatus::WriteProtection => UserOutcomeKind::Revert,
             EvmApiStatus::OutOfGas => UserOutcomeKind::OutOfInk,
-            _ => bail!("unexpect outcome"),
+            _ => bail!("unexpected outcome"),
         };
         Ok((cost, outcome))
     }
@@ -174,7 +174,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         let outcome = match status.try_into()? {
             EvmApiStatus::Success => UserOutcomeKind::Success,
             EvmApiStatus::WriteProtection => UserOutcomeKind::Revert,
-            _ => bail!("unexpect outcome"),
+            _ => bail!("unexpected outcome"),
         };
 
         Ok(outcome)

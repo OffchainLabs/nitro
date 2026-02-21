@@ -70,7 +70,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Centralize validator worker throttling in BlockValidator #NIT-3339: [[PR]](https://github.com/OffchainLabs/nitro/pull/4032)
 - Do not require BatchMetadata for reading DelayedInbox: [[PR]](https://github.com/OffchainLabs/nitro/pull/4106)
 - redis pubsub: add retries limit and option to disable retries: [[PR]](https://github.com/OffchainLabs/nitro/pull/2803)
-- Extract saturating arithmetics: [[PR]](https://github.com/OffchainLabs/nitro/pull/4126)
+- Extract saturating arithmetic: [[PR]](https://github.com/OffchainLabs/nitro/pull/4126)
 - Add MaxTxSize check to ValidateExpressLaneTx(): [[PR]](https://github.com/OffchainLabs/nitro/pull/4105)
 - Adjust pricing formula with weight normalisation by max weight: [[PR]](https://github.com/OffchainLabs/nitro/pull/4125)
 - Make bids receiver buffer size configurable: [[PR]](https://github.com/OffchainLabs/nitro/pull/4117)
@@ -133,4 +133,3 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - [MEL] - Implement preimage recorder for `DelayedMessageDatabase` interface: [[PR]](https://github.com/OffchainLabs/nitro/pull/4119)
 - [MEL] - Implement recording of preimages related to sequencer batches (DA providers): [[PR]](https://github.com/OffchainLabs/nitro/pull/4133)
 - Add new boolean option to `BlocksReExecutor` called `CommitStateToDisk` that will allow `BlocksReExecutor.Blocks` range to not only re-executes blocks but it will also commit their state to triedb on disk. [[PR]](https://github.com/OffchainLabs/nitro/pull/4132)
-

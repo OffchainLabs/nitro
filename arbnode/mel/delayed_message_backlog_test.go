@@ -37,7 +37,7 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	// Test that clone works
 	cloned := backlog.clone()
 	if !reflect.DeepEqual(backlog, cloned) {
-		t.Fatal("cloned doesnt match original")
+		t.Fatal("cloned doesn't match original")
 	}
 
 	// Test failures with Get
@@ -51,7 +51,7 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	}
 	// Index mismatch
 	failIndex := uint64(3)
-	backlog.entries[failIndex].Index = failIndex + 1 // shouldnt match
+	backlog.entries[failIndex].Index = failIndex + 1 // shouldn't match
 	_, err = backlog.Get(failIndex)
 	if err == nil {
 		t.Fatal("backlog Get function should've errored for an invalid entry in the backlog")
@@ -70,7 +70,7 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	// Verify that Reorg handling works as expected, reorg of 5 indexes
 	newSeen := numEntries - 5
 	require.NoError(t, backlog.reorg(newSeen))
-	// as newDelayedMessageBacklog hasnt updated with new finalized info, its starting elements remain unchanged, just that the right parts are trimmed till (newSeen-1) delayed index
+	// as newDelayedMessageBacklog hasn't updated with new finalized info, its starting elements remain unchanged, just that the right parts are trimmed till (newSeen-1) delayed index
 	require.True(t, len(backlog.entries) == int(newSeen-finalizedAndRead)) // #nosec G115
 	require.True(t, backlog.entries[len(backlog.entries)-1].Index == newSeen-1)
 }

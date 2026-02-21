@@ -33,7 +33,7 @@ func InitializeDelayedMessageBacklog(ctx context.Context, d *mel.DelayedMessageB
 		return err
 	}
 	if uint64(len(delayedMsgIndexToParentChainBlockNum)) < state.DelayedMessagesSeen-targetDelayedMessagesRead {
-		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed atleast: %d", len(delayedMsgIndexToParentChainBlockNum), state.DelayedMessagesSeen-targetDelayedMessagesRead)
+		return fmt.Errorf("number of mappings from index to ParentChainBlockNum: %d are insufficient, needed at least: %d", len(delayedMsgIndexToParentChainBlockNum), state.DelayedMessagesSeen-targetDelayedMessagesRead)
 	}
 
 	// Create DelayedMessageBacklogEntry for all the delayed messages that are seen but not read

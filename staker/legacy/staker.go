@@ -1134,7 +1134,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return s.tryFastConfirmationNodeNumber(ctx, action.number, action.hash)
 		}
 		log.Info("staking on existing node", "node", action.number)
-		// We'll return early if we already havea stake
+		// We'll return early if we already have a stake
 		if info.StakeExists {
 			_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
 			if err != nil {

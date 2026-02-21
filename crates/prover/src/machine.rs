@@ -507,7 +507,7 @@ impl Module {
             };
             ensure!(
                 memory_index == 0,
-                "Attempted to write to nonexistant memory"
+                "Attempted to write to nonexistent memory"
             );
 
             let offset = match (init.read()?, init.read()?, init.eof()) {
@@ -556,7 +556,7 @@ impl Module {
                 x => bail!("Non-constant element segment offset expression {x:?}"),
             };
             let Some(table) = tables.get_mut(t) else {
-                bail!("Element segment for non-exsistent table {}", t.red())
+                bail!("Element segment for non-existent table {}", t.red())
             };
 
             let mut contents = vec![];
@@ -2549,7 +2549,7 @@ impl Machine {
                     let ptr = value_stack.pop().unwrap().assume_u32();
                     let msg_num = value_stack.pop().unwrap().assume_u64();
                     let inbox_identifier =
-                        argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
+                        argument_data_to_inbox(inst.argument_data).expect("Bad inbox identifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
                         if ptr as u64 + 32 > module.memory.size() {
                             error!();
@@ -3148,7 +3148,7 @@ impl Machine {
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
                         let inbox_identifier =
-                            argument_data_to_inbox(arg).expect("Bad inbox indentifier");
+                            argument_data_to_inbox(arg).expect("Bad inbox identifier");
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {

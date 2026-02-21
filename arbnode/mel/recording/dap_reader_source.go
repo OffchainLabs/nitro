@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-// DAPReader implements recording of data avaialability preimages when melextraction.ExtractMessages function is called by
+// DAPReader implements recording of data availability preimages when melextraction.ExtractMessages function is called by
 // MEL validator for creation of validation entry. Since ExtractMessages function would use daprovider.Reader interface to
 // fetch the sequencer batch via RecoverPayload we implement collecting of preimages as well in the same method and record it
 type DAPReader struct {

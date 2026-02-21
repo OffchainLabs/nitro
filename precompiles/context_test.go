@@ -48,7 +48,7 @@ func TestContextBurn(t *testing.T) {
 
 	// Burn 200 more storage growth, which should error with out of gas
 	if err := ctx.Burn(multigas.ResourceKindStorageGrowth, 200); !errors.Is(err, vm.ErrOutOfGas) {
-		t.Errorf("wrong erro from burn: got %v, want %v", err, vm.ErrOutOfGas)
+		t.Errorf("wrong error from burn: got %v, want %v", err, vm.ErrOutOfGas)
 	}
 	if got, want := ctx.GasLeft(), uint64(0); got != want {
 		t.Errorf("wrong gas left: got %v, want %v", got, want)
@@ -96,7 +96,7 @@ func TestContextBurnMultiGas(t *testing.T) {
 	}
 
 	if err := ctx.BurnMultiGas(gasToBurn); !errors.Is(err, vm.ErrOutOfGas) {
-		t.Errorf("wrong erro from burn: got %v, want %v", err, vm.ErrOutOfGas)
+		t.Errorf("wrong error from burn: got %v, want %v", err, vm.ErrOutOfGas)
 	}
 	if got, want := ctx.GasLeft(), uint64(0); got != want {
 		t.Errorf("wrong gas left: got %v, want %v", got, want)

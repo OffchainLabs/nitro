@@ -121,7 +121,7 @@ func (r *DelayedMsgDatabase) initialize(state *mel.State) error {
 		}
 	}
 	if acc == nil {
-		return errors.New("couldnt initialize the accumulator")
+		return errors.New("couldn't initialize the accumulator")
 	}
 	acc.RecordPreimagesTo(r.preimages)
 	for i := state.DelayedMessagesRead; i < state.DelayedMessagesSeen; i++ {

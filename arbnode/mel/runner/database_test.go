@@ -153,7 +153,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 		state.DelayedMessagesSeen++
 	}
 	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs[:numDelayed]))
-	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesnt error
+	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesn't error
 	// #nosec G115
 	for i := uint64(0); i < uint64(numDelayed); i++ {
 		have, err := melDB.ReadDelayedMessage(ctx, state, i)

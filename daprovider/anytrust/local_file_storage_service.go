@@ -605,8 +605,8 @@ type trieLayout struct {
 
 	// Anything changing the layout (pruning, adding files) must go through
 	// this mutex.
-	// Pruning the entire history at statup of Arb Nova as of 2024-06-12 takes
-	// 5s on my laptop, so the overhead of pruning after startup should be neglibile.
+	// Pruning the entire history at startup of Arb Nova as of 2024-06-12 takes
+	// 5s on my laptop, so the overhead of pruning after startup should be negligible.
 	writeMutex sync.Mutex
 }
 
