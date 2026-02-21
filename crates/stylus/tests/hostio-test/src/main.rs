@@ -6,17 +6,11 @@
 use stylus_sdk::{
     abi::Bytes,
     alloy_primitives::{Address, B256, U256},
-    block, console, contract, evm, hostio, msg,
+    hostio,
     prelude::*,
     stylus_proc::entrypoint,
-    tx,
-    types::AddressVM,
 };
 extern crate alloc;
-
-#[cfg(target_arch = "wasm32")]
-#[global_allocator]
-static ALLOC: mini_alloc::MiniAlloc = mini_alloc::MiniAlloc::INIT;
 
 sol_storage! {
     #[entrypoint]
@@ -24,7 +18,7 @@ sol_storage! {
     }
 }
 
-type Result<T> = std::result::Result<T, Vec<u8>>;
+type Result<T, E = Vec<u8>> = std::result::Result<T, E>;
 
 // These are not available as hostios in the sdk, so we import them directly.
 #[link(wasm_import_module = "vm_hooks")]
@@ -39,7 +33,7 @@ extern "C" {
     fn exit_early(status: u32);
 }
 
-#[external]
+#[public]
 impl HostioTest {
     fn exit_early() -> Result<()> {
         unsafe {
@@ -66,14 +60,14 @@ impl HostioTest {
         unsafe { Ok(hostio::return_data_size().try_into().unwrap()) }
     }
 
-    fn emit_log(data: Bytes, n: i8, t1: B256, t2: B256, t3: B256, t4: B256) -> Result<()> {
+    fn emit_log(&self, data: Bytes, n: i8, t1: B256, t2: B256, t3: B256, t4: B256) -> Result<()> {
         let topics = &[t1, t2, t3, t4];
-        evm::raw_log(&topics[0..n as usize], data.as_slice())?;
+        self.vm().raw_log(&topics[0..n as usize], data.as_ref())?;
         Ok(())
     }
 
-    fn account_balance(account: Address) -> Result<U256> {
-        Ok(account.balance())
+    fn account_balance(&self, account: Address) -> Result<U256> {
+        Ok(self.vm().balance(account))
     }
 
     fn account_code(account: Address) -> Result<Vec<u8>> {
@@ -86,48 +80,52 @@ impl HostioTest {
         Ok(code)
     }
 
-    fn account_code_size(account: Address) -> Result<U256> {
-        Ok(account.code_size().try_into().unwrap())
+    fn account_code_size(&self, account: Address) -> Result<U256> {
+        Ok(self.vm().code_size(account).try_into().unwrap())
     }
 
-    fn account_codehash(account: Address) -> Result<B256> {
-        Ok(account.codehash())
+    fn account_codehash(&self, account: Address) -> Result<B256> {
+        Ok(self.vm().code_hash(account))
     }
 
-    fn evm_gas_left() -> Result<U256> {
-        Ok(evm::gas_left().try_into().unwrap())
+    fn evm_gas_left(&self) -> Result<U256> {
+        Ok(self.vm().evm_gas_left().try_into().unwrap())
     }
 
-    fn evm_ink_left() -> Result<U256> {
-        Ok(tx::ink_to_gas(evm::ink_left()).try_into().unwrap())
+    fn evm_ink_left(&self) -> Result<U256> {
+        Ok(self
+            .vm()
+            .ink_to_gas(self.vm().evm_ink_left())
+            .try_into()
+            .unwrap())
     }
 
-    fn block_basefee() -> Result<U256> {
-        Ok(block::basefee())
+    fn block_basefee(&self) -> Result<U256> {
+        Ok(self.vm().block_basefee())
     }
 
-    fn chainid() -> Result<U256> {
-        Ok(block::chainid().try_into().unwrap())
+    fn chainid(&self) -> Result<U256> {
+        Ok(self.vm().chain_id().try_into().unwrap())
     }
 
-    fn block_coinbase() -> Result<Address> {
-        Ok(block::coinbase())
+    fn block_coinbase(&self) -> Result<Address> {
+        Ok(self.vm().block_coinbase())
     }
 
-    fn block_gas_limit() -> Result<U256> {
-        Ok(block::gas_limit().try_into().unwrap())
+    fn block_gas_limit(&self) -> Result<U256> {
+        Ok(self.vm().block_gas_limit().try_into().unwrap())
     }
 
-    fn block_number() -> Result<U256> {
-        Ok(block::number().try_into().unwrap())
+    fn block_number(&self) -> Result<U256> {
+        Ok(self.vm().block_number().try_into().unwrap())
     }
 
-    fn block_timestamp() -> Result<U256> {
-        Ok(block::timestamp().try_into().unwrap())
+    fn block_timestamp(&self) -> Result<U256> {
+        Ok(self.vm().block_timestamp().try_into().unwrap())
     }
 
-    fn contract_address() -> Result<Address> {
-        Ok(contract::address())
+    fn contract_address(&self) -> Result<Address> {
+        Ok(self.vm().contract_address())
     }
 
     fn math_div(a: U256, b: U256) -> Result<U256> {
@@ -177,12 +175,12 @@ impl HostioTest {
         Ok(a_bytes.into())
     }
 
-    fn msg_sender() -> Result<Address> {
-        Ok(msg::sender())
+    fn msg_sender(&self) -> Result<Address> {
+        Ok(self.vm().msg_sender())
     }
 
-    fn msg_value() -> Result<U256> {
-        Ok(msg::value())
+    fn msg_value(&self) -> Result<U256> {
+        Ok(self.vm().msg_value())
     }
 
     fn keccak(preimage: Bytes) -> Result<B256> {
@@ -193,16 +191,20 @@ impl HostioTest {
         Ok(result)
     }
 
-    fn tx_gas_price() -> Result<U256> {
-        Ok(tx::gas_price())
+    fn tx_gas_price(&self) -> Result<U256> {
+        Ok(self.vm().tx_gas_price())
     }
 
-    fn tx_ink_price() -> Result<U256> {
-        Ok(tx::ink_to_gas(tx::ink_price().into()).try_into().unwrap())
+    fn tx_ink_price(&self) -> Result<U256> {
+        Ok(self
+            .vm()
+            .ink_to_gas(self.vm().tx_ink_price().into())
+            .try_into()
+            .unwrap())
     }
 
-    fn tx_origin() -> Result<Address> {
-        Ok(tx::origin())
+    fn tx_origin(&self) -> Result<Address> {
+        Ok(self.vm().tx_origin())
     }
 
     fn storage_cache_bytes32() {
@@ -220,8 +222,7 @@ impl HostioTest {
         }
     }
 
-    fn write_result_empty() {
-    }
+    fn write_result_empty() {}
 
     fn write_result(size: U256) -> Result<Vec<u32>> {
         let size: usize = size.try_into().unwrap();
@@ -229,12 +230,9 @@ impl HostioTest {
         Ok(data)
     }
 
-    fn read_args_no_args() {
-    }
+    fn read_args_no_args() {}
 
-    fn read_args_one_arg(_arg1: U256) {
-    }
+    fn read_args_one_arg(_arg1: U256) {}
 
-    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {
-    }
+    fn read_args_three_args(_arg1: U256, _arg2: U256, _arg3: U256) {}
 }
