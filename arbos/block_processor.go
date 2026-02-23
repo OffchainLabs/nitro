@@ -261,13 +261,12 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	// Group checkpoints are only used when transaction filtering is active
-	// (ArbOS >= 60). For older versions, we use the legacy behavior where
-	// Finalise runs after every committed tx. Enabling skipFinalise on
-	// older versions would break consensus by changing empty-account
-	// lifecycle behavior (CreateZombieIfDeleted depends on intermediate
-	// Finalise calls to populate stateObjectsDestruct).
-	useGroupCheckpoints := arbState.ArbOSVersion() >= params.ArbosVersion_TransactionFiltering
+	// Group checkpoints are only used on ArbOS >= 30. For older versions,
+	// we use the legacy behavior where Finalise runs after every committed
+	// tx. Enabling skipFinalise on older versions would break consensus by
+	// changing empty-account lifecycle behavior (CreateZombieIfDeleted
+	// depends on intermediate Finalise calls to populate stateObjectsDestruct).
+	useGroupCheckpoints := arbState.ArbOSVersion() >= params.ArbosVersion_30
 
 	// Group checkpoint state for tx groups (a user tx + all its redeems).
 	// We take a state checkpoint before each non-redeem tx and process it
