@@ -212,7 +212,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var dbDelayedCount uint64
 	var err error
 	if d.msgExtractor != nil {
-		dbDelayedCount, err = d.msgExtractor.GetDelayedCount(ctx, 0)
+		dbDelayedCount, err = d.msgExtractor.GetDelayedCount(0)
 		if err != nil {
 			return err
 		}
@@ -234,7 +234,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
 		if d.msgExtractor != nil {
-			finalizedPos, err := d.msgExtractor.GetDelayedCount(ctx, finalized)
+			finalizedPos, err := d.msgExtractor.GetDelayedCount(finalized)
 			if err != nil {
 				if !strings.Contains(err.Error(), "not found") {
 					return err

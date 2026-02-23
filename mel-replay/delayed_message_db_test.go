@@ -40,7 +40,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	}
 	db := rawdb.NewMemoryDatabase()
 	melDB := melrunner.NewDatabase(db)
-	err := melDB.SaveDelayedMessages(ctx, &mel.State{DelayedMessagesSeen: uint64(len(delayedMessages))}, delayedMessages)
+	err := melDB.SaveDelayedMessages(&mel.State{DelayedMessagesSeen: uint64(len(delayedMessages))}, delayedMessages)
 	require.NoError(t, err)
 
 	startBlockNum := uint64(3)
@@ -53,7 +53,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMessages[i]))
 	}
 	require.NoError(t, state.GenerateDelayedMessagesSeenMerklePartialsAndRoot())
-	require.NoError(t, melDB.SaveState(ctx, state))
+	require.NoError(t, melDB.SaveState(state))
 
 	preimages := make(daprovider.PreimagesMap)
 	recordingDB, err := melrecording.NewDelayedMsgDatabase(db, preimages)
@@ -80,7 +80,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 		),
 	)
 	for i := startBlockNum; i < numMsgsToRead; i++ {
-		msg, err := delayedDB.ReadDelayedMessage(ctx, state, i)
+		msg, err := delayedDB.ReadDelayedMessage(state, i)
 		require.NoError(t, err)
 		require.Equal(t, msg.Hash(), delayedMessages[i].Hash())
 	}
