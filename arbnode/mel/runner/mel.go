@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -18,14 +19,16 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -266,6 +269,24 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
+func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if index >= headState.DelayedMessagesSeen {
+		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+	}
+	msg, err := m.melDB.fetchDelayedMessage(index)
+	if err != nil {
+		return nil, err
+	}
+	return rlp.EncodeToBytes(msg)
+}
+
+func (m *MessageExtractor) SetBlockValidator(_ *staker.BlockValidator) {
+}
+
 func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
 	var state *mel.State
 	var err error
@@ -351,8 +372,8 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 
 // err will return unexpected/internal errors
 // bool will be false if batch not found (meaning, block not yet posted on a batch)
-func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount(ctx)
+func (m *MessageExtractor) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	batchCount, err := m.GetBatchCount()
 	if err != nil {
 		return 0, false, err
 	}
@@ -397,12 +418,16 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 	}
 }
 
-func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetBatchCount() (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return 0, err
 	}
 	return headState.BatchCount, nil
+}
+
+func (m *MessageExtractor) GetBatchAcc(_ uint64) (common.Hash, error) {
+	return common.Hash{}, errors.New("unimplemented")
 }
 
 func (m *MessageExtractor) CaughtUp() chan struct{} {
