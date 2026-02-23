@@ -279,13 +279,27 @@ func ProduceBlockAdvanced(
 		headerGasUsed        uint64
 		blockGasLeft         uint64
 		expectedBalanceDelta *big.Int
-		completeLen          int
-		receiptsLen          int
 		userTxsProcessed     int
 		gethGas              core.GasPool
 		userTxHash           common.Hash
 	}
 	var activeGroupCP *groupCheckpoint
+	// Tentative tx/receipt buffers for the current group. Txs are accumulated
+	// here while a group is active and only promoted to complete/receipts when
+	// the group commits successfully. On revert, these are simply discarded.
+	var groupComplete []*types.Transaction
+	var groupReceipts types.Receipts
+
+	// commitGroup promotes tentative txs/receipts to the main slices and
+	// flushes the deferred Finalise.
+	commitGroup := func() {
+		complete = append(complete, groupComplete...)
+		receipts = append(receipts, groupReceipts...)
+		groupComplete = groupComplete[:0]
+		groupReceipts = groupReceipts[:0]
+		statedb.Finalise(true)
+		activeGroupCP = nil
+	}
 
 	// revertToGroupCheckpoint reverts statedb and all non-statedb state back
 	// to the group checkpoint and deactivates the group. It does NOT report
@@ -297,11 +311,11 @@ func ProduceBlockAdvanced(
 		header.GasUsed = activeGroupCP.headerGasUsed
 		blockGasLeft = activeGroupCP.blockGasLeft
 		expectedBalanceDelta.Set(activeGroupCP.expectedBalanceDelta)
-		complete = complete[:activeGroupCP.completeLen]
-		receipts = receipts[:activeGroupCP.receiptsLen]
 		userTxsProcessed = activeGroupCP.userTxsProcessed
 		gethGas = activeGroupCP.gethGas
 		redeems = redeems[:0]
+		groupComplete = groupComplete[:0]
+		groupReceipts = groupReceipts[:0]
 		var reopenErr error
 		arbState, reopenErr = arbosState.OpenSystemArbosState(statedb, nil, true)
 		if reopenErr != nil {
@@ -359,20 +373,18 @@ func ProduceBlockAdvanced(
 			// group's deferred Finalise, then take a checkpoint so we can revert
 			// the entire group (tx + all its redeems) if any tx in the group errors.
 			if !isRedeem {
-				if activeGroupCP != nil {
-					statedb.Finalise(true)
-				}
+				commitGroup()
+
 				activeGroupCP = &groupCheckpoint{
 					snap:                 statedb.Snapshot(),
 					headerGasUsed:        header.GasUsed,
 					blockGasLeft:         blockGasLeft,
 					expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
-					completeLen:          len(complete),
-					receiptsLen:          len(receipts),
 					userTxsProcessed:     userTxsProcessed,
 					gethGas:              gethGas,
 					userTxHash:           tx.Hash(),
 				}
+
 			}
 
 			// Without Finalise between txs in a tentative group, the EVM refund
@@ -657,18 +669,22 @@ func ProduceBlockAdvanced(
 
 		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
 
-		complete = append(complete, tx)
-		receipts = append(receipts, receipt)
+		if activeGroupCP != nil {
+			groupComplete = append(groupComplete, tx)
+			groupReceipts = append(groupReceipts, receipt)
+		} else {
+			complete = append(complete, tx)
+			receipts = append(receipts, receipt)
+		}
 
 		if isUserTx {
 			userTxsProcessed++
 		}
 	}
 
-	// Flush deferred Finalise for the last clean group
+	// Flush the last clean group
 	if activeGroupCP != nil {
-		statedb.Finalise(true)
-		activeGroupCP = nil
+		commitGroup()
 	}
 
 	if statedb.IsTxFiltered() {
