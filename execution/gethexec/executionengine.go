@@ -116,6 +116,9 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // For non-redeems: collects tx hashes that touch filtered addresses but are not
 // in the onchain filter.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if tx.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())

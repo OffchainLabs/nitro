@@ -330,7 +330,6 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		var hooks SequencingHooks
 		isUserTx := false
 		isRedeem := false
 		if firstTx != nil {
@@ -339,7 +338,6 @@ func ProduceBlockAdvanced(
 		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
-			hooks = sequencingHooks
 			isRedeem = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
@@ -362,7 +360,6 @@ func ProduceBlockAdvanced(
 				break
 			}
 			if tx.Type() != types.ArbitrumInternalTxType {
-				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 				options = conditionalOptions
 			}
@@ -425,7 +422,7 @@ func ProduceBlockAdvanced(
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
-				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -460,7 +457,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if isUserTx && hooks.DiscardInvalidTxsEarly() {
+				if isUserTx && sequencingHooks.DiscardInvalidTxsEarly() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -488,10 +485,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if hooks != nil { // nil only for firstTx (ArbitrumInternalTxType)
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
-					}
-					return nil
+					return sequencingHooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
 				},
 				// skipFinalise: Normally Finalise runs after every committed tx,
 				// promoting dirtyStorage -> pendingStorage, clearing the journal,
@@ -524,7 +518,7 @@ func ProduceBlockAdvanced(
 
 		// append the err, even if it is nil
 		if isUserTx {
-			hooks.InsertLastTxError(err)
+			sequencingHooks.InsertLastTxError(err)
 		}
 
 		if err != nil {
@@ -574,7 +568,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(isUserTx && hooks.DiscardInvalidTxsEarly()) {
+			if !(isUserTx && sequencingHooks.DiscardInvalidTxsEarly()) {
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
