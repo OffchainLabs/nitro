@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
+use crate::{EVM_DATA, GLOBAL_STATE, KEYS};
 use arbutil::{
     benchmark::Benchmark,
     evm::{
@@ -11,9 +11,10 @@ use arbutil::{
     },
     Bytes20, Bytes32, Color,
 };
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use eyre::{eyre, Result};
 use prover::programs::memory::MemoryModel;
+use std::borrow::Cow;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 
@@ -38,12 +39,16 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = MockEvmApi;
 
-    fn args(&self) -> &[u8] {
-        unsafe { &ARGS }
+    fn args(&self) -> Cow<[u8]> {
+        Cow::Owned(GLOBAL_STATE.lock().args.clone())
     }
 
-    fn outs(&mut self) -> &mut Vec<u8> {
-        unsafe { &mut OUTS }
+    fn outs(&self) -> Cow<[u8]> {
+        Cow::Owned(GLOBAL_STATE.lock().outs.clone())
+    }
+
+    fn set_outs(&mut self, outs: Vec<u8>) {
+        GLOBAL_STATE.lock().outs = outs;
     }
 
     fn evm_api(&mut self) -> &mut Self::A {
@@ -64,7 +69,7 @@ impl UserHost<VecReader> for Program {
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
+        Ok(StaticMem.read_slice(ptr, len as usize))
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryBoundsError> {
@@ -74,12 +79,12 @@ impl UserHost<VecReader> for Program {
 
     fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
-        unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
+        Ok(StaticMem.write_u32(ptr, x))
     }
 
     fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
+        Ok(StaticMem.write_slice(ptr, src))
     }
 
     fn say<D: Display>(&self, text: D) {
@@ -195,7 +200,7 @@ impl EvmApi<VecReader> for MockEvmApi {
     }
 
     fn emit_log(&mut self, data: Vec<u8>, _topics: u32) -> Result<()> {
-        unsafe { LOGS.push(data) };
+        GLOBAL_STATE.lock().logs.push(data);
         Ok(())
     }
 
@@ -217,13 +222,13 @@ impl EvmApi<VecReader> for MockEvmApi {
     }
 
     fn add_pages(&mut self, pages: u16) -> Result<Gas> {
+        let mut gs = GLOBAL_STATE.lock();
+        let (open, ever) = (gs.open_pages, gs.ever_pages);
+        gs.open_pages = gs.open_pages.saturating_add(pages);
+        gs.ever_pages = gs.ever_pages.max(gs.open_pages);
+
         let model = MemoryModel::new(2, 1000);
-        unsafe {
-            let (open, ever) = (OPEN_PAGES, EVER_PAGES);
-            OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
-            EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
-            Ok(model.gas_cost(pages, open, ever))
-        }
+        Ok(model.gas_cost(pages, open, ever))
     }
 
     fn capture_hostio(

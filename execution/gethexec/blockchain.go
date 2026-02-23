@@ -255,6 +255,7 @@ func GetBlockChain(
 	chainConfig *params.ChainConfig,
 	tracer *tracing.Hooks,
 	txIndexerConfig *TxIndexerConfig,
+	exposeMultiGas bool,
 ) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -263,6 +264,7 @@ func GetBlockChain(
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
 		Tracer:                  tracer,
+		ExposeMultiGas:          exposeMultiGas,
 	}
 	cacheConfig.VmConfig = vmConfig
 
@@ -288,13 +290,14 @@ func WriteOrTestBlockChain(
 	initMessage *arbostypes.ParsedInitMessage,
 	txIndexerConfig *TxIndexerConfig,
 	accountsPerSync uint,
+	exposeMultiGas bool,
 ) (*core.BlockChain, error) {
 	emptyBlockChain := rawdb.ReadHeadHeader(executionDB) == nil
 	if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) {
 		// When using path scheme, and the stored state trie is not empty,
 		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
 		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
-		return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig)
+		return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig, exposeMultiGas)
 	}
 
 	err := WriteOrTestGenblock(executionDB, cacheConfig, initData, chainConfig, genesisArbOSInit, initMessage, accountsPerSync)
@@ -305,7 +308,7 @@ func WriteOrTestBlockChain(
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig)
+	return GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, txIndexerConfig, exposeMultiGas)
 }
 
 func init() {
