@@ -111,11 +111,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		}
 	}
 
-	// // Assert details about the extraction routine.
-	// if len(mockDB.savedStates) == 0 {
-	// 	t.Fatal("MEL did not save any states")
-	// }
-
 	inboxTracker := builder.L2.ConsensusNode.InboxTracker
 	numBatches, err := inboxTracker.GetBatchCount()
 	Require(t, err)
