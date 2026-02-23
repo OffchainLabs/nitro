@@ -126,7 +126,7 @@ type SequencingHooks interface {
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	DiscardInvalidTxsEarly() bool
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	InsertLastTxError(error)
 	ReportGroupRevert(error)
@@ -157,7 +157,7 @@ func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 	return nil
 }
 
-func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, isRedeem bool) error {
+func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
 	return nil
 }
 
@@ -478,7 +478,7 @@ func ProduceBlockAdvanced(
 				runCtx,
 				func(result *core.ExecutionResult) error {
 					if hooks != nil { // nil only for firstTx (ArbitrumInternalTxType)
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result, isRedeem)
+						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
 					}
 					return nil
 				},

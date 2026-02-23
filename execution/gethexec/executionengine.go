@@ -114,7 +114,8 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // address is found (triggering group revert in the block processor).
 // For non-redeems: touches To/From addresses, applies event filter, and collects
 // tx hashes that touch filtered addresses but are not in the onchain filter.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, isRedeem bool) error {
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	isRedeem := tx.Type() == types.ArbitrumRetryTxType
 	if isRedeem {
 		applyEventFilter(f.eventFilter, db)
 		if db.IsAddressFiltered() {
