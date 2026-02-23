@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -69,6 +69,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
@@ -77,6 +78,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		reorgEventChan,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -205,6 +207,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
@@ -213,6 +216,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		melDB,
 		mockMsgConsumer,
 		blobReaderRegistry,
+		reorgEventChan,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -340,6 +344,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
@@ -348,6 +353,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		reorgEventChan,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
@@ -411,6 +417,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		reorgEventChan,
 	)
 	Require(t, err)
 	newExtractor.StopWaiter.Start(ctx, extractor)
@@ -660,6 +667,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	Require(t, melDB.SaveState(ctx, melState)) // save head mel state
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventsChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
@@ -668,6 +676,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		melDB,
 		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		reorgEventsChan,
 	)
 	Require(t, err)
 	extractor.StopWaiter.Start(ctx, extractor)
