@@ -770,6 +770,7 @@ func getInboxTrackerAndReader(
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
+		log.Info("Inbox reader and tracker disabled")
 		return nil, nil, nil
 	}
 	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders, config.SnapSyncTest)
@@ -848,6 +849,7 @@ func getMessageExtractor(
 		return nil, err
 	}
 	txStreamer.SetMsgExtractor(msgExtractor)
+	log.Info("Message extractor enabled")
 	return msgExtractor, nil
 }
 

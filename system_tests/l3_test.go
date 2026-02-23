@@ -16,6 +16,8 @@ func TestSimpleL3(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.l3Config.nodeConfig.MessageExtraction.Enable = true
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
@@ -24,6 +26,7 @@ func TestSimpleL3(t *testing.T) {
 	firstNodeTestClient := builder.L3
 
 	secondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	secondNodeNodeConfig.MessageExtraction.Enable = true
 	secondNodeTestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeNodeConfig})
 	defer cleanupL3SecondNode()
 
@@ -50,5 +53,16 @@ func TestSimpleL3(t *testing.T) {
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	headState1, err := firstNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState(ctx)
+	Require(t, err)
+	headState2, err := secondNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState(ctx)
+	Require(t, err)
+	if headState1.MsgCount <= 1 {
+		t.Fatal("Expected more than 1 message in head MEL state of first L3 node")
+	}
+	if headState1.Hash() != headState2.Hash() {
+		t.Fatal("Head MEL states of both L3 nodes do not match")
 	}
 }
