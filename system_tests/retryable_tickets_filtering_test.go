@@ -1409,3 +1409,233 @@ func TestRetryableFilteringL2ContractChainToRedeemFiltered(t *testing.T) {
 	// Clear filter, verify manual redeem succeeds
 	manualRedeemSucceeds(t, ctx, builder, ticketId)
 }
+
+// ============================================================================
+// Part H: Fanout Redeem via Contract
+// ============================================================================
+
+// TestRetryableFilteringFanoutAutoRedeemDirtyLast tests the fanout pattern where
+// A's auto-redeem calls Simple.redeemAllAndCreateAddresses([B_clean, C_dirty], []).
+// B's retry succeeds first, then C's retry triggers the filter. The group revert
+// unwinds B's successful redeem. Both B and C tickets survive.
+func TestRetryableFilteringFanoutAutoRedeemDirtyLast(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy Simple contract on L2
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Deploy caller and filtered target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Submit B (gasLimit=0, dest=callerAddr, data=noop()) — clean ticket. Process.
+	bRetryData, err := callerABI.Pack("noop")
+	require.NoError(t, err)
+	_, ticketIdB := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, bRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdB, types.ReceiptStatusSuccessful)
+
+	// Submit C (gasLimit=0, dest=callerAddr, data=callTarget(filteredTarget)) — dirty ticket. Process.
+	cRetryData, err := callerABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
+	_, ticketIdC := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, cRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdC, types.ReceiptStatusSuccessful)
+
+	// Set filter on filteredTarget
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Build A's calldata: redeemAllAndCreateAddresses([ticketIdB, ticketIdC], [])
+	aRetryData, err := simpleABI.Pack("redeemAllAndCreateAddresses",
+		[][32]byte{ticketIdB, ticketIdC}, []common.Address{})
+	require.NoError(t, err)
+
+	// Submit A (gasLimit=1e6, dest=simpleAddr). Advance L1.
+	gasLimit := big.NewInt(1e7)
+	_, ticketIdA := submitRetryableViaL1WithGasLimit(
+		t, p, "Faucet", simpleAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, aRetryData, gasLimit,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// A's auto-redeem → Simple fans out → B succeeds, C touches filtered → group revert
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketIdA, p.filtererName, p.fundsRecipientAddr)
+
+	// B's successful redeem was rolled back, ticket still exists
+	verifyTicketExists(t, ctx, builder, ticketIdB)
+	// C should still exist
+	verifyTicketExists(t, ctx, builder, ticketIdC)
+
+	// After clearing filter, manual redeem of A succeeds
+	manualRedeemSucceeds(t, ctx, builder, ticketIdA)
+}
+
+// TestRetryableFilteringFanoutAutoRedeemDirtyFirst tests the fanout pattern with
+// reversed order: A fans out to [C_dirty, B_clean]. C's retry triggers the filter
+// before B's retry executes. Proves order doesn't matter for group revert.
+func TestRetryableFilteringFanoutAutoRedeemDirtyFirst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy Simple contract on L2
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Deploy caller and filtered target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Submit B (gasLimit=0, dest=callerAddr, data=noop()) — clean ticket. Process.
+	bRetryData, err := callerABI.Pack("noop")
+	require.NoError(t, err)
+	_, ticketIdB := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, bRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdB, types.ReceiptStatusSuccessful)
+
+	// Submit C (gasLimit=0, dest=callerAddr, data=callTarget(filteredTarget)) — dirty ticket. Process.
+	cRetryData, err := callerABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
+	_, ticketIdC := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, cRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdC, types.ReceiptStatusSuccessful)
+
+	// Set filter on filteredTarget
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Build A's calldata: redeemAllAndCreateAddresses([ticketIdC, ticketIdB], []) — reversed order
+	aRetryData, err := simpleABI.Pack("redeemAllAndCreateAddresses",
+		[][32]byte{ticketIdC, ticketIdB}, []common.Address{})
+	require.NoError(t, err)
+
+	// Submit A (gasLimit=1e6, dest=simpleAddr). Advance L1.
+	gasLimit := big.NewInt(1e7)
+	_, ticketIdA := submitRetryableViaL1WithGasLimit(
+		t, p, "Faucet", simpleAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, aRetryData, gasLimit,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// A's auto-redeem → Simple fans out → C touches filtered first → group revert
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketIdA, p.filtererName, p.fundsRecipientAddr)
+
+	// Both tickets should still exist after group revert
+	verifyTicketExists(t, ctx, builder, ticketIdB)
+	verifyTicketExists(t, ctx, builder, ticketIdC)
+
+	// After clearing filter, manual redeem of A succeeds
+	manualRedeemSucceeds(t, ctx, builder, ticketIdA)
+}
+
+// TestRetryableFilteringFanoutL2ManualRedeemDirtyLast tests the L2 manual redeem
+// fanout path. A is submitted with gasLimit=0 (no auto-redeem). L2 EOA redeems A
+// manually, which calls Simple to fan out to [B_clean, C_dirty]. The group revert
+// fires on the manual redeem tx.
+func TestRetryableFilteringFanoutL2ManualRedeemDirtyLast(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy Simple contract on L2
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
+	simpleABI, err := localgen.SimpleMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Deploy caller and filtered target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Submit B (gasLimit=0, dest=callerAddr, data=noop()) — clean ticket. Process.
+	bRetryData, err := callerABI.Pack("noop")
+	require.NoError(t, err)
+	_, ticketIdB := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, bRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdB, types.ReceiptStatusSuccessful)
+
+	// Submit C (gasLimit=0, dest=callerAddr, data=callTarget(filteredTarget)) — dirty ticket. Process.
+	cRetryData, err := callerABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
+	_, ticketIdC := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, cRetryData,
+	)
+	processRetryableSubmission(t, p, ticketIdC, types.ReceiptStatusSuccessful)
+
+	// Build A's calldata: redeemAllAndCreateAddresses([ticketIdB, ticketIdC], [])
+	aCallData, err := simpleABI.Pack("redeemAllAndCreateAddresses",
+		[][32]byte{ticketIdB, ticketIdC}, []common.Address{})
+	require.NoError(t, err)
+
+	// Submit A (gasLimit=0, dest=simpleAddr, data=redeemAll...) — no auto-redeem. Process.
+	_, ticketIdA := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", simpleAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, aCallData,
+	)
+	processRetryableSubmission(t, p, ticketIdA, types.ReceiptStatusSuccessful)
+
+	// Set filter on filteredTarget
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// L2 EOA manually redeems A
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
+	require.ErrorContains(t, err, "cascading redeem filtered",
+		"manual redeem should fail with cascading redeem filter error")
+
+	// A, B, C should all still exist
+	verifyTicketExists(t, ctx, builder, ticketIdA)
+	verifyTicketExists(t, ctx, builder, ticketIdB)
+	verifyTicketExists(t, ctx, builder, ticketIdC)
+
+	// After clearing filter, manual redeem of A succeeds
+	manualRedeemSucceeds(t, ctx, builder, ticketIdA)
+}
