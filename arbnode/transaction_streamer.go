@@ -29,7 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -1190,7 +1190,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 	if s.msgExtractor == nil {
 		return nil
 	}
-	batchCount, err := s.msgExtractor.GetBatchCount(ctx)
+	batchCount, err := s.msgExtractor.GetBatchCount()
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
 	}
