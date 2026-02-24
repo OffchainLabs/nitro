@@ -16,14 +16,8 @@
 
 <img src="https://arbitrum.io/assets/arbitrum/logo_color.png" alt="Logo" width="80" height="80">
 
-Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
-layer 2 optimistic rollup system, including fraud proofs, sequencer, token bridges,
-advanced calldata compression, and more.
-
-See the live docs-site [here](https://developer.arbitrum.io/) (or [here](https://github.com/OffchainLabs/arbitrum-docs)
-for markdown docs source).
-
-See [here](https://docs.arbitrum.io/audit-reports) for security audit reports.
+Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete layer 2 optimistic
+rollup system, including fraud proofs, sequencer, token bridges, advanced calldata compression, and more.
 
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using
@@ -40,16 +34,22 @@ batching and compression system to minimize L1 costs.
 Essentially, Nitro runs Geth at layer 2 on top of Ethereum, and can prove fraud over the core engine of Geth
 compiled to WASM.
 
-## Changelog
-
-- **August 31, 2022:** Arbitrum One successfully migrated from Classic to Nitro.
+**August 31, 2022:** Arbitrum One successfully migrated from Arbiturm Classic to Arbitrum Nitro.
 (See [state migration](https://developer.arbitrum.io/migration/state-migration) and
 [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
 
+## Documentation
+
+Refer to the [Documentation Website](https://developer.arbitrum.io/) or [Documentation Repository](https://github.com/OffchainLabs/arbitrum-docs)
+
+## Security Audits
+
+[Audit Reports](https://docs.arbitrum.io/audit-reports)
+
 ## Contributing
 
-[Contributing.md](https://github.com/OffchainLabs/nitro/blob/master/CONTRIBUTING.md) outlines the steps 
-for contributing to this repository.
+Refer to [contributing.md](https://github.com/OffchainLabs/nitro/blob/master/CONTRIBUTING.md) on how to
+contribute to this repository.
 
 ## Community
 
