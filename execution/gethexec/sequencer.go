@@ -1084,9 +1084,22 @@ func (s *FullSequencingHooks) GetTxErrors() []error {
 	return s.txErrors
 }
 
-func (s *FullSequencingHooks) InsertLastTxError(err error) {
-	s.txErrors = append(s.txErrors, err)
+func (s *FullSequencingHooks) TxSucceeded() {
+	s.txErrors = append(s.txErrors, nil)
 }
+
+func (s *FullSequencingHooks) TxFailed(err error) {
+	if len(s.txErrors) >= s.sequencedQueueItemsCount {
+		// Entry already exists (TxSucceeded was called for the user tx, then a
+		// cascading redeem failed). Overwrite the nil with the error.
+		s.txErrors[len(s.txErrors)-1] = err
+	} else {
+		// No entry yet (the user tx itself failed before TxSucceeded). Append.
+		s.txErrors = append(s.txErrors, err)
+	}
+}
+
+func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
 // It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
@@ -1104,7 +1117,7 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 			s.sequencedQueueItemsCount += 1
-			s.InsertLastTxError(core.ErrGasLimitReached)
+			s.TxFailed(core.ErrGasLimitReached)
 			s.txSizeLimitReached = true
 		} else {
 			s.sequencedQueueItemsCount += 1
@@ -1112,10 +1125,6 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 		}
 	}
 	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
-}
-
-func (s *FullSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return true
 }
 
 func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
@@ -1145,20 +1154,6 @@ func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 		return s.blockFilter(header, db, transactions, receipts)
 	}
 	return nil
-}
-
-// ReportGroupRevert replaces the last txErrors entry with the group revert
-// error. Redeems don't get txErrors entries (only user txs from
-// NextTxToSequence do), so a group (user tx + all its redeems) has exactly
-// one entry - the originating user tx's nil. Replacing it with the error
-// excludes the tx from the block (MessageFromTxes skips non-nil entries)
-// and returns the error to the RPC caller via resultChan.
-func (s *FullSequencingHooks) ReportGroupRevert(err error) {
-	if len(s.txErrors) > 0 {
-		s.txErrors[len(s.txErrors)-1] = err
-	} else {
-		log.Error("ReportGroupRevert called with empty txErrors")
-	}
 }
 
 func MakeSequencingHooks(

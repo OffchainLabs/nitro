@@ -1868,7 +1868,7 @@ func TestRetryableAutoRedeemEmitsTransferToFilteredAddress(t *testing.T) {
 // no auto-redeem is scheduled and the ticket survives. Then the address
 // filter is set and a manual redeem is sent as a regular L2 tx. The redeem's
 // inner execution touches the filtered address, triggering a group revert via
-// FullSequencingHooks.ReportGroupRevert. The manual redeem tx is dropped and
+// FullSequencingHooks.TxFailed. The manual redeem tx is dropped and
 // the retryable ticket survives.
 func TestManualRedeemGroupRevert(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1942,7 +1942,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 
 	// Send manual redeem via L2 tx (goes through FullSequencingHooks).
 	// The redeem's inner execution calls targetAddr which is now filtered.
-	// Group revert fires: FullSequencingHooks.ReportGroupRevert replaces
+	// Group revert fires: FullSequencingHooks.TxFailed replaces
 	// txErrors[last], causing the sequencer to return an error.
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketId)

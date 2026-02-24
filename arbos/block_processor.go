@@ -111,7 +111,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int,
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
-// ErrFilteredCascadingRedeem is returned via ReportGroupRevert when a redeem's
+// ErrFilteredCascadingRedeem is returned via TxFailed when a redeem's
 // inner execution touches a filtered address, requiring the entire tx group
 // (originating user tx + all its redeems) to be reverted.
 type ErrFilteredCascadingRedeem struct {
@@ -123,13 +123,21 @@ func (e *ErrFilteredCascadingRedeem) Error() string {
 }
 
 type SequencingHooks interface {
+	// NextTxToSequence returns the next tx to include, or nil when done.
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
-	DiscardInvalidTxsEarly() bool
+	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
+	TxSucceeded()
+	// TxFailed records an error for the last user tx from NextTxToSequence.
+	TxFailed(error)
+	// CanDiscardTx returns whether failed txs can be excluded from the block.
+	// This is a static property of the implementing type (true for sequencer, false for replay).
+	CanDiscardTx() bool
+	// PreTxFilter rejects a tx before execution.
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	// PostTxFilter rejects a tx after execution.
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	InsertLastTxError(error)
-	ReportGroupRevert(error)
 }
 
 type NoopSequencingHooks struct {
@@ -149,9 +157,11 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	return n.txs[n.scheduledTxsCount-1], nil, nil
 }
 
-func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return false
-}
+func (n *NoopSequencingHooks) TxSucceeded() {}
+
+func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) CanDiscardTx() bool { return false }
 
 func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
 	return nil
@@ -164,10 +174,6 @@ func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	return nil
 }
-
-func (n *NoopSequencingHooks) InsertLastTxError(err error) {}
-
-func (n *NoopSequencingHooks) ReportGroupRevert(error) {}
 
 func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
@@ -304,7 +310,7 @@ func ProduceBlockAdvanced(
 	// revertToGroupCheckpoint reverts statedb and all non-statedb state back
 	// to the group checkpoint and deactivates the group. It does NOT report
 	// the error to sequencing hooks -- callers decide whether to call
-	// ReportGroupRevert separately. Returns an error only on fatal failures.
+	// TxFailed separately. Returns an error only on fatal failures.
 	revertToGroupCheckpoint := func() error {
 		statedb.RevertToSnapshot(activeGroupCP.snap)
 		statedb.ClearTxFilter()
@@ -409,6 +415,7 @@ func ProduceBlockAdvanced(
 		preTxHeaderGasUsed := header.GasUsed
 		arbosVersion := arbState.ArbOSVersion()
 		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
+		var alreadyMarkedFailed bool
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -457,10 +464,11 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if isUserTx && sequencingHooks.DiscardInvalidTxsEarly() {
+				if isUserTx && sequencingHooks.CanDiscardTx() {
+					sequencingHooks.TxFailed(core.ErrIntrinsicGas)
+					alreadyMarkedFailed = true
 					return nil, nil, core.ErrIntrinsicGas
 				}
-				// ensure at least TxGas is left in the pool before trying a state transition
 				computeGas = params.TxGas
 			}
 
@@ -516,20 +524,12 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
-		// append the err, even if it is nil
-		if isUserTx {
-			sequencingHooks.InsertLastTxError(err)
-		}
-
 		if err != nil {
 			if activeGroupCP != nil {
-				// Group checkpoints active (ArbOS >= 60): revert the entire
+				// Group checkpoints active (ArbOS >= 30): revert the entire
 				// group (user tx + all its redeems). Two sub-cases:
 				//
-				//  Filter errors  -> revert group, report to hooks, continue
-				//                    (skips gas deduction because the user tx's
-				//                    error is already recorded via InsertLastTxError
-				//                    above, or for redeems via ReportGroupRevert).
+				//  Filter errors  -> revert group, record failure, continue.
 				//
 				//  Non-filter errors -> revert group, then fall through to
 				//                       normal gas deduction and logging.
@@ -538,11 +538,10 @@ func ProduceBlockAdvanced(
 					if err := revertToGroupCheckpoint(); err != nil {
 						return nil, nil, err
 					}
-					// Only redeems report to hooks; a directly-filtered
-					// user tx already has ErrArbTxFilter recorded by
-					// InsertLastTxError above.
-					if isRedeem {
-						sequencingHooks.ReportGroupRevert(&ErrFilteredCascadingRedeem{
+					if isUserTx {
+						sequencingHooks.TxFailed(err)
+					} else if isRedeem {
+						sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
 							OriginatingTxHash: userTxHash,
 						})
 					}
@@ -568,7 +567,12 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(isUserTx && sequencingHooks.DiscardInvalidTxsEarly()) {
+			if isUserTx && !alreadyMarkedFailed {
+				sequencingHooks.TxFailed(err)
+			}
+			// Deduct gas unless this is a user tx that was (or can be) discarded.
+			// Non-user txs (e.g. redeems) always deduct gas on failure.
+			if !isUserTx || (!alreadyMarkedFailed && !sequencingHooks.CanDiscardTx()) {
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
@@ -672,6 +676,7 @@ func ProduceBlockAdvanced(
 		}
 
 		if isUserTx {
+			sequencingHooks.TxSucceeded()
 			userTxsProcessed++
 		}
 	}

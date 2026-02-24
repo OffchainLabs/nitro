@@ -155,11 +155,11 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	return nil
 }
 
-// ReportGroupRevert extracts the originating tx hash from ErrFilteredCascadingRedeem
+// TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
 // and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the existing
 // check at executionengine.go fires ErrFilteredDelayedMessage, causing the delayed
 // sequencer to halt and the transaction-filterer to add the hash to the onchain filter.
-func (f *DelayedFilteringSequencingHooks) ReportGroupRevert(err error) {
+func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	var cascadingErr *arbos.ErrFilteredCascadingRedeem
 	if errors.As(err, &cascadingErr) {
 		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
