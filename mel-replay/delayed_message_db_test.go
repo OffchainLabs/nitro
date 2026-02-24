@@ -3,7 +3,6 @@
 package melreplay_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -22,7 +21,6 @@ import (
 )
 
 func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
-	ctx := context.Background()
 	var delayedMessages []*mel.DelayedInboxMessage
 	numMsgs := uint64(10)
 	for i := range numMsgs {
@@ -67,7 +65,7 @@ func TestRecordingPreimagesForReadDelayedMessage(t *testing.T) {
 	// Simulate reading of delayed Messages in native mode to record preimages
 	numMsgsToRead := uint64(7)
 	for i := startBlockNum; i < numMsgsToRead; i++ {
-		delayed, err := recordingDB.ReadDelayedMessage(ctx, state, i)
+		delayed, err := recordingDB.ReadDelayedMessage(state, i)
 		require.NoError(t, err)
 		require.Equal(t, delayed.Hash(), delayedMessages[i].Hash())
 	}
