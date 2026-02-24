@@ -33,7 +33,10 @@ const (
 	L1MessageType_Invalid               = 0xFF
 )
 
-const MaxL2MessageSize = 256 * 1024
+// 1,000,000,000 gas/s = 100,000,000 gas per block @ 10 blocks/s
+// 100,000,000 gas of TxDataNonZeroGasEIP2028
+// 100,000,000 / 16 = 6,250,000
+const MaxL2MessageSize = 6_250_000
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
