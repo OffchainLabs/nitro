@@ -64,7 +64,7 @@ func submitRetryableWithFailingAutoRedeem(
 	}
 	// Gas covers intrinsic cost + tiny buffer: enough to schedule auto-redeem
 	// (gasLimit >= TxGas) but inner call gets ~100 gas → immediate out-of-gas.
-	gasLimit := big.NewInt(int64(params.TxGas + dataGas + 100))
+	gasLimit := new(big.Int).SetUint64(params.TxGas + dataGas + 100)
 
 	return submitRetryableViaL1WithGasLimit(t, p, l1Sender, destAddr, callValue, beneficiary, feeRefundAddr, data, gasLimit)
 }
