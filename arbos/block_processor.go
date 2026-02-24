@@ -126,7 +126,7 @@ type SequencingHooks interface {
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	DiscardInvalidTxsEarly() bool
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, bool) error
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	InsertLastTxError(error)
 	ReportGroupRevert(error)
@@ -157,7 +157,7 @@ func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 	return nil
 }
 
-func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, isRedeem bool) error {
+func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
 	return nil
 }
 
@@ -261,13 +261,12 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	// Group checkpoints are only used when transaction filtering is active
-	// (ArbOS >= 60). For older versions, we use the legacy behavior where
-	// Finalise runs after every committed tx. Enabling skipFinalise on
-	// older versions would break consensus by changing empty-account
-	// lifecycle behavior (CreateZombieIfDeleted depends on intermediate
-	// Finalise calls to populate stateObjectsDestruct).
-	useGroupCheckpoints := arbState.ArbOSVersion() >= params.ArbosVersion_TransactionFiltering
+	// Group checkpoints are only used on ArbOS >= 30. For older versions,
+	// we use the legacy behavior where Finalise runs after every committed
+	// tx. Enabling skipFinalise on older versions would break consensus by
+	// changing empty-account lifecycle behavior (CreateZombieIfDeleted
+	// depends on intermediate Finalise calls to populate stateObjectsDestruct).
+	useGroupCheckpoints := arbState.ArbOSVersion() >= params.ArbosVersion_30
 
 	// Group checkpoint state for tx groups (a user tx + all its redeems).
 	// We take a state checkpoint before each non-redeem tx and process it
@@ -280,13 +279,27 @@ func ProduceBlockAdvanced(
 		headerGasUsed        uint64
 		blockGasLeft         uint64
 		expectedBalanceDelta *big.Int
-		completeLen          int
-		receiptsLen          int
 		userTxsProcessed     int
 		gethGas              core.GasPool
 		userTxHash           common.Hash
 	}
 	var activeGroupCP *groupCheckpoint
+	// Tentative tx/receipt buffers for the current group. Txs are accumulated
+	// here while a group is active and only promoted to complete/receipts when
+	// the group commits successfully. On revert, these are simply discarded.
+	var groupComplete []*types.Transaction
+	var groupReceipts types.Receipts
+
+	// commitGroup promotes tentative txs/receipts to the main slices and
+	// flushes the deferred Finalise.
+	commitGroup := func() {
+		complete = append(complete, groupComplete...)
+		receipts = append(receipts, groupReceipts...)
+		groupComplete = groupComplete[:0]
+		groupReceipts = groupReceipts[:0]
+		statedb.Finalise(true)
+		activeGroupCP = nil
+	}
 
 	// revertToGroupCheckpoint reverts statedb and all non-statedb state back
 	// to the group checkpoint and deactivates the group. It does NOT report
@@ -298,11 +311,11 @@ func ProduceBlockAdvanced(
 		header.GasUsed = activeGroupCP.headerGasUsed
 		blockGasLeft = activeGroupCP.blockGasLeft
 		expectedBalanceDelta.Set(activeGroupCP.expectedBalanceDelta)
-		complete = complete[:activeGroupCP.completeLen]
-		receipts = receipts[:activeGroupCP.receiptsLen]
 		userTxsProcessed = activeGroupCP.userTxsProcessed
 		gethGas = activeGroupCP.gethGas
 		redeems = redeems[:0]
+		groupComplete = groupComplete[:0]
+		groupReceipts = groupReceipts[:0]
 		var reopenErr error
 		arbState, reopenErr = arbosState.OpenSystemArbosState(statedb, nil, true)
 		if reopenErr != nil {
@@ -317,7 +330,6 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		var hooks SequencingHooks
 		isUserTx := false
 		isRedeem := false
 		if firstTx != nil {
@@ -326,7 +338,6 @@ func ProduceBlockAdvanced(
 		} else if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
-			hooks = sequencingHooks
 			isRedeem = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
@@ -349,7 +360,6 @@ func ProduceBlockAdvanced(
 				break
 			}
 			if tx.Type() != types.ArbitrumInternalTxType {
-				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 				options = conditionalOptions
 			}
@@ -360,20 +370,18 @@ func ProduceBlockAdvanced(
 			// group's deferred Finalise, then take a checkpoint so we can revert
 			// the entire group (tx + all its redeems) if any tx in the group errors.
 			if !isRedeem {
-				if activeGroupCP != nil {
-					statedb.Finalise(true)
-				}
+				commitGroup()
+
 				activeGroupCP = &groupCheckpoint{
 					snap:                 statedb.Snapshot(),
 					headerGasUsed:        header.GasUsed,
 					blockGasLeft:         blockGasLeft,
 					expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
-					completeLen:          len(complete),
-					receiptsLen:          len(receipts),
 					userTxsProcessed:     userTxsProcessed,
 					gethGas:              gethGas,
 					userTxHash:           tx.Hash(),
 				}
+
 			}
 
 			// Without Finalise between txs in a tentative group, the EVM refund
@@ -414,7 +422,7 @@ func ProduceBlockAdvanced(
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
-				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -449,7 +457,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if isUserTx && hooks.DiscardInvalidTxsEarly() {
+				if isUserTx && sequencingHooks.DiscardInvalidTxsEarly() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -477,10 +485,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if hooks != nil { // nil only for firstTx (ArbitrumInternalTxType)
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result, isRedeem)
-					}
-					return nil
+					return sequencingHooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
 				},
 				// skipFinalise: Normally Finalise runs after every committed tx,
 				// promoting dirtyStorage -> pendingStorage, clearing the journal,
@@ -513,7 +518,7 @@ func ProduceBlockAdvanced(
 
 		// append the err, even if it is nil
 		if isUserTx {
-			hooks.InsertLastTxError(err)
+			sequencingHooks.InsertLastTxError(err)
 		}
 
 		if err != nil {
@@ -563,7 +568,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(isUserTx && hooks.DiscardInvalidTxsEarly()) {
+			if !(isUserTx && sequencingHooks.DiscardInvalidTxsEarly()) {
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
 					userTxsProcessed++
@@ -658,18 +663,22 @@ func ProduceBlockAdvanced(
 
 		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
 
-		complete = append(complete, tx)
-		receipts = append(receipts, receipt)
+		if activeGroupCP != nil {
+			groupComplete = append(groupComplete, tx)
+			groupReceipts = append(groupReceipts, receipt)
+		} else {
+			complete = append(complete, tx)
+			receipts = append(receipts, receipt)
+		}
 
 		if isUserTx {
 			userTxsProcessed++
 		}
 	}
 
-	// Flush deferred Finalise for the last clean group
+	// Flush the last clean group
 	if activeGroupCP != nil {
-		statedb.Finalise(true)
-		activeGroupCP = nil
+		commitGroup()
 	}
 
 	if statedb.IsTxFiltered() {
