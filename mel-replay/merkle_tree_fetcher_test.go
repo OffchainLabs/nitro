@@ -1,7 +1,6 @@
 package melreplay_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -32,13 +31,12 @@ func (m *mockPreimageResolver) ResolveTypedPreimage(preimageType arbutil.Preimag
 
 func TestFetchObjectFromMerkleTree(t *testing.T) {
 	// Tests implementation of fetchObjectFromMerkleTree method
-	ctx := context.Background()
 	t.Run("message index out of range", func(t *testing.T) {
 		db := melreplay.NewDelayedMessageDatabase(nil)
 		state := &mel.State{
 			DelayedMessagesSeen: 5,
 		}
-		_, err := db.ReadDelayedMessage(ctx, state, 5)
+		_, err := db.ReadDelayedMessage(state, 5)
 		require.ErrorContains(t, err, "index 5 out of range, total delayed messages seen: 5")
 	})
 	t.Run("single message in Merkle tree", func(t *testing.T) {
@@ -58,7 +56,7 @@ func TestFetchObjectFromMerkleTree(t *testing.T) {
 			DelayedMessagesSeenRoot: root,
 		}
 
-		msg, err := db.ReadDelayedMessage(ctx, state, uint64(0)) // #nosec G115
+		msg, err := db.ReadDelayedMessage(state, uint64(0)) // #nosec G115
 		require.NoError(t, err)
 		require.Equal(t, []byte("foobar"), msg.Message.L2msg)
 	})
@@ -90,7 +88,7 @@ func TestFetchObjectFromMerkleTree(t *testing.T) {
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b")}
 		for i, expected := range expectedData {
-			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
+			msg, err := db.ReadDelayedMessage(state, uint64(i)) // #nosec G115
 			require.NoError(t, err)
 			require.Equal(t, expected, msg.Message.L2msg)
 		}
@@ -123,7 +121,7 @@ func TestFetchObjectFromMerkleTree(t *testing.T) {
 		// Test each message
 		expectedData := [][]byte{[]byte("a"), []byte("b"), []byte("c")}
 		for i, expected := range expectedData {
-			msg, err := db.ReadDelayedMessage(ctx, state, uint64(i)) // #nosec G115
+			msg, err := db.ReadDelayedMessage(state, uint64(i)) // #nosec G115
 			require.NoError(t, err)
 			require.Equal(t, expected, msg.Message.L2msg)
 		}

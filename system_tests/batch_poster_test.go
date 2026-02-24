@@ -897,7 +897,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount(ctx)
+		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
