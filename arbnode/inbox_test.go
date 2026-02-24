@@ -142,8 +142,7 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	disableDelayedSequencingFilterConfigFetcher := func() bool { return false }
-	execEngine := gethexec.NewExecutionEngine(bc, 0, false, disableDelayedSequencingFilterConfigFetcher)
+	execEngine := gethexec.NewExecutionEngine(bc, 0, false, false)
 	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
 	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
 	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {

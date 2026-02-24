@@ -215,10 +215,10 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker                              state.AddressChecker
-	eventFilter                                 *eventfilter.EventFilter
-	transactionFiltererRPCClient                *TransactionFiltererRPCClient
-	disableDelayedSequencingFilterConfigFetcher func() bool
+	addressChecker                 state.AddressChecker
+	eventFilter                    *eventfilter.EventFilter
+	transactionFiltererRPCClient   *TransactionFiltererRPCClient
+	disableDelayedSequencingFilter bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -238,16 +238,16 @@ func NewExecutionEngine(
 	bc *core.BlockChain,
 	syncTillBlock uint64,
 	exposeMultiGas bool,
-	disableDelayedSequencingFilterConfigFetcher func() bool,
+	disableDelayedSequencingFilter bool,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
-		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:  make(chan struct{}, 1),
-		cachedL1PriceData: NewL1PriceData(),
-		exposeMultiGas:    exposeMultiGas,
-		syncTillBlock:     syncTillBlock,
-		disableDelayedSequencingFilterConfigFetcher: disableDelayedSequencingFilterConfigFetcher,
+		bc:                             bc,
+		resequenceChan:                 make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:               make(chan struct{}, 1),
+		cachedL1PriceData:              NewL1PriceData(),
+		exposeMultiGas:                 exposeMultiGas,
+		syncTillBlock:                  syncTillBlock,
+		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 	}
 }
 
@@ -877,7 +877,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if !s.disableDelayedSequencingFilterConfigFetcher() && isSequencing {
+	if !s.disableDelayedSequencingFilter && isSequencing {
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)

@@ -102,7 +102,7 @@ type SequencerConfig struct {
 }
 
 type TransactionFilteringConfig struct {
-	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter" reload:"hot"`
+	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
