@@ -38,21 +38,17 @@ pub async fn validate_native(
         false => vec![],
     };
 
-    let binary_path = if let Some(module_root) = request.module_root {
-        server_state.locator.get_machine_path(module_root)?
-    } else {
-        server_state
-            .locator
-            .latest_wasm_module_root()
-            .path
-            .to_path_buf()
-    };
+    let module_root = request
+        .module_root
+        .unwrap_or(server_state.locator.latest_wasm_module_root().module_root);
+
+    let binary_path = server_state.locator.get_machine_path(module_root)?;
     let binary = replay_binary(binary_path);
-    info!("validate native serving request with module root at {binary:?}");
+    info!("validate native serving request with module root 0x{module_root}");
 
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
-            binary,
+            binary: binary.clone(),
             cranelift: DEFAULT_JIT_CRANELIFT,
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
@@ -66,7 +62,17 @@ pub async fn validate_native(
         }),
     };
 
-    let result = jit::run(&opts).map_err(|error| format!("{error}"))?;
+    let result = match server_state.module_cache.get(&module_root) {
+        Some(compiled) => {
+            jit::run_with_module(compiled, &opts).map_err(|error| format!("{error}"))?
+        }
+        None => {
+            return Err(format!(
+                "module root 0x{module_root} not in cache, compiling from {binary:?}"
+            ))
+        }
+    };
+
     if let Some(err) = result.error {
         Err(format!("{err}"))
     } else {

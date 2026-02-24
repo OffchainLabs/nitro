@@ -9,13 +9,15 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use tracing::info;
 
 use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
+use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
 
-#[derive(Debug)]
 pub struct ServerState {
     pub mode: InputMode,
     /// Machine locator is responsible for locating replay.wasm binary and building
@@ -25,6 +27,9 @@ pub struct ServerState {
     /// in Arc<> since the caller of ServerState is wrapped in Arc<>.
     pub jit_manager: JitProcessManager,
     pub available_workers: usize,
+    /// Cache of pre-compiled WASM modules keyed by module root.
+    /// Populated at startup to avoid re-compiling on every native validation request.
+    pub module_cache: HashMap<ModuleRoot, jit::CompiledModule>,
 }
 
 impl ServerState {
@@ -35,11 +40,41 @@ impl ServerState {
             InputMode::Continuous => JitProcessManager::new(&locator)?,
             InputMode::Native => JitProcessManager::new_empty(),
         };
+
+        let mut module_cache = HashMap::new();
+        if matches!(config.mode, InputMode::Native) {
+            for meta in locator.module_roots() {
+                let binary = replay_binary(meta.path.clone());
+                let validator_opts = jit::ValidatorOpts {
+                    binary: binary.clone(),
+                    cranelift: DEFAULT_JIT_CRANELIFT,
+                    debug: false,
+                    require_success: false,
+                };
+                match jit::machine::compile_module(&validator_opts) {
+                    Ok(compiled) => {
+                        info!(
+                            "Pre-compiled module for root 0x{} from {binary:?}",
+                            meta.module_root
+                        );
+                        module_cache.insert(meta.module_root, compiled);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "Failed to pre-compile module for root 0x{}: {err}",
+                            meta.module_root
+                        );
+                    }
+                }
+            }
+        }
+
         Ok(ServerState {
             mode: config.mode,
             locator,
             jit_manager,
             available_workers,
+            module_cache,
         })
     }
 }
