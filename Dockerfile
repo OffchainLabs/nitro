@@ -208,6 +208,7 @@ COPY ./scripts/download-machine.sh .
 RUN ./download-machine.sh consensus-v60-alpha.1 0xe237db4636ba7878fb1d6998f40fa155260a26484f81db732f9aa7dc1b684bf7
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
+RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
 
 FROM golang:1.25-bookworm AS node-builder
 WORKDIR /workspace
