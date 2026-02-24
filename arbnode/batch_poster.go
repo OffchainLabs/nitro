@@ -127,6 +127,8 @@ type BatchPoster struct {
 	parentChain  *parent.ParentChain
 	checkEip7623 bool
 	useEip7623   bool
+
+	maxL2MessageSize uint64
 }
 
 type l1BlockBound int
@@ -321,18 +323,19 @@ var TestBatchPosterConfig = BatchPosterConfig{
 }
 
 type BatchPosterOpts struct {
-	DataPosterDB  ethdb.Database
-	L1Reader      *headerreader.HeaderReader
-	Inbox         *InboxTracker
-	Streamer      *TransactionStreamer
-	VersionGetter execution.ArbOSVersionGetter
-	SyncMonitor   *SyncMonitor
-	Config        BatchPosterConfigFetcher
-	DeployInfo    *chaininfo.RollupAddresses
-	TransactOpts  *bind.TransactOpts
-	DAPWriter     daprovider.Writer
-	ParentChainID *big.Int
-	DAPReaders    *daprovider.ReaderRegistry
+	DataPosterDB     ethdb.Database
+	L1Reader         *headerreader.HeaderReader
+	Inbox            *InboxTracker
+	Streamer         *TransactionStreamer
+	VersionGetter    execution.ArbOSVersionGetter
+	SyncMonitor      *SyncMonitor
+	Config           BatchPosterConfigFetcher
+	DeployInfo       *chaininfo.RollupAddresses
+	TransactOpts     *bind.TransactOpts
+	DAPWriter        daprovider.Writer
+	ParentChainID    *big.Int
+	DAPReaders       *daprovider.ReaderRegistry
+	MaxL2MessageSize uint64
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -392,6 +395,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
+		maxL2MessageSize:   opts.MaxL2MessageSize,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -1843,7 +1847,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.maxL2MessageSize)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)

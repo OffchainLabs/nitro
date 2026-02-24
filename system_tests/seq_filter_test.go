@@ -136,7 +136,7 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 			return nil
 		}
 	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, preTxFilter, postTxFilter, blockFilter)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txes, preTxFilter, postTxFilter, blockFilter, params.DefaultMaxL2MessageSize)
 	cleanup := func() {
 		builderCleanup()
 		cancel()

@@ -39,12 +39,13 @@ func BuildBlock(
 	inbox arbstate.InboxBackend,
 	seqBatch []byte,
 	runCtx *core.MessageRunContext,
+	maxL2MessageSize uint64,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate, chainContext.ChainConfig().MaxL2MessageSize())
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -136,7 +137,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, targetsSeed uint8, runCtxSeed uint8) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte, targetsSeed uint8, runCtxSeed uint8, maxL2MessageSize uint64) {
 		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}

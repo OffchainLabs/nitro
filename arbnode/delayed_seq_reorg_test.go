@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -20,7 +21,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, params.DefaultMaxL2MessageSize)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
@@ -220,7 +221,7 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, ctx, common.Address{})
-	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig)
+	tracker, err := NewInboxTracker(db, streamer, nil, DefaultSnapSyncConfig, params.MaxL2MessageSize)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
