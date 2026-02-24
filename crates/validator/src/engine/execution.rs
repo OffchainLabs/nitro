@@ -16,18 +16,24 @@
 //!    validation, isolating the execution environment and allowing for specific
 //!    binary version targeting.
 
+use std::collections::HashMap;
+
 use axum::Json;
+use jit::CompiledModule;
 use tracing::info;
 use validation::{local_target, BatchInfo, GoGlobalState};
 
 use crate::{
-    config::ServerState,
-    engine::{replay_binary, DEFAULT_JIT_CRANELIFT},
+    engine::{
+        machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
+        DEFAULT_JIT_CRANELIFT,
+    },
     spawner_endpoints::ValidationRequest,
 };
 
 pub async fn validate_native(
-    server_state: &ServerState,
+    locator: &MachineLocator,
+    module_cache: &HashMap<ModuleRoot, CompiledModule>,
     request: ValidationRequest,
 ) -> Result<Json<GoGlobalState>, String> {
     let delayed_inbox = match request.validation_input.has_delayed_msg {
@@ -40,9 +46,9 @@ pub async fn validate_native(
 
     let module_root = request
         .module_root
-        .unwrap_or(server_state.locator.latest_wasm_module_root().module_root);
+        .unwrap_or(locator.latest_wasm_module_root().module_root);
 
-    let binary_path = server_state.locator.get_machine_path(module_root)?;
+    let binary_path = locator.get_machine_path(module_root)?;
     let binary = replay_binary(&binary_path);
     info!("validate native serving request with module root 0x{module_root}");
 
@@ -62,15 +68,11 @@ pub async fn validate_native(
         }),
     };
 
-    let result = match server_state.module_cache.get(&module_root) {
+    let result = match module_cache.get(&module_root) {
         Some(compiled) => {
             jit::run_with_module(compiled, &opts).map_err(|error| format!("{error}"))?
         }
-        None => {
-            return Err(format!(
-                "module root 0x{module_root} not in cache, compiling from {binary:?}"
-            ))
-        }
+        None => return Err(format!("module root 0x{module_root} not in cache")),
     };
 
     if let Some(err) = result.error {
@@ -81,17 +83,17 @@ pub async fn validate_native(
 }
 
 pub async fn validate_continuous(
-    server_state: &ServerState,
+    locator: &MachineLocator,
+    jit_manager: &JitProcessManager,
     request: ValidationRequest,
 ) -> Result<Json<GoGlobalState>, String> {
     let module_root = request
         .module_root
-        .unwrap_or_else(|| server_state.locator.latest_wasm_module_root().module_root);
+        .unwrap_or_else(|| locator.latest_wasm_module_root().module_root);
 
     info!("validate continuous serving request with module_root 0x{module_root}");
 
-    let new_state = server_state
-        .jit_manager
+    let new_state = jit_manager
         .feed_machine_with_root(&request.validation_input, module_root)
         .await
         .map_err(|error| format!("{error:?}"))?;

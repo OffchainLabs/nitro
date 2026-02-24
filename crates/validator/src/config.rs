@@ -18,64 +18,76 @@ use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
 use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
 
+/// Mode-specific execution state, built at startup.
+pub enum ExecutionMode {
+    Native {
+        module_cache: HashMap<ModuleRoot, CompiledModule>,
+    },
+    Continuous {
+        // Not wrapped in Arc<> since the caller of ServerState is already wrapped.
+        jit_manager: JitProcessManager,
+    },
+}
+
 pub struct ServerState {
-    pub mode: InputMode,
     /// Machine locator is responsible for locating replay.wasm binary and building
     /// a map of module roots to their respective location + binary
     pub locator: MachineLocator,
-    /// Jit manager is responsible for computing next GlobalState. Not wrapped
-    /// in Arc<> since the caller of ServerState is wrapped in Arc<>.
-    pub jit_manager: JitProcessManager,
     pub available_workers: usize,
-    /// Cache of pre-compiled WASM modules keyed by module root.
-    /// Populated at startup to avoid re-compiling on every native validation request.
-    pub module_cache: HashMap<ModuleRoot, jit::CompiledModule>,
+    pub execution: ExecutionMode,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         let locator = MachineLocator::new(&config.root_path)?;
 
-        let jit_manager = match config.mode {
-            InputMode::Continuous => JitProcessManager::new(&locator)?,
-            InputMode::Native => JitProcessManager::new_empty(),
-        };
-
-        let mut module_cache = HashMap::new();
-        if matches!(config.mode, InputMode::Native) {
-            for meta in locator.module_roots() {
-                let binary = replay_binary(&meta.path);
-                let validator_opts = jit::ValidatorOpts {
-                    binary: binary.clone(),
-                    cranelift: DEFAULT_JIT_CRANELIFT,
-                    debug: false,
-                    require_success: false,
-                };
-                match jit::machine::compile_module(&validator_opts) {
-                    Ok(compiled) => {
-                        info!(
-                            "Pre-compiled module for root 0x{} from {binary:?}",
-                            meta.module_root
-                        );
-                        module_cache.insert(meta.module_root, compiled);
-                    }
-                    Err(err) => {
-                        warn!(
-                            "Failed to pre-compile module for root 0x{}: {err}",
-                            meta.module_root
-                        );
+        let execution = match config.mode {
+            InputMode::Continuous => ExecutionMode::Continuous {
+                jit_manager: JitProcessManager::new(&locator)?,
+            },
+            InputMode::Native => {
+                let mut module_cache = HashMap::new();
+                for meta in locator.module_roots() {
+                    let binary = replay_binary(&meta.path);
+                    let validator_opts = jit::ValidatorOpts {
+                        binary: binary.clone(),
+                        cranelift: DEFAULT_JIT_CRANELIFT,
+                        debug: false,
+                        require_success: false,
+                    };
+                    match jit::machine::compile_module(&validator_opts) {
+                        Ok(compiled) => {
+                            info!(
+                                "Pre-compiled module for root 0x{} from {binary:?}",
+                                meta.module_root
+                            );
+                            module_cache.insert(meta.module_root, compiled);
+                        }
+                        Err(err) => {
+                            warn!(
+                                "Failed to pre-compile module for root 0x{}: {err}",
+                                meta.module_root
+                            );
+                        }
                     }
                 }
+                ExecutionMode::Native { module_cache }
             }
-        }
+        };
 
         Ok(ServerState {
-            mode: config.mode,
             locator,
-            jit_manager,
             available_workers,
-            module_cache,
+            execution,
         })
+    }
+
+    /// Gracefully shuts down mode-specific resources.
+    pub async fn shutdown(&self) -> Result<()> {
+        match &self.execution {
+            ExecutionMode::Continuous { jit_manager } => jit_manager.complete_machines().await,
+            ExecutionMode::Native { .. } => Ok(()),
+        }
     }
 }
 
@@ -92,6 +104,7 @@ pub enum LoggingFormat {
     Json,
 }
 use tracing::warn;
+use jit::CompiledModule;
 
 const DEFAULT_NUM_WORKERS: usize = 4;
 

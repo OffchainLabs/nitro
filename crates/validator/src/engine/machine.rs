@@ -135,14 +135,6 @@ pub struct JitProcessManager {
 }
 
 impl JitProcessManager {
-    pub fn new_empty() -> Self {
-        Self {
-            wasm_memory_usage_limit: DEFAULT_WASM_MEMORY_USAGE_LIMIT,
-            machines: RwLock::new(HashMap::new()),
-            shutting_down: AtomicBool::new(false),
-        }
-    }
-
     pub fn new(locator: &MachineLocator) -> Result<Self> {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
