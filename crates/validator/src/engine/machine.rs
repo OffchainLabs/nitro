@@ -149,7 +149,7 @@ impl JitProcessManager {
             .iter()
             .cloned()
             .map(|root_meta| {
-                let root_path = replay_binary(root_meta.path);
+                let root_path = replay_binary(&root_meta.path);
                 let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;
                 Ok::<(ModuleRoot, Arc<JitMachine>), anyhow::Error>((
                     root_meta.module_root,

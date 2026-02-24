@@ -44,7 +44,7 @@ impl ServerState {
         let mut module_cache = HashMap::new();
         if matches!(config.mode, InputMode::Native) {
             for meta in locator.module_roots() {
-                let binary = replay_binary(meta.path.clone());
+                let binary = replay_binary(&meta.path);
                 let validator_opts = jit::ValidatorOpts {
                     binary: binary.clone(),
                     cranelift: DEFAULT_JIT_CRANELIFT,

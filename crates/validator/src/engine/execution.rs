@@ -43,7 +43,7 @@ pub async fn validate_native(
         .unwrap_or(server_state.locator.latest_wasm_module_root().module_root);
 
     let binary_path = server_state.locator.get_machine_path(module_root)?;
-    let binary = replay_binary(binary_path);
+    let binary = replay_binary(&binary_path);
     info!("validate native serving request with module root 0x{module_root}");
 
     let opts = jit::Opts {
