@@ -209,6 +209,12 @@ func manualRedeemSucceeds(t *testing.T, ctx context.Context, builder *NodeBuilde
 	builder.L2Info.GenerateAccount("Redeemer_test")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer_test", big.NewInt(1e18), builder.L2Info)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer_test", ctx)
+	// Set a fixed gas limit to bypass eth_estimateGas. Gas estimation for
+	// nested redeems (fanout patterns) double-processes scheduled txes
+	// because runScheduledTxes shares a log context across all retries,
+	// causing ScheduledTxes() to re-read already-processed RedeemScheduled
+	// events. This is a known limitation of gas estimation for nested redeems.
+	redeemOpts.GasLimit = 1e7
 	redeemTx, err := arbRetryable.Redeem(&redeemOpts, ticketId)
 	require.NoError(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(redeemTx)
@@ -1627,6 +1633,12 @@ func TestRetryableFilteringFanoutL2ManualRedeemDirtyLast(t *testing.T) {
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	// Set a fixed gas limit to bypass eth_estimateGas. Gas estimation for
+	// nested redeems (fanout patterns) double-processes scheduled txes
+	// because runScheduledTxes shares a log context across all retries,
+	// causing ScheduledTxes() to re-read already-processed RedeemScheduled
+	// events. This is a known limitation of gas estimation for nested redeems.
+	redeemOpts.GasLimit = 1e7
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
 		"manual redeem should fail with cascading redeem filter error")
