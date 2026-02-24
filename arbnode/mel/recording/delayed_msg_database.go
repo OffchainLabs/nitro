@@ -3,7 +3,6 @@
 package melrecording
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -47,7 +46,7 @@ func NewDelayedMsgDatabase(db ethdb.KeyValueStore, preimages daprovider.Preimage
 // ReadDelayedMessage allows for retrieving a delayed message that has been observed by MEL but not yet consumed in a batch
 // at a specific index. Underneath the hood, delayed messages are stored in a binary Merkle tree representation to make
 // retrieval possible in WASM mode. In recording mode, reading a delayed message records its access in a preimages mapping
-func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
+func (r *DelayedMsgDatabase) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if !r.initialized {
 		if err := r.initialize(state); err != nil {
 			return nil, fmt.Errorf("error initializing recording database for MEL validation: %w", err)
