@@ -10,7 +10,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
 use validation::{BatchInfo, UserWasm};
-use wasmer::{FunctionEnv, FrameInfo, Instance, Pages, Store};
+use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
 
 mod arbcompress;
 mod arbcrypto;
@@ -167,10 +167,7 @@ fn run_instance(
     env: FunctionEnv<machine::WasmEnv>,
     store: &mut Store,
 ) -> eyre::Result<RunResult> {
-    let outcome = instance
-        .exports
-        .get_function("_start")?
-        .call(store, &[]);
+    let outcome = instance.exports.get_function("_start")?.call(store, &[]);
 
     let memory_used = instance.exports.get_memory("memory")?.view(store).size();
     let env = env.as_mut(store);

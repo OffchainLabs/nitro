@@ -103,8 +103,8 @@ pub enum LoggingFormat {
     Text,
     Json,
 }
-use tracing::warn;
 use jit::CompiledModule;
+use tracing::warn;
 
 const DEFAULT_NUM_WORKERS: usize = 4;
 
