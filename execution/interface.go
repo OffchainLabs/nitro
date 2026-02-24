@@ -139,4 +139,5 @@ type FullExecutionClient interface {
 	ExecutionClient
 	ExecutionSequencer
 	ExecutionRecorder
+	ExecutionBatchPoster
 }
