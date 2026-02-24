@@ -3,23 +3,22 @@
 package melreplay
 
 import (
-	"context"
 	"fmt"
 	"math/bits"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 )
 
 type delayedMessageDatabase struct {
 	preimageResolver PreimageResolver
 }
 
-func NewDelayedMessageDatabase(preimageResolver PreimageResolver) mel.DelayedMessageDatabase {
+func NewDelayedMessageDatabase(preimageResolver PreimageResolver) melextraction.DelayedMessageDatabase {
 	return &delayedMessageDatabase{preimageResolver}
 }
 
 func (d *delayedMessageDatabase) ReadDelayedMessage(
-	ctx context.Context,
 	state *mel.State,
 	msgIndex uint64,
 ) (*mel.DelayedInboxMessage, error) {

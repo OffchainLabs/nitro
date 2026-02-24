@@ -576,6 +576,7 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
+	execEngine.SetEventFilter(eventFilter)
 	return s, nil
 }
 
