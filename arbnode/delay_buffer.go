@@ -72,7 +72,7 @@ func GetDelayBufferConfig(ctx context.Context, sequencerInbox *bridgegen.Sequenc
 
 // GenDelayProof generates the delay proof based on batch's first delayed message and the delayed
 // accumulator from the inbox.
-func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata, inbox *InboxTracker) (
+func GenDelayProof(ctx context.Context, message *arbostypes.MessageWithMetadata, inbox BatchMetadataFetcher) (
 	*bridgegen.DelayProof, error) {
 
 	if message.DelayedMessagesRead == 0 {

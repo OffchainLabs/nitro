@@ -37,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -101,11 +100,16 @@ type batchPosterPosition struct {
 	NextSeqNum          uint64
 }
 
+type BatchMetadataFetcher interface {
+	GetBatchCount() (uint64, error)
+	GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error)
+	GetDelayedAcc(seqNum uint64) (common.Hash, error)
+}
+
 type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
-	inbox              *InboxTracker
-	msgExtractor       *melrunner.MessageExtractor
+	batchMetaFetcher   BatchMetadataFetcher
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
 	chainConfig        *params.ChainConfig
@@ -366,20 +370,19 @@ var TestBatchPosterConfig = BatchPosterConfig{
 }
 
 type BatchPosterOpts struct {
-	DataPosterDB  ethdb.Database
-	L1Reader      *headerreader.HeaderReader
-	Inbox         *InboxTracker
-	MsgExtractor  *melrunner.MessageExtractor
-	Streamer      *TransactionStreamer
-	VersionGetter execution.ArbOSVersionGetter
-	SyncMonitor   *SyncMonitor
-	Config        BatchPosterConfigFetcher
-	DeployInfo    *chaininfo.RollupAddresses
-	TransactOpts  *bind.TransactOpts
-	DAPWriters    []daprovider.Writer
-	ParentChainID *big.Int
-	DAPReaders    *daprovider.DAProviderRegistry
-	ChainConfig   *params.ChainConfig
+	DataPosterDB         ethdb.Database
+	L1Reader             *headerreader.HeaderReader
+	BatchMetadataFetcher BatchMetadataFetcher
+	Streamer             *TransactionStreamer
+	VersionGetter        execution.ArbOSVersionGetter
+	SyncMonitor          *SyncMonitor
+	Config               BatchPosterConfigFetcher
+	DeployInfo           *chaininfo.RollupAddresses
+	TransactOpts         *bind.TransactOpts
+	DAPWriters           []daprovider.Writer
+	ParentChainID        *big.Int
+	DAPReaders           *daprovider.DAProviderRegistry
+	ChainConfig          *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -423,8 +426,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	}
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,
-		inbox:              opts.Inbox,
-		msgExtractor:       opts.MsgExtractor,
+		batchMetaFetcher:   opts.BatchMetadataFetcher,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
 		chainConfig:        opts.ChainConfig,
@@ -900,12 +902,7 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 	inboxBatchCount := bigInboxBatchCount.Uint64()
 	var prevBatchMeta mel.BatchMetadata
 	if inboxBatchCount > 0 {
-		var err error
-		if b.msgExtractor != nil {
-			prevBatchMeta, err = b.msgExtractor.GetBatchMetadata(inboxBatchCount - 1)
-		} else {
-			prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
-		}
+		prevBatchMeta, err = b.batchMetaFetcher.GetBatchMetadata(inboxBatchCount - 1)
 		if err != nil {
 			return nil, fmt.Errorf("error getting latest batch metadata: %w", err)
 		}
@@ -1424,12 +1421,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("decoding batch position: %w", err)
 	}
 
-	var dbBatchCount uint64
-	if b.msgExtractor != nil {
-		dbBatchCount, err = b.msgExtractor.GetBatchCount(ctx)
-	} else {
-		dbBatchCount, err = b.inbox.GetBatchCount()
-	}
+	dbBatchCount, err := b.batchMetaFetcher.GetBatchCount()
 	if err != nil {
 		return false, err
 	}
@@ -1870,7 +1862,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isn't needed, but better to be safe
 	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
-		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.inbox) // TODO: how to replace inboxTracer with msgExtractor here?
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher) // TODO: how to replace inboxTracer with msgExtractor here?
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
 		}
