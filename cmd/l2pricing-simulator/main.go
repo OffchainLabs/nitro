@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // l2pricing-simulator is a command-line tool that simulates the behavior of Nitro's l2 pricing algorithm.
@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -53,7 +54,7 @@ func runLegacyModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
@@ -66,8 +67,8 @@ func runLegacyModel(args []string) error {
 	return nil
 }
 
-func runConstraintsModel(args []string) error {
-	var config ConstraintsConfig
+func runSingleGasModel(args []string) error {
+	var config SingleGasConfig
 	if err := ParseConfig(&config, args); err != nil {
 		return err
 	}
@@ -102,7 +103,47 @@ func runConstraintsModel(args []string) error {
 	for i := range config.Iterations() {
 		baseFee, _ := pricing.BaseFeeWei()
 		gas := gasSimulator.compute(i, baseFee)
-		_ = pricing.AddToGasPool(-arbmath.SaturatingCast[int64](gas))
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
+		pricing.UpdatePricingModel(1)
+		baseFee, _ = pricing.BaseFeeWei()
+		results = append(results, Result{
+			baseFee:  baseFee,
+			gasRatio: float64(gas) / float64(longTermTarget),
+		})
+	}
+
+	printOutput(&config, results)
+	return nil
+}
+
+func runMultiGasModel(args []string) error {
+	var config MultiGasConfig
+	if err := ParseConfig(&config, args); err != nil {
+		return err
+	}
+
+	pricing, err := newPricingState(params.ArbosVersion_MultiGasConstraintsVersion)
+	if err != nil {
+		return err
+	}
+
+	longTermWindow := uint32(0)
+	longTermTarget := uint64(0)
+	for _, constraint := range config.Constraints {
+		_ = pricing.AddMultiGasConstraint(constraint.Target, constraint.Window, constraint.Backlog, constraint.Weights)
+		if constraint.Window > longTermWindow {
+			longTermWindow = constraint.Window
+			longTermTarget = constraint.Target
+		}
+	}
+
+	gasSimulator := NewGasSimulator(config.CommonConfig, longTermTarget)
+
+	results := []Result{}
+	for i := range config.Iterations() {
+		baseFee, _ := pricing.BaseFeeWei()
+		gas := gasSimulator.compute(i, baseFee)
+		_ = pricing.GrowBacklog(gas, multigas.ComputationGas(gas))
 		pricing.UpdatePricingModel(1)
 		baseFee, _ = pricing.BaseFeeWei()
 		results = append(results, Result{
@@ -118,17 +159,19 @@ func runConstraintsModel(args []string) error {
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		fmt.Println("Usage: l2pricing-simulator [legacy|constraints] ...")
+		fmt.Println("Usage: l2pricing-simulator [legacy|singlegas|multigas] ...")
 		os.Exit(1)
 	}
 	var err error
 	switch strings.ToLower(args[1]) {
 	case "legacy":
 		err = runLegacyModel(args[2:])
-	case "constraints":
-		err = runConstraintsModel(args[2:])
+	case "singlegas":
+		err = runSingleGasModel(args[2:])
+	case "multigas":
+		err = runMultiGasModel(args[2:])
 	default:
-		err = fmt.Errorf("unknown command '%s', valid commands are: legacy and constraints", args[1])
+		err = fmt.Errorf("unknown command '%s', valid commands are: legacy, singlegas, multigas", args[1])
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

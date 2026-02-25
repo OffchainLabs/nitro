@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -68,6 +68,7 @@ var (
 
 	batchPosterEstimatedBatchBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/estimated_batch_backlog", nil)
 
+	// Metric names keep "da" prefix for backward compatibility with existing dashboards
 	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
 	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
 	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
@@ -85,6 +86,11 @@ const (
 	sequencerBatchPostWithBlobsMethodName           = "addSequencerL2BatchFromBlobs"
 	sequencerBatchPostDelayProofMethodName          = "addSequencerL2BatchFromOriginDelayProof"
 	sequencerBatchPostWithBlobsDelayProofMethodName = "addSequencerL2BatchFromBlobsDelayProof"
+
+	// Overhead/safety margin for 4844 blob batch encoding (subtracted from max blob capacity)
+	blobBatchEncodingOverhead = 2000
+	// Size of the L1 sequencer message header (5 uint64 fields: min/max timestamp, min/max block number, after delayed messages read)
+	SequencerMessageHeaderSize = 40
 )
 
 type batchPosterPosition struct {
@@ -99,6 +105,7 @@ type BatchPoster struct {
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
 	arbOSVersionGetter execution.ArbOSVersionGetter
+	chainConfig        *params.ChainConfig
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	syncMonitor        *SyncMonitor
@@ -107,8 +114,8 @@ type BatchPoster struct {
 	bridgeAddr         common.Address
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
-	dapWriter          daprovider.Writer
-	dapReaders         *daprovider.ReaderRegistry
+	dapWriters         []daprovider.Writer
+	dapReaders         *daprovider.DAProviderRegistry
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -119,9 +126,11 @@ type BatchPoster struct {
 	backlog         atomic.Uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
-	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
-	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
-	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
+	batchReverted          atomic.Bool // indicates whether data poster batch was reverted
+	nextRevertCheckBlock   int64       // the last parent block scanned for reverting batches
+	postedFirstBatch       bool        // indicates if batch poster has posted the first batch
+	ethDAFallbackRemaining int         // when >0, use EthDA and decrement; when 0, use altDA
+	currentWriterIndex     int         // index of DA writer to use (reset to 0 after success)
 
 	accessList   func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 	parentChain  *parent.ParentChain
@@ -149,8 +158,12 @@ type BatchPosterDangerousConfig struct {
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
-	// Max batch size.
+	// Number of batches to post to EthDA before retrying AltDA after a fallback.
+	EthDAFallbackBatchCount int `koanf:"ethda-fallback-batch-count" reload:"hot"`
+	// Deprecated: use MaxCalldataBatchSize instead. Will be removed in next version.
 	MaxSize int `koanf:"max-size" reload:"hot"`
+	// Maximum calldata batch size for EthDA.
+	MaxCalldataBatchSize int `koanf:"max-calldata-batch-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
 	Max4844BatchSize int `koanf:"max-4844-batch-size" reload:"hot"`
 	// Max batch post delay.
@@ -160,9 +173,13 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	ErrorDelay time.Duration `koanf:"error-delay" reload:"hot"`
+	// Deprecated: use CompressionLevels instead. This sets a single compression level for all backlog levels.
+	CompressionLevel int `koanf:"compression-level" reload:"hot"`
+	// CompressionLevels defines adaptive compression based on backlog. Each entry specifies the
+	// compression level and recompression level to use when backlog >= the entry's backlog threshold.
+	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
 	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                       string                      `koanf:"redis-url"`
@@ -194,8 +211,16 @@ func (c *BatchPosterConfig) Validate() error {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
-	if c.MaxSize <= 40 {
-		return errors.New("MaxBatchSize too small")
+	if c.MaxSize != 0 {
+		log.Error("max-size is deprecated; use max-calldata-batch-size for calldata batches, or data-availability.max-batch-size for AnyTrust; max-size will be removed in a future release")
+		if c.MaxCalldataBatchSize == DefaultBatchPosterConfig.MaxCalldataBatchSize {
+			c.MaxCalldataBatchSize = c.MaxSize
+		} else {
+			return errors.New("both max-size (deprecated) and max-calldata-batch-size are set; please use only max-calldata-batch-size")
+		}
+	}
+	if c.MaxCalldataBatchSize <= SequencerMessageHeaderSize {
+		return errors.New("MaxCalldataBatchSize too small")
 	}
 	if c.L1BlockBound == "" {
 		c.l1BlockBound = l1BlockBoundDefault
@@ -210,6 +235,12 @@ func (c *BatchPosterConfig) Validate() error {
 	} else {
 		return fmt.Errorf("invalid L1 block bound tag \"%v\" (see --help for options)", c.L1BlockBound)
 	}
+	// Resolve compression levels from deprecated and new config fields
+	resolved, err := ResolveCompressionLevels(c.CompressionLevel, c.CompressionLevels)
+	if err != nil {
+		return err
+	}
+	c.CompressionLevels = resolved
 	return nil
 }
 
@@ -223,14 +254,20 @@ func DangerousBatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
-	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum estimated compressed batch size")
+	f.Int(prefix+".ethda-fallback-batch-count", DefaultBatchPosterConfig.EthDAFallbackBatchCount, "number of batches to post to EthDA before retrying AltDA after a fallback")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "DEPRECATED: use "+prefix+".max-calldata-batch-size instead")
+	f.Int(prefix+".max-calldata-batch-size", DefaultBatchPosterConfig.MaxCalldataBatchSize, "maximum estimated compressed calldata batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum estimated compressed 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
 	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-interval", DefaultBatchPosterConfig.PollInterval, "how long to wait after no batches are ready to be posted before checking again")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
-	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
-	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
+	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "DEPRECATED: use compression-levels instead. batch compression level")
+	f.Var(&parsedCompressionLevelsConf, prefix+".compression-levels",
+		`JSON array of compression level steps. Format: [{"backlog":<int>,"level":<int>,"recompression-level":<int>},...]. `+
+			`First entry must have backlog:0. Both Level and recomp-level must be 0-11, weakly descending. `+
+			`Example: [{"backlog":0,"level":11,"recompression-level":11},{"backlog":21,"level":6,"recompression-level":11}]`)
+	f.Duration(prefix+".anytrust-retention-period", DefaultBatchPosterConfig.AnyTrustRetentionPeriod, "In AnyTrust mode, the period which AnyTrust nodes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
@@ -255,8 +292,10 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDapFallbackStoreDataOnChain: false,
+	EthDAFallbackBatchCount:            10,
+	MaxSize:                            0, // Deprecated
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize: 100000,
+	MaxCalldataBatchSize: 100000,
 	// The Max4844BatchSize should be calculated from the values from L1 chain configs
 	// using the eip4844 utility package from go-ethereum.
 	// The default value of 0 causes the batch poster to use the value from go-ethereum.
@@ -265,8 +304,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
-	CompressionLevel:               brotli.BestCompression,
-	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
+	AnyTrustRetentionPeriod:        daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
@@ -297,14 +335,16 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:                             true,
 	DisableDapFallbackStoreDataOnChain: true,
-	MaxSize:                            100000,
+	EthDAFallbackBatchCount:            1,
+	MaxCalldataBatchSize:               100000,
 	Max4844BatchSize:                   DefaultBatchPosterConfig.Max4844BatchSize,
 	PollInterval:                       time.Millisecond * 10,
 	ErrorDelay:                         time.Millisecond * 10,
 	MaxDelay:                           0,
 	WaitForMaxDelay:                    false,
-	CompressionLevel:                   2,
-	DASRetentionPeriod:                 daprovider.DefaultDASRetentionPeriod,
+	CompressionLevel:                   0,
+	CompressionLevels:                  CompressionLevelStepList{{Backlog: 0, Level: 2, RecompressionLevel: 2}},
+	AnyTrustRetentionPeriod:            daprovider.DefaultAnyTrustRetentionPeriod,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
@@ -332,9 +372,10 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
-	DAPWriter     daprovider.Writer
+	DAPWriters    []daprovider.Writer
 	ParentChainID *big.Int
-	DAPReaders    *daprovider.ReaderRegistry
+	DAPReaders    *daprovider.DAProviderRegistry
+	ChainConfig   *params.ChainConfig
 }
 
 func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, error) {
@@ -381,6 +422,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		inbox:              opts.Inbox,
 		streamer:           opts.Streamer,
 		arbOSVersionGetter: opts.VersionGetter,
+		chainConfig:        opts.ChainConfig,
 		syncMonitor:        opts.SyncMonitor,
 		config:             opts.Config,
 		seqInbox:           seqInbox,
@@ -388,7 +430,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
-		dapWriter:          opts.DAPWriter,
+		dapWriters:         opts.DAPWriters,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
 		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
@@ -619,7 +661,7 @@ func (b *BatchPoster) ParentChainIsUsingEIP7623(ctx context.Context, latestHeade
 
 	// Rather than checking the latest block, we're going to check a recent
 	// block (5 blocks back) to avoid reorgs.
-	targetBlockNumber := latestHeader.Number.Sub(latestHeader.Number, big.NewInt(5))
+	targetBlockNumber := new(big.Int).Sub(latestHeader.Number, big.NewInt(5))
 	targetHeader, err := rpcClient.HeaderByNumber(ctx, targetBlockNumber)
 	if err != nil {
 		return false, err
@@ -879,6 +921,7 @@ type batchSegments struct {
 	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
+	maxUncompressedSize   int
 	lastCompressedSize    int
 	trailingHeaders       int // how many trailing segments are headers
 	isDone                bool
@@ -896,54 +939,68 @@ type buildingBatch struct {
 	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
-func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool) (*batchSegments, error) {
-	maxSize := b.config().MaxSize
+func (b *BatchPoster) newBatchSegments(ctx context.Context, firstDelayed uint64, use4844 bool, usingAltDA bool) (*batchSegments, error) {
+	config := b.config()
+	var maxSize int
+
 	if use4844 {
-		if b.config().Max4844BatchSize != 0 {
-			maxSize = b.config().Max4844BatchSize
+		// Building 4844 blobs for EthDA
+		if config.Max4844BatchSize != 0 {
+			maxSize = config.Max4844BatchSize
 		} else {
 			maxBlobGasPerBlock, err := b.parentChain.MaxBlobGasPerBlock(ctx, nil)
 			if err != nil {
 				return nil, err
 			}
-			// Try to fill 3 blobs per batch
+			// Try to fill under half of the parent chain's max blobs.
 			// #nosec G115
-			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - 2000
+			maxSize = blobs.BlobEncodableData*(int(maxBlobGasPerBlock)/params.BlobTxBlobGasPerBlob)/2 - blobBatchEncodingOverhead
 		}
+	} else if usingAltDA {
+		// Query the currently selected DA writer to get its max batch size
+		if len(b.dapWriters) == 0 {
+			return nil, fmt.Errorf("using AltDA but no DA writers configured")
+		}
+		if b.currentWriterIndex >= len(b.dapWriters) {
+			return nil, fmt.Errorf("currentWriterIndex %d exceeds number of writers %d", b.currentWriterIndex, len(b.dapWriters))
+		}
+		writerMaxSize, err := b.dapWriters[b.currentWriterIndex].GetMaxMessageSize().Await(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get max message size from DA writer %d: %w", b.currentWriterIndex, err)
+		}
+		if writerMaxSize <= 0 {
+			return nil, fmt.Errorf("DA writer %d returned invalid max message size: %d", b.currentWriterIndex, writerMaxSize)
+		}
+		maxSize = writerMaxSize
 	} else {
-		if maxSize <= 40 {
-			panic("Maximum batch size too small")
+		// Using calldata for EthDA
+		maxSize = config.MaxCalldataBatchSize
+		if maxSize <= SequencerMessageHeaderSize {
+			return nil, fmt.Errorf("maximum calldata batch size too small: %d", maxSize)
 		}
-		maxSize -= 40
+		maxSize -= SequencerMessageHeaderSize
 	}
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, maxSize*2))
-	compressionLevel := b.config().CompressionLevel
-	recompressionLevel := b.config().CompressionLevel
-	if b.GetBacklogEstimate() > 20 {
-		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 40 {
-		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
-	}
-	if b.GetBacklogEstimate() > 60 {
-		compressionLevel = arbmath.MinInt(compressionLevel, 4)
-	}
-	if recompressionLevel < compressionLevel {
-		// This should never be possible
-		log.Warn(
-			"somehow the recompression level was lower than the compression level",
-			"recompressionLevel", recompressionLevel,
-			"compressionLevel", compressionLevel,
-		)
-		recompressionLevel = compressionLevel
+	// Determine compression levels based on backlog using configured steps
+	compressionLevel := config.CompressionLevels[0].Level
+	recompressionLevel := config.CompressionLevels[0].RecompressionLevel
+	backlog := b.GetBacklogEstimate()
+	for _, step := range config.CompressionLevels {
+		if backlog >= step.Backlog {
+			compressionLevel = step.Level
+			recompressionLevel = step.RecompressionLevel
+		} else {
+			break
+		}
 	}
 	return &batchSegments{
-		compressedBuffer:   compressedBuffer,
-		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
-		sizeLimit:          maxSize,
-		recompressionLevel: recompressionLevel,
-		rawSegments:        make([][]byte, 0, 128),
-		delayedMsg:         firstDelayed,
+		compressedBuffer:    compressedBuffer,
+		compressedWriter:    brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:           maxSize,
+		recompressionLevel:  recompressionLevel,
+		rawSegments:         make([][]byte, 0, 128),
+		delayedMsg:          firstDelayed,
+		maxUncompressedSize: int(b.chainConfig.MaxUncompressedBatchSize()), // #nosec G115
 	}, nil
 }
 
@@ -958,8 +1015,8 @@ func (s *batchSegments) recompressAll() error {
 			return err
 		}
 	}
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		return fmt.Errorf("batch size %v exceeds maximum uncompressed length %v", s.totalUncompressedSize, s.maxUncompressedSize)
 	}
 	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
@@ -969,10 +1026,10 @@ func (s *batchSegments) recompressAll() error {
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
-	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
-		log.Info("Batch full: max decompressed length exceeded",
+	if s.totalUncompressedSize > s.maxUncompressedSize {
+		log.Info("Batch full: max uncompressed length exceeded",
 			"current", s.totalUncompressedSize,
-			"max", arbstate.MaxDecompressedLen,
+			"max", s.maxUncompressedSize,
 			"isHeader", isHeader)
 		return true, nil
 	}
@@ -1140,7 +1197,9 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)
+
 	fullMsg[0] = daprovider.BrotliMessageHeaderByte
+
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil
 }
@@ -1368,9 +1427,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		if err != nil {
 			return false, err
 		}
-		var use4844 bool
 		config := b.config()
-		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		buildingForEthDA := len(b.dapWriters) == 0 || b.ethDAFallbackRemaining > 0
+		// Determine if we should use 4844 blobs (only relevant when posting to EthDA)
+		var use4844 bool
+		if buildingForEthDA &&
+			config.Post4844Blobs &&
+			latestHeader.ExcessBlobGas != nil &&
+			latestHeader.BlobGasUsed != nil {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
 			if err != nil {
 				return false, err
@@ -1424,7 +1488,14 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 		}
 
-		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844)
+		if b.ethDAFallbackRemaining > 0 {
+			log.Info("Building batch for EthDA due to previous altDA failure", "use4844", use4844, "fallbackRemaining", b.ethDAFallbackRemaining)
+		}
+
+		// Only use 4844 batching when posting to EthDA
+		use4844 = use4844 && buildingForEthDA
+		usingAltDA := !buildingForEthDA
+		segments, err := b.newBatchSegments(ctx, batchPosition.DelayedMessageCount, use4844, usingAltDA)
 		if err != nil {
 			return false, err
 		}
@@ -1672,7 +1743,8 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 	var sequencerMsg []byte
 
-	if b.dapWriter != nil {
+	// Try DA writers if not forced to EthDA
+	if len(b.dapWriters) > 0 && b.ethDAFallbackRemaining == 0 {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1694,21 +1766,55 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			}
 			return false, fmt.Errorf("%w: batch position changed from %v to %v while creating batch", storage.ErrStorageRace, batchPosition, actualBatchPosition)
 		}
+
+		// Try the DA writer at currentWriterIndex
+		writerIndex := b.currentWriterIndex
+		writer := b.dapWriters[writerIndex]
+
+		log.Debug("Attempting to store batch with DA writer", "writerIndex", writerIndex, "numWriters", len(b.dapWriters), "batchSize", len(batchData))
+		storeStart := time.Now()
 		// #nosec G115
-		sequencerMsg, err = b.dapWriter.Store(batchData, uint64(time.Now().Add(config.DASRetentionPeriod).Unix())).Await(ctx)
+		sequencerMsg, err = writer.Store(batchData, uint64(time.Now().Add(config.AnyTrustRetentionPeriod).Unix())).Await(ctx)
+		storeDuration := time.Since(storeStart)
+
 		if err != nil {
-			if config.DisableDapFallbackStoreDataOnChain {
-				batchPosterDAFailureCounter.Inc(1)
-				return false, err
-			} else {
-				// DAP on-chain fallback storage
-				sequencerMsg = batchData
+			if errors.Is(err, daprovider.ErrMessageTooLarge) {
+				log.Info("DA writer reports message too large, will rebuild batch", "writerIndex", writerIndex, "error", err, "duration", storeDuration, "batchSize", len(batchData))
+				b.building = nil
+				return true, nil // Trigger immediate rebuild with same writer
 			}
+			if errors.Is(err, daprovider.ErrFallbackRequested) {
+				log.Warn("DA writer explicitly requested fallback", "writerIndex", writerIndex, "error", err, "duration", storeDuration)
+				// Check if there's a next writer to try
+				if writerIndex+1 < len(b.dapWriters) {
+					b.currentWriterIndex = writerIndex + 1
+					b.building = nil
+					log.Info("Will rebuild batch for next DA writer", "nextWriterIndex", b.currentWriterIndex)
+					return true, nil // Trigger rebuild with next writer's size
+				}
+				// No more writers - fall back to EthDA
+				batchPosterDAFailureCounter.Inc(1)
+				if config.DisableDapFallbackStoreDataOnChain {
+					log.Error("DA fallback to EthDA is disabled, cannot post batch", "error", err)
+					return false, fmt.Errorf("all DA writers failed: %w", err)
+				}
+				log.Info("DA writers exhausted, will rebuild for EthDA", "error", err, "batchSize", len(batchData), "fallbackBatches", config.EthDAFallbackBatchCount)
+				b.ethDAFallbackRemaining = config.EthDAFallbackBatchCount
+				b.currentWriterIndex = 0 // Reset for next batch after EthDA fallback period
+				b.building = nil
+				return true, nil // Trigger rebuild for EthDA
+			}
+			// Non-fallback error - fail immediately
+			log.Error("DA writer failed, operator action required", "writerIndex", writerIndex, "error", err, "duration", storeDuration)
+			batchPosterDAFailureCounter.Inc(1)
+			return false, fmt.Errorf("DA writer %d failed: %w", writerIndex, err)
 		}
 
+		log.Debug("DA writer succeeded", "writerIndex", writerIndex, "duration", storeDuration)
 		batchPosterDASuccessCounter.Inc(1)
 		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
 	} else {
+		// No DA writers or forced to EthDA
 		sequencerMsg = batchData
 	}
 
@@ -1813,37 +1919,18 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	if config.CheckBatchCorrectness {
-		// Create a new registry for checking batch correctness
-		// We need to copy existing readers and potentially add a simulated blob reader
-		dapReaders := daprovider.NewReaderRegistry()
-
-		// Copy all existing readers from the batch poster's registry
-		// These readers can fetch data that was already posted to
-		// external DA systems (eg AnyTrust) before this batch transaction
+		// For batch correctness checking, we use a wrapper that overrides blob reads
+		// with a simulated reader for the local kzgBlobs (which haven't been posted yet).
+		// All other DA reads pass through to the original registry.
+		// Explicit nil check needed: a typed nil (*DAProviderRegistry) assigned to an interface is not nil.
+		var baseDapReaders arbstate.DapReaderSource
 		if b.dapReaders != nil {
-			for _, headerByte := range b.dapReaders.SupportedHeaderBytes() {
-				// Skip blob reader, we'll add simulated reader instead after this loop
-				if headerByte == daprovider.BlobHashesHeaderFlag {
-					continue
-				}
-				if reader, found := b.dapReaders.GetByHeaderByte(headerByte); found {
-					if err := dapReaders.Register(headerByte, reader); err != nil {
-						return false, fmt.Errorf("failed to register reader for header byte 0x%02x: %w", headerByte, err)
-					}
-				}
-			}
+			baseDapReaders = b.dapReaders
 		}
-
-		// For EIP-4844 blob transactions, the blobs are created locally and will be
-		// included with the L1 transaction itself (as blob sidecars). Since these blobs
-		// don't exist on L1 yet, we need a simulated reader that can "read" from the
-		// local kzgBlobs we just created. This is different from other DA systems where
-		// data is posted externally first and only a reference is included in the L1 tx.
-		if b.building.use4844 {
-			if err := dapReaders.SetupBlobReader(daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs})); err != nil {
-				return false, fmt.Errorf("failed to register simulated blob reader: %w", err)
-			}
-		}
+		dapReaders := arbstate.NewBlobReaderOverride(
+			baseDapReaders,
+			daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs}),
+		)
 		seqMsg := binary.BigEndian.AppendUint64([]byte{}, l1BoundMinTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMaxTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMinBlockNumber)
@@ -1853,7 +1940,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
-		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate, b.chainConfig)
 		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)
@@ -1889,6 +1976,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	b.postedFirstBatch = true
+	b.currentWriterIndex = 0 // Reset to first writer after successful batch
 	log.Info(
 		"BatchPoster: batch sent",
 		"sequenceNumber", batchPosition.NextSeqNum,
@@ -1950,12 +2038,23 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	b.backlog.Store(backlog)
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
-	if config.DataPoster.UseNoOpStorage {
+	if b.dataPoster.UsingNoOpStorage() {
 		receipt, err := b.l1Reader.WaitForTxApproval(ctx, tx)
 		if err != nil {
 			return false, fmt.Errorf("error waiting for tx receipt: %w", err)
 		}
 		log.Info("Got successful receipt from batch poster transaction", "txHash", tx.Hash(), "blockNumber", receipt.BlockNumber, "blockHash", receipt.BlockHash)
+	}
+
+	// After successful EthDA batch post in fallback mode, decrement counter and potentially retry AltDA
+	if b.ethDAFallbackRemaining > 0 {
+		b.ethDAFallbackRemaining--
+		if b.ethDAFallbackRemaining == 0 {
+			log.Info("EthDA fallback period complete, will retry AltDA")
+		} else {
+			log.Info("Successful EthDA batch post, continuing fallback mode",
+				"fallbackRemaining", b.ethDAFallbackRemaining)
+		}
 	}
 
 	return true, nil

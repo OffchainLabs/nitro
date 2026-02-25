@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package timeboost
 
 import (
@@ -477,6 +479,8 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	testConsumerConfig := pubsub.ConsumerConfig{
 		IdletimeToAutoclaim:  300 * time.Millisecond,
 		ResponseEntryTimeout: time.Minute,
+		Retry:                true,
+		MaxRetryCount:        -1,
 	}
 
 	// Create primary auctioneer instance

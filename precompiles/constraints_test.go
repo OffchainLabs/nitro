@@ -1,4 +1,4 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package precompiles
@@ -13,9 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -36,6 +38,8 @@ func setupResourceConstraintHandles(
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
 	require.NoError(t, err)
+
+	state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
 
 	arbGasInfo := &ArbGasInfo{}
 	arbOwner := &ArbOwner{}
@@ -190,12 +194,12 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 
 	evm, state, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
 
-	// Initially multi-constraints should be disabled
-	shouldUseMultiConstraints, err := state.L2PricingState().ShouldUseGasConstraints()
+	// Initially single-gas constraints should be disabled
+	gasModel, err := state.L2PricingState().GasModelToUse()
 	require.NoError(t, err)
-	require.False(t, shouldUseMultiConstraints)
+	require.Equal(t, l2pricing.GasModelLegacy, gasModel)
 
-	// Set constraints to enable multi-constraints
+	// Set gas constraints to enable single-gas constraints
 	constraints := [][3]uint64{
 		{30_000_000, 1, 800_000},
 		{15_000_000, 102, 1_600_000},
@@ -203,17 +207,45 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, constraints)
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints()
+	gasModel, err = state.L2PricingState().GasModelToUse()
 	require.NoError(t, err)
-	require.True(t, shouldUseMultiConstraints)
+	require.Equal(t, l2pricing.GasModelSingleGasConstraints, gasModel)
 
-	// Clear constraints to disable multi-constraints
+	// Set multi-gas constraints to enable multi-gas constraints
+	mgConstraints := []MultiGasConstraint{
+		{
+			Resources: []WeightedResource{
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+			},
+			AdjustmentWindowSecs: 12,
+			TargetPerSec:         7_000_000,
+			Backlog:              50_000_000,
+		},
+	}
+
+	err = arbOwner.SetMultiGasPricingConstraints(callCtx, evm, mgConstraints)
+	require.NoError(t, err)
+
+	gasModel, err = state.L2PricingState().GasModelToUse()
+	require.NoError(t, err)
+	require.Equal(t, l2pricing.GasModelMultiGasConstraints, gasModel)
+
+	// Clear multi-gas constraints to disable multi-gas constraints
+	err = arbOwner.SetMultiGasPricingConstraints(callCtx, evm, []MultiGasConstraint{})
+	require.NoError(t, err)
+
+	gasModel, err = state.L2PricingState().GasModelToUse()
+	require.NoError(t, err)
+	require.Equal(t, l2pricing.GasModelSingleGasConstraints, gasModel)
+
+	// Clear gas constraints to disable single-gas constraints
 	err = arbOwner.SetGasPricingConstraints(callCtx, evm, [][3]uint64{})
 	require.NoError(t, err)
 
-	shouldUseMultiConstraints, err = state.L2PricingState().ShouldUseGasConstraints()
+	gasModel, err = state.L2PricingState().GasModelToUse()
 	require.NoError(t, err)
-	require.False(t, shouldUseMultiConstraints)
+	require.Equal(t, l2pricing.GasModelLegacy, gasModel)
 }
 
 func TestMultiGasConstraintsStorage(t *testing.T) {
@@ -225,8 +257,8 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	constraints := []MultiGasConstraint{
 		{
 			Resources: []WeightedResource{
-				{uint8(multigas.ResourceKindComputation), 1},
-				{uint8(multigas.ResourceKindStorageAccess), 2},
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
 			},
 			AdjustmentWindowSecs: 1,
 			TargetPerSec:         30_000_000,
@@ -234,8 +266,8 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		},
 		{
 			Resources: []WeightedResource{
-				{uint8(multigas.ResourceKindComputation), 2},
-				{uint8(multigas.ResourceKindStorageAccess), 3},
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 2},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 3},
 			},
 			AdjustmentWindowSecs: 102,
 			TargetPerSec:         15_000_000,
@@ -304,8 +336,8 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	newConstraints := []MultiGasConstraint{
 		{
 			Resources: []WeightedResource{
-				{uint8(multigas.ResourceKindComputation), 5},
-				{uint8(multigas.ResourceKindStorageAccess), 7},
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
 			},
 			AdjustmentWindowSecs: 12,
 			TargetPerSec:         7_000_000,
@@ -343,8 +375,34 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.Equal(t, uint64(7_000_000), results[0].TargetPerSec)
 	require.Equal(t, uint64(50_000_000), results[0].Backlog)
 	require.Equal(t, 2, len(results[0].Resources))
-	require.Equal(t, uint8(multigas.ResourceKindComputation), results[0].Resources[0].Resource)
-	require.Equal(t, uint64(5), results[0].Resources[0].Weight)
-	require.Equal(t, uint8(multigas.ResourceKindStorageAccess), results[0].Resources[1].Resource)
-	require.Equal(t, uint64(7), results[0].Resources[1].Weight)
+
+	gotWeights := make(map[uint8]uint64, len(results[0].Resources))
+	for _, r := range results[0].Resources {
+		gotWeights[r.Resource] = r.Weight
+	}
+	require.Equal(t, uint64(5), gotWeights[uint8(multigas.ResourceKindComputation)])
+	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccess)])
+}
+
+func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
+	t.Parallel()
+
+	evm, _, callCtx, _, arbOwner := setupResourceConstraintHandles(t)
+
+	// Try to set a constraint that exceeds the MaxPricingExponentBips
+	constraints := []MultiGasConstraint{
+		{
+			Resources: []WeightedResource{
+				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
+				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+			},
+			AdjustmentWindowSecs: 1,
+			TargetPerSec:         30_000_000,
+			Backlog:              800_000_000_000,
+		},
+	}
+
+	err := arbOwner.SetMultiGasPricingConstraints(callCtx, evm, constraints)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds maximum allowed")
 }

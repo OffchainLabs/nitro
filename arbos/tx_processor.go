@@ -1,4 +1,4 @@
-// Copyright 2021-2024, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbos
@@ -79,6 +79,10 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	if !contract.IsDelegateOrCallcode() {
 		p.Programs[contract.Address()]++
 	}
+
+	// Record touched addresses for tx filtering
+	p.evm.StateDB.TouchAddress(contract.Address())
+	p.evm.StateDB.TouchAddress(contract.Caller())
 }
 
 func (p *TxProcessor) PopContract() {
@@ -140,10 +144,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		return false, multigas.ZeroGas(), nil, nil
 	}
 
+	evm := p.evm
 	var tracingInfo *util.TracingInfo
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
-	evm := p.evm
 
 	startTracer := func() func() {
 		tracer := evm.Config.Tracer
@@ -178,6 +182,19 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if to == nil {
 			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
 		}
+		// Check if this deposit tx is in the onchain filter.
+		// Deposits return endTxNow=true so RevertedTxHook (which normally
+		// handles filtered txs) is never reached. We must check here instead.
+		txHash := underlyingTx.Hash()
+		var txnErr error
+		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
+			recipient, err := p.state.FilteredFundsRecipientOrDefault()
+			if err != nil {
+				return true, multigas.ZeroGas(), err, nil
+			}
+			to = &recipient
+			txnErr = &core.ErrFilteredTx{TxHash: txHash}
+		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
 		// We intentionally use the variant here that doesn't do tracing,
@@ -186,7 +203,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
 		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
-		return true, multigas.ZeroGas(), nil, nil
+		return true, multigas.ZeroGas(), txnErr, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
@@ -198,10 +215,34 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		defer (startTracer())()
 		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
+
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
 		from := tx.From
 		scenario := util.TracingDuringEVM
+
+		// Check if this transaction is in the onchain filter. If so, redirect FeeRefundAddr
+		// and Beneficiary to the filteredFundsRecipient (or networkFeeAccount as fallback).
+		// filteredErr is set as result.Err so that PostTxFilter can detect the tx was
+		// already handled by the onchain filter and skip halting.
+		var filteredErr error
+		isFiltered := false
+		if p.state.FilteredTransactions().IsFilteredFree(ticketId) {
+			recipient, err := p.state.FilteredFundsRecipientOrDefault()
+			if err != nil {
+				return true, multigas.ZeroGas(), err, nil
+			}
+			// For symmetry with other filtered tx paths, deletion from the onchain filter
+			// is handled by the external tx authority service rather than here.
+			// Note: deletion here *would* be committed despite the ErrFilteredTx in
+			// result.Err, because endTxNow=true means the outer error is nil and state
+			// is not reverted. May move to direct deletion here in future.
+			// p.state.FilteredTransactions().DeleteFree(ticketId)
+			tx.FeeRefundAddr = recipient
+			tx.Beneficiary = recipient
+			isFiltered = true
+			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
+		}
 
 		// mint funds with the deposit, then charge fees later
 		availableRefund := new(big.Int).Set(tx.DepositValue)
@@ -302,7 +343,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				// should never happen as from's balance should be at least availableRefund at this point
 				log.Error("failed to transfer gasCostRefund", "err", err)
 			}
-			return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+			return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 		}
 
 		// pay for the retryable's gas and update the pools
@@ -319,7 +360,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				infraCost = takeFunds(networkCost, infraCost)
 				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceIncreaseInfraFee); err != nil {
 					log.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
-					return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+					return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 				}
 			}
 		}
@@ -327,7 +368,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceIncreaseNetworkFee); err != nil {
 				// should be impossible because we just checked the tx.From balance
 				log.Error("failed to transfer gas cost to network fee account", "err", err)
-				return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+				return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 			}
 		}
 
@@ -343,6 +384,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		}
 		availableRefund.Add(availableRefund, withheldGasFunds)
 		availableRefund.Add(availableRefund, withheldSubmissionFee)
+
+		// For filtered retryables, skip auto-redeem scheduling. The retryable
+		// is created with a redirected beneficiary who can redeem manually.
+		// This prevents the auto-redeem from executing calls against
+		// potentially filtered addresses.
+		if isFiltered {
+			return true, multigas.L2CalldataGas(usergas), filteredErr, ticketId.Bytes()
+		}
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -523,8 +572,7 @@ func (p *TxProcessor) HeldGas() uint64 {
 	return p.computeHoldGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
-
+func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, success bool) {
 	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	scenario := util.TracingAfterEVM
@@ -533,6 +581,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		panic("Tx somehow refunds gas after computation")
 	}
 	gasUsed := p.msg.GasLimit - gasLeft
+
+	var multiDimensionalCost *big.Int
+	var err error
+	if p.state.L2PricingState().ArbosVersion >= params.ArbosVersion_MultiGasConstraintsVersion {
+		multiDimensionalCost, err = p.state.L2PricingState().MultiDimensionalPriceForRefund(usedMultiGas)
+		p.state.Restrict(err)
+	}
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
@@ -554,6 +609,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
+
+		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)
+		shouldRefundMultiGas := multiDimensionalCost != nil &&
+			arbmath.BigGreaterThan(singleGasCost, multiDimensionalCost) &&
+			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
@@ -597,8 +657,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
 		}
+
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
-		takeFunds(maxRefund, arbmath.BigMulByUint(effectiveBaseFee, gasUsed))
+		// This continues to use the simple-gas price; any multi-gas discount is handled
+		// as an explicit refund below.
+		takeFunds(maxRefund, singleGasCost)
+
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		networkRefund := gasRefund
 		if p.state.ArbOSVersion() >= params.ArbosVersion_11 {
@@ -616,6 +680,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		refund(networkFeeAccount, networkRefund, tracing.BalanceChangeTransferNetworkRefund)
 
+		// Multi-dimensional refund (retryable tx path)
+		if shouldRefundMultiGas {
+			amount := arbmath.BigSub(singleGasCost, multiDimensionalCost)
+			refund(networkFeeAccount, amount, tracing.BalanceChangeMultiGasRefund)
+		}
+
 		if success {
 			// we don't want to charge for this
 			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From, scenario)
@@ -632,7 +702,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](gasUsed)))
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(gasUsed, usedMultiGas))
 		return
 	}
 
@@ -669,7 +739,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if arbmath.BigGreaterThan(computeCost, common.Big0) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, tracing.BalanceIncreaseNetworkFee)
 	}
-	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
+	posterFeeDestination := types.L1PricerFundsPoolAddress
 	if p.state.ArbOSVersion() < params.ArbosVersion_2 {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}
@@ -677,6 +747,22 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if p.state.ArbOSVersion() >= params.ArbosVersion_10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
 			log.Error("failed to update L1FeesAvailable: ", "err", err)
+		}
+	}
+
+	// Multi-dimensional refund (normal tx path)
+	if multiDimensionalCost != nil {
+		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
+		if amount.Sign() > 0 {
+			err := util.TransferBalance(
+				&networkFeeAccount,
+				&p.msg.From,
+				amount,
+				p.evm,
+				scenario,
+				tracing.BalanceChangeMultiGasRefund,
+			)
+			p.state.Restrict(err)
 		}
 	}
 
@@ -695,7 +781,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](computeGas)))
+		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
+		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
+		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }
 
@@ -813,6 +901,42 @@ func (p *TxProcessor) IsCalldataPricingIncreaseEnabled() bool {
 		return false
 	}
 	return enabled
+}
+
+func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas.MultiGas) (multigas.MultiGas, error) {
+	if p.msg.Tx == nil {
+		return usedMultiGas, nil
+	}
+
+	txHash := p.msg.Tx.Hash()
+
+	// Check for pre-recorded reverted transactions
+	if l2GasUsed, ok := core.RevertedTxGasUsed[txHash]; ok {
+		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
+
+		// Calculate adjusted gas since l2GasUsed contains params.TxGas
+		adjustedGas := l2GasUsed - params.TxGas
+		*gasRemaining -= adjustedGas
+
+		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(adjustedGas))
+		return usedMultiGas, vm.ErrExecutionReverted
+	}
+
+	// Check if tx is in the onchain filter (gas-free read).
+	// This handles delayed messages that were flagged by address filter,
+	// then added to onchain filter list. We skip execution but consume gas.
+	if p.state.FilteredTransactions().IsFilteredFree(txHash) {
+		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
+
+		// Consume all remaining gas as punishment
+		usedGas := *gasRemaining
+		*gasRemaining = 0
+		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(usedGas))
+
+		return usedMultiGas, &core.ErrFilteredTx{TxHash: txHash}
+	}
+
+	return usedMultiGas, nil
 }
 
 func (p *TxProcessor) EVM() *vm.EVM {

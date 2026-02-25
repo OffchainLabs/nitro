@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbtest
@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -182,22 +181,6 @@ func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration t
 	}
 }
 
-// stopNodes blocks and waits until all nodes are stopped.
-func stopNodes(nodes []*arbnode.Node) {
-	var wg sync.WaitGroup
-	for _, node := range nodes {
-		if node != nil {
-			wg.Add(1)
-			n := node
-			go func() {
-				n.StopAndWait()
-				wg.Done()
-			}()
-		}
-	}
-	wg.Wait()
-}
-
 func user(suffix string, idx int) string {
 	return fmt.Sprintf("User%s_%d", suffix, idx)
 }
@@ -241,11 +224,11 @@ func TestRedisForwarder(t *testing.T) {
 	var seqNodes []*arbnode.Node
 	var seqClients []*ethclient.Client
 	for _, path := range nodePaths {
-		testClientSeq, _ := createSequencer(t, builder, path, redisUrl)
+		testClientSeq, cleanupTestSeq := createSequencer(t, builder, path, redisUrl)
+		defer cleanupTestSeq()
 		seqNodes = append(seqNodes, testClientSeq.ConsensusNode)
 		seqClients = append(seqClients, testClientSeq.Client)
 	}
-	defer stopNodes(seqNodes)
 
 	for i := range seqClients {
 		userA := user("A", i)

@@ -1,4 +1,4 @@
-// Copyright 2022-2024, Offchain Labs, Inc.
+// Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 //go:build wasm
@@ -7,12 +7,12 @@ package programs
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -118,6 +118,23 @@ func newProgram(
 	gas uint64,
 ) uint32
 
+//go:wasmimport programs program_requires_prepare
+func programRequiresPrepare(
+	moduleHashPtr unsafe.Pointer,
+) uint32
+
+//go:wasmimport programs program_prepare
+func ProgramPrepare(
+	wasmPtr unsafe.Pointer,
+	wasmSize uint64,
+	moduleHashPtr unsafe.Pointer,
+	codehashPtr unsafe.Pointer,
+	maxWasmSize uint32,
+	pagelimit uint32,
+	debugMode uint32,
+	stylusVersion uint32,
+)
+
 //go:wasmimport programs pop
 func popProgram()
 
@@ -136,9 +153,36 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, maxWasmSize uint32, pagelimit uint16, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) (map[rawdb.WasmTarget][]byte, error) {
-	// we need to return asm map with an entry for local target to make checks for local target work
-	return map[rawdb.WasmTarget][]byte{rawdb.LocalTarget(): {}}, nil
+func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
+	requiresPrepare := programRequiresPrepare(unsafe.Pointer(&moduleHash[0]))
+	if requiresPrepare != 0 {
+		var debugInt uint32
+		if debugMode {
+			debugInt = 1
+		}
+
+		// Not an activation path here, so fragment read gas shouldn't be charged.
+		// Passing nil avoids charging gas through a storage-backed burner here.
+		wasm, err := getWasmFromContractCode(statedb, code, params, nil)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get wasm for program, program address: %v, err: %v", addressForLogging.Hex(), err))
+		}
+
+		wasmSize := uint64(len(wasm))
+
+		ProgramPrepare(
+			unsafe.Pointer(&wasm),
+			wasmSize,
+			unsafe.Pointer(&moduleHash),
+			unsafe.Pointer(&codehash),
+			params.MaxWasmSize,
+			uint32(params.PageLimit),
+			debugInt,
+			uint32(params.Version),
+		)
+	}
+
+	return []byte{}
 }
 
 func callProgram(

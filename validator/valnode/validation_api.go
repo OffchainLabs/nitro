@@ -1,4 +1,4 @@
-// Copyright 2023-2024, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package valnode
@@ -28,8 +28,13 @@ func (a *ValidationServerAPI) Name() string {
 	return a.spawner.Name()
 }
 
+func (a *ValidationServerAPI) Capacity() int {
+	return a.spawner.Capacity()
+}
+
+// This is for backwards compatibility, should be removed in the future.
 func (a *ValidationServerAPI) Room() int {
-	return a.spawner.Room()
+	return a.spawner.Capacity()
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {

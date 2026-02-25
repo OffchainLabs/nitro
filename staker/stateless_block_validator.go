@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package staker
@@ -44,7 +44,7 @@ type StatelessBlockValidator struct {
 	inboxTracker         InboxTrackerInterface
 	streamer             TransactionStreamerInterface
 	db                   ethdb.Database
-	dapReaders           *daprovider.ReaderRegistry
+	dapReaders           *daprovider.DAProviderRegistry
 	stack                *node.Node
 	latestWasmModuleRoot common.Hash
 }
@@ -206,7 +206,7 @@ func newValidationEntry(
 	}
 	valBatches = append(valBatches, prevBatches...)
 
-	copyPreimagesInto(preimages, fullBatchInfo.Preimages)
+	validator.CopyPreimagesInto(preimages, fullBatchInfo.Preimages)
 
 	hasDelayed := false
 	var delayedNum uint64
@@ -236,8 +236,8 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
-	arbdb ethdb.Database,
-	dapReaders *daprovider.ReaderRegistry,
+	consensusDB ethdb.Database,
+	dapReaders *daprovider.DAProviderRegistry,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 	latestWasmModuleRoot common.Hash,
@@ -249,6 +249,7 @@ func NewStatelessBlockValidator(
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
 		redisValClient, err = redis.NewValidationClient(&config().RedisValidationClientConfig)
+		boldExecutionSpawners = append(boldExecutionSpawners, redis.NewBOLDRedisExecutionClient(redisValClient))
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
@@ -278,7 +279,7 @@ func NewStatelessBlockValidator(
 		inboxReader:          inboxReader,
 		inboxTracker:         inbox,
 		streamer:             streamer,
-		db:                   arbdb,
+		db:                   consensusDB,
 		dapReaders:           dapReaders,
 		execSpawners:         executionSpawners,
 		boldExecSpawners:     boldExecutionSpawners,
@@ -326,14 +327,17 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	preimages := make(daprovider.PreimagesMap)
 	if len(postedData) > 40 && v.dapReaders != nil {
 		headerByte := postedData[40]
-		if dapReader, found := v.dapReaders.GetByHeaderByte(headerByte); found {
+		dapReader := v.dapReaders.GetReader(headerByte)
+		if dapReader != nil {
 			promise := dapReader.CollectPreimages(batchNum, batchBlockHash, postedData)
 			result, err := promise.Await(ctx)
 			if err != nil {
-				// Matches the way keyset validation was done inside DAS readers i.e logging the error
+				// Matches the way keyset validation was done inside AnyTrust readers i.e logging the error
 				//  But other daproviders might just want to return the error
-				if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(headerByte) {
+				if daprovider.IsAnyTrustMessageHeaderByte(headerByte) && strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) {
 					log.Error(err.Error())
+				} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) && daprovider.IsCertificateValidationError(err) {
+					log.Warn("Certificate validation of sequencer batch failed, treating it as an empty batch", "batch", batchNum, "error", err)
 				} else {
 					return false, nil, err
 				}
@@ -342,8 +346,8 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 			}
 		} else {
 			// No reader found for this header byte - check if it's a known type
-			if daprovider.IsDASMessageHeaderByte(headerByte) {
-				log.Error("No DAS Reader configured for DAS message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
+			if daprovider.IsAnyTrustMessageHeaderByte(headerByte) {
+				log.Error("No AnyTrust Reader configured for AnyTrust message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsBlobHashesHeaderByte(headerByte) {
 				log.Error("No Blob Reader configured for blob message", "headerByte", fmt.Sprintf("0x%02x", headerByte))
 			} else if daprovider.IsDACertificateMessageHeaderByte(headerByte) {
@@ -360,17 +364,6 @@ func (v *StatelessBlockValidator) readFullBatch(ctx context.Context, batchNum ui
 	return true, &fullInfo, nil
 }
 
-func copyPreimagesInto(dest, source map[arbutil.PreimageType]map[common.Hash][]byte) {
-	for piType, piMap := range source {
-		if dest[piType] == nil {
-			dest[piType] = make(map[common.Hash][]byte, len(piMap))
-		}
-		for hash, preimage := range piMap {
-			dest[piType][hash] = preimage
-		}
-	}
-}
-
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, wasmTargets ...rawdb.WasmTarget) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -380,7 +373,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(wasmTargets) == 0 {
 			wasmTargets = v.wasmTargets
 		}
-		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg, wasmTargets)
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg, wasmTargets).Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -391,7 +384,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			recordingPreimages := map[arbutil.PreimageType]map[common.Hash][]byte{
 				arbutil.Keccak256PreimageType: recording.Preimages,
 			}
-			copyPreimagesInto(e.Preimages, recordingPreimages)
+			validator.CopyPreimagesInto(e.Preimages, recordingPreimages)
 		}
 		e.UserWasms = recording.UserWasms
 	}
@@ -568,6 +561,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	wasmTargetsSet := make(map[rawdb.WasmTarget]struct{})
 
 	if v.redisValidator != nil {
+		if err := v.redisValidator.Initialize(ctx_in, []common.Hash{v.GetLatestWasmModuleRoot()}); err != nil {
+			return fmt.Errorf("initializing redis validation client: %w", err)
+		}
 		if err := v.redisValidator.Start(ctx_in); err != nil {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
@@ -591,11 +587,19 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	}
 	v.wasmTargets = wasmTargets
 
+	for _, spawner := range v.boldExecSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (v *StatelessBlockValidator) Stop() {
 	for _, spawner := range v.execSpawners {
+		spawner.Stop()
+	}
+	for _, spawner := range v.boldExecSpawners {
 		spawner.Stop()
 	}
 	if v.redisValidator != nil {

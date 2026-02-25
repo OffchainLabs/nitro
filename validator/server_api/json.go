@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package server_api
@@ -48,6 +48,10 @@ func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.Ma
 
 func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
 	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
+}
+
+func RedisBoldStreamForRoot(prefix string, moduleRoot common.Hash) string {
+	return fmt.Sprintf("%sstream-bold:%s", prefix, moduleRoot.Hex())
 }
 
 type Request struct {
@@ -171,4 +175,12 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.UserWasms[target] = archWasms
 	}
 	return valInput, nil
+}
+
+type BoldValidationInput struct {
+	ModuleRoot        common.Hash
+	MachineStartIndex uint64
+	StepSize          uint64
+	NumDesiredLeaves  uint64
+	ValidationInput   *validator.ValidationInput
 }

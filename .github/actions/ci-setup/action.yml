@@ -43,26 +43,26 @@ runs:
       shell: bash
 
     - name: Cache Go build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/go-build
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
     - name: Cache Rust build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/
-          arbitrator/target/
-          arbitrator/wasm-libraries/target/
-          arbitrator/wasm-libraries/soft-float/
+          target/
+          crates/wasm-libraries/target/
+          crates/wasm-libraries/soft-float/
           target/etc/initial-machine-cache/
           /home/runner/.rustup/toolchains/
-        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('arbitrator/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('Cargo.lock') }}
 
     - name: Cache cbrotli
       id: cache-cbrotli
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           target/include/brotli/

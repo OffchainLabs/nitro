@@ -1,9 +1,11 @@
-// Copyright 2025, Offchain Labs, Inc.
+// Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package proofenhancement
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -70,7 +72,7 @@ func NewProofEnhancementManager() *ProofEnhancementManager {
 //
 // For testing or custom configurations, use NewProofEnhancementManager and RegisterEnhancer directly.
 func NewCustomDAProofEnhancer(
-	daValidator daprovider.Validator,
+	dapRegistry *daprovider.DAProviderRegistry,
 	inboxTracker staker.InboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
 ) *ProofEnhancementManager {
@@ -79,11 +81,11 @@ func NewCustomDAProofEnhancer(
 	// Register both CustomDA enhancers
 	manager.RegisterEnhancer(
 		MarkerCustomDAReadPreimage,
-		NewReadPreimageProofEnhancer(daValidator, inboxTracker, inboxReader),
+		NewReadPreimageProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 	)
 	manager.RegisterEnhancer(
 		MarkerCustomDAValidateCertificate,
-		NewValidateCertificateProofEnhancer(daValidator, inboxTracker, inboxReader),
+		NewValidateCertificateProofEnhancer(dapRegistry, inboxTracker, inboxReader),
 	)
 
 	return manager
@@ -124,4 +126,71 @@ func (m *ProofEnhancementManager) EnhanceProof(ctx context.Context, messageNum a
 
 	// Let specific enhancer handle the proof
 	return enhancer.EnhanceProof(ctx, messageNum, enhancedProof)
+}
+
+func retrieveCertificateFromInboxMessage(
+	ctx context.Context,
+	messageNum arbutil.MessageIndex,
+	tracker staker.InboxTrackerInterface,
+	reader staker.InboxReaderInterface,
+) ([]byte, error) {
+	batchContainingMessage, found, err := tracker.FindInboxBatchContainingMessage(messageNum)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("couldn't find batch for message #%d to enhance proof", messageNum)
+	}
+
+	sequencerMessage, _, err := reader.GetSequencerMessageBytes(ctx, batchContainingMessage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sequencer message for batch %d: %w", batchContainingMessage, err)
+	}
+
+	// Extract and validate certificate from sequencer message
+	if len(sequencerMessage) < SequencerMessageHeaderSize+1 {
+		return nil, fmt.Errorf("sequencer message too short: expected at least %d bytes, got %d", SequencerMessageHeaderSize+1, len(sequencerMessage))
+	}
+
+	// Extract certificate (skip sequencer message header)
+	certificate := sequencerMessage[SequencerMessageHeaderSize:]
+
+	// Validate certificate format
+	if len(certificate) < MinCertificateSize {
+		return nil, fmt.Errorf("certificate too short: expected at least %d bytes, got %d", MinCertificateSize, len(certificate))
+	}
+
+	if certificate[0] != daprovider.DACertificateMessageHeaderFlag {
+		return nil, fmt.Errorf("invalid certificate header: expected 0x%02x, got 0x%02x",
+			daprovider.DACertificateMessageHeaderFlag, certificate[0])
+	}
+
+	return certificate, nil
+}
+
+// Build standard CustomDA proof
+// [...proof..., certSize(8), certificate, customProof]
+func constructEnhancedProof(
+	originalProof []byte,
+	certificate []byte,
+	customProof []byte,
+) []byte {
+	enhancedProof := make([]byte, len(originalProof)+CertificateSizeFieldSize+len(certificate)+len(customProof))
+
+	// Copy the raw original proof
+	copy(enhancedProof, originalProof)
+	offset := len(originalProof)
+
+	// Add certSize
+	binary.BigEndian.PutUint64(enhancedProof[offset:], uint64(len(certificate)))
+	offset += CertificateSizeFieldSize
+
+	// Add certificate
+	copy(enhancedProof[offset:], certificate)
+	offset += len(certificate)
+
+	// Add custom proof
+	copy(enhancedProof[offset:], customProof)
+
+	return enhancedProof
 }
