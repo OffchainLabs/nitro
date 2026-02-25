@@ -59,7 +59,7 @@ func TestGetParsedInitMsgWithoutConsensus(t *testing.T) {
 	}
 }
 
-func TestGetParsedInitMsgFromConsensus(t *testing.T) {
+func TestGetParsedInitMsgFromParentChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -68,7 +68,7 @@ func TestGetParsedInitMsgFromConsensus(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	initMessage, err := nitroinit.GetParsedInitMsgFromConsensus(ctx, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromParentChain(ctx, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
 	Require(t, err)
 
 	if success := reflect.DeepEqual(initMessage, builder.initMessage); !success {

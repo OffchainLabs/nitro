@@ -1986,7 +1986,7 @@ func deployOnParentChain(
 	parentChainInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
 	parentChainInfo.SetContract("Inbox", addresses.Inbox)
 	parentChainInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
-	initMessage, err := nitroinit.GetParsedInitMsgFromConsensus(ctx, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromParentChain(ctx, chainConfig.ChainID, parentChainClient, addresses, chainConfig)
 	Require(t, err)
 
 	return addresses, initMessage

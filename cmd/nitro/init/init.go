@@ -638,7 +638,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 
 		var parsedInitMessage *arbostypes.ParsedInitMessage
 		if config.Node.ParentChainReader.Enable {
-			parsedInitMessage, err = GetParsedInitMsgFromConsensus(ctx, chainId, l1Client, &rollupAddrs, chainConfig)
+			parsedInitMessage, err = GetParsedInitMsgFromParentChain(ctx, chainId, l1Client, &rollupAddrs, chainConfig)
 		} else if genesis != nil {
 			parsedInitMessage, err = GetParsedInitMsgFromGenesis(genesis)
 			if err == nil && config.Init.GenesisOverride.IsSet() {
@@ -1055,7 +1055,7 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 	return nil, nil, nil, nil, nil
 }
 
-func GetParsedInitMsgFromConsensus(ctx context.Context, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetParsedInitMsgFromParentChain(ctx context.Context, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
 	var parsedInitMessage *arbostypes.ParsedInitMessage
 	delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 	if err != nil {
