@@ -344,7 +344,7 @@ func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
 	mv.rewindMutex.Lock()
 	defer mv.rewindMutex.Unlock()
-	return mv.messageExtractor.GetState(ctx, mv.latestValidatedParentChainBlock)
+	return mv.messageExtractor.GetState(mv.latestValidatedParentChainBlock)
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -391,7 +391,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		// ending position- bold staker latest posted assertion on chain that it agrees with (l1blockhash)-
 		return nil, nil, errors.New("trying to create validation entry for zero block number")
 	}
-	currentState, err := mv.messageExtractor.GetState(ctx, lastValidatedParentChainBlock)
+	currentState, err := mv.messageExtractor.GetState(lastValidatedParentChainBlock)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -452,7 +452,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		if len(l2Msgs) > 0 && (melMsgHash == common.Hash{}) {
 			melMsgHash = l2Msgs[0].Hash()
 		}
-		wantState, err := mv.messageExtractor.GetState(ctx, i)
+		wantState, err := mv.messageExtractor.GetState(i)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -505,7 +505,7 @@ func (mv *MELValidator) FetchMsgPreimagesAndRelevantState(ctx context.Context, l
 		return preimagesAndRelevantState, nil
 	}
 	// Couldn't find preimages and relevant state, we first find the corresponding parent chain block number to the L2 block
-	batchSeqNum, found, err := mv.messageExtractor.FindInboxBatchContainingMessage(ctx, l2BlockNum)
+	batchSeqNum, found, err := mv.messageExtractor.FindInboxBatchContainingMessage(l2BlockNum)
 	if err != nil {
 		return nil, err
 	}

@@ -1309,7 +1309,7 @@ func InitReorg(ctx context.Context, initConfig conf.InitConfig, chainConfig *par
 		var found bool
 		var err error
 		if msgExtractor != nil {
-			batchCount, found, err = msgExtractor.FindInboxBatchContainingMessage(ctx, messageIndex+1)
+			batchCount, found, err = msgExtractor.FindInboxBatchContainingMessage(messageIndex + 1)
 			if err != nil {
 				return err
 			}
