@@ -450,6 +450,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
+		nil,
 	)
 	Require(t, err)
 	blockchain.Stop()
@@ -467,6 +468,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
+		nil,
 	)
 	Require(t, err)
 	blockchain.Stop()
@@ -485,6 +487,7 @@ func TestOpenInitializeExecutionDBIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
+		nil,
 	)
 	if !strings.Contains(err.Error(), "incompatible state scheme, stored: path, provided: hash") {
 		t.Fatalf("Failed to detect incompatible state scheme")
@@ -713,6 +716,7 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
+		nil,
 	)
 	Require(t, err)
 	blockchain.Stop()
@@ -1068,6 +1072,7 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
+		nil,
 	)
 	Require(t, err)
 
