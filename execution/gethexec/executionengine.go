@@ -445,9 +445,11 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
 	attempts := 0
 	for {
-		s.createBlocksMutex.Lock()
-		block, err := sequencerFunc()
-		s.createBlocksMutex.Unlock()
+		block, err := func() (*types.Block, error) {
+			s.createBlocksMutex.Lock()
+			defer s.createBlocksMutex.Unlock()
+			return sequencerFunc()
+		}()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
