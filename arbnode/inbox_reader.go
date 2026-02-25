@@ -718,3 +718,7 @@ func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 func (r *InboxReader) GetDelayBlocks() uint64 {
 	return r.config().DelayBlocks
 }
+
+func (r *InboxReader) SupportsPushingFinalityData() bool {
+	return true
+}

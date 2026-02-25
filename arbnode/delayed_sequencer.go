@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -42,13 +41,16 @@ type FilteredTxWaitState struct {
 	LastFullRetry time.Time
 }
 
+type DelayedMessageCountFetcher interface {
+	GetDelayedCount() (uint64, error)
+}
+
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
 	l1Reader                 *headerreader.HeaderReader
 	bridge                   *DelayedBridge
-	inbox                    *InboxTracker
+	delayedCountFetcher      DelayedMessageCountFetcher
 	reader                   *InboxReader
-	msgExtractor             *melrunner.MessageExtractor
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *uint64
@@ -95,19 +97,19 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	FilteredTxFullRetryInterval: 1 * time.Second,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, msgExtractor *melrunner.MessageExtractor, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, delayedCountFetcher DelayedMessageCountFetcher, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
-		l1Reader:     l1Reader,
-		bridge:       delayedBridge,
-		msgExtractor: msgExtractor,
-		reader:       reader,
-		coordinator:  coordinator,
-		exec:         exec,
-		config:       config,
+		l1Reader:            l1Reader,
+		bridge:              delayedBridge,
+		reader:              reader,
+		delayedCountFetcher: delayedCountFetcher,
+		coordinator:         coordinator,
+		exec:                exec,
+		config:              config,
 	}
 	if reader != nil {
 		d.bridge = reader.DelayedBridge()
-		d.inbox = reader.Tracker()
+		d.delayedCountFetcher = reader.Tracker()
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -209,18 +211,9 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	// Reset what block we're waiting for if we've caught up
 	d.waitingForFinalizedBlock = nil
 
-	var dbDelayedCount uint64
-	var err error
-	if d.msgExtractor != nil {
-		dbDelayedCount, err = d.msgExtractor.GetDelayedCount(ctx, 0)
-		if err != nil {
-			return err
-		}
-	} else {
-		dbDelayedCount, err = d.inbox.GetDelayedCount()
-		if err != nil {
-			return err
-		}
+	dbDelayedCount, err := d.delayedCountFetcher.GetDelayedCount()
+	if err != nil {
+		return err
 	}
 
 	startPos, err := d.getDelayedMessagesRead()
