@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
@@ -1363,4 +1364,221 @@ func gracefulShutdown(t *testing.T, ctx context.Context, server *http.Server) {
 	if err := server.Shutdown(ctx); err != nil {
 		t.Logf("HTTP server shutdown error: %v", err)
 	}
+}
+
+func testChainConfigJSON(t *testing.T) string {
+	t.Helper()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	serialized, err := json.Marshal(chainConfig)
+	require.NoError(t, err)
+	return string(serialized)
+}
+
+func TestGetParsedInitMsgFromGenesisOverride(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	serializedConfig := testChainConfigJSON(t)
+
+	t.Run("with default initial L1 base fee", func(t *testing.T) {
+		override := &conf.GenesisOverride{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      "",
+		}
+		msg, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.NoError(t, err)
+		require.Equal(t, chainConfig.ChainID, msg.ChainId)
+		require.Equal(t, arbostypes.DefaultInitialL1BaseFee, msg.InitialL1BaseFee)
+		require.Equal(t, serializedConfig, string(msg.SerializedChainConfig))
+		require.NotNil(t, msg.ChainConfig)
+	})
+
+	t.Run("with custom initial L1 base fee", func(t *testing.T) {
+		override := &conf.GenesisOverride{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      "100000000000", // 100 GWei
+		}
+		msg, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.NoError(t, err)
+		require.Equal(t, big.NewInt(100_000_000_000), msg.InitialL1BaseFee)
+	})
+
+	t.Run("with large initial L1 base fee", func(t *testing.T) {
+		largeFee := "999999999999999999999999999999"
+		override := &conf.GenesisOverride{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      largeFee,
+		}
+		msg, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.NoError(t, err)
+		expected, _ := new(big.Int).SetString(largeFee, 10)
+		require.Equal(t, expected, msg.InitialL1BaseFee)
+	})
+
+	t.Run("with invalid chain config JSON", func(t *testing.T) {
+		override := &conf.GenesisOverride{
+			SerializedChainConfig: "not-valid-json",
+		}
+		_, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to deserialize chain config from genesis override")
+	})
+
+	t.Run("with invalid initial L1 base fee", func(t *testing.T) {
+		override := &conf.GenesisOverride{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      "not-a-number",
+		}
+		_, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse initial-l1-base-fee")
+	})
+}
+
+func TestGetParsedInitMsgFromGenesis(t *testing.T) {
+	serializedConfig := testChainConfigJSON(t)
+
+	t.Run("with ArbOSInit initial L1 base fee", func(t *testing.T) {
+		customFee := big.NewInt(100_000_000_000)
+		genesis := &core.Genesis{
+			SerializedChainConfig: serializedConfig,
+			ArbOSInit: &params.ArbOSInit{
+				InitialL1BaseFee: customFee,
+			},
+		}
+		msg, err := GetParsedInitMsgFromGenesis(genesis)
+		require.NoError(t, err)
+		require.Equal(t, customFee, msg.InitialL1BaseFee)
+	})
+
+	t.Run("without ArbOSInit uses default", func(t *testing.T) {
+		genesis := &core.Genesis{
+			SerializedChainConfig: serializedConfig,
+		}
+		msg, err := GetParsedInitMsgFromGenesis(genesis)
+		require.NoError(t, err)
+		require.Equal(t, arbostypes.DefaultInitialL1BaseFee, msg.InitialL1BaseFee)
+	})
+}
+
+func TestValidateParsedInitMessagesMatch(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	serializedConfig, err := json.Marshal(chainConfig)
+	require.NoError(t, err)
+
+	baseMsg := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedConfig,
+	}
+
+	t.Run("matching messages", func(t *testing.T) {
+		other := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedConfig,
+		}
+		require.NoError(t, validateParsedInitMessagesMatch(baseMsg, other))
+	})
+
+	t.Run("chain ID mismatch", func(t *testing.T) {
+		other := &arbostypes.ParsedInitMessage{
+			ChainId:               big.NewInt(999999),
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedConfig,
+		}
+		err := validateParsedInitMessagesMatch(baseMsg, other)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "chain ID mismatch")
+	})
+
+	t.Run("initial L1 base fee mismatch", func(t *testing.T) {
+		other := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      big.NewInt(123),
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: serializedConfig,
+		}
+		err := validateParsedInitMessagesMatch(baseMsg, other)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "initial L1 base fee mismatch")
+	})
+
+	t.Run("serialized chain config mismatch", func(t *testing.T) {
+		other := &arbostypes.ParsedInitMessage{
+			ChainId:               chainConfig.ChainID,
+			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+			ChainConfig:           chainConfig,
+			SerializedChainConfig: []byte(`{"chainId":999}`),
+		}
+		err := validateParsedInitMessagesMatch(baseMsg, other)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "serialized chain config mismatch")
+	})
+}
+
+func TestGenesisOverride(t *testing.T) {
+	t.Run("IsSet returns false for defaults", func(t *testing.T) {
+		c := conf.GenesisOverrideDefault
+		require.False(t, c.IsSet())
+	})
+
+	t.Run("IsSet returns true when serialized chain config is set", func(t *testing.T) {
+		c := conf.GenesisOverride{
+			SerializedChainConfig: `{"chainId": 1}`,
+		}
+		require.True(t, c.IsSet())
+	})
+
+	t.Run("IsSet returns false when only initial L1 base fee is set", func(t *testing.T) {
+		c := conf.GenesisOverride{
+			InitialL1BaseFee: "0",
+		}
+		require.False(t, c.IsSet())
+	})
+
+	t.Run("ParseInitialL1BaseFee returns nil when not set", func(t *testing.T) {
+		c := conf.GenesisOverride{}
+		fee, err := c.ParseInitialL1BaseFee()
+		require.NoError(t, err)
+		require.Nil(t, fee)
+	})
+
+	t.Run("ParseInitialL1BaseFee returns value when set", func(t *testing.T) {
+		c := conf.GenesisOverride{InitialL1BaseFee: "50000000000"}
+		fee, err := c.ParseInitialL1BaseFee()
+		require.NoError(t, err)
+		require.Equal(t, big.NewInt(50_000_000_000), fee)
+	})
+
+	t.Run("ParseInitialL1BaseFee returns zero when explicitly set to zero", func(t *testing.T) {
+		c := conf.GenesisOverride{InitialL1BaseFee: "0"}
+		fee, err := c.ParseInitialL1BaseFee()
+		require.NoError(t, err)
+		require.Equal(t, big.NewInt(0), fee)
+	})
+
+	t.Run("ParseInitialL1BaseFee supports large values", func(t *testing.T) {
+		largeFee := "999999999999999999999999999999"
+		c := conf.GenesisOverride{InitialL1BaseFee: largeFee}
+		fee, err := c.ParseInitialL1BaseFee()
+		require.NoError(t, err)
+		expected, _ := new(big.Int).SetString(largeFee, 10)
+		require.Equal(t, expected, fee)
+	})
+
+	t.Run("ParseInitialL1BaseFee errors on invalid string", func(t *testing.T) {
+		c := conf.GenesisOverride{InitialL1BaseFee: "not-a-number"}
+		_, err := c.ParseInitialL1BaseFee()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse initial-l1-base-fee")
+	})
+
+	t.Run("ParseInitialL1BaseFee errors on negative value", func(t *testing.T) {
+		c := conf.GenesisOverride{InitialL1BaseFee: "-1"}
+		_, err := c.ParseInitialL1BaseFee()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must be non-negative")
+	})
 }
