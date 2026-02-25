@@ -1,6 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::engine::ModuleRoot;
 use anyhow::Result;
 use std::collections::HashSet;
 use std::env;
@@ -10,8 +11,6 @@ use std::str::FromStr;
 use tracing::debug;
 use tracing::info;
 use tracing::warn;
-
-use crate::engine::ModuleRoot;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ModuleRootMeta {
@@ -173,11 +172,6 @@ impl MachineLocator {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        path::{Path, PathBuf},
-        str::FromStr,
-    };
-
     use crate::engine::{
         machine_locator::{MachineLocator, ModuleRootMeta},
         ModuleRoot,
@@ -185,42 +179,46 @@ mod tests {
     use anyhow::{anyhow, Result};
     use arbutil::Bytes32;
     use rand::RngCore;
+    use std::{
+        path::{Path, PathBuf},
+        str::FromStr,
+    };
 
-    fn get_or_create_root_path(machines_dir: &PathBuf, root: &str) -> RootMetaWrapper {
+    fn get_temp_machines_dir() -> Result<PathBuf> {
+        Ok(tempdir::TempDir::new("machines")?.into_path())
+    }
+
+    fn get_real_machines_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("Failed to navigate to workspace root")
+            .join("target/machines")
+    }
+
+    fn get_or_create_root_path(machines_dir: &PathBuf, root: &str) -> ModuleRootMeta {
         let complete_root_path = machines_dir.join(root);
-
-        let (module_root, should_delete) = if !complete_root_path.exists() {
-            // We assume "latest" module root exist. That avoids multiple tests trying to create
-            // the same "latest" module root to run into each other; be run in parallel
-            if root == "latest" {
-                panic!("latest path should exist!")
-            };
-
+        let module_root = if !complete_root_path.exists() {
             std::fs::create_dir_all(&complete_root_path)
                 .expect("Failed to create target/machines directory");
 
-            std::fs::write(complete_root_path.join("module-root.txt"), root)
+            let actual_root = match root {
+                "latest" => format!("0x{}", gen_random_module_root()),
+                hash => hash.into(),
+            };
+            std::fs::write(complete_root_path.join("module-root.txt"), &actual_root)
                 .expect("Failed to write module-root.txt");
-            let module_root = ModuleRoot::from_str(root).unwrap();
-            // Since we are the ones who are creating the directory for this module root, we mark it
-            // for deletion
-            (module_root, true)
+            ModuleRoot::from_str(&actual_root).unwrap()
         } else {
             let existing_content =
                 std::fs::read_to_string(complete_root_path.join("module-root.txt"))
                     .expect("Failed to read existing module-root.txt");
-            let module_root = ModuleRoot::from_str(&existing_content.trim()).unwrap();
-            // If there's an existing module root we still want to remember it; however, we don't want
-            // to delete on drop since we were not the one who created it
-            (module_root, false)
+            ModuleRoot::from_str(&existing_content.trim()).unwrap()
         };
 
-        RootMetaWrapper {
-            root_meta: ModuleRootMeta {
-                module_root,
-                path: complete_root_path,
-            },
-            should_delete,
+        ModuleRootMeta {
+            module_root,
+            path: complete_root_path,
         }
     }
 
@@ -231,32 +229,24 @@ mod tests {
         Bytes32(bytes)
     }
 
-    #[derive(Debug, Clone)]
-    struct RootMetaWrapper {
-        root_meta: ModuleRootMeta,
-        // dictates if root_meta should be deleted on drop. Only module roots
-        // that have been created by LocatorSimulator are marked for deletion
-        should_delete: bool,
-    }
-
     struct LocatorSimulator {
-        root_metas: Vec<RootMetaWrapper>,
-        latest_root: RootMetaWrapper,
+        root_metas: Vec<ModuleRootMeta>,
+        latest_root: ModuleRootMeta,
     }
 
     impl LocatorSimulator {
         // Generates a new LocatorSimulator by creating temporary module root
         // folders with their respective module-root.txt so that MachineLocator
         // can find them
-        fn new(root_count: u32) -> Self {
-            let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-            assert!(root_count > 0, "there must be at least one module root");
-
-            let machines_dir = manifest_dir
-                .ancestors()
-                .nth(2)
-                .expect("Failed to navigate to workspace root")
-                .join("target/machines");
+        fn new(root_count: u32, machines_dir: &Option<PathBuf>) -> Self {
+            assert!(
+                machines_dir.is_some() || root_count == 0,
+                "Forbidden to create new module root folders in a shared workspace"
+            );
+            let machines_dir = machines_dir
+                .as_ref()
+                .map(Clone::clone)
+                .unwrap_or_else(get_real_machines_dir);
 
             let mut root_metas = vec![];
 
@@ -278,23 +268,8 @@ mod tests {
         }
     }
 
-    impl Drop for LocatorSimulator {
-        fn drop(&mut self) {
-            for root_meta_wrapper in self.root_metas.iter() {
-                if root_meta_wrapper.should_delete && root_meta_wrapper.root_meta.path.exists() {
-                    if let Err(e) = std::fs::remove_dir_all(&root_meta_wrapper.root_meta.path) {
-                        eprintln!(
-                            "Failed to cleanup test directory {:?}: {}",
-                            root_meta_wrapper.root_meta.path, e
-                        );
-                    }
-                }
-            }
-        }
-    }
-
     fn test_machine_locator(root_count: u32, root_path: &Option<PathBuf>) -> Result<()> {
-        let file_manager = LocatorSimulator::new(root_count);
+        let file_manager = LocatorSimulator::new(root_count, root_path);
         let machine_locator = MachineLocator::new(root_path)?;
 
         if machine_locator.module_roots().is_empty() {
@@ -303,13 +278,11 @@ mod tests {
 
         assert_eq!(
             machine_locator.latest_wasm_module_root().module_root,
-            file_manager.latest_root.root_meta.module_root
+            file_manager.latest_root.module_root
         );
 
         for root_meta_wrapper in file_manager.root_metas.iter() {
-            assert!(machine_locator
-                .module_roots()
-                .contains(&root_meta_wrapper.root_meta));
+            assert!(machine_locator.module_roots().contains(&root_meta_wrapper));
         }
 
         // Check if get_machine_path returns the correct module root path for
@@ -321,7 +294,7 @@ mod tests {
             .take(root_count as usize)
             .for_each(|root_meta_wrapper| {
                 // let root_meta_wrapper = file_manager.root_metas.first().unwrap();
-                let mod_root = root_meta_wrapper.root_meta.module_root;
+                let mod_root = root_meta_wrapper.module_root;
                 let module_root = machine_locator.get_machine_path(mod_root).unwrap();
                 assert!(module_root
                     .to_str()
@@ -334,49 +307,25 @@ mod tests {
 
     #[test]
     fn test_machine_locator_one_machine() -> Result<()> {
-        test_machine_locator(1, &None)
+        test_machine_locator(1, &Some(get_temp_machines_dir()?))
     }
 
     #[test]
     fn test_machine_locator_many_machines() -> Result<()> {
-        test_machine_locator(10, &None)
+        test_machine_locator(10, &Some(get_temp_machines_dir()?))
     }
 
     #[test]
-    fn test_machine_locator_with_root_path() -> Result<()> {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let machines_dir = manifest_dir
-            .ancestors()
-            .nth(2)
-            .expect("Failed to navigate to workspace root")
-            .join("target/machines");
-
-        test_machine_locator(2, &Some(machines_dir))?;
-
-        Ok(())
+    fn test_machine_locator_without_root_path() -> Result<()> {
+        // Don't create any new module root folders in a shared workspace, used by other tests.
+        // Only verify that the `latest` machine is found.
+        test_machine_locator(0, &None)
     }
 
     #[test]
     fn test_machine_locator_wrong_root_path() -> Result<()> {
-        let result = test_machine_locator(2, &Some("i/do/not/exist".into()));
-        assert!(result.is_err());
-
-        let error = result.err().unwrap();
-        let err_str = error.to_string();
-        assert!(err_str.contains("empty module roots"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_get_machine_path() -> Result<()> {
-        let file_manager = LocatorSimulator::new(1);
-        let machine_locator = MachineLocator::new(&None)?;
-        let root_meta_wrapper = file_manager.root_metas.first().unwrap();
-
-        let result = machine_locator.get_machine_path(root_meta_wrapper.root_meta.module_root);
-        assert!(result.is_ok());
-
+        let machine_locator = MachineLocator::new(&Some("i/do/not/exist".into()))?;
+        assert!(machine_locator.module_roots().is_empty());
         Ok(())
     }
 
@@ -391,13 +340,7 @@ mod tests {
         let error = result.err().unwrap();
         let err_str = error.to_string();
 
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let machines_dir = manifest_dir
-            .ancestors()
-            .nth(2)
-            .expect("Failed to navigate to workspace root")
-            .join("target/machines");
-        let expected_path = machines_dir.join(format!("0x{random_module_root}"));
+        let expected_path = get_real_machines_dir().join(format!("0x{random_module_root}"));
         let expected_error = format!("module root path {expected_path:?} does not exist");
         assert_eq!(err_str, expected_error);
 
