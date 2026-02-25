@@ -8,12 +8,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
+
+// trimHexPrefix strips a leading "0x" or "0X" prefix from a hex string.
+func trimHexPrefix(s string) string {
+	s = strings.TrimPrefix(s, "0x")
+	s = strings.TrimPrefix(s, "0X")
+	return s
+}
 
 // hashListPayload represents the JSON structure of the hash list file used for unmarshalling.
 type hashListPayload struct {
@@ -73,7 +81,7 @@ func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
 			"scheme", payload.HashingScheme)
 	}
 
-	salt, err := hex.DecodeString(payload.Salt)
+	salt, err := hex.DecodeString(trimHexPrefix(payload.Salt))
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid salt hex: %w", err)
 	}
@@ -83,7 +91,7 @@ func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
 
 	hashes := make([]common.Hash, len(payload.AddressHashes))
 	for i, h := range payload.AddressHashes {
-		hashBytes, err := hex.DecodeString(h.Hash)
+		hashBytes, err := hex.DecodeString(trimHexPrefix(h.Hash))
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
 		}
