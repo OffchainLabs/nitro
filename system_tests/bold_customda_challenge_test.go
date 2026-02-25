@@ -19,24 +19,16 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/bold/challenge"
-	modes "github.com/offchainlabs/nitro/bold/challenge/types"
-	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
@@ -45,15 +37,12 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
-	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -154,82 +143,6 @@ func (w *assertingWriter) GetMaxMessageSize() containers.PromiseInterface[int] {
 	panic("assertingWriter.GetMaxMessageSize should never be called - evil provider server should not be used for writing")
 }
 
-// createNodeBWithSharedContracts creates a second node that uses the same contracts as the first node
-func createNodeBWithSharedContracts(
-	t *testing.T,
-	ctx context.Context,
-	first *arbnode.Node,
-	l1stack *node.Node,
-	l1info *BlockchainTestInfo,
-	l2InitData *statetransfer.ArbosInitializationInfo,
-	nodeConfig *arbnode.Config,
-	stackConfig *node.Config,
-	rollupStackConf setup.RollupStackConfig,
-	stakeTokenAddr common.Address,
-	l1client *ethclient.Client,
-	assertionChain *sol.AssertionChain,
-) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
-	fatalErrChan := make(chan error, 10)
-
-	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
-	if !ok {
-		Fatal(t, "not geth execution node")
-	}
-	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-
-	// Use the same addresses as the first node
-	addresses := first.DeployInfo
-
-	if nodeConfig == nil {
-		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
-	}
-	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	if stackConfig == nil {
-		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
-		stackConfig.DBEngine = rawdb.DBPebble
-	}
-	l2stack, err := node.New(stackConfig)
-	Require(t, err)
-
-	l2executionDB, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
-	Require(t, err)
-	l2consensusDB, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
-	Require(t, err)
-
-	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
-
-	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1client, first.DeployInfo, chainConfig)
-	Require(t, err)
-
-	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
-	Require(t, execConfig.Validate())
-	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
-	Require(t, err)
-
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
-	Require(t, err)
-	l1ChainId, err := l1client.ChainID(ctx)
-	Require(t, err)
-	locator, err := server_common.NewMachineLocator("")
-	Require(t, err)
-
-	// Create node using the same addresses as the first node
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
-	Require(t, err)
-
-	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
-
-	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
-
-	return l2client, l2node, execNode, l2stack
-}
-
 func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
@@ -274,7 +187,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	nodeConfigA.DA.ExternalProvider.Enable = true
 
 	// Set up L1 first to get validator address
-	l1info, _, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1WithRollupAddresses(
+	l1info, _, l1client, l1stack, addresses, _, asserterOpts, signerCfg := setupL1WithRollupAddresses(
 		t, ctx, sconf, false, nodeConfigA, l2chainConfig, true, // useExternalSigner=false, enableCustomDA=true
 	)
 	defer requireClose(t, l1stack)
@@ -341,19 +254,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	l2nodeConfig.DA.ExternalProvider.RPC.URL = providerURLNodeB
 
 	// Create node B using the same contracts as node A
-	l2clientB, l2nodeB, l2execNodeB, l2stackB := createNodeBWithSharedContracts(
-		t,
-		ctx,
-		l2nodeA,
-		l1stack,
-		l1info,
-		&l2info.ArbInitData,
-		l2nodeConfig,
-		nil,
-		sconf,
-		stakeTokenAddr,
-		l1client,
-		assertionChain,
+	l2stackB, l2clientB, l2nodeB, l2execNodeB := createSecondL2Node(
+		t, ctx, l2nodeA, l1info, l1client, &l2info.ArbInitData, l2nodeA.DeployInfo, l2nodeConfig, nil,
 	)
 	defer l2nodeB.StopAndWait()
 	_ = l2clientB // suppress unused variable warning
@@ -510,28 +412,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 
 	chalManagerAddr := assertionChain.SpecChallengeManager()
 	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
-	l1ChainId, err := l1client.ChainID(ctx)
-	Require(t, err)
-	dp, err := arbnode.StakerDataposter(
-		ctx,
-		rawdb.NewTable(l2nodeB.ConsensusDB, storage.StakerPrefix),
-		l2nodeB.L1Reader,
-		&evilOpts,
-		NewCommonConfigFetcher(l2nodeConfig),
-		l2nodeB.SyncMonitor,
-		l1ChainId,
-	)
-	Require(t, err)
-	chainB, err := sol.NewAssertionChain(
-		ctx,
-		assertionChain.RollupAddress(),
-		chalManagerAddr.Address(),
-		&evilOpts,
-		l1client,
-		bold.NewDataPosterTransactor(dp),
-		sol.WithRpcHeadBlockNumber(rpc.LatestBlockNumber),
-	)
-	Require(t, err)
+	chainB := createEvilAssertionChain(t, ctx, assertionChain.RollupAddress(), chalManagerAddr.Address(), l1client, l2nodeB, &evilOpts, l2nodeConfig)
 
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -850,107 +731,5 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		time.Sleep(time.Millisecond * 200)
 	}
 
-	provider := state.NewHistoryCommitmentProvider(
-		stateManager,
-		stateManager,
-		stateManager,
-		[]state.Height{
-			state.Height(blockChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(smallStepChallengeLeafHeight),
-		},
-		stateManager,
-		nil, // Api db
-	)
-
-	evilHistoryProvider := state.NewHistoryCommitmentProvider(
-		stateManagerB,
-		stateManagerB,
-		stateManagerB,
-		[]state.Height{
-			state.Height(blockChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(bigStepChallengeLeafHeight),
-			state.Height(smallStepChallengeLeafHeight),
-		},
-		stateManagerB,
-		nil, // Api db
-	)
-
-	stackOpts := []challenge.StackOpt{
-		challenge.StackWithName("honest"),
-		challenge.StackWithMode(modes.MakeMode),
-		challenge.StackWithPostingInterval(time.Second * 3),
-		challenge.StackWithPollingInterval(time.Second),
-		challenge.StackWithMinimumGapToParentAssertion(0),
-		challenge.StackWithAverageBlockCreationTime(time.Second),
-	}
-
-	manager, err := challenge.NewChallengeStack(
-		assertionChain,
-		provider,
-		stackOpts...,
-	)
-	Require(t, err)
-
-	evilStackOpts := append(stackOpts, challenge.StackWithName("evil"))
-
-	managerB, err := challenge.NewChallengeStack(
-		chainB,
-		evilHistoryProvider,
-		evilStackOpts...,
-	)
-	Require(t, err)
-
-	manager.Start(ctx)
-	managerB.Start(ctx)
-
-	chalManager := assertionChain.SpecChallengeManager()
-	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), l1client)
-	Require(t, err)
-
-	fromBlock := uint64(0)
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			latestBlock, err := l1client.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock == toBlock {
-				continue
-			}
-			filterOpts := &bind.FilterOpts{
-				Start:   fromBlock,
-				End:     &toBlock,
-				Context: ctx,
-			}
-			it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
-			Require(t, err)
-			for it.Next() {
-				if it.Error() != nil {
-					t.Fatalf("FATAL: Error in filter iterator: %v", it.Error())
-				}
-				t.Log("Received event of OSP confirmation!")
-				tx, _, err := l1client.TransactionByHash(ctx, it.Event.Raw.TxHash)
-				Require(t, err)
-				signer := types.NewCancunSigner(tx.ChainId())
-				address, err := signer.Sender(tx)
-				Require(t, err)
-				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
-					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
-					Require(t, it.Close())
-					time.Sleep(5 * time.Second)
-					return
-				}
-			}
-			fromBlock = toBlock
-		case <-ctx.Done():
-			return
-		}
-	}
+	runFastChallengeAndAssertHonestWin(t, ctx, assertionChain, chainB, stateManager, stateManagerB, l2nodeA, l2nodeB, l1client, l1info.GetDefaultTransactOpts("Asserter", ctx).From)
 }
