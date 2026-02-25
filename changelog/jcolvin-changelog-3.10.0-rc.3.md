@@ -1,2 +1,2 @@
-### Ignore
+### Ignored
 - add changelog
