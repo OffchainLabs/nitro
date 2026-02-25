@@ -20,6 +20,12 @@ type GlobalStateValidatedInfo struct {
 	WasmRoots   []common.Hash
 }
 
+type MELGlobalStateValidatedInfo struct {
+	ParentChainBlockNumber uint64
+	GlobalState            validator.GoGlobalState
+	WasmRoots              []common.Hash
+}
+
 var (
 	lastMELGlobalStateValidatedInfoKey = []byte("_lastMELGlobalStateValidatedInfo") // contains a rlp encoded GlobalStateValidatedInfo of the last validated MEL state
 	lastGlobalStateValidatedInfoKey    = []byte("_lastGlobalStateValidatedInfo")    // contains a rlp encoded lastBlockValidatedDbInfo

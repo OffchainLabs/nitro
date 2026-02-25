@@ -328,7 +328,7 @@ func NewStaker(
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
 	rollupAddress common.Address,
-	inboxTracker staker.InboxTrackerInterface,
+	inboxTracker L1ValidatorInboxTrackerInterface,
 	inboxStreamer staker.TransactionStreamerInterface,
 	inboxReader staker.InboxReaderInterface,
 	fatalErr chan<- error,

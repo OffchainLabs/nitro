@@ -32,6 +32,7 @@ import (
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -336,6 +337,7 @@ type Node struct {
 	BatchPoster              *BatchPoster
 	MessagePruner            *MessagePruner
 	BlockValidator           *staker.BlockValidator
+	MELValidator             *staker.MELValidator
 	StatelessBlockValidator  *staker.StatelessBlockValidator
 	Staker                   *multiprotocolstaker.MultiProtocolStaker
 	BroadcastServer          *broadcaster.Broadcaster
@@ -829,6 +831,7 @@ func getMessageExtractor(
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	melReorgDetector chan uint64,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		return nil, nil
@@ -851,7 +854,7 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapRegistry,
-		nil,
+		melReorgDetector,
 	)
 	if err != nil {
 		return nil, err
@@ -885,10 +888,49 @@ func createInitialMELState(
 		MsgRoot:                            common.Hash{},
 		DelayedMessagesSeen:                0,
 		DelayedMessagesRead:                0,
+		MessageMerklePartials:              make([]common.Hash, 0),
 		DelayedMessageMerklePartials:       make([]common.Hash, 0),
 		MsgCount:                           0,
 		BatchCount:                         0,
 	}, nil
+}
+
+func getMELValidator(
+	ctx context.Context,
+	config *Config,
+	configFetcher ConfigFetcher,
+	arbDb ethdb.KeyValueStore,
+	deployInfo *chaininfo.RollupAddresses,
+	l1Client *ethclient.Client,
+	stack *node.Node,
+	messageExtractor *melrunner.MessageExtractor,
+	dapReaders arbstate.DapReaderSource,
+	latestWasmModuleRoot common.Hash,
+	melReorgDetector chan uint64,
+) (*staker.MELValidator, error) {
+	var err error
+	var melValidator *staker.MELValidator
+	if config.MELValidator.Enable {
+		initialState, err := createInitialMELState(ctx, deployInfo, l1Client)
+		if err != nil {
+			return nil, err
+		}
+		melValidator, err = staker.NewMELValidator(
+			func() *staker.MELValidatorConfig { return &configFetcher.Get().MELValidator },
+			arbDb,
+			l1Client,
+			stack,
+			initialState,
+			messageExtractor,
+			dapReaders,
+			latestWasmModuleRoot,
+			melReorgDetector,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return melValidator, err
 }
 
 func getBlockValidator(
@@ -896,6 +938,8 @@ func getBlockValidator(
 	configFetcher ConfigFetcher,
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	inboxTracker *InboxTracker,
+	messageExtractor *melrunner.MessageExtractor,
+	melValidator *staker.MELValidator,
 	txStreamer *TransactionStreamer,
 	fatalErrChan chan error,
 ) (*staker.BlockValidator, error) {
@@ -908,11 +952,14 @@ func getBlockValidator(
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
-			nil, // Nil MEL runner
-			nil, // Nil MEL validator
+			messageExtractor,
+			melValidator,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if inboxTracker != nil {
+			inboxTracker.SetBlockValidator(blockValidator)
 		}
 	}
 	return blockValidator, err
@@ -1062,6 +1109,7 @@ func getStatelessBlockValidator(
 	configFetcher ConfigFetcher,
 	inboxReader *InboxReader,
 	inboxTracker *InboxTracker,
+	messageExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	exec execution.ExecutionRecorder,
 	consensusDB ethdb.Database,
@@ -1076,17 +1124,31 @@ func getStatelessBlockValidator(
 			return nil, errors.New("stateless block validator requires an execution recorder")
 		}
 
-		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
-			inboxReader,
-			inboxTracker,
-			txStreamer,
-			exec,
-			rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
-			dapReaders,
-			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
-			stack,
-			latestWasmModuleRoot,
-		)
+		if messageExtractor != nil {
+			statelessBlockValidator, err = staker.NewStatelessBlockValidator(
+				messageExtractor,
+				messageExtractor,
+				txStreamer,
+				exec,
+				rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
+				dapReaders,
+				func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+				stack,
+				latestWasmModuleRoot,
+			)
+		} else {
+			statelessBlockValidator, err = staker.NewStatelessBlockValidator(
+				inboxReader,
+				inboxTracker,
+				txStreamer,
+				exec,
+				rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
+				dapReaders,
+				func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+				stack,
+				latestWasmModuleRoot,
+			)
+		}
 	} else {
 		err = errors.New("no validator url specified")
 	}
@@ -1233,6 +1295,7 @@ func getNodeParentChainReaderDisabled(
 		BatchPoster:              nil,
 		MessagePruner:            nil,
 		BlockValidator:           nil,
+		MELValidator:             nil,
 		StatelessBlockValidator:  nil,
 		Staker:                   nil,
 		BroadcastServer:          broadcastServer,
@@ -1335,17 +1398,23 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry)
+	melReorgDetector := make(chan uint64)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry, melReorgDetector)
 	if err != nil {
 		return nil, err
 	}
 
-	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
+	melValidator, err := getMELValidator(ctx, config, configFetcher, consensusDB, deployInfo, l1client, stack, messageExtractor, dapRegistry, latestWasmModuleRoot, melReorgDetector)
 	if err != nil {
 		return nil, err
 	}
 
-	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, txStreamer, fatalErrChan)
+	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, messageExtractor, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	blockValidator, err := getBlockValidator(config, configFetcher, statelessBlockValidator, inboxTracker, messageExtractor, melValidator, txStreamer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1387,6 +1456,7 @@ func createNodeImpl(
 		BatchPoster:              batchPoster,
 		MessagePruner:            messagePruner,
 		BlockValidator:           blockValidator,
+		MELValidator:             melValidator,
 		StatelessBlockValidator:  statelessBlockValidator,
 		Staker:                   stakerObj,
 		BroadcastServer:          broadcastServer,
@@ -1654,6 +1724,13 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing staker: %w", err)
 		}
 	}
+	if n.MELValidator != nil {
+		err = n.MELValidator.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing MEL validator: %w", err)
+		}
+		n.MELValidator.Start(ctx)
+	}
 	if n.StatelessBlockValidator != nil {
 		err = n.StatelessBlockValidator.Start(ctx)
 		if err != nil {
@@ -1757,6 +1834,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.StatelessBlockValidator != nil {
 		n.StatelessBlockValidator.Stop()
+	}
+	if n.MELValidator != nil && n.MELValidator.Started() {
+		n.MELValidator.StopAndWait()
 	}
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()

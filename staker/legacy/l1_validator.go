@@ -44,6 +44,11 @@ const (
 	CONFLICT_TYPE_INCOMPLETE
 )
 
+type L1ValidatorInboxTrackerInterface interface {
+	staker.InboxTrackerInterface
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
+}
+
 type L1Validator struct {
 	rollup         *RollupWatcher
 	rollupAddress  common.Address
@@ -53,7 +58,7 @@ type L1Validator struct {
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
 
-	inboxTracker       staker.InboxTrackerInterface
+	inboxTracker       L1ValidatorInboxTrackerInterface
 	txStreamer         staker.TransactionStreamerInterface
 	blockValidator     *staker.BlockValidator
 	lastWasmModuleRoot common.Hash
@@ -66,7 +71,7 @@ func NewL1Validator(
 	rollupAddress common.Address,
 	gasRefunder common.Address,
 	callOpts bind.CallOpts,
-	inboxTracker staker.InboxTrackerInterface,
+	inboxTracker L1ValidatorInboxTrackerInterface,
 	txStreamer staker.TransactionStreamerInterface,
 	blockValidator *staker.BlockValidator,
 ) (*L1Validator, error) {

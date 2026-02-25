@@ -23,8 +23,11 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -362,7 +365,7 @@ func NewBlockValidator(
 	streamer TransactionStreamerInterface,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
-	melRunner MELRunnerInterface,
+	messageExtractor *melrunner.MessageExtractor,
 	melValidator MELValidatorInterface,
 ) (*BlockValidator, error) {
 	ret := &BlockValidator{
@@ -409,9 +412,12 @@ func NewBlockValidator(
 		}
 	}
 	ret.streamer = streamer
-	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
-	inbox.SetBlockValidator(ret)
+	if messageExtractor != nil {
+		ret.inboxTracker = messageExtractor
+	} else {
+		ret.inboxTracker = inbox
+	}
 	if config().MemoryFreeLimit != "" {
 		limitchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {
@@ -650,8 +656,12 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
+	recordSent := v.recordSent()
+	if v.config().EnableMEL {
+		v.melValidator.ValidateMsgExtractionTill(recordSent + arbutil.MessageIndex(v.config().ForwardBlocks))
+	}
 	pos := v.created()
-	if pos > v.recordSent()+arbutil.MessageIndex(v.config().ForwardBlocks) {
+	if pos > recordSent+arbutil.MessageIndex(v.config().ForwardBlocks) {
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
@@ -1145,18 +1155,48 @@ func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ig
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
 func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
-	v.lastValidGS = gs
-	info := GlobalStateValidatedInfo{
-		GlobalState: gs,
-		WasmRoots:   wasmRoots,
+	put := func(globalState validator.GoGlobalState) error {
+		info := GlobalStateValidatedInfo{
+			GlobalState: globalState,
+			WasmRoots:   wasmRoots,
+		}
+		encoded, err := rlp.EncodeToBytes(info)
+		if err != nil {
+			return err
+		}
+		err = v.db.Put(lastGlobalStateValidatedInfoKey, encoded)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	encoded, err := rlp.EncodeToBytes(info)
-	if err != nil {
-		return err
-	}
-	err = v.db.Put(lastGlobalStateValidatedInfoKey, encoded)
-	if err != nil {
-		return err
+	// Detect end global state that would lead to message extraction next, since validation of msg extraction
+	// is handled by melValidator we can be ok in adding the next expected startGs to db and set as lastValidGS
+	if v.config().EnableMEL && (gs.MELMsgHash == common.Hash{}) {
+		msg, err := v.streamer.GetMessage(arbutil.MessageIndex(gs.PosInBatch))
+		if err != nil {
+			return err
+		}
+		stateHash, err := v.melValidator.FetchRelevantStateHash(arbutil.MessageIndex(gs.PosInBatch))
+		if err != nil {
+			return err
+		}
+		newGS := validator.GoGlobalState{
+			BlockHash:    gs.BlockHash,
+			SendRoot:     gs.SendRoot,
+			MELStateHash: stateHash,
+			MELMsgHash:   msg.Hash(),
+			PosInBatch:   gs.PosInBatch,
+		}
+		if err := put(newGS); err != nil {
+			return err
+		}
+		v.lastValidGS = newGS
+	} else {
+		if err := put(gs); err != nil {
+			return err
+		}
+		v.lastValidGS = gs
 	}
 	return nil
 }
@@ -1349,7 +1389,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 
 	// genesis block is impossible to validate unless genesis state is empty
-	if v.lastValidGS.Batch == 0 && v.legacyValidInfo == nil {
+	if !config.EnableMEL && v.lastValidGS.Batch == 0 && v.legacyValidInfo == nil {
 		genesis, err := v.streamer.ResultAtMessageIndex(0)
 		if err != nil {
 			return err
@@ -1516,7 +1556,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.legacyValidInfo != nil {
 		return false, nil
 	}
-	if v.lastValidGS.Batch == 0 {
+	if !v.config().EnableMEL && v.lastValidGS.Batch == 0 {
 		return false, errors.New("lastValid not initialized. cannot validate genesis")
 	}
 	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
@@ -1583,6 +1623,9 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 		case <-time.After(v.config().ValidationPoll):
 		}
 	}
+	if v.config().EnableMEL {
+		v.melValidator.ValidateMsgExtractionTill(v.created() + arbutil.MessageIndex(v.config().ForwardBlocks))
+	}
 	err := stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeValidationEntryCreator, v.createNodesChan)
 	if err != nil {
 		v.possiblyFatal(err)
@@ -1603,6 +1646,42 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
+	// genesis block is impossible to validate unless genesis state is empty
+	if v.config().EnableMEL && v.lastValidGS.Batch == 0 && v.lastValidGS.PosInBatch == 0 {
+		genesis, err := v.streamer.ResultAtMessageIndex(0)
+		if err != nil {
+			return err
+		}
+		v.LaunchThread(func(ctx context.Context) {
+			msg, err := retry.UntilSucceeds(ctx, func() (*arbostypes.MessageWithMetadata, error) {
+				return v.streamer.GetMessage(arbutil.MessageIndex(1))
+			}, retry.WithInterval(100*time.Millisecond))
+			if err != nil {
+				select {
+				case v.fatalErr <- err:
+				default:
+				}
+				return
+			}
+			stateHash, err := retry.UntilSucceeds(ctx, func() (common.Hash, error) {
+				return v.melValidator.FetchRelevantStateHash(1)
+			}, retry.WithInterval(100*time.Millisecond))
+			if err != nil {
+				select {
+				case v.fatalErr <- err:
+				default:
+				}
+				return
+			}
+			v.lastValidGS = validator.GoGlobalState{
+				BlockHash:    genesis.BlockHash,
+				SendRoot:     genesis.SendRoot,
+				PosInBatch:   1,
+				MELStateHash: stateHash,
+				MELMsgHash:   msg.Hash(),
+			}
+		})
+	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil

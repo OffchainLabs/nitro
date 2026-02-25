@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -362,6 +363,20 @@ func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageI
 func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
 	return metadata.ParentChainBlock, err
+}
+
+func (m *MessageExtractor) FindMELStateContainingMessage(pos arbutil.MessageIndex) (*mel.State, error) {
+	seqNum, found, err := m.FindInboxBatchContainingMessage(pos)
+	if err != nil {
+		return nil, err
+	} else if !found {
+		return nil, errors.New("batch containing message not found")
+	}
+	metadata, err := m.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	return m.melDB.State(metadata.ParentChainBlock)
 }
 
 // err will return unexpected/internal errors
