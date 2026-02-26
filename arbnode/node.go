@@ -770,6 +770,7 @@ func getInboxTrackerAndReader(
 	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
+		log.Info("Inbox reader and tracker disabled")
 		return nil, nil, nil
 	}
 	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders, config.SnapSyncTest)
@@ -848,6 +849,7 @@ func getMessageExtractor(
 		return nil, err
 	}
 	txStreamer.SetMsgExtractor(msgExtractor)
+	log.Info("Message extractor enabled")
 	return msgExtractor, nil
 }
 
@@ -926,6 +928,7 @@ func getStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
 	dapRegistry *daprovider.DAProviderRegistry,
+	messageExtractor *melrunner.MessageExtractor,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -981,7 +984,13 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapRegistry, fatalErrChan)
+		var tracker staker.InboxTrackerInterface
+		var reader staker.InboxReaderInterface
+		if messageExtractor != nil {
+			tracker = messageExtractor
+			reader = messageExtractor
+		}
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -1339,7 +1348,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry, messageExtractor)
 	if err != nil {
 		return nil, err
 	}
@@ -1803,7 +1812,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
@@ -1875,7 +1884,7 @@ func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) container
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}

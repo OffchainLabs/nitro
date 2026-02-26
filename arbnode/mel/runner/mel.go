@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -16,21 +17,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-)
-
-var (
-	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 )
 
 type MessageExtractionConfig struct {
@@ -266,6 +264,24 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
+func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if index >= headState.DelayedMessagesSeen {
+		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+	}
+	msg, err := m.melDB.fetchDelayedMessage(index)
+	if err != nil {
+		return nil, err
+	}
+	return rlp.EncodeToBytes(msg)
+}
+
+func (m *MessageExtractor) SetBlockValidator(_ *staker.BlockValidator) {
+}
+
 func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
 	var state *mel.State
 	var err error
@@ -351,8 +367,8 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 
 // err will return unexpected/internal errors
 // bool will be false if batch not found (meaning, block not yet posted on a batch)
-func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount(ctx)
+func (m *MessageExtractor) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	batchCount, err := m.GetBatchCount()
 	if err != nil {
 		return 0, false, err
 	}
@@ -397,12 +413,16 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 	}
 }
 
-func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetBatchCount() (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return 0, err
 	}
 	return headState.BatchCount, nil
+}
+
+func (m *MessageExtractor) GetBatchAcc(_ uint64) (common.Hash, error) {
+	return common.Hash{}, errors.New("unimplemented")
 }
 
 func (m *MessageExtractor) CaughtUp() chan struct{} {
@@ -427,6 +447,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// from the parent chain block. The FSM will transition to the `SavingMessages`
 	// state after successfully extracting messages.
 	case ProcessingNextBlock:
+		fsmBlocksProcessedCounter.Inc(1)
 		return m.processNextBlock(ctx, current)
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -434,12 +455,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// After data is stored, the FSM will then transition to the `ProcessingNextBlock` state
 	// yet again.
 	case SavingMessages:
+		fsmSaveMessagesCounter.Inc(1)
 		return m.saveMessages(ctx, current)
 	// `Reorging` is the state responsible for handling reorgs in the parent chain.
 	// It is triggered when a reorg occurs, and it will revert the MEL state being processed to the
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
+		fsmReorgsCounter.Inc(1)
 		return m.reorg(ctx, current)
 	default:
 		return m.config.RetryInterval, fmt.Errorf("invalid state: %s", current.State)
