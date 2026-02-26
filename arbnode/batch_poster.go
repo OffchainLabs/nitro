@@ -1426,7 +1426,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	var dbBatchCount uint64
 	if b.msgExtractor != nil {
-		dbBatchCount, err = b.msgExtractor.GetBatchCount(ctx)
+		dbBatchCount, err = b.msgExtractor.GetBatchCount()
 	} else {
 		dbBatchCount, err = b.inbox.GetBatchCount()
 	}

@@ -825,12 +825,12 @@ func getMessageExtractor(
 		return nil, nil
 	}
 	melDB := melrunner.NewDatabase(arbDb)
-	if _, err := melDB.GetHeadMelState(ctx); err != nil {
+	if _, err := melDB.GetHeadMelState(); err != nil {
 		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
 		if err != nil {
 			return nil, err
 		}
-		if err = melDB.SaveState(ctx, initialState); err != nil {
+		if err = melDB.SaveState(initialState); err != nil {
 			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
 		}
 	}
@@ -1803,7 +1803,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
@@ -1875,7 +1875,7 @@ func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) container
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
