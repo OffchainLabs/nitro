@@ -53,6 +53,7 @@ func (d *Database) setMelState(batch ethdb.KeyValueWriter, parentChainBlockNumbe
 	if err != nil {
 		return err
 	}
+	melStateSizeBytesGauge.Update(int64(len(melStateBytes)))
 	if err := batch.Put(key, melStateBytes); err != nil {
 		return err
 	}
