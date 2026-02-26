@@ -1017,6 +1017,7 @@ dependencies = [
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
+ "arbos",
  "reth-chainspec",
  "reth-ethereum-primitives",
  "reth-evm",
@@ -1069,6 +1070,7 @@ dependencies = [
 name = "arb-precompiles"
 version = "0.1.0"
 dependencies = [
+ "alloy-evm",
  "alloy-primitives",
  "alloy-sol-types",
  "arb-alloy-predeploys",
@@ -1076,6 +1078,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -1157,6 +1160,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "arb-chainspec",
  "arb-primitives",
  "arb-storage",
  "revm",

@@ -12,10 +12,12 @@ use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
-use alloy_primitives::Log;
+use alloy_primitives::{Address, Log, U256};
+use arbos::tx_processor::EndTxFeeDistribution;
 use revm::context::result::ExecutionResult;
 use revm::database::State;
 use revm::inspector::Inspector;
+use revm_database::DatabaseCommitExt;
 
 use crate::context::ArbBlockExecutionCtx;
 use crate::executor::DefaultArbOsHooks;
@@ -169,33 +171,31 @@ where
             f(exec_result)
         })?;
 
-        // Post-execution: compute and log fee distribution.
-        if let Some(committed_gas) = result {
-            if let Some(hooks) = &self.arb_hooks {
-                let base_fee = self.arb_ctx.basefee;
-                let gas_used = captured_gas_used.get();
+        // Post-execution: compute fee distribution (borrows self.arb_hooks).
+        let fee_dist = if let Some(committed_gas) = result {
+            let base_fee = self.arb_ctx.basefee;
+            let gas_used = captured_gas_used.get();
 
-                let fee_dist = hooks.compute_end_tx_fees(&EndTxContext {
-                    sender: alloy_primitives::Address::ZERO,
+            self.arb_hooks.as_ref().map(|hooks| {
+                hooks.compute_end_tx_fees(&EndTxContext {
+                    sender: Address::ZERO,
                     gas_left: committed_gas.saturating_sub(gas_used),
                     gas_used,
                     gas_price: base_fee,
                     base_fee,
                     tx_type: arb_primitives::tx_types::ArbTxType::ArbitrumUnsignedTx,
                     success: captured_success.get(),
-                    refund_to: alloy_primitives::Address::ZERO,
-                });
+                    refund_to: Address::ZERO,
+                })
+            })
+        } else {
+            None
+        };
 
-                tracing::trace!(
-                    target: "arb::executor",
-                    gas_used,
-                    network_fee = %fee_dist.network_fee_amount,
-                    infra_fee = %fee_dist.infra_fee_amount,
-                    poster_fee = %fee_dist.poster_fee_amount,
-                    poster_dest = %fee_dist.poster_fee_destination,
-                    "computed fee distribution"
-                );
-            }
+        // Apply fee distribution to EVM state (borrows self.inner).
+        if let Some(dist) = fee_dist {
+            let db = self.inner.evm_mut().db_mut();
+            apply_fee_distribution(db, &dist);
         }
 
         Ok(result)
@@ -222,4 +222,41 @@ where
     fn receipts(&self) -> &[Self::Receipt] {
         self.inner.receipts()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Fee distribution helpers
+// ---------------------------------------------------------------------------
+
+/// Mint balance to an address in the EVM state.
+///
+/// This is Arbitrum's mechanism for crediting fee accounts without
+/// a corresponding debit (ETH is minted into the L2).
+fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+    if amount.is_zero() || address == Address::ZERO {
+        return;
+    }
+    let _ = state.load_cache_account(address);
+    let amount_u128: u128 = amount.try_into().unwrap_or(u128::MAX);
+    let _ = state.increment_balances(core::iter::once((address, amount_u128)));
+}
+
+/// Apply a computed fee distribution to the EVM state.
+///
+/// Mints ETH to the network fee account, infrastructure fee account,
+/// and poster fee destination (L1 pricer funds pool).
+fn apply_fee_distribution<DB: Database>(state: &mut State<DB>, dist: &EndTxFeeDistribution) {
+    mint_balance(state, dist.network_fee_account, dist.network_fee_amount);
+    mint_balance(state, dist.infra_fee_account, dist.infra_fee_amount);
+    mint_balance(state, dist.poster_fee_destination, dist.poster_fee_amount);
+
+    tracing::trace!(
+        target: "arb::executor",
+        network_fee = %dist.network_fee_amount,
+        infra_fee = %dist.infra_fee_amount,
+        poster_fee = %dist.poster_fee_amount,
+        poster_dest = %dist.poster_fee_destination,
+        backlog_gas = dist.compute_gas_for_backlog,
+        "applied fee distribution"
+    );
 }
