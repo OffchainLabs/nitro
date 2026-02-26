@@ -1,0 +1,258 @@
+use alloy_primitives::{Address, B256, U256};
+use std::io::{self, Cursor};
+
+use crate::arbos_types::{
+    L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
+    L1_MESSAGE_TYPE_END_OF_BLOCK, L1_MESSAGE_TYPE_ETH_DEPOSIT,
+    L1_MESSAGE_TYPE_INITIALIZE, L1_MESSAGE_TYPE_L2_FUNDED_BY_L1,
+    L1_MESSAGE_TYPE_L2_MESSAGE, L1_MESSAGE_TYPE_ROLLUP_EVENT,
+    L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
+};
+use crate::util::{
+    address_from_256_from_reader, address_from_reader, bytestring_from_reader,
+    uint256_from_reader, uint64_from_reader,
+};
+
+/// L2 message kind constants.
+pub const L2_MESSAGE_KIND_UNSIGNED_USER_TX: u8 = 0;
+pub const L2_MESSAGE_KIND_CONTRACT_TX: u8 = 1;
+pub const L2_MESSAGE_KIND_NON_MUTATING_CALL: u8 = 2;
+pub const L2_MESSAGE_KIND_BATCH: u8 = 3;
+pub const L2_MESSAGE_KIND_SIGNED_TX: u8 = 4;
+pub const L2_MESSAGE_KIND_HEARTBEAT: u8 = 6;
+pub const L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX: u8 = 7;
+
+/// The ArbOS version at which heartbeat messages were disabled.
+pub const HEARTBEATS_DISABLED_AT: u64 = 6;
+
+/// Represents a parsed L2 transaction from an L1 message.
+#[derive(Debug, Clone)]
+pub enum ParsedTransaction {
+    /// A signed Ethereum transaction (RLP-encoded).
+    Signed(Vec<u8>),
+    /// An unsigned user transaction (Arbitrum-specific).
+    UnsignedUserTx {
+        from: Address,
+        to: Option<Address>,
+        value: U256,
+        gas: u64,
+        nonce: u64,
+        data: Vec<u8>,
+    },
+    /// A contract transaction (L1→L2 call).
+    ContractTx {
+        from: Address,
+        to: Option<Address>,
+        value: U256,
+        gas: u64,
+        data: Vec<u8>,
+        request_id: B256,
+    },
+    /// An ETH deposit from L1.
+    EthDeposit {
+        to: Address,
+        value: U256,
+        request_id: B256,
+    },
+    /// A submit retryable transaction.
+    SubmitRetryable {
+        request_id: B256,
+        l1_base_fee: U256,
+        deposit: U256,
+        callvalue: U256,
+        gas_feature_cap: U256,
+        max_submission_fee: U256,
+        from: Address,
+        to: Address,
+        beneficiary: Address,
+        data: Vec<u8>,
+    },
+    /// A batch posting report (internal tx).
+    BatchPostingReport {
+        batch_timestamp: u64,
+        batch_poster: Address,
+        batch_number: u64,
+        batch_data_gas: u64,
+        l1_base_fee_estimate: U256,
+    },
+    /// An internal start-block transaction.
+    InternalStartBlock {
+        l1_block_number: u64,
+        l1_timestamp: u64,
+    },
+}
+
+/// Parse L2 transactions from an L1 incoming message.
+pub fn parse_l2_transactions(
+    kind: u8,
+    poster: Address,
+    l2_msg: &[u8],
+    request_id: Option<B256>,
+    l1_base_fee: Option<U256>,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
+    match kind {
+        L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, 0),
+        L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
+        L1_MESSAGE_TYPE_L2_FUNDED_BY_L1 => {
+            let request_id = request_id.unwrap_or(B256::ZERO);
+            parse_l2_funded_by_l1(l2_msg, poster, request_id)
+        }
+        L1_MESSAGE_TYPE_SUBMIT_RETRYABLE => {
+            let request_id = request_id.unwrap_or(B256::ZERO);
+            let l1_base_fee = l1_base_fee.unwrap_or(U256::ZERO);
+            parse_submit_retryable_message(l2_msg, request_id, l1_base_fee)
+        }
+        L1_MESSAGE_TYPE_ETH_DEPOSIT => {
+            let request_id = request_id.unwrap_or(B256::ZERO);
+            parse_eth_deposit_message(l2_msg, request_id)
+        }
+        L1_MESSAGE_TYPE_BATCH_POSTING_REPORT => {
+            let request_id = request_id.unwrap_or(B256::ZERO);
+            parse_batch_posting_report(l2_msg, poster, request_id)
+        }
+        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => parse_l2_message(l2_msg, 0),
+        L1_MESSAGE_TYPE_INITIALIZE | L1_MESSAGE_TYPE_ROLLUP_EVENT => Ok(vec![]),
+        _ => Ok(vec![]),
+    }
+}
+
+fn parse_l2_message(data: &[u8], depth: u32) -> Result<Vec<ParsedTransaction>, io::Error> {
+    const MAX_DEPTH: u32 = 16;
+    if depth > MAX_DEPTH || data.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let kind = data[0];
+    let payload = &data[1..];
+
+    match kind {
+        L2_MESSAGE_KIND_SIGNED_TX | L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => {
+            Ok(vec![ParsedTransaction::Signed(payload.to_vec())])
+        }
+        L2_MESSAGE_KIND_UNSIGNED_USER_TX => {
+            let tx = parse_unsigned_tx(payload)?;
+            Ok(vec![tx])
+        }
+        L2_MESSAGE_KIND_BATCH => {
+            let mut reader = Cursor::new(payload);
+            let mut txs = Vec::new();
+            while reader.position() < payload.len() as u64 {
+                let segment = bytestring_from_reader(&mut reader)?;
+                let mut sub_txs = parse_l2_message(&segment, depth + 1)?;
+                txs.append(&mut sub_txs);
+            }
+            Ok(txs)
+        }
+        L2_MESSAGE_KIND_HEARTBEAT => Ok(vec![]),
+        L2_MESSAGE_KIND_NON_MUTATING_CALL => Ok(vec![]),
+        _ => Ok(vec![]),
+    }
+}
+
+fn parse_unsigned_tx(data: &[u8]) -> Result<ParsedTransaction, io::Error> {
+    let mut reader = Cursor::new(data);
+    let gas = uint64_from_reader(&mut reader)?;
+    let gas_price = uint256_from_reader(&mut reader)?;
+    let nonce = uint64_from_reader(&mut reader)?;
+    let to = address_from_reader(&mut reader)?;
+    let value = uint256_from_reader(&mut reader)?;
+    let calldata = bytestring_from_reader(&mut reader)?;
+    let _ = gas_price; // Gas price is part of the format but not used in unsigned txs.
+    let to_addr = if to == Address::ZERO { None } else { Some(to) };
+    Ok(ParsedTransaction::UnsignedUserTx {
+        from: Address::ZERO, // Set by caller based on poster.
+        to: to_addr,
+        value,
+        gas,
+        nonce,
+        data: calldata,
+    })
+}
+
+fn parse_l2_funded_by_l1(
+    data: &[u8],
+    poster: Address,
+    request_id: B256,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
+    let mut reader = Cursor::new(data);
+    let gas = uint64_from_reader(&mut reader)?;
+    let _gas_price = uint256_from_reader(&mut reader)?;
+    let to = address_from_reader(&mut reader)?;
+    let value = uint256_from_reader(&mut reader)?;
+    let calldata = bytestring_from_reader(&mut reader)?;
+    let to_addr = if to == Address::ZERO { None } else { Some(to) };
+    Ok(vec![ParsedTransaction::ContractTx {
+        from: poster,
+        to: to_addr,
+        value,
+        gas,
+        data: calldata,
+        request_id,
+    }])
+}
+
+fn parse_eth_deposit_message(
+    data: &[u8],
+    request_id: B256,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
+    let mut reader = Cursor::new(data);
+    let to = address_from_reader(&mut reader)?;
+    let value = uint256_from_reader(&mut reader)?;
+    Ok(vec![ParsedTransaction::EthDeposit {
+        to,
+        value,
+        request_id,
+    }])
+}
+
+fn parse_submit_retryable_message(
+    data: &[u8],
+    request_id: B256,
+    l1_base_fee: U256,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
+    let mut reader = Cursor::new(data);
+    let deposit = uint256_from_reader(&mut reader)?;
+    let callvalue = uint256_from_reader(&mut reader)?;
+    let gas_feature_cap = uint256_from_reader(&mut reader)?;
+    let max_submission_fee = uint256_from_reader(&mut reader)?;
+    let _fee_refund_addr = address_from_256_from_reader(&mut reader)?;
+    let beneficiary = address_from_256_from_reader(&mut reader)?;
+    let _max_refund = uint256_from_reader(&mut reader)?;
+    let calldata = bytestring_from_reader(&mut reader)?;
+    // `from` and `to` are extracted from the data layout
+    let from = address_from_256_from_reader(&mut reader)?;
+    let to = address_from_256_from_reader(&mut reader)?;
+
+    Ok(vec![ParsedTransaction::SubmitRetryable {
+        request_id,
+        l1_base_fee,
+        deposit,
+        callvalue,
+        gas_feature_cap,
+        max_submission_fee,
+        from,
+        to,
+        beneficiary,
+        data: calldata,
+    }])
+}
+
+fn parse_batch_posting_report(
+    data: &[u8],
+    _poster: Address,
+    _request_id: B256,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
+    let mut reader = Cursor::new(data);
+    let batch_timestamp = uint64_from_reader(&mut reader)?;
+    let batch_poster = address_from_reader(&mut reader)?;
+    let batch_number = uint64_from_reader(&mut reader)?;
+    let batch_data_gas = uint64_from_reader(&mut reader)?;
+    let l1_base_fee_estimate = uint256_from_reader(&mut reader)?;
+    Ok(vec![ParsedTransaction::BatchPostingReport {
+        batch_timestamp,
+        batch_poster,
+        batch_number,
+        batch_data_gas,
+        l1_base_fee_estimate,
+    }])
+}
