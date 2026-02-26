@@ -1,0 +1,72 @@
+use alloy_primitives::{Address, B256, U256};
+use std::collections::HashMap;
+
+/// Arbitrum-specific block execution context.
+///
+/// Carries L1 information and Arbitrum state needed during block execution.
+/// This is passed as `ExecutionCtx` through reth's block executor pipeline.
+#[derive(Debug, Clone, Default)]
+pub struct ArbBlockExecutionCtx {
+    /// Hash of the parent block.
+    pub parent_hash: B256,
+    /// Parent beacon block root (for EIP-4788).
+    pub parent_beacon_block_root: Option<B256>,
+    /// Header extra data (carries send root).
+    pub extra_data: Vec<u8>,
+    /// Number of delayed messages read (from header nonce).
+    pub delayed_messages_read: u64,
+    /// L1 block number (from header mix_hash bytes 8-15).
+    pub l1_block_number: u64,
+    /// Chain ID.
+    pub chain_id: u64,
+    /// Block timestamp.
+    pub block_timestamp: u64,
+    /// Block base fee.
+    pub basefee: U256,
+}
+
+/// Attributes for building the next Arbitrum block.
+///
+/// Contains values that cannot be derived from the parent block alone.
+#[derive(Debug, Clone)]
+pub struct ArbNextBlockEnvCtx {
+    /// L1 poster address (becomes the coinbase).
+    pub suggested_fee_recipient: Address,
+    /// Block timestamp.
+    pub timestamp: u64,
+    /// Mix hash encoding L1 block info and ArbOS version.
+    pub prev_randao: B256,
+    /// Extra data (carries send root).
+    pub extra_data: Vec<u8>,
+    /// Parent beacon block root (for EIP-4788).
+    pub parent_beacon_block_root: Option<B256>,
+}
+
+/// WASM activation info for a newly activated Stylus program.
+#[derive(Debug, Clone)]
+pub struct ActivatedWasm {
+    /// Compiled ASM per target.
+    pub asm: HashMap<String, Vec<u8>>,
+    /// Raw WASM module.
+    pub module: Vec<u8>,
+}
+
+/// Extra per-block state tracked during Arbitrum execution.
+///
+/// In geth this is `ArbitrumExtraData` on StateDB. In reth it lives
+/// alongside the block executor as mutable state.
+#[derive(Debug, Clone, Default)]
+pub struct ArbitrumExtraData {
+    /// Net balance change across all accounts (tracks ETH minting/burning).
+    pub unexpected_balance_delta: i128,
+    /// WASM modules encountered during execution (for recording).
+    pub user_wasms: HashMap<B256, ActivatedWasm>,
+    /// Number of WASM memory pages currently open (Stylus).
+    pub open_wasm_pages: u16,
+    /// Peak number of WASM memory pages allocated during this tx.
+    pub ever_wasm_pages: u16,
+    /// Newly activated WASM modules during this block.
+    pub activated_wasms: HashMap<B256, ActivatedWasm>,
+    /// Whether transaction filtering is active.
+    pub arb_tx_filter: bool,
+}
