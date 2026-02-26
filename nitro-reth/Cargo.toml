@@ -39,6 +39,7 @@ reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-consensus = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-evm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }

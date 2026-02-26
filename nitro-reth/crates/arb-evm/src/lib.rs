@@ -7,7 +7,9 @@ pub mod hooks;
 pub mod transaction;
 
 pub use config::ArbEvmConfig;
-pub use context::{ActivatedWasm, ArbBlockExecutionCtx, ArbitrumExtraData, ArbNextBlockEnvCtx};
+pub use context::{
+    ActivatedWasm, ArbBlockExecutionCtx, ArbitrumExtraData, ArbNextBlockEnvCtx, RecentWasms,
+};
 pub use evm::{ArbEvm, ArbEvmFactory};
 pub use hooks::{ArbOsHooks, NoopArbOsHooks};
 pub use transaction::ArbTransaction;

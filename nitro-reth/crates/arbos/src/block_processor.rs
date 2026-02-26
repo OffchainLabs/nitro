@@ -28,8 +28,13 @@ pub trait SequencingHooks {
     /// Determines whether to discard invalid txs early.
     fn discard_invalid_txs_early(&self) -> bool;
 
-    /// Block-level filter.
-    fn block_filter(&self) -> Result<(), String> {
+    /// Block-level filter applied after all transactions are processed.
+    fn block_filter(
+        &self,
+        _header: &NewHeaderResult,
+        _txs: &[Vec<u8>],
+        _receipts: &[Vec<u8>],
+    ) -> Result<(), String> {
         Ok(())
     }
 
