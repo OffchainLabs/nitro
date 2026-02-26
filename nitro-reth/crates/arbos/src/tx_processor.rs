@@ -112,6 +112,27 @@ impl TxProcessor {
     }
 
     // -----------------------------------------------------------------
+    // Start Tx Hook helpers
+    // -----------------------------------------------------------------
+
+    /// Set the top-level transaction type for this tx.
+    pub fn set_tx_type(&mut self, tx_type: u8) {
+        self.top_tx_type = Some(tx_type);
+    }
+
+    /// Set up state for processing a retry transaction.
+    ///
+    /// The caller should:
+    /// 1. Verify the retryable exists (via `RetryableState::open_retryable`)
+    /// 2. Transfer call value from escrow to `from`
+    /// 3. Mint prepaid gas (`base_fee * gas`) to `from`
+    /// 4. Continue to gas charging and EVM execution
+    pub fn prepare_retry_tx(&mut self, ticket_id: B256, refund_to: Address) {
+        self.current_retryable = Some(ticket_id);
+        self.current_refund_to = Some(refund_to);
+    }
+
+    // -----------------------------------------------------------------
     // Gas Charging Hook
     // -----------------------------------------------------------------
 
@@ -429,6 +450,73 @@ pub struct EndTxRetryableResult {
     pub escrow_address: Address,
 }
 
+/// Parameters for computing submit retryable fees.
+#[derive(Debug, Clone)]
+pub struct SubmitRetryableParams {
+    pub ticket_id: B256,
+    pub deposit_value: U256,
+    pub retry_value: U256,
+    pub gas_fee_cap: U256,
+    pub gas: u64,
+    pub max_submission_fee: U256,
+    pub retry_data_len: usize,
+    pub l1_base_fee: U256,
+    pub effective_base_fee: U256,
+    pub current_time: u64,
+    /// From address balance after deposit minting.
+    pub balance_after_mint: U256,
+    pub infra_fee_account: Address,
+    pub min_base_fee: U256,
+    pub arbos_version: u64,
+}
+
+/// Computed fee distribution for a submit retryable transaction.
+///
+/// The caller should execute the following operations in order:
+/// 1. Mint `deposit_value` to `from`
+/// 2. Transfer `submission_fee` from `from` to network fee account
+/// 3. Transfer `submission_fee_refund` from `from` to fee refund address
+/// 4. Transfer `retry_value` from `from` to `escrow`
+/// 5. Create retryable ticket with `timeout`
+/// 6. If `can_pay_for_gas`:
+///    - Transfer `infra_cost` from `from` to infra fee account
+///    - Transfer `network_cost` from `from` to network fee account
+///    - Transfer `gas_price_refund` from `from` to fee refund address
+///    - Schedule auto-redeem with `available_refund` as max refund
+/// 7. If not `can_pay_for_gas`: refund `gas_cost_refund` to fee refund address
+#[derive(Debug, Clone, Default)]
+pub struct SubmitRetryableFees {
+    /// The actual submission fee.
+    pub submission_fee: U256,
+    /// Excess submission fee to refund.
+    pub submission_fee_refund: U256,
+    /// Escrow address for the retryable's call value.
+    pub escrow: Address,
+    /// Retryable ticket timeout.
+    pub timeout: u64,
+    /// Whether the user can pay for gas.
+    pub can_pay_for_gas: bool,
+    /// Total gas cost (effective_base_fee * gas).
+    pub gas_cost: U256,
+    /// Infra fee portion of gas cost (ArbOS v11+).
+    pub infra_cost: U256,
+    /// Network fee portion (gas_cost - infra_cost).
+    pub network_cost: U256,
+    /// Gas price refund ((gas_fee_cap - effective_base_fee) * gas).
+    pub gas_price_refund: U256,
+    /// If user can't pay for gas, this amount should be refunded.
+    pub gas_cost_refund: U256,
+    /// Remaining L1 deposit available for auto-redeem max refund.
+    pub available_refund: U256,
+    /// Withheld submission fee (for error path refunds).
+    pub withheld_submission_fee: U256,
+    /// Error if validation fails.
+    pub error: Option<String>,
+}
+
+/// Standard Ethereum base transaction gas.
+pub const TX_GAS: u64 = 21_000;
+
 // =====================================================================
 // Helper functions
 // =====================================================================
@@ -530,6 +618,147 @@ fn refund_with_pool<F>(
     let remainder = amount.saturating_sub(to_refund_addr);
     if remainder > U256::ZERO {
         let _ = transfer_fn(refund_from, from, remainder);
+    }
+}
+
+/// Compute the gas payment split between infra and network fee accounts.
+///
+/// Returns (infra_cost, network_cost) where gas_cost = infra_cost + network_cost.
+pub fn compute_retryable_gas_split(
+    gas: u64,
+    effective_base_fee: U256,
+    infra_fee_account: Address,
+    min_base_fee: U256,
+    arbos_version: u64,
+) -> (U256, U256) {
+    let gas_cost = effective_base_fee.saturating_mul(U256::from(gas));
+    let mut network_cost = gas_cost;
+    let mut infra_cost = U256::ZERO;
+
+    if arbos_version >= arb_ver::ARBOS_VERSION_11
+        && infra_fee_account != Address::ZERO
+    {
+        let infra_fee = min_base_fee.min(effective_base_fee);
+        infra_cost = infra_fee.saturating_mul(U256::from(gas));
+        infra_cost = take_funds(&mut network_cost, infra_cost);
+    }
+
+    (infra_cost, network_cost)
+}
+
+/// Compute fees for a submit retryable transaction.
+///
+/// This performs the pure fee computation without executing any balance
+/// operations. The caller should execute the operations described in
+/// the `SubmitRetryableFees` documentation.
+pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRetryableFees {
+    let submission_fee = retryables::retryable_submission_fee(
+        params.retry_data_len,
+        params.l1_base_fee,
+    );
+
+    let escrow = retryables::retryable_escrow_address(params.ticket_id);
+    let timeout = params.current_time + retryables::RETRYABLE_LIFETIME_SECONDS;
+
+    // Check balance covers max submission fee.
+    if params.balance_after_mint < params.max_submission_fee {
+        return SubmitRetryableFees {
+            submission_fee,
+            escrow,
+            timeout,
+            error: Some(format!(
+                "insufficient funds for max submission fee: have {} want {}",
+                params.balance_after_mint, params.max_submission_fee,
+            )),
+            ..Default::default()
+        };
+    }
+
+    // Check max submission fee covers actual fee.
+    if params.max_submission_fee < submission_fee {
+        return SubmitRetryableFees {
+            submission_fee,
+            escrow,
+            timeout,
+            error: Some(format!(
+                "max submission fee {} is less than actual {}",
+                params.max_submission_fee, submission_fee,
+            )),
+            ..Default::default()
+        };
+    }
+
+    let submission_fee_refund = params.max_submission_fee.saturating_sub(submission_fee);
+
+    // Track available refund from L1 deposit.
+    let mut available_refund = params.deposit_value;
+    take_funds(&mut available_refund, params.retry_value);
+    let withheld_submission_fee = take_funds(&mut available_refund, submission_fee);
+    take_funds(&mut available_refund, submission_fee_refund);
+
+    // Check if user can pay for gas.
+    let max_gas_cost = params.gas_fee_cap.saturating_mul(U256::from(params.gas));
+    let fee_cap_too_low = params.gas_fee_cap < params.effective_base_fee;
+
+    // Balance after all deductions so far.
+    let balance_after_deductions = params.balance_after_mint
+        .saturating_sub(submission_fee)
+        .saturating_sub(submission_fee_refund)
+        .saturating_sub(params.retry_value);
+
+    let can_pay_for_gas = !fee_cap_too_low
+        && params.gas >= TX_GAS
+        && balance_after_deductions >= max_gas_cost;
+
+    // Compute gas cost split.
+    let (infra_cost, network_cost) = compute_retryable_gas_split(
+        params.gas,
+        params.effective_base_fee,
+        params.infra_fee_account,
+        params.min_base_fee,
+        params.arbos_version,
+    );
+    let gas_cost = params.effective_base_fee.saturating_mul(U256::from(params.gas));
+
+    // Gas cost refund if user can't pay.
+    let gas_cost_refund = if !can_pay_for_gas {
+        take_funds(&mut available_refund, max_gas_cost)
+    } else {
+        U256::ZERO
+    };
+
+    // Gas price refund (difference between fee cap and effective base fee).
+    let gas_price_refund = if params.gas_fee_cap > params.effective_base_fee {
+        (params.gas_fee_cap - params.effective_base_fee)
+            .saturating_mul(U256::from(params.gas))
+    } else {
+        U256::ZERO
+    };
+
+    if can_pay_for_gas {
+        // Track gas cost and gas price refund through available_refund.
+        let withheld_gas_funds = take_funds(&mut available_refund, gas_cost);
+        let _gas_price_taken = take_funds(&mut available_refund, gas_price_refund);
+        // Add back withheld amounts for the auto-redeem's max refund.
+        available_refund = available_refund
+            .saturating_add(withheld_gas_funds)
+            .saturating_add(withheld_submission_fee);
+    }
+
+    SubmitRetryableFees {
+        submission_fee,
+        submission_fee_refund,
+        escrow,
+        timeout,
+        can_pay_for_gas,
+        gas_cost,
+        infra_cost,
+        network_cost,
+        gas_price_refund,
+        gas_cost_refund,
+        available_refund,
+        withheld_submission_fee,
+        error: None,
     }
 }
 
