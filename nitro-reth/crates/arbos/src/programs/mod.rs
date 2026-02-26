@@ -192,6 +192,16 @@ impl<D: Database> Programs<D> {
     }
 }
 
+/// Information returned from program activation.
+#[derive(Debug, Clone)]
+pub struct ActivationInfo {
+    pub module_hash: B256,
+    pub init_gas: u16,
+    pub cached_init_gas: u16,
+    pub asm_estimate: u32,
+    pub footprint: u16,
+}
+
 /// Hours since Arbitrum began, rounded down.
 pub fn hours_since_arbitrum(time: u64) -> u32 {
     let elapsed = time.saturating_sub(ARBITRUM_START_TIME);
