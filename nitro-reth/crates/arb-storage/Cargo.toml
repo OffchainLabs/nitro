@@ -11,4 +11,8 @@ alloy-primitives = { workspace = true, features = ["std"] }
 reth-storage-api = { workspace = true }
 reth-provider = { workspace = true }
 reth-db-api = { workspace = true }
+revm = { workspace = true }
+revm-database = { workspace = true }
+revm-state = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
