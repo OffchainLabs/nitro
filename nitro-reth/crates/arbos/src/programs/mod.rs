@@ -7,6 +7,7 @@ use revm::Database;
 
 use arb_storage::Storage;
 
+use crate::address_set::{open_address_set, AddressSet};
 use self::data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME};
 use self::memory::MemoryModel;
 use self::params::{init_stylus_params, StylusParams};
@@ -102,6 +103,7 @@ pub struct Programs<D> {
     programs: Storage<D>,
     module_hashes: Storage<D>,
     pub data_pricer: DataPricer<D>,
+    pub cache_managers: AddressSet<D>,
 }
 
 impl<D: Database> Programs<D> {
@@ -117,12 +119,15 @@ impl<D: Database> Programs<D> {
         let data_pricer = open_data_pricer(&data_pricer_sto);
         let programs = sto.open_sub_storage(PROGRAM_DATA_KEY);
         let module_hashes = sto.open_sub_storage(MODULE_HASHES_KEY);
+        let cache_managers_sto = sto.open_sub_storage(CACHE_MANAGERS_KEY);
+        let cache_managers = open_address_set(cache_managers_sto);
         Self {
             arbos_version,
             backing_storage: sto,
             programs,
             module_hashes,
             data_pricer,
+            cache_managers,
         }
     }
 
