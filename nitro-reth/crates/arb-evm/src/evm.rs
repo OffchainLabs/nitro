@@ -2,6 +2,7 @@ use alloy_evm::{
     eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
 };
 use alloy_primitives::{Address, Bytes};
+use arb_precompiles::register_arb_precompiles;
 use core::fmt::Debug;
 use revm::context::result::EVMError;
 use revm::context_interface::result::{HaltReason, ResultAndState};
@@ -110,8 +111,9 @@ impl EvmFactory for ArbEvmFactory {
         db: DB,
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
-        let evm = ArbEvm::new(self.0.create_evm(db, input));
-        // TODO: Register Arbitrum precompiles (ArbSys, ArbGasInfo, etc.)
+        let mut evm = ArbEvm::new(self.0.create_evm(db, input));
+        let (_, _, precompiles) = evm.components_mut();
+        register_arb_precompiles(precompiles);
         evm
     }
 
@@ -121,8 +123,9 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let evm = ArbEvm::new(self.0.create_evm_with_inspector(db, input, inspector));
-        // TODO: Register Arbitrum precompiles
+        let mut evm = ArbEvm::new(self.0.create_evm_with_inspector(db, input, inspector));
+        let (_, _, precompiles) = evm.components_mut();
+        register_arb_precompiles(precompiles);
         evm
     }
 }
