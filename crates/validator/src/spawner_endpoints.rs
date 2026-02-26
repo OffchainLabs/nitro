@@ -7,9 +7,10 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
+use crate::config::ExecutionMode;
 use crate::engine::execution::{validate_continuous, validate_native};
 use crate::engine::ModuleRoot;
-use crate::{config::InputMode, ServerState};
+use crate::ServerState;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -105,9 +106,13 @@ pub async fn validate(
         module_root,
     };
 
-    let result = match state.mode {
-        InputMode::Native => validate_native(&state, request).await,
-        InputMode::Continuous => validate_continuous(&state, request).await,
+    let result = match &state.execution {
+        ExecutionMode::Native { module_cache } => {
+            validate_native(&state.locator, module_cache, request).await
+        }
+        ExecutionMode::Continuous { jit_manager } => {
+            validate_continuous(&state.locator, jit_manager, request).await
+        }
     };
 
     match result {
