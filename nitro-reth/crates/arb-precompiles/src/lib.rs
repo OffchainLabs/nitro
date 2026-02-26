@@ -1,5 +1,6 @@
 mod arbaddresstable;
 mod arbaggregator;
+mod arbbls;
 mod arbdebug;
 mod arbfunctiontable;
 mod arbgasinfo;
@@ -14,6 +15,7 @@ mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
+pub use arbbls::{create_arbbls_precompile, ARBBLS_ADDRESS};
 pub use arbdebug::{create_arbdebug_precompile, ARBDEBUG_ADDRESS};
 pub use arbfunctiontable::{create_arbfunctiontable_precompile, ARBFUNCTIONTABLE_ADDRESS};
 pub use arbgasinfo::{create_arbgasinfo_precompile, ARBGASINFO_ADDRESS};
@@ -57,6 +59,7 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
             create_arbretryabletx_precompile(),
         ),
         (ARBOWNER_ADDRESS, create_arbowner_precompile()),
+        (ARBBLS_ADDRESS, create_arbbls_precompile()),
         (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
     ]);
 }
