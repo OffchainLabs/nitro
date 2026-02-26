@@ -1,5 +1,7 @@
 use alloy_eips::eip2930::AccessList;
-use alloy_primitives::{Address, U256};
+use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
+use alloy_primitives::{Address, Bytes, U256};
+use reth_ethereum_primitives::TransactionSigned;
 use revm::context::TxEnv;
 
 use arb_primitives::tx_types::ArbTxType;
@@ -137,5 +139,17 @@ impl revm::context_interface::Transaction for ArbTransaction {
     }
     fn max_priority_fee_per_gas(&self) -> Option<u128> {
         revm::context_interface::Transaction::max_priority_fee_per_gas(&self.0)
+    }
+}
+
+impl FromRecoveredTx<TransactionSigned> for ArbTransaction {
+    fn from_recovered_tx(tx: &TransactionSigned, sender: Address) -> Self {
+        ArbTransaction(TxEnv::from_recovered_tx(tx, sender))
+    }
+}
+
+impl FromTxWithEncoded<TransactionSigned> for ArbTransaction {
+    fn from_encoded_tx(tx: &TransactionSigned, sender: Address, encoded: Bytes) -> Self {
+        ArbTransaction(TxEnv::from_encoded_tx(tx, sender, encoded))
     }
 }
