@@ -18,7 +18,7 @@ func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[
 	if currentDirtyState.ParentChainBlockNumber == 0 {
 		return m.config.RetryInterval, errors.New("invalid reorging stage, ParentChainBlockNumber of current mel state has reached 0")
 	}
-	previousState, err := m.melDB.State(ctx, currentDirtyState.ParentChainBlockNumber-1)
+	previousState, err := m.melDB.State(currentDirtyState.ParentChainBlockNumber - 1)
 	if err != nil {
 		return m.config.RetryInterval, err
 	}

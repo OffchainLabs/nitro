@@ -116,7 +116,7 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	}
 
 	if s.msgExtractor != nil {
-		melMsgCount, err := s.msgExtractor.GetMsgCount(s.GetContext())
+		melMsgCount, err := s.msgExtractor.GetMsgCount()
 		if err != nil {
 			return msgCount, err
 		}
@@ -181,7 +181,7 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
 	if s.msgExtractor != nil {
-		headMelState, err := s.msgExtractor.GetHeadState(s.GetContext())
+		headMelState, err := s.msgExtractor.GetHeadState()
 		if err != nil {
 			log.Error("Error getting head state from mel", "err", err)
 			res["batchMetadataError"] = err.Error()
@@ -285,7 +285,7 @@ func (s *SyncMonitor) Synced() bool {
 	}
 
 	if s.msgExtractor != nil {
-		headMelState, err := s.msgExtractor.GetHeadState(s.GetContext())
+		headMelState, err := s.msgExtractor.GetHeadState()
 		if err != nil {
 			log.Error("Error getting head state from mel", "err", err)
 			return false
