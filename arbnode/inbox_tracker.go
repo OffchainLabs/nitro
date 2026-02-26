@@ -37,24 +37,22 @@ var (
 )
 
 type InboxTracker struct {
-	db             ethdb.Database
-	txStreamer     *TransactionStreamer
-	mutex          sync.Mutex
-	validator      *staker.BlockValidator
-	dapReaders     *daprovider.DAProviderRegistry
-	snapSyncConfig SnapSyncConfig
+	db         ethdb.Database
+	txStreamer *TransactionStreamer
+	mutex      sync.Mutex
+	validator  *staker.BlockValidator
+	dapReaders *daprovider.DAProviderRegistry
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, mel.BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:             db,
-		txStreamer:     txStreamer,
-		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, mel.BatchMetadata](1000),
-		snapSyncConfig: snapSyncConfig,
+		db:         db,
+		txStreamer: txStreamer,
+		dapReaders: dapReaders,
+		batchMeta:  containers.NewLruCache[uint64, mel.BatchMetadata](1000),
 	}
 	return tracker, nil
 }
@@ -429,36 +427,12 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 
 func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) error {
 	var nextAcc common.Hash
-	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
 		return nil
 	}
 	pos, err := messages[0].Message.Header.SeqNum()
 	if err != nil {
 		return err
-	}
-	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
-		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
-		if firstDelayedMsgToKeep > 0 {
-			firstDelayedMsgToKeep--
-		}
-		for {
-			if len(messages) == 0 {
-				return nil
-			}
-			pos, err = messages[0].Message.Header.SeqNum()
-			if err != nil {
-				return err
-			}
-			if pos+1 == firstDelayedMsgToKeep {
-				nextAcc = messages[0].AfterInboxAcc()
-			}
-			if pos < firstDelayedMsgToKeep {
-				messages = messages[1:]
-			} else {
-				break
-			}
-		}
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -474,7 +448,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 		return err
 	}
 
-	if pos > firstDelayedMsgToKeep {
+	if pos > 0 {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -684,34 +658,8 @@ var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missi
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*mel.SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta mel.BatchMetadata
-	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
 		return nil
-	}
-	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
-		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
-		if sequenceNumberToKeep > 0 {
-			sequenceNumberToKeep--
-		}
-		for {
-			if len(batches) == 0 {
-				return nil
-			}
-			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
-				nextAcc = batches[0].AfterInboxAcc
-				prevbatchmeta = mel.BatchMetadata{
-					Accumulator:         batches[0].AfterInboxAcc,
-					DelayedMessageCount: batches[0].AfterDelayedCount,
-					MessageCount:        arbutil.MessageIndex(t.snapSyncConfig.PrevBatchMessageCount),
-					ParentChainBlock:    batches[0].ParentChainBlockNumber,
-				}
-			}
-			if batches[0].SequenceNumber < sequenceNumberToKeep {
-				batches = batches[1:]
-			} else {
-				break
-			}
-		}
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -719,7 +667,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	pos := batches[0].SequenceNumber
 	startPos := pos
 
-	if pos > sequenceNumberToKeep {
+	if pos > 0 {
 		var err error
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
