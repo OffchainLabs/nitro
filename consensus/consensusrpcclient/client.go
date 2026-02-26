@@ -48,6 +48,9 @@ func convertError(err error) error {
 	if strings.Contains(errStr, execution.ErrSequencerInsertLockTaken.Error()) {
 		return execution.ErrSequencerInsertLockTaken
 	}
+	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
+		return execution.ErrRetrySequencer
+	}
 	return err
 }
 
