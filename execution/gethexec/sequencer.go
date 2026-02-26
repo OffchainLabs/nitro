@@ -843,6 +843,16 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		}
 	}
 
+	// For redeems, return the filter error so the block processor can
+	// trigger a group rollback. Skip nonce/revert-gas checks since those
+	// don't apply to protocol-scheduled transactions.
+	if tx.Type() == types.ArbitrumRetryTxType {
+		if statedb.IsAddressFiltered() {
+			return state.ErrArbTxFilter
+		}
+		return nil
+	}
+
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
 	}
@@ -1022,6 +1032,7 @@ type FullSequencingHooks struct {
 	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+	eventFilter              *eventfilter.EventFilter
 	txSizeLimitReached       bool
 }
 
@@ -1073,8 +1084,18 @@ func (s *FullSequencingHooks) GetTxErrors() []error {
 	return s.txErrors
 }
 
-func (s *FullSequencingHooks) InsertLastTxError(err error) {
-	s.txErrors = append(s.txErrors, err)
+func (s *FullSequencingHooks) TxSucceeded() {
+	s.txErrors = append(s.txErrors, nil)
+}
+
+func (s *FullSequencingHooks) TxFailed(err error) {
+	if len(s.txErrors) >= s.sequencedQueueItemsCount {
+		// Entry already exists (TxSucceeded was called for the user tx, then a
+		// cascading redeem failed). Overwrite the nil with the error.
+		s.txErrors[len(s.txErrors)-1] = err
+	} else {
+		s.txErrors = append(s.txErrors, err)
+	}
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
@@ -1093,7 +1114,7 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 			s.sequencedQueueItemsCount += 1
-			s.InsertLastTxError(core.ErrGasLimitReached)
+			s.TxFailed(core.ErrGasLimitReached)
 			s.txSizeLimitReached = true
 		} else {
 			s.sequencedQueueItemsCount += 1
@@ -1103,9 +1124,7 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
 }
 
-func (s *FullSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return true
-}
+func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
 
 func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
 	// This is not supposed to happen, if so we have a bug
@@ -1123,6 +1142,9 @@ func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 }
 
 func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+	if transaction.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
 	if s.postTxFilter != nil {
 		return s.postTxFilter(header, db, a, transaction, address, u, result)
 	}
@@ -1142,6 +1164,7 @@ func MakeSequencingHooks(
 	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info) error,
 	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error,
 	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
+	eventFilter *eventfilter.EventFilter,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -1151,6 +1174,7 @@ func MakeSequencingHooks(
 		preTxFilter:              preTxFilter,
 		postTxFilter:             postTxFilter,
 		blockFilter:              blockFilter,
+		eventFilter:              eventFilter,
 	}
 	return res
 }
@@ -1175,6 +1199,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 		preTxFilter,
 		postTxFilter,
 		blockFilter,
+		nil,
 	)
 }
 
@@ -1445,6 +1470,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		s.preTxFilter,
 		s.postTxFilter,
 		nil,
+		s.eventFilter,
 	)
 
 	for _, queueItem := range queueItems {

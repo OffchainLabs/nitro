@@ -166,6 +166,49 @@ func addTxHashToOnChainFilter(t *testing.T, ctx context.Context, builder *NodeBu
 	require.NoError(t, err)
 }
 
+// verifyCascadingRedeemFiltered verifies the checkpoint-and-revert behavior for
+// a cascading redeem filter. The delayed sequencer halts because the auto-redeem
+// touched a filtered address. After the operator adds the tx hash to the onchain
+// filter, the submission re-processes as filtered (no auto-redeem). Asserts:
+//  1. Delayed sequencer halts on the ticketId hash.
+//  2. After onchain filter entry, sequencer resumes.
+//  3. Submission receipt has failed status (retryable created with redirected beneficiary, auto-redeem skipped).
+//  4. Retryable ticket exists with the expected beneficiary.
+//  5. No ArbitrumRetryTx in the submission block.
+func verifyCascadingRedeemFiltered(t *testing.T, ctx context.Context, builder *NodeBuilder, ticketId common.Hash, filtererName string, expectedBeneficiary common.Address) *types.Receipt {
+	t.Helper()
+
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	submissionReceipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, submissionReceipt.Status)
+
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	Require(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket should still exist")
+
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, expectedBeneficiary, beneficiary, "beneficiary should be redirected to filteredFundsRecipient")
+
+	block, err := builder.L2.Client.BlockByNumber(ctx, submissionReceipt.BlockNumber)
+	Require(t, err)
+	redeemCount := 0
+	for _, btx := range block.Transactions() {
+		if btx.Type() == types.ArbitrumRetryTxType {
+			redeemCount++
+		}
+	}
+	require.Equal(t, 0, redeemCount, "no redeem should exist - submission was filtered on retry")
+
+	return submissionReceipt
+}
+
 // setupFilteredTxTestBuilder creates a NodeBuilder configured for delayed message filtering tests.
 func setupFilteredTxTestBuilder(t *testing.T, ctx context.Context) *NodeBuilder {
 	t.Helper()
@@ -1240,10 +1283,25 @@ func submitRetryableViaL1(
 	data []byte,
 ) (*types.Receipt, common.Hash) {
 	t.Helper()
+	gasLimit := big.NewInt(100000)
+	return submitRetryableViaL1WithGasLimit(t, p, l1Sender, destAddr, callValue, beneficiary, feeRefundAddr, data, gasLimit)
+}
+
+func submitRetryableViaL1WithGasLimit(
+	t *testing.T,
+	p *retryableFilterTestParams,
+	l1Sender string,
+	destAddr common.Address,
+	callValue *big.Int,
+	beneficiary common.Address,
+	feeRefundAddr common.Address,
+	data []byte,
+	gasLimit *big.Int,
+) (*types.Receipt, common.Hash) {
+	t.Helper()
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	maxSubmissionCost := big.NewInt(1e16)
-	gasLimit := big.NewInt(100000)
 	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 
 	l1opts := p.builder.L1Info.GetDefaultTransactOpts(l1Sender, p.ctx)
@@ -1611,6 +1669,814 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	require.False(t, waiting, "sequencer should not be re-halted after processing")
 }
 
+// TestRetryableAutoRedeemCallsFilteredAddress verifies the checkpoint-and-revert
+// path when an auto-redeem CALLs a filtered address. The retryable's outer
+// fields are clean so submission initially succeeds and schedules an auto-redeem.
+// RedeemFilter detects the CALL to the filtered target, triggering a group
+// revert of the entire submission+redeem. The delayed sequencer halts, the
+// operator adds the tx hash to the onchain filter, and the submission
+// re-processes with redirected beneficiary/feeRefundAddr and no auto-redeem.
+func TestRetryableAutoRedeemCallsFilteredAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy two AddressFilterTest contracts: caller (clean) and target (filtered)
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("callTarget", targetAddr)
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId, p.filtererName, p.fundsRecipientAddr)
+}
+
+// TestRetryableAutoRedeemCreatesAtFilteredAddress verifies the checkpoint-and-revert
+// path when an auto-redeem CREATEs a contract at a filtered address. The group
+// is reverted, the submission re-processes with redirected beneficiary and no
+// auto-redeem. No contract is deployed.
+func TestRetryableAutoRedeemCreatesAtFilteredAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	nonce, err := builder.L2.Client.NonceAt(ctx, callerAddr, nil)
+	require.NoError(t, err)
+	createAddr := crypto.CreateAddress(callerAddr, nonce)
+
+	filter := newHashedChecker([]common.Address{createAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("createContract")
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId, p.filtererName, p.fundsRecipientAddr)
+
+	// Verify no contract was created at the filtered address
+	code, err := builder.L2.Client.CodeAt(ctx, createAddr, nil)
+	require.NoError(t, err)
+	require.Empty(t, code, "no contract should exist at filtered address after group revert")
+}
+
+// TestRetryableAutoRedeemSelfDestructsToFilteredAddress verifies the
+// checkpoint-and-revert path when an auto-redeem SELFDESTRUCTs to a filtered
+// beneficiary. The group is reverted, so the filtered beneficiary receives no
+// ETH. The submission re-processes with redirected beneficiary and no
+// auto-redeem. The retryable ticket survives.
+func TestRetryableAutoRedeemSelfDestructsToFilteredAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+	filteredBeneficiary := builder.L2Info.GetAddress("FilteredBeneficiary")
+
+	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{filteredBeneficiary})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredBeneficiary, nil)
+	require.NoError(t, err)
+
+	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := contractABI.Pack("selfDestructTo", filteredBeneficiary)
+	require.NoError(t, err)
+
+	callValue := big.NewInt(1e16)
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", contractAddr, callValue, cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId, p.filtererName, p.fundsRecipientAddr)
+
+	// Verify filtered beneficiary did NOT receive ETH (group was reverted)
+	filteredFinal, err := builder.L2.Client.BalanceAt(ctx, filteredBeneficiary, nil)
+	require.NoError(t, err)
+	require.True(t, filteredFinal.Cmp(filteredInitial) == 0,
+		"filtered beneficiary should not have received funds from reverted selfdestruct redeem")
+}
+
+// TestRetryableAutoRedeemStaticCallsFilteredAddress verifies the
+// checkpoint-and-revert path when an auto-redeem STATICCALLs a filtered
+// address. The group is reverted, the submission re-processes with redirected
+// beneficiary and no auto-redeem. The retryable ticket survives.
+func TestRetryableAutoRedeemStaticCallsFilteredAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("staticcallTargetInTx", targetAddr)
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId, p.filtererName, p.fundsRecipientAddr)
+}
+
+// TestRetryableAutoRedeemEmitsTransferToFilteredAddress verifies the
+// checkpoint-and-revert path when an auto-redeem emits a Transfer event with
+// a filtered address in a topic. The event filter inside RedeemFilter detects
+// the filtered address, triggering a group revert. The submission re-processes
+// with redirected beneficiary and no auto-redeem. The retryable ticket survives.
+func TestRetryableAutoRedeemEmitsTransferToFilteredAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	selector, _, err := eventfilter.CanonicalSelectorFromEvent("Transfer(address,address,uint256)")
+	require.NoError(t, err)
+	rules := []eventfilter.EventRule{{
+		Event:          "Transfer(address,address,uint256)",
+		Selector:       selector,
+		TopicAddresses: []int{1, 2},
+	}}
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, rules)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	builder.L2Info.GenerateAccount("FilteredTarget")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+	filteredAddr := builder.L2Info.GetAddress("FilteredTarget")
+
+	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+
+	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := contractABI.Pack("emitTransfer", cleanBeneficiary, filteredAddr)
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", contractAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId, p.filtererName, p.fundsRecipientAddr)
+}
+
+// TestManualRedeemGroupRevert verifies the FullSequencingHooks path for
+// checkpoint-and-revert. A retryable is submitted via L1 with gasLimit=0 so
+// no auto-redeem is scheduled and the ticket survives. Then the address
+// filter is set and a manual redeem is sent as a regular L2 tx. The redeem's
+// inner execution touches the filtered address, triggering a group revert via
+// FullSequencingHooks.TxFailed. The manual redeem tx is dropped and
+// the retryable ticket survives.
+func TestManualRedeemGroupRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy caller and target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("callTarget", targetAddr)
+	require.NoError(t, err)
+
+	// Submit retryable with gasLimit=0 so no auto-redeem is scheduled.
+	// The ticket survives for later manual redemption.
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := p.delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		callerAddr,
+		common.Big0,
+		maxSubmissionCost,
+		cleanBeneficiary,
+		cleanBeneficiary,
+		common.Big0, // gasLimit=0: no auto-redeem
+		maxFeePerGas,
+		retryData,
+	)
+	require.NoError(t, err)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	l2Tx := p.lookupL2Tx(l1Receipt)
+	ticketId := l2Tx.Hash()
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for submission receipt (successful - outer fields are clean)
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status,
+		"retryable submission should succeed")
+
+	// Verify retryable ticket exists (no auto-redeem was scheduled)
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket should exist")
+
+	// Record target contract balance before enabling filter
+	targetBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, targetAddr, nil)
+	require.NoError(t, err)
+
+	// NOW set address filter to include the target
+	filter := newHashedChecker([]common.Address{targetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Send manual redeem via L2 tx (goes through FullSequencingHooks).
+	// The redeem's inner execution calls targetAddr which is now filtered.
+	// Group revert fires: FullSequencingHooks.TxFailed replaces
+	// txErrors[last], causing the sequencer to return an error.
+	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	_, err = arbRetryable.Redeem(&redeemOpts, ticketId)
+	require.ErrorContains(t, err, "cascading redeem filtered",
+		"manual redeem should fail with cascading redeem filter error")
+
+	// Retryable ticket should STILL exist (submission was in a previous block,
+	// unaffected by the group revert of the manual redeem)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket should survive manual redeem group revert")
+
+	// Target contract state should be unchanged (group revert rolled back all effects)
+	targetBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, targetAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, targetBalanceBefore, targetBalanceAfter,
+		"target contract balance should be unchanged after group revert")
+
+	// Clear filter and do a successful manual redeem to verify numTries was
+	// rolled back. If IncrementNumTries had leaked, SequenceNum would be 1.
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	redeemOpts2 := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	redeemTx, err := arbRetryable.Redeem(&redeemOpts2, ticketId)
+	require.NoError(t, err)
+	redeemReceipt, err := builder.L2.EnsureTxSucceeded(redeemTx)
+	require.NoError(t, err)
+
+	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	foundEvent := false
+	for _, log := range redeemReceipt.Logs {
+		event, err := arbRetryableFilterer.ParseRedeemScheduled(*log)
+		if err != nil {
+			continue
+		}
+		require.Equal(t, uint64(0), event.SequenceNum,
+			"numTries should be 0: IncrementNumTries from the reverted manual redeem was rolled back")
+		foundEvent = true
+		break
+	}
+	require.True(t, foundEvent, "successful redeem should emit RedeemScheduled event")
+}
+
+// TestDelayedManualRedeemGroupRevert exercises the path where a signed L2 tx
+// sent via the delayed inbox calls ArbRetryableTx.redeem(), and the redeem's
+// inner execution touches a filtered address. Unlike cascading-redeem tests
+// where ticketId == the originating delayed tx hash, here the L2 tx hash that
+// wraps the redeem differs from the ticketId. The group revert fires with the
+// L2 tx hash (NOT the ticketId), so the delayed sequencer halts on l2TxHash.
+func TestDelayedManualRedeemGroupRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("ManualRedeemer")
+	builder.L2.TransferBalance(t, "Owner", "ManualRedeemer", big.NewInt(1e18), builder.L2Info)
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy caller and target contracts
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTargetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("callTarget", filteredTargetAddr)
+	require.NoError(t, err)
+
+	// Phase 2: Submit clean retryable (no address filter yet) with gasLimit=0
+	// so no auto-redeem is scheduled. The ticket survives for later manual redemption.
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := p.delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		callerAddr,
+		common.Big0,
+		maxSubmissionCost,
+		cleanBeneficiary,
+		cleanBeneficiary,
+		common.Big0, // gasLimit=0: no auto-redeem
+		maxFeePerGas,
+		retryData,
+	)
+	require.NoError(t, err)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	l2Tx := p.lookupL2Tx(l1Receipt)
+	ticketId := l2Tx.Hash()
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status,
+		"retryable submission should succeed (no filter yet)")
+
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket should exist")
+
+	// Record target contract balance before enabling filter
+	targetBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, filteredTargetAddr, nil)
+	require.NoError(t, err)
+
+	// Phase 3: Enable filter and send delayed manual redeem
+	filter := newHashedChecker([]common.Address{filteredTargetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	require.NoError(t, err)
+	redeemCallData, err := arbRetryableABI.Pack("redeem", ticketId)
+	require.NoError(t, err)
+
+	arbRetryableTxAddr := types.ArbRetryableTxAddress
+	signedL2Tx := prepareDelayedContractCall(t, builder, "ManualRedeemer", arbRetryableTxAddr, redeemCallData)
+	l2TxHash := sendDelayedTx(t, ctx, builder, signedL2Tx)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Phase 4: Verify group revert fires on L2 tx hash (NOT ticketId)
+	require.NotEqual(t, ticketId, l2TxHash,
+		"L2 tx hash must differ from ticketId")
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{l2TxHash}, 10*time.Second)
+
+	// Phase 5: Resolve and verify
+	addTxHashToOnChainFilter(t, ctx, builder, l2TxHash, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	redeemReceipt, err := WaitForTx(ctx, builder.L2.Client, l2TxHash, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, redeemReceipt.Status,
+		"delayed manual redeem should fail (filtered)")
+
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket should still exist")
+
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, cleanBeneficiary, beneficiary,
+		"beneficiary should be unchanged (submission was in a prior block)")
+
+	targetBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, filteredTargetAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, targetBalanceBefore, targetBalanceAfter,
+		"filtered target should be untouched")
+
+	// Phase 6: Verify numTries rollback
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+
+	builder.L2Info.GenerateAccount("CleanRedeemer")
+	builder.L2.TransferBalance(t, "Owner", "CleanRedeemer", big.NewInt(1e18), builder.L2Info)
+	cleanRedeemOpts := builder.L2Info.GetDefaultTransactOpts("CleanRedeemer", ctx)
+	cleanRedeemTx, err := arbRetryable.Redeem(&cleanRedeemOpts, ticketId)
+	require.NoError(t, err)
+	cleanRedeemReceipt, err := builder.L2.EnsureTxSucceeded(cleanRedeemTx)
+	require.NoError(t, err)
+
+	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	foundEvent := false
+	for _, log := range cleanRedeemReceipt.Logs {
+		event, err := arbRetryableFilterer.ParseRedeemScheduled(*log)
+		if err != nil {
+			continue
+		}
+		require.Equal(t, uint64(0), event.SequenceNum,
+			"numTries should be 0: IncrementNumTries from the reverted delayed redeem was rolled back")
+		foundEvent = true
+		break
+	}
+	require.True(t, foundEvent, "successful redeem should emit RedeemScheduled event")
+}
+
+// TestRetryableGroupRevertDoesNotAffectCleanRetryable verifies that a clean
+// retryable processed before a dirty one is unaffected by the dirty one's
+// group revert. The two retryables arrive as separate delayed messages and
+// are processed in separate blocks (via separate ProduceBlockAdvanced calls),
+// so this tests sequential-block safety: the clean retryable's block is fully
+// committed before the dirty retryable's block starts processing. The dirty
+// group revert cannot affect a prior committed block.
+func TestRetryableGroupRevertDoesNotAffectCleanRetryable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy caller, clean target (not filtered), and dirty target (filtered)
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	cleanTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	dirtyTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{dirtyTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Clean retryable: callTarget(cleanTarget) - no filtered address touched
+	cleanRetryData, err := callerABI.Pack("callTarget", cleanTarget)
+	require.NoError(t, err)
+	_, cleanTicketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, cleanRetryData,
+	)
+
+	// Dirty retryable: callTarget(dirtyTarget) - touches filtered address
+	dirtyRetryData, err := callerABI.Pack("callTarget", dirtyTarget)
+	require.NoError(t, err)
+	_, dirtyTicketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, dirtyRetryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Clean retryable should succeed (processed first, group finalized before dirty)
+	cleanReceipt, err := WaitForTx(ctx, builder.L2.Client, cleanTicketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, cleanReceipt.Status,
+		"clean retryable submission should succeed")
+
+	// Clean retryable's auto-redeem should have succeeded (ticket deleted)
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, cleanTicketId)
+	require.Error(t, err, "clean retryable should be deleted after successful auto-redeem")
+
+	// Dirty retryable triggers cascading revert and halt/resume flow
+	verifyCascadingRedeemFiltered(t, ctx, builder, dirtyTicketId,
+		p.filtererName, p.fundsRecipientAddr)
+}
+
+// TestSequentialRetryableGroupReverts verifies that two dirty retryables
+// submitted in sequence each trigger their own group revert independently.
+// The first retryable halts the delayed sequencer, gets resolved, and then
+// the second retryable triggers another halt/resolve cycle.
+func TestSequentialRetryableGroupReverts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget1, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget2, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{filteredTarget1, filteredTarget2})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	retryData1, err := callerABI.Pack("callTarget", filteredTarget1)
+	require.NoError(t, err)
+	_, ticketId1 := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, retryData1,
+	)
+
+	retryData2, err := callerABI.Pack("callTarget", filteredTarget2)
+	require.NoError(t, err)
+	_, ticketId2 := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, retryData2,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// First retryable: group revert -> halt -> resolve
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId1}, 10*time.Second)
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId1, p.filtererName)
+
+	// After resolving ticketId1, the sequencer briefly resumes, processes
+	// ticketId1 as filtered (redirected beneficiary, no auto-redeem), then immediately encounters ticketId2
+	// and halts again. We skip waitForDelayedSequencerResume here because
+	// the resume-to-halt transition is too fast for polling to catch.
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId2}, 10*time.Second)
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId2, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt1, err := WaitForTx(ctx, builder.L2.Client, ticketId1, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt1.Status)
+
+	receipt2, err := WaitForTx(ctx, builder.L2.Client, ticketId2, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt2.Status)
+
+	// Both retryables exist with redirected beneficiary
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+
+	beneficiary1, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId1)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary1)
+
+	beneficiary2, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId2)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary2)
+}
+
+// TestRetryableGroupRevertSkipFinaliseSafety verifies that state changes from
+// tentative execution (before group revert) are fully rolled back. The auto-
+// redeem calls staticcallTargetInTx which increments the contract's "dummy"
+// storage variable before STATICCALLing the filtered target. After the group
+// revert and filtered re-processing, the dummy counter should be unchanged,
+// proving that the tentative auto-redeem's storage writes were rolled back.
+//
+// Note: the dummy++ assertion specifically verifies per-redeem snapshot
+// rollback (RevertToSnapshot). The skipFinalise flag's correctness is
+// implicitly tested by verifyCascadingRedeemFiltered succeeding: if
+// skipFinalise were broken, the tentative retryable creation would leak
+// into pending storage via Finalise(), and the filtered re-processing's
+// CreateRetryable would produce incorrect state.
+func TestRetryableGroupRevertSkipFinaliseSafety(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	callerAddr, callerContract := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Record initial dummy counter value
+	dummyBefore, err := callerContract.Dummy(&bind.CallOpts{})
+	require.NoError(t, err)
+	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredTarget, nil)
+	require.NoError(t, err)
+
+	// Use staticcallTargetInTx: it does dummy++ then STATICCALL(target).
+	// The dummy++ modifies storage, and the STATICCALL touches the filtered address.
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	retryData, err := callerABI.Pack("staticcallTargetInTx", filteredTarget)
+	require.NoError(t, err)
+
+	_, ticketId := submitRetryableViaL1(
+		t, p, "Faucet", callerAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, retryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketId,
+		p.filtererName, p.fundsRecipientAddr)
+
+	// Verify dummy counter was NOT incremented (tentative auto-redeem's
+	// storage write was rolled back by group revert)
+	dummyAfter, err := callerContract.Dummy(&bind.CallOpts{})
+	require.NoError(t, err)
+	require.Equal(t, dummyBefore, dummyAfter,
+		"dummy counter should be unchanged after group revert (tentative storage writes rolled back)")
+
+	// Verify filtered target was not touched
+	filteredFinalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredTarget, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitialBalance, filteredFinalBalance,
+		"filtered target balance should be unchanged after group revert")
+}
+
+// TestRetryableGroupRevertWithChainedRedeems verifies that the group revert
+// correctly handles chained redeems: retryable A's auto-redeem calls
+// ArbRetryableTx.redeem(ticketB), which schedules redeem-B. Redeem-B's
+// inner execution touches a filtered address. The entire group (A's
+// submission + A's redeem + B's redeem) is reverted. The delayed sequencer
+// halts on A's ticketId, and after resolution, A re-processes with redirected
+// beneficiary and no auto-redeem. B's ticket remains intact.
+func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	// Deploy contract for B's inner execution target
+	innerTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+
+	// Submit retryable B first with gasLimit=0 (no auto-redeem).
+	// B's inner execution calls filteredTarget.
+	bRetryData, err := callerABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1txB, err := p.delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		innerTarget,
+		common.Big0,
+		maxSubmissionCost,
+		cleanBeneficiary,
+		cleanBeneficiary,
+		common.Big0, // gasLimit=0: no auto-redeem
+		maxFeePerGas,
+		bRetryData,
+	)
+	require.NoError(t, err)
+	l1ReceiptB, err := builder.L1.EnsureTxSucceeded(l1txB)
+	require.NoError(t, err)
+
+	l2TxB := p.lookupL2Tx(l1ReceiptB)
+	ticketIdB := l2TxB.Hash()
+
+	// Process B's submission
+	advanceL1ForDelayed(t, ctx, builder)
+	receiptB, err := WaitForTx(ctx, builder.L2.Client, ticketIdB, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receiptB.Status,
+		"retryable B submission should succeed")
+
+	// Verify B's ticket exists
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketIdB)
+	require.NoError(t, err, "retryable B ticket should exist")
+
+	// Submit retryable A whose inner execution calls ArbRetryableTx.redeem(ticketB).
+	// A's auto-redeem will chain into B's redeem which touches the filtered address.
+	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	require.NoError(t, err)
+	aRetryData, err := arbRetryableABI.Pack("redeem", ticketIdB)
+	require.NoError(t, err)
+
+	arbRetryableTxAddr := common.HexToAddress("6e")
+	_, ticketIdA := submitRetryableViaL1(
+		t, p, "Faucet", arbRetryableTxAddr, common.Big0,
+		cleanBeneficiary, cleanBeneficiary, aRetryData,
+	)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// A's auto-redeem chains into B's redeem which touches filtered address.
+	// Group revert fires for A's group, delayed sequencer halts on A's ticketId.
+	verifyCascadingRedeemFiltered(t, ctx, builder, ticketIdA,
+		p.filtererName, p.fundsRecipientAddr)
+
+	// B's ticket should STILL exist (its submission was in a prior block,
+	// and B's chained redeem was rolled back along with A's group)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketIdB)
+	require.NoError(t, err, "retryable B ticket should survive the chained group revert")
+
+	// Verify B's numTries is still 0: the chained redeem called
+	// IncrementNumTries on B, but the group revert rolled it back.
+	// Clear filter and do a successful manual redeem of B to check.
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	redeemTx, err := arbRetryable.Redeem(&redeemOpts, ticketIdB)
+	require.NoError(t, err)
+	redeemReceipt, err := builder.L2.EnsureTxSucceeded(redeemTx)
+	require.NoError(t, err)
+
+	arbRetryableFilterer, err := precompilesgen.NewArbRetryableTxFilterer(
+		common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	foundEvent := false
+	for _, log := range redeemReceipt.Logs {
+		event, err := arbRetryableFilterer.ParseRedeemScheduled(*log)
+		if err != nil {
+			continue
+		}
+		require.Equal(t, uint64(0), event.SequenceNum,
+			"B's numTries should be 0: IncrementNumTries from the chained redeem was rolled back")
+		foundEvent = true
+		break
+	}
+	require.True(t, foundEvent, "successful redeem of B should emit RedeemScheduled event")
+}
+
 // TestDelayedMessageFilterCatchesEventFilter verifies that the delayed
 // message PostTxFilter runs the event filter. A normal delayed tx that
 // emits a Transfer event naming a filtered address causes the sequencer
@@ -1705,7 +2571,6 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Create accounts
 	builder.L2Info.GenerateAccount("Filterer")
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -1749,7 +2614,6 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(l1tx)
 	require.NoError(t, err)
 
-	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
 
 	// Wait for delayed sequencer to halt on the filtered deposit
@@ -1765,17 +2629,12 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	}
 	require.NotEqual(t, common.Hash{}, depositTxHash, "sequencer should halt on filtered deposit")
 
-	// Add the deposit tx hash to the onchain filter
 	addTxHashToOnChainFilter(t, ctx, builder, depositTxHash, "Filterer")
 
-	// Wait for delayed sequencer to resume.
-	// BUG: Before fix, this times out because the sequencer is permanently stuck.
 	waitForDelayedSequencerResume(t, ctx, builder, 30*time.Second)
 
-	// Advance L1 again to ensure the deposit block is processed
 	advanceL1ForDelayed(t, ctx, builder)
 
-	// Wait for the deposit tx receipt on L2
 	receipt, err := WaitForTx(ctx, builder.L2.Client, depositTxHash, 30*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,

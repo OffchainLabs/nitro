@@ -39,6 +39,17 @@ var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
+// ErrFilteredCascadingRedeem is returned via TxFailed when a redeem's
+// inner execution touches a filtered address, requiring the entire tx group
+// (originating user tx + all its redeems) to be reverted.
+type ErrFilteredCascadingRedeem struct {
+	OriginatingTxHash common.Hash
+}
+
+func (e *ErrFilteredCascadingRedeem) Error() string {
+	return fmt.Sprintf("cascading redeem filtered (originating tx: %s)", e.OriginatingTxHash.Hex())
+}
+
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
 // it doesn't waste compute marshalling the transaction when the result wouldn't be used.
@@ -52,6 +63,17 @@ func (p printTxAsJson) String() string {
 		return fmt.Sprintf("[error marshalling tx: %v]", err)
 	}
 	return string(json)
+}
+
+type groupCheckpoint struct {
+	backup               *state.StateDB
+	headerGasUsed        uint64
+	blockGasLeft         uint64
+	expectedBalanceDelta *big.Int
+	userTxsProcessed     int
+	completeLen          int
+	receiptsLen          int
+	userTxHash           common.Hash
 }
 
 type L1Info struct {
@@ -112,12 +134,21 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int,
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
 type SequencingHooks interface {
+	// NextTxToSequence returns the next tx to include, or nil when done.
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
-	DiscardInvalidTxsEarly() bool
+	// CanDiscardTx returns whether failed txs can be excluded from the block.
+	// This is a static property of the implementing type (true for sequencer, false for replay).
+	CanDiscardTx() bool
+	// PreTxFilter rejects a tx before execution.
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	// PostTxFilter rejects a tx after execution.
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	InsertLastTxError(error)
+	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
+	TxSucceeded()
+	// TxFailed records an error for the last user tx from NextTxToSequence.
+	TxFailed(error)
 }
 
 type NoopSequencingHooks struct {
@@ -137,9 +168,7 @@ func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	return n.txs[n.scheduledTxsCount-1], nil, nil
 }
 
-func (n *NoopSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return false
-}
+func (n *NoopSequencingHooks) CanDiscardTx() bool { return false }
 
 func (n *NoopSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *L1Info) error {
 	return nil
@@ -153,7 +182,9 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 	return nil
 }
 
-func (n *NoopSequencingHooks) InsertLastTxError(err error) {}
+func (n *NoopSequencingHooks) TxSucceeded() {}
+
+func (n *NoopSequencingHooks) TxFailed(error) {}
 
 func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
@@ -247,12 +278,31 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
+	var activeGroupCP *groupCheckpoint
+
+	rollbackToGroupCheckpoint := func() error {
+		statedb.RestoreFrom(activeGroupCP.backup)
+		header.GasUsed = activeGroupCP.headerGasUsed
+		blockGasLeft = activeGroupCP.blockGasLeft
+		expectedBalanceDelta.Set(activeGroupCP.expectedBalanceDelta)
+		userTxsProcessed = activeGroupCP.userTxsProcessed
+		redeems = redeems[:0]
+		complete = complete[:activeGroupCP.completeLen]
+		receipts = receipts[:activeGroupCP.receiptsLen]
+		var reopenErr error
+		arbState, reopenErr = arbosState.OpenSystemArbosState(statedb, nil, true)
+		if reopenErr != nil {
+			return reopenErr
+		}
+		activeGroupCP = nil
+		return nil
+	}
+
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
 		var options *arbitrum_types.ConditionalOptions
-		var hooks SequencingHooks
 		isUserTx := false
 		if firstTx != nil {
 			tx = firstTx
@@ -271,6 +321,8 @@ func ProduceBlockAdvanced(
 				continue
 			}
 		} else {
+			// Previous group (if any) completed successfully
+			activeGroupCP = nil
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
@@ -280,7 +332,6 @@ func ProduceBlockAdvanced(
 				break
 			}
 			if tx.Type() != types.ArbitrumInternalTxType {
-				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 				options = conditionalOptions
 			}
@@ -308,8 +359,8 @@ func ProduceBlockAdvanced(
 			}
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if hooks != nil {
-				if err = hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
+			if isUserTx {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -344,7 +395,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas < params.TxGas {
-				if hooks != nil && hooks.DiscardInvalidTxsEarly() {
+				if isUserTx && sequencingHooks.CanDiscardTx() {
 					return nil, nil, core.ErrIntrinsicGas
 				}
 				// ensure at least TxGas is left in the pool before trying a state transition
@@ -372,8 +423,22 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if hooks != nil {
-						return hooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result)
+					if err := sequencingHooks.PostTxFilter(header, statedb, arbState, tx, sender, dataGas, result); err != nil {
+						return err
+					}
+					if isUserTx && len(result.ScheduledTxes) > 0 && statedb.HasActiveAddressFilter() {
+						backup := statedb.Copy()
+						backup.RevertToSnapshot(snap)
+						activeGroupCP = &groupCheckpoint{
+							backup:               backup,
+							headerGasUsed:        header.GasUsed,
+							blockGasLeft:         blockGasLeft,
+							expectedBalanceDelta: new(big.Int).Set(expectedBalanceDelta),
+							userTxsProcessed:     userTxsProcessed,
+							completeLen:          len(complete),
+							receiptsLen:          len(receipts),
+							userTxHash:           tx.Hash(),
+						}
 					}
 					return nil
 				},
@@ -395,12 +460,21 @@ func ProduceBlockAdvanced(
 			return receipt, result, nil
 		})()
 
-		// append the err, even if it is nil
-		if hooks != nil {
-			hooks.InsertLastTxError(err)
-		}
-
 		if err != nil {
+			// If a redeem was rejected by the address filter and we have an
+			// active group checkpoint, roll back the entire group (user tx + all
+			// redeems) to the pre-group state.
+			if !isUserTx && activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+				userTxHash := activeGroupCP.userTxHash
+				if err := rollbackToGroupCheckpoint(); err != nil {
+					return nil, nil, err
+				}
+				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
+				continue
+			}
+			if isUserTx {
+				sequencingHooks.TxFailed(err)
+			}
 			logLevel := log.Debug
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn
@@ -408,7 +482,7 @@ func ProduceBlockAdvanced(
 			if !isMsgForPrefetch {
 				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			}
-			if !(hooks != nil && hooks.DiscardInvalidTxsEarly()) {
+			if !(isUserTx && sequencingHooks.CanDiscardTx()) {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
 				if isUserTx {
@@ -508,6 +582,7 @@ func ProduceBlockAdvanced(
 		receipts = append(receipts, receipt)
 
 		if isUserTx {
+			sequencingHooks.TxSucceeded()
 			userTxsProcessed++
 		}
 	}
