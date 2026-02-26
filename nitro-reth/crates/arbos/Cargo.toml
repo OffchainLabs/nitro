@@ -9,5 +9,6 @@ license.workspace = true
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true }
 revm = { workspace = true }
 thiserror = { workspace = true }
