@@ -2,24 +2,34 @@ mod arbaddresstable;
 mod arbaggregator;
 mod arbbls;
 mod arbdebug;
+mod arbfilteredtxmanager;
 mod arbfunctiontable;
 mod arbgasinfo;
 mod arbinfo;
+mod arbnativetokenmanager;
 mod arbosacts;
 mod arbowner;
 mod arbownerpublic;
 mod arbretryabletx;
 mod arbstatistics;
 mod arbsys;
+mod arbwasm;
+mod arbwasmcache;
 mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
 pub use arbbls::{create_arbbls_precompile, ARBBLS_ADDRESS};
 pub use arbdebug::{create_arbdebug_precompile, ARBDEBUG_ADDRESS};
+pub use arbfilteredtxmanager::{
+    create_arbfilteredtxmanager_precompile, ARBFILTEREDTXMANAGER_ADDRESS,
+};
 pub use arbfunctiontable::{create_arbfunctiontable_precompile, ARBFUNCTIONTABLE_ADDRESS};
 pub use arbgasinfo::{create_arbgasinfo_precompile, ARBGASINFO_ADDRESS};
 pub use arbinfo::{create_arbinfo_precompile, ARBINFO_ADDRESS};
+pub use arbnativetokenmanager::{
+    create_arbnativetokenmanager_precompile, ARBNATIVETOKENMANAGER_ADDRESS,
+};
 pub use arbosacts::{create_arbosacts_precompile, ARBOSACTS_ADDRESS};
 pub use arbowner::{create_arbowner_precompile, ARBOWNER_ADDRESS};
 pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRESS};
@@ -29,6 +39,8 @@ pub use arbsys::{
     create_arbsys_precompile, get_cached_l1_block_number, set_cached_l1_block_number,
     store_arbsys_state, take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
 };
+pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
+pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
 pub use storage_slot::{compute_storage_slot, ARBOS_STATE_ADDRESS};
 
 use alloy_evm::precompiles::PrecompilesMap;
@@ -61,5 +73,15 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
         (ARBOWNER_ADDRESS, create_arbowner_precompile()),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
         (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
+        (ARBWASM_ADDRESS, create_arbwasm_precompile()),
+        (ARBWASMCACHE_ADDRESS, create_arbwasmcache_precompile()),
+        (
+            ARBFILTEREDTXMANAGER_ADDRESS,
+            create_arbfilteredtxmanager_precompile(),
+        ),
+        (
+            ARBNATIVETOKENMANAGER_ADDRESS,
+            create_arbnativetokenmanager_precompile(),
+        ),
     ]);
 }
