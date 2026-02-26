@@ -49,14 +49,27 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
 // to be added to the onchain filter before retrying.
+//
+// Implements rpc.Error and rpc.DataError so that ErrorCode and structured data
+// (tx hashes, delayed message index) survive JSON-RPC serialization.
 type ErrFilteredDelayedMessage struct {
-	TxHashes      []common.Hash
-	DelayedMsgIdx uint64
+	TxHashes      []common.Hash `json:"txHashes"`
+	DelayedMsgIdx uint64        `json:"delayedMsgIdx"`
 }
+
+const ErrCodeFilteredDelayedMessage = -32050
 
 func (e *ErrFilteredDelayedMessage) Error() string {
 	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
 		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
+}
+
+func (e *ErrFilteredDelayedMessage) ErrorCode() int {
+	return ErrCodeFilteredDelayedMessage
+}
+
+func (e *ErrFilteredDelayedMessage) ErrorData() interface{} {
+	return e
 }
 
 // always needed
