@@ -1,17 +1,27 @@
+mod arbaddresstable;
+mod arbaggregator;
+mod arbdebug;
 mod arbfunctiontable;
 mod arbgasinfo;
 mod arbinfo;
 mod arbosacts;
+mod arbowner;
 mod arbownerpublic;
+mod arbretryabletx;
 mod arbstatistics;
 mod arbsys;
 mod storage_slot;
 
+pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
+pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
+pub use arbdebug::{create_arbdebug_precompile, ARBDEBUG_ADDRESS};
 pub use arbfunctiontable::{create_arbfunctiontable_precompile, ARBFUNCTIONTABLE_ADDRESS};
 pub use arbgasinfo::{create_arbgasinfo_precompile, ARBGASINFO_ADDRESS};
 pub use arbinfo::{create_arbinfo_precompile, ARBINFO_ADDRESS};
 pub use arbosacts::{create_arbosacts_precompile, ARBOSACTS_ADDRESS};
+pub use arbowner::{create_arbowner_precompile, ARBOWNER_ADDRESS};
 pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRESS};
+pub use arbretryabletx::{create_arbretryabletx_precompile, ARBRETRYABLETX_ADDRESS};
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
 pub use arbsys::{
     create_arbsys_precompile, get_cached_l1_block_number, set_cached_l1_block_number,
@@ -37,5 +47,16 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
             ARBOWNERPUBLIC_ADDRESS,
             create_arbownerpublic_precompile(),
         ),
+        (
+            ARBADDRESSTABLE_ADDRESS,
+            create_arbaddresstable_precompile(),
+        ),
+        (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
+        (
+            ARBRETRYABLETX_ADDRESS,
+            create_arbretryabletx_precompile(),
+        ),
+        (ARBOWNER_ADDRESS, create_arbowner_precompile()),
+        (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
     ]);
 }
