@@ -276,7 +276,7 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
