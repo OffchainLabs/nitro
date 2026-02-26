@@ -1,6 +1,7 @@
 pub mod address_set;
 pub mod address_table;
 pub mod arbos_state;
+pub mod arbos_types;
 pub mod blockhash;
 pub mod burn;
 pub mod features;
