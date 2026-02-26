@@ -7,6 +7,9 @@ use revm::primitives::hardfork::SpecId;
 /// These map to EVM spec upgrades gated by the ArbOS version
 /// stored in the block header's mix_hash.
 pub mod arbos_version {
+    pub const ARBOS_VERSION_3: u64 = 3;
+    pub const ARBOS_VERSION_8: u64 = 8;
+    pub const ARBOS_VERSION_10: u64 = 10;
     /// ArbOS version 11 — Shanghai EVM rules (PUSH0, etc.).
     pub const ARBOS_VERSION_11: u64 = 11;
     /// ArbOS version 20 — Cancun EVM rules (transient storage, blob base fee).
