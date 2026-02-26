@@ -30,6 +30,20 @@ const GET_AMORTIZED_COST_CAP_BIPS: [u8; 4] = [0x7a, 0x7d, 0x6b, 0xeb];
 const GET_L1_FEES_AVAILABLE: [u8; 4] = [0x5b, 0x39, 0xd2, 0x3c];
 const GET_L1_REWARD_RATE: [u8; 4] = [0x8a, 0x5b, 0x1d, 0x28];
 const GET_L1_REWARD_RECIPIENT: [u8; 4] = [0x9e, 0x6d, 0x7d, 0xe5];
+const GET_L1_PRICING_EQUILIBRATION_UNITS: [u8; 4] = [0xd5, 0xab, 0xd5, 0x54];
+const GET_LAST_L1_PRICING_UPDATE_TIME: [u8; 4] = [0x67, 0x20, 0x9a, 0x5e];
+const GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS: [u8; 4] = [0xdf, 0xd1, 0x63, 0x27];
+const GET_L1_PRICING_UNITS_SINCE_UPDATE: [u8; 4] = [0x45, 0xc7, 0x2a, 0x50];
+const GET_LAST_L1_PRICING_SURPLUS: [u8; 4] = [0xe2, 0x74, 0xa6, 0x03];
+const GET_MAX_BLOCK_GAS_LIMIT: [u8; 4] = [0xb2, 0xb8, 0x67, 0xf9];
+const GET_MAX_TX_GAS_LIMIT: [u8; 4] = [0xe3, 0x7e, 0x24, 0x71];
+const GET_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0x86, 0xe7, 0xa1, 0xd0];
+const GET_MULTI_GAS_PRICING_CONSTRAINTS: [u8; 4] = [0x17, 0x45, 0x5f, 0xda];
+const GET_MULTI_GAS_BASE_FEE: [u8; 4] = [0x2c, 0xc0, 0x69, 0x4e];
+const PRE_V4_GET_PRICES_IN_WEI: [u8; 4] = [0xf4, 0xd4, 0x68, 0x38];
+const PRE_V4_GET_PRICES_IN_ARBGAS: [u8; 4] = [0x1d, 0x26, 0xb2, 0x0e];
+const PRE_V10_GET_L1_PRICING_SURPLUS: [u8; 4] = [0xad, 0x38, 0x87, 0x31];
+const GET_L1_PRICING_PARENT_GAS_FLOOR: [u8; 4] = [0xee, 0x36, 0x03, 0x8e];
 
 // Gas costs.
 const SLOAD_GAS: u64 = 800;
@@ -43,7 +57,12 @@ const L1_PRICE_PER_UNIT: u64 = 7;
 const L1_LAST_SURPLUS: u64 = 8;
 const L1_PER_BATCH_GAS_COST: u64 = 9;
 const L1_AMORTIZED_COST_CAP_BIPS: u64 = 10;
+const L1_EQUILIBRATION_UNITS: u64 = 1;
+const L1_LAST_UPDATE_TIME: u64 = 4;
+const L1_FUNDS_DUE_FOR_REWARDS: u64 = 5;
+const L1_UNITS_SINCE: u64 = 6;
 const L1_FEES_AVAILABLE: u64 = 11;
+const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 // L2 pricing field offsets (within L2 pricing subspace).
 const L2_SPEED_LIMIT: u64 = 0;
@@ -53,6 +72,7 @@ const L2_MIN_BASE_FEE: u64 = 3;
 const L2_GAS_BACKLOG: u64 = 4;
 const L2_PRICING_INERTIA: u64 = 5;
 const L2_BACKLOG_TOLERANCE: u64 = 6;
+const L2_PER_TX_GAS_LIMIT: u64 = 7;
 
 const TX_DATA_NON_ZERO_GAS: u64 = 16;
 const ASSUMED_SIMPLE_TX_SIZE: u64 = 140;
@@ -93,6 +113,40 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_L1_FEES_AVAILABLE => read_l1_field(&mut input, L1_FEES_AVAILABLE),
         GET_L1_REWARD_RATE => read_l1_field(&mut input, L1_PER_UNIT_REWARD),
         GET_L1_REWARD_RECIPIENT => read_l1_field(&mut input, L1_PAY_REWARDS_TO),
+        GET_L1_PRICING_EQUILIBRATION_UNITS => {
+            read_l1_field(&mut input, L1_EQUILIBRATION_UNITS)
+        }
+        GET_LAST_L1_PRICING_UPDATE_TIME => read_l1_field(&mut input, L1_LAST_UPDATE_TIME),
+        GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS => {
+            read_l1_field(&mut input, L1_FUNDS_DUE_FOR_REWARDS)
+        }
+        GET_L1_PRICING_UNITS_SINCE_UPDATE => read_l1_field(&mut input, L1_UNITS_SINCE),
+        GET_LAST_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
+        GET_MAX_BLOCK_GAS_LIMIT => read_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
+        GET_MAX_TX_GAS_LIMIT => read_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
+        GET_L1_PRICING_PARENT_GAS_FLOOR => {
+            read_l1_field(&mut input, L1_GAS_FLOOR_PER_TOKEN)
+        }
+        // Legacy versions that accepted an aggregator address (now ignored).
+        PRE_V4_GET_PRICES_IN_WEI => handle_prices_in_wei(&mut input),
+        PRE_V4_GET_PRICES_IN_ARBGAS => handle_prices_in_arbgas(&mut input),
+        PRE_V10_GET_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
+        // Multi-gas (ArbOS v50+) — return empty for now.
+        GET_GAS_PRICING_CONSTRAINTS | GET_MULTI_GAS_PRICING_CONSTRAINTS => {
+            let gas_cost = COPY_GAS.min(input.gas);
+            let mut out = Vec::with_capacity(64);
+            // ABI: dynamic array with 0 elements
+            out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+            out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
+            Ok(PrecompileOutput::new(gas_cost, out.into()))
+        }
+        GET_MULTI_GAS_BASE_FEE => {
+            let gas_cost = COPY_GAS.min(input.gas);
+            let mut out = Vec::with_capacity(64);
+            out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+            out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
+            Ok(PrecompileOutput::new(gas_cost, out.into()))
+        }
         _ => Err(PrecompileError::other("unknown selector")),
     }
 }
