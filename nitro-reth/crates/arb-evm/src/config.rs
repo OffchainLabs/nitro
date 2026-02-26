@@ -6,7 +6,8 @@ use alloy_consensus::{BlockHeader, Header};
 use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutorFactory};
 use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_primitives::{B256, U256};
-use reth_chainspec::EthChainSpec;
+use arb_chainspec::ArbitrumChainSpec;
+use reth_chainspec::{EthChainSpec, Hardforks};
 use reth_ethereum_primitives::EthPrimitives;
 use reth_evm::{ConfigureEvm, EvmEnv};
 use reth_evm_ethereum::{EthBlockAssembler, RethReceiptBuilder};
@@ -14,7 +15,6 @@ use reth_primitives_traits::{SealedBlock, SealedHeader};
 use revm::context::{BlockEnv, CfgEnv};
 use revm::context_interface::block::BlobExcessGasAndPrice;
 use revm::primitives::hardfork::SpecId;
-use reth_chainspec::Hardforks;
 
 use crate::context::{ArbBlockExecutionCtx, ArbNextBlockEnvCtx};
 use crate::evm::ArbEvmFactory;
@@ -57,7 +57,7 @@ where
 
 impl<ChainSpec> ConfigureEvm for ArbEvmConfig<ChainSpec>
 where
-    ChainSpec: EthExecutorSpec + EthChainSpec<Header = Header> + Hardforks + 'static,
+    ChainSpec: EthExecutorSpec + EthChainSpec<Header = Header> + ArbitrumChainSpec + Hardforks + 'static,
 {
     type Primitives = EthPrimitives;
     type Error = Infallible;
@@ -79,7 +79,7 @@ where
         let arbos_version = arbos_version_from_mix_hash(
             &header.mix_hash().unwrap_or_default(),
         );
-        let spec = arbos_version_to_spec_id(arbos_version);
+        let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
         let cfg_env = CfgEnv::new().with_chain_id(chain_id).with_spec_and_mainnet_gas_params(spec);
         let block_env = BlockEnv {
@@ -106,7 +106,7 @@ where
     ) -> Result<EvmEnv<SpecId>, Self::Error> {
         let chain_id = self.chain_spec.chain().id();
         let arbos_version = arbos_version_from_mix_hash(&attributes.prev_randao);
-        let spec = arbos_version_to_spec_id(arbos_version);
+        let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
         let cfg_env = CfgEnv::new().with_chain_id(chain_id).with_spec_and_mainnet_gas_params(spec);
         let next_number = parent.number().saturating_add(1);
@@ -214,17 +214,4 @@ pub fn l1_block_number_from_mix_hash(mix_hash: &B256) -> u64 {
     u64::from_be_bytes(buf)
 }
 
-/// Map ArbOS version to the appropriate SpecId.
-///
-/// Arbitrum uses ArbOS version (encoded in mix_hash) rather than
-/// block number/timestamp to determine the active EVM spec.
-pub fn arbos_version_to_spec_id(arbos_version: u64) -> SpecId {
-    match arbos_version {
-        0..=10 => SpecId::LONDON,
-        11..=19 => SpecId::LONDON,
-        20..=30 => SpecId::CANCUN,
-        31..=39 => SpecId::CANCUN,
-        40..=49 => SpecId::CANCUN,
-        _ => SpecId::OSAKA,
-    }
-}
+// The ArbOS version → SpecId mapping is now in arb_chainspec::spec_id_by_arbos_version.

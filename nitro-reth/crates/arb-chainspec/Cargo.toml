@@ -12,5 +12,6 @@ alloy-genesis = { workspace = true }
 alloy-hardforks = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-primitives-traits = { workspace = true }
+revm = { workspace = true }
 serde = { workspace = true }
 once_cell = { workspace = true }
