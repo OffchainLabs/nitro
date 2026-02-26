@@ -27,6 +27,9 @@ func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[
 		return m.config.RetryInterval, err
 	}
 	m.logsAndHeadersPreFetcher.reset()
+
+	// Update metrics.
+	reorgCounter.Inc(1)
 	return 0, m.fsm.Do(processNextBlock{
 		prevStepWasReorg: true,
 		melState:         previousState,

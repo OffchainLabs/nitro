@@ -26,6 +26,7 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 	if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
 		return m.config.RetryInterval, err
 	}
+	msgsPushedCounter.Inc(int64(len(saveAction.messages)))
 	if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
 		log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 		return m.config.RetryInterval, err

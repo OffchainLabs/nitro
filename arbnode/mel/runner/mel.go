@@ -16,21 +16,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-)
-
-var (
-	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 )
 
 type MessageExtractionConfig struct {
@@ -427,6 +422,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// from the parent chain block. The FSM will transition to the `SavingMessages`
 	// state after successfully extracting messages.
 	case ProcessingNextBlock:
+		fsmBlocksProcessedCounter.Inc(1)
 		return m.processNextBlock(ctx, current)
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -434,12 +430,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// After data is stored, the FSM will then transition to the `ProcessingNextBlock` state
 	// yet again.
 	case SavingMessages:
+		fsmSaveMessagesCounter.Inc(1)
 		return m.saveMessages(ctx, current)
 	// `Reorging` is the state responsible for handling reorgs in the parent chain.
 	// It is triggered when a reorg occurs, and it will revert the MEL state being processed to the
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
+		fsmReorgsCounter.Inc(1)
 		return m.reorg(ctx, current)
 	default:
 		return m.config.RetryInterval, fmt.Errorf("invalid state: %s", current.State)

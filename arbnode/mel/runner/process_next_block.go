@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
@@ -76,6 +76,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
 		return m.config.RetryInterval, err
 	}
+	start := time.Now()
 	postState, msgs, delayedMsgs, batchMetas, err := melextraction.ExtractMessages(
 		ctx,
 		preState,
@@ -87,12 +88,23 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.chainConfig,
 	)
 	if err != nil {
+		extractionErrors.Inc(1)
 		return m.config.RetryInterval, err
 	}
+	end := time.Since(start)
 	// After processing every 100 parent chain blocks, print a status log
 	if postState.ParentChainBlockNumber%100 == 0 {
 		log.Info("Message extraction successful", "parentChainBlockNumber", postState.ParentChainBlockNumber, "msgCount", postState.MsgCount)
 	}
+
+	// Update metrics.
+	latestBlockGauge.Update(int64(postState.ParentChainBlockNumber))
+	latestMsgCountGauge.Update(int64(postState.MsgCount))
+	latestDelayedSeenCountGauge.Update(int64(postState.DelayedMessagesSeen))
+	latestDelayedReadCountGauge.Update(int64(postState.DelayedMessagesRead))
+	msgsExtractedCounter.Inc(int64(len(msgs)))
+	blockProcessTimeGauge.Update(end.Milliseconds())
+
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{
 		preStateMsgCount: preState.MsgCount,
