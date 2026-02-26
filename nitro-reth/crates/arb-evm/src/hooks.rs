@@ -26,6 +26,10 @@ pub struct GasChargingContext {
     pub gas_price: U256,
     pub base_fee: U256,
     pub tx_type: ArbTxType,
+    /// Transaction calldata bytes for poster cost computation.
+    pub tx_data: Vec<u8>,
+    /// L1 base fee from L1PricingState for poster cost computation.
+    pub l1_base_fee: U256,
 }
 
 /// Result from gas charging.

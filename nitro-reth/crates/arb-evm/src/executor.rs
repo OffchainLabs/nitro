@@ -2,6 +2,7 @@ use alloy_primitives::{Address, B256, U256};
 
 use arbos::tx_processor::{
     EndTxFeeDistribution, EndTxNormalParams, GasChargingError, GasChargingParams, TxProcessor,
+    get_poster_gas,
 };
 use arbos::util::tx_type_has_poster_costs;
 
@@ -33,6 +34,8 @@ pub struct DefaultArbOsHooks {
     pub coinbase: Address,
     /// Whether this is an eth_call (non-mutating).
     pub is_eth_call: bool,
+    /// Cached L1 base fee for poster cost computation.
+    pub l1_base_fee: U256,
 }
 
 impl DefaultArbOsHooks {
@@ -45,6 +48,7 @@ impl DefaultArbOsHooks {
         per_block_gas_limit: u64,
         per_tx_gas_limit: u64,
         is_eth_call: bool,
+        l1_base_fee: U256,
     ) -> Self {
         Self {
             tx_proc: TxProcessor::new(coinbase),
@@ -56,6 +60,7 @@ impl DefaultArbOsHooks {
             per_tx_gas_limit,
             coinbase,
             is_eth_call,
+            l1_base_fee,
         }
     }
 
@@ -98,9 +103,14 @@ impl ArbOsHooks for DefaultArbOsHooks {
         let poster_cost = if skip_l1_charging {
             U256::ZERO
         } else {
-            // Compute poster cost based on calldata.
-            // For now use simplified calculation.
-            U256::ZERO
+            // Compute poster cost from calldata and L1 base fee.
+            let (poster_gas, _calldata_units) = get_poster_gas(
+                &ctx.tx_data,
+                ctx.l1_base_fee,
+                ctx.base_fee,
+                self.arbos_version,
+            );
+            ctx.l1_base_fee.saturating_mul(U256::from(poster_gas))
         };
 
         let params = GasChargingParams {
