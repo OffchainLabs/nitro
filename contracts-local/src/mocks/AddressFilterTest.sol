@@ -69,6 +69,15 @@ contract AddressFilterTest {
         return address(uint160(uint256(hash)));
     }
 
+    /// @notice Redeems a retryable ticket by calling ArbRetryableTx.redeem()
+    function redeemTicket(
+        bytes32 ticketId
+    ) external {
+        // ArbRetryableTx lives at address 110 (0x6e)
+        (bool success,) = address(110).call(abi.encodeWithSignature("redeem(bytes32)", ticketId));
+        require(success, "redeem failed");
+    }
+
     /// @notice Selfdestructs this contract and sends balance to beneficiary
     function selfDestructTo(
         address payable beneficiary

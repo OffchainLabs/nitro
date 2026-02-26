@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -16,12 +18,15 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -32,6 +37,7 @@ var (
 	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
 	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
 	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
+	txPreCheckerAddressFilterRejectedCounter               = metrics.NewRegisteredCounter("arb/txprechecker/addressfilter/rejected", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -66,9 +72,14 @@ type TxPreChecker struct {
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *ExpressLaneTracker
+	addressChecker     state.AddressChecker
+	eventFilter        *eventfilter.EventFilter
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+func NewTxPreChecker(
+	publisher TransactionPublisher,
+	bc *core.BlockChain,
+	config TxPreCheckerConfigFetcher) *TxPreChecker {
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
@@ -226,6 +237,13 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
+	if err != nil {
+		return err
+	}
+	if err := c.preCheckAddressFilter(tx, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
 
@@ -255,6 +273,13 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), msg.Transaction)
+	if err != nil {
+		return err
+	}
+	if err := c.preCheckAddressFilter(msg.Transaction, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
 
@@ -272,9 +297,96 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
+	if err != nil {
+		return err
+	}
+	if err := c.preCheckAddressFilter(tx, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
 func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
 	c.expressLaneTracker = tracker
+}
+
+func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
+	c.addressChecker = checker
+}
+
+func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
+	c.eventFilter = filter
+}
+
+// preCheckAddressFilter speculatively executes the transaction to detect
+// filtered addresses. Mirrors PostTxFilter from the sequencer path: executes
+// the tx, touches sender/to/retryable/event-log addresses, then checks
+// IsAddressFiltered.
+func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender common.Address, header *types.Header) error {
+	if c.addressChecker == nil {
+		return nil
+	}
+	statedb, err := c.bc.StateAt(header.Root)
+	if err != nil {
+		return err
+	}
+	statedb.SetAddressChecker(c.addressChecker)
+	statedb.SetTxContext(tx.Hash(), 0)
+
+	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
+	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
+
+	msg, err := core.TransactionToMessage(tx, types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion), header.BaseFee, core.NewMessageEthcallContext())
+	if err != nil {
+		return nil
+	}
+	// Override gas and value fields so the speculative execution always
+	// proceeds past balance and gas checks. We only care about which
+	// addresses are touched during execution.
+	msg.GasLimit = math.MaxUint64
+	msg.GasPrice = new(big.Int)
+	msg.GasFeeCap = new(big.Int)
+	msg.GasTipCap = new(big.Int)
+	msg.SkipNonceChecks = true
+	msg.SkipTransactionChecks = true
+
+	gasPool := core.GasPool(math.MaxUint64)
+	var usedGas uint64
+
+	_, _, err = core.ApplyTransactionWithEVM(
+		msg,
+		&gasPool,
+		statedb,
+		header.Number,
+		header.Hash(),
+		header.Time,
+		tx,
+		&usedGas,
+		evm,
+		func(result *core.ExecutionResult) error {
+			statedb.TouchAddress(sender)
+			if tx.To() != nil {
+				statedb.TouchAddress(*tx.To())
+			}
+			txType := tx.Type()
+			if arbosutil.DoesTxTypeAlias(&txType) {
+				statedb.TouchAddress(arbosutil.InverseRemapL1Address(sender))
+			}
+			touchRetryableAddresses(statedb, tx)
+			if c.eventFilter != nil {
+				applyEventFilter(c.eventFilter, statedb)
+			}
+
+			if statedb.IsAddressFiltered() {
+				return state.ErrArbTxFilter
+			}
+			return nil
+		},
+	)
+	if errors.Is(err, state.ErrArbTxFilter) {
+		txPreCheckerAddressFilterRejectedCounter.Inc(1)
+		return err
+	}
+	return nil
 }
