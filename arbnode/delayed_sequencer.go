@@ -261,7 +261,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// #nosec G115
 			_, err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i)).Await(ctx)
 			if err != nil {
-				var filteredErr *gethexec.ErrFilteredDelayedMessage
+				var filteredErr *execution.ErrFilteredDelayedMessage
 				if errors.As(err, &filteredErr) {
 					now := time.Now()
 					if d.waitingForFilteredTx == nil {

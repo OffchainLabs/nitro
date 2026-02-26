@@ -5,6 +5,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -44,6 +45,19 @@ type ConsensusSyncData struct {
 
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
+
+// ErrFilteredDelayedMessage is returned when a delayed message contains transactions
+// that touch filtered addresses. The sequencer should halt and wait for the tx hashes
+// to be added to the onchain filter before retrying.
+type ErrFilteredDelayedMessage struct {
+	TxHashes      []common.Hash
+	DelayedMsgIdx uint64
+}
+
+func (e *ErrFilteredDelayedMessage) Error() string {
+	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
+		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
+}
 
 // always needed
 type ExecutionClient interface {

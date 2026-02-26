@@ -75,19 +75,6 @@ var (
 	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
 )
 
-// ErrFilteredDelayedMessage is returned when a delayed message contains transactions
-// that touch filtered addresses. The sequencer should halt and wait for the tx hashes
-// to be added to the onchain filter before retrying.
-type ErrFilteredDelayedMessage struct {
-	TxHashes      []common.Hash
-	DelayedMsgIdx uint64
-}
-
-func (e *ErrFilteredDelayedMessage) Error() string {
-	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
-		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
-}
-
 // ErrDelayedTxFiltered is an internal error used during block production to signal
 // that a transaction touched a filtered address and is not in the onchain filter.
 var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
@@ -910,7 +897,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				})
 			}
 
-			return nil, nil, nil, &ErrFilteredDelayedMessage{
+			return nil, nil, nil, &execution.ErrFilteredDelayedMessage{
 				TxHashes:      filteringHooks.FilteredTxHashes,
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
