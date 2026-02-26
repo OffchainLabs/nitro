@@ -4,11 +4,13 @@ package rpcclient
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -47,6 +49,15 @@ func convertError(err error) error {
 	errStr := err.Error()
 	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
 		return execution.ErrRetrySequencer
+	}
+	var rpcErr rpc.Error
+	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == execution.ErrCodeFilteredDelayedMessage {
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			if parsed, ok := execution.ErrFilteredDelayedMessageFromRPCData(dataErr.ErrorData()); ok {
+				return parsed
+			}
+		}
 	}
 	return err
 }
