@@ -15,12 +15,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // failingBlobReader wraps a real BlobReader and can be configured to fail.

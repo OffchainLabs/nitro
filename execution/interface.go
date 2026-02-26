@@ -77,19 +77,16 @@ func (e *ErrFilteredDelayedMessage) ErrorData() interface{} {
 // from the untyped data returned by rpc.DataError.ErrorData(). The RPC layer
 // deserializes JSON into map[string]interface{}, so we re-encode to JSON and
 // decode into the typed struct to get proper common.Hash unmarshaling.
-func ErrFilteredDelayedMessageFromRPCData(data interface{}) (*ErrFilteredDelayedMessage, bool) {
+func ErrFilteredDelayedMessageFromRPCData(data interface{}) (*ErrFilteredDelayedMessage, error) {
 	b, err := json.Marshal(data)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	var result ErrFilteredDelayedMessage
-	if err := json.Unmarshal(b, &result); err != nil {
-		return nil, false
+	if err = json.Unmarshal(b, &result); err != nil {
+		return nil, err
 	}
-	if len(result.TxHashes) == 0 {
-		return nil, false
-	}
-	return &result, true
+	return &result, nil
 }
 
 // always needed

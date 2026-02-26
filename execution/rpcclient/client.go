@@ -54,7 +54,7 @@ func convertError(err error) error {
 	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == execution.ErrCodeFilteredDelayedMessage {
 		var dataErr rpc.DataError
 		if errors.As(err, &dataErr) {
-			if parsed, ok := execution.ErrFilteredDelayedMessageFromRPCData(dataErr.ErrorData()); ok {
+			if parsed, err := execution.ErrFilteredDelayedMessageFromRPCData(dataErr.ErrorData()); err == nil {
 				return parsed
 			}
 		}
