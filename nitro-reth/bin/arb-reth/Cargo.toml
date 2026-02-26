@@ -1,0 +1,23 @@
+[package]
+name = "arb-reth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "arb-reth"
+path = "src/main.rs"
+
+[dependencies]
+arb-node = { workspace = true }
+arb-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+reth = { workspace = true }
+reth-cli = { workspace = true }
+reth-node-builder = { workspace = true }
+reth-tracing = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+eyre = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "arb-chainspec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-genesis = { workspace = true }
+alloy-hardforks = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-primitives-traits = { workspace = true }
+serde = { workspace = true }
+once_cell = { workspace = true }

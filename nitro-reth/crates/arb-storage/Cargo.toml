@@ -1,0 +1,14 @@
+[package]
+name = "arb-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+reth-storage-api = { workspace = true }
+reth-provider = { workspace = true }
+reth-db-api = { workspace = true }
+thiserror = { workspace = true }

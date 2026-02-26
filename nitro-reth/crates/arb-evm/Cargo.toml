@@ -1,0 +1,27 @@
+[package]
+name = "arb-evm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-storage = { workspace = true }
+arb-precompiles = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-consensus = { workspace = true, features = ["std"] }
+alloy-evm = { workspace = true }
+reth-evm = { workspace = true }
+reth-primitives-traits = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-revm = { workspace = true }
+reth-execution-types = { workspace = true }
+revm = { workspace = true }
+revm-database = { workspace = true }
+revm-state = { workspace = true }
+revm-primitives = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

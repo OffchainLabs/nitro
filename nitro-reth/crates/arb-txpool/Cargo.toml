@@ -1,0 +1,11 @@
+[package]
+name = "arb-txpool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+reth-transaction-pool = { workspace = true }
+reth-primitives-traits = { workspace = true }

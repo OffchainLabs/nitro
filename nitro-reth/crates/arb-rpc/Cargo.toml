@@ -1,0 +1,14 @@
+[package]
+name = "arb-rpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+reth-rpc-eth-api = { workspace = true }
+reth-provider = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

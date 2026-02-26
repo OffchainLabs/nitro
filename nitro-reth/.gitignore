@@ -1,0 +1,34 @@
+# Build
+/target/
+**/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation and notes (keep out of repo)
+*.md
+!CLAUDE.md
+!README.md
+
+# Environment
+.env
+.env.*
+
+# Test scripts
+scripts/
+test_*.sh
+
+# MCP config
+.mcp.json
+
+# Claude
+.claude/

@@ -1,0 +1,22 @@
+[package]
+name = "arb-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-evm = { workspace = true }
+arb-payload = { workspace = true }
+arb-rpc = { workspace = true }
+arb-txpool = { workspace = true }
+reth-node-builder = { workspace = true }
+reth-node-api = { workspace = true }
+reth-provider = { workspace = true }
+reth-consensus = { workspace = true }
+reth-engine-primitives = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+eyre = { workspace = true }

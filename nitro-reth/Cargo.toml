@@ -1,0 +1,117 @@
+[workspace]
+members = [
+    "crates/arb-primitives",
+    "crates/arb-chainspec",
+    "crates/arb-storage",
+    "crates/arb-evm",
+    "crates/arb-precompiles",
+    "crates/arb-node",
+    "crates/arb-payload",
+    "crates/arb-rpc",
+    "crates/arb-txpool",
+    "bin/arb-reth",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Internal crates
+arb-primitives = { path = "crates/arb-primitives" }
+arb-chainspec = { path = "crates/arb-chainspec" }
+arb-storage = { path = "crates/arb-storage" }
+arb-evm = { path = "crates/arb-evm" }
+arb-precompiles = { path = "crates/arb-precompiles" }
+arb-node = { path = "crates/arb-node" }
+arb-payload = { path = "crates/arb-payload" }
+arb-rpc = { path = "crates/arb-rpc" }
+arb-txpool = { path = "crates/arb-txpool" }
+
+# Reth SDK (official)
+reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-consensus = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-provider = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-revm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-storage-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-db-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-cli-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-tracing = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+
+# Alloy
+alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
+alloy-consensus = { version = "1.7", default-features = false }
+alloy-eips = { version = "1.7", default-features = false }
+alloy-evm = { version = "0.27" }
+alloy-genesis = { version = "1.7" }
+alloy-network = { version = "1.7" }
+alloy-rlp = { version = "0.3", features = ["derive"] }
+alloy-rpc-types = { version = "1.7" }
+alloy-rpc-types-engine = { version = "1.7" }
+alloy-rpc-types-eth = { version = "1.7" }
+alloy-serde = { version = "1.7" }
+alloy-sol-types = { version = "1.5" }
+alloy-trie = { version = "0.9" }
+alloy-hardforks = { version = "0.4" }
+
+# Revm
+revm = { version = "34.0" }
+revm-database = { version = "10.0" }
+revm-database-interface = { version = "9.0" }
+revm-state = { version = "9.0" }
+revm-primitives = { version = "22.0" }
+revm-interpreter = { version = "32.0" }
+revm-context = { version = "12.0" }
+revm-bytecode = { version = "8.0" }
+
+# Arb-alloy
+arb-alloy-consensus = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
+arb-alloy-predeploys = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
+arb-alloy-util = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
+
+# Common
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+once_cell = "1.19"
+clap = { version = "4", features = ["derive"] }
+eyre = "0.6"
+derive_more = { version = "2", features = ["full"] }
+auto_impl = "1"
+bytes = "1"
+parking_lot = "0.12"
+lazy_static = "1"
+num = "0.4"
+hex = "0.4"

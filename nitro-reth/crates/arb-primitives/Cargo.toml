@@ -1,0 +1,21 @@
+[package]
+name = "arb-primitives"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
+alloy-consensus = { workspace = true, features = ["std"] }
+alloy-eips = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true }
+alloy-genesis = { workspace = true }
+arb-alloy-consensus = { workspace = true }
+arb-alloy-predeploys = { workspace = true }
+arb-alloy-util = { workspace = true }
+reth-primitives-traits = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+derive_more = { workspace = true }
+bytes = { workspace = true }

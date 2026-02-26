@@ -1,0 +1,14 @@
+[package]
+name = "arb-payload"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rpc-types-engine = { workspace = true }
+reth-payload-builder = { workspace = true }
+reth-primitives-traits = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "arb-precompiles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-sol-types = { workspace = true }
+arb-alloy-predeploys = { workspace = true }
+revm = { workspace = true }
+revm-primitives = { workspace = true }
+thiserror = { workspace = true }
