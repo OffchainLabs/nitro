@@ -9,7 +9,9 @@ license.workspace = true
 arb-primitives = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-sol-types = { workspace = true }
+alloy-evm = { workspace = true }
 arb-alloy-predeploys = { workspace = true }
 revm = { workspace = true }
 revm-primitives = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
