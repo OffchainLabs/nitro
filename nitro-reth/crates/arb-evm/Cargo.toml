@@ -12,6 +12,7 @@ arb-storage = { workspace = true }
 arb-precompiles = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-consensus = { workspace = true, features = ["std"] }
+alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 reth-evm = { workspace = true }
 reth-primitives-traits = { workspace = true }
