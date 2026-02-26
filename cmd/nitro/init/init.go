@@ -38,6 +38,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -50,7 +52,7 @@ import (
 	cmd_util "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -1110,7 +1112,7 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 		return nil, assertionHash, false, err
 	}
 
-	genesisAssertionCreationInfo, err := bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
+	genesisAssertionCreationInfo, err := staker.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
 
 	if err != nil {
 		// If we can't find the empty genesis assertion, try to compute the assertion for non-empty genesis
@@ -1134,7 +1136,7 @@ func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.A
 			return nil, assertionHash, false, err
 		}
 
-		genesisAssertionCreationInfo, err = bold.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
+		genesisAssertionCreationInfo, err = staker.ReadBoldAssertionCreationInfo(ctx, userLogic, l1Client, rollupAddress, assertionHash)
 	}
 
 	return genesisAssertionCreationInfo, assertionHash, true, err
@@ -1281,7 +1283,7 @@ func testUpdateTxIndex(executionDB ethdb.Database, chainConfig *params.ChainConf
 	}()
 }
 
-func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+func InitReorg(ctx context.Context, initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker, txStreamer *arbnode.TransactionStreamer, msgExtractor *melrunner.MessageExtractor) error {
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
 		// #nosec G115
@@ -1306,13 +1308,36 @@ func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 		// Reorg out the batch containing the next message
 		var found bool
 		var err error
-		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
-		if err != nil {
-			return err
-		}
-		if !found {
-			log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
-			return nil
+		if msgExtractor != nil {
+			batchCount, found, err = msgExtractor.FindInboxBatchContainingMessage(messageIndex + 1)
+			if err != nil {
+				return err
+			}
+			if !found {
+				log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+				return nil
+			}
+			var prevBatchMeta mel.BatchMetadata
+			if batchCount > 0 {
+				var err error
+				prevBatchMeta, err = msgExtractor.GetBatchMetadata(batchCount - 1)
+				if err != nil {
+					return err
+				}
+			}
+			if err := msgExtractor.ReorgTo(prevBatchMeta.ParentChainBlock); err != nil {
+				return err
+			}
+			return txStreamer.ReorgAt(prevBatchMeta.MessageCount)
+		} else {
+			batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+			if err != nil {
+				return err
+			}
+			if !found {
+				log.Warn("init-reorg: no need to reorg, because message ahead of chain", "messageIndex", messageIndex)
+				return nil
+			}
 		}
 	}
 	return inboxTracker.ReorgBatchesTo(batchCount)

@@ -39,7 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -704,7 +704,7 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
+		err = nitroinit.InitReorg(ctx, nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker, consensusNode.TxStreamer, consensusNode.MessageExtractor)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {

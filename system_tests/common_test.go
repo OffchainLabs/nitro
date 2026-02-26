@@ -1673,6 +1673,10 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
 	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
 	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
+	// TODO: remove this comment once both MEL and block validator are able
+	// to talk to the same validation node running the unified replay binary
+	clientConfig.MELValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.MELValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func currentRootModule(t *testing.T) common.Hash {
@@ -1684,7 +1688,27 @@ func currentRootModule(t *testing.T) common.Hash {
 	return locator.LatestWasmModuleRoot()
 }
 
+func AddMELValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+	if !nodeConfig.MELValidatorRequired() {
+		return
+	}
+	conf := valnode.TestValidationConfig
+	conf.UseJit = useJit
+	conf.Wasm.RootPath = wasmRootDir
+	conf.Arbitrator.MachineConfig = server_arb.ArbitratorMachineConfig{
+		WavmBinaryPath:       "unified_machine.wavm.br",
+		UntilHostIoStatePath: "unified-until-host-io-state.bin",
+	}
+	conf.MELEnabled = true
+	_, valStack := createTestValidationNode(t, ctx, &conf)
+	configByValidationNode(nodeConfig, valStack)
+}
+
 func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+	if nodeConfig.MELValidator.Enable {
+		AddMELValNodeIfNeeded(t, ctx, nodeConfig, false, redisURL, wasmRootDir) // TODO: currently useJit is false remove this once jit validation for MEL is enabled
+		return
+	}
 	if !nodeConfig.ValidatorRequired() || nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
