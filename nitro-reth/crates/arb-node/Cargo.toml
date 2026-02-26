@@ -15,8 +15,12 @@ arb-txpool = { workspace = true }
 reth-node-builder = { workspace = true }
 reth-node-api = { workspace = true }
 reth-provider = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-ethereum-primitives = { workspace = true }
 reth-consensus = { workspace = true }
 reth-engine-primitives = { workspace = true }
+reth-execution-types = { workspace = true }
+reth-primitives-traits = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 eyre = { workspace = true }

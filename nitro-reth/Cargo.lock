@@ -1045,10 +1045,14 @@ dependencies = [
  "arb-rpc",
  "arb-txpool",
  "eyre",
+ "reth-chainspec",
  "reth-consensus",
  "reth-engine-primitives",
+ "reth-ethereum-primitives",
+ "reth-execution-types",
  "reth-node-api",
  "reth-node-builder",
+ "reth-primitives-traits",
  "reth-provider",
  "tokio",
  "tracing",
@@ -1121,6 +1125,7 @@ dependencies = [
 name = "arb-rpc"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "arb-primitives",
  "reth-provider",
  "reth-rpc-eth-api",
