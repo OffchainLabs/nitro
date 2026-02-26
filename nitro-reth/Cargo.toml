@@ -9,6 +9,7 @@ members = [
     "crates/arb-payload",
     "crates/arb-rpc",
     "crates/arb-txpool",
+    "crates/arbos",
     "bin/arb-reth",
 ]
 resolver = "2"
@@ -30,6 +31,8 @@ arb-node = { path = "crates/arb-node" }
 arb-payload = { path = "crates/arb-payload" }
 arb-rpc = { path = "crates/arb-rpc" }
 arb-txpool = { path = "crates/arb-txpool" }
+
+arbos = { path = "crates/arbos" }
 
 # Reth SDK (official)
 reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }

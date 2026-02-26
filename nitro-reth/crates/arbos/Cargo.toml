@@ -1,0 +1,13 @@
+[package]
+name = "arbos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+revm = { workspace = true }
+thiserror = { workspace = true }
