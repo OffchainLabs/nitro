@@ -830,7 +830,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
-	err := s.bc.RecoverState(currentBlock)
+	err := s.bc.RecoverState(s.GetContext(), currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}

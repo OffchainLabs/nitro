@@ -656,7 +656,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		return executionDB, nil, l2BlockChain, err
 	}
 
-	err = recreateMissingStates(config, executionDB, l2BlockChain, cacheConfig)
+	err = recreateMissingStates(ctx, config, executionDB, l2BlockChain, cacheConfig)
 	if err != nil {
 		return executionDB, nil, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 	}
@@ -666,9 +666,9 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 	return executionDB, initDataReader, l2BlockChain, err
 }
 
-func recreateMissingStates(config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
+func recreateMissingStates(ctx context.Context, config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
 	if config.Init.RecreateMissingStateFrom > 0 {
-		err := staterecovery.RecreateMissingStates(executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+		err := staterecovery.RecreateMissingStates(ctx, executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 		if err != nil {
 			return fmt.Errorf("failed to recreate missing states: %w", err)
 		}
