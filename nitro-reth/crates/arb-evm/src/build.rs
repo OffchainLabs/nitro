@@ -1,3 +1,5 @@
+use core::cell::Cell;
+
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_evm::block::{
@@ -17,6 +19,7 @@ use revm::inspector::Inspector;
 
 use crate::context::ArbBlockExecutionCtx;
 use crate::executor::DefaultArbOsHooks;
+use crate::hooks::EndTxContext;
 
 /// Arbitrum block executor factory.
 ///
@@ -126,6 +129,9 @@ where
             target: "arb::executor",
             l1_block = self.arb_ctx.l1_block_number,
             delayed_msgs = self.arb_ctx.delayed_messages_read,
+            chain_id = self.arb_ctx.chain_id,
+            basefee = %self.arb_ctx.basefee,
+            has_hooks = self.arb_hooks.is_some(),
             "starting arbitrum block execution"
         );
 
@@ -148,7 +154,51 @@ where
         tx: impl ExecutableTx<Self>,
         f: impl FnOnce(&ExecutionResult<<Self::Evm as Evm>::HaltReason>) -> CommitChanges,
     ) -> Result<Option<u64>, BlockExecutionError> {
-        self.inner.execute_transaction_with_commit_condition(tx, f)
+        // Capture execution result info for post-tx hooks.
+        let captured_gas_used = Cell::new(0u64);
+        let captured_success = Cell::new(false);
+
+        let result = self.inner.execute_transaction_with_commit_condition(tx, |exec_result| {
+            let (used, success) = match exec_result {
+                ExecutionResult::Success { gas_used, .. } => (*gas_used, true),
+                ExecutionResult::Revert { gas_used, .. } => (*gas_used, false),
+                ExecutionResult::Halt { gas_used, .. } => (*gas_used, false),
+            };
+            captured_gas_used.set(used);
+            captured_success.set(success);
+            f(exec_result)
+        })?;
+
+        // Post-execution: compute and log fee distribution.
+        if let Some(committed_gas) = result {
+            if let Some(hooks) = &self.arb_hooks {
+                let base_fee = self.arb_ctx.basefee;
+                let gas_used = captured_gas_used.get();
+
+                let fee_dist = hooks.compute_end_tx_fees(&EndTxContext {
+                    sender: alloy_primitives::Address::ZERO,
+                    gas_left: committed_gas.saturating_sub(gas_used),
+                    gas_used,
+                    gas_price: base_fee,
+                    base_fee,
+                    tx_type: arb_primitives::tx_types::ArbTxType::ArbitrumUnsignedTx,
+                    success: captured_success.get(),
+                    refund_to: alloy_primitives::Address::ZERO,
+                });
+
+                tracing::trace!(
+                    target: "arb::executor",
+                    gas_used,
+                    network_fee = %fee_dist.network_fee_amount,
+                    infra_fee = %fee_dist.infra_fee_amount,
+                    poster_fee = %fee_dist.poster_fee_amount,
+                    poster_dest = %fee_dist.poster_fee_destination,
+                    "computed fee distribution"
+                );
+            }
+        }
+
+        Ok(result)
     }
 
     fn finish(
