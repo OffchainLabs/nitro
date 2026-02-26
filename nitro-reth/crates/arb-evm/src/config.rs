@@ -3,7 +3,7 @@ use core::convert::Infallible;
 use core::fmt::Debug;
 
 use alloy_consensus::{BlockHeader, Header};
-use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutorFactory};
+use alloy_evm::eth::EthBlockExecutionCtx;
 use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_primitives::{B256, U256};
 use arb_chainspec::ArbitrumChainSpec;
@@ -16,6 +16,7 @@ use revm::context::{BlockEnv, CfgEnv};
 use revm::context_interface::block::BlobExcessGasAndPrice;
 use revm::primitives::hardfork::SpecId;
 
+use crate::build::ArbBlockExecutorFactory;
 use crate::context::{ArbBlockExecutionCtx, ArbNextBlockEnvCtx};
 use crate::evm::ArbEvmFactory;
 
@@ -26,7 +27,7 @@ use crate::evm::ArbEvmFactory;
 #[derive(Debug, Clone)]
 pub struct ArbEvmConfig<ChainSpec = reth_chainspec::ChainSpec> {
     pub executor_factory:
-        EthBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>,
+        ArbBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>,
     pub block_assembler: EthBlockAssembler<ChainSpec>,
     chain_spec: Arc<ChainSpec>,
 }
@@ -39,7 +40,7 @@ where
     pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
         let evm_factory = ArbEvmFactory::new();
         Self {
-            executor_factory: EthBlockExecutorFactory::new(
+            executor_factory: ArbBlockExecutorFactory::new(
                 RethReceiptBuilder::default(),
                 chain_spec.clone(),
                 evm_factory,
@@ -63,7 +64,7 @@ where
     type Error = Infallible;
     type NextBlockEnvCtx = ArbNextBlockEnvCtx;
     type BlockExecutorFactory =
-        EthBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>;
+        ArbBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>;
     type BlockAssembler = EthBlockAssembler<ChainSpec>;
 
     fn block_executor_factory(&self) -> &Self::BlockExecutorFactory {
