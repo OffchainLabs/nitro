@@ -103,7 +103,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	latestDelayedSeenCountGauge.Update(int64(postState.DelayedMessagesSeen))
 	latestDelayedReadCountGauge.Update(int64(postState.DelayedMessagesRead))
 	msgsExtractedCounter.Inc(int64(len(msgs)))
-	blockProcessTimeGauge.Update(end.Milliseconds())
+	blockProcessTimeGauge.Update(end.Microseconds())
 
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{

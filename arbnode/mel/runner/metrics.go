@@ -26,5 +26,8 @@ var (
 	reorgCounter = metrics.NewRegisteredCounter("arb/mel/reorgs", nil)
 
 	// Performance.
-	blockProcessTimeGauge = metrics.NewRegisteredGauge("arb/mel/block_processing_time_millis", nil)
+	blockProcessTimeGauge = metrics.NewRegisteredGauge("arb/mel/block_processing_time_micros", nil)
+
+	// MEL state size bytes.
+	melStateSizeBytesGauge = metrics.NewRegisteredGauge("arb/mel/mel_state_size_bytes", nil)
 )
