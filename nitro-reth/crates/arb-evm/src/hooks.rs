@@ -83,6 +83,18 @@ pub trait ArbOsHooks {
 
     /// Returns an L1 block hash.
     fn l1_block_hash(&self, block_number: u64) -> Result<B256, Self::Error>;
+
+    /// Whether the priority fee tip should be dropped (not sent to coinbase).
+    fn drop_tip(&self) -> bool;
+
+    /// The effective gas price for the GASPRICE opcode.
+    fn gas_price_op(&self, gas_price: U256, base_fee: U256) -> U256;
+
+    /// Whether the message is non-mutating (eth_call).
+    fn msg_is_non_mutating(&self) -> bool;
+
+    /// Whether EIP-7623 calldata pricing increase is enabled.
+    fn is_calldata_pricing_increase_enabled(&self) -> bool;
 }
 
 /// No-op implementation for testing.
@@ -121,5 +133,21 @@ impl ArbOsHooks for NoopArbOsHooks {
 
     fn l1_block_hash(&self, _block_number: u64) -> Result<B256, ()> {
         Ok(B256::ZERO)
+    }
+
+    fn drop_tip(&self) -> bool {
+        false
+    }
+
+    fn gas_price_op(&self, gas_price: U256, _base_fee: U256) -> U256 {
+        gas_price
+    }
+
+    fn msg_is_non_mutating(&self) -> bool {
+        false
+    }
+
+    fn is_calldata_pricing_increase_enabled(&self) -> bool {
+        true
     }
 }

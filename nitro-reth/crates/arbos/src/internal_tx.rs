@@ -23,15 +23,12 @@ pub const ARB_SYS_ADDRESS: Address = {
     Address::new(bytes)
 };
 
-/// Number of additional floor-gas tokens per gas token.
-/// Used in EIP-7825 floor gas pricing.
-pub fn floor_gas_additional_tokens(arbos_version: u64) -> u64 {
-    if arbos_version >= 40 {
-        3 // 4 total floor gas per token (1 base + 3 additional)
-    } else {
-        0
-    }
-}
+/// Additional tokens in the calldata for floor gas accounting.
+///
+/// Raw batch has a 40-byte header (5 uint64s) that doesn't come from calldata.
+/// The addSequencerL2BatchFromOrigin call has a selector + 5 additional fields.
+/// Token count: 4*4 (selector) + 4*24 (uint64 padding) + 4*12+12 (address) = 172
+pub const FLOOR_GAS_ADDITIONAL_TOKENS: u64 = 172;
 
 /// L1 block info passed to internal transactions.
 #[derive(Debug, Clone)]
