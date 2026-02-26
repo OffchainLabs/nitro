@@ -93,8 +93,6 @@ type Config struct {
 	RPCServer                rpcserver.Config                 `koanf:"rpc-server"`
 	ExecutionRPCClient       rpcclient.ClientConfig           `koanf:"execution-rpc-client" reload:"hot"`
 	VersionAlerterServer     nitroversionalerter.ServerConfig `koanf:"version-alerter-server" reload:"hot"`
-	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
-	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -221,7 +219,6 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	VersionAlerterServer:     nitroversionalerter.DefaultServerConfig,
-	SnapSyncTest:             DefaultSnapSyncConfig,
 	RPCServer:                rpcserver.DefaultConfig,
 	ExecutionRPCClient: rpcclient.ClientConfig{
 		URL:                       "",
@@ -341,24 +338,6 @@ type Node struct {
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 	sequencerInbox           *SequencerInbox
-}
-
-type SnapSyncConfig struct {
-	Enabled                   bool
-	PrevBatchMessageCount     uint64
-	PrevDelayedRead           uint64
-	BatchCount                uint64
-	DelayedCount              uint64
-	ParentChainAssertionBlock uint64
-}
-
-var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:                   false,
-	PrevBatchMessageCount:     0,
-	PrevDelayedRead:           0,
-	BatchCount:                0,
-	DelayedCount:              0,
-	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -756,52 +735,25 @@ func getDAProviders(
 }
 
 func getInboxTrackerAndReader(
-	ctx context.Context,
+	config *Config,
 	consensusDB ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapReaders *daprovider.DAProviderRegistry,
-	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
-	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
 		return nil, nil, nil
 	}
-	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders)
 	if err != nil {
 		return nil, nil, err
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	if config.SnapSyncTest.Enabled {
-		if exec == nil {
-			return nil, nil, errors.New("snap sync test requires an execution sequencer")
-		}
-
-		batchCount := config.SnapSyncTest.BatchCount
-		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
-		if err != nil {
-			return nil, nil, err
-		}
-		if batchCount > delayedMessageNumber {
-			batchCount = delayedMessageNumber
-		}
-		// Find the first block containing the batch count.
-		// Subtract 1 to get the block before the needed batch count,
-		// this is done to fetch previous batch metadata needed for snap sync.
-		if batchCount > 0 {
-			batchCount--
-		}
-		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
-		if err != nil {
-			return nil, nil, err
-		}
-		firstMessageBlock.SetUint64(block)
-	}
 	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, nil, err
@@ -1014,7 +966,7 @@ func getTransactionStreamer(
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -1319,7 +1271,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, consensusDB, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox)
 	if err != nil {
 		return nil, err
 	}
@@ -1390,53 +1342,6 @@ func createNodeImpl(
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
 		sequencerInbox:           sequencerInbox,
 	}, nil
-}
-
-func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
-	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
-	if err != nil {
-		return 0, err
-	}
-	high := parentChainAssertionBlock
-	low := uint64(0)
-	reduceBy := uint64(100)
-	if high > reduceBy {
-		low = high - reduceBy
-	}
-	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
-	// This will give us a range (low to high) of blocks that contain the batch count.
-	for low > 0 {
-		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
-		if err != nil {
-			return 0, err
-		}
-		if lowCount.Uint64() > batchCount {
-			high = low
-			reduceBy = reduceBy * 2
-			if low > reduceBy {
-				low = low - reduceBy
-			} else {
-				low = 0
-			}
-		} else {
-			break
-		}
-	}
-	// Then binary search between low and high to find the block containing the batch count.
-	for low < high {
-		mid := low + (high-low)/2
-
-		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
-		if err != nil {
-			return 0, err
-		}
-		if midCount.Uint64() < batchCount {
-			low = mid + 1
-		} else {
-			high = mid
-		}
-	}
-	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
