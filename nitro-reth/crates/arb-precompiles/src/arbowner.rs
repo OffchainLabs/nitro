@@ -21,6 +21,8 @@ pub const ARBOWNER_ADDRESS: Address = Address::new([
 // Getters (also on ArbOwner in Go, though most are on ArbOwnerPublic)
 const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x3e, 0x7a, 0x47, 0xb1];
 const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x74, 0x33, 0x16, 0x04];
+const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x69, 0x9d];
+const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0xaf, 0x03];
 
 // Setters — ArbOS root state
 const SET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0xe1, 0xa3, 0x5b, 0x12];
@@ -138,6 +140,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_FILTERED_FUNDS_RECIPIENT => {
             read_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
+        IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
+        GET_ALL_CHAIN_OWNERS => handle_get_all_chain_owners(&mut input),
         GET_ALL_TRANSACTION_FILTERERS => {
             handle_get_all_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
@@ -427,6 +431,16 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 }
 
 // ── AddressSet helpers ──────────────────────────────────────────────
+
+/// Check if an address is a chain owner.
+fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    handle_is_member(input, CHAIN_OWNER_SUBSPACE)
+}
+
+/// Get all chain owners. Returns ABI-encoded dynamic address array.
+fn handle_get_all_chain_owners(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    handle_get_all_members(input, CHAIN_OWNER_SUBSPACE)
+}
 
 /// Derive the storage key for an AddressSet at the given subspace.
 fn address_set_key(subspace: &[u8]) -> B256 {
