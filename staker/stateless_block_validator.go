@@ -72,10 +72,10 @@ type TransactionStreamerInterface interface {
 }
 
 type MELValidatorInterface interface {
-	ValidateMsgExtractionTill(target arbutil.MessageIndex)
+	UpdateValidationTarget(pos arbutil.MessageIndex)
 	LatestValidatedMELState(context.Context) (*mel.State, error)
 	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
-	FetchRelevantStateHash(pos arbutil.MessageIndex) (common.Hash, error)
+	FetchMessageOriginMELStateHash(pos arbutil.MessageIndex) (common.Hash, error)
 	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)
 }
 

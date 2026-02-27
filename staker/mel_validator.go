@@ -49,10 +49,6 @@ type MELValidator struct {
 	arbDb    ethdb.KeyValueStore
 	l1Client *ethclient.Client
 
-	// boldStakerAddr common.Address
-	// rollupAddr     common.Address
-	// rollup         *rollupgen.RollupUserLogic
-
 	messageExtractor *melrunner.MessageExtractor
 	dapReaders       arbstate.DapReaderSource
 
@@ -214,21 +210,6 @@ func NewMELValidator(
 		mv.latestValidatedParentChainBlock = info.ParentChainBlockNumber
 		mv.latestValidatedGS = info.GlobalState
 	} else {
-		// TODO: If LastMELValidatedInfo is not in DB then start from latest staked assertion on chain
-		// latestStaked, err := mv.rollup.LatestStakedAssertion(&bind.CallOpts{}, mv.boldStakerAddr)
-		// if err != nil {
-		// 	log.Error("MEL validator: Error fetching latest staked assertion hash", "err", err)
-		// 	return 0
-		// }
-		// latestStakedAssertion, err := ReadBoldAssertionCreationInfo(ctx, mv.rollup, mv.l1Client, mv.rollupAddr, latestStaked)
-		// if err != nil {
-		// 	log.Error("MEL validator: Error fetching latest staked assertion creation info", "err", err)
-		// 	return 0
-		// }
-		// if latestStakedAssertion.InboxMaxCount == nil || !latestStakedAssertion.InboxMaxCount.IsUint64() {
-		// 	log.Error("MEL validator: latestStakedAssertion.InboxMaxCount is not uint64")
-		// 	return 0
-		// }
 		if initialState == nil {
 			return nil, errors.New("initialState is nil when starting out from scratch")
 		}
@@ -364,7 +345,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 	})
 }
 
-func (mv *MELValidator) ValidateMsgExtractionTill(target arbutil.MessageIndex) {
+func (mv *MELValidator) UpdateValidationTarget(target arbutil.MessageIndex) {
 	mv.validateMsgExtractionTill.Store(uint64(target))
 }
 
@@ -562,12 +543,13 @@ func (mv *MELValidator) FetchMsgPreimagesAndRelevantState(ctx context.Context, m
 	return preimagesAndRelevantState, nil
 }
 
-func (mv *MELValidator) FetchRelevantStateHash(pos arbutil.MessageIndex) (common.Hash, error) {
+// FetchMessageOriginMELStateHash returns the hash of the MEL state that extracted the message corresponding to the given position
+func (mv *MELValidator) FetchMessageOriginMELStateHash(pos arbutil.MessageIndex) (common.Hash, error) {
 	mv.msgPreimagesAndStateCacheMutex.RLock()
 	preimagesAndRelevantState, found := mv.msgPreimagesAndStateCache[pos]
 	mv.msgPreimagesAndStateCacheMutex.RUnlock()
 	if !found {
-		state, err := mv.messageExtractor.FindMELStateContainingMessage(pos)
+		state, err := mv.messageExtractor.FindMessageOriginMELState(pos)
 		if err != nil {
 			return common.Hash{}, err
 		}

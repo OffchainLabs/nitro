@@ -365,7 +365,7 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 	return metadata.ParentChainBlock, err
 }
 
-func (m *MessageExtractor) FindMELStateContainingMessage(pos arbutil.MessageIndex) (*mel.State, error) {
+func (m *MessageExtractor) FindMessageOriginMELState(pos arbutil.MessageIndex) (*mel.State, error) {
 	seqNum, found, err := m.FindInboxBatchContainingMessage(pos)
 	if err != nil {
 		return nil, err

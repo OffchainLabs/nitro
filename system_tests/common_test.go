@@ -728,9 +728,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
-func UseUnifiedModuleRoot(nodeConfig *arbnode.Config) bool {
-	return nodeConfig.MELValidator.Enable && nodeConfig.BlockValidator.Enable && nodeConfig.BlockValidator.EnableMEL
-}
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
 	if b.parallelise {
@@ -744,7 +741,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1 = NewTestClient(b.ctx)
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
 	var locator *server_common.MachineLocator
-	if UseUnifiedModuleRoot(b.nodeConfig) {
+	if b.nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	} else {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
@@ -838,7 +835,7 @@ func buildOnParentChain(
 
 	fatalErrChan := make(chan error, 10)
 	var locator *server_common.MachineLocator
-	if UseUnifiedModuleRoot(nodeConfig) {
+	if nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	} else {
 		locator, err = server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
@@ -872,7 +869,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 
 	var locator *server_common.MachineLocator
 	var err error
-	if UseUnifiedModuleRoot(b.l3Config.nodeConfig) {
+	if b.l3Config.nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	} else {
 		locator, err = server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
@@ -1035,7 +1032,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	fatalErrChan := make(chan error, 10)
 	var locator *server_common.MachineLocator
-	if UseUnifiedModuleRoot(b.nodeConfig) {
+	if b.nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	} else {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
@@ -1102,7 +1099,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	feedErrChan := make(chan error, 10)
 	var locator *server_common.MachineLocator
-	if UseUnifiedModuleRoot(b.nodeConfig) {
+	if b.nodeConfig.UseUnifiedModuleRoot() {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
 	} else {
 		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)

@@ -165,6 +165,10 @@ func (c *Config) ValidatorRequired() bool {
 
 func (c *Config) MELValidatorRequired() bool { return c.MELValidator.Enable }
 
+func (c *Config) UseUnifiedModuleRoot() bool {
+	return c.MELValidator.Enable && c.BlockValidator.Enable && c.BlockValidator.EnableMEL
+}
+
 // MigrateDeprecatedConfig migrates deprecated DataAvailability config to DA.AnyTrust.
 // This allows operators to continue using --node.data-availability.* flags while
 // transitioning to the new --node.da.anytrust.* flags.
@@ -1076,31 +1080,26 @@ func getStatelessBlockValidator(
 			return nil, errors.New("stateless block validator requires an execution recorder")
 		}
 
+		var reader staker.InboxReaderInterface
+		var tracker staker.InboxTrackerInterface
 		if messageExtractor != nil {
-			statelessBlockValidator, err = staker.NewStatelessBlockValidator(
-				messageExtractor,
-				messageExtractor,
-				txStreamer,
-				exec,
-				rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
-				dapReaders,
-				func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
-				stack,
-				latestWasmModuleRoot,
-			)
+			reader = messageExtractor
+			tracker = messageExtractor
 		} else {
-			statelessBlockValidator, err = staker.NewStatelessBlockValidator(
-				inboxReader,
-				inboxTracker,
-				txStreamer,
-				exec,
-				rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
-				dapReaders,
-				func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
-				stack,
-				latestWasmModuleRoot,
-			)
+			reader = inboxReader
+			tracker = inboxTracker
 		}
+		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
+			reader,
+			tracker,
+			txStreamer,
+			exec,
+			rawdb.NewTable(consensusDB, storage.BlockValidatorPrefix),
+			dapReaders,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			stack,
+			latestWasmModuleRoot,
+		)
 	} else {
 		err = errors.New("no validator url specified")
 	}
@@ -1350,7 +1349,10 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	melReorgDetector := make(chan uint64)
+	var melReorgDetector chan uint64
+	if config.MessageExtraction.Enable && config.MELValidator.Enable {
+		melReorgDetector = make(chan uint64)
+	}
 	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry, melReorgDetector)
 	if err != nil {
 		return nil, err

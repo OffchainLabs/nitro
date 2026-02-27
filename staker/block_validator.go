@@ -658,7 +658,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	defer v.reorgMutex.RUnlock()
 	recordSent := v.recordSent()
 	if v.config().EnableMEL {
-		v.melValidator.ValidateMsgExtractionTill(recordSent + arbutil.MessageIndex(v.config().ForwardBlocks))
+		v.melValidator.UpdateValidationTarget(recordSent + arbutil.MessageIndex(v.config().ForwardBlocks))
 	}
 	pos := v.created()
 	if pos > recordSent+arbutil.MessageIndex(v.config().ForwardBlocks) {
@@ -1177,27 +1177,22 @@ func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoot
 		if err != nil {
 			return err
 		}
-		stateHash, err := v.melValidator.FetchRelevantStateHash(arbutil.MessageIndex(gs.PosInBatch))
+		stateHash, err := v.melValidator.FetchMessageOriginMELStateHash(arbutil.MessageIndex(gs.PosInBatch))
 		if err != nil {
 			return err
 		}
-		newGS := validator.GoGlobalState{
+		gs = validator.GoGlobalState{
 			BlockHash:    gs.BlockHash,
 			SendRoot:     gs.SendRoot,
 			MELStateHash: stateHash,
 			MELMsgHash:   msg.Hash(),
 			PosInBatch:   gs.PosInBatch,
 		}
-		if err := put(newGS); err != nil {
-			return err
-		}
-		v.lastValidGS = newGS
-	} else {
-		if err := put(gs); err != nil {
-			return err
-		}
-		v.lastValidGS = gs
 	}
+	if err := put(gs); err != nil {
+		return err
+	}
+	v.lastValidGS = gs
 	return nil
 }
 
@@ -1624,7 +1619,7 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 		}
 	}
 	if v.config().EnableMEL {
-		v.melValidator.ValidateMsgExtractionTill(v.created() + arbutil.MessageIndex(v.config().ForwardBlocks))
+		v.melValidator.UpdateValidationTarget(v.created() + arbutil.MessageIndex(v.config().ForwardBlocks))
 	}
 	err := stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeValidationEntryCreator, v.createNodesChan)
 	if err != nil {
@@ -1664,7 +1659,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				return
 			}
 			stateHash, err := retry.UntilSucceeds(ctx, func() (common.Hash, error) {
-				return v.melValidator.FetchRelevantStateHash(1)
+				return v.melValidator.FetchMessageOriginMELStateHash(1)
 			}, retry.WithInterval(100*time.Millisecond))
 			if err != nil {
 				select {
