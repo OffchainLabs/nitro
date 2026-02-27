@@ -3,7 +3,9 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
+    multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
+    vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
 };
 
 /// ArbGasInfo precompile address (0x6c).
@@ -131,22 +133,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         PRE_V4_GET_PRICES_IN_WEI => handle_prices_in_wei(&mut input),
         PRE_V4_GET_PRICES_IN_ARBGAS => handle_prices_in_arbgas(&mut input),
         PRE_V10_GET_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
-        // Multi-gas (ArbOS v50+) — return empty for now.
-        GET_GAS_PRICING_CONSTRAINTS | GET_MULTI_GAS_PRICING_CONSTRAINTS => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            let mut out = Vec::with_capacity(64);
-            // ABI: dynamic array with 0 elements
-            out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
-            out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
-            Ok(PrecompileOutput::new(gas_cost, out.into()))
-        }
-        GET_MULTI_GAS_BASE_FEE => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            let mut out = Vec::with_capacity(64);
-            out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
-            out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
-            Ok(PrecompileOutput::new(gas_cost, out.into()))
-        }
+        GET_GAS_PRICING_CONSTRAINTS => handle_gas_pricing_constraints(&mut input),
+        GET_MULTI_GAS_PRICING_CONSTRAINTS => handle_multi_gas_pricing_constraints(&mut input),
+        GET_MULTI_GAS_BASE_FEE => handle_multi_gas_base_fee(&mut input),
         _ => Err(PrecompileError::other("unknown selector")),
     }
 }
@@ -262,6 +251,166 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.into(),
+    ))
+}
+
+// ── Constraint getters (ArbOS v50+) ─────────────────────────────────
+
+/// Constraint field offsets (matching gas_constraint.rs / multi_gas_constraint.rs).
+const CONSTRAINT_TARGET: u64 = 0;
+const CONSTRAINT_ADJ_WINDOW: u64 = 1;
+const CONSTRAINT_BACKLOG: u64 = 2;
+const MULTI_CONSTRAINT_WEIGHTED_BASE: u64 = 4;
+
+const NUM_RESOURCE_KIND: u64 = 8;
+/// Offset within MultiGasFees for current-block fees.
+const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND;
+
+/// Returns `[][3]uint64` — (target, adjustmentWindow, backlog) per constraint.
+fn handle_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    load_arbos(input)?;
+
+    let vec_key = gas_constraints_vec_key();
+    let count = sload_field(input, vector_length_slot(&vec_key))?
+        .saturating_to::<u64>();
+    let mut sloads: u64 = 1;
+
+    // ABI: offset to dynamic array, then length, then N×3 uint64 values.
+    let mut out = Vec::with_capacity(64 + count as usize * 96);
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
+
+    for i in 0..count {
+        let target = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_TARGET))?;
+        let window = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_ADJ_WINDOW))?;
+        let backlog = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_BACKLOG))?;
+
+        out.extend_from_slice(&target.to_be_bytes::<32>());
+        out.extend_from_slice(&window.to_be_bytes::<32>());
+        out.extend_from_slice(&backlog.to_be_bytes::<32>());
+        sloads += 3;
+    }
+
+    Ok(PrecompileOutput::new(
+        (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.into(),
+    ))
+}
+
+/// Returns `[]MultiGasConstraint` ABI-encoded.
+///
+/// MultiGasConstraint = (WeightedResource[] resources, uint32 adjustmentWindowSecs,
+///                        uint64 targetPerSec, uint64 backlog)
+/// WeightedResource   = (uint8 resource, uint64 weight)
+fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    load_arbos(input)?;
+
+    let vec_key = multi_gas_constraints_vec_key();
+    let count = sload_field(input, vector_length_slot(&vec_key))?
+        .saturating_to::<u64>();
+    let mut sloads: u64 = 1;
+
+    // Collect per-constraint data before encoding, since we need to know sizes for offsets.
+    struct ConstraintData {
+        target: U256,
+        window: U256,
+        backlog: U256,
+        resources: Vec<(u8, U256)>,
+    }
+    let mut constraints = Vec::with_capacity(count as usize);
+
+    for i in 0..count {
+        let target = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_TARGET))?;
+        let window = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_ADJ_WINDOW))?;
+        let backlog = sload_field(input, vector_element_field(&vec_key, i, CONSTRAINT_BACKLOG))?;
+        sloads += 3;
+
+        let elem_key = vector_element_key(&vec_key, i);
+        let mut resources = Vec::new();
+        for kind in 0..NUM_RESOURCE_KIND {
+            let w = sload_field(
+                input,
+                map_slot(elem_key.as_slice(), MULTI_CONSTRAINT_WEIGHTED_BASE + kind),
+            )?;
+            sloads += 1;
+            if w > U256::ZERO {
+                resources.push((kind as u8, w));
+            }
+        }
+        constraints.push(ConstraintData { target, window, backlog, resources });
+    }
+
+    // ABI-encode: dynamic array of dynamic tuples.
+    let n = constraints.len();
+    let mut out = Vec::new();
+
+    // Top-level: offset to outer array.
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    // Array length.
+    out.extend_from_slice(&U256::from(n).to_be_bytes::<32>());
+
+    // Element tuple size = 4 × 32 (head) + 32 (resources length) + resources.len() × 64.
+    let elem_sizes: Vec<usize> = constraints
+        .iter()
+        .map(|c| 4 * 32 + 32 + c.resources.len() * 64)
+        .collect();
+
+    // Write offsets (relative to start of offsets area).
+    let mut running_offset = n * 32;
+    for size in &elem_sizes {
+        out.extend_from_slice(&U256::from(running_offset).to_be_bytes::<32>());
+        running_offset += size;
+    }
+
+    // Write each element.
+    for c in &constraints {
+        let m = c.resources.len();
+        // Tuple head: offset to Resources data = 4 × 32 = 128.
+        out.extend_from_slice(&U256::from(4u64 * 32).to_be_bytes::<32>());
+        // AdjustmentWindowSecs (uint32).
+        out.extend_from_slice(&c.window.to_be_bytes::<32>());
+        // TargetPerSec (uint64).
+        out.extend_from_slice(&c.target.to_be_bytes::<32>());
+        // Backlog (uint64).
+        out.extend_from_slice(&c.backlog.to_be_bytes::<32>());
+        // Resources array length.
+        out.extend_from_slice(&U256::from(m).to_be_bytes::<32>());
+        // Each WeightedResource (uint8 resource, uint64 weight).
+        for &(kind, ref weight) in &c.resources {
+            out.extend_from_slice(&U256::from(kind).to_be_bytes::<32>());
+            out.extend_from_slice(&weight.to_be_bytes::<32>());
+        }
+    }
+
+    Ok(PrecompileOutput::new(
+        (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.into(),
+    ))
+}
+
+/// Returns `uint256[]` — current-block base fee per resource kind.
+fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    load_arbos(input)?;
+
+    let fees_key = multi_gas_base_fees_subspace();
+
+    let mut out = Vec::with_capacity(64 + NUM_RESOURCE_KIND as usize * 32);
+    // ABI: offset, then length, then values.
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    out.extend_from_slice(&U256::from(NUM_RESOURCE_KIND).to_be_bytes::<32>());
+
+    for kind in 0..NUM_RESOURCE_KIND {
+        let slot = map_slot(fees_key.as_slice(), CURRENT_BLOCK_FEES_OFFSET + kind);
+        let fee = sload_field(input, slot)?;
+        out.extend_from_slice(&fee.to_be_bytes::<32>());
+    }
+
+    Ok(PrecompileOutput::new(
+        (NUM_RESOURCE_KIND * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }

@@ -110,3 +110,51 @@ pub fn subspace_slot(subspace_key: &[u8], offset: u64) -> U256 {
     map_slot(sub_storage_key.as_slice(), offset)
 }
 
+// ── L2 pricing vector helpers ────────────────────────────────────────
+
+/// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).
+pub fn l2_pricing_subspace() -> B256 {
+    derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE)
+}
+
+/// Subspace keys within L2 pricing (matching Go l2pricing constants).
+const GAS_CONSTRAINTS_SUBKEY: &[u8] = &[0];
+const MULTI_GAS_CONSTRAINTS_SUBKEY: &[u8] = &[1];
+const MULTI_GAS_BASE_FEES_SUBKEY: &[u8] = &[2];
+
+/// Derive a sub-storage vector key under L2 pricing.
+fn l2_vector_key(sub_key: &[u8]) -> B256 {
+    derive_subspace_key(l2_pricing_subspace().as_slice(), sub_key)
+}
+
+/// Slot for the length of a sub-storage vector.
+pub fn vector_length_slot(vector_key: &B256) -> U256 {
+    map_slot(vector_key.as_slice(), 0)
+}
+
+/// Subspace key for element `index` within a vector.
+pub fn vector_element_key(vector_key: &B256, index: u64) -> B256 {
+    derive_subspace_key(vector_key.as_slice(), &index.to_be_bytes())
+}
+
+/// Slot for field `offset` within element `index` of a vector.
+pub fn vector_element_field(vector_key: &B256, index: u64, offset: u64) -> U256 {
+    let elem = vector_element_key(vector_key, index);
+    map_slot(elem.as_slice(), offset)
+}
+
+/// Gas constraints vector key.
+pub fn gas_constraints_vec_key() -> B256 {
+    l2_vector_key(GAS_CONSTRAINTS_SUBKEY)
+}
+
+/// Multi-gas constraints vector key.
+pub fn multi_gas_constraints_vec_key() -> B256 {
+    l2_vector_key(MULTI_GAS_CONSTRAINTS_SUBKEY)
+}
+
+/// Multi-gas base fees subspace key.
+pub fn multi_gas_base_fees_subspace() -> B256 {
+    l2_vector_key(MULTI_GAS_BASE_FEES_SUBKEY)
+}
+
