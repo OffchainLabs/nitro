@@ -1349,3 +1349,23 @@ func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, err
 
 	return arbState.FilteredTransactions().IsFiltered(txHash)
 }
+
+func (s *ExecutionEngine) UnfilterTxHashes(txHashes []common.Hash) error {
+	if s.transactionFiltererRPCClient == nil {
+		return errors.New("transaction filterer RPC client not configured")
+	}
+
+	s.LaunchThread(func(ctx context.Context) {
+		for _, txHash := range txHashes {
+			_, err := s.transactionFiltererRPCClient.Unfilter(txHash).Await(ctx)
+			if err != nil {
+				log.Error(
+					"error deleting filtered tx",
+					"filteredTxHash", txHash,
+					"err", err,
+				)
+			}
+		}
+	})
+	return nil
+}

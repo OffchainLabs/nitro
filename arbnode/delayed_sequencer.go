@@ -291,6 +291,10 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 					"txHashes", d.waitingForFilteredTx.TxHashes,
 					"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
 					"waitedFor", time.Since(d.waitingForFilteredTx.FirstSeen))
+				err = d.exec.UnfilterTxHashes(d.waitingForFilteredTx.TxHashes)
+				if err != nil {
+					log.Warn("error unfiltering tx hashes", "err", err, "txHashes", d.waitingForFilteredTx.TxHashes)
+				}
 				d.waitingForFilteredTx = nil
 				delayedSequencerFilteredTxWaitSeconds.Update(0)
 			}
