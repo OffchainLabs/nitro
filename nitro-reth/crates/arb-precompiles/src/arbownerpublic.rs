@@ -4,7 +4,9 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
+    CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY,
+    TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -71,22 +73,26 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let gas_cost = COPY_GAS.min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
-        IS_NATIVE_TOKEN_OWNER | IS_TRANSACTION_FILTERER => {
-            // Check membership — return false for now (no address set reading).
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+        IS_NATIVE_TOKEN_OWNER => {
+            handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
-        GET_ALL_NATIVE_TOKEN_OWNERS | GET_ALL_TRANSACTION_FILTERERS => {
-            handle_empty_address_array(&mut input)
+        IS_TRANSACTION_FILTERER => {
+            handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
-        GET_NATIVE_TOKEN_MANAGEMENT_FROM | GET_TRANSACTION_FILTERING_FROM => {
-            // Return zero timestamp (feature not enabled).
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+        GET_ALL_NATIVE_TOKEN_OWNERS => {
+            handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
+        }
+        GET_ALL_TRANSACTION_FILTERERS => {
+            handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
+        }
+        GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
+            read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
+        }
+        GET_TRANSACTION_FILTERING_FROM => {
+            read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
         GET_FILTERED_FUNDS_RECIPIENT => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+            read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
             // Return true (enabled by default on recent ArbOS versions).
@@ -219,10 +225,60 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_empty_address_array(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let gas_cost = COPY_GAS.min(input.gas);
-    let mut out = Vec::with_capacity(64);
+fn handle_is_set_member(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    load_arbos(input)?;
+
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, subspace);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
+    let addr_hash = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let value = sload_field(input, member_slot)?;
+    let is_member = if value != U256::ZERO {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
+
+    Ok(PrecompileOutput::new(
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        is_member.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+fn handle_get_all_set_members(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+) -> PrecompileResult {
+    let gas_limit = input.gas;
+    load_arbos(input)?;
+
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, subspace);
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let count: u64 = size.try_into().unwrap_or(0);
+    let max_members = count.min(65536);
+
+    let mut out = Vec::with_capacity(64 + max_members as usize * 32);
     out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
-    out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
-    Ok(PrecompileOutput::new(gas_cost, out.into()))
+    out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
+
+    for i in 0..max_members {
+        let member_slot = map_slot(set_key.as_slice(), i + 1);
+        let addr_val = sload_field(input, member_slot)?;
+        out.extend_from_slice(&addr_val.to_be_bytes::<32>());
+    }
+
+    Ok(PrecompileOutput::new(
+        ((1 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        out.into(),
+    ))
 }
