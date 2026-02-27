@@ -8,7 +8,13 @@ license.workspace = true
 [dependencies]
 arb-primitives = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-rlp = { workspace = true }
 alloy-rpc-types-engine = { workspace = true }
-reth-payload-builder = { workspace = true }
+reth-engine-primitives = { workspace = true }
+reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
 serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
