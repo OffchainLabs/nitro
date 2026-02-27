@@ -211,6 +211,10 @@ impl<D: Database> L1PricingState<D> {
     }
 
     pub fn set_last_surplus(&self, magnitude: U256, negative: bool) -> Result<(), ()> {
+        // Pre-v7 doesn't store surplus.
+        if self.arbos_version < 7 {
+            return Ok(());
+        }
         if negative {
             self.last_surplus.set_negative(magnitude)
         } else {
@@ -255,10 +259,16 @@ impl<D: Database> L1PricingState<D> {
     }
 
     pub fn parent_gas_floor_per_token(&self) -> Result<u64, ()> {
+        if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+            return Ok(0);
+        }
         self.gas_floor_per_token.get()
     }
 
     pub fn set_parent_gas_floor_per_token(&self, val: u64) -> Result<(), ()> {
+        if self.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+            return Err(());
+        }
         self.gas_floor_per_token.set(val)
     }
 
