@@ -74,10 +74,19 @@ where
         DB: Database + 'a,
         I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
     {
+        // Capture header-derived fields from the Eth context before passing
+        // it to the inner executor. The rest is populated from state in
+        // apply_pre_execution_changes.
+        let arb_ctx = ArbBlockExecutionCtx {
+            parent_hash: ctx.parent_hash,
+            parent_beacon_block_root: ctx.parent_beacon_block_root,
+            extra_data: ctx.extra_data.to_vec(),
+            ..Default::default()
+        };
         ArbBlockExecutor {
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
-            arb_ctx: ArbBlockExecutionCtx::default(),
+            arb_ctx,
         }
     }
 }
@@ -132,6 +141,23 @@ where
 
     fn apply_pre_execution_changes(&mut self) -> Result<(), BlockExecutionError> {
         self.inner.apply_pre_execution_changes()?;
+
+        // Populate header-derived fields from the EVM block/cfg environment.
+        // These are fields encoded in mix_hash and other header fields that
+        // aren't available through the standard EthBlockExecutionCtx.
+        {
+            let block = self.inner.evm().block();
+            let timestamp = revm::context::Block::timestamp(block).to::<u64>();
+            if self.arb_ctx.block_timestamp == 0 {
+                self.arb_ctx.block_timestamp = timestamp;
+            }
+            if let Some(prevrandao) = revm::context::Block::prevrandao(block) {
+                if self.arb_ctx.l1_block_number == 0 {
+                    self.arb_ctx.l1_block_number =
+                        crate::config::l1_block_number_from_mix_hash(&prevrandao);
+                }
+            }
+        }
 
         // Load ArbOS state parameters from the EVM database.
         // This populates the execution context with state-derived fields
