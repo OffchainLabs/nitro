@@ -208,7 +208,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             .per_tx_gas_limit()
             .unwrap_or(0);
 
-        self.arb_hooks = Some(DefaultArbOsHooks::new(
+        let mut hooks = DefaultArbOsHooks::new(
             self.arb_ctx.coinbase,
             arbos_version,
             self.arb_ctx.network_fee_account,
@@ -218,7 +218,12 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             per_tx_gas_limit,
             false,
             self.arb_ctx.l1_base_fee,
-        ));
+        );
+        // Populate L1 block number cache from header-derived context.
+        if self.arb_ctx.l1_block_number > 0 {
+            hooks.tx_proc.set_l1_block_number(self.arb_ctx.l1_block_number);
+        }
+        self.arb_hooks = Some(hooks);
     }
 }
 

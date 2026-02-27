@@ -116,6 +116,30 @@ impl TxProcessor {
     }
 
     // -----------------------------------------------------------------
+    // L1 Block Number / Hash Caching
+    // -----------------------------------------------------------------
+
+    /// Set the cached L1 block number (from ArbOS blockhashes state).
+    pub fn set_l1_block_number(&mut self, block_number: u64) {
+        self.cached_l1_block_number = Some(block_number);
+    }
+
+    /// Get the cached L1 block number.
+    pub fn l1_block_number(&self) -> Option<u64> {
+        self.cached_l1_block_number
+    }
+
+    /// Cache an L1 block hash for the given block number.
+    pub fn set_l1_block_hash(&mut self, block_number: u64, hash: B256) {
+        self.cached_l1_block_hashes.insert(block_number, hash);
+    }
+
+    /// Get a cached L1 block hash.
+    pub fn l1_block_hash(&self, block_number: u64) -> Option<B256> {
+        self.cached_l1_block_hashes.get(&block_number).copied()
+    }
+
+    // -----------------------------------------------------------------
     // Stylus / WASM Execution
     // -----------------------------------------------------------------
 
