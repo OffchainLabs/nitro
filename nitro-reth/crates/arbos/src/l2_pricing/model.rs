@@ -374,9 +374,25 @@ impl<D: Database> L2PricingState<D> {
         Ok(())
     }
 
-    /// Multi-dimensional price for refund calculation.
-    pub fn multi_dimensional_price_for_refund(&self) -> Result<U256, ()> {
-        self.base_fee_wei()
+    /// Compute total cost for a multi-gas usage, for refund calculations.
+    ///
+    /// Returns `sum(gas_used[kind] * base_fee[kind])` across all resource kinds.
+    pub fn multi_dimensional_price_for_refund(
+        &self,
+        gas_used: MultiGas,
+    ) -> Result<U256, ()> {
+        let fees = self.get_multi_gas_base_fee_per_resource()?;
+        let mut total = U256::ZERO;
+        for kind in ResourceKind::ALL {
+            let amount = gas_used.get(kind);
+            if amount == 0 {
+                continue;
+            }
+            total = total.saturating_add(
+                U256::from(amount).saturating_mul(fees[kind as usize]),
+            );
+        }
+        Ok(total)
     }
 }
 
