@@ -916,8 +916,34 @@ where
                             // Transfer call value from escrow to sender.
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
-                            if !value.is_zero() {
-                                transfer_balance(db, escrow, sender, value);
+                            if !value.is_zero()
+                                && !try_transfer_balance(db, escrow, sender, value)
+                            {
+                                // Escrow has insufficient funds — abort the retry tx.
+                                let tx_type = recovered.tx().tx_type();
+                                self.pending_tx = Some(PendingArbTx {
+                                    sender,
+                                    tx_gas_limit: 0,
+                                    arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
+                                    has_poster_costs: false,
+                                    poster_gas: 0,
+                                    evm_gas_used: 0,
+                                    calldata_units: 0,
+                                    charged_multi_gas: MultiGas::default(),
+                                    gas_price_positive: true,
+                                    retry_context: None,
+                                });
+                                return Ok(EthTxResult {
+                                    result: revm::context::result::ResultAndState {
+                                        result: ExecutionResult::Revert {
+                                            gas_used: 0,
+                                            output: alloy_primitives::Bytes::new(),
+                                        },
+                                        state: Default::default(),
+                                    },
+                                    blob_gas_used: 0,
+                                    tx_type,
+                                });
                             }
 
                             // Mint prepaid gas to sender.
