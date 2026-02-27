@@ -1,5 +1,5 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
@@ -75,12 +75,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         GET_TIMEOUT => handle_get_timeout(&mut input),
         GET_BENEFICIARY => handle_get_beneficiary(&mut input),
-        REDEEM => {
-            // Redeem schedules a retry tx — handled by the block executor, not here.
-            Err(PrecompileError::other(
-                "redeem is handled by the block executor",
-            ))
-        }
+        REDEEM => handle_redeem(&mut input),
         KEEPALIVE => handle_keepalive(&mut input),
         CANCEL => handle_cancel(&mut input),
         _ => Err(PrecompileError::other(
@@ -239,6 +234,51 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         beneficiary.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// Redeem validates the retryable, increments numTries, and returns a deterministic
+/// retry tx hash. The actual retry execution is scheduled by the block executor.
+fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let ticket_id = B256::from_slice(&data[4..36]);
+    let current_timestamp: u64 = input
+        .internals()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(u64::MAX);
+
+    load_arbos(input)?;
+
+    // Open the retryable (verifies exists and not expired).
+    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+
+    // Read and increment numTries.
+    let num_tries_slot = map_slot(ticket_key.as_slice(), NUM_TRIES_OFFSET);
+    let num_tries = sload_field(input, num_tries_slot)?;
+    let nonce: u64 = num_tries
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid numTries"))?;
+    sstore_field(input, num_tries_slot, U256::from(nonce + 1))?;
+
+    // Compute a deterministic retry tx hash: keccak256(ticket_id || nonce).
+    // The executor uses this hash to identify the scheduled retry.
+    let mut hash_input = [0u8; 64];
+    hash_input[..32].copy_from_slice(ticket_id.as_slice());
+    hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
+    let retry_tx_hash = keccak256(&hash_input);
+
+    // Gas: open_retryable(1 sload) + 1 sload (numTries) + 1 sstore (numTries) + copy
+    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        retry_tx_hash.to_vec().into(),
     ))
 }
 
