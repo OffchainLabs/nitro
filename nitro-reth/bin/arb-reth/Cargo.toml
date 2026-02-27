@@ -11,8 +11,5 @@ path = "src/main.rs"
 
 [dependencies]
 arb-node = { workspace = true }
-arb-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }
-reth-chainspec = { workspace = true }
-reth-node-builder = { workspace = true }
 tracing = { workspace = true }

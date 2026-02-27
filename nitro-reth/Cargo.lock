@@ -1039,16 +1039,22 @@ dependencies = [
  "arb-evm",
  "arb-payload",
  "arb-primitives",
+ "arb-txpool",
  "clap",
  "eyre",
  "reth-chainspec",
  "reth-consensus",
+ "reth-evm",
  "reth-execution-types",
+ "reth-network",
+ "reth-node-api",
  "reth-node-builder",
- "reth-node-ethereum",
  "reth-node-types",
+ "reth-payload-builder",
  "reth-primitives-traits",
  "reth-storage-api",
+ "reth-transaction-pool",
+ "tracing",
 ]
 
 [[package]]
@@ -1108,11 +1114,8 @@ dependencies = [
 name = "arb-reth"
 version = "0.1.0"
 dependencies = [
- "arb-chainspec",
  "arb-node",
- "reth-chainspec",
  "reth-cli-util",
- "reth-node-builder",
  "tracing",
 ]
 
@@ -1149,7 +1152,12 @@ dependencies = [
 name = "arb-txpool"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
  "arb-primitives",
+ "c-kzg",
+ "derive_more",
  "reth-primitives-traits",
  "reth-transaction-pool",
 ]
@@ -6517,22 +6525,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-ethereum-consensus"
-version = "1.11.1"
-source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
-dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alloy-primitives",
- "reth-chainspec",
- "reth-consensus",
- "reth-consensus-common",
- "reth-execution-types",
- "reth-primitives-traits",
- "tracing",
-]
-
-[[package]]
 name = "reth-ethereum-engine-primitives"
 version = "1.11.1"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
@@ -6561,35 +6553,6 @@ dependencies = [
  "auto_impl",
  "once_cell",
  "rustc-hash",
-]
-
-[[package]]
-name = "reth-ethereum-payload-builder"
-version = "1.11.1"
-source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
-dependencies = [
- "alloy-consensus",
- "alloy-eips",
- "alloy-primitives",
- "alloy-rlp",
- "alloy-rpc-types-engine",
- "reth-basic-payload-builder",
- "reth-chainspec",
- "reth-consensus-common",
- "reth-errors",
- "reth-ethereum-primitives",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-payload-builder",
- "reth-payload-builder-primitives",
- "reth-payload-primitives",
- "reth-payload-validator",
- "reth-primitives-traits",
- "reth-revm",
- "reth-storage-api",
- "reth-transaction-pool",
- "revm",
- "tracing",
 ]
 
 [[package]]
@@ -7159,44 +7122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-node-ethereum"
-version = "1.11.1"
-source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
-dependencies = [
- "alloy-eips",
- "alloy-network",
- "alloy-rpc-types-engine",
- "alloy-rpc-types-eth",
- "eyre",
- "reth-chainspec",
- "reth-engine-local",
- "reth-engine-primitives",
- "reth-ethereum-consensus",
- "reth-ethereum-engine-primitives",
- "reth-ethereum-payload-builder",
- "reth-ethereum-primitives",
- "reth-evm",
- "reth-evm-ethereum",
- "reth-network",
- "reth-node-api",
- "reth-node-builder",
- "reth-payload-primitives",
- "reth-primitives-traits",
- "reth-provider",
- "reth-revm",
- "reth-rpc",
- "reth-rpc-api",
- "reth-rpc-builder",
- "reth-rpc-eth-api",
- "reth-rpc-eth-types",
- "reth-rpc-server-types",
- "reth-tracing",
- "reth-transaction-pool",
- "revm",
- "tokio",
-]
-
-[[package]]
 name = "reth-node-ethstats"
 version = "1.11.1"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
@@ -7333,16 +7258,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "tokio",
-]
-
-[[package]]
-name = "reth-payload-validator"
-version = "1.11.1"
-source = "git+https://github.com/paradigmxyz/reth.git?rev=20cfb2d517#20cfb2d51772f3f0f35bc3a34cb78b3196884a15"
-dependencies = [
- "alloy-consensus",
- "alloy-rpc-types-engine",
- "reth-primitives-traits",
 ]
 
 [[package]]
