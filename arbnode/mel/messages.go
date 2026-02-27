@@ -72,3 +72,9 @@ type BatchMetadata struct {
 	DelayedMessageCount uint64
 	ParentChainBlock    uint64
 }
+
+type MessageSyncProgress struct {
+	BatchSeen      uint64
+	BatchProcessed uint64
+	MsgCount       arbutil.MessageIndex
+}

@@ -715,6 +715,36 @@ func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 	return r.lastSeenBatchCount.Load()
 }
 
+func (r *InboxReader) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
+	batchProcessed := r.GetLastReadBatchCount()
+	if batchProcessed == 0 {
+		return 0, nil
+	}
+	return r.tracker.GetBatchMessageCount(batchProcessed - 1)
+}
+
+func (r *InboxReader) GetSyncProgress(_ context.Context) (mel.MessageSyncProgress, error) {
+	batchSeen := r.GetLastSeenBatchCount()
+	batchProcessed := r.GetLastReadBatchCount()
+	var msgCount arbutil.MessageIndex
+	if batchProcessed > 0 {
+		var err error
+		msgCount, err = r.tracker.GetBatchMessageCount(batchProcessed - 1)
+		if err != nil {
+			return mel.MessageSyncProgress{}, err
+		}
+	}
+	return mel.MessageSyncProgress{
+		BatchSeen:      batchSeen,
+		BatchProcessed: batchProcessed,
+		MsgCount:       msgCount,
+	}, nil
+}
+
+func (r *InboxReader) GetL1Reader() *headerreader.HeaderReader {
+	return r.l1Reader
+}
+
 func (r *InboxReader) GetDelayBlocks() uint64 {
 	return r.config().DelayBlocks
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -80,6 +81,11 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
+// SequencerBatchCountFetcher queries the on-chain sequencer inbox batch count at a given parent chain block.
+type SequencerBatchCountFetcher interface {
+	GetBatchCount(ctx context.Context, blockNum *big.Int) (uint64, error)
+}
+
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
 type ParentChainReader interface {
 	Client() rpc.ClientInterface // to make BatchCallContext requests
@@ -111,6 +117,8 @@ type MessageExtractor struct {
 	lastBlockToRead          atomic.Uint64
 	stuckCount               uint64
 	reorgEventsNotifier      chan uint64
+	seqBatchCounter          SequencerBatchCountFetcher
+	l1Reader                 *headerreader.HeaderReader
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -124,6 +132,8 @@ func NewMessageExtractor(
 	melDB *Database,
 	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	seqBatchCounter SequencerBatchCountFetcher,
+	l1Reader *headerreader.HeaderReader,
 	reorgEventsNotifier chan uint64,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
@@ -141,6 +151,8 @@ func NewMessageExtractor(
 		fsm:                 fsm,
 		caughtUpChan:        make(chan struct{}),
 		reorgEventsNotifier: reorgEventsNotifier,
+		seqBatchCounter:     seqBatchCounter,
+		l1Reader:            l1Reader,
 	}, nil
 }
 
@@ -229,6 +241,33 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 		return 0, err
 	}
 	return arbutil.MessageIndex(state.MsgCount), nil
+}
+
+func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
+	if err != nil {
+		return mel.MessageSyncProgress{}, err
+	}
+	batchSeen := headState.BatchCount // fallback when seqBatchCounter is nil or returns error
+	if m.seqBatchCounter != nil {
+		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber+1))
+		if err != nil {
+			if !strings.Contains(err.Error(), "header not found") {
+				log.Error("SequencerInbox GetBatchCount error", "err", err)
+			}
+		} else {
+			batchSeen = seen
+		}
+	}
+	return mel.MessageSyncProgress{
+		BatchSeen:      batchSeen,
+		BatchProcessed: headState.BatchCount,
+		MsgCount:       arbutil.MessageIndex(headState.MsgCount),
+	}, nil
+}
+
+func (m *MessageExtractor) GetL1Reader() *headerreader.HeaderReader {
+	return m.l1Reader
 }
 
 // GetFinalizedDelayedMessagesRead uses MessageExtractor's context for calls to parentChainReader

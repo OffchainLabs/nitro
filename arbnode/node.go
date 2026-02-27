@@ -820,6 +820,8 @@ func getMessageExtractor(
 	arbDb ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	sequencerInbox *SequencerInbox,
+	l1Reader *headerreader.HeaderReader,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		return nil, nil
@@ -842,6 +844,8 @@ func getMessageExtractor(
 		melDB,
 		txStreamer,
 		dapRegistry,
+		sequencerInbox,
+		l1Reader,
 		nil,
 	)
 	if err != nil {
@@ -1322,7 +1326,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry, sequencerInbox, l1Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -1703,7 +1707,13 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
-	n.SyncMonitor.Initialize(n.MessageExtractor, n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.L1Reader, n.sequencerInbox)
+	var syncFetcher MessageSyncProgressFetcher
+	if n.MessageExtractor != nil {
+		syncFetcher = n.MessageExtractor
+	} else if n.InboxReader != nil {
+		syncFetcher = n.InboxReader
+	}
+	n.SyncMonitor.Initialize(syncFetcher, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
