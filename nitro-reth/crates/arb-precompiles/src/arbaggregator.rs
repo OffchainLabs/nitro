@@ -88,12 +88,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         GET_FEE_COLLECTOR => handle_get_fee_collector(&mut input),
         SET_FEE_COLLECTOR => handle_set_fee_collector(&mut input),
-        GET_BATCH_POSTERS | ADD_BATCH_POSTER => {
-            // These methods require address set iteration/modification.
-            Err(PrecompileError::other(
-                "batch poster list operations not yet supported",
-            ))
-        }
+        GET_BATCH_POSTERS => handle_get_batch_posters(&mut input),
+        ADD_BATCH_POSTER => handle_add_batch_poster(&mut input),
         _ => Err(PrecompileError::other(
             "unknown ArbAggregator selector",
         )),
@@ -130,11 +126,21 @@ fn sstore_field(
     Ok(())
 }
 
-/// Derive the poster info sub-storage key for a specific batch poster.
-/// Path: root → l1pricing → batchPosterTable([0]) → posterInfo([1]) → poster_address
-fn poster_info_key(poster: Address) -> B256 {
+/// Derive the batch poster table sub-storage key.
+fn batch_poster_table_key() -> B256 {
     let l1_pricing_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
-    let bpt_key = derive_subspace_key(l1_pricing_key.as_slice(), BATCH_POSTER_TABLE_KEY);
+    derive_subspace_key(l1_pricing_key.as_slice(), BATCH_POSTER_TABLE_KEY)
+}
+
+/// Derive the posterAddrs (AddressSet) sub-storage key.
+fn poster_addrs_key() -> B256 {
+    let bpt_key = batch_poster_table_key();
+    derive_subspace_key(bpt_key.as_slice(), POSTER_ADDRS_KEY)
+}
+
+/// Derive the poster info sub-storage key for a specific batch poster.
+fn poster_info_key(poster: Address) -> B256 {
+    let bpt_key = batch_poster_table_key();
     let poster_info = derive_subspace_key(bpt_key.as_slice(), POSTER_INFO_KEY);
     derive_subspace_key(poster_info.as_slice(), poster.as_slice())
 }
@@ -142,7 +148,7 @@ fn poster_info_key(poster: Address) -> B256 {
 /// Check if caller is a chain owner via the address set membership check.
 fn is_chain_owner(input: &mut PrecompileInput<'_>, addr: Address) -> Result<bool, PrecompileError> {
     let owner_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
-    let by_address_key = derive_subspace_key(owner_key.as_slice(), &[]);
+    let by_address_key = derive_subspace_key(owner_key.as_slice(), &[0]);
     let addr_b256 = B256::left_padding_from(addr.as_slice());
     let slot = map_slot_b256(by_address_key.as_slice(), &addr_b256);
     let val = sload_field(input, slot)?;
@@ -207,5 +213,103 @@ fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     sstore_field(input, pay_to_slot, new_val)?;
 
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
+}
+
+/// GetBatchPosters returns all batch poster addresses from the AddressSet.
+fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    load_arbos(input)?;
+
+    let addrs_key = poster_addrs_key();
+    // AddressSet size is at offset 0.
+    let size_slot = map_slot(addrs_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let count: u64 = size
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+
+    const MAX_MEMBERS: u64 = 1024;
+    let count = count.min(MAX_MEMBERS);
+
+    // Read each member address from positions 1..=count.
+    let mut addresses = Vec::with_capacity(count as usize);
+    for i in 1..=count {
+        let member_slot = map_slot(addrs_key.as_slice(), i);
+        let val = sload_field(input, member_slot)?;
+        addresses.push(val);
+    }
+
+    // ABI-encode as dynamic address array: offset, length, then elements.
+    let mut out = Vec::with_capacity(64 + 32 * addresses.len());
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
+    for addr_val in &addresses {
+        out.extend_from_slice(&addr_val.to_be_bytes::<32>());
+    }
+
+    let gas_used = (1 + count) * SLOAD_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
+}
+
+/// AddBatchPoster adds a new batch poster. Caller must be a chain owner.
+fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let new_poster = Address::from_slice(&data[16..36]);
+    let caller = input.caller;
+    load_arbos(input)?;
+
+    // Verify caller is a chain owner.
+    if !is_chain_owner(input, caller)? {
+        return Err(PrecompileError::other("must be called by chain owner"));
+    }
+
+    let addrs_key = poster_addrs_key();
+
+    // Check if already a batch poster via byAddress sub-storage.
+    let by_address_key = derive_subspace_key(addrs_key.as_slice(), &[0]);
+    let addr_hash = B256::left_padding_from(new_poster.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let existing = sload_field(input, member_slot)?;
+
+    if existing != U256::ZERO {
+        // Already a batch poster — no-op.
+        return Ok(PrecompileOutput::new(
+            (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+            vec![].into(),
+        ));
+    }
+
+    // Read current size and increment.
+    let size_slot = map_slot(addrs_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let size_u64: u64 = size
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+    let new_size = size_u64 + 1;
+
+    // Store the new poster at position (1 + size) in the backing storage.
+    let new_pos_slot = map_slot(addrs_key.as_slice(), new_size);
+    let addr_as_u256 = U256::from_be_slice(new_poster.as_slice());
+    sstore_field(input, new_pos_slot, addr_as_u256)?;
+
+    // Store in byAddress mapping: byAddress[addr_hash] = 1-based position.
+    let slot_value = U256::from(new_size);
+    sstore_field(input, member_slot, slot_value)?;
+
+    // Increment size.
+    sstore_field(input, size_slot, U256::from(new_size))?;
+
+    // Initialize poster info: set payTo = newPoster (the poster pays itself initially).
+    let info_key = poster_info_key(new_poster);
+    let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
+    sstore_field(input, pay_to_slot, addr_as_u256)?;
+
+    let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
 }

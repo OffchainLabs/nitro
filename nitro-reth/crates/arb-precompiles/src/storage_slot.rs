@@ -17,6 +17,14 @@ pub const BLOCKHASHES_SUBSPACE: &[u8] = &[6];
 pub const PROGRAMS_SUBSPACE: &[u8] = &[7];
 pub const CHAIN_CONFIG_SUBSPACE: &[u8] = &[8];
 pub const FEATURES_SUBSPACE: &[u8] = &[9];
+pub const NATIVE_TOKEN_SUBSPACE: &[u8] = &[10];
+pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
+
+/// Filtered transactions backing storage account (separate from ArbOS state).
+pub const FILTERED_TX_STATE_ADDRESS: alloy_primitives::Address = alloy_primitives::Address::new([
+    0xa4, 0xb0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x01,
+]);
 
 /// Root-level ArbOS state field offsets (matches Go iota in arbosstate.go).
 pub const VERSION_OFFSET: u64 = 0;
