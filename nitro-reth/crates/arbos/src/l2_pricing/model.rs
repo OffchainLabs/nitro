@@ -293,7 +293,7 @@ impl<D: Database> L2PricingState<D> {
             return Ok(min_base_fee);
         }
 
-        let exp_result = approx_exp_basis_points(exponent_bips as u128);
+        let exp_result = approx_exp_basis_points(exponent_bips);
         let base_fee = (min_base_fee * U256::from(exp_result)) / U256::from(10000u64);
 
         if base_fee < min_base_fee {
@@ -438,24 +438,26 @@ impl<D: Database> L2PricingState<D> {
     }
 }
 
-/// Approximate e^(x/10000) * 10000 using a Taylor series.
-fn approx_exp_basis_points(bips: u128) -> u128 {
-    if bips >= MAX_PRICING_EXPONENT_BIPS as u128 {
-        return u128::MAX;
+/// Approximate e^(x/10000) * 10000 using Horner's method (degree 4).
+///
+/// Matches Go's `ApproxExpBasisPoints(value, 4)` exactly.
+fn approx_exp_basis_points(bips: u64) -> u64 {
+    const ACCURACY: u64 = 4;
+    const B: u64 = 10_000; // OneInBips
+
+    if bips == 0 {
+        return B;
     }
 
-    let mut result = 10000u128;
-    let mut term = 10000u128;
-
-    for i in 1..=20 {
-        term = term.saturating_mul(bips) / (i * 10000);
-        result = result.saturating_add(term);
-        if term < 1 {
-            break;
-        }
+    // Horner's method: b*(1 + x/b*(1 + x/(2b)*(1 + x/(3b))))
+    let mut res = B.saturating_add(bips / ACCURACY);
+    let mut i = ACCURACY - 1;
+    while i > 0 {
+        res = B.saturating_add(res.saturating_mul(bips) / (i * B));
+        i -= 1;
     }
 
-    result
+    res
 }
 
 /// Apply a gas delta to a backlog value (signed).
