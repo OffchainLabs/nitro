@@ -1,6 +1,7 @@
 //! Arbitrum transaction request and conversion types.
 
 use alloy_consensus::{error::ValueError, SignableTransaction};
+use alloy_evm::rpc::TryIntoTxEnv;
 use alloy_primitives::Signature;
 use alloy_rpc_types_eth::request::TransactionRequest;
 use arb_primitives::ArbTransactionSigned;
@@ -49,5 +50,19 @@ impl TryIntoSimTx<ArbTransactionSigned> for ArbTransactionRequest {
             self,
             "simulate_v1 not yet supported",
         ))
+    }
+}
+
+impl<Block: alloy_evm::env::BlockEnvironment> TryIntoTxEnv<arb_evm::ArbTransaction, Block>
+    for ArbTransactionRequest
+{
+    type Err = alloy_evm::rpc::EthTxEnvError;
+
+    fn try_into_tx_env<Spec>(
+        self,
+        evm_env: &alloy_evm::EvmEnv<Spec, Block>,
+    ) -> Result<arb_evm::ArbTransaction, Self::Err> {
+        let tx_env = self.0.try_into_tx_env(evm_env)?;
+        Ok(arb_evm::ArbTransaction(tx_env))
     }
 }

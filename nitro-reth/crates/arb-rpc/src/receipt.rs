@@ -5,7 +5,7 @@ use alloy_primitives::{Address, Bloom, TxKind};
 use alloy_rpc_types_eth::TransactionReceipt;
 use arb_primitives::ArbPrimitives;
 use reth_rpc_convert::transaction::{ConvertReceiptInput, ReceiptConverter};
-use std::convert::Infallible;
+use reth_rpc_eth_types::EthApiError;
 
 /// Converts Arbitrum receipts to RPC transaction receipts.
 #[derive(Debug, Clone)]
@@ -13,12 +13,12 @@ pub struct ArbReceiptConverter;
 
 impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
     type RpcReceipt = TransactionReceipt;
-    type Error = Infallible;
+    type Error = EthApiError;
 
     fn convert_receipts(
         &self,
         receipts: Vec<ConvertReceiptInput<'_, ArbPrimitives>>,
-    ) -> Result<Vec<TransactionReceipt>, Infallible> {
+    ) -> Result<Vec<TransactionReceipt>, EthApiError> {
         let results = receipts
             .into_iter()
             .map(convert_single_receipt)

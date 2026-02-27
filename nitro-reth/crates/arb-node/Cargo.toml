@@ -10,6 +10,7 @@ arb-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-evm = { workspace = true }
 arb-payload = { workspace = true }
+arb-rpc = { workspace = true }
 arb-txpool = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-evm = { workspace = true }

@@ -15,20 +15,32 @@ use std::sync::Arc;
 
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
+use arb_rpc::ArbEthApiBuilder;
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
     components::{ComponentsBuilder, ConsensusBuilder, ExecutorBuilder},
-    BuilderContext, FullNodeTypes, Node, NodeTypes,
+    rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns},
+    BuilderContext, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
 use reth_storage_api::EthStorage;
 
 use arb_evm::ArbEvmConfig;
 
+use crate::addons::ArbPayloadValidatorBuilder;
 use crate::args::RollupArgs;
 use crate::consensus::ArbConsensus;
 use crate::network::ArbNetworkBuilder;
 use crate::payload::ArbPayloadServiceBuilder;
 use crate::pool::ArbPoolBuilder;
+
+/// Arbitrum RPC add-ons type alias.
+pub type ArbAddOns<N> = RpcAddOns<
+    N,
+    ArbEthApiBuilder,
+    ArbPayloadValidatorBuilder,
+    BasicEngineApiBuilder<ArbPayloadValidatorBuilder>,
+    BasicEngineValidatorBuilder<ArbPayloadValidatorBuilder>,
+>;
 
 /// Arbitrum storage type.
 pub type ArbStorage = EthStorage<ArbTransactionSigned>;
@@ -90,15 +102,21 @@ where
         ArbConsensusBuilder,
     >;
 
-    // Full RPC add-ons require a custom EthApiBuilder with Arbitrum-specific
-    // RPC types and converters. Using () until that is implemented.
-    type AddOns = ();
+    type AddOns = ArbAddOns<NodeAdapter<N, <Self::ComponentsBuilder as reth_node_builder::components::NodeComponentsBuilder<N>>::Components>>;
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
         Self::components()
     }
 
-    fn add_ons(&self) -> Self::AddOns {}
+    fn add_ons(&self) -> Self::AddOns {
+        RpcAddOns::new(
+            ArbEthApiBuilder::default(),
+            ArbPayloadValidatorBuilder,
+            BasicEngineApiBuilder::default(),
+            BasicEngineValidatorBuilder::default(),
+            Default::default(),
+        )
+    }
 }
 
 /// Builder for the Arbitrum EVM executor component.
