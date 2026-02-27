@@ -53,6 +53,7 @@ pub struct ArbBlockInfo {
 
 /// Maintenance status for the node.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ArbMaintenanceStatus {
-    pub status: String,
+    pub is_running: bool,
 }
