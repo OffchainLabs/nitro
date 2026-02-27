@@ -99,7 +99,7 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 		}
 		endGsMELMsgHash = nextMsg.Hash()
 	}
-	endGlobalState := validator.GoGlobalState{
+	endGS := validator.GoGlobalState{
 		BlockHash:    executionResult.BlockHash,
 		SendRoot:     executionResult.SendRoot,
 		MELStateHash: relevantMELState.Hash(),
@@ -112,7 +112,7 @@ func (m *MELEnabledValidationEntryCreator) CreateBlockValidationEntry(
 		Stage:       ReadyForRecord,
 		Pos:         position,
 		Start:       startGs,
-		End:         endGlobalState,
+		End:         endGS,
 		msg:         msg,
 		ChainConfig: chainConfig,
 		Preimages:   preimages,

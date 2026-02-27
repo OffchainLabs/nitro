@@ -56,6 +56,9 @@ func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapRea
 	if preimages == nil {
 		return nil, errors.New("preimages recording destination cannot be nil")
 	}
+	if dapReaders == nil {
+		return nil, errors.New("dapReaderSource cannot be nil")
+	}
 	return &DAPReaderSource{
 		validatorCtx: validatorCtx,
 		dapReaders:   dapReaders,
@@ -65,6 +68,9 @@ func NewDAPReaderSource(validatorCtx context.Context, dapReaders arbstate.DapRea
 
 func (s *DAPReaderSource) GetReader(headerByte byte) daprovider.Reader {
 	reader := s.dapReaders.GetReader(headerByte)
+	if reader == nil {
+		return nil
+	}
 	return &DAPReader{
 		validatorCtx: s.validatorCtx,
 		reader:       reader,

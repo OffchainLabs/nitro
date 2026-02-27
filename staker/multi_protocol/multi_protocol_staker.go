@@ -75,7 +75,7 @@ func NewMultiProtocolStaker(
 	validatorUtilsAddress common.Address,
 	bridgeAddress common.Address,
 	inboxStreamer staker.TransactionStreamerInterface,
-	inboxTracker staker.InboxTrackerInterface,
+	inboxTracker legacystaker.L1ValidatorInboxTrackerInterface,
 	inboxReader staker.InboxReaderInterface,
 	dapRegistry *daprovider.DAProviderRegistry,
 	fatalErr chan<- error,

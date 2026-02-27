@@ -6,19 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-
-	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/validator/server_arb"
-	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
+func TestValidationPostMEL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -29,13 +25,13 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	builder.nodeConfig.MELValidator.Enable = true
-	builder.nodeConfig.BlockValidator.Enable = false
+	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.EnableMEL = true
+	builder.nodeConfig.BlockValidator.ForwardBlocks = 0
 	cleanup := builder.Build(t)
 	defer cleanup()
 
 	// Post a blob batch with a bunch of txs
-	startBlock, err := builder.L1.Client.BlockNumber(ctx)
-	Require(t, err)
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
 	initialBatchCount := GetBatchCount(t, builder)
@@ -46,7 +42,7 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	}
 	builder.nodeConfig.BatchPoster.MaxDelay = 0
 	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
-	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	_, err := builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
 	Require(t, err)
 	for _, tx := range txs {
 		_, err := testClientB.EnsureTxSucceeded(tx)
@@ -57,122 +53,162 @@ func TestUnifiedReplayBinary_ValidationOfMELAndBlockExecution(t *testing.T) {
 	// Post delayed messages
 	forceDelayedBatchPosting(t, ctx, builder, testClientB, 10, 0)
 
-	// MEL Validator
 	extractedMsgCountToValidate, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
-	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled()) // to get unified-module-root
-	Require(t, err)
-	blobReaderRegistry := daprovider.NewDAProviderRegistry()
-	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 40)
 
-	config := func() *staker.MELValidatorConfig { return &builder.nodeConfig.MELValidator }
-	melValidator, err := staker.NewMELValidator(config, builder.L2.ConsensusNode.ConsensusDB, builder.L1.Client, builder.L1.Stack, builder.L2.ConsensusNode.MessageExtractor, blobReaderRegistry, locator.LatestWasmModuleRoot(), make(chan uint64))
-	Require(t, err)
-	Require(t, melValidator.Initialize(ctx))
-	entry, endMELState, err := melValidator.CreateNextValidationEntry(ctx, startBlock, uint64(extractedMsgCountToValidate))
-	Require(t, err)
-	doneEntry, err := melValidator.SendValidationEntry(ctx, entry)
-	Require(t, err)
-	if !doneEntry.Success {
-		t.Fatal("failed mel validation")
-	}
-	Require(t, melValidator.AdvanceValidations(ctx, doneEntry))
-
-	mockMElV := &mockMELValidator{
-		realValidator:        melValidator,
-		latestValidatedState: endMELState,
-	}
-	entryCreator := staker.NewMELEnabledValidationEntryCreator(
-		mockMElV, builder.L2.ConsensusNode.TxStreamer,
-	)
-	Require(t, err)
-
-	// Create a machine loader for the unified replay binary.
-	arbSpawnerCfgFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-		cfg := server_arb.DefaultArbitratorSpawnerConfig
-		cfg.MachineConfig.UntilHostIoStatePath = "unified-until-host-io-state.bin"
-		cfg.MachineConfig.WavmBinaryPath = "unified_machine.wavm.br"
-		return &cfg
-	}
-	spawner, err := server_arb.NewArbitratorSpawner(locator, arbSpawnerCfgFetcher)
-	Require(t, err)
-	Require(t, spawner.Start(ctx))
-
-	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
-	computedGlobalState := doneEntry.End
-
-	// While the computed global state's msg hash is non-empty, we will run MEL validation
-	// until we validate all the blocks corresponding to messages extracted by MEL.
-	// This is because when MEL extraction runs, it may extract N new messages. Then, we validate block production
-	// for messages 0 to N-1. At that point, a new message extraction must occur to fetch brand new messages beyond that.
-	for computedGlobalState.PosInBatch != endMELState.MsgCount {
-		blockValidatorEntry, created, err := entryCreator.CreateBlockValidationEntry(
-			ctx,
-			computedGlobalState,
-			arbutil.MessageIndex(computedGlobalState.PosInBatch),
-		)
-		Require(t, err)
-		if !created {
-			t.Fatal("validation entry not created")
-		}
-
-		l2Header, err := builder.L2.ExecNode.Backend.APIBackend().HeaderByHash(ctx, blockValidatorEntry.End.BlockHash)
-		Require(t, err)
-		prevL2Header, err := builder.L2.ExecNode.Backend.APIBackend().HeaderByHash(ctx, l2Header.ParentHash)
-		Require(t, err)
-
-		// We run recording over the execution of the block validator entry.
-		err = sbv.ValidationEntryRecord(ctx, blockValidatorEntry)
-		Require(t, err)
-
-		// We add the previous block header to the preimages map.
-		rlpEncodedHeader, err := rlp.EncodeToBytes(prevL2Header)
-		Require(t, err)
-		blockValidatorEntry.Preimages[arbutil.Keccak256PreimageType][l2Header.ParentHash] = rlpEncodedHeader
-
-		// Launch an execution run with the entry.
-		input, err := blockValidatorEntry.ToInput(spawner.StylusArchs())
-		Require(t, err)
-		execRun := spawner.CreateExecutionRun(locator.LatestWasmModuleRoot(), input, true /* use bold machinery */)
-
-		// Verify the final global state matches the block hash of the native execution of that message.
-		createdRun, err := execRun.Await(ctx)
-		Require(t, err)
-		lastStep, err := createdRun.GetLastStep().Await(ctx)
-		Require(t, err)
-		if lastStep.GlobalState.BlockHash != blockValidatorEntry.End.BlockHash {
-			t.Fatalf("Expected to compute %s block hash but computed %s", blockValidatorEntry.End.BlockHash, lastStep.GlobalState.BlockHash)
-		}
-		t.Logf("Validated block execution of message index %+v\n", lastStep.GlobalState)
-
-		// Update the computed global state to the one just computed by Arbitrator.
-		computedGlobalState = lastStep.GlobalState
-	}
-
-	// Finally, we want to verify that the ending global state has executed all messages extracted by MEL
-	// and that it also contains the proper MEL state hash field corresponding to the extraction of such messages.
-	// This puts everything together and verifies we can validate both extraction and execution correctly, in lock-step.
-	if computedGlobalState.MELMsgHash != (common.Hash{}) {
-		t.Fatalf("Expected to compute MEL msg hash %s but computed %s", common.Hash{}, computedGlobalState.MELMsgHash)
-	}
-	if computedGlobalState.PosInBatch != uint64(extractedMsgCountToValidate) {
-		t.Fatalf("Expected to validate execution of %d messages, but got %d", extractedMsgCountToValidate, computedGlobalState.PosInBatch)
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, extractedMsgCountToValidate-1, timeout) {
+		Fatal(t, "did not validate all blocks")
 	}
 }
 
-type mockMELValidator struct {
-	realValidator        *staker.MELValidator
-	latestValidatedState *mel.State
-}
+func TestValidationPostMELReorgHandle(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlInfo)
 
-func (m *mockMELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
-	return m.latestValidatedState, nil
-}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-func (m *mockMELValidator) FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*staker.MsgPreimagesAndRelevantState, error) {
-	return m.realValidator.FetchMsgPreimagesAndRelevantState(ctx, l2BlockNum)
-}
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.nodeConfig.MessageExtraction.RetryInterval = 100 * time.Millisecond
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
+	// Enable MEL validation
+	builder.nodeConfig.MELValidator.Enable = true
+	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.EnableMEL = true
+	builder.nodeConfig.BlockValidator.ForwardBlocks = 0
+	builder.nodeConfig.BlockValidator.ClearMsgPreimagesPoll = time.Hour // Don't auto clear validated msg preimages cache
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-func (m *mockMELValidator) ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex) {
-	m.realValidator.ClearValidatedMsgPreimages(lastValidatedL2BlockNumber)
+	builder.L2Info.GenerateAccount("User2")
+
+	nodeConfig2 := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2.MessageExtraction.Enable = true
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2})
+	defer cleanupB()
+	forceDelayedBatchPosting(t, ctx, builder, testClientB, 10, 0)
+
+	// Test plan:
+	// 		* Send a delayed message in L1 by making a eth deposit
+	// 		* Reorg L1 to a block before the eth deposit was made
+	//      * Validate messages extracted by MEL up until now
+	// 		* Advance L1 to the previous head block number at the least so that MEL detects reorg
+	// 		* We verify that MEL detected reorg
+	//      * Verify that MEL validator received the reorg event and reset its latestValidatedParentChainBlock
+	// 		* Geth would still include the eth deposit tx as a block in the new chain
+	// 		* Post a batch with L2 txs- this would include delayed message read corresponding to the index containing
+	// 		  eth deposit tx- as that delayed message was sequenced
+	// 		* MEL will add the right delayed message at the corresponding index and send those txs to txStreamer
+	// 		* TxStreamer would detect a reorg as the previous delayed message's bytes wont match the new one's
+	// 		* We verify that TxStreamer detected reorg
+	// 		* Later we verify that the balance is as expected since the eth deposit tx should be successful
+	//      * Verify that all the messages are validated along with their extraction
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	Require(t, err)
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	Require(t, err)
+	lookupL2Tx := getLookupL2Tx(t, ctx, delayedBridge)
+
+	builder.L1Info.GenerateAccount("UserX")
+	builder.L1.TransferBalance(t, "Faucet", "UserX", big.NewInt(1e18), builder.L1Info)
+	txOpts := builder.L1Info.GetDefaultTransactOpts("UserX", ctx)
+	txOpts.Value = big.NewInt(13)
+	oldBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
+
+	// Find latest L1 block, so that we can later reorg to it
+	reorgToBlock, err := builder.L1.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+
+	// Verify that ethDeposit works as intended on the sequence node's side
+	testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts) // this also checks if balance increment is seen on L2
+
+	// Validate blocks and message extraction to this point
+	headState, err := builder.L2.ConsensusNode.MessageExtractor.GetHeadState()
+	Require(t, err)
+	extractedMsgCountToValidate := headState.MsgCount
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(extractedMsgCountToValidate-1), timeout) {
+		Fatal(t, "did not validate all blocks")
+	}
+
+	// Check that MEL validator's LatestValidatedMELState is the state that extracted headState.MsgCount
+	// and that msgPreimages and relevant MEL states for upto headState.MsgCount index are available
+	want, err := builder.L2.ConsensusNode.MessageExtractor.FindMessageOriginMELState(arbutil.MessageIndex(headState.MsgCount - 1))
+	Require(t, err)
+	have, err := builder.L2.ConsensusNode.MELValidator.LatestValidatedMELState(ctx)
+	Require(t, err)
+	if have.Hash() != want.Hash() {
+		t.Fatal("MELValidator LatestValidatedMELState hash mismatch")
+	}
+	for i := uint64(1); i < headState.MsgCount; i++ {
+		// All message preimages should've been found
+		_, err := builder.L2.ConsensusNode.MELValidator.FetchMsgPreimagesAndRelevantState(ctx, arbutil.MessageIndex(i))
+		Require(t, err)
+	}
+
+	// Reorg L1 and advance it so that MEl can pick up the reorg
+	currHead, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
+	// #nosec G115
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(currHead-reorgToBlock.NumberU64()+5)) // we need to advance L1 blocks up until the current head so that reorg is detected
+
+	// Wait until mel can detect reorg and rewind head state
+	time.Sleep(5 * time.Second)
+
+	// Check that MEL validator received reorg event and updated its latestValidatedParentChainBlock
+	if !logHandler.WasLogged("MEL Validator: receieved a reorg event from message extractor") {
+		t.Fatal("reorg event was not forwarded to MEL validator")
+	}
+	newLatestValidated, err := builder.L2.ConsensusNode.MELValidator.LatestValidatedMELState(ctx)
+	Require(t, err)
+	if newLatestValidated.ParentChainBlockNumber != reorgToBlock.NumberU64()-1 {
+		t.Fatalf("MELValidator latestValidatedParentChainBlock mismatch, have: %d, want: %d", newLatestValidated.ParentChainBlockNumber, reorgToBlock.NumberU64()-1)
+	}
+
+	// Post a batch so that mel can send up-to-date L2 messages to txStreamer
+	initialBatchCount := GetBatchCount(t, builder)
+	builder.nodeConfig.BatchPoster.MaxDelay = 0
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	for range 10 {
+		builder.L2.TransferBalance(t, "Faucet", "User2", big.NewInt(1e12), builder.L2Info)
+	}
+	_, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
+	Require(t, err)
+	time.Sleep(2 * time.Second)
+	CheckBatchCount(t, builder, initialBatchCount+1)
+
+	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
+	time.Sleep(time.Second)
+
+	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if err != nil {
+		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+	}
+	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
+		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	}
+
+	// Verify that both MEL and TxStreamer detected the reorg
+	if !logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+		t.Fatal("reorg was not detected by TransactionStreamer")
+	}
+	if !logHandler.WasLogged("MEL detected L1 reorg") {
+		t.Fatal("reorg was not detected by MEL")
+	}
+
+	// Check that block and MEL validators successfully validate all the blocks
+	headState, err = builder.L2.ConsensusNode.MessageExtractor.GetHeadState()
+	Require(t, err)
+	extractedMsgCountToValidate = headState.MsgCount
+	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(extractedMsgCountToValidate-1), timeout) {
+		Fatal(t, "did not validate all blocks")
+	}
 }

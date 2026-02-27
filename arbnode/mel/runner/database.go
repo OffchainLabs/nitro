@@ -3,7 +3,6 @@
 package melrunner
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -144,7 +143,7 @@ func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.Dela
 	if ok, err := d.checkAgainstAccumulator(state, delayed, index); err != nil {
 		return nil, fmt.Errorf("error checking if delayed message is part of the mel state accumulator: %w", err)
 	} else if !ok {
-		return nil, errors.New("delayed message message not part of the mel state accumulator")
+		return nil, fmt.Errorf("delayed message not part of the mel state accumulator. ParentChainBlockNumber: %d, Index: %d", state.ParentChainBlockNumber, index)
 	}
 	return delayed, nil
 }
