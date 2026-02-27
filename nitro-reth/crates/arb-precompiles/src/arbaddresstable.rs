@@ -44,12 +44,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         LOOKUP => handle_lookup(&mut input),
         LOOKUP_INDEX => handle_lookup_index(&mut input),
         REGISTER => handle_register(&mut input),
-        COMPRESS | DECOMPRESS => {
-            // Compress/Decompress involve RLP encoding/decoding.
-            Err(PrecompileError::other(
-                "address table compress/decompress not yet supported",
-            ))
-        }
+        COMPRESS => handle_compress(&mut input),
+        DECOMPRESS => handle_decompress(&mut input),
         _ => Err(PrecompileError::other(
             "unknown ArbAddressTable selector",
         )),
@@ -256,4 +252,228 @@ fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         gas_used.min(gas_limit),
         U256::from(index).to_be_bytes::<32>().to_vec().into(),
     ))
+}
+
+/// Compress: if address is in table, RLP-encode its index; else RLP-encode the 20-byte address.
+/// Returns ABI-encoded bytes.
+fn handle_compress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    load_arbos(input)?;
+
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    let by_address_key = derive_subspace_key(table_key.as_slice(), &[]);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
+    let value = sload_field(input, member_slot)?;
+
+    let rlp_bytes = if value != U256::ZERO {
+        // Address exists — RLP-encode the 0-based index.
+        let index = value.wrapping_sub(U256::from(1u64)).to::<u64>();
+        rlp_encode_u64(index)
+    } else {
+        // Not in table — RLP-encode the raw 20-byte address.
+        rlp_encode_bytes(addr.as_slice())
+    };
+
+    // ABI-encode as `bytes`: offset (32) + length (32) + padded data.
+    let mut output = Vec::with_capacity(96);
+    output.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    output.extend_from_slice(&U256::from(rlp_bytes.len() as u64).to_be_bytes::<32>());
+    output.extend_from_slice(&rlp_bytes);
+    // Pad to 32-byte boundary.
+    let pad = (32 - rlp_bytes.len() % 32) % 32;
+    output.extend(core::iter::repeat(0u8).take(pad));
+
+    Ok(PrecompileOutput::new(
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        output.into(),
+    ))
+}
+
+/// Decompress: RLP-decode from buf[offset..]. If 20 bytes, it's a raw address.
+/// Otherwise decode as u64 index and look up in the table.
+/// Returns ABI-encoded (address, uint256 bytesRead).
+fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    // ABI: decompress(bytes buf, uint256 offset)
+    // data[4..36] = offset to bytes data
+    // data[36..68] = offset value
+    if data.len() < 68 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+
+    // Decode ABI bytes parameter.
+    let bytes_offset = U256::from_be_slice(&data[4..36]).to::<usize>();
+    let ioffset = U256::from_be_slice(&data[36..68]).to::<usize>();
+
+    // bytes data starts at 4 + bytes_offset (skip selector).
+    let bytes_start = 4 + bytes_offset;
+    if data.len() < bytes_start + 32 {
+        return Err(PrecompileError::other("invalid bytes offset"));
+    }
+    let bytes_len = U256::from_be_slice(&data[bytes_start..bytes_start + 32]).to::<usize>();
+    let bytes_data_start = bytes_start + 32;
+    if data.len() < bytes_data_start + bytes_len {
+        return Err(PrecompileError::other("bytes data truncated"));
+    }
+    let buf = &data[bytes_data_start..bytes_data_start + bytes_len];
+
+    if ioffset >= buf.len() {
+        return Err(PrecompileError::other("offset out of bounds"));
+    }
+    let slice = &buf[ioffset..];
+
+    load_arbos(input)?;
+
+    // Try to RLP-decode as byte string first.
+    let (decoded, bytes_read) = rlp_decode_bytes(slice)
+        .map_err(|_| PrecompileError::other("RLP decode failed"))?;
+
+    let (addr, final_bytes_read) = if decoded.len() == 20 {
+        // Raw 20-byte address.
+        (Address::from_slice(&decoded), bytes_read)
+    } else {
+        // Re-decode as u64 index.
+        let (index, idx_bytes_read) = rlp_decode_u64(slice)
+            .map_err(|_| PrecompileError::other("RLP decode index failed"))?;
+
+        let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+
+        // Bounds check: index < numItems.
+        let num_items_slot = map_slot(table_key.as_slice(), 0);
+        let num_items = sload_field(input, num_items_slot)?;
+        if U256::from(index) >= num_items {
+            return Err(PrecompileError::other("index does not exist in AddressTable"));
+        }
+
+        let entry_slot = map_slot(table_key.as_slice(), index + 1);
+        let value = sload_field(input, entry_slot)?;
+
+        // Extract 20-byte address from the 32-byte stored value.
+        let value_bytes = value.to_be_bytes::<32>();
+        let result_addr = Address::from_slice(&value_bytes[12..32]);
+        (result_addr, idx_bytes_read)
+    };
+
+    // ABI-encode (address, uint256).
+    let mut output = Vec::with_capacity(64);
+    output.extend_from_slice(&alloy_primitives::B256::left_padding_from(addr.as_slice()).0);
+    output.extend_from_slice(&U256::from(final_bytes_read as u64).to_be_bytes::<32>());
+
+    Ok(PrecompileOutput::new(
+        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        output.into(),
+    ))
+}
+
+// ── Minimal RLP helpers ─────────────────────────────────────────────
+
+/// RLP-encode a u64 value.
+fn rlp_encode_u64(val: u64) -> Vec<u8> {
+    if val == 0 {
+        return vec![0x80];
+    }
+    if val < 128 {
+        return vec![val as u8];
+    }
+    let bytes = val.to_be_bytes();
+    let start = bytes.iter().position(|&b| b != 0).unwrap_or(7);
+    let len = 8 - start;
+    let mut out = Vec::with_capacity(1 + len);
+    out.push(0x80 + len as u8);
+    out.extend_from_slice(&bytes[start..]);
+    out
+}
+
+/// RLP-encode a byte slice as an RLP string.
+fn rlp_encode_bytes(data: &[u8]) -> Vec<u8> {
+    if data.len() == 1 && data[0] < 128 {
+        return vec![data[0]];
+    }
+    if data.len() < 56 {
+        let mut out = Vec::with_capacity(1 + data.len());
+        out.push(0x80 + data.len() as u8);
+        out.extend_from_slice(data);
+        return out;
+    }
+    let len_bytes = {
+        let l = data.len() as u64;
+        let bytes = l.to_be_bytes();
+        let start = bytes.iter().position(|&b| b != 0).unwrap_or(7);
+        bytes[start..].to_vec()
+    };
+    let mut out = Vec::with_capacity(1 + len_bytes.len() + data.len());
+    out.push(0xb7 + len_bytes.len() as u8);
+    out.extend_from_slice(&len_bytes);
+    out.extend_from_slice(data);
+    out
+}
+
+/// RLP-decode a byte string from a slice, returning (decoded_bytes, total_bytes_consumed).
+fn rlp_decode_bytes(data: &[u8]) -> Result<(Vec<u8>, usize), &'static str> {
+    if data.is_empty() {
+        return Err("empty input");
+    }
+    let prefix = data[0];
+    if prefix < 0x80 {
+        // Single byte.
+        Ok((vec![prefix], 1))
+    } else if prefix <= 0xb7 {
+        // Short string (0-55 bytes).
+        let len = (prefix - 0x80) as usize;
+        if data.len() < 1 + len {
+            return Err("truncated short string");
+        }
+        Ok((data[1..1 + len].to_vec(), 1 + len))
+    } else if prefix <= 0xbf {
+        // Long string.
+        let len_of_len = (prefix - 0xb7) as usize;
+        if data.len() < 1 + len_of_len {
+            return Err("truncated long string length");
+        }
+        let mut len_bytes = [0u8; 8];
+        len_bytes[8 - len_of_len..].copy_from_slice(&data[1..1 + len_of_len]);
+        let len = u64::from_be_bytes(len_bytes) as usize;
+        let total = 1 + len_of_len + len;
+        if data.len() < total {
+            return Err("truncated long string data");
+        }
+        Ok((data[1 + len_of_len..total].to_vec(), total))
+    } else {
+        Err("unexpected list prefix")
+    }
+}
+
+/// RLP-decode a u64 from a slice.
+fn rlp_decode_u64(data: &[u8]) -> Result<(u64, usize), &'static str> {
+    if data.is_empty() {
+        return Err("empty input");
+    }
+    let prefix = data[0];
+    if prefix == 0x80 {
+        // Zero.
+        Ok((0, 1))
+    } else if prefix < 0x80 {
+        // Single byte value.
+        Ok((prefix as u64, 1))
+    } else if prefix <= 0x88 {
+        // Short string encoding for integers (up to 8 bytes).
+        let len = (prefix - 0x80) as usize;
+        if len > 8 || data.len() < 1 + len {
+            return Err("invalid u64 encoding");
+        }
+        let mut bytes = [0u8; 8];
+        bytes[8 - len..].copy_from_slice(&data[1..1 + len]);
+        Ok((u64::from_be_bytes(bytes), 1 + len))
+    } else {
+        Err("value too large for u64")
+    }
 }
