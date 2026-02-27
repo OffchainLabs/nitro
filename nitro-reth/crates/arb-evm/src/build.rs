@@ -13,6 +13,8 @@ use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
+use arbos::arbos_state::ArbosState;
+use arbos::burn::SystemBurner;
 use arbos::l1_pricing;
 use arbos::tx_processor::EndTxFeeDistribution;
 use revm::context::result::ExecutionResult;
@@ -128,12 +130,79 @@ where
     fn apply_pre_execution_changes(&mut self) -> Result<(), BlockExecutionError> {
         self.inner.apply_pre_execution_changes()?;
 
+        // Load ArbOS state parameters from the EVM database.
+        // This populates the execution context with state-derived fields
+        // and creates the ArbOS hooks for per-transaction processing.
+        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+        let state_ptr: *mut State<DB> = db as *mut State<DB>;
+
+        if let Ok(arb_state) =
+            ArbosState::open(state_ptr, SystemBurner::new(None, false))
+        {
+            let arbos_version = arb_state.arbos_version;
+            let network_fee_account = arb_state
+                .network_fee_account
+                .get()
+                .unwrap_or(Address::ZERO);
+            let infra_fee_account = arb_state
+                .infra_fee_account
+                .get()
+                .unwrap_or(Address::ZERO);
+            let brotli_compression_level = arb_state
+                .brotli_compression_level
+                .get()
+                .unwrap_or(0);
+
+            let l1_price_per_unit = arb_state
+                .l1_pricing_state
+                .price_per_unit()
+                .unwrap_or(U256::ZERO);
+            let min_base_fee = arb_state
+                .l2_pricing_state
+                .min_base_fee_wei()
+                .unwrap_or(U256::ZERO);
+            let per_block_gas_limit = arb_state
+                .l2_pricing_state
+                .per_block_gas_limit()
+                .unwrap_or(0);
+            let per_tx_gas_limit = arb_state
+                .l2_pricing_state
+                .per_tx_gas_limit()
+                .unwrap_or(0);
+            // L1 base fee comes from the incoming message header, not ArbOS state.
+            // It will be set when the start-block internal tx is executed.
+            let l1_base_fee = U256::ZERO;
+
+            // Populate state-derived fields in the execution context.
+            self.arb_ctx.arbos_version = arbos_version;
+            self.arb_ctx.network_fee_account = network_fee_account;
+            self.arb_ctx.infra_fee_account = infra_fee_account;
+            self.arb_ctx.brotli_compression_level = brotli_compression_level;
+            self.arb_ctx.l1_price_per_unit = l1_price_per_unit;
+            self.arb_ctx.min_base_fee = min_base_fee;
+
+            // Create ArbOS hooks with the loaded state parameters.
+            let coinbase = revm::context::Block::beneficiary(self.inner.evm().block());
+            self.arb_hooks = Some(DefaultArbOsHooks::new(
+                coinbase,
+                arbos_version,
+                network_fee_account,
+                infra_fee_account,
+                min_base_fee,
+                per_block_gas_limit,
+                per_tx_gas_limit,
+                false,
+                l1_base_fee,
+            ));
+        }
+
         tracing::trace!(
             target: "arb::executor",
             l1_block = self.arb_ctx.l1_block_number,
             delayed_msgs = self.arb_ctx.delayed_messages_read,
             chain_id = self.arb_ctx.chain_id,
             basefee = %self.arb_ctx.basefee,
+            arbos_version = self.arb_ctx.arbos_version,
             has_hooks = self.arb_hooks.is_some(),
             "starting arbitrum block execution"
         );

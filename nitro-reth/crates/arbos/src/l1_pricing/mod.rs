@@ -571,8 +571,31 @@ fn signed_add(a_mag: U256, a_pos: bool, b_mag: U256, b_pos: bool) -> (U256, bool
     }
 }
 
+/// Compute poster cost and calldata units from pre-loaded pricing parameters.
+///
+/// This is the standalone version used by the block executor which has already
+/// extracted L1 pricing state values into the execution context.
+pub fn compute_poster_cost_standalone(
+    tx_bytes: &[u8],
+    poster: Address,
+    price_per_unit: U256,
+    brotli_compression_level: u64,
+) -> (U256, u64) {
+    if poster != BATCH_POSTER_ADDRESS {
+        return (U256::ZERO, 0);
+    }
+    let units = poster_units_from_bytes(tx_bytes, brotli_compression_level);
+    (price_per_unit.saturating_mul(U256::from(units)), units)
+}
+
+/// Compute calldata units from tx bytes using brotli compression.
+pub fn poster_units_from_bytes(tx_bytes: &[u8], brotli_compression_level: u64) -> u64 {
+    let l1_bytes = byte_count_after_brotli_level(tx_bytes, brotli_compression_level);
+    TX_DATA_NON_ZERO_GAS_EIP2028.saturating_mul(l1_bytes)
+}
+
 /// Computes the brotli-compressed size at a given compression level.
-fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
+pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
     let level = level.min(11) as u32;
     let mut output = Vec::new();
     let params = brotli::enc::BrotliEncoderParams {
