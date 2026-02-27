@@ -110,6 +110,19 @@ pub fn subspace_slot(subspace_key: &[u8], offset: u64) -> U256 {
     map_slot(sub_storage_key.as_slice(), offset)
 }
 
+// ── Per-tx scratch slot ──────────────────────────────────────────────
+
+/// Scratch slot used to pass per-transaction L1 poster fee from the
+/// executor into the EVM where the ArbGasInfo precompile can read it.
+/// The value is written before EVM execution and has no long-term
+/// significance — it's overwritten every transaction.
+pub const CURRENT_TX_POSTER_FEE_OFFSET: u64 = 255;
+
+/// Compute the storage slot for the per-tx poster fee.
+pub fn current_tx_poster_fee_slot() -> U256 {
+    map_slot(ROOT_STORAGE_KEY, CURRENT_TX_POSTER_FEE_OFFSET)
+}
+
 // ── L2 pricing vector helpers ────────────────────────────────────────
 
 /// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).

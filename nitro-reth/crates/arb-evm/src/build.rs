@@ -1111,6 +1111,20 @@ where
             }
         }
 
+        // Write the poster fee to a scratch storage slot so the ArbGasInfo
+        // precompile can read it via GetCurrentTxL1Fees during EVM execution.
+        {
+            use arb_precompiles::storage_slot::current_tx_poster_fee_slot;
+            let poster_fee_val = self.arb_hooks.as_ref()
+                .map(|h| h.tx_proc.poster_fee)
+                .unwrap_or(U256::ZERO);
+            arb_storage::write_arbos_storage(
+                self.inner.evm_mut().db_mut(),
+                current_tx_poster_fee_slot(),
+                poster_fee_val,
+            );
+        }
+
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
 
         // Capture gas_used as reported by reth's EVM (before our adjustments).
@@ -1598,3 +1612,4 @@ fn decode_retry_tx_gas(encoded: &[u8]) -> Option<u64> {
     .ok()?;
     Some(retry.gas)
 }
+

@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
+    current_tx_poster_fee_slot, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
     multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
     vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
 };
@@ -100,9 +100,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_PRICES_IN_WEI => handle_prices_in_wei(&mut input),
         GET_GAS_ACCOUNTING_PARAMS => handle_gas_accounting_params(&mut input),
         GET_CURRENT_TX_L1_FEES => {
-            // Returns poster fee for current tx; context-dependent.
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+            let gas_limit = input.gas;
+            load_arbos(&mut input)?;
+            let fee = sload_field(&mut input, current_tx_poster_fee_slot())?;
+            Ok(PrecompileOutput::new(
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                fee.to_be_bytes::<32>().to_vec().into(),
+            ))
         }
         GET_PRICES_IN_ARBGAS => handle_prices_in_arbgas(&mut input),
         GET_L1_BASEFEE_ESTIMATE_INERTIA => read_l1_field(&mut input, L1_INERTIA),
