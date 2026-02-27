@@ -489,7 +489,7 @@ impl<D: Database> L1PricingState<D> {
 
             // desiredDerivative = -surplus / equilUnits
             let (desired_mag, desired_pos) =
-                signed_floor_div(surplus_mag, !surplus_positive, equil_units);
+                signed_div(surplus_mag, !surplus_positive, equil_units);
 
             // actualDerivative = (surplus - oldSurplus) / unitsAllocated
             let (diff_mag, diff_pos) = signed_sub(
@@ -498,7 +498,7 @@ impl<D: Database> L1PricingState<D> {
                 old_surplus_mag,
                 !old_surplus_neg,
             );
-            let (actual_mag, actual_pos) = signed_floor_div(diff_mag, diff_pos, units_u256);
+            let (actual_mag, actual_pos) = signed_div(diff_mag, diff_pos, units_u256);
 
             // changeDerivativeBy = desired - actual
             let (change_mag, change_pos) =
@@ -507,7 +507,7 @@ impl<D: Database> L1PricingState<D> {
             // priceChange = changeDerivativeBy * unitsAllocated / allocPlusInert
             let change_times_units = change_mag.saturating_mul(units_u256);
             let (price_change, price_change_pos) =
-                signed_floor_div(change_times_units, change_pos, alloc_plus_inert);
+                signed_div(change_times_units, change_pos, alloc_plus_inert);
 
             let new_price = if price_change_pos {
                 price.saturating_add(price_change)
@@ -545,21 +545,18 @@ impl<D: Database> L1PricingState<D> {
     }
 }
 
-/// Signed floor division matching Go big.Int.Div semantics.
-fn signed_floor_div(mag: U256, positive: bool, divisor: U256) -> (U256, bool) {
+/// Signed division with truncation toward zero, matching Go's big.Int.Div.
+fn signed_div(mag: U256, positive: bool, divisor: U256) -> (U256, bool) {
     if divisor.is_zero() {
         return (U256::ZERO, true);
     }
 
-    let quotient = mag.checked_div(divisor).unwrap_or(U256::ZERO);
-    let remainder = mag.checked_rem(divisor).unwrap_or(U256::ZERO);
+    let quotient = mag / divisor;
 
-    if positive {
+    if positive || quotient.is_zero() {
         (quotient, true)
-    } else if remainder.is_zero() {
-        (quotient, false)
     } else {
-        (quotient.saturating_add(U256::from(1)), false)
+        (quotient, false)
     }
 }
 
