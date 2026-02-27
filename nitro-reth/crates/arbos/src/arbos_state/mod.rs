@@ -461,6 +461,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             self.arbos_version = next;
             self.programs.arbos_version = next;
             self.l1_pricing_state.arbos_version = next;
+            self.l2_pricing_state.arbos_version = next;
         }
 
         // First-time initialization overrides
