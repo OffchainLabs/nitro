@@ -74,6 +74,7 @@ reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2
 reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-codecs = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }

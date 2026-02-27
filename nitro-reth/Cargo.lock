@@ -1097,6 +1097,7 @@ dependencies = [
  "arb-alloy-util",
  "bytes",
  "derive_more",
+ "reth-codecs",
  "reth-primitives-traits",
  "serde",
  "thiserror 2.0.18",
