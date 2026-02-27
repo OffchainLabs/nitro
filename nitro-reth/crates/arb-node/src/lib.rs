@@ -15,13 +15,15 @@ use std::sync::Arc;
 
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
-use arb_rpc::ArbEthApiBuilder;
+use arb_rpc::{ArbApiHandler, ArbApiServer, ArbEthApiBuilder};
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
     components::{ComponentsBuilder, ConsensusBuilder, ExecutorBuilder},
-    rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns},
-    BuilderContext, FullNodeTypes, Node, NodeAdapter, NodeTypes,
+    rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns, RpcContext},
+    BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
+use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
+use reth_rpc_eth_api::EthApiTypes;
 use reth_storage_api::EthStorage;
 
 use arb_evm::ArbEvmConfig;
@@ -116,6 +118,7 @@ where
             BasicEngineValidatorBuilder::default(),
             Default::default(),
         )
+        .extend_rpc_modules(register_arb_rpc)
     }
 }
 
@@ -132,6 +135,17 @@ where
     async fn build_evm(self, ctx: &BuilderContext<N>) -> eyre::Result<Self::EVM> {
         Ok(ArbEvmConfig::new(ctx.chain_spec()))
     }
+}
+
+/// Registers the `arb_` RPC namespace on all configured transports.
+fn register_arb_rpc<N, EthApi>(ctx: RpcContext<'_, N, EthApi>) -> eyre::Result<()>
+where
+    N: FullNodeComponents<Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider>,
+    EthApi: EthApiTypes,
+{
+    let arb_api = ArbApiHandler::new(ctx.provider().clone());
+    ctx.modules.merge_configured(arb_api.into_rpc())?;
+    Ok(())
 }
 
 /// Builder for the Arbitrum consensus component.

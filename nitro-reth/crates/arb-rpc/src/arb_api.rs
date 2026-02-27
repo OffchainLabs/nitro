@@ -1,0 +1,108 @@
+//! Arbitrum `arb_` RPC namespace.
+//!
+//! Implements the `arb_` JSON-RPC methods: maintenance status,
+//! health checks, and block metadata queries.
+
+use std::sync::Arc;
+
+use alloy_consensus::BlockHeader;
+use alloy_primitives::B256;
+use alloy_rpc_types_eth::BlockNumberOrTag;
+use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
+
+use crate::{ArbBlockInfo, ArbMaintenanceStatus};
+
+/// Arbitrum `arb_` RPC namespace.
+#[rpc(server, namespace = "arb")]
+pub trait ArbApi {
+    /// Returns the maintenance status of the node.
+    #[method(name = "maintenanceStatus")]
+    fn maintenance_status(&self) -> RpcResult<ArbMaintenanceStatus>;
+
+    /// Checks publisher health. Returns an error if unhealthy.
+    #[method(name = "checkPublisherHealth")]
+    fn check_publisher_health(&self) -> RpcResult<()>;
+
+    /// Returns block info for the given block number.
+    #[method(name = "getBlockInfo")]
+    async fn get_block_info(&self, block_num: u64) -> RpcResult<ArbBlockInfo>;
+}
+
+/// Implementation of the `arb_` RPC namespace.
+pub struct ArbApiHandler<Provider> {
+    provider: Provider,
+    /// Current maintenance mode status.
+    maintenance_status: Arc<parking_lot::RwLock<ArbMaintenanceStatus>>,
+}
+
+impl<Provider> ArbApiHandler<Provider> {
+    /// Create a new `ArbApiHandler`.
+    pub fn new(provider: Provider) -> Self {
+        Self {
+            provider,
+            maintenance_status: Arc::new(parking_lot::RwLock::new(ArbMaintenanceStatus::default())),
+        }
+    }
+
+    /// Returns a reference to the maintenance status lock for external updates.
+    pub fn maintenance_status_handle(&self) -> Arc<parking_lot::RwLock<ArbMaintenanceStatus>> {
+        self.maintenance_status.clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl<Provider> ArbApiServer for ArbApiHandler<Provider>
+where
+    Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + 'static,
+{
+    fn maintenance_status(&self) -> RpcResult<ArbMaintenanceStatus> {
+        Ok(self.maintenance_status.read().clone())
+    }
+
+    fn check_publisher_health(&self) -> RpcResult<()> {
+        // Sequencer health is always OK for a full node.
+        Ok(())
+    }
+
+    async fn get_block_info(&self, block_num: u64) -> RpcResult<ArbBlockInfo> {
+        let header = self
+            .provider
+            .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(block_num))
+            .map_err(|e| {
+                jsonrpsee::types::ErrorObject::owned(
+                    jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+                    e.to_string(),
+                    None::<()>,
+                )
+            })?
+            .ok_or_else(|| {
+                jsonrpsee::types::ErrorObject::owned(
+                    jsonrpsee::types::error::INVALID_PARAMS_CODE,
+                    format!("block {block_num} not found"),
+                    None::<()>,
+                )
+            })?;
+
+        let mix = header.mix_hash().unwrap_or_default();
+        let extra = header.extra_data();
+
+        let send_count = u64::from_be_bytes(mix.0[0..8].try_into().unwrap_or_default());
+        let l1_block_number = u64::from_be_bytes(mix.0[8..16].try_into().unwrap_or_default());
+        let arbos_format_version =
+            u64::from_be_bytes(mix.0[16..24].try_into().unwrap_or_default());
+
+        let send_root = if extra.len() >= 32 {
+            B256::from_slice(&extra[..32])
+        } else {
+            B256::ZERO
+        };
+
+        Ok(ArbBlockInfo {
+            l1_block_number,
+            arbos_format_version,
+            send_count,
+            send_root,
+        })
+    }
+}

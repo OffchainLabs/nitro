@@ -23,6 +23,8 @@ reth-execution-types = { workspace = true }
 reth-network = { workspace = true }
 reth-node-api = { workspace = true }
 reth-node-builder = { workspace = true }
+reth-provider = { workspace = true }
+reth-rpc-eth-api = { workspace = true }
 reth-node-ethereum = { workspace = true }
 reth-node-types = { workspace = true }
 reth-payload-builder = { workspace = true }
