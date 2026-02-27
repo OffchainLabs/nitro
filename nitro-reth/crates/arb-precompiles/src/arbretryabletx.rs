@@ -26,11 +26,19 @@ const SUBMIT_RETRYABLE: [u8; 4] = [0xc9, 0xf9, 0x5d, 0x32];
 const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 // Retryable ticket storage field offsets (within the ticket's sub-storage).
+const NUM_TRIES_OFFSET: u64 = 0;
+const FROM_OFFSET: u64 = 1;
+const TO_OFFSET: u64 = 2;
+const CALLVALUE_OFFSET: u64 = 3;
+const BENEFICIARY_OFFSET: u64 = 4;
 const TIMEOUT_OFFSET: u64 = 5;
 const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
-const BENEFICIARY_OFFSET: u64 = 4;
+
+/// Timeout queue subspace key within the retryables storage.
+const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 
 const SLOAD_GAS: u64 = 800;
+const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbretryabletx_precompile() -> DynPrecompile {
@@ -73,14 +81,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 "redeem is handled by the block executor",
             ))
         }
-        KEEPALIVE => {
-            // Keepalive involves timeout queue writes — not yet implemented in precompile.
-            Err(PrecompileError::other("keepalive not yet supported"))
-        }
-        CANCEL => {
-            // Cancel involves balance transfers and storage clearing.
-            Err(PrecompileError::other("cancel not yet supported"))
-        }
+        KEEPALIVE => handle_keepalive(&mut input),
+        CANCEL => handle_cancel(&mut input),
         _ => Err(PrecompileError::other(
             "unknown ArbRetryableTx selector",
         )),
@@ -103,6 +105,18 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
     Ok(val.data)
+}
+
+fn sstore_field(
+    input: &mut PrecompileInput<'_>,
+    slot: U256,
+    value: U256,
+) -> Result<(), PrecompileError> {
+    input
+        .internals_mut()
+        .sstore(ARBOS_STATE_ADDRESS, slot, value)
+        .map_err(|_| PrecompileError::other("sstore failed"))?;
+    Ok(())
 }
 
 /// Derive the storage key for a specific retryable ticket.
@@ -172,6 +186,33 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
+/// Derive the timeout queue storage key.
+fn timeout_queue_key() -> B256 {
+    let retryables_key = derive_subspace_key(ROOT_STORAGE_KEY, RETRYABLES_SUBSPACE);
+    derive_subspace_key(retryables_key.as_slice(), TIMEOUT_QUEUE_KEY)
+}
+
+/// Queue Put: reads nextPutOffset (slot 0), writes the value at that offset, increments nextPutOffset.
+fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), PrecompileError> {
+    let queue_key = timeout_queue_key();
+
+    // nextPutOffset is at offset 0 within the queue sub-storage.
+    let put_offset_slot = map_slot(queue_key.as_slice(), 0);
+    let put_offset = sload_field(input, put_offset_slot)?;
+    let put_offset_u64: u64 = put_offset
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid queue put offset"))?;
+
+    // Store the value at map_slot_b256(queue_key, value_as_key) using the offset as key.
+    let item_slot = map_slot(queue_key.as_slice(), put_offset_u64);
+    sstore_field(input, item_slot, U256::from_be_bytes(value.0))?;
+
+    // Increment nextPutOffset.
+    sstore_field(input, put_offset_slot, U256::from(put_offset_u64 + 1))?;
+
+    Ok(())
+}
+
 /// GetBeneficiary returns the beneficiary address for a retryable ticket.
 fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
@@ -199,4 +240,123 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         beneficiary.to_be_bytes::<32>().to_vec().into(),
     ))
+}
+
+/// Keepalive adds one lifetime period to the ticket's expiry.
+///
+/// Opens the retryable, verifies effective timeout isn't too far in the future,
+/// adds a duplicate entry to the timeout queue, and increments timeout_windows_left.
+fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let ticket_id = B256::from_slice(&data[4..36]);
+    let current_timestamp: u64 = input
+        .internals()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(u64::MAX);
+
+    load_arbos(input)?;
+
+    // Open the retryable (verifies exists and not expired).
+    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+
+    // Read timeout and timeout_windows_left to compute effective timeout.
+    let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
+    let timeout = sload_field(input, timeout_slot)?;
+    let timeout_u64: u64 = timeout
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid timeout"))?;
+
+    let windows_slot = map_slot(ticket_key.as_slice(), TIMEOUT_WINDOWS_LEFT_OFFSET);
+    let windows = sload_field(input, windows_slot)?;
+    let windows_u64: u64 = windows
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid windows"))?;
+
+    let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
+
+    // The window limit is current_time + one lifetime.
+    let window_limit = current_timestamp + RETRYABLE_LIFETIME_SECONDS;
+    if effective_timeout > window_limit {
+        return Err(PrecompileError::other("timeout too far into the future"));
+    }
+
+    // Put the ticket into the timeout queue (duplicate entry for the new window).
+    queue_put(input, ticket_id)?;
+
+    // Increment timeout_windows_left.
+    let new_windows = windows_u64 + 1;
+    sstore_field(input, windows_slot, U256::from(new_windows))?;
+
+    let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
+
+    // Gas: open_retryable(1 sload) + 2 sloads (timeout, windows) + queue_put(1 sload + 2 sstores) + 1 sstore (windows)
+    let gas_used = 4 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        U256::from(new_timeout).to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// Cancel the ticket and refund its callvalue to its beneficiary.
+///
+/// Verifies the caller is the beneficiary, then clears all storage fields.
+/// Balance transfer (escrow → beneficiary) is handled by the executor.
+fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let ticket_id = B256::from_slice(&data[4..36]);
+    let caller = input.caller;
+    let current_timestamp: u64 = input
+        .internals()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(u64::MAX);
+
+    load_arbos(input)?;
+
+    // Open the retryable (verifies exists and not expired).
+    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+
+    // Read beneficiary and verify caller is the beneficiary.
+    let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
+    let beneficiary = sload_field(input, beneficiary_slot)?;
+
+    // The caller address is left-padded with zeros in 20 bytes.
+    let caller_u256 = U256::from_be_slice(caller.as_slice());
+    if caller_u256 != beneficiary {
+        return Err(PrecompileError::other(
+            "only the beneficiary may cancel a retryable",
+        ));
+    }
+
+    // Clear all storage fields for this retryable ticket.
+    let offsets = [
+        NUM_TRIES_OFFSET,
+        FROM_OFFSET,
+        TO_OFFSET,
+        CALLVALUE_OFFSET,
+        BENEFICIARY_OFFSET,
+        TIMEOUT_OFFSET,
+        TIMEOUT_WINDOWS_LEFT_OFFSET,
+    ];
+    for offset in offsets {
+        let slot = map_slot(ticket_key.as_slice(), offset);
+        sstore_field(input, slot, U256::ZERO)?;
+    }
+
+    // Gas: open_retryable(1 sload) + 1 sload (beneficiary) + 7 sstores (clear fields)
+    let gas_used = 2 * SLOAD_GAS + 7 * SSTORE_GAS + COPY_GAS;
+
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
