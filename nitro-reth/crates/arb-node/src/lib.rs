@@ -3,11 +3,13 @@
 //! Provides the node type definition and component builders
 //! needed to launch an Arbitrum reth node.
 
+pub mod addons;
 pub mod args;
 pub mod consensus;
 pub mod network;
 pub mod payload;
 pub mod pool;
+pub mod validator;
 
 use std::sync::Arc;
 
@@ -88,6 +90,8 @@ where
         ArbConsensusBuilder,
     >;
 
+    // Full RPC add-ons require a custom EthApiBuilder with Arbitrum-specific
+    // RPC types and converters. Using () until that is implemented.
     type AddOns = ();
 
     fn components_builder(&self) -> Self::ComponentsBuilder {
