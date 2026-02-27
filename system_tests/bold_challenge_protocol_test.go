@@ -39,7 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -583,9 +583,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2executionDB, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	l2executionDB, err := l2stack.OpenDatabaseWithOptions("chaindb", node.DatabaseOptions{})
 	Require(t, err)
-	l2consensusDB, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	l2consensusDB, err := l2stack.OpenDatabaseWithOptions("arbdb", node.DatabaseOptions{NoFreezer: true})
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
