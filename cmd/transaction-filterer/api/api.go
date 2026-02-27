@@ -60,13 +60,17 @@ func (t *TransactionFiltererAPI) Unfilter(ctx context.Context, txHashToUnfilter 
 	txOpts.Context = ctx
 
 	log.Info("Received call to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex())
+	if t.arbFilteredTransactionsManager == nil {
+		return common.Hash{}, errors.New("sequencer client not set yet")
+	}
 	tx, err := t.arbFilteredTransactionsManager.DeleteFilteredTransaction(&txOpts, txHashToUnfilter)
 	if err != nil {
 		log.Warn("Failed to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "err", err)
 		return common.Hash{}, err
+	} else {
+		log.Info("Submitted unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "txHash", tx.Hash().Hex())
+		return tx.Hash(), nil
 	}
-	log.Info("Submitted unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "txHash", tx.Hash().Hex())
-	return tx.Hash(), nil
 }
 
 // Only used for testing.
