@@ -1,3 +1,4 @@
+pub mod api;
 pub mod data_pricer;
 pub mod memory;
 pub mod params;
