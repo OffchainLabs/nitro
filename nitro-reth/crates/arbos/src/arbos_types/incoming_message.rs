@@ -69,6 +69,18 @@ impl L1IncomingMessageHeader {
 }
 
 impl L1IncomingMessage {
+    /// Returns batch numbers this message depends on.
+    ///
+    /// Only BatchPostingReport messages reference past batches; all other
+    /// message types return an empty list.
+    pub fn past_batches_required(&self) -> io::Result<Vec<u64>> {
+        if self.header.kind != L1_MESSAGE_TYPE_BATCH_POSTING_REPORT {
+            return Ok(Vec::new());
+        }
+        let fields = parse_batch_posting_report_fields(&self.l2_msg)?;
+        Ok(vec![fields.batch_number])
+    }
+
     /// Serializes this message to bytes.
     pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
