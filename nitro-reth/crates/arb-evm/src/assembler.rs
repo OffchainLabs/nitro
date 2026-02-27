@@ -82,6 +82,16 @@ where
             })
             .unwrap_or_else(|| ctx.extra_data.clone());
 
+        // Decode delayed_messages_read from bytes 32-39 of the execution context's extra_data.
+        let extra_bytes = ctx.extra_data.as_ref();
+        let delayed_messages_read = if extra_bytes.len() >= 40 {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&extra_bytes[32..40]);
+            u64::from_be_bytes(buf)
+        } else {
+            0
+        };
+
         let header = Header {
             parent_hash: ctx.parent_hash,
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
@@ -93,7 +103,7 @@ where
             logs_bloom,
             timestamp,
             mix_hash,
-            nonce: B64::ZERO, // Set from delayed_messages_read by the caller
+            nonce: B64::from(delayed_messages_read.to_be_bytes()),
             base_fee_per_gas: Some(evm_env.block_env.basefee()),
             number: evm_env.block_env.number().saturating_to(),
             gas_limit: evm_env.block_env.gas_limit(),

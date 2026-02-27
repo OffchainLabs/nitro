@@ -107,10 +107,20 @@ where
         DB: Database + 'a,
         I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
     {
+        // Decode delayed_messages_read from bytes 32-39 of extra_data if present.
+        let extra_bytes = ctx.extra_data.as_ref();
+        let delayed_messages_read = if extra_bytes.len() >= 40 {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&extra_bytes[32..40]);
+            u64::from_be_bytes(buf)
+        } else {
+            0
+        };
         let arb_ctx = ArbBlockExecutionCtx {
             parent_hash: ctx.parent_hash,
             parent_beacon_block_root: ctx.parent_beacon_block_root,
-            extra_data: ctx.extra_data.to_vec(),
+            extra_data: extra_bytes[..core::cmp::min(extra_bytes.len(), 32)].to_vec(),
+            delayed_messages_read,
             ..Default::default()
         };
         ArbBlockExecutor {
