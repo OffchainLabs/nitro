@@ -1470,22 +1470,51 @@ fn apply_fee_distribution<DB: Database>(
 }
 
 /// Estimate intrinsic gas for a transaction.
+///
+/// Matches geth's `IntrinsicGas()`: base 21000 + calldata cost + create cost +
+/// access list cost + EIP-3860 initcode cost.
 fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
     const TX_GAS: u64 = 21_000;
     const TX_CREATE_GAS: u64 = 32_000;
     const TX_DATA_ZERO_GAS: u64 = 4;
     const TX_DATA_NON_ZERO_GAS: u64 = 16;
+    const TX_ACCESS_LIST_ADDRESS_GAS: u64 = 2400;
+    const TX_ACCESS_LIST_STORAGE_KEY_GAS: u64 = 1900;
+    const INIT_CODE_WORD_GAS: u64 = 2;
+
+    let is_create = tx.to().is_none();
 
     let mut gas = TX_GAS;
-    if tx.to().is_none() {
+    if is_create {
         gas += TX_CREATE_GAS;
     }
+
     let data = tx.input();
+
+    // Calldata cost.
     let data_gas: u64 = data
         .iter()
         .map(|&b| if b == 0 { TX_DATA_ZERO_GAS } else { TX_DATA_NON_ZERO_GAS })
         .sum();
-    gas.saturating_add(data_gas)
+    gas = gas.saturating_add(data_gas);
+
+    // EIP-2930: access list cost.
+    if let Some(access_list) = tx.access_list() {
+        for item in access_list.iter() {
+            gas = gas.saturating_add(TX_ACCESS_LIST_ADDRESS_GAS);
+            gas = gas.saturating_add(
+                (item.storage_keys.len() as u64).saturating_mul(TX_ACCESS_LIST_STORAGE_KEY_GAS),
+            );
+        }
+    }
+
+    // EIP-3860: initcode word cost for CREATE txs (Shanghai+).
+    if is_create && !data.is_empty() {
+        let words = (data.len() as u64 + 31) / 32;
+        gas = gas.saturating_add(words.saturating_mul(INIT_CODE_WORD_GAS));
+    }
+
+    gas
 }
 
 /// Extract the gas field from a scheduled retry tx's encoded bytes.
