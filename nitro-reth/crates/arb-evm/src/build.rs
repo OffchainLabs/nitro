@@ -1072,13 +1072,14 @@ where
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
 
-        // Adjust gas_used to include poster_gas and compute_hold_gas.
-        // These were deducted from gas_limit before EVM execution, so reth's
-        // reported gas_used doesn't include them. Adding them back produces
-        // correct receipt gas_used matching Go's accounting.
-        let extra_gas = poster_gas.saturating_add(compute_hold_gas);
-        if extra_gas > 0 {
-            adjust_result_gas_used(&mut output.result.result, extra_gas);
+        // Adjust gas_used to include poster_gas only.
+        // poster_gas was deducted from gas_limit before EVM execution so reth's
+        // reported gas_used doesn't include it. Adding it back produces correct
+        // receipt gas_used. compute_hold_gas is NOT added: Go returns it via
+        // calcHeldGasRefund() before computing final gasUsed, and Go's
+        // NonRefundableGas() excludes it from the refund denominator.
+        if poster_gas > 0 {
+            adjust_result_gas_used(&mut output.result.result, poster_gas);
         }
 
         // Store per-tx state for fee distribution in commit_transaction.
@@ -1114,10 +1115,11 @@ where
             let is_retry = pending.retry_context.is_some();
 
             // Charge the sender for gas costs that reth's internal buyGas
-            // didn't cover. For normal EVM txs, this is poster_gas +
-            // compute_hold_gas (deducted from gas_limit before reth sees it).
-            // For early-return paths (pre-recorded revert, filtered tx),
-            // reth's EVM was never invoked so evm_gas_used is 0 and the
+            // didn't cover. For normal EVM txs, this equals poster_gas
+            // (deducted from gas_limit before reth sees it; compute_hold_gas
+            // is also deducted but not charged — Go returns it via
+            // calcHeldGasRefund before final gasUsed). For early-return paths
+            // (pre-recorded revert, filtered tx), evm_gas_used is 0 and the
             // sender must pay the full gas_used.
             let sender_extra_gas = gas_used_total
                 .saturating_sub(pending.evm_gas_used);
