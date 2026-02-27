@@ -155,6 +155,15 @@ impl reth_evm::TransactionEnv for ArbTransaction {
     }
 }
 
+impl crate::build::ArbTransactionEnv for ArbTransaction {
+    fn set_gas_price(&mut self, gas_price: u128) {
+        self.0.gas_price = gas_price;
+    }
+    fn set_gas_priority_fee(&mut self, fee: Option<u128>) {
+        self.0.gas_priority_fee = fee;
+    }
+}
+
 impl FromRecoveredTx<TransactionSigned> for ArbTransaction {
     fn from_recovered_tx(tx: &TransactionSigned, sender: Address) -> Self {
         ArbTransaction(TxEnv::from_recovered_tx(tx, sender))

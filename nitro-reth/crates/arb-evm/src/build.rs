@@ -29,13 +29,34 @@ use arb_primitives::signed_tx::ArbTransactionExt;
 use arb_primitives::tx_types::ArbTxType;
 use reth_evm::TransactionEnv;
 use revm::context::result::ExecutionResult;
+use revm::context::TxEnv;
 use revm::database::State;
 use revm::inspector::Inspector;
 use revm_database::{DatabaseCommit, DatabaseCommitExt};
 
 use crate::context::ArbBlockExecutionCtx;
 use crate::executor::DefaultArbOsHooks;
-use crate::hooks::EndTxContext;
+use crate::hooks::{ArbOsHooks, EndTxContext};
+
+/// Extension trait for transaction environments that support gas price mutation.
+///
+/// Arbitrum needs to cap the gas price to the base fee when dropping tips,
+/// which requires mutating fields not exposed by the standard `TransactionEnv` trait.
+pub trait ArbTransactionEnv: TransactionEnv {
+    /// Set the effective gas price (max_fee_per_gas for EIP-1559, gas_price for legacy).
+    fn set_gas_price(&mut self, gas_price: u128);
+    /// Set the max priority fee per gas (tip cap).
+    fn set_gas_priority_fee(&mut self, fee: Option<u128>);
+}
+
+impl ArbTransactionEnv for TxEnv {
+    fn set_gas_price(&mut self, gas_price: u128) {
+        self.gas_price = gas_price;
+    }
+    fn set_gas_priority_fee(&mut self, fee: Option<u128>) {
+        self.gas_priority_fee = fee;
+    }
+}
 
 /// Arbitrum block executor factory.
 ///
@@ -64,7 +85,7 @@ where
     EvmF: EvmFactory<
         Tx: FromRecoveredTx<R::Transaction>
             + FromTxWithEncoded<R::Transaction>
-            + TransactionEnv,
+            + ArbTransactionEnv,
     >,
     Self: 'static,
 {
@@ -236,7 +257,7 @@ where
         DB = &'db mut State<DB>,
         Tx: FromRecoveredTx<R::Transaction>
             + FromTxWithEncoded<R::Transaction>
-            + TransactionEnv,
+            + ArbTransactionEnv,
     >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
@@ -451,7 +472,7 @@ where
         DB = &'db mut State<DB>,
         Tx: FromRecoveredTx<R::Transaction>
             + FromTxWithEncoded<R::Transaction>
-            + TransactionEnv,
+            + ArbTransactionEnv,
     >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
@@ -1007,6 +1028,21 @@ where
         }
 
         // --- Execute via inner EVM executor ---
+
+        // Drop the priority fee tip: cap gas price to the base fee.
+        // In Arbitrum, fees go to network/infra accounts via EndTxHook, not to coinbase.
+        // Without this, revm's reward_beneficiary sends the tip to coinbase.
+        let should_drop_tip = self.arb_hooks.as_ref()
+            .map(|h| h.drop_tip())
+            .unwrap_or(false);
+        if should_drop_tip {
+            let base_fee: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
+            let current_price = revm::context_interface::Transaction::gas_price(&tx_env);
+            if current_price > base_fee {
+                tx_env.set_gas_price(base_fee);
+                tx_env.set_gas_priority_fee(Some(0));
+            }
+        }
 
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
 
