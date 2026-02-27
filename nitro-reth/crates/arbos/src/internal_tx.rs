@@ -344,7 +344,7 @@ where
         .per_batch_gas_cost()
         .unwrap_or(0);
 
-    let gas_spent = (per_batch_gas as u64).saturating_add(inputs.batch_data_gas);
+    let gas_spent = (per_batch_gas.max(0) as u64).saturating_add(inputs.batch_data_gas);
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(

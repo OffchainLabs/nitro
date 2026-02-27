@@ -297,7 +297,11 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         let scheduled_version = self.upgrade_version.get()?;
         let scheduled_timestamp = self.upgrade_timestamp.get()?;
 
-        if scheduled_version == 0 || current_timestamp < scheduled_timestamp {
+        // Go checks: arbosVersion < upgradeTo && currentTimestamp >= flagday
+        if scheduled_version == 0
+            || self.arbos_version >= scheduled_version
+            || current_timestamp < scheduled_timestamp
+        {
             return Ok(());
         }
 
@@ -308,9 +312,9 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         let old_version = self.arbos_version;
         self.upgrade_arbos_version(scheduled_version, false)?;
 
-        // Clear the scheduled upgrade
-        self.upgrade_version.set(0)?;
-        self.upgrade_timestamp.set(0)?;
+        // Go does NOT clear the scheduled upgrade fields after upgrade.
+        // They remain in storage and are simply ignored because the
+        // arbos_version >= scheduled_version check prevents re-upgrade.
 
         if old_version != self.arbos_version {
             tracing::info!(
