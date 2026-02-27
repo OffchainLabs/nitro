@@ -852,8 +852,6 @@ where
             mint_balance(db, sender, value);
             transfer_balance(db, sender, to, value);
 
-            let _ = is_filtered; // filtered deposits still succeed, just redirected
-
             self.pending_tx = Some(PendingArbTx {
                 sender,
                 tx_gas_limit: 0,
@@ -867,17 +865,29 @@ where
                 retry_context: None,
             });
 
+            // Filtered deposits: Go returns ErrFilteredTx (non-nil error) which
+            // produces a failed receipt (status=0). The state changes (mint +
+            // redirected transfer) are still committed.
+            let result = if is_filtered {
+                ExecutionResult::Revert {
+                    gas_used: 0,
+                    output: alloy_primitives::Bytes::from("filtered transaction"),
+                }
+            } else {
+                ExecutionResult::Success {
+                    reason: revm::context::result::SuccessReason::Return,
+                    gas_used: 0,
+                    gas_refunded: 0,
+                    output: revm::context::result::Output::Call(
+                        alloy_primitives::Bytes::new(),
+                    ),
+                    logs: Vec::new(),
+                }
+            };
+
             return Ok(EthTxResult {
                 result: revm::context::result::ResultAndState {
-                    result: ExecutionResult::Success {
-                        reason: revm::context::result::SuccessReason::Return,
-                        gas_used: 0,
-                        gas_refunded: 0,
-                        output: revm::context::result::Output::Call(
-                            alloy_primitives::Bytes::new(),
-                        ),
-                        logs: Vec::new(),
-                    },
+                    result,
                     state: Default::default(),
                 },
                 blob_gas_used: 0,
@@ -1245,6 +1255,19 @@ where
                 current_retryable_slot(),
                 retryable_id,
             );
+        }
+
+        // Fix nonce for retry txs: the encoded tx nonce is the retryable's
+        // numTries sequence number, not the sender's account nonce. Go's
+        // skipNonceChecks() returns true for ArbitrumRetryTx. Override the
+        // tx_env nonce to match the sender's current state nonce so revm's
+        // nonce validation passes. revm will then increment it (matching Go).
+        if is_retry_tx {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            let sender_nonce = db.load_cache_account(sender)
+                .map(|a| a.account_info().map(|i| i.nonce).unwrap_or(0))
+                .unwrap_or(0);
+            tx_env.set_nonce(sender_nonce);
         }
 
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
