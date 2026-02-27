@@ -8,20 +8,12 @@ pub mod consensus;
 
 use std::sync::Arc;
 
+use arb_primitives::ArbPrimitives;
 use reth_chainspec::ChainSpec;
-use reth_ethereum_primitives::EthPrimitives;
 use reth_node_builder::{
-    components::{
-        ComponentsBuilder, ConsensusBuilder, ExecutorBuilder, NoopPayloadBuilder,
-        NodeComponentsBuilder,
-    },
-    BuilderContext, FullNodeTypes, Node, NodeAdapter, NodeTypes,
+    components::{ConsensusBuilder, ExecutorBuilder},
+    BuilderContext, FullNodeTypes, NodeTypes,
 };
-use reth_node_ethereum::{
-    EthEngineTypes, EthereumAddOns, EthereumEthApiBuilder, EthereumEngineValidatorBuilder,
-    EthereumNetworkBuilder, EthereumPoolBuilder,
-};
-use reth_storage_api::EthStorage;
 
 use arb_evm::ArbEvmConfig;
 
@@ -42,12 +34,8 @@ impl ArbNode {
     }
 }
 
-impl NodeTypes for ArbNode {
-    type Primitives = EthPrimitives;
-    type ChainSpec = ChainSpec;
-    type Storage = EthStorage;
-    type Payload = EthEngineTypes;
-}
+// TODO: Implement NodeTypes once ArbPrimitives-compatible engine/payload types exist.
+// EthEngineTypes requires EthPrimitives; need ArbEngineTypes with ArbPrimitives payloads.
 
 /// Builder for the Arbitrum EVM executor component.
 #[derive(Debug, Default, Clone, Copy)]
@@ -55,7 +43,7 @@ pub struct ArbExecutorBuilder;
 
 impl<N> ExecutorBuilder<N> for ArbExecutorBuilder
 where
-    N: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = EthPrimitives>>,
+    N: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = ArbPrimitives>>,
 {
     type EVM = ArbEvmConfig;
 
@@ -70,7 +58,7 @@ pub struct ArbConsensusBuilder;
 
 impl<N> ConsensusBuilder<N> for ArbConsensusBuilder
 where
-    N: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = EthPrimitives>>,
+    N: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec, Primitives = ArbPrimitives>>,
 {
     type Consensus = Arc<ArbConsensus<ChainSpec>>;
 
@@ -79,39 +67,6 @@ where
     }
 }
 
-/// Component types for the Arbitrum node.
-pub type ArbNodeComponents<N> = ComponentsBuilder<
-    N,
-    EthereumPoolBuilder,
-    NoopPayloadBuilder,
-    EthereumNetworkBuilder,
-    ArbExecutorBuilder,
-    ArbConsensusBuilder,
->;
-
-impl<N> Node<N> for ArbNode
-where
-    N: FullNodeTypes<Types = Self>,
-{
-    type ComponentsBuilder = ArbNodeComponents<N>;
-
-    type AddOns = EthereumAddOns<
-        NodeAdapter<N, <Self::ComponentsBuilder as NodeComponentsBuilder<N>>::Components>,
-        EthereumEthApiBuilder,
-        EthereumEngineValidatorBuilder,
-    >;
-
-    fn components_builder(&self) -> Self::ComponentsBuilder {
-        ComponentsBuilder::default()
-            .node_types::<N>()
-            .executor(ArbExecutorBuilder)
-            .consensus(ArbConsensusBuilder)
-            .pool(EthereumPoolBuilder::default())
-            .network(EthereumNetworkBuilder::default())
-            .noop_payload()
-    }
-
-    fn add_ons(&self) -> Self::AddOns {
-        EthereumAddOns::default()
-    }
-}
+// TODO: Implement Node trait once ArbPrimitives-compatible pool builder and add-ons are available.
+// The Ethereum pool/network/add-ons builders hard-code EthPrimitives and cannot be used directly.
+// Need: ArbPoolBuilder (EthPoolTransaction for ArbTransactionSigned), ArbAddOns, ArbEngineValidator.

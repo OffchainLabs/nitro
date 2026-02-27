@@ -10,14 +10,5 @@ name = "arb-reth"
 path = "src/main.rs"
 
 [dependencies]
-arb-node = { workspace = true }
-arb-primitives = { workspace = true }
-arb-chainspec = { workspace = true }
-reth-ethereum-cli = { workspace = true }
 reth-cli-util = { workspace = true }
-reth-node-builder = { workspace = true }
-reth-tracing = { workspace = true }
-tokio = { workspace = true }
-clap = { workspace = true }
-eyre = { workspace = true }
 tracing = { workspace = true }

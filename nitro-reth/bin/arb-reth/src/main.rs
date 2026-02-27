@@ -1,6 +1,3 @@
-use arb_node::{args::RollupArgs, ArbNode};
-use clap::Parser;
-use reth_ethereum_cli::{chainspec::EthereumChainSpecParser, Cli};
 use tracing::info;
 
 fn main() {
@@ -10,14 +7,7 @@ fn main() {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 
-    if let Err(err) =
-        Cli::<EthereumChainSpecParser, RollupArgs>::parse().run(async move |builder, rollup_args| {
-            info!(target: "reth::cli", "Launching arb-reth node");
-            let handle = builder.node(ArbNode::new(rollup_args)).launch().await?;
-            handle.wait_for_node_exit().await
-        })
-    {
-        eprintln!("Error: {err:?}");
-        std::process::exit(1);
-    }
+    // TODO: Re-enable node launch once ArbPrimitives-compatible pool/add-ons builders exist.
+    // The Ethereum builders hard-code EthPrimitives which is incompatible with ArbPrimitives.
+    info!(target: "reth::cli", "arb-reth binary placeholder — node builder integration pending");
 }
