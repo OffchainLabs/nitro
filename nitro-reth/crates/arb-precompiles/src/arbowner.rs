@@ -4,7 +4,7 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CACHE_MANAGERS_KEY, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
+    CACHE_MANAGERS_KEY, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE,
     FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
     NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
     ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
@@ -255,9 +255,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_remove_cache_manager(&mut input)
         }
         SET_CALLDATA_PRICE_INCREASE => {
-            // Feature toggle stored at root state level.
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
+            handle_set_calldata_price_increase(&mut input)
         }
 
         // ── Transaction filtering ──────────────────────────────────
@@ -1278,5 +1276,32 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let new_slots = (bytes_len as u64 + 31) / 32;
     let total_stores = old_slots + 1 + new_slots; // clear + length + data
     let gas_used = total_stores * SSTORE_GAS + SLOAD_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+/// Set the calldata price increase feature flag.
+/// Reads a bool from calldata and sets bit 0 of the features bitmask.
+fn handle_set_calldata_price_increase(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let enabled = U256::from_be_slice(&data[4..36]) != U256::ZERO;
+
+    load_arbos(input)?;
+
+    let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
+    let features_slot = map_slot(features_key.as_slice(), 0);
+    let current = sload_field(input, features_slot)?;
+
+    let updated = if enabled {
+        current | U256::from(1)
+    } else {
+        current & !(U256::from(1))
+    };
+    sstore_field(input, features_slot, updated)?;
+
+    let gas_used = SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }

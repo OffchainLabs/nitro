@@ -4,9 +4,9 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
-    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY,
-    TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET,
+    L1_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE,
+    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -95,11 +95,16 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
-            // Return true (enabled by default on recent ArbOS versions).
-            let gas_cost = COPY_GAS.min(input.gas);
+            let gas_limit = input.gas;
+            load_arbos(&mut input)?;
+            let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
+            let features_slot = map_slot(features_key.as_slice(), 0);
+            let features = sload_field(&mut input, features_slot)?;
+            let enabled = features & U256::from(1);
+            let gas_cost = (SLOAD_GAS + COPY_GAS).min(gas_limit);
             Ok(PrecompileOutput::new(
                 gas_cost,
-                U256::from(1u64).to_be_bytes::<32>().to_vec().into(),
+                enabled.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
