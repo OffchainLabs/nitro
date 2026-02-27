@@ -35,6 +35,9 @@ pub const CHAIN_ID_OFFSET: u64 = 4;
 pub const GENESIS_BLOCK_NUM_OFFSET: u64 = 5;
 pub const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 pub const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
+pub const NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET: u64 = 8;
+pub const TX_FILTERING_ENABLED_FROM_TIME_OFFSET: u64 = 9;
+pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
 
 /// Compute the EVM storage slot for an ArbOS field at a given offset
 /// within a storage scope defined by `storage_key`.

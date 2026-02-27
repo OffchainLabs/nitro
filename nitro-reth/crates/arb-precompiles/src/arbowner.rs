@@ -1,10 +1,12 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    derive_subspace_key, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
+    derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
+    CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
+    L2_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE,
+    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwner precompile address (0x70).
@@ -133,21 +135,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_NETWORK_FEE_ACCOUNT => read_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         GET_INFRA_FEE_ACCOUNT => read_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET),
         GET_FILTERED_FUNDS_RECIPIENT => {
-            // Stored in ArbOS state (offset for filtered funds recipient).
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+            read_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
-        GET_ALL_TRANSACTION_FILTERERS | GET_ALL_NATIVE_TOKEN_OWNERS => {
-            // Return empty dynamic array.
-            let gas_cost = COPY_GAS.min(input.gas);
-            let mut out = Vec::with_capacity(64);
-            out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
-            out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
-            Ok(PrecompileOutput::new(gas_cost, out.into()))
+        GET_ALL_TRANSACTION_FILTERERS => {
+            handle_get_all_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
-        IS_TRANSACTION_FILTERER | IS_NATIVE_TOKEN_OWNER => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+        GET_ALL_NATIVE_TOKEN_OWNERS => {
+            handle_get_all_members(&mut input, NATIVE_TOKEN_SUBSPACE)
+        }
+        IS_TRANSACTION_FILTERER => {
+            handle_is_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
+        }
+        IS_NATIVE_TOKEN_OWNER => {
+            handle_is_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
 
         // ── Root state setters ───────────────────────────────────
@@ -211,16 +211,43 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
 
-        // ── Transaction filtering / native token (stubs) ─────────
-        ADD_TRANSACTION_FILTERER
-        | REMOVE_TRANSACTION_FILTERER
-        | SET_TRANSACTION_FILTERING_FROM
-        | SET_FILTERED_FUNDS_RECIPIENT
-        | SET_NATIVE_TOKEN_MANAGEMENT_FROM
-        | ADD_NATIVE_TOKEN_OWNER
-        | REMOVE_NATIVE_TOKEN_OWNER => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
+        // ── Transaction filtering ──────────────────────────────────
+        ADD_TRANSACTION_FILTERER => {
+            handle_add_to_set_with_feature_check(
+                &mut input,
+                TRANSACTION_FILTERER_SUBSPACE,
+                TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+            )
+        }
+        REMOVE_TRANSACTION_FILTERER => {
+            handle_remove_from_set(&mut input, TRANSACTION_FILTERER_SUBSPACE)
+        }
+        SET_TRANSACTION_FILTERING_FROM => {
+            handle_set_feature_time(
+                &mut input,
+                TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+            )
+        }
+        SET_FILTERED_FUNDS_RECIPIENT => {
+            write_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
+        }
+
+        // ── Native token management ─────────────────────────────
+        SET_NATIVE_TOKEN_MANAGEMENT_FROM => {
+            handle_set_feature_time(
+                &mut input,
+                NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+            )
+        }
+        ADD_NATIVE_TOKEN_OWNER => {
+            handle_add_to_set_with_feature_check(
+                &mut input,
+                NATIVE_TOKEN_SUBSPACE,
+                NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+            )
+        }
+        REMOVE_NATIVE_TOKEN_OWNER => {
+            handle_remove_from_set(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
 
         // ── Multi-gas (stubs) ────────────────────────────────────
@@ -351,4 +378,275 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         (2 * SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),
     ))
+}
+
+// ── AddressSet helpers ──────────────────────────────────────────────
+
+/// Derive the storage key for an AddressSet at the given subspace.
+fn address_set_key(subspace: &[u8]) -> B256 {
+    derive_subspace_key(ROOT_STORAGE_KEY, subspace)
+}
+
+/// Check if an address is a member of the AddressSet at the given subspace.
+fn is_member_of(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    addr: Address,
+) -> Result<bool, PrecompileError> {
+    let set_key = address_set_key(subspace);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
+    let addr_hash = B256::left_padding_from(addr.as_slice());
+    let slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let val = sload_field(input, slot)?;
+    Ok(val != U256::ZERO)
+}
+
+/// Handle IS_MEMBER check for an address set.
+fn handle_is_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    let is_member = is_member_of(input, subspace, addr)?;
+    let result = if is_member { U256::from(1u64) } else { U256::ZERO };
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        result.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// Handle GET_ALL_MEMBERS for an address set. Returns ABI-encoded dynamic array.
+fn handle_get_all_members(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
+    let gas_limit = input.gas;
+    let set_key = address_set_key(subspace);
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let count: u64 = size
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+    const MAX_MEMBERS: u64 = 65536;
+    let count = count.min(MAX_MEMBERS);
+
+    let mut addresses = Vec::with_capacity(count as usize);
+    for i in 1..=count {
+        let member_slot = map_slot(set_key.as_slice(), i);
+        let val = sload_field(input, member_slot)?;
+        addresses.push(val);
+    }
+
+    let mut out = Vec::with_capacity(64 + 32 * addresses.len());
+    out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+    out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
+    for addr_val in &addresses {
+        out.extend_from_slice(&addr_val.to_be_bytes::<32>());
+    }
+
+    let gas_used = (1 + count) * SLOAD_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
+}
+
+/// Add an address to an AddressSet. Returns true if newly added.
+fn address_set_add(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    addr: Address,
+) -> Result<bool, PrecompileError> {
+    let set_key = address_set_key(subspace);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
+    let addr_hash = B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+    let existing = sload_field(input, member_slot)?;
+
+    if existing != U256::ZERO {
+        return Ok(false); // already a member
+    }
+
+    // Read size and increment.
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let size_u64: u64 = size
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid address set size"))?;
+    let new_size = size_u64 + 1;
+
+    // Store address at position (1 + old_size).
+    let new_pos_slot = map_slot(set_key.as_slice(), new_size);
+    let addr_as_u256 = U256::from_be_slice(addr.as_slice());
+    sstore_field(input, new_pos_slot, addr_as_u256)?;
+
+    // Store in byAddress: addr_hash → 1-based position.
+    sstore_field(input, member_slot, U256::from(new_size))?;
+
+    // Update size.
+    sstore_field(input, size_slot, U256::from(new_size))?;
+
+    Ok(true)
+}
+
+/// Remove an address from an AddressSet using swap-with-last.
+fn address_set_remove(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    addr: Address,
+) -> Result<(), PrecompileError> {
+    let set_key = address_set_key(subspace);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
+    let addr_hash = B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
+
+    // Get the 1-based position of the address.
+    let position = sload_field(input, member_slot)?;
+    if position == U256::ZERO {
+        return Err(PrecompileError::other("address not in set"));
+    }
+    let pos_u64: u64 = position
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid position"))?;
+
+    // Clear the byAddress entry.
+    sstore_field(input, member_slot, U256::ZERO)?;
+
+    // Read current size.
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
+    let size_u64: u64 = size
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid size"))?;
+
+    // If not the last element, swap with last.
+    if pos_u64 < size_u64 {
+        let last_slot = map_slot(set_key.as_slice(), size_u64);
+        let last_val = sload_field(input, last_slot)?;
+
+        // Move last to removed position.
+        let removed_slot = map_slot(set_key.as_slice(), pos_u64);
+        sstore_field(input, removed_slot, last_val)?;
+
+        // Update byAddress for the swapped address.
+        let last_bytes = last_val.to_be_bytes::<32>();
+        let last_hash = B256::from(last_bytes);
+        let last_member_slot = map_slot_b256(by_address_key.as_slice(), &last_hash);
+        sstore_field(input, last_member_slot, U256::from(pos_u64))?;
+    }
+
+    // Clear last position.
+    let last_pos_slot = map_slot(set_key.as_slice(), size_u64);
+    sstore_field(input, last_pos_slot, U256::ZERO)?;
+
+    // Decrement size.
+    sstore_field(input, size_slot, U256::from(size_u64 - 1))?;
+
+    Ok(())
+}
+
+/// One week in seconds.
+const FEATURE_ENABLE_DELAY: u64 = 7 * 24 * 60 * 60;
+
+/// Handle setting a feature enabled-from timestamp with validation.
+fn handle_set_feature_time(
+    input: &mut PrecompileInput<'_>,
+    time_offset: u64,
+) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let timestamp: u64 = U256::from_be_slice(&data[4..36])
+        .try_into()
+        .map_err(|_| PrecompileError::other("timestamp too large"))?;
+
+    if timestamp == 0 {
+        // Disable the feature.
+        sstore_field(input, root_slot(time_offset), U256::ZERO)?;
+        return Ok(PrecompileOutput::new(
+            (SSTORE_GAS + COPY_GAS).min(gas_limit),
+            Vec::new().into(),
+        ));
+    }
+
+    let stored_val = sload_field(input, root_slot(time_offset))?;
+    let stored: u64 = stored_val.try_into().unwrap_or(0);
+    let now = input
+        .internals_mut()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(0u64);
+
+    // Validate timing constraints.
+    if (stored == 0 && timestamp < now + FEATURE_ENABLE_DELAY)
+        || (stored > now + FEATURE_ENABLE_DELAY && timestamp < now + FEATURE_ENABLE_DELAY)
+    {
+        return Err(PrecompileError::other(
+            "feature must be enabled at least 7 days in the future",
+        ));
+    }
+    if stored > now && stored <= now + FEATURE_ENABLE_DELAY && timestamp < stored {
+        return Err(PrecompileError::other(
+            "feature cannot be updated to a time earlier than the current scheduled enable time",
+        ));
+    }
+
+    sstore_field(input, root_slot(time_offset), U256::from(timestamp))?;
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + SSTORE_GAS + COPY_GAS).min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
+/// Add an address to an AddressSet, requiring that the feature is enabled.
+fn handle_add_to_set_with_feature_check(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+    time_offset: u64,
+) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+
+    // Check feature is enabled.
+    let enabled_time_val = sload_field(input, root_slot(time_offset))?;
+    let enabled_time: u64 = enabled_time_val.try_into().unwrap_or(0);
+    let now: u64 = input
+        .internals_mut()
+        .block_timestamp()
+        .try_into()
+        .unwrap_or(0u64);
+
+    if enabled_time == 0 || enabled_time > now {
+        return Err(PrecompileError::other("feature is not enabled yet"));
+    }
+
+    address_set_add(input, subspace, addr)?;
+
+    let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+/// Remove an address from an AddressSet.
+fn handle_remove_from_set(
+    input: &mut PrecompileInput<'_>,
+    subspace: &[u8],
+) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+
+    // Verify membership first.
+    if !is_member_of(input, subspace, addr)? {
+        return Err(PrecompileError::other("address is not a member"));
+    }
+
+    address_set_remove(input, subspace, addr)?;
+
+    let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
