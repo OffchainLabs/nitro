@@ -3,7 +3,8 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    compute_storage_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SPACE, L2_PRICING_SPACE,
+    derive_subspace_key, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
+    CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
 };
 
 /// ArbOwner precompile address (0x70).
@@ -86,7 +87,6 @@ const INFRA_FEE_ACCOUNT_OFFSET: u64 = 6;
 const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
 const UPGRADE_VERSION_OFFSET: u64 = 1;
 const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
-const CHAIN_OWNERS_OFFSET: u64 = 5;
 
 // L1 pricing field offsets
 const L1_PAY_REWARDS_TO: u64 = 0;
@@ -182,8 +182,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             // Release L1 pricer surplus — reads available then zeros it.
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
-            let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-            let avail_slot = compute_storage_slot(&[l1_slot], L1_FEES_AVAILABLE);
+            let avail_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_FEES_AVAILABLE);
             let available = sload_field(&mut input, avail_slot)?;
             sstore_field(&mut input, avail_slot, U256::ZERO)?;
             Ok(PrecompileOutput::new(
@@ -240,14 +239,13 @@ fn verify_owner(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> 
     let caller = input.caller;
     load_arbos(input)?;
 
-    // Chain owners AddressSet at offset CHAIN_OWNERS_OFFSET.
-    let owners_slot = compute_storage_slot(&[], CHAIN_OWNERS_OFFSET);
-    let by_address_slot = compute_storage_slot(&[owners_slot], 0);
+    // Chain owners are stored in an AddressSet in the CHAIN_OWNER_SUBSPACE.
+    // AddressSet.byAddress is at sub-storage key [0] within the set's storage.
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
 
-    let mut addr_padded = [0u8; 32];
-    addr_padded[12..32].copy_from_slice(caller.as_slice());
-    let addr_key = U256::from_be_bytes(alloy_primitives::keccak256(&addr_padded).0);
-    let member_slot = by_address_slot.wrapping_add(addr_key);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(caller.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
     let value = sload_field(input, member_slot)?;
     if value == U256::ZERO {
@@ -288,7 +286,7 @@ fn sstore_field(
 
 fn read_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let gas_limit = input.gas;
-    let value = sload_field(input, U256::from(offset))?;
+    let value = sload_field(input, root_slot(offset))?;
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
@@ -302,7 +300,7 @@ fn write_root_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileR
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
-    sstore_field(input, U256::from(offset), value)?;
+    sstore_field(input, root_slot(offset), value)?;
     Ok(PrecompileOutput::new(
         (SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),
@@ -316,8 +314,7 @@ fn write_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileRes
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
-    let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-    let field_slot = compute_storage_slot(&[l1_slot], offset);
+    let field_slot = subspace_slot(L1_PRICING_SUBSPACE, offset);
     sstore_field(input, field_slot, value)?;
     Ok(PrecompileOutput::new(
         (SSTORE_GAS + COPY_GAS).min(gas_limit),
@@ -332,8 +329,7 @@ fn write_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileRes
     }
     let gas_limit = input.gas;
     let value = U256::from_be_slice(&data[4..36]);
-    let l2_slot = compute_storage_slot(&[], L2_PRICING_SPACE);
-    let field_slot = compute_storage_slot(&[l2_slot], offset);
+    let field_slot = subspace_slot(L2_PRICING_SUBSPACE, offset);
     sstore_field(input, field_slot, value)?;
     Ok(PrecompileOutput::new(
         (SSTORE_GAS + COPY_GAS).min(gas_limit),
@@ -349,8 +345,8 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let gas_limit = input.gas;
     let new_version = U256::from_be_slice(&data[4..36]);
     let timestamp = U256::from_be_slice(&data[36..68]);
-    sstore_field(input, U256::from(UPGRADE_VERSION_OFFSET), new_version)?;
-    sstore_field(input, U256::from(UPGRADE_TIMESTAMP_OFFSET), timestamp)?;
+    sstore_field(input, root_slot(UPGRADE_VERSION_OFFSET), new_version)?;
+    sstore_field(input, root_slot(UPGRADE_TIMESTAMP_OFFSET), timestamp)?;
     Ok(PrecompileOutput::new(
         (2 * SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),

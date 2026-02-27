@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    compute_storage_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SPACE, L2_PRICING_SPACE,
+    subspace_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
 };
 
 /// ArbGasInfo precompile address (0x6c).
@@ -172,8 +172,7 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
 fn read_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
-    let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-    let field_slot = compute_storage_slot(&[l1_slot], offset);
+    let field_slot = subspace_slot(L1_PRICING_SUBSPACE, offset);
     let value = sload_field(input, field_slot)?;
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -184,8 +183,7 @@ fn read_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResu
 fn read_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
-    let l2_slot = compute_storage_slot(&[], L2_PRICING_SPACE);
-    let field_slot = compute_storage_slot(&[l2_slot], offset);
+    let field_slot = subspace_slot(L2_PRICING_SUBSPACE, offset);
     let value = sload_field(input, field_slot)?;
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -197,12 +195,9 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-    let l2_slot = compute_storage_slot(&[], L2_PRICING_SPACE);
-
-    let l1_price = sload_field(input, compute_storage_slot(&[l1_slot], L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, compute_storage_slot(&[l2_slot], L2_BASE_FEE))?;
-    let l2_min = sload_field(input, compute_storage_slot(&[l2_slot], L2_MIN_BASE_FEE))?;
+    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
+    let l2_min = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));
@@ -229,10 +224,9 @@ fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileRe
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l2_slot = compute_storage_slot(&[], L2_PRICING_SPACE);
-    let speed_limit = sload_field(input, compute_storage_slot(&[l2_slot], L2_SPEED_LIMIT))?;
+    let speed_limit = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_SPEED_LIMIT))?;
     let gas_limit_val =
-        sload_field(input, compute_storage_slot(&[l2_slot], L2_PER_BLOCK_GAS_LIMIT))?;
+        sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_PER_BLOCK_GAS_LIMIT))?;
 
     let mut out = Vec::with_capacity(96);
     out.extend_from_slice(&speed_limit.to_be_bytes::<32>());
@@ -249,11 +243,8 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-    let l2_slot = compute_storage_slot(&[], L2_PRICING_SPACE);
-
-    let l1_price = sload_field(input, compute_storage_slot(&[l1_slot], L1_PRICE_PER_UNIT))?;
-    let l2_base = sload_field(input, compute_storage_slot(&[l2_slot], L2_BASE_FEE))?;
+    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l2_base = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     let wei_for_l1_calldata = l1_price.saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS));
     let wei_per_l2_tx = wei_for_l1_calldata.saturating_mul(U256::from(ASSUMED_SIMPLE_TX_SIZE));

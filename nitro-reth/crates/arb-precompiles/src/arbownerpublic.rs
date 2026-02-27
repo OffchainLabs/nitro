@@ -3,7 +3,8 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    compute_storage_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SPACE,
+    derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
+    CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
@@ -38,9 +39,7 @@ const BROTLI_COMPRESSION_LEVEL_OFFSET: u64 = 7;
 const UPGRADE_VERSION_OFFSET: u64 = 1;
 const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
 
-// Chain owners are stored in an AddressSet at state offset 5.
-const CHAIN_OWNERS_OFFSET: u64 = 5;
-// L1 pricing field for gas floor per token
+// L1 pricing field for gas floor per token.
 const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 const SLOAD_GAS: u64 = 800;
@@ -66,7 +65,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         GET_SCHEDULED_UPGRADE => handle_scheduled_upgrade(&mut input),
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
-        GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input, CHAIN_OWNERS_OFFSET),
+        GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
         RECTIFY_CHAIN_OWNER => {
             // Rectify is a no-op if the address is already an owner.
             let gas_cost = COPY_GAS.min(input.gas);
@@ -100,8 +99,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
-            let l1_slot = compute_storage_slot(&[], L1_PRICING_SPACE);
-            let field_slot = compute_storage_slot(&[l1_slot], L1_GAS_FLOOR_PER_TOKEN);
+            let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
             let value = sload_field(&mut input, field_slot)?;
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -141,8 +139,7 @@ fn read_state_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileR
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    // Root-level ArbOS state fields are at slot = offset directly.
-    let value = sload_field(input, U256::from(offset))?;
+    let value = sload_field(input, root_slot(offset))?;
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
@@ -153,8 +150,8 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let version = sload_field(input, U256::from(UPGRADE_VERSION_OFFSET))?;
-    let timestamp = sload_field(input, U256::from(UPGRADE_TIMESTAMP_OFFSET))?;
+    let version = sload_field(input, root_slot(UPGRADE_VERSION_OFFSET))?;
+    let timestamp = sload_field(input, root_slot(UPGRADE_TIMESTAMP_OFFSET))?;
 
     let mut out = Vec::with_capacity(64);
     out.extend_from_slice(&version.to_be_bytes::<32>());
@@ -176,17 +173,12 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
-    // Chain owners are in an AddressSet at offset CHAIN_OWNERS_OFFSET.
-    // AddressSet stores size at slot 0, and has a by_address sub-storage
-    // that maps keccak256(address) to a non-zero value if the address is a member.
-    let owners_slot = compute_storage_slot(&[], CHAIN_OWNERS_OFFSET);
-    let by_address_slot = compute_storage_slot(&[owners_slot], 0);
+    // Chain owners AddressSet: byAddress sub-storage at key [0].
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
+    let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
 
-    // The by_address mapping key is keccak256(address padded to 32 bytes).
-    let mut addr_padded = [0u8; 32];
-    addr_padded[12..32].copy_from_slice(addr.as_slice());
-    let addr_key = U256::from_be_bytes(alloy_primitives::keccak256(&addr_padded).0);
-    let member_slot = by_address_slot.wrapping_add(addr_key);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
     let value = sload_field(input, member_slot)?;
     let is_owner = value != U256::ZERO;
@@ -199,26 +191,24 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_get_all_members(input: &mut PrecompileInput<'_>, set_offset: u64) -> PrecompileResult {
+fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    // AddressSet: slot 0 = size, sub-storage at offset 1 = by_address, offset 2 = members list.
-    let set_slot = compute_storage_slot(&[], set_offset);
-    let size = sload_field(input, set_slot)?;
+    // AddressSet: size at offset 0, members at offsets 1..=size in backing storage.
+    let set_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_OWNER_SUBSPACE);
+    let size_slot = map_slot(set_key.as_slice(), 0);
+    let size = sload_field(input, size_slot)?;
     let count: u64 = size.try_into().unwrap_or(0);
 
-    // Members are stored starting at the list sub-storage.
-    let list_slot = compute_storage_slot(&[set_slot], 2);
-
-    // ABI: offset to dynamic array, array length, then elements
-    let mut out = Vec::with_capacity(64 + count as usize * 32);
+    // ABI: offset to dynamic array, array length, then elements.
+    let max_members = count.min(256); // Safety cap
+    let mut out = Vec::with_capacity(64 + max_members as usize * 32);
     out.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(count).to_be_bytes::<32>());
 
-    let max_members = count.min(256); // Safety cap
     for i in 0..max_members {
-        let member_slot = list_slot.wrapping_add(U256::from(i));
+        let member_slot = map_slot(set_key.as_slice(), i + 1);
         let addr_val = sload_field(input, member_slot)?;
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }

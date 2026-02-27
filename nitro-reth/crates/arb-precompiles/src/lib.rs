@@ -41,7 +41,7 @@ pub use arbsys::{
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
-pub use storage_slot::{compute_storage_slot, ARBOS_STATE_ADDRESS};
+pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::PrecompilesMap;
 

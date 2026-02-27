@@ -2,7 +2,10 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::storage_slot::{compute_storage_slot, ARBOS_STATE_ADDRESS};
+use crate::storage_slot::{
+    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, ADDRESS_TABLE_SUBSPACE,
+    ROOT_STORAGE_KEY,
+};
 
 /// ArbAddressTable precompile address (0x66).
 pub const ARBADDRESSTABLE_ADDRESS: Address = Address::new([
@@ -18,9 +21,6 @@ const LOOKUP: [u8; 4] = [0xd4, 0xb6, 0xb5, 0xda];
 const LOOKUP_INDEX: [u8; 4] = [0x8a, 0x18, 0x67, 0x88];
 const REGISTER: [u8; 4] = [0x44, 0x20, 0xe4, 0x86];
 const SIZE: [u8; 4] = [0x94, 0x9d, 0x22, 0x5d];
-
-/// ArbOS state offset for the address table.
-const ADDRESS_TABLE_OFFSET: u64 = 4;
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
@@ -72,16 +72,13 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
     Ok(val.data)
 }
 
-/// AddressTable size is stored at the root of the address table storage space.
-/// In Go: `addressTable.size()` reads from `storageBackedUint64` at offset 0 in the
-/// address table's storage slot.
+/// AddressTable numItems is stored at offset 0 in the table's subspace storage.
 fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let table_slot = compute_storage_slot(&[], ADDRESS_TABLE_OFFSET);
-    // The "numItems" field is at sub-offset 0 within the address table.
-    let size_slot = compute_storage_slot(&[table_slot], 0);
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    let size_slot = map_slot(table_key.as_slice(), 0);
     let size = sload_field(input, size_slot)?;
 
     Ok(PrecompileOutput::new(
@@ -90,7 +87,7 @@ fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// Check if an address exists in the table by looking up the by-address mapping.
+/// Check if an address exists in the table by looking up the byAddress sub-storage.
 fn handle_address_exists(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
@@ -101,14 +98,12 @@ fn handle_address_exists(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
-    let table_slot = compute_storage_slot(&[], ADDRESS_TABLE_OFFSET);
-    // byAddress mapping is at sub-offset 1 within the address table.
-    let by_address_slot = compute_storage_slot(&[table_slot], 1);
+    // byAddress = OpenSubStorage([]byte{}) — sub-storage with empty key.
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    let by_address_key = derive_subspace_key(table_key.as_slice(), &[]);
 
-    let mut addr_padded = [0u8; 32];
-    addr_padded[12..32].copy_from_slice(addr.as_slice());
-    let addr_key = U256::from_be_bytes(alloy_primitives::keccak256(&addr_padded).0);
-    let member_slot = by_address_slot.wrapping_add(addr_key);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
     let value = sload_field(input, member_slot)?;
     let exists = if value != U256::ZERO {
@@ -134,13 +129,11 @@ fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let addr = Address::from_slice(&data[16..36]);
     load_arbos(input)?;
 
-    let table_slot = compute_storage_slot(&[], ADDRESS_TABLE_OFFSET);
-    let by_address_slot = compute_storage_slot(&[table_slot], 1);
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    let by_address_key = derive_subspace_key(table_key.as_slice(), &[]);
 
-    let mut addr_padded = [0u8; 32];
-    addr_padded[12..32].copy_from_slice(addr.as_slice());
-    let addr_key = U256::from_be_bytes(alloy_primitives::keccak256(&addr_padded).0);
-    let member_slot = by_address_slot.wrapping_add(addr_key);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
 
     let value = sload_field(input, member_slot)?;
     if value == U256::ZERO {
@@ -149,7 +142,7 @@ fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // The stored value is the 1-based index, so subtract 1.
+    // Stored value is the 1-based index, so subtract 1.
     let index = value.wrapping_sub(U256::from(1u64));
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -158,6 +151,7 @@ fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 /// Lookup an address by index in the table.
+/// Reverse entries are stored at offset (index + 1) in the table's backing storage.
 fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
@@ -165,14 +159,14 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     }
 
     let gas_limit = input.gas;
-    let index = U256::from_be_slice(&data[4..36]);
+    let index: u64 = U256::from_be_slice(&data[4..36])
+        .try_into()
+        .map_err(|_| PrecompileError::other("index too large"))?;
     load_arbos(input)?;
 
-    let table_slot = compute_storage_slot(&[], ADDRESS_TABLE_OFFSET);
-    // byIndex mapping is at sub-offset 2 within the address table.
-    let by_index_slot = compute_storage_slot(&[table_slot], 2);
-
-    let entry_slot = by_index_slot.wrapping_add(index);
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    // Reverse lookup is at offset (index + 1) — 1-indexed.
+    let entry_slot = map_slot(table_key.as_slice(), index + 1);
     let value = sload_field(input, entry_slot)?;
 
     if value == U256::ZERO {
@@ -181,7 +175,6 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // The stored value is the address (stored as a U256, right-aligned).
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),

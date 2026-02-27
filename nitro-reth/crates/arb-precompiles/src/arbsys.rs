@@ -5,7 +5,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::storage_slot::{compute_storage_slot, ARBOS_STATE_ADDRESS};
+use crate::storage_slot::{
+    derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, ROOT_STORAGE_KEY,
+    SEND_MERKLE_SUBSPACE,
+};
 
 /// ArbSys precompile address (0x64).
 pub const ARBSYS_ADDRESS: Address = Address::new([
@@ -33,10 +36,7 @@ const L1_ALIAS_OFFSET: Address = Address::new([
     0x00, 0x00, 0x00, 0x11, 0x11,
 ]);
 
-// ArbOS state offsets for the send Merkle accumulator.
-const SEND_MERKLE_SPACE: u64 = 5;
-const MERKLE_SIZE_OFFSET: u64 = 0;
-const MERKLE_PARTIALS_SPACE_OFFSET: u64 = 1;
+// MerkleAccumulator: size at offset 0, partials at offset (2 + level).
 
 // Gas costs.
 const SLOAD_GAS: u64 = 800;
@@ -158,9 +158,9 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at offset 0 in the root storage.
+    // ArbOS version is at root offset 0.
     let version = internals
-        .sload(ARBOS_STATE_ADDRESS, U256::ZERO)
+        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
 
     Ok(PrecompileOutput::new(
@@ -290,8 +290,8 @@ fn do_send_tx_to_l1(
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
     // Read current Merkle accumulator size.
-    let merkle_space = compute_storage_slot(&[], SEND_MERKLE_SPACE);
-    let size_slot = compute_storage_slot(&[merkle_space], MERKLE_SIZE_OFFSET);
+    let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
+    let size_slot = map_slot(merkle_key.as_slice(), 0);
     let current_size = internals
         .sload(ARBOS_STATE_ADDRESS, size_slot)
         .map_err(|_| PrecompileError::other("sload failed"))?
@@ -311,7 +311,7 @@ fn do_send_tx_to_l1(
     let new_size = leaf_num + 1;
     let partials = update_merkle_accumulator(
         internals,
-        merkle_space,
+        &merkle_key,
         send_hash,
         leaf_num,
     )?;
@@ -392,8 +392,8 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    let merkle_space = compute_storage_slot(&[], SEND_MERKLE_SPACE);
-    let size_slot = compute_storage_slot(&[merkle_space], MERKLE_SIZE_OFFSET);
+    let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
+    let size_slot = map_slot(merkle_key.as_slice(), 0);
     let size = internals
         .sload(ARBOS_STATE_ADDRESS, size_slot)
         .map_err(|_| PrecompileError::other("sload failed"))?
@@ -401,15 +401,13 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
 
     let size_u64: u64 = size.try_into().unwrap_or(0);
 
-    // Read partials (up to 64 levels).
-    let partials_space =
-        compute_storage_slot(&[merkle_space], MERKLE_PARTIALS_SPACE_OFFSET);
+    // Read partials — stored at offset (2 + level) in the accumulator storage.
     let mut partials = Vec::new();
     for i in 0..64u64 {
         if (size_u64 >> i) == 0 {
             break;
         }
-        let slot = compute_storage_slot(&[partials_space], i);
+        let slot = map_slot(merkle_key.as_slice(), 2 + i);
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
             .map_err(|_| PrecompileError::other("sload failed"))?
@@ -458,21 +456,18 @@ fn compute_send_hash(
 
 fn update_merkle_accumulator(
     internals: &mut alloy_evm::EvmInternals<'_>,
-    merkle_space: U256,
+    merkle_key: &B256,
     leaf_hash: B256,
     index: u64,
 ) -> Result<Vec<B256>, PrecompileError> {
-    let partials_space =
-        compute_storage_slot(&[merkle_space], MERKLE_PARTIALS_SPACE_OFFSET);
-
     let mut hash = U256::from_be_bytes(leaf_hash.0);
     let mut level = 0u64;
     let mut idx = index;
     let mut updated_partials = Vec::new();
 
     while idx & 1 == 1 {
-        // Read the sibling partial at this level.
-        let slot = compute_storage_slot(&[partials_space], level);
+        // Read the sibling partial at this level (offset = 2 + level).
+        let slot = map_slot(merkle_key.as_slice(), 2 + level);
         let sibling = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
             .map_err(|_| PrecompileError::other("sload failed"))?
@@ -488,20 +483,19 @@ fn update_merkle_accumulator(
         level += 1;
     }
 
-    // Store the hash at the current level.
-    let slot = compute_storage_slot(&[partials_space], level);
+    // Store the hash at the current level (offset = 2 + level).
+    let slot = map_slot(merkle_key.as_slice(), 2 + level);
     internals
         .sstore(ARBOS_STATE_ADDRESS, slot, hash)
         .map_err(|_| PrecompileError::other("sstore failed"))?;
 
-    // Collect all partials for the root computation.
-    // Re-read all partials from storage.
+    // Re-read all partials for root computation.
     let new_size = index + 1;
     for i in 0..64u64 {
         if (new_size >> i) == 0 {
             break;
         }
-        let pslot = compute_storage_slot(&[partials_space], i);
+        let pslot = map_slot(merkle_key.as_slice(), 2 + i);
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, pslot)
             .map_err(|_| PrecompileError::other("sload failed"))?
