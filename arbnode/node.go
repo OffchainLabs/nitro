@@ -964,7 +964,7 @@ func getBatchPoster(
 	l1Reader *headerreader.HeaderReader,
 	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	execBatchPoster execution.ExecutionBatchPoster,
 	consensusDB ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
@@ -974,7 +974,7 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
-		if arbOSVersionGetter == nil {
+		if execBatchPoster == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
 
@@ -986,19 +986,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
-			L1Reader:      l1Reader,
-			Inbox:         inboxTracker,
-			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
-			SyncMonitor:   syncMonitor,
-			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:    deployInfo,
-			TransactOpts:  txOptsBatchPoster,
-			DAPWriters:    dapWriters,
-			ParentChainID: parentChainID,
-			DAPReaders:    dapReaders,
-			ChainConfig:   l2Config,
+			DataPosterDB:    rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
+			L1Reader:        l1Reader,
+			Inbox:           inboxTracker,
+			Streamer:        txStreamer,
+			ExecBatchPoster: execBatchPoster,
+			SyncMonitor:     syncMonitor,
+			Config:          func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:      deployInfo,
+			TransactOpts:    txOptsBatchPoster,
+			DAPWriters:      dapWriters,
+			ParentChainID:   parentChainID,
+			DAPReaders:      dapReaders,
+			ChainConfig:     l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1098,7 +1098,7 @@ func createNodeImpl(
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	execBatchPoster execution.ExecutionBatchPoster,
 	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1195,7 +1195,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, execBatchPoster, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1296,7 +1296,7 @@ func registerAPIs(currentNode *Node, stack *node.Node, genesisBlockNum uint64) {
 func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	executionClient execution.ExecutionClient,
+	executionClient execution.FullExecutionClient,
 	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
