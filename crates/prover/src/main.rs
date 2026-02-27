@@ -316,9 +316,9 @@ fn main() -> Result<()> {
             let after = mach.hash();
             println!(" - done");
             proofs.push(ProofInfo {
-                before: before.to_string(),
+                before: hex::encode(before),
                 proof: hex::encode(proof),
-                after: after.to_string(),
+                after: hex::encode(after),
             });
             mach.step_n(opts.proving_interval.saturating_sub(1))?;
         }
@@ -338,9 +338,9 @@ fn main() -> Result<()> {
     if !proofs.is_empty() && mach.is_halted() {
         let hash = mach.hash();
         proofs.push(ProofInfo {
-            before: hash.to_string(),
+            before: hex::encode(hash),
             proof: hex::encode(mach.serialize_proof()),
-            after: hash.to_string(),
+            after: hex::encode(hash),
         });
     }
 
