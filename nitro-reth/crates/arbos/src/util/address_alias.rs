@@ -50,7 +50,18 @@ pub fn does_tx_type_alias(tx_type: u8) -> bool {
 }
 
 /// Whether a transaction type incurs L1 poster costs.
+///
+/// Returns false for all Arbitrum-specific tx types (they handle L1
+/// costs through other mechanisms). Only standard EVM tx types (Legacy,
+/// EIP-2930, EIP-1559, etc.) return true.
 pub fn tx_type_has_poster_costs(tx_type: u8) -> bool {
-    // All types except ArbitrumInternalTx (0x6f)
-    tx_type != 0x6f
+    !matches!(
+        tx_type,
+        0x64  // ArbitrumDepositTx
+        | 0x68 // ArbitrumUnsignedTx
+        | 0x69 // ArbitrumContractTx
+        | 0x6a // ArbitrumRetryTx
+        | 0x6c // ArbitrumSubmitRetryableTx
+        | 0x6f // ArbitrumInternalTx
+    )
 }
