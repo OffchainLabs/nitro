@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
 
+use arb_primitives::multigas::MultiGas;
 use arbos::tx_processor::{
     EndTxFeeDistribution, EndTxNormalParams, GasChargingError, GasChargingParams, TxProcessor,
 };
@@ -121,11 +122,15 @@ impl ArbOsHooks for DefaultArbOsHooks {
 
         self.tx_proc.gas_charging_hook(&mut gas_remaining, ctx.intrinsic_gas, &params)?;
 
+        // L1 calldata gas is tracked as a multi-gas dimension.
+        let multi_gas = MultiGas::l1_calldata_gas(self.tx_proc.poster_gas);
+
         Ok(GasChargingResult {
             poster_cost: self.tx_proc.poster_fee,
             poster_gas: self.tx_proc.poster_gas,
             compute_hold_gas: self.tx_proc.compute_hold_gas,
             calldata_units: ctx.calldata_units,
+            multi_gas,
         })
     }
 

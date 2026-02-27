@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
 
+use arb_primitives::multigas::MultiGas;
 use arb_primitives::tx_types::ArbTxType;
 
 /// Context passed to ArbOS hooks at the start of transaction execution.
@@ -41,6 +42,8 @@ pub struct GasChargingResult {
     pub compute_hold_gas: u64,
     /// Calldata units to add to L1 pricing state's units_since_update.
     pub calldata_units: u64,
+    /// Multi-dimensional gas consumed during gas charging (L1 calldata component).
+    pub multi_gas: MultiGas,
 }
 
 /// Context passed to the end-of-transaction hook.

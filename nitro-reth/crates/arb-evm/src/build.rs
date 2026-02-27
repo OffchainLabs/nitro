@@ -114,6 +114,8 @@ struct PendingArbTx {
     has_poster_costs: bool,
     poster_gas: u64,
     calldata_units: u64,
+    /// Multi-dimensional gas charged during gas charging (L1 calldata component).
+    charged_multi_gas: MultiGas,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
 }
@@ -379,6 +381,11 @@ where
             has_poster_costs: false, // No poster costs for submit retryable
             poster_gas: 0,
             calldata_units: 0,
+            charged_multi_gas: if fees.can_pay_for_gas {
+                MultiGas::l2_calldata_gas(user_gas)
+            } else {
+                MultiGas::default()
+            },
             retry_context: None,
         });
 
@@ -577,6 +584,7 @@ where
                 has_poster_costs: false,
                 poster_gas: 0,
                 calldata_units: 0,
+                charged_multi_gas: MultiGas::default(),
                 retry_context: None,
             });
 
@@ -631,6 +639,7 @@ where
                 has_poster_costs: false,
                 poster_gas: 0,
                 calldata_units: 0,
+                charged_multi_gas: MultiGas::default(),
                 retry_context: None,
             });
 
@@ -784,6 +793,9 @@ where
         }
 
         // Store per-tx state for fee distribution in commit_transaction.
+        // Build multi-gas: L1 calldata gas was charged for poster costs.
+        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas);
+
         self.pending_tx = Some(PendingArbTx {
             sender,
             tx_gas_limit,
@@ -791,6 +803,7 @@ where
             has_poster_costs,
             poster_gas,
             calldata_units,
+            charged_multi_gas,
             retry_context,
         });
 
@@ -864,14 +877,14 @@ where
                         }
                     }
 
-                    // Grow gas backlog.
+                    // Grow gas backlog with the actual multi-gas used.
                     // SAFETY: state_ptr is valid for the lifetime of this block.
                     if let Ok(arb_state) =
                         ArbosState::open(state_ptr, SystemBurner::new(None, false))
                     {
                         let _ = arb_state.l2_pricing_state.grow_backlog(
                             result.compute_gas_for_backlog,
-                            MultiGas::default(),
+                            pending.charged_multi_gas,
                         );
                     }
                 }
@@ -897,13 +910,19 @@ where
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
 
+                    // Remove poster gas from the L1Calldata dimension: the
+                    // poster gas was added during gas charging, but for backlog
+                    // growth we only want compute gas in the multi-gas.
+                    let used_multi_gas = pending.charged_multi_gas
+                        .saturating_sub(MultiGas::l1_calldata_gas(pending.poster_gas));
+
                     let state_ptr: *mut State<DB> = db as *mut State<DB>;
                     if let Ok(arb_state) =
                         ArbosState::open(state_ptr, SystemBurner::new(None, false))
                     {
                         let _ = arb_state.l2_pricing_state.grow_backlog(
                             dist.compute_gas_for_backlog,
-                            MultiGas::default(),
+                            used_multi_gas,
                         );
                         if !dist.l1_fees_to_add.is_zero() {
                             let _ = arb_state
