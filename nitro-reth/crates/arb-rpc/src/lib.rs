@@ -1,4 +1,22 @@
-//! Arbitrum-specific RPC types and extensions.
+//! Arbitrum-specific RPC types, converters, and builders.
+//!
+//! Provides the Arbitrum Eth API builder and RPC type conversions needed
+//! to serve the `eth_` namespace with Arbitrum-specific transaction,
+//! receipt, and header types.
+
+pub mod builder;
+pub mod header;
+pub mod receipt;
+pub mod response;
+pub mod transaction;
+pub mod types;
+
+pub use builder::{ArbEthApi, ArbEthApiBuilder, ArbRpcConvert};
+pub use header::ArbHeaderConverter;
+pub use receipt::ArbReceiptConverter;
+pub use response::ArbRpcTxConverter;
+pub use transaction::ArbTransactionRequest;
+pub use types::ArbRpcTypes;
 
 use alloy_primitives::{B256, U256};
 use serde::{Deserialize, Serialize};
