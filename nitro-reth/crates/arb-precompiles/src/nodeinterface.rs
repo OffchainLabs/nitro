@@ -2,9 +2,10 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
+use crate::arbsys::get_cached_l1_block_number;
 use crate::storage_slot::{
-    root_slot, subspace_slot, ARBOS_STATE_ADDRESS, BROTLI_COMPRESSION_LEVEL_OFFSET,
-    GENESIS_BLOCK_NUM_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
+    L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
 };
 
 /// NodeInterface virtual contract address (0xc8).
@@ -57,8 +58,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GAS_ESTIMATE_COMPONENTS => handle_gas_estimate_components(&mut input),
         GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
-        // Methods that need backend access return stub responses.
-        BLOCK_L1_NUM => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 32].into())),
+        BLOCK_L1_NUM => handle_block_l1_num(&mut input),
+        // Methods requiring chain-level access beyond EVM state.
+        // Full implementations are at the RPC layer.
         L2_BLOCK_RANGE_FOR_L1 => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 64].into())),
         ESTIMATE_RETRYABLE_TICKET => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 32].into())),
         CONSTRUCT_OUTBOX_PROOF => Ok(PrecompileOutput::new(COPY_GAS, vec![].into())),
@@ -148,6 +150,28 @@ fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResu
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
         genesis_block_num.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// blockL1Num(uint64 blockNum) → uint64
+///
+/// Returns the L1 block number associated with the given L2 block.
+/// Uses the cached L1→L2 block mapping populated during block execution.
+fn handle_block_l1_num(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 4 + 32 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let block_num: u64 = U256::from_be_slice(&data[4..36])
+        .try_into()
+        .unwrap_or(u64::MAX);
+
+    let l1_block = get_cached_l1_block_number(block_num).unwrap_or(0);
+
+    Ok(PrecompileOutput::new(
+        COPY_GAS.min(input.gas),
+        U256::from(l1_block).to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
