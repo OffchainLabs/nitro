@@ -20,6 +20,11 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_40: u64 = 40;
     /// ArbOS version 50 — Osaka EVM rules (future).
     pub const ARBOS_VERSION_50: u64 = 50;
+    /// ArbOS version 51 — multi-constraint fix.
+    pub const ARBOS_VERSION_MULTI_CONSTRAINT_FIX: u64 = 51;
+    /// ArbOS version 60 — multi-gas constraints.
+    pub const ARBOS_VERSION_MULTI_GAS_CONSTRAINTS: u64 = 60;
+    pub const ARBOS_VERSION_60: u64 = 60;
 }
 
 /// Trait for Arbitrum chain specifications.

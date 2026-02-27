@@ -5,6 +5,7 @@ pub mod params;
 pub mod types;
 
 use alloy_primitives::B256;
+use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
 use arb_storage::Storage;
@@ -322,6 +323,50 @@ impl<D: Database> Programs<D> {
         Ok(data_fee)
     }
 
+    /// Execute a Stylus program call.
+    ///
+    /// Computes gas costs, resolves program metadata, and delegates to the
+    /// provided `call_fn` which handles the actual WASM runtime execution.
+    /// After execution, attributes residual gas to WasmComputation.
+    ///
+    /// The `call_fn` receives `(program, prog_params, evm_data, calldata)`
+    /// and returns `(output_bytes, gas_left)` or an error.
+    pub fn call_program<F>(
+        &self,
+        code_hash: B256,
+        time: u64,
+        pages_open: u16,
+        calldata: &[u8],
+        evm_data: EvmData,
+        _reentrant: bool,
+        debug_mode: bool,
+        gas: u64,
+        used_multi_gas: &mut MultiGas,
+        recent_cache_hit: bool,
+        call_fn: F,
+    ) -> Result<(Vec<u8>, u64), String>
+    where
+        F: FnOnce(Program, ProgParams, EvmData, &[u8], u64) -> Result<(Vec<u8>, u64), String>,
+    {
+        let (call_cost, program, _model) = self
+            .call_gas_cost(code_hash, time, pages_open, recent_cache_hit)
+            .map_err(|_| "failed to compute call cost")?;
+
+        if gas < call_cost {
+            return Err("insufficient gas for Stylus call".into());
+        }
+
+        let gas_for_program = gas - call_cost;
+        let params = self.prog_params(program.version, debug_mode, &self.params().map_err(|_| "failed to load params")?);
+
+        let starting_gas = gas;
+        let (output, gas_left) = call_fn(program, params, evm_data, calldata, gas_for_program)?;
+
+        attribute_wasm_computation(used_multi_gas, starting_gas, gas_left);
+
+        Ok((output, gas_left))
+    }
+
     /// Update the cached status of a program.
     pub fn set_program_cached(
         &self,
@@ -363,6 +408,29 @@ pub struct ActivationInfo {
     pub cached_init_gas: u16,
     pub asm_estimate: u32,
     pub footprint: u16,
+}
+
+/// Attribute residual WASM gas consumption to the WasmComputation resource kind.
+///
+/// After a Stylus program executes, the total gas consumed may exceed what was
+/// individually tracked through MultiGas accounting. This function assigns the
+/// residual (unaccounted) gas to `ResourceKind::WasmComputation`.
+pub fn attribute_wasm_computation(used_multi_gas: &mut MultiGas, starting_gas: u64, gas_left: u64) {
+    let used_gas = starting_gas.saturating_sub(gas_left);
+    let accounted_gas = used_multi_gas.single_gas();
+
+    let residual = if accounted_gas > used_gas {
+        tracing::trace!(used_gas, accounted_gas, "negative WASM computation residual");
+        0
+    } else {
+        used_gas - accounted_gas
+    };
+
+    let (updated, overflow) = used_multi_gas.safe_increment(ResourceKind::WasmComputation, residual);
+    if overflow {
+        tracing::trace!(residual, "WASM computation gas overflow");
+    }
+    *used_multi_gas = updated;
 }
 
 /// Hours since Arbitrum began, rounded down.

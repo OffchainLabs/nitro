@@ -4,10 +4,10 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CACHE_MANAGERS_KEY, CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET,
-    L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
-    NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
-    TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    CACHE_MANAGERS_KEY, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
+    FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE,
+    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwner precompile address (0x70).
@@ -295,11 +295,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_remove_from_set(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
 
-        // ── Multi-gas (stubs) ────────────────────────────────────
-        SET_GAS_PRICING_CONSTRAINTS | SET_MULTI_GAS_PRICING_CONSTRAINTS | SET_CHAIN_CONFIG => {
-            let gas_cost = COPY_GAS.min(input.gas);
-            Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
-        }
+        // ── Gas pricing constraints ──────────────────────────────
+        SET_GAS_PRICING_CONSTRAINTS => handle_set_gas_pricing_constraints(&mut input),
+        SET_MULTI_GAS_PRICING_CONSTRAINTS => handle_set_multi_gas_pricing_constraints(&mut input),
+
+        // ── Chain config ────────────────────────────────────────
+        SET_CHAIN_CONFIG => handle_set_chain_config(&mut input),
 
         _ => Err(PrecompileError::other("unknown ArbOwner selector")),
     }
@@ -829,5 +830,439 @@ fn handle_remove_from_set(
     address_set_remove(input, set_key, addr)?;
 
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+// ── Gas constraint storage helpers ───────────────────────────────────
+
+const GC_KEY: &[u8] = b"gc";
+const MGC_KEY: &[u8] = b"mgc";
+const CONSTRAINT_TARGET: u64 = 0;
+const CONSTRAINT_WINDOW: u64 = 1;
+const CONSTRAINT_BACKLOG: u64 = 2;
+const MGC_MAX_WEIGHT: u64 = 3;
+const MGC_WEIGHTS_BASE: u64 = 4;
+const NUM_RESOURCE_KINDS: u64 = 8;
+const GAS_CONSTRAINTS_MAX_NUM: usize = 42;
+const MAX_PRICING_EXPONENT_BIPS: u64 = 63000;
+
+/// Derive the L2 pricing sub-storage key.
+fn l2_pricing_key() -> B256 {
+    derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE)
+}
+
+/// Derive the gas constraints vector sub-storage key.
+fn gc_vector_key() -> B256 {
+    derive_subspace_key(l2_pricing_key().as_slice(), GC_KEY)
+}
+
+/// Derive the multi-gas constraints vector sub-storage key.
+fn mgc_vector_key() -> B256 {
+    derive_subspace_key(l2_pricing_key().as_slice(), MGC_KEY)
+}
+
+/// SubStorageVector length slot (offset 0 from vector base key).
+fn vector_length_slot(vector_key: B256) -> U256 {
+    map_slot(vector_key.as_slice(), 0)
+}
+
+/// Sub-storage key for element at given index within a vector.
+fn vector_element_key(vector_key: B256, index: u64) -> B256 {
+    derive_subspace_key(vector_key.as_slice(), &index.to_be_bytes())
+}
+
+/// Storage slot for a field within a constraint element.
+fn constraint_field_slot(element_key: B256, field_offset: u64) -> U256 {
+    map_slot(element_key.as_slice(), field_offset)
+}
+
+/// Read ArbOS version from root state.
+fn read_arbos_version(input: &mut PrecompileInput<'_>) -> Result<u64, PrecompileError> {
+    let val = sload_field(input, root_slot(0))?; // VERSION_OFFSET = 0
+    val.try_into()
+        .map_err(|_| PrecompileError::other("invalid ArbOS version"))
+}
+
+/// Clear all constraints in a SubStorageVector of gas constraints.
+fn clear_gas_constraints_vector(
+    input: &mut PrecompileInput<'_>,
+    vector_key: B256,
+    fields_per_element: u64,
+) -> Result<u64, PrecompileError> {
+    let len_slot = vector_length_slot(vector_key);
+    let len: u64 = sload_field(input, len_slot)?
+        .try_into()
+        .unwrap_or(0);
+
+    // Clear each constraint's fields.
+    for i in 0..len {
+        let elem_key = vector_element_key(vector_key, i);
+        for f in 0..fields_per_element {
+            sstore_field(input, constraint_field_slot(elem_key, f), U256::ZERO)?;
+        }
+    }
+
+    // Reset length to 0.
+    sstore_field(input, len_slot, U256::ZERO)?;
+
+    Ok(len)
+}
+
+/// Clear all multi-gas constraints, including resource weights.
+fn clear_multi_gas_constraints(
+    input: &mut PrecompileInput<'_>,
+) -> Result<u64, PrecompileError> {
+    let vector_key = mgc_vector_key();
+    let len_slot = vector_length_slot(vector_key);
+    let len: u64 = sload_field(input, len_slot)?
+        .try_into()
+        .unwrap_or(0);
+
+    for i in 0..len {
+        let elem_key = vector_element_key(vector_key, i);
+        // Clear target, window, backlog, max_weight.
+        for f in 0..4 {
+            sstore_field(input, constraint_field_slot(elem_key, f), U256::ZERO)?;
+        }
+        // Clear resource weights.
+        for r in 0..NUM_RESOURCE_KINDS {
+            sstore_field(
+                input,
+                constraint_field_slot(elem_key, MGC_WEIGHTS_BASE + r),
+                U256::ZERO,
+            )?;
+        }
+    }
+
+    sstore_field(input, len_slot, U256::ZERO)?;
+    Ok(len)
+}
+
+// ── SetGasPricingConstraints ─────────────────────────────────────────
+
+/// ABI: `setGasPricingConstraints(uint64[3][])`
+///
+/// Clears existing constraints, validates count for certain ArbOS versions,
+/// then adds each constraint (target, adjustment_window, starting_backlog).
+fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    // Minimum: selector(4) + offset(32) + length(32) = 68 bytes
+    if data.len() < 68 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+
+    // Parse array length.
+    let count: u64 = U256::from_be_slice(&data[36..68])
+        .try_into()
+        .map_err(|_| PrecompileError::other("array length overflow"))?;
+
+    // Each element is 3 × 32 bytes = 96 bytes.
+    let expected_len = 68 + (count as usize) * 96;
+    if data.len() < expected_len {
+        return Err(PrecompileError::other("input too short for constraints"));
+    }
+
+    // Clear existing constraints.
+    let vector_key = gc_vector_key();
+    clear_gas_constraints_vector(input, vector_key, 3)?;
+
+    // Version check for max constraint count.
+    let arbos_version = read_arbos_version(input)?;
+    use arb_chainspec::arbos_version as arb_ver;
+    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX
+        && arbos_version < arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
+    {
+        if (count as usize) > GAS_CONSTRAINTS_MAX_NUM {
+            return Err(PrecompileError::other("too many constraints"));
+        }
+    }
+
+    // Add each constraint.
+    let len_slot = vector_length_slot(vector_key);
+    for i in 0..count {
+        let base = 68 + (i as usize) * 96;
+        let target: u64 = U256::from_be_slice(&data[base..base + 32])
+            .try_into()
+            .unwrap_or(0);
+        let window: u64 = U256::from_be_slice(&data[base + 32..base + 64])
+            .try_into()
+            .unwrap_or(0);
+        let backlog: u64 = U256::from_be_slice(&data[base + 64..base + 96])
+            .try_into()
+            .unwrap_or(0);
+
+        if target == 0 || window == 0 {
+            return Err(PrecompileError::other("invalid constraint parameters"));
+        }
+
+        // Write constraint fields.
+        let elem_key = vector_element_key(vector_key, i);
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_TARGET), U256::from(target))?;
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_WINDOW), U256::from(window))?;
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_BACKLOG), U256::from(backlog))?;
+
+        // Increment vector length.
+        sstore_field(input, len_slot, U256::from(i + 1))?;
+    }
+
+    let gas_used = (count * 4 + 2) * SSTORE_GAS + count * SLOAD_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+// ── SetMultiGasPricingConstraints ────────────────────────────────────
+
+/// ABI: `setMultiGasPricingConstraints((uint64,uint64,uint64,(uint8,uint64)[])[])`
+///
+/// Clears existing multi-gas constraints, then adds each constraint
+/// with per-resource-kind weights. Validates pricing exponents after each add.
+fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 68 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+
+    // Clear existing multi-gas constraints.
+    clear_multi_gas_constraints(input)?;
+
+    // The outer array offset.
+    let _outer_offset: usize = U256::from_be_slice(&data[4..36])
+        .try_into()
+        .unwrap_or(0usize);
+    // Array length.
+    let count: u64 = U256::from_be_slice(&data[36..68])
+        .try_into()
+        .map_err(|_| PrecompileError::other("array length overflow"))?;
+
+    // Parse each constraint. ABI encodes dynamic structs with offsets.
+    let array_data_start = 68; // after selector + offset + length
+
+    // Read offsets to each struct.
+    let mut struct_offsets = Vec::with_capacity(count as usize);
+    for i in 0..count as usize {
+        let offset_pos = array_data_start + i * 32;
+        if data.len() < offset_pos + 32 {
+            return Err(PrecompileError::other("input too short for struct offsets"));
+        }
+        let offset: usize = U256::from_be_slice(&data[offset_pos..offset_pos + 32])
+            .try_into()
+            .unwrap_or(0);
+        // Offset is relative to array data start.
+        struct_offsets.push(array_data_start + offset);
+    }
+
+    let vector_key = mgc_vector_key();
+    let len_slot = vector_length_slot(vector_key);
+
+    for (i, &struct_start) in struct_offsets.iter().enumerate() {
+        // Each struct: target(32) + window(32) + backlog(32) + resources_offset(32) = 128 min
+        if data.len() < struct_start + 128 {
+            return Err(PrecompileError::other("input too short for constraint struct"));
+        }
+
+        let target: u64 = U256::from_be_slice(&data[struct_start..struct_start + 32])
+            .try_into()
+            .unwrap_or(0);
+        let window: u64 = U256::from_be_slice(&data[struct_start + 32..struct_start + 64])
+            .try_into()
+            .unwrap_or(0);
+        let backlog: u64 = U256::from_be_slice(&data[struct_start + 64..struct_start + 96])
+            .try_into()
+            .unwrap_or(0);
+
+        if target == 0 || window == 0 {
+            return Err(PrecompileError::other("invalid constraint parameters"));
+        }
+
+        // Parse resources offset (relative to struct start).
+        let resources_offset: usize = U256::from_be_slice(&data[struct_start + 96..struct_start + 128])
+            .try_into()
+            .unwrap_or(0);
+        let resources_start = struct_start + resources_offset;
+
+        if data.len() < resources_start + 32 {
+            return Err(PrecompileError::other("input too short for resources array"));
+        }
+
+        let num_resources: usize = U256::from_be_slice(&data[resources_start..resources_start + 32])
+            .try_into()
+            .unwrap_or(0);
+
+        // Parse resource weights.
+        let mut weights = [0u64; 8];
+        let mut max_weight = 0u64;
+        for r in 0..num_resources {
+            let r_start = resources_start + 32 + r * 64;
+            if data.len() < r_start + 64 {
+                return Err(PrecompileError::other("input too short for resource weight"));
+            }
+            let resource: u8 = U256::from_be_slice(&data[r_start..r_start + 32])
+                .try_into()
+                .unwrap_or(0);
+            let weight: u64 = U256::from_be_slice(&data[r_start + 32..r_start + 64])
+                .try_into()
+                .unwrap_or(0);
+
+            if (resource as u64) < NUM_RESOURCE_KINDS {
+                weights[resource as usize] = weight;
+                if weight > max_weight {
+                    max_weight = weight;
+                }
+            }
+        }
+
+        // Write constraint to storage.
+        let elem_key = vector_element_key(vector_key, i as u64);
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_TARGET), U256::from(target))?;
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_WINDOW), U256::from(window))?;
+        sstore_field(input, constraint_field_slot(elem_key, CONSTRAINT_BACKLOG), U256::from(backlog))?;
+        sstore_field(input, constraint_field_slot(elem_key, MGC_MAX_WEIGHT), U256::from(max_weight))?;
+
+        // Write resource weights.
+        for r in 0..NUM_RESOURCE_KINDS as usize {
+            sstore_field(
+                input,
+                constraint_field_slot(elem_key, MGC_WEIGHTS_BASE + r as u64),
+                U256::from(weights[r]),
+            )?;
+        }
+
+        // Increment vector length.
+        sstore_field(input, len_slot, U256::from(i as u64 + 1))?;
+
+        // Validate exponents after each constraint.
+        validate_multi_gas_exponents(input, vector_key, i as u64 + 1)?;
+    }
+
+    let gas_used = (count * 16 + 2) * SSTORE_GAS + (count * 12 + 2) * SLOAD_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+/// Validate that no pricing exponent exceeds the maximum.
+fn validate_multi_gas_exponents(
+    input: &mut PrecompileInput<'_>,
+    vector_key: B256,
+    count: u64,
+) -> Result<(), PrecompileError> {
+    let mut exponents = [0u64; 8];
+
+    for i in 0..count {
+        let elem_key = vector_element_key(vector_key, i);
+        let target: u64 = sload_field(input, constraint_field_slot(elem_key, CONSTRAINT_TARGET))?
+            .try_into()
+            .unwrap_or(0);
+        let backlog: u64 = sload_field(input, constraint_field_slot(elem_key, CONSTRAINT_BACKLOG))?
+            .try_into()
+            .unwrap_or(0);
+
+        if backlog == 0 {
+            continue;
+        }
+
+        let window: u64 = sload_field(input, constraint_field_slot(elem_key, CONSTRAINT_WINDOW))?
+            .try_into()
+            .unwrap_or(0);
+        let max_weight: u64 = sload_field(input, constraint_field_slot(elem_key, MGC_MAX_WEIGHT))?
+            .try_into()
+            .unwrap_or(0);
+
+        if max_weight == 0 || target == 0 || window == 0 {
+            continue;
+        }
+
+        // divisor = window * target * max_weight (in bips).
+        let divisor = (window as u128)
+            .saturating_mul(target as u128)
+            .saturating_mul(max_weight as u128);
+        let divisor_bips = divisor.saturating_mul(10000);
+
+        for r in 0..NUM_RESOURCE_KINDS as usize {
+            let weight: u64 = sload_field(
+                input,
+                constraint_field_slot(elem_key, MGC_WEIGHTS_BASE + r as u64),
+            )?
+            .try_into()
+            .unwrap_or(0);
+
+            if weight == 0 {
+                continue;
+            }
+
+            let dividend = (backlog as u128).saturating_mul(weight as u128) * 10000;
+            let exp = if divisor_bips > 0 {
+                (dividend / divisor_bips) as u64
+            } else {
+                0
+            };
+            exponents[r] = exponents[r].saturating_add(exp);
+        }
+    }
+
+    for &exp in &exponents {
+        if exp > MAX_PRICING_EXPONENT_BIPS {
+            return Err(PrecompileError::other("pricing exponent exceeds maximum"));
+        }
+    }
+
+    Ok(())
+}
+
+// ── SetChainConfig ───────────────────────────────────────────────────
+
+/// ABI: `setChainConfig(bytes)`
+///
+/// Stores the serialized chain config in StorageBackedBytes format.
+fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 68 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+
+    // ABI: offset(32) + length(32) + data.
+    let bytes_len: usize = U256::from_be_slice(&data[36..68])
+        .try_into()
+        .map_err(|_| PrecompileError::other("bytes length overflow"))?;
+
+    if data.len() < 68 + bytes_len {
+        return Err(PrecompileError::other("input too short for chain config bytes"));
+    }
+    let config_bytes = &data[68..68 + bytes_len];
+
+    // Chain config sub-storage key.
+    let cc_key = derive_subspace_key(ROOT_STORAGE_KEY, CHAIN_CONFIG_SUBSPACE);
+
+    // Clear existing bytes (StorageBackedBytes: slot 0 = length, slots 1..N = data).
+    let old_len: u64 = sload_field(input, map_slot(cc_key.as_slice(), 0))?
+        .try_into()
+        .unwrap_or(0);
+    let old_slots = (old_len + 31) / 32;
+    for s in 1..=old_slots {
+        sstore_field(input, map_slot(cc_key.as_slice(), s), U256::ZERO)?;
+    }
+
+    // Write new length.
+    sstore_field(input, map_slot(cc_key.as_slice(), 0), U256::from(bytes_len as u64))?;
+
+    // Write data in 32-byte chunks.
+    let mut remaining = config_bytes;
+    let mut offset = 1u64;
+    while remaining.len() >= 32 {
+        let mut slot = [0u8; 32];
+        slot.copy_from_slice(&remaining[..32]);
+        sstore_field(input, map_slot(cc_key.as_slice(), offset), U256::from_be_bytes(slot))?;
+        remaining = &remaining[32..];
+        offset += 1;
+    }
+    if !remaining.is_empty() {
+        let mut slot = [0u8; 32];
+        slot[..remaining.len()].copy_from_slice(remaining);
+        sstore_field(input, map_slot(cc_key.as_slice(), offset), U256::from_be_bytes(slot))?;
+    }
+
+    let new_slots = (bytes_len as u64 + 31) / 32;
+    let total_stores = old_slots + 1 + new_slots; // clear + length + data
+    let gas_used = total_stores * SSTORE_GAS + SLOAD_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }

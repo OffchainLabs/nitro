@@ -44,6 +44,9 @@ pub struct TxProcessor {
     pub cached_l1_block_hashes: HashMap<u64, B256>,
     /// Scheduled transactions (e.g., retryable auto-redeems).
     pub scheduled_txs: Vec<Vec<u8>>,
+    /// Count of open Stylus program contexts per contract address.
+    /// Used to detect reentrance.
+    pub programs_depth: HashMap<Address, usize>,
 }
 
 impl Default for TxProcessor {
@@ -59,6 +62,7 @@ impl Default for TxProcessor {
             cached_l1_block_number: None,
             cached_l1_block_hashes: HashMap::new(),
             scheduled_txs: Vec::new(),
+            programs_depth: HashMap::new(),
         }
     }
 }
@@ -109,6 +113,30 @@ impl TxProcessor {
     /// Fill receipt info with the poster gas used for L1.
     pub fn fill_receipt_gas_used_for_l1(&self) -> u64 {
         self.poster_gas
+    }
+
+    // -----------------------------------------------------------------
+    // Stylus / WASM Execution
+    // -----------------------------------------------------------------
+
+    /// Record entering a Stylus program context for a contract address.
+    pub fn push_program(&mut self, addr: Address) {
+        *self.programs_depth.entry(addr).or_insert(0) += 1;
+    }
+
+    /// Record leaving a Stylus program context for a contract address.
+    pub fn pop_program(&mut self, addr: Address) {
+        if let Some(count) = self.programs_depth.get_mut(&addr) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.programs_depth.remove(&addr);
+            }
+        }
+    }
+
+    /// Whether the given address has a reentrant Stylus call.
+    pub fn is_reentrant(&self, addr: &Address) -> bool {
+        self.programs_depth.get(addr).copied().unwrap_or(0) > 1
     }
 
     // -----------------------------------------------------------------

@@ -1,3 +1,5 @@
+pub mod initialize;
+
 use alloy_primitives::{Address, Bytes, B256, U256};
 use revm::Database;
 
