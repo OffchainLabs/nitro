@@ -23,6 +23,7 @@ const REGISTER: [u8; 4] = [0x44, 0x20, 0xe4, 0x86];
 const SIZE: [u8; 4] = [0x94, 0x9d, 0x22, 0x5d];
 
 const SLOAD_GAS: u64 = 800;
+const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbaddresstable_precompile() -> DynPrecompile {
@@ -42,10 +43,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         ADDRESS_EXISTS => handle_address_exists(&mut input),
         LOOKUP => handle_lookup(&mut input),
         LOOKUP_INDEX => handle_lookup_index(&mut input),
-        REGISTER | COMPRESS | DECOMPRESS => {
-            // These methods require write access or complex serialization.
+        REGISTER => handle_register(&mut input),
+        COMPRESS | DECOMPRESS => {
+            // Compress/Decompress involve RLP encoding/decoding.
             Err(PrecompileError::other(
-                "address table write/compress operations not yet supported",
+                "address table compress/decompress not yet supported",
             ))
         }
         _ => Err(PrecompileError::other(
@@ -70,6 +72,18 @@ fn sload_field(input: &mut PrecompileInput<'_>, slot: U256) -> Result<U256, Prec
         .sload(ARBOS_STATE_ADDRESS, slot)
         .map_err(|_| PrecompileError::other("sload failed"))?;
     Ok(val.data)
+}
+
+fn sstore_field(
+    input: &mut PrecompileInput<'_>,
+    slot: U256,
+    value: U256,
+) -> Result<(), PrecompileError> {
+    input
+        .internals_mut()
+        .sstore(ARBOS_STATE_ADDRESS, slot, value)
+        .map_err(|_| PrecompileError::other("sstore failed"))?;
+    Ok(())
 }
 
 /// AddressTable numItems is stored at offset 0 in the table's subspace storage.
@@ -178,5 +192,68 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// Register an address in the table. If it already exists, returns its index.
+/// Otherwise, adds it and returns the new 0-based index.
+///
+/// Storage layout:
+/// - numItems at offset 0 in table subspace
+/// - byAddress: sub-storage with empty key, maps addr_hash → 1-based index
+/// - backing: maps (index + 1) → addr_hash (reverse lookup)
+fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    load_arbos(input)?;
+
+    let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
+    let by_address_key = derive_subspace_key(table_key.as_slice(), &[]);
+    let addr_as_b256 = alloy_primitives::B256::left_padding_from(addr.as_slice());
+
+    // Check if address already exists in byAddress mapping.
+    let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_as_b256);
+    let existing = sload_field(input, member_slot)?;
+
+    if existing != U256::ZERO {
+        // Already registered — return 0-based index.
+        let index = existing.wrapping_sub(U256::from(1u64));
+        return Ok(PrecompileOutput::new(
+            (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+            index.to_be_bytes::<32>().to_vec().into(),
+        ));
+    }
+
+    // Not yet registered — add it.
+    // Read numItems and increment it.
+    let num_items_slot = map_slot(table_key.as_slice(), 0);
+    let num_items = sload_field(input, num_items_slot)?;
+    let num_items_u64: u64 = num_items
+        .try_into()
+        .map_err(|_| PrecompileError::other("invalid numItems"))?;
+    let new_num_items = num_items_u64 + 1;
+    sstore_field(input, num_items_slot, U256::from(new_num_items))?;
+
+    // Store reverse mapping: backingStorage[newNumItems] = addr_hash.
+    let reverse_slot = map_slot(table_key.as_slice(), new_num_items);
+    sstore_field(input, reverse_slot, U256::from_be_bytes(addr_as_b256.0))?;
+
+    // Store byAddress mapping: byAddress[addr_hash] = newNumItems (1-based).
+    sstore_field(input, member_slot, U256::from(new_num_items))?;
+
+    // Return 0-based index.
+    let index = new_num_items - 1;
+
+    // Gas: 2 sloads (byAddress lookup + numItems) + 3 sstores (numItems, reverse, byAddress)
+    let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        U256::from(index).to_be_bytes::<32>().to_vec().into(),
     ))
 }
