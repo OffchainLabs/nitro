@@ -146,7 +146,6 @@ struct PendingArbTx {
     arb_tx_type: Option<ArbTxType>,
     has_poster_costs: bool,
     poster_gas: u64,
-    calldata_units: u64,
     /// Gas that reth's EVM actually charged the sender for (gas_used before
     /// poster/compute adjustments). Zero for paths that bypass reth's EVM
     /// (internal tx, deposit, submit retryable, pre-recorded revert, filtered tx).
@@ -392,7 +391,7 @@ where
                 has_poster_costs: false,
                 poster_gas: 0,
                 evm_gas_used: 0,
-                calldata_units: 0,
+
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
@@ -444,7 +443,7 @@ where
                     has_poster_costs: false,
                     poster_gas: 0,
                     evm_gas_used: 0,
-                    calldata_units: 0,
+    
                     charged_multi_gas: MultiGas::default(),
                     gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                     retry_context: None,
@@ -582,7 +581,6 @@ where
             has_poster_costs: false, // No poster costs for submit retryable
             poster_gas: 0,
             evm_gas_used: 0,
-            calldata_units: 0,
             charged_multi_gas: if fees.can_pay_for_gas {
                 MultiGas::l2_calldata_gas(user_gas)
             } else {
@@ -823,7 +821,7 @@ where
                 has_poster_costs: false,
                 poster_gas: 0,
                 evm_gas_used: 0,
-                calldata_units: 0,
+
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
@@ -900,7 +898,7 @@ where
                 has_poster_costs: false,
                 poster_gas: 0,
                 evm_gas_used: 0,
-                calldata_units: 0,
+
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
@@ -979,7 +977,7 @@ where
                                     has_poster_costs: false,
                                     poster_gas: 0,
                                     evm_gas_used: 0,
-                                    calldata_units: 0,
+                    
                                     charged_multi_gas: MultiGas::default(),
                                     gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                     retry_context: None,
@@ -1029,7 +1027,7 @@ where
                                 has_poster_costs: false,
                                 poster_gas: 0,
                                 evm_gas_used: 0,
-                                calldata_units: 0,
+                
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
@@ -1062,7 +1060,7 @@ where
                                 has_poster_costs: false,
                                 poster_gas: 0,
                                 evm_gas_used: 0,
-                                calldata_units: 0,
+                
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
@@ -1147,6 +1145,18 @@ where
             }
         }
 
+        // Add calldata units to L1 pricing state BEFORE EVM execution
+        // (matching Go's GasChargingHook timing).
+        if calldata_units > 0 {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            let state_ptr: *mut State<DB> = db as *mut State<DB>;
+            if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                let _ = arb_state
+                    .l1_pricing_state
+                    .add_to_units_since_update(calldata_units);
+            }
+        }
+
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         let mut tx_env = tx_env;
         let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
@@ -1194,7 +1204,6 @@ where
                             has_poster_costs,
                             poster_gas,
                             evm_gas_used: 0,
-                            calldata_units,
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
@@ -1228,7 +1237,6 @@ where
                             has_poster_costs,
                             poster_gas,
                             evm_gas_used: 0,
-                            calldata_units,
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
@@ -1409,7 +1417,6 @@ where
             has_poster_costs,
             poster_gas,
             evm_gas_used,
-            calldata_units,
             charged_multi_gas,
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             retry_context,
@@ -1624,9 +1631,6 @@ where
                                 .l1_pricing_state
                                 .add_to_l1_fees_available(dist.l1_fees_to_add);
                         }
-                        let _ = arb_state
-                            .l1_pricing_state
-                            .add_to_units_since_update(pending.calldata_units);
                     }
                 }
             }
