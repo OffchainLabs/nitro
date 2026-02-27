@@ -5,22 +5,30 @@ use std::collections::HashMap;
 /// ArbOS state address — the fictional account that stores all ArbOS state.
 pub const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
 
+/// Filtered transactions state address — a separate account for tracking filtered tx hashes.
+pub const FILTERED_TX_STATE_ADDRESS: Address =
+    address!("a4b0500000000000000000000000000000000001");
+
 /// Ensures the ArbOS account exists in bundle_state.
 ///
 /// Uses database.basic() instead of state.basic() to avoid cache non-determinism.
 pub fn ensure_arbos_account_in_bundle<D: Database>(state: &mut revm::database::State<D>) {
+    ensure_account_in_bundle(state, ARBOS_STATE_ADDRESS);
+}
+
+/// Ensures an arbitrary account exists in bundle_state with nonce=1.
+pub fn ensure_account_in_bundle<D: Database>(
+    state: &mut revm::database::State<D>,
+    addr: Address,
+) {
     use revm_database::{AccountStatus, BundleAccount};
     use revm_state::AccountInfo;
 
-    if state.bundle_state.state.contains_key(&ARBOS_STATE_ADDRESS) {
+    if state.bundle_state.state.contains_key(&addr) {
         return;
     }
 
-    let db_info = state
-        .database
-        .basic(ARBOS_STATE_ADDRESS)
-        .ok()
-        .flatten();
+    let db_info = state.database.basic(addr).ok().flatten();
 
     let info = db_info.or_else(|| {
         Some(AccountInfo {
@@ -38,7 +46,7 @@ pub fn ensure_arbos_account_in_bundle<D: Database>(state: &mut revm::database::S
         original_info: info,
         status: AccountStatus::Loaded,
     };
-    state.bundle_state.state.insert(ARBOS_STATE_ADDRESS, acc);
+    state.bundle_state.state.insert(addr, acc);
 }
 
 /// Reads a storage slot from the ArbOS account, checking cache -> bundle -> database.
@@ -46,8 +54,17 @@ pub fn read_arbos_storage<D: Database>(
     state: &mut revm::database::State<D>,
     slot: U256,
 ) -> U256 {
+    read_storage_at(state, ARBOS_STATE_ADDRESS, slot)
+}
+
+/// Reads a storage slot from an arbitrary account, checking cache -> bundle -> database.
+pub fn read_storage_at<D: Database>(
+    state: &mut revm::database::State<D>,
+    account: Address,
+    slot: U256,
+) -> U256 {
     // Check cache first
-    if let Some(cached_acc) = state.cache.accounts.get(&ARBOS_STATE_ADDRESS) {
+    if let Some(cached_acc) = state.cache.accounts.get(&account) {
         if let Some(ref account) = cached_acc.account {
             if let Some(&value) = account.storage.get(&slot) {
                 return value;
@@ -56,7 +73,7 @@ pub fn read_arbos_storage<D: Database>(
     }
 
     // Check bundle_state
-    if let Some(acc) = state.bundle_state.state.get(&ARBOS_STATE_ADDRESS) {
+    if let Some(acc) = state.bundle_state.state.get(&account) {
         if let Some(slot_entry) = acc.storage.get(&slot) {
             return slot_entry.present_value;
         }
@@ -65,7 +82,7 @@ pub fn read_arbos_storage<D: Database>(
     // Fall back to database
     state
         .database
-        .storage(ARBOS_STATE_ADDRESS, slot)
+        .storage(account, slot)
         .unwrap_or(U256::ZERO)
 }
 
@@ -78,17 +95,27 @@ pub fn write_arbos_storage<D: Database>(
     slot: U256,
     value: U256,
 ) {
+    write_storage_at(state, ARBOS_STATE_ADDRESS, slot, value);
+}
+
+/// Writes a storage slot to an arbitrary account using the transition mechanism.
+pub fn write_storage_at<D: Database>(
+    state: &mut revm::database::State<D>,
+    account: Address,
+    slot: U256,
+    value: U256,
+) {
     use revm_database::states::StorageSlot;
 
     // Load account into cache
-    let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
+    let _ = state.load_cache_account(account);
 
     // Get current value from cache/bundle, and original from DB
     let current_value = {
         state
             .cache
             .accounts
-            .get(&ARBOS_STATE_ADDRESS)
+            .get(&account)
             .and_then(|ca| ca.account.as_ref())
             .and_then(|a| a.storage.get(&slot).copied())
     }
@@ -96,14 +123,14 @@ pub fn write_arbos_storage<D: Database>(
         state
             .bundle_state
             .state
-            .get(&ARBOS_STATE_ADDRESS)
+            .get(&account)
             .and_then(|a| a.storage.get(&slot))
             .map(|s| s.present_value)
     });
 
     let original_value = state
         .database
-        .storage(ARBOS_STATE_ADDRESS, slot)
+        .storage(account, slot)
         .unwrap_or(U256::ZERO);
 
     // Skip no-op writes
@@ -114,7 +141,7 @@ pub fn write_arbos_storage<D: Database>(
 
     // Modify cache entry
     let (previous_info, previous_status, current_info, current_status) = {
-        let cached_acc = match state.cache.accounts.get_mut(&ARBOS_STATE_ADDRESS) {
+        let cached_acc = match state.cache.accounts.get_mut(&account) {
             Some(acc) => acc,
             None => return,
         };
@@ -150,7 +177,7 @@ pub fn write_arbos_storage<D: Database>(
         storage_was_destroyed: false,
     };
 
-    state.apply_transition(vec![(ARBOS_STATE_ADDRESS, transition)]);
+    state.apply_transition(vec![(account, transition)]);
 }
 
 /// Reads the balance of an account from the state.

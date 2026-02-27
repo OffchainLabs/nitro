@@ -1,21 +1,40 @@
-use alloy_primitives::{B256, U256, keccak256};
+use alloy_primitives::{Address, B256, U256, keccak256};
 use revm::Database;
 
 use crate::slot::{storage_key_map, storage_key_map_b256};
-use crate::state_ops::{read_arbos_storage, write_arbos_storage};
+use crate::state_ops::{ARBOS_STATE_ADDRESS, read_storage_at, write_storage_at};
 
-/// Hierarchical storage abstraction over ArbOS state.
+/// Hierarchical storage abstraction over EVM account state.
 ///
-/// All ArbOS state lives in a single account. Storage uses keccak256-based
+/// State lives in a specific account. Storage uses keccak256-based
 /// subspace derivation to create a hierarchical key space.
 pub struct Storage<D> {
     pub state: *mut revm::database::State<D>,
     pub base_key: B256,
+    pub account: Address,
 }
 
 impl<D: Database> Storage<D> {
+    /// Creates a new Storage backed by the ArbOS state account.
     pub fn new(state: *mut revm::database::State<D>, base_key: B256) -> Self {
-        Self { state, base_key }
+        Self {
+            state,
+            base_key,
+            account: ARBOS_STATE_ADDRESS,
+        }
+    }
+
+    /// Creates a new Storage backed by a specific account.
+    pub fn new_with_account(
+        state: *mut revm::database::State<D>,
+        base_key: B256,
+        account: Address,
+    ) -> Self {
+        Self {
+            state,
+            base_key,
+            account,
+        }
     }
 
     /// Opens a child subspace by hashing the parent key with the child ID.
@@ -29,7 +48,7 @@ impl<D: Database> Storage<D> {
         combined.extend_from_slice(base_slice);
         combined.extend_from_slice(sub_key);
         let new_key = keccak256(&combined);
-        Storage::new(self.state, new_key)
+        Storage::new_with_account(self.state, new_key, self.account)
     }
 
     /// Reads a 32-byte value by uint64 offset.
@@ -37,7 +56,7 @@ impl<D: Database> Storage<D> {
         let slot = self.compute_slot(offset);
         unsafe {
             let state = &mut *self.state;
-            Ok(B256::from(read_arbos_storage(state, slot)))
+            Ok(B256::from(read_storage_at(state, self.account, slot)))
         }
     }
 
@@ -47,7 +66,7 @@ impl<D: Database> Storage<D> {
         let value_u256 = U256::from_be_bytes(value.0);
         unsafe {
             let state = &mut *self.state;
-            write_arbos_storage(state, slot, value_u256);
+            write_storage_at(state, self.account, slot, value_u256);
             Ok(())
         }
     }
@@ -57,7 +76,7 @@ impl<D: Database> Storage<D> {
         let slot = self.compute_slot(offset);
         unsafe {
             let state = &mut *self.state;
-            let value = read_arbos_storage(state, slot);
+            let value = read_storage_at(state, self.account, slot);
             Ok(value.try_into().unwrap_or(0))
         }
     }
@@ -67,7 +86,7 @@ impl<D: Database> Storage<D> {
         let slot = self.compute_slot(offset);
         unsafe {
             let state = &mut *self.state;
-            write_arbos_storage(state, slot, U256::from(value));
+            write_storage_at(state, self.account, slot, U256::from(value));
             Ok(())
         }
     }
@@ -77,7 +96,7 @@ impl<D: Database> Storage<D> {
         let slot = self.compute_slot_for_key(key);
         unsafe {
             let state = &mut *self.state;
-            Ok(B256::from(read_arbos_storage(state, slot)))
+            Ok(B256::from(read_storage_at(state, self.account, slot)))
         }
     }
 
@@ -87,7 +106,7 @@ impl<D: Database> Storage<D> {
         let value_u256 = U256::from_be_bytes(value.0);
         unsafe {
             let state = &mut *self.state;
-            write_arbos_storage(state, slot, value_u256);
+            write_storage_at(state, self.account, slot, value_u256);
             Ok(())
         }
     }
@@ -129,6 +148,7 @@ impl<D> Clone for Storage<D> {
         Self {
             state: self.state,
             base_key: self.base_key,
+            account: self.account,
         }
     }
 }
