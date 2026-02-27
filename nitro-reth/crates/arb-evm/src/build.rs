@@ -138,7 +138,7 @@ where
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
-        if let Ok(arb_state) =
+        if let Ok(mut arb_state) =
             ArbosState::open(state_ptr, SystemBurner::new(None, false))
         {
             // Rotate multi-gas fees: copy next-block fees to current-block.
@@ -146,6 +146,47 @@ where
             let _ = arb_state.l2_pricing_state.commit_multi_gas_fees();
 
             let arbos_version = arb_state.arbos_version;
+            let time_passed = self.arb_ctx.time_passed;
+            let block_timestamp = self.arb_ctx.block_timestamp;
+
+            // --- Start-block state updates ---
+            // Record L1 block hashes if L1 block number advanced.
+            let l1_block_number = self.arb_ctx.l1_block_number;
+            if let Ok(old_l1_block) = arb_state.blockhashes.l1_block_number() {
+                if l1_block_number > old_l1_block {
+                    let _ = arb_state.blockhashes.record_new_l1_block(
+                        l1_block_number - 1,
+                        self.arb_ctx.parent_hash,
+                        arbos_version,
+                    );
+                }
+            }
+
+            // Reap up to 2 expired retryables.
+            let noop_transfer = &mut |_from: Address, _to: Address, _value: U256| -> Result<(), ()> {
+                // TODO: implement ETH transfer via State<DB> for retryable reaping
+                Ok(())
+            };
+            let _ = arb_state.retryable_state.try_to_reap_one_retryable(
+                block_timestamp,
+                &mut *noop_transfer,
+            );
+            let _ = arb_state.retryable_state.try_to_reap_one_retryable(
+                block_timestamp,
+                &mut *noop_transfer,
+            );
+
+            // Update L2 pricing model (drain backlogs, recalculate base fee).
+            let _ = arb_state
+                .l2_pricing_state
+                .update_pricing_model(time_passed, arbos_version);
+
+            // Check for scheduled ArbOS upgrade.
+            let _ = arb_state.upgrade_arbos_version_if_necessary(block_timestamp);
+
+            // Re-read state after updates (version may have changed).
+            let arbos_version = arb_state.arbos_version();
+
             let network_fee_account = arb_state
                 .network_fee_account
                 .get()
@@ -175,14 +216,12 @@ where
                 .l2_pricing_state
                 .per_tx_gas_limit()
                 .unwrap_or(0);
-            // Base fee from L2 pricing state (after multi-gas fee commit).
+            // Base fee from L2 pricing state (after pricing model update).
             let base_fee = arb_state
                 .l2_pricing_state
                 .base_fee_wei()
                 .unwrap_or(U256::ZERO);
-            // L1 base fee comes from the incoming message header, not ArbOS state.
-            // It will be set when the start-block internal tx is executed.
-            let l1_base_fee = U256::ZERO;
+            let l1_base_fee = self.arb_ctx.l1_base_fee;
 
             // Populate state-derived fields in the execution context.
             self.arb_ctx.arbos_version = arbos_version;

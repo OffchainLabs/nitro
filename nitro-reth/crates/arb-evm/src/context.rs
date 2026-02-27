@@ -23,6 +23,10 @@ pub struct ArbBlockExecutionCtx {
     pub block_timestamp: u64,
     /// Block base fee.
     pub basefee: U256,
+    /// Time elapsed since parent block (seconds).
+    pub time_passed: u64,
+    /// L1 base fee from the incoming message header.
+    pub l1_base_fee: U256,
     /// L1 pricing: price per unit from L1PricingState.
     pub l1_price_per_unit: U256,
     /// L1 pricing: brotli compression level from ArbOS state.

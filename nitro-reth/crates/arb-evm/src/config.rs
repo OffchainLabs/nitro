@@ -254,6 +254,8 @@ where
             chain_id: self.chain_spec.chain().id(),
             block_timestamp: header.timestamp,
             basefee: U256::from(header.base_fee_per_gas.unwrap_or_default()),
+            time_passed: 0,
+            l1_base_fee: U256::ZERO,
             arbos_version: arbos_version_from_mix_hash(&mix_hash),
             // State-derived fields populated by block executor after state open.
             l1_price_per_unit: U256::ZERO,
@@ -281,6 +283,8 @@ where
             chain_id: self.chain_spec.chain().id(),
             block_timestamp: parent.timestamp(),
             basefee: U256::from(parent.base_fee_per_gas().unwrap_or_default()),
+            time_passed: 0,
+            l1_base_fee: U256::ZERO,
             arbos_version: 0,
             l1_price_per_unit: U256::ZERO,
             brotli_compression_level: 0,
