@@ -1,6 +1,7 @@
 pub mod data_pricer;
 pub mod memory;
 pub mod params;
+pub mod types;
 
 use alloy_primitives::B256;
 use revm::Database;
@@ -11,6 +12,9 @@ use crate::address_set::{open_address_set, AddressSet};
 use self::data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME};
 use self::memory::MemoryModel;
 use self::params::{init_stylus_params, StylusParams};
+pub use self::types::{
+    ActivationResult, EvmData, ProgParams, RequestType, UserOutcome, evm_memory_cost, to_word_size,
+};
 
 const PARAMS_KEY: &[u8] = &[0];
 const PROGRAM_DATA_KEY: &[u8] = &[1];
@@ -189,6 +193,164 @@ impl<D: Database> Programs<D> {
     /// Set the module hash for a code hash.
     pub fn set_module_hash(&self, code_hash: B256, module_hash: B256) -> Result<(), ()> {
         self.module_hashes.set(code_hash, module_hash)
+    }
+
+    /// Build runtime parameters for a program invocation.
+    pub fn prog_params(&self, version: u16, debug_mode: bool, params: &StylusParams) -> ProgParams {
+        ProgParams {
+            version,
+            max_depth: params.max_stack_depth,
+            ink_price: params.ink_price,
+            debug_mode,
+        }
+    }
+
+    /// Activate a Stylus program. Records metadata and charges data fees.
+    ///
+    /// Returns `(version, code_hash, module_hash, data_fee)` on success.
+    pub fn activate_program(
+        &self,
+        code_hash: B256,
+        wasm: &[u8],
+        time: u64,
+        page_limit: u16,
+        debug: bool,
+        activate_fn: impl FnOnce(&[u8], u16, u64, u16, bool) -> Result<ActivationResult, String>,
+    ) -> Result<(u16, B256, alloy_primitives::U256), String> {
+        let params = self.params().map_err(|_| "failed to load params")?;
+        let stylus_version = params.version;
+
+        let (current_version, expired, cached) = self
+            .program_exists(code_hash, time, &params)
+            .map_err(|_| "failed to read program")?;
+
+        if current_version == stylus_version && !expired {
+            return Err("program up to date".into());
+        }
+
+        let info = activate_fn(wasm, stylus_version, self.arbos_version, page_limit, debug)?;
+
+        // If previously cached, remove old module.
+        if cached {
+            // Old module eviction would happen at the runtime layer.
+        }
+
+        self.set_module_hash(code_hash, info.module_hash)
+            .map_err(|_| "failed to set module hash")?;
+
+        let estimate_kb = div_ceil(info.asm_estimate as u64, 1024) as u32;
+
+        let data_fee = self
+            .data_pricer
+            .update_model(info.asm_estimate, time)
+            .map_err(|_| "failed to update data pricer")?;
+
+        let program = Program {
+            version: stylus_version,
+            init_cost: info.init_gas,
+            cached_cost: info.cached_init_gas,
+            footprint: info.footprint,
+            asm_estimate_kb: estimate_kb.min(0xFF_FFFF), // uint24 max
+            activated_at: hours_since_arbitrum(time),
+            age_seconds: 0,
+            cached,
+        };
+
+        self.set_program(code_hash, program)
+            .map_err(|_| "failed to set program")?;
+
+        Ok((stylus_version, info.module_hash, data_fee))
+    }
+
+    /// Compute gas costs for calling a Stylus program.
+    ///
+    /// Returns `(call_gas_cost, memory_model)`.
+    pub fn call_gas_cost(
+        &self,
+        code_hash: B256,
+        time: u64,
+        pages_open: u16,
+        recent_cache_hit: bool,
+    ) -> Result<(u64, Program, MemoryModel), ()> {
+        let params = self.params()?;
+        let program = self.get_active_program(code_hash, time, &params)?;
+        let model = MemoryModel::new(params.free_pages, params.page_gas);
+
+        let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
+
+        let cached = program.cached || recent_cache_hit;
+        if cached || program.version > 1 {
+            cost = cost.saturating_add(program.cached_gas(&params));
+        }
+        if !cached {
+            cost = cost.saturating_add(program.init_gas(&params));
+        }
+
+        Ok((cost, program, model))
+    }
+
+    /// Extend a program's expiry by resetting its activation time.
+    ///
+    /// Returns the data fee charged.
+    pub fn program_keepalive(
+        &self,
+        code_hash: B256,
+        time: u64,
+    ) -> Result<alloy_primitives::U256, String> {
+        let params = self.params().map_err(|_| "failed to load params")?;
+        let mut program = self
+            .get_active_program(code_hash, time, &params)
+            .map_err(|_| "program not active")?;
+
+        if program.age_seconds < days_to_seconds(params.keepalive_days) {
+            return Err("keepalive too soon".into());
+        }
+        if program.version != params.version {
+            return Err("program needs upgrade".into());
+        }
+
+        let data_fee = self
+            .data_pricer
+            .update_model(program.asm_size(), time)
+            .map_err(|_| "failed to update data pricer")?;
+
+        program.activated_at = hours_since_arbitrum(time);
+        self.set_program(code_hash, program)
+            .map_err(|_| "failed to set program")?;
+
+        Ok(data_fee)
+    }
+
+    /// Update the cached status of a program.
+    pub fn set_program_cached(
+        &self,
+        code_hash: B256,
+        cache: bool,
+        time: u64,
+    ) -> Result<(), String> {
+        let params = self.params().map_err(|_| "failed to load params")?;
+        let mut program = self
+            .get_program(code_hash, time)
+            .map_err(|_| "failed to read program")?;
+
+        let expired =
+            program.age_seconds > days_to_seconds(params.expiry_days);
+
+        if program.version != params.version && cache {
+            return Err("program needs upgrade".into());
+        }
+        if expired && cache {
+            return Err("program expired".into());
+        }
+        if program.cached == cache {
+            return Ok(());
+        }
+
+        program.cached = cache;
+        self.set_program(code_hash, program)
+            .map_err(|_| "failed to set program")?;
+
+        Ok(())
     }
 }
 
