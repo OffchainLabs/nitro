@@ -257,6 +257,7 @@ where
             time_passed: 0,
             l1_base_fee: U256::ZERO,
             arbos_version: arbos_version_from_mix_hash(&mix_hash),
+            coinbase: header.beneficiary,
             // State-derived fields populated by block executor after state open.
             l1_price_per_unit: U256::ZERO,
             brotli_compression_level: 0,
@@ -286,6 +287,7 @@ where
             time_passed: 0,
             l1_base_fee: U256::ZERO,
             arbos_version: 0,
+            coinbase: Address::ZERO,
             l1_price_per_unit: U256::ZERO,
             brotli_compression_level: 0,
             network_fee_account: Address::ZERO,

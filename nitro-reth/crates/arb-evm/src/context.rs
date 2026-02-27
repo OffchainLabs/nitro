@@ -39,6 +39,8 @@ pub struct ArbBlockExecutionCtx {
     pub infra_fee_account: Address,
     /// Minimum L2 base fee.
     pub min_base_fee: U256,
+    /// Block coinbase (poster address / beneficiary).
+    pub coinbase: Address,
 }
 
 /// Attributes for building the next Arbitrum block.

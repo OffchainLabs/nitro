@@ -156,14 +156,8 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             .per_tx_gas_limit()
             .unwrap_or(0);
 
-        let coinbase = self
-            .arb_hooks
-            .as_ref()
-            .map(|h| h.coinbase)
-            .unwrap_or(Address::ZERO);
-
         self.arb_hooks = Some(DefaultArbOsHooks::new(
-            coinbase,
+            self.arb_ctx.coinbase,
             arbos_version,
             self.arb_ctx.network_fee_account,
             self.arb_ctx.infra_fee_account,
@@ -205,6 +199,7 @@ where
             if self.arb_ctx.block_timestamp == 0 {
                 self.arb_ctx.block_timestamp = timestamp;
             }
+            self.arb_ctx.coinbase = revm::context::Block::beneficiary(block);
             if let Some(prevrandao) = revm::context::Block::prevrandao(block) {
                 if self.arb_ctx.l1_block_number == 0 {
                     self.arb_ctx.l1_block_number =
@@ -353,14 +348,9 @@ where
 
         let calldata_units = if has_poster_costs {
             let tx_bytes = recovered.tx().encoded_2718();
-            let coinbase = self
-                .arb_hooks
-                .as_ref()
-                .map(|h| h.coinbase)
-                .unwrap_or(Address::ZERO);
             let (poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
                 &tx_bytes,
-                coinbase,
+                self.arb_ctx.coinbase,
                 self.arb_ctx.l1_price_per_unit,
                 self.arb_ctx.brotli_compression_level,
             );
