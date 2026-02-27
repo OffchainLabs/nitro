@@ -230,14 +230,16 @@ pub struct InternalTxContext {
 ///   updates L2 pricing, and checks for ArbOS upgrades.
 /// - BatchPostingReport (v1 and v2): updates L1 pricing based on
 ///   batch poster spending.
-pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F>(
+pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G>(
     data: &[u8],
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
     mut transfer_fn: F,
+    mut balance_of: G,
 ) -> Result<(), String>
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    G: FnMut(Address) -> U256,
 {
     if data.len() < 4 {
         return Err(format!(
@@ -251,7 +253,7 @@ where
     match selector {
         INTERNAL_TX_START_BLOCK_METHOD_ID => {
             let inputs = decode_start_block_data(data)?;
-            apply_start_block(inputs, state, ctx, &mut transfer_fn)
+            apply_start_block(inputs, state, ctx, &mut transfer_fn, &mut balance_of)
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID => {
             let inputs = decode_batch_posting_report(data)?;
@@ -268,14 +270,16 @@ where
     }
 }
 
-fn apply_start_block<D: revm::Database, B: Burner, F>(
+fn apply_start_block<D: revm::Database, B: Burner, F, G>(
     inputs: StartBlockData,
     state: &mut ArbosState<D, B>,
     ctx: &InternalTxContext,
     transfer_fn: &mut F,
+    balance_of: &mut G,
 ) -> Result<(), String>
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
+    G: FnMut(Address) -> U256,
 {
     let arbos_version = state.arbos_version();
 
@@ -308,10 +312,10 @@ where
     // Try to reap 2 expired retryables.
     let _ = state
         .retryable_state
-        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn);
+        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn, &mut *balance_of);
     let _ = state
         .retryable_state
-        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn);
+        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn, &mut *balance_of);
 
     // Update L2 pricing model.
     let _ = state

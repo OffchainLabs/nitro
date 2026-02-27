@@ -637,12 +637,21 @@ where
                         current_time,
                         prev_hash: self.arb_ctx.parent_hash,
                     };
-                    let mut noop = |_: Address, _: Address, _: U256| Ok(());
+                    let mut do_transfer = |from: Address, to: Address, amount: U256| {
+                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                        unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                        Ok(())
+                    };
+                    let mut do_balance = |addr: Address| -> U256 {
+                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                        unsafe { get_balance(&mut *state_ptr, addr) }
+                    };
                     if let Err(e) = internal_tx::apply_internal_tx_update(
                         &tx_data,
                         &mut arb_state,
                         &ctx,
-                        &mut noop,
+                        &mut do_transfer,
+                        &mut do_balance,
                     ) {
                         tracing::warn!(
                             target: "arb::executor",
@@ -1197,6 +1206,10 @@ where
                                     unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
                                     Ok(())
                                 },
+                                |addr| {
+                                    // SAFETY: called sequentially within delete_retryable.
+                                    unsafe { get_balance(&mut *state_ptr, addr) }
+                                },
                             );
                         }
                     } else if result.should_return_value_to_escrow
@@ -1403,6 +1416,14 @@ fn increment_nonce<DB: Database>(state: &mut State<DB>, address: Address) {
         let mut account = revm_state::Account::from(info);
         account.mark_touch();
         state.commit_iter(&mut core::iter::once((address, account)));
+    }
+}
+
+/// Read the balance of an account in the EVM state.
+fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
+    match revm::Database::basic(state, address) {
+        Ok(Some(info)) => info.balance,
+        _ => U256::ZERO,
     }
 }
 

@@ -119,14 +119,16 @@ impl<D: Database> RetryableState<D> {
     }
 
     /// Deletes a retryable and returns whether it existed.
-    /// The `transfer_fn` handles moving escrowed funds to the beneficiary.
-    pub fn delete_retryable<F>(
+    /// Moves the escrow's entire balance to the beneficiary via the provided closures.
+    pub fn delete_retryable<F, G>(
         &self,
         id: B256,
         mut transfer_fn: F,
+        mut balance_of: G,
     ) -> Result<bool, ()>
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        G: FnMut(Address) -> U256,
     {
         let ret_storage = self.retryables.open_sub_storage(id.as_slice());
         let timeout_val = ret_storage.get_by_uint64(TIMEOUT_OFFSET)?;
@@ -138,8 +140,8 @@ impl<D: Database> RetryableState<D> {
         let beneficiary_val = ret_storage.get_by_uint64(BENEFICIARY_OFFSET)?;
         let escrow_address = retryable_escrow_address(id);
         let beneficiary_address = Address::from_slice(&beneficiary_val[12..]);
-        // The actual balance transfer is delegated to the caller.
-        let _ = transfer_fn(escrow_address, beneficiary_address, U256::ZERO);
+        let amount = balance_of(escrow_address);
+        let _ = transfer_fn(escrow_address, beneficiary_address, amount);
 
         // Clear all storage slots.
         let _ = ret_storage.set_by_uint64(NUM_TRIES_OFFSET, B256::ZERO);
@@ -176,13 +178,15 @@ impl<D: Database> RetryableState<D> {
     }
 
     /// Tries to reap one expired retryable from the timeout queue.
-    pub fn try_to_reap_one_retryable<F>(
+    pub fn try_to_reap_one_retryable<F, G>(
         &self,
         current_timestamp: u64,
         mut transfer_fn: F,
+        mut balance_of: G,
     ) -> Result<(), ()>
     where
         F: FnMut(Address, Address, U256) -> Result<(), ()>,
+        G: FnMut(Address) -> U256,
     {
         let id = self.timeout_queue.peek()?;
         let id = match id {
@@ -220,7 +224,7 @@ impl<D: Database> RetryableState<D> {
 
         if windows_left == 0 {
             // Fully expired — delete it.
-            self.delete_retryable(id, &mut transfer_fn)?;
+            self.delete_retryable(id, &mut transfer_fn, &mut balance_of)?;
             return Ok(());
         }
 
