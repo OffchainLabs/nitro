@@ -159,7 +159,8 @@ pub fn encode_start_block(
 // ABI decoding
 // ---------------------------------------------------------------------------
 
-fn decode_start_block(data: &[u8]) -> Result<StartBlockData, String> {
+/// Decode startBlock data from raw internal tx bytes.
+pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, String> {
     if data.len() < 4 + 32 * 4 {
         return Err(format!(
             "start block data too short: expected >= 132, got {}",
@@ -249,7 +250,7 @@ where
 
     match selector {
         INTERNAL_TX_START_BLOCK_METHOD_ID => {
-            let inputs = decode_start_block(data)?;
+            let inputs = decode_start_block_data(data)?;
             apply_start_block(inputs, state, ctx, &mut transfer_fn)
         }
         INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID => {

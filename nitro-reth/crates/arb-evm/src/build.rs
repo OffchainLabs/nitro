@@ -121,6 +121,59 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         self.arb_ctx = ctx;
         self
     }
+
+    /// Read state parameters from ArbOS state into the execution context
+    /// and create/update the hooks.
+    fn load_state_params<D: Database>(
+        &mut self,
+        arb_state: &ArbosState<D, impl arbos::burn::Burner>,
+    ) {
+        let arbos_version = arb_state.arbos_version();
+        self.arb_ctx.arbos_version = arbos_version;
+
+        if let Ok(addr) = arb_state.network_fee_account() {
+            self.arb_ctx.network_fee_account = addr;
+        }
+        if let Ok(addr) = arb_state.infra_fee_account() {
+            self.arb_ctx.infra_fee_account = addr;
+        }
+        if let Ok(level) = arb_state.brotli_compression_level() {
+            self.arb_ctx.brotli_compression_level = level;
+        }
+        if let Ok(price) = arb_state.l1_pricing_state.price_per_unit() {
+            self.arb_ctx.l1_price_per_unit = price;
+        }
+        if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei() {
+            self.arb_ctx.min_base_fee = min_fee;
+        }
+
+        let per_block_gas_limit = arb_state
+            .l2_pricing_state
+            .per_block_gas_limit()
+            .unwrap_or(0);
+        let per_tx_gas_limit = arb_state
+            .l2_pricing_state
+            .per_tx_gas_limit()
+            .unwrap_or(0);
+
+        let coinbase = self
+            .arb_hooks
+            .as_ref()
+            .map(|h| h.coinbase)
+            .unwrap_or(Address::ZERO);
+
+        self.arb_hooks = Some(DefaultArbOsHooks::new(
+            coinbase,
+            arbos_version,
+            self.arb_ctx.network_fee_account,
+            self.arb_ctx.infra_fee_account,
+            self.arb_ctx.min_base_fee,
+            per_block_gas_limit,
+            per_tx_gas_limit,
+            false,
+            self.arb_ctx.l1_base_fee,
+        ));
+    }
 }
 
 impl<'db, DB, E, Spec, R> BlockExecutor for ArbBlockExecutor<'_, E, Spec, R>
@@ -146,8 +199,6 @@ where
         self.inner.apply_pre_execution_changes()?;
 
         // Populate header-derived fields from the EVM block/cfg environment.
-        // These are fields encoded in mix_hash and other header fields that
-        // aren't available through the standard EthBlockExecutionCtx.
         {
             let block = self.inner.evm().block();
             let timestamp = revm::context::Block::timestamp(block).to::<u64>();
@@ -163,118 +214,20 @@ where
         }
 
         // Load ArbOS state parameters from the EVM database.
-        // This populates the execution context with state-derived fields
-        // and creates the ArbOS hooks for per-transaction processing.
+        // Block-start operations (pricing model update, retryable reaping, etc.)
+        // are triggered by the startBlock internal tx, NOT here.
+        // We only commit multi-gas fees and read state parameters.
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
-        if let Ok(mut arb_state) =
+        if let Ok(arb_state) =
             ArbosState::open(state_ptr, SystemBurner::new(None, false))
         {
             // Rotate multi-gas fees: copy next-block fees to current-block.
-            // This must happen before reading the base fee or executing transactions.
             let _ = arb_state.l2_pricing_state.commit_multi_gas_fees();
 
-            let arbos_version = arb_state.arbos_version;
-            let time_passed = self.arb_ctx.time_passed;
-            let block_timestamp = self.arb_ctx.block_timestamp;
-
-            // --- Start-block state updates ---
-            // Record L1 block hashes if L1 block number advanced.
-            let l1_block_number = self.arb_ctx.l1_block_number;
-            if let Ok(old_l1_block) = arb_state.blockhashes.l1_block_number() {
-                if l1_block_number > old_l1_block {
-                    let _ = arb_state.blockhashes.record_new_l1_block(
-                        l1_block_number - 1,
-                        self.arb_ctx.parent_hash,
-                        arbos_version,
-                    );
-                }
-            }
-
-            // Reap up to 2 expired retryables.
-            let noop_transfer = &mut |_from: Address, _to: Address, _value: U256| -> Result<(), ()> {
-                // TODO: implement ETH transfer via State<DB> for retryable reaping
-                Ok(())
-            };
-            let _ = arb_state.retryable_state.try_to_reap_one_retryable(
-                block_timestamp,
-                &mut *noop_transfer,
-            );
-            let _ = arb_state.retryable_state.try_to_reap_one_retryable(
-                block_timestamp,
-                &mut *noop_transfer,
-            );
-
-            // Update L2 pricing model (drain backlogs, recalculate base fee).
-            let _ = arb_state
-                .l2_pricing_state
-                .update_pricing_model(time_passed, arbos_version);
-
-            // Check for scheduled ArbOS upgrade.
-            let _ = arb_state.upgrade_arbos_version_if_necessary(block_timestamp);
-
-            // Re-read state after updates (version may have changed).
-            let arbos_version = arb_state.arbos_version();
-
-            let network_fee_account = arb_state
-                .network_fee_account
-                .get()
-                .unwrap_or(Address::ZERO);
-            let infra_fee_account = arb_state
-                .infra_fee_account
-                .get()
-                .unwrap_or(Address::ZERO);
-            let brotli_compression_level = arb_state
-                .brotli_compression_level
-                .get()
-                .unwrap_or(0);
-
-            let l1_price_per_unit = arb_state
-                .l1_pricing_state
-                .price_per_unit()
-                .unwrap_or(U256::ZERO);
-            let min_base_fee = arb_state
-                .l2_pricing_state
-                .min_base_fee_wei()
-                .unwrap_or(U256::ZERO);
-            let per_block_gas_limit = arb_state
-                .l2_pricing_state
-                .per_block_gas_limit()
-                .unwrap_or(0);
-            let per_tx_gas_limit = arb_state
-                .l2_pricing_state
-                .per_tx_gas_limit()
-                .unwrap_or(0);
-            // Base fee from L2 pricing state (after pricing model update).
-            let base_fee = arb_state
-                .l2_pricing_state
-                .base_fee_wei()
-                .unwrap_or(U256::ZERO);
-            let l1_base_fee = self.arb_ctx.l1_base_fee;
-
-            // Populate state-derived fields in the execution context.
-            self.arb_ctx.arbos_version = arbos_version;
-            self.arb_ctx.network_fee_account = network_fee_account;
-            self.arb_ctx.infra_fee_account = infra_fee_account;
-            self.arb_ctx.brotli_compression_level = brotli_compression_level;
-            self.arb_ctx.l1_price_per_unit = l1_price_per_unit;
-            self.arb_ctx.min_base_fee = min_base_fee;
-            self.arb_ctx.basefee = base_fee;
-
-            // Create ArbOS hooks with the loaded state parameters.
-            let coinbase = revm::context::Block::beneficiary(self.inner.evm().block());
-            self.arb_hooks = Some(DefaultArbOsHooks::new(
-                coinbase,
-                arbos_version,
-                network_fee_account,
-                infra_fee_account,
-                min_base_fee,
-                per_block_gas_limit,
-                per_tx_gas_limit,
-                false,
-                l1_base_fee,
-            ));
+            // Read state parameters for the execution context and hooks.
+            self.load_state_params(&arb_state);
         }
 
         tracing::trace!(
@@ -332,41 +285,55 @@ where
 
         // --- Pre-execution: apply special tx type state changes ---
 
-        // Internal txs carry batch posting reports that update L1 pricing.
-        // startBlock updates are already handled in apply_pre_execution_changes,
-        // so we only process batch posting reports here.
+        // Internal txs: startBlock triggers block-start operations (pricing model
+        // update, retryable reaping, upgrade checks); batch posting reports
+        // update L1 pricing from batch poster spending.
         if is_arb_internal {
             let tx_data = recovered.tx().input().to_vec();
             if tx_data.len() >= 4 {
                 let selector: [u8; 4] = tx_data[0..4].try_into().unwrap();
-                if selector != internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID {
-                    // Batch posting report: update L1 pricing state.
-                    let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                    if let Ok(mut arb_state) =
-                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    {
-                        let block = self.inner.evm().block();
-                        let current_time =
-                            revm::context::Block::timestamp(block).to::<u64>();
-                        let ctx = InternalTxContext {
-                            block_number: revm::context::Block::number(block).to::<u64>(),
-                            current_time,
-                            prev_hash: self.arb_ctx.parent_hash,
-                        };
-                        let mut noop = |_: Address, _: Address, _: U256| Ok(());
-                        if let Err(e) = internal_tx::apply_internal_tx_update(
-                            &tx_data,
-                            &mut arb_state,
-                            &ctx,
-                            &mut noop,
-                        ) {
-                            tracing::warn!(
-                                target: "arb::executor",
-                                error = %e,
-                                "internal tx processing failed"
-                            );
-                        }
+                let is_start_block = selector == internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID;
+
+                // Extract l1_base_fee and time_passed from startBlock data
+                // before dispatching, so we can update context afterwards.
+                if is_start_block {
+                    if let Ok(start_data) = internal_tx::decode_start_block_data(&tx_data) {
+                        self.arb_ctx.l1_base_fee = start_data.l1_base_fee;
+                        self.arb_ctx.time_passed = start_data.time_passed;
+                    }
+                }
+
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                if let Ok(mut arb_state) =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                {
+                    let block = self.inner.evm().block();
+                    let current_time =
+                        revm::context::Block::timestamp(block).to::<u64>();
+                    let ctx = InternalTxContext {
+                        block_number: revm::context::Block::number(block).to::<u64>(),
+                        current_time,
+                        prev_hash: self.arb_ctx.parent_hash,
+                    };
+                    let mut noop = |_: Address, _: Address, _: U256| Ok(());
+                    if let Err(e) = internal_tx::apply_internal_tx_update(
+                        &tx_data,
+                        &mut arb_state,
+                        &ctx,
+                        &mut noop,
+                    ) {
+                        tracing::warn!(
+                            target: "arb::executor",
+                            error = %e,
+                            "internal tx processing failed"
+                        );
+                    }
+
+                    // After startBlock, re-read updated state params since the
+                    // pricing model update may have changed base fees.
+                    if is_start_block {
+                        self.load_state_params(&arb_state);
                     }
                 }
             }
