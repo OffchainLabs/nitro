@@ -17,9 +17,12 @@ use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
+use arbos::internal_tx::{self, InternalTxContext};
 use arb_primitives::multigas::MultiGas;
+use arb_primitives::tx_types::ArbTxType;
 use arbos::l1_pricing;
 use arbos::tx_processor::{EndTxFeeDistribution, compute_poster_gas};
+use arbos::util::tx_type_has_poster_costs;
 use revm::context::result::ExecutionResult;
 use revm::database::State;
 use revm::inspector::Inspector;
@@ -310,6 +313,12 @@ where
         let tx_type_raw = recovered.tx().ty();
         let tx_gas_limit = recovered.tx().gas_limit();
 
+        // Classify the transaction type.
+        let arb_tx_type = ArbTxType::from_u8(tx_type_raw).ok();
+        let is_arb_internal = arb_tx_type == Some(ArbTxType::ArbitrumInternalTx);
+        let is_arb_deposit = arb_tx_type == Some(ArbTxType::ArbitrumDepositTx);
+        let has_poster_costs = tx_type_has_poster_costs(tx_type_raw);
+
         // Reset per-tx processor state. Go creates a fresh TxProcessor per tx;
         // we reset the mutable fields that accumulate across transactions.
         if let Some(hooks) = self.arb_hooks.as_mut() {
@@ -321,32 +330,89 @@ where
             hooks.tx_proc.scheduled_txs.clear();
         }
 
-        // Pre-compute poster costs for correct fee distribution.
-        // Encode the tx to compute brotli-compressed L1 data cost.
-        let tx_bytes = recovered.tx().encoded_2718();
-        let coinbase = self
-            .arb_hooks
-            .as_ref()
-            .map(|h| h.coinbase)
-            .unwrap_or(Address::ZERO);
-        let (poster_cost, calldata_units) = l1_pricing::compute_poster_cost_standalone(
-            &tx_bytes,
-            coinbase,
-            self.arb_ctx.l1_price_per_unit,
-            self.arb_ctx.brotli_compression_level,
-        );
+        // --- Pre-execution: apply special tx type state changes ---
 
-        // Set poster_gas and poster_fee on the TxProcessor so fee distribution
-        // correctly splits between poster and compute costs.
-        if let Some(hooks) = self.arb_hooks.as_mut() {
-            let base_fee = self.arb_ctx.basefee;
-            hooks.tx_proc.poster_gas =
-                compute_poster_gas(poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
-            hooks.tx_proc.poster_fee =
-                base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
+        // Internal txs carry batch posting reports that update L1 pricing.
+        // startBlock updates are already handled in apply_pre_execution_changes,
+        // so we only process batch posting reports here.
+        if is_arb_internal {
+            let tx_data = recovered.tx().input().to_vec();
+            if tx_data.len() >= 4 {
+                let selector: [u8; 4] = tx_data[0..4].try_into().unwrap();
+                if selector != internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID {
+                    // Batch posting report: update L1 pricing state.
+                    let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                    if let Ok(mut arb_state) =
+                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                    {
+                        let block = self.inner.evm().block();
+                        let current_time =
+                            revm::context::Block::timestamp(block).to::<u64>();
+                        let ctx = InternalTxContext {
+                            block_number: revm::context::Block::number(block).to::<u64>(),
+                            current_time,
+                            prev_hash: self.arb_ctx.parent_hash,
+                        };
+                        let mut noop = |_: Address, _: Address, _: U256| Ok(());
+                        if let Err(e) = internal_tx::apply_internal_tx_update(
+                            &tx_data,
+                            &mut arb_state,
+                            &ctx,
+                            &mut noop,
+                        ) {
+                            tracing::warn!(
+                                target: "arb::executor",
+                                error = %e,
+                                "internal tx processing failed"
+                            );
+                        }
+                    }
+                }
+            }
         }
 
-        // Capture execution result info for post-tx hooks.
+        // Deposit txs mint ETH to the sender before EVM execution.
+        // The EVM then transfers value from sender to recipient naturally.
+        if is_arb_deposit {
+            let value = recovered.tx().value();
+            if !value.is_zero() {
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                mint_balance(db, sender, value);
+            }
+        }
+
+        // --- Poster cost computation (user txs only) ---
+
+        let calldata_units = if has_poster_costs {
+            let tx_bytes = recovered.tx().encoded_2718();
+            let coinbase = self
+                .arb_hooks
+                .as_ref()
+                .map(|h| h.coinbase)
+                .unwrap_or(Address::ZERO);
+            let (poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
+                &tx_bytes,
+                coinbase,
+                self.arb_ctx.l1_price_per_unit,
+                self.arb_ctx.brotli_compression_level,
+            );
+
+            if let Some(hooks) = self.arb_hooks.as_mut() {
+                let base_fee = self.arb_ctx.basefee;
+                hooks.tx_proc.poster_gas =
+                    compute_poster_gas(poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
+                hooks.tx_proc.poster_fee =
+                    base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
+            }
+
+            units
+        } else {
+            0
+        };
+
+        // --- Execute via inner EVM executor ---
+
         let captured_gas_used = Cell::new(0u64);
         let captured_success = Cell::new(false);
 
@@ -364,52 +430,52 @@ where
             },
         )?;
 
-        // Post-execution: compute fee distribution.
-        let fee_dist = if result.is_some() {
-            let base_fee = self.arb_ctx.basefee;
-            let gas_used = captured_gas_used.get();
-            let gas_left = tx_gas_limit.saturating_sub(gas_used);
-            let arb_tx_type = arb_primitives::tx_types::ArbTxType::from_u8(tx_type_raw)
-                .unwrap_or(arb_primitives::tx_types::ArbTxType::ArbitrumLegacyTx);
+        // --- Post-execution: fee distribution (user txs only) ---
 
-            self.arb_hooks.as_ref().map(|hooks| {
-                hooks.compute_end_tx_fees(&EndTxContext {
-                    sender,
-                    gas_left,
-                    gas_used,
-                    gas_price: base_fee,
-                    base_fee,
-                    tx_type: arb_tx_type,
-                    success: captured_success.get(),
-                    refund_to: sender,
+        if has_poster_costs {
+            let fee_dist = if result.is_some() {
+                let base_fee = self.arb_ctx.basefee;
+                let gas_used = captured_gas_used.get();
+                let gas_left = tx_gas_limit.saturating_sub(gas_used);
+
+                self.arb_hooks.as_ref().map(|hooks| {
+                    hooks.compute_end_tx_fees(&EndTxContext {
+                        sender,
+                        gas_left,
+                        gas_used,
+                        gas_price: base_fee,
+                        base_fee,
+                        tx_type: arb_tx_type
+                            .unwrap_or(ArbTxType::ArbitrumLegacyTx),
+                        success: captured_success.get(),
+                        refund_to: sender,
+                    })
                 })
-            })
-        } else {
-            None
-        };
+            } else {
+                None
+            };
 
-        // Apply fee distribution and update pricing state.
-        if let Some(ref dist) = fee_dist {
-            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            apply_fee_distribution(db, dist, None);
+            if let Some(ref dist) = fee_dist {
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                apply_fee_distribution(db, dist, None);
 
-            // Update gas backlog and L1 pricing state.
-            let state_ptr: *mut State<DB> = db as *mut State<DB>;
-            if let Ok(arb_state) =
-                ArbosState::open(state_ptr, SystemBurner::new(None, false))
-            {
-                let _ = arb_state.l2_pricing_state.grow_backlog(
-                    dist.compute_gas_for_backlog,
-                    MultiGas::default(),
-                );
-                if !dist.l1_fees_to_add.is_zero() {
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                if let Ok(arb_state) =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                {
+                    let _ = arb_state.l2_pricing_state.grow_backlog(
+                        dist.compute_gas_for_backlog,
+                        MultiGas::default(),
+                    );
+                    if !dist.l1_fees_to_add.is_zero() {
+                        let _ = arb_state
+                            .l1_pricing_state
+                            .add_to_l1_fees_available(dist.l1_fees_to_add);
+                    }
                     let _ = arb_state
                         .l1_pricing_state
-                        .add_to_l1_fees_available(dist.l1_fees_to_add);
+                        .add_to_units_since_update(calldata_units);
                 }
-                let _ = arb_state
-                    .l1_pricing_state
-                    .add_to_units_since_update(calldata_units);
             }
         }
 
