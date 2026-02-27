@@ -1,0 +1,31 @@
+[package]
+name = "prover"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arbutil = { workspace = true }
+brotli = { workspace = true }
+bytes = { workspace = true }
+derivative = { workspace = true }
+digest = { workspace = true }
+eyre = { workspace = true }
+fnv = { workspace = true }
+lazy_static = { workspace = true }
+nom = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_with = { workspace = true, features = ["base64"] }
+sha3 = { workspace = true }
+rkyv = { workspace = true }
+validation = { workspace = true }
+wasmer = { workspace = true, optional = true }
+wasmer-types = { workspace = true, optional = true }
+wasmparser = { workspace = true, optional = true }
+
+[features]
+default = ["native", "sp1"]
+sp1 = []
+native = ["dep:wasmer", "dep:wasmer-types", "dep:wasmparser"]
