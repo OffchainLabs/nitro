@@ -7,9 +7,8 @@ use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
 use arb_storage::{
-    Storage, StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigUint,
-    StorageBackedBytes, StorageBackedUint64, get_account_balance, set_account_code,
-    set_account_nonce,
+    Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
+    get_account_balance, set_account_code, set_account_nonce, FILTERED_TX_STATE_ADDRESS,
 };
 
 use crate::address_set::{self, AddressSet};
@@ -50,7 +49,6 @@ const PROGRAMS_SUBSPACE: &[u8] = &[8];
 const FEATURES_SUBSPACE: &[u8] = &[9];
 const NATIVE_TOKEN_OWNER_SUBSPACE: &[u8] = &[10];
 const TRANSACTION_FILTERING_SUBSPACE: &[u8] = &[11];
-const FILTERED_TRANSACTIONS_SUBSPACE: &[u8] = &[12];
 
 /// The maximum ArbOS version supported by this node.
 pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
@@ -82,7 +80,7 @@ pub struct ArbosState<D, B: Burner> {
     pub transaction_filtering_enabled_from_time: StorageBackedUint64<D>,
     pub transaction_filterers: AddressSet<D>,
     pub features: Features<D>,
-    pub filtered_funds_recipient: StorageBackedAddressOrNil<D>,
+    pub filtered_funds_recipient: StorageBackedAddress<D>,
     pub filtered_transactions: FilteredTransactionsState<D>,
 }
 
@@ -178,13 +176,13 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 features_sto.base_key(),
                 0,
             ),
-            filtered_funds_recipient: StorageBackedAddressOrNil::new(
+            filtered_funds_recipient: StorageBackedAddress::new(
                 state,
                 B256::ZERO,
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
             filtered_transactions: FilteredTransactionsState::open(
-                backing_storage.open_sub_storage(FILTERED_TRANSACTIONS_SUBSPACE),
+                Storage::new_with_account(state, B256::ZERO, FILTERED_TX_STATE_ADDRESS),
             ),
             backing_storage,
             burner,
@@ -247,18 +245,20 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         self.infra_fee_account.set(account)
     }
 
-    pub fn filtered_funds_recipient(&self) -> Result<Option<Address>, ()> {
+    pub fn filtered_funds_recipient(&self) -> Result<Address, ()> {
         self.filtered_funds_recipient.get()
     }
 
     pub fn filtered_funds_recipient_or_default(&self) -> Result<Address, ()> {
-        match self.filtered_funds_recipient.get()? {
-            Some(addr) => Ok(addr),
-            None => self.network_fee_account(),
+        let addr = self.filtered_funds_recipient.get()?;
+        if addr == Address::ZERO {
+            self.network_fee_account()
+        } else {
+            Ok(addr)
         }
     }
 
-    pub fn set_filtered_funds_recipient(&self, addr: Option<Address>) -> Result<(), ()> {
+    pub fn set_filtered_funds_recipient(&self, addr: Address) -> Result<(), ()> {
         self.filtered_funds_recipient.set(addr)
     }
 
