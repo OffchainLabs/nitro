@@ -122,6 +122,7 @@ struct PendingArbTx {
 struct PendingRetryContext {
     ticket_id: alloy_primitives::B256,
     refund_to: Address,
+    #[allow(dead_code)]
     gas_fee_cap: U256,
     max_refund: U256,
     submission_fee_refund: U256,
