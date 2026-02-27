@@ -99,12 +99,7 @@ impl MachineLocator {
 
                 let dir_name = entry.file_name().to_string_lossy().to_string();
 
-                // IMPORTANT:
-                // Go's moduleRoot.Hex() returns "0x" + hex.
-                // Rust Bytes32 Display impl returns raw hex.
-                // We must format it manually to match Go's directory naming convention.
-                let module_root_hex = format!("0x{module_root}");
-
+                let module_root_hex = format!("{module_root}");
                 if dir_name != "latest" && dir_name != module_root_hex {
                     continue;
                 }
@@ -149,7 +144,7 @@ impl MachineLocator {
             if module_root == ModuleRoot::default() || module_root == self.latest.module_root {
                 self.root_path.join("latest")
             } else {
-                self.root_path.join(format!("0x{module_root}"))
+                self.root_path.join(format!("{module_root}"))
             };
 
         if !module_root_path.exists() || !module_root_path.is_dir() {
@@ -203,7 +198,7 @@ mod tests {
                 .expect("Failed to create target/machines directory");
 
             let actual_root = match root {
-                "latest" => format!("0x{}", gen_random_module_root()),
+                "latest" => format!("{}", gen_random_module_root()),
                 hash => hash.into(),
             };
             std::fs::write(complete_root_path.join("module-root.txt"), &actual_root)
@@ -252,7 +247,7 @@ mod tests {
 
             for _ in 0..root_count {
                 let random_module_root = gen_random_module_root();
-                let module_root_str = format!("0x{random_module_root}");
+                let module_root_str = format!("{random_module_root}");
                 let root_meta = get_or_create_root_path(&machines_dir, &module_root_str);
 
                 root_metas.push(root_meta);
@@ -299,7 +294,7 @@ mod tests {
                 assert!(module_root
                     .to_str()
                     .unwrap()
-                    .contains(&format!("0x{mod_root}")));
+                    .contains(&format!("{mod_root}")));
             });
 
         Ok(())
@@ -340,7 +335,7 @@ mod tests {
         let error = result.err().unwrap();
         let err_str = error.to_string();
 
-        let expected_path = get_real_machines_dir().join(format!("0x{random_module_root}"));
+        let expected_path = get_real_machines_dir().join(format!("{random_module_root}"));
         let expected_error = format!("module root path {expected_path:?} does not exist");
         assert_eq!(err_str, expected_error);
 

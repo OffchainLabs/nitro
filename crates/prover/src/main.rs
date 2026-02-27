@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     if opts.print_wasmmoduleroot {
         match Machine::new_from_wavm(&opts.binary) {
             Ok(mach) => {
-                println!("0x{}", mach.get_modules_root());
+                println!("{}", mach.get_modules_root());
                 return Ok(());
             }
             Err(err) => {
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
 
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
-        writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
+        writeln!(module_root_file, "{}", mach.get_modules_root())?;
         module_root_file.flush()?;
 
         mach.serialize_binary(output_path.join("machine.wavm.br"))?;
