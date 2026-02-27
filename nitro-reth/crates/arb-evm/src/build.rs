@@ -15,11 +15,13 @@ use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
+use reth_evm::TransactionEnv;
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
 use arbos::internal_tx::{self, InternalTxContext};
 use arb_primitives::multigas::MultiGas;
 use arb_primitives::tx_types::ArbTxType;
+use arb_chainspec;
 use arbos::l1_pricing;
 use arbos::tx_processor::{EndTxFeeDistribution, compute_poster_gas};
 use arbos::util::tx_type_has_poster_costs;
@@ -56,7 +58,11 @@ where
             Receipt: TxReceipt<Log = Log>,
         > + 'static,
     Spec: EthExecutorSpec + Clone + 'static,
-    EvmF: EvmFactory<Tx: FromRecoveredTx<R::Transaction> + FromTxWithEncoded<R::Transaction>>,
+    EvmF: EvmFactory<
+        Tx: FromRecoveredTx<R::Transaction>
+            + FromTxWithEncoded<R::Transaction>
+            + TransactionEnv,
+    >,
     Self: 'static,
 {
     type EvmFactory = EvmF;
@@ -175,7 +181,9 @@ where
     DB: Database + 'db,
     E: Evm<
         DB = &'db mut State<DB>,
-        Tx: FromRecoveredTx<R::Transaction> + FromTxWithEncoded<R::Transaction>,
+        Tx: FromRecoveredTx<R::Transaction>
+            + FromTxWithEncoded<R::Transaction>
+            + TransactionEnv,
     >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
@@ -344,8 +352,10 @@ where
             }
         }
 
-        // --- Poster cost computation (user txs only) ---
+        // --- Poster cost and gas limiting (user txs only) ---
 
+        let mut poster_gas = 0u64;
+        let mut compute_hold_gas = 0u64;
         let calldata_units = if has_poster_costs {
             let tx_bytes = recovered.tx().encoded_2718();
             let (poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
@@ -361,12 +371,45 @@ where
                     compute_poster_gas(poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
+                poster_gas = hooks.tx_proc.poster_gas;
+
+                // Compute gas held to cap computation per tx.
+                // Estimate intrinsic gas for the hold calculation.
+                let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx());
+                let gas_after_intrinsic =
+                    tx_gas_limit.saturating_sub(intrinsic_estimate);
+                let gas_after_poster =
+                    gas_after_intrinsic.saturating_sub(poster_gas);
+
+                let max_compute = if hooks.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+                    hooks.per_block_gas_limit
+                } else {
+                    hooks.per_tx_gas_limit.saturating_sub(intrinsic_estimate)
+                };
+
+                if max_compute > 0 && gas_after_poster > max_compute {
+                    compute_hold_gas = gas_after_poster - max_compute;
+                    hooks.tx_proc.compute_hold_gas = compute_hold_gas;
+                }
             }
 
             units
         } else {
             0
         };
+
+        // --- Adjust gas limit for EVM execution ---
+        //
+        // Reduce the gas the EVM sees by poster_gas (L1 data cost expressed
+        // as L2 gas) and compute_hold_gas (excess gas held to enforce the
+        // per-block/per-tx gas limit). Both are accounted for in fee
+        // distribution after execution.
+        let mut tx_env = tx_env;
+        let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
+        if gas_deduction > 0 {
+            let current = revm::context_interface::Transaction::gas_limit(&tx_env);
+            tx_env.set_gas_limit(current.saturating_sub(gas_deduction));
+        }
 
         // --- Execute via inner EVM executor ---
 
@@ -388,11 +431,16 @@ where
         )?;
 
         // --- Post-execution: fee distribution (user txs only) ---
+        //
+        // The EVM's gas_used doesn't include poster_gas (we subtracted it
+        // from the gas limit). Add poster_gas back for correct total gas_used.
+        // compute_hold_gas is NOT consumed — it's returned to the user.
 
         if has_poster_costs {
             let fee_dist = if result.is_some() {
                 let base_fee = self.arb_ctx.basefee;
-                let gas_used = captured_gas_used.get();
+                let evm_gas_used = captured_gas_used.get();
+                let gas_used = evm_gas_used.saturating_add(poster_gas);
                 let gas_left = tx_gas_limit.saturating_sub(gas_used);
 
                 self.arb_hooks.as_ref().map(|hooks| {
@@ -510,4 +558,26 @@ fn apply_fee_distribution<DB: Database>(
         backlog_gas = dist.compute_gas_for_backlog,
         "applied fee distribution"
     );
+}
+
+/// Estimate intrinsic gas for a transaction.
+///
+/// Used to compute compute_hold_gas before passing the tx to the EVM.
+/// Matches the standard Ethereum intrinsic gas calculation.
+fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
+    const TX_GAS: u64 = 21_000;
+    const TX_CREATE_GAS: u64 = 32_000;
+    const TX_DATA_ZERO_GAS: u64 = 4;
+    const TX_DATA_NON_ZERO_GAS: u64 = 16;
+
+    let mut gas = TX_GAS;
+    if tx.to().is_none() {
+        gas += TX_CREATE_GAS;
+    }
+    let data = tx.input();
+    let data_gas: u64 = data
+        .iter()
+        .map(|&b| if b == 0 { TX_DATA_ZERO_GAS } else { TX_DATA_NON_ZERO_GAS })
+        .sum();
+    gas.saturating_add(data_gas)
 }
