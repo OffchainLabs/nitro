@@ -1,4 +1,8 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
+use arb_primitives::signed_tx::ArbTransactionSigned;
+use arb_primitives::tx_types::{
+    ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx,
+};
 use std::io::{self, Cursor};
 
 use crate::arbos_types::{
@@ -255,4 +259,113 @@ fn parse_batch_posting_report(
         batch_data_gas,
         l1_base_fee_estimate,
     }])
+}
+
+// =====================================================================
+// Conversion to ArbTransactionSigned
+// =====================================================================
+
+/// Convert a `ParsedTransaction` into an `ArbTransactionSigned`.
+///
+/// The `chain_id` is needed for constructing Arbitrum-specific tx envelopes.
+/// Returns `None` for batch posting reports and internal start-block txs that
+/// are constructed separately by the internal tx module.
+pub fn parsed_tx_to_signed(
+    parsed: &ParsedTransaction,
+    chain_id: u64,
+) -> Option<ArbTransactionSigned> {
+    use arb_primitives::signed_tx::ArbTypedTransaction;
+
+    let chain_id_u256 = U256::from(chain_id);
+
+    let tx = match parsed {
+        ParsedTransaction::Signed(rlp_bytes) => {
+            // Standard signed Ethereum tx — decode via Decodable2718.
+            use alloy_eips::Decodable2718;
+            return ArbTransactionSigned::decode_2718(&mut rlp_bytes.as_slice()).ok();
+        }
+        ParsedTransaction::UnsignedUserTx {
+            from,
+            to,
+            value,
+            gas,
+            nonce,
+            data,
+        } => ArbTypedTransaction::Unsigned(ArbUnsignedTx {
+            chain_id: chain_id_u256,
+            from: *from,
+            nonce: *nonce,
+            gas_fee_cap: U256::ZERO,
+            gas: *gas,
+            to: *to,
+            value: *value,
+            data: Bytes::copy_from_slice(data),
+        }),
+        ParsedTransaction::ContractTx {
+            from,
+            to,
+            value,
+            gas,
+            data,
+            request_id,
+        } => ArbTypedTransaction::Contract(ArbContractTx {
+            chain_id: chain_id_u256,
+            request_id: *request_id,
+            from: *from,
+            gas_fee_cap: U256::ZERO,
+            gas: *gas,
+            to: *to,
+            value: *value,
+            data: Bytes::copy_from_slice(data),
+        }),
+        ParsedTransaction::EthDeposit {
+            to,
+            value,
+            request_id,
+        } => ArbTypedTransaction::Deposit(ArbDepositTx {
+            chain_id: chain_id_u256,
+            l1_request_id: *request_id,
+            from: Address::ZERO, // Set by aliased L1 sender
+            to: *to,
+            value: *value,
+        }),
+        ParsedTransaction::SubmitRetryable {
+            request_id,
+            l1_base_fee,
+            deposit,
+            callvalue,
+            gas_feature_cap,
+            max_submission_fee,
+            from,
+            to,
+            beneficiary,
+            data,
+        } => ArbTypedTransaction::SubmitRetryable(ArbSubmitRetryableTx {
+            chain_id: chain_id_u256,
+            request_id: *request_id,
+            from: *from,
+            l1_base_fee: *l1_base_fee,
+            deposit_value: *deposit,
+            gas_fee_cap: *gas_feature_cap,
+            gas: 0, // Gas derived from gas_feature_cap later
+            retry_to: if *to == Address::ZERO { None } else { Some(*to) },
+            retry_value: *callvalue,
+            beneficiary: *beneficiary,
+            max_submission_fee: *max_submission_fee,
+            fee_refund_addr: Address::ZERO, // Set by caller
+            retry_data: Bytes::copy_from_slice(data),
+        }),
+        ParsedTransaction::BatchPostingReport { .. } => {
+            // Batch posting reports become internal txs with ABI-encoded data.
+            // These are constructed by the block producer, not this function.
+            return None;
+        }
+        ParsedTransaction::InternalStartBlock { .. } => {
+            // Start-block txs are constructed by the block producer.
+            return None;
+        }
+    };
+
+    let sig = alloy_primitives::Signature::new(U256::ZERO, U256::ZERO, false);
+    Some(ArbTransactionSigned::new_unhashed(tx, sig))
 }
