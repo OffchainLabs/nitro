@@ -9,6 +9,7 @@ members = [
     "crates/arb-payload",
     "crates/arb-rpc",
     "crates/arb-txpool",
+    "crates/arb-stylus",
     "crates/arbos",
     "bin/arb-reth",
 ]
@@ -32,6 +33,7 @@ arb-payload = { path = "crates/arb-payload" }
 arb-rpc = { path = "crates/arb-rpc" }
 arb-txpool = { path = "crates/arb-txpool" }
 
+arb-stylus = { path = "crates/arb-stylus" }
 arbos = { path = "crates/arbos" }
 
 # Reth SDK (official)
@@ -132,3 +134,5 @@ brotli = "8"
 sha2 = "0.10"
 jsonrpsee-types = "0.26.0"
 dyn-clone = "1"
+wasmer = { version = "4.4", default-features = false, features = ["sys", "cranelift"] }
+schnellru = "0.2"

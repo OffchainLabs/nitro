@@ -1,0 +1,24 @@
+[package]
+name = "arb-stylus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal
+arbos = { workspace = true }
+arb-primitives = { workspace = true }
+
+# Alloy
+alloy-primitives = { workspace = true }
+
+# Wasmer
+wasmer = { workspace = true }
+
+# Common
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+lazy_static = { workspace = true }
+eyre = { workspace = true }
