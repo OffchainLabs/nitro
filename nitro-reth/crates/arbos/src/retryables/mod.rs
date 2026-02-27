@@ -305,6 +305,35 @@ impl<D: Database> Retryable<D> {
     pub fn calldata_size(&self) -> Result<u64, ()> {
         self.calldata.size()
     }
+
+    /// Constructs a retry transaction from this retryable's stored fields
+    /// combined with the provided runtime parameters.
+    pub fn make_tx(
+        &self,
+        chain_id: U256,
+        nonce: u64,
+        gas_fee_cap: U256,
+        gas: u64,
+        ticket_id: B256,
+        refund_to: Address,
+        max_refund: U256,
+        submission_fee_refund: U256,
+    ) -> Result<arb_alloy_consensus::tx::ArbRetryTx, ()> {
+        Ok(arb_alloy_consensus::tx::ArbRetryTx {
+            chain_id,
+            nonce,
+            from: self.from()?,
+            gas_fee_cap,
+            gas,
+            to: self.to()?,
+            value: self.callvalue()?,
+            data: self.calldata()?.into(),
+            ticket_id,
+            refund_to,
+            max_refund,
+            submission_fee_refund,
+        })
+    }
 }
 
 /// Computes the escrow address for a retryable ticket.
