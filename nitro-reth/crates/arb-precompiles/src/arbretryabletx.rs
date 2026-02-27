@@ -1,5 +1,5 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{keccak256, Address, B256, Log, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
@@ -40,6 +40,26 @@ const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
+const TX_GAS: u64 = 21_000;
+const LOG_GAS: u64 = 375;
+const LOG_TOPIC_GAS: u64 = 375;
+const LOG_DATA_GAS: u64 = 8;
+
+/// ABI-encoded data size for RedeemScheduled: 4 non-indexed params × 32 bytes.
+const REDEEM_SCHEDULED_DATA_BYTES: u64 = 128;
+
+/// Gas cost for emitting the RedeemScheduled event (LOG4 with 128 data bytes).
+const REDEEM_SCHEDULED_EVENT_COST: u64 =
+    LOG_GAS + 4 * LOG_TOPIC_GAS + LOG_DATA_GAS * REDEEM_SCHEDULED_DATA_BYTES;
+
+/// Static backlog update cost (StorageReadCost + StorageWriteCost).
+const BACKLOG_UPDATE_COST: u64 = SLOAD_GAS + SSTORE_GAS;
+
+/// RedeemScheduled event topic0.
+/// keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
+pub fn redeem_scheduled_topic() -> B256 {
+    keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
+}
 
 pub fn create_arbretryabletx_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbretryabletx"), handler)
@@ -237,8 +257,9 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-/// Redeem validates the retryable, increments numTries, and returns a deterministic
-/// retry tx hash. The actual retry execution is scheduled by the block executor.
+/// Redeem validates the retryable, increments numTries, donates remaining gas
+/// to the retry tx, and emits a RedeemScheduled event. The block executor
+/// discovers the event in the execution logs and schedules the retry tx.
 fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
@@ -247,37 +268,103 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let gas_limit = input.gas;
     let ticket_id = B256::from_slice(&data[4..36]);
+    let caller = input.caller;
     let current_timestamp: u64 = input
         .internals()
         .block_timestamp()
         .try_into()
         .unwrap_or(u64::MAX);
 
-    load_arbos(input)?;
+    let internals = input.internals_mut();
+
+    // Load the ArbOS state account.
+    internals
+        .load_account(ARBOS_STATE_ADDRESS)
+        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
     // Open the retryable (verifies exists and not expired).
-    let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
+    let ticket_key = {
+        let tk = ticket_storage_key(ticket_id);
+        let timeout_slot = map_slot(tk.as_slice(), TIMEOUT_OFFSET);
+        let timeout = internals
+            .sload(ARBOS_STATE_ADDRESS, timeout_slot)
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
+        let timeout_u64: u64 = timeout
+            .try_into()
+            .map_err(|_| PrecompileError::other("invalid timeout value"))?;
+        if timeout_u64 == 0 {
+            return Err(PrecompileError::other("retryable ticket not found"));
+        }
+        if timeout_u64 < current_timestamp {
+            return Err(PrecompileError::other("retryable ticket expired"));
+        }
+        tk
+    };
 
     // Read and increment numTries.
     let num_tries_slot = map_slot(ticket_key.as_slice(), NUM_TRIES_OFFSET);
-    let num_tries = sload_field(input, num_tries_slot)?;
+    let num_tries = internals
+        .sload(ARBOS_STATE_ADDRESS, num_tries_slot)
+        .map_err(|_| PrecompileError::other("sload failed"))?
+        .data;
     let nonce: u64 = num_tries
         .try_into()
         .map_err(|_| PrecompileError::other("invalid numTries"))?;
-    sstore_field(input, num_tries_slot, U256::from(nonce + 1))?;
+    internals
+        .sstore(ARBOS_STATE_ADDRESS, num_tries_slot, U256::from(nonce + 1))
+        .map_err(|_| PrecompileError::other("sstore failed"))?;
 
-    // Compute a deterministic retry tx hash: keccak256(ticket_id || nonce).
-    // The executor uses this hash to identify the scheduled retry.
+    // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];
     hash_input[..32].copy_from_slice(ticket_id.as_slice());
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(&hash_input);
 
-    // Gas: open_retryable(1 sload) + 1 sload (numTries) + 1 sstore (numTries) + copy
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    // Gas consumed so far: 2 sloads (timeout + numTries) + 1 sstore (numTries).
+    let gas_used_so_far = 2 * SLOAD_GAS + SSTORE_GAS;
+
+    // Calculate gas to donate to the retry tx.
+    // Reserve gas for: event emission + copy (return result) + backlog update.
+    let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + BACKLOG_UPDATE_COST;
+    let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
+    if gas_remaining < future_gas_costs + TX_GAS {
+        return Err(PrecompileError::other(
+            "not enough gas to run redeem attempt",
+        ));
+    }
+    let gas_to_donate = gas_remaining - future_gas_costs;
+
+    // Manual redeem: maxRefund = 2^256 - 1, submissionFeeRefund = 0.
+    let max_refund = U256::MAX;
+    let submission_fee_refund = U256::ZERO;
+
+    // Emit RedeemScheduled event.
+    let topic0 = redeem_scheduled_topic();
+    let topic1 = ticket_id;
+    let topic2 = B256::from(retry_tx_hash);
+    let mut seq_bytes = [0u8; 32];
+    seq_bytes[24..32].copy_from_slice(&nonce.to_be_bytes());
+    let topic3 = B256::from(seq_bytes);
+
+    let mut event_data = Vec::with_capacity(128);
+    event_data.extend_from_slice(&U256::from(gas_to_donate).to_be_bytes::<32>());
+    event_data.extend_from_slice(&B256::left_padding_from(caller.as_slice()).0);
+    event_data.extend_from_slice(&max_refund.to_be_bytes::<32>());
+    event_data.extend_from_slice(&submission_fee_refund.to_be_bytes::<32>());
+
+    internals.log(Log::new_unchecked(
+        ARBRETRYABLETX_ADDRESS,
+        vec![topic0, topic1, topic2, topic3],
+        event_data.into(),
+    ));
+
+    // Total gas: initial costs + event + copy + donated gas.
+    // The donated gas is "burned" from the caller and given to the retry tx.
+    let total_gas = gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + gas_to_donate;
 
     Ok(PrecompileOutput::new(
-        gas_used.min(gas_limit),
+        total_gas.min(gas_limit),
         retry_tx_hash.to_vec().into(),
     ))
 }

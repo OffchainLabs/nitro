@@ -52,6 +52,15 @@ impl<D: Database> L2PricingState<D> {
         self.update_backlog(BacklogOperation::Grow, used_gas, used_multi_gas)
     }
 
+    /// Shrink the gas backlog for the active pricing model.
+    pub fn shrink_backlog(
+        &self,
+        used_gas: u64,
+        used_multi_gas: MultiGas,
+    ) -> Result<(), ()> {
+        self.update_backlog(BacklogOperation::Shrink, used_gas, used_multi_gas)
+    }
+
     /// Dispatch backlog update to the active pricing model.
     fn update_backlog(
         &self,

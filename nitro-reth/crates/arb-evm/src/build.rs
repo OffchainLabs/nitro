@@ -1248,6 +1248,67 @@ where
             adjust_result_gas_used(&mut output.result.result, poster_gas);
         }
 
+        // Scan execution logs for RedeemScheduled events (manual redeem path).
+        // The ArbRetryableTx.Redeem precompile emits this event; we discover it
+        // here and schedule the retry tx, matching Go's ScheduledTxes() mechanism.
+        if let ExecutionResult::Success { ref logs, .. } = output.result.result {
+            let redeem_topic = arb_precompiles::redeem_scheduled_topic();
+            let precompile_addr = arb_precompiles::ARBRETRYABLETX_ADDRESS;
+
+            for log in logs {
+                if log.address != precompile_addr { continue; }
+                if log.topics().is_empty() || log.topics()[0] != redeem_topic { continue; }
+                if log.topics().len() < 4 || log.data.data.len() < 128 { continue; }
+
+                let ticket_id = log.topics()[1];
+                let seq_num_bytes = log.topics()[3];
+                let nonce = u64::from_be_bytes(seq_num_bytes.0[24..32].try_into().unwrap_or([0u8; 8]));
+                let data = &log.data.data;
+                let donated_gas = U256::from_be_slice(&data[0..32]).to::<u64>();
+                let gas_donor = Address::from_slice(&data[44..64]);
+                let max_refund = U256::from_be_slice(&data[64..96]);
+                let submission_fee_refund = U256::from_be_slice(&data[96..128]);
+
+                // Open the retryable and construct the retry tx.
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                let current_time = {
+                    let block = self.inner.evm().block();
+                    revm::context::Block::timestamp(block).to::<u64>()
+                };
+                if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                    if let Ok(Some(retryable)) = arb_state.retryable_state.open_retryable(
+                        ticket_id,
+                        current_time,
+                    ) {
+                        if let Ok(retry_tx) = retryable.make_tx(
+                            U256::from(self.arb_ctx.chain_id),
+                            nonce,
+                            self.arb_ctx.basefee,
+                            donated_gas,
+                            ticket_id,
+                            gas_donor,
+                            max_refund,
+                            submission_fee_refund,
+                        ) {
+                            if let Some(hooks) = self.arb_hooks.as_mut() {
+                                let mut encoded = Vec::new();
+                                encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                                alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                                hooks.tx_proc.scheduled_txs.push(encoded);
+                            }
+                        }
+                    }
+
+                    // Shrink the backlog by the donated gas amount.
+                    let _ = arb_state.l2_pricing_state.shrink_backlog(
+                        donated_gas,
+                        MultiGas::default(),
+                    );
+                }
+            }
+        }
+
         // Store per-tx state for fee distribution in commit_transaction.
         // Build multi-gas: L1 calldata gas was charged for poster costs.
         let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas);

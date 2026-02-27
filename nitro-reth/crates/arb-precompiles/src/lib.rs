@@ -34,7 +34,9 @@ pub use arbnativetokenmanager::{
 pub use arbosacts::{create_arbosacts_precompile, ARBOSACTS_ADDRESS};
 pub use arbowner::{create_arbowner_precompile, ARBOWNER_ADDRESS};
 pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRESS};
-pub use arbretryabletx::{create_arbretryabletx_precompile, ARBRETRYABLETX_ADDRESS};
+pub use arbretryabletx::{
+    create_arbretryabletx_precompile, redeem_scheduled_topic, ARBRETRYABLETX_ADDRESS,
+};
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
 pub use arbsys::{
     create_arbsys_precompile, get_cached_l1_block_number, get_tx_is_aliased,
