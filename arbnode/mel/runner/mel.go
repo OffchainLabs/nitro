@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -266,14 +267,16 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
-func (m *MessageExtractor) GetDelayedCount(ctx context.Context, block uint64) (uint64, error) {
-	var state *mel.State
-	var err error
-	if block == 0 {
-		state, err = m.melDB.GetHeadMelState(ctx)
-	} else {
-		state, err = m.melDB.State(ctx, block)
+func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
+	state, err := m.melDB.State(ctx, parentChainBlockNum)
+	if err != nil {
+		return 0, err
 	}
+	return state.DelayedMessagesSeen, nil
+}
+
+func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
+	state, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -297,6 +300,49 @@ func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, e
 
 func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 	return false
+}
+
+// FinalizedDelayedMessageAtPosition checks if the delayed message at the
+// requested position is finalized based on the finalized position, and returns the message
+// if it is finalized. If the message is not finalized, it returns a boolean
+// indicating that as well. An error is returned if there was an issue
+// fetching the finalized position or the message.
+func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
+	ctx context.Context,
+	finalizedPosition uint64,
+	_ common.Hash,
+	requestedPosition uint64,
+) (*arbostypes.L1IncomingMessage, common.Hash, bool, error) {
+	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
+	if err != nil {
+		if !strings.Contains(err.Error(), "not found") {
+			return nil, common.Hash{}, false, err
+		}
+		// If the message was not found, return nil.
+		return nil, common.Hash{}, false, nil
+	}
+	if requestedPosition > finalizedPos {
+		// Message isn't finalized yet, return false.
+		return nil, common.Hash{}, false, nil
+	}
+	msg, err := m.GetDelayedMessage(requestedPosition)
+	if err != nil {
+		return nil, common.Hash{}, false, err
+	}
+	return msg.Message, common.Hash{}, true, nil
+}
+
+// CheckAccumulatorReorg checks if there has been a reorg in the parent chain by
+// comparing certain onchain accumulators. This is not relevant in MEL and is a no-op
+// in the message extractor simply to satisfy an interface.
+func (m *MessageExtractor) CheckAccumulatorReorg(
+	_ context.Context,
+	_ common.Hash,
+	_ uint64,
+	_ common.Hash,
+	_ uint64,
+) error {
+	return nil
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {

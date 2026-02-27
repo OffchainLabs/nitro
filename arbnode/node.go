@@ -1098,7 +1098,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
+	batchMetaFetcher BatchMetadataFetcher,
 	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
@@ -1123,20 +1123,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
-			L1Reader:      l1Reader,
-			Inbox:         inboxTracker,
-			MsgExtractor:  msgExtractor,
-			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
-			SyncMonitor:   syncMonitor,
-			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:    deployInfo,
-			TransactOpts:  txOptsBatchPoster,
-			DAPWriters:    dapWriters,
-			ParentChainID: parentChainID,
-			DAPReaders:    dapReaders,
-			ChainConfig:   l2Config,
+			DataPosterDB:         rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
+			L1Reader:             l1Reader,
+			BatchMetadataFetcher: batchMetaFetcher,
+			Streamer:             txStreamer,
+			VersionGetter:        arbOSVersionGetter,
+			SyncMonitor:          syncMonitor,
+			Config:               func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:           deployInfo,
+			TransactOpts:         txOptsBatchPoster,
+			DAPWriters:           dapWriters,
+			ParentChainID:        parentChainID,
+			DAPReaders:           dapReaders,
+			ChainConfig:          l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1161,7 +1160,7 @@ func getDelayedSequencer(
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
 	if inboxReader == nil && msgExtractor == nil {
-		return nil, nil
+		return nil, errors.New("delayed sequencer either an inbox reader or message extractor, but neither was provided")
 	}
 	if exec == nil {
 		return nil, nil
@@ -1199,7 +1198,6 @@ func getNodeParentChainReaderDisabled(
 	consensusExecutionSyncer := NewConsensusExecutionSyncer(
 		consensusExecutionSyncerConfigFetcher,
 		nil, // inboxReader
-		nil, // msgExtractor
 		executionClient,
 		nil, // blockValidator
 		txStreamer,
@@ -1357,7 +1355,13 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, messageExtractor, executionClient, blockValidator, txStreamer, syncMonitor)
+	var msgCountFetcher MessageCountFetcher
+	if messageExtractor != nil {
+		msgCountFetcher = messageExtractor
+	} else {
+		msgCountFetcher = inboxReader
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, msgCountFetcher, executionClient, blockValidator, txStreamer, syncMonitor)
 
 	return &Node{
 		ConsensusDB:              consensusDB,
