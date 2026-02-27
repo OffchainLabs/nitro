@@ -119,6 +119,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             ),
             l2_pricing_state: L2PricingState::open(
                 backing_storage.open_sub_storage(L2_PRICING_SUBSPACE),
+                arbos_version,
             ),
             retryable_state: RetryableState::open(
                 backing_storage.open_sub_storage(RETRYABLES_SUBSPACE),

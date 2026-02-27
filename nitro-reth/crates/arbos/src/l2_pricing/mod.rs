@@ -50,6 +50,7 @@ pub const INITIAL_PER_TX_GAS_LIMIT_V50: u64 = 256_000_000;
 /// L2 pricing state manages gas pricing for L2 execution.
 pub struct L2PricingState<D> {
     pub backing_storage: Storage<D>,
+    pub arbos_version: u64,
     speed_limit_per_second: StorageBackedUint64<D>,
     per_block_gas_limit: StorageBackedUint64<D>,
     base_fee_wei: StorageBackedBigUint<D>,
@@ -81,7 +82,7 @@ pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>, initial_base_f
         .set(INITIAL_BACKLOG_TOLERANCE);
 }
 
-pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>) -> L2PricingState<D> {
+pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>, arbos_version: u64) -> L2PricingState<D> {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
@@ -90,6 +91,7 @@ pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>) -> L2PricingState<D> 
     let mgf_sto = sto.open_sub_storage(MULTI_GAS_BASE_FEES_KEY);
 
     L2PricingState {
+        arbos_version,
         speed_limit_per_second: StorageBackedUint64::new(
             state,
             base_key,
@@ -114,8 +116,8 @@ pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>) -> L2PricingState<D> 
 }
 
 impl<D: Database> L2PricingState<D> {
-    pub fn open(sto: Storage<D>) -> Self {
-        open_l2_pricing_state(sto)
+    pub fn open(sto: Storage<D>, arbos_version: u64) -> Self {
+        open_l2_pricing_state(sto, arbos_version)
     }
 
     pub fn initialize(sto: &Storage<D>, initial_base_fee: U256) {

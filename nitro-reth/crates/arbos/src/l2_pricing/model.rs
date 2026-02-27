@@ -2,6 +2,8 @@ use alloy_primitives::U256;
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use revm::Database;
 
+use arb_chainspec::arbos_version as version;
+
 use super::{L2PricingState, MAX_PRICING_EXPONENT_BIPS};
 
 /// Which gas pricing model to use.
@@ -24,15 +26,19 @@ pub enum BacklogOperation {
 pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 500;
 
 impl<D: Database> L2PricingState<D> {
-    /// Determine which gas model to use based on stored constraint counts.
+    /// Determine which gas model to use based on ArbOS version and stored constraints.
     pub fn gas_model_to_use(&self) -> Result<GasModel, ()> {
-        let mgc_len = self.multi_gas_constraints_length()?;
-        if mgc_len > 0 {
-            return Ok(GasModel::MultiGasConstraints);
+        if self.arbos_version >= version::ARBOS_VERSION_60 {
+            let mgc_len = self.multi_gas_constraints_length()?;
+            if mgc_len > 0 {
+                return Ok(GasModel::MultiGasConstraints);
+            }
         }
-        let gc_len = self.gas_constraints_length()?;
-        if gc_len > 0 {
-            return Ok(GasModel::SingleGasConstraints);
+        if self.arbos_version >= version::ARBOS_VERSION_50 {
+            let gc_len = self.gas_constraints_length()?;
+            if gc_len > 0 {
+                return Ok(GasModel::SingleGasConstraints);
+            }
         }
         Ok(GasModel::Legacy)
     }
@@ -105,8 +111,9 @@ impl<D: Database> L2PricingState<D> {
     pub fn update_pricing_model(
         &self,
         time_passed: u64,
-        _arbos_version: u64,
+        arbos_version: u64,
     ) -> Result<(), ()> {
+        let _ = arbos_version; // version gating handled by gas_model_to_use via self.arbos_version
         match self.gas_model_to_use()? {
             GasModel::Legacy | GasModel::Unknown => {
                 self.update_pricing_model_legacy(time_passed)
@@ -147,29 +154,35 @@ impl<D: Database> L2PricingState<D> {
     }
 
     fn update_pricing_model_single_constraints(&self, time_passed: u64) -> Result<(), ()> {
-        self.update_single_gas_constraints_backlogs(time_passed)?;
-
-        let mut max_exponent: u64 = 0;
+        // Drain backlogs and compute total exponent (sum across all constraints).
+        let mut total_exponent: u64 = 0;
         let len = self.gas_constraints_length()?;
 
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
             let target = c.target()?;
-            let window = c.adjustment_window()?;
-            let backlog = c.backlog()?;
 
+            // Drain backlog.
+            let backlog = c.backlog()?;
+            let drain = (time_passed as u128).saturating_mul(target as u128);
+            let new_backlog = backlog.saturating_sub(drain.min(u64::MAX as u128) as u64);
+            c.set_backlog(new_backlog)?;
+
+            if new_backlog == 0 {
+                continue;
+            }
+
+            let window = c.adjustment_window()?;
             if target == 0 || window == 0 {
                 continue;
             }
 
-            let exponent = (backlog as u128 * 10000) / (window as u128 * target as u128);
+            let exponent = (new_backlog as u128 * 10000) / (window as u128 * target as u128);
             let exponent = exponent.min(u64::MAX as u128) as u64;
-            if exponent > max_exponent {
-                max_exponent = exponent;
-            }
+            total_exponent = total_exponent.saturating_add(exponent);
         }
 
-        let base_fee = self.calc_base_fee_from_exponent(max_exponent)?;
+        let base_fee = self.calc_base_fee_from_exponent(total_exponent)?;
         self.set_base_fee_wei(base_fee)
     }
 
@@ -205,18 +218,6 @@ impl<D: Database> L2PricingState<D> {
         self.set_gas_backlog(new_backlog)
     }
 
-    fn update_single_gas_constraints_backlogs(&self, time_passed: u64) -> Result<(), ()> {
-        let len = self.gas_constraints_length()?;
-        for i in 0..len {
-            let c = self.open_gas_constraint_at(i);
-            let target = c.target()?;
-            let drain = (time_passed as u128).saturating_mul(target as u128);
-            let backlog = c.backlog()?;
-            let new_backlog = backlog.saturating_sub(drain.min(u64::MAX as u128) as u64);
-            c.set_backlog(new_backlog)?;
-        }
-        Ok(())
-    }
 
     fn update_multi_gas_constraints_backlogs(&self, time_passed: u64) -> Result<(), ()> {
         let len = self.multi_gas_constraints_length()?;
@@ -303,6 +304,9 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Get multi-gas current-block base fee per resource kind.
+    ///
+    /// L1Calldata kind is always forced to the global base fee,
+    /// and any zero fee is replaced with the global base fee.
     pub fn get_multi_gas_base_fee_per_resource(
         &self,
     ) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
@@ -312,6 +316,11 @@ impl<D: Database> L2PricingState<D> {
         );
         let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
         for kind in ResourceKind::ALL {
+            // L1Calldata always uses the global base fee.
+            if kind == ResourceKind::L1Calldata {
+                fees[kind as usize] = base_fee;
+                continue;
+            }
             let fee = mgf.get_current_block_fee(kind)?;
             fees[kind as usize] = if fee.is_zero() { base_fee } else { fee };
         }
