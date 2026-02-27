@@ -20,6 +20,14 @@ pub const FEATURES_SUBSPACE: &[u8] = &[9];
 pub const NATIVE_TOKEN_SUBSPACE: &[u8] = &[10];
 pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
 
+/// Subspace keys within the PROGRAMS subspace.
+pub const PROGRAMS_PARAMS_KEY: &[u8] = &[0];
+pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
+
+/// Cache managers subspace within ArbOS (PROGRAMS → CACHE_MANAGERS).
+/// Not a direct root subspace; derive at runtime via `programs_cache_managers_key()`.
+pub const CACHE_MANAGERS_SUBSPACE: &[u8] = CACHE_MANAGERS_KEY;
+
 /// Filtered transactions backing storage account (separate from ArbOS state).
 pub const FILTERED_TX_STATE_ADDRESS: alloy_primitives::Address = alloy_primitives::Address::new([
     0xa4, 0xb0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

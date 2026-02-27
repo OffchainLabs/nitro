@@ -4,9 +4,10 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
-    L2_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    CACHE_MANAGERS_KEY, CHAIN_OWNER_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET,
+    L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
+    NATIVE_TOKEN_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE,
+    TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwner precompile address (0x70).
@@ -191,22 +192,66 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
 
-        // ── Stylus/Wasm (stubs — return success) ────────────────
-        SET_INK_PRICE
-        | SET_WASM_MAX_STACK_DEPTH
-        | SET_WASM_FREE_PAGES
-        | SET_WASM_PAGE_GAS
-        | SET_WASM_PAGE_LIMIT
-        | SET_WASM_MIN_INIT_GAS
-        | SET_WASM_INIT_COST_SCALAR
-        | SET_WASM_EXPIRY_DAYS
-        | SET_WASM_KEEPALIVE_DAYS
-        | SET_WASM_BLOCK_CACHE_SIZE
-        | SET_WASM_MAX_SIZE
-        | ADD_WASM_CACHE_MANAGER
-        | REMOVE_WASM_CACHE_MANAGER
-        | SET_MAX_STYLUS_CONTRACT_FRAGMENTS
-        | SET_CALLDATA_PRICE_INCREASE => {
+        // ── Stylus/Wasm parameter setters ────────────────────────
+        SET_INK_PRICE => {
+            let val = read_u32_param(data)?;
+            if val == 0 || val > 0xFF_FFFF {
+                return Err(PrecompileError::other("ink price must be a positive uint24"));
+            }
+            write_stylus_param(&mut input, StylusField::InkPrice, val as u64)
+        }
+        SET_WASM_MAX_STACK_DEPTH => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::MaxStackDepth, val as u64)
+        }
+        SET_WASM_FREE_PAGES => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::FreePages, val as u64)
+        }
+        SET_WASM_PAGE_GAS => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::PageGas, val as u64)
+        }
+        SET_WASM_PAGE_LIMIT => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::PageLimit, val as u64)
+        }
+        SET_WASM_MIN_INIT_GAS => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::MinInitGas, val as u64)
+        }
+        SET_WASM_INIT_COST_SCALAR => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::InitCostScalar, val as u64)
+        }
+        SET_WASM_EXPIRY_DAYS => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::ExpiryDays, val as u64)
+        }
+        SET_WASM_KEEPALIVE_DAYS => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::KeepaliveDays, val as u64)
+        }
+        SET_WASM_BLOCK_CACHE_SIZE => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::BlockCacheSize, val as u64)
+        }
+        SET_WASM_MAX_SIZE => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::MaxWasmSize, val as u64)
+        }
+        SET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
+            let val = read_u32_param(data)?;
+            write_stylus_param(&mut input, StylusField::MaxFragmentCount, val as u64)
+        }
+        ADD_WASM_CACHE_MANAGER => {
+            handle_add_cache_manager(&mut input)
+        }
+        REMOVE_WASM_CACHE_MANAGER => {
+            handle_remove_cache_manager(&mut input)
+        }
+        SET_CALLDATA_PRICE_INCREASE => {
+            // Feature toggle stored at root state level.
             let gas_cost = COPY_GAS.min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
@@ -387,13 +432,12 @@ fn address_set_key(subspace: &[u8]) -> B256 {
     derive_subspace_key(ROOT_STORAGE_KEY, subspace)
 }
 
-/// Check if an address is a member of the AddressSet at the given subspace.
+/// Check if an address is a member of the AddressSet with the given set key.
 fn is_member_of(
     input: &mut PrecompileInput<'_>,
-    subspace: &[u8],
+    set_key: B256,
     addr: Address,
 ) -> Result<bool, PrecompileError> {
-    let set_key = address_set_key(subspace);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -409,7 +453,7 @@ fn handle_is_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> Precomp
     }
     let gas_limit = input.gas;
     let addr = Address::from_slice(&data[16..36]);
-    let is_member = is_member_of(input, subspace, addr)?;
+    let is_member = is_member_of(input, address_set_key(subspace), addr)?;
     let result = if is_member { U256::from(1u64) } else { U256::ZERO };
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -450,10 +494,9 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> P
 /// Add an address to an AddressSet. Returns true if newly added.
 fn address_set_add(
     input: &mut PrecompileInput<'_>,
-    subspace: &[u8],
+    set_key: B256,
     addr: Address,
 ) -> Result<bool, PrecompileError> {
-    let set_key = address_set_key(subspace);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -488,10 +531,9 @@ fn address_set_add(
 /// Remove an address from an AddressSet using swap-with-last.
 fn address_set_remove(
     input: &mut PrecompileInput<'_>,
-    subspace: &[u8],
+    set_key: B256,
     addr: Address,
 ) -> Result<(), PrecompileError> {
-    let set_key = address_set_key(subspace);
     let by_address_key = derive_subspace_key(set_key.as_slice(), &[0]);
     let addr_hash = B256::left_padding_from(addr.as_slice());
     let member_slot = map_slot_b256(by_address_key.as_slice(), &addr_hash);
@@ -539,6 +581,144 @@ fn address_set_remove(
     sstore_field(input, size_slot, U256::from(size_u64 - 1))?;
 
     Ok(())
+}
+
+// ── Stylus param helpers ─────────────────────────────────────────────
+
+/// Field identifiers in the packed StylusParams storage word.
+///
+/// Packed layout (byte offsets within a 32-byte storage word):
+///   [0-1]   version (u16)
+///   [2-4]   ink_price (uint24)
+///   [5-8]   max_stack_depth (u32)
+///   [9-10]  free_pages (u16)
+///   [11-12] page_gas (u16)
+///   [13-14] page_limit (u16)
+///   [15]    min_init_gas (u8)
+///   [16]    min_cached_init_gas (u8)
+///   [17]    init_cost_scalar (u8)
+///   [18]    cached_cost_scalar (u8)
+///   [19-20] expiry_days (u16)
+///   [21-22] keepalive_days (u16)
+///   [23-24] block_cache_size (u16)
+///   [25-28] max_wasm_size (u32) -- arbos >= 40
+///   [29]    max_fragment_count (u8) -- arbos >= 41
+enum StylusField {
+    InkPrice,       // bytes 2..5 (uint24)
+    MaxStackDepth,  // bytes 5..9 (u32)
+    FreePages,      // bytes 9..11 (u16)
+    PageGas,        // bytes 11..13 (u16)
+    PageLimit,      // bytes 13..15 (u16)
+    MinInitGas,     // byte 15 (u8)
+    InitCostScalar, // byte 17 (u8)
+    ExpiryDays,     // bytes 19..21 (u16)
+    KeepaliveDays,  // bytes 21..23 (u16)
+    BlockCacheSize, // bytes 23..25 (u16)
+    MaxWasmSize,    // bytes 25..29 (u32)
+    MaxFragmentCount, // byte 29 (u8)
+}
+
+impl StylusField {
+    fn byte_range(&self) -> (usize, usize) {
+        match self {
+            Self::InkPrice => (2, 5),
+            Self::MaxStackDepth => (5, 9),
+            Self::FreePages => (9, 11),
+            Self::PageGas => (11, 13),
+            Self::PageLimit => (13, 15),
+            Self::MinInitGas => (15, 16),
+            Self::InitCostScalar => (17, 18),
+            Self::ExpiryDays => (19, 21),
+            Self::KeepaliveDays => (21, 23),
+            Self::BlockCacheSize => (23, 25),
+            Self::MaxWasmSize => (25, 29),
+            Self::MaxFragmentCount => (29, 30),
+        }
+    }
+}
+
+/// Compute the storage slot for the programs params word (slot 0).
+fn programs_params_slot() -> U256 {
+    // Path: root → PROGRAMS_SUBSPACE → PROGRAMS_PARAMS_KEY → slot 0
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let params_key = derive_subspace_key(programs_key.as_slice(), &[0]); // PARAMS_KEY = [0]
+    map_slot(params_key.as_slice(), 0)
+}
+
+/// Read the packed programs params word from storage.
+fn read_stylus_params_word(input: &mut PrecompileInput<'_>) -> Result<[u8; 32], PrecompileError> {
+    let slot = programs_params_slot();
+    let val = sload_field(input, slot)?;
+    Ok(val.to_be_bytes::<32>())
+}
+
+/// Write a modified field in the packed programs params storage word.
+fn write_stylus_param(
+    input: &mut PrecompileInput<'_>,
+    field: StylusField,
+    value: u64,
+) -> PrecompileResult {
+    let gas_limit = input.gas;
+    let slot = programs_params_slot();
+    let mut word = read_stylus_params_word(input)?;
+
+    let (start, end) = field.byte_range();
+    let len = end - start;
+    let bytes = value.to_be_bytes();
+    // Copy the least significant `len` bytes from the u64.
+    word[start..end].copy_from_slice(&bytes[8 - len..]);
+
+    sstore_field(input, slot, U256::from_be_bytes(word))?;
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + SSTORE_GAS + COPY_GAS).min(gas_limit),
+        Vec::new().into(),
+    ))
+}
+
+/// Parse a u32 parameter from ABI calldata (first arg after selector).
+fn read_u32_param(data: &[u8]) -> Result<u32, PrecompileError> {
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let val = U256::from_be_slice(&data[4..36]);
+    val.try_into()
+        .map_err(|_| PrecompileError::other("value overflow"))
+}
+
+// ── Cache manager helpers ────────────────────────────────────────────
+
+/// Derive the AddressSet key for cache managers (PROGRAMS → CACHE_MANAGERS).
+fn cache_managers_set_key() -> B256 {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    derive_subspace_key(programs_key.as_slice(), CACHE_MANAGERS_KEY)
+}
+
+fn handle_add_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    address_set_add(input, cache_managers_set_key(), addr)?;
+    let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+fn handle_remove_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+    let set_key = cache_managers_set_key();
+    if !is_member_of(input, set_key, addr)? {
+        return Err(PrecompileError::other("address is not a cache manager"));
+    }
+    address_set_remove(input, set_key, addr)?;
+    let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
 
 /// One week in seconds.
@@ -622,7 +802,7 @@ fn handle_add_to_set_with_feature_check(
         return Err(PrecompileError::other("feature is not enabled yet"));
     }
 
-    address_set_add(input, subspace, addr)?;
+    address_set_add(input, address_set_key(subspace), addr)?;
 
     let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
@@ -641,11 +821,12 @@ fn handle_remove_from_set(
     let addr = Address::from_slice(&data[16..36]);
 
     // Verify membership first.
-    if !is_member_of(input, subspace, addr)? {
+    let set_key = address_set_key(subspace);
+    if !is_member_of(input, set_key, addr)? {
         return Err(PrecompileError::other("address is not a member"));
     }
 
-    address_set_remove(input, subspace, addr)?;
+    address_set_remove(input, set_key, addr)?;
 
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
