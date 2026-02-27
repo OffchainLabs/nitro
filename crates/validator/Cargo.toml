@@ -31,3 +31,4 @@ validation = { workspace = true }
 [dev-dependencies]
 rand = { workspace = true, default-features = true }
 reqwest = { workspace = true }
+tempdir = { workspace = true }

@@ -302,7 +302,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(ctx, execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -340,7 +340,13 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDB, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDB, err := stack.OpenDatabaseWithOptions("classic-msg", node.DatabaseOptions{
+			MetricsNamespace: "classicmsg/",
+			Cache:            0, // will be sanitized to minimum
+			Handles:          0, // will be sanitized to minimum
+			ReadOnly:         true,
+			NoFreezer:        true,
+		})
 		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
