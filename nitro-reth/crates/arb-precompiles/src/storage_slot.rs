@@ -134,6 +134,16 @@ pub fn current_retryable_slot() -> U256 {
     map_slot(ROOT_STORAGE_KEY, CURRENT_RETRYABLE_OFFSET)
 }
 
+/// Scratch slot for the current redeemer (refund_to address) during retry tx.
+/// Written by the executor before retry tx EVM execution so GetCurrentRedeemer
+/// can return the correct address.
+pub const CURRENT_REDEEMER_OFFSET: u64 = 253;
+
+/// Compute the storage slot for the current redeemer address.
+pub fn current_redeemer_slot() -> U256 {
+    map_slot(ROOT_STORAGE_KEY, CURRENT_REDEEMER_OFFSET)
+}
+
 // ── L2 pricing vector helpers ────────────────────────────────────────
 
 /// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).

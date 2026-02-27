@@ -3,8 +3,8 @@ use alloy_primitives::{keccak256, Address, B256, Log, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    current_retryable_slot, derive_subspace_key, map_slot, ARBOS_STATE_ADDRESS,
-    RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+    current_redeemer_slot, current_retryable_slot, derive_subspace_key, map_slot,
+    ARBOS_STATE_ADDRESS, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
 };
 
 /// ArbRetryableTx precompile address (0x6e).
@@ -85,10 +85,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         GET_CURRENT_REDEEMER => {
-            // Returns zero address when not in a retryable redeem context.
+            // Read the current redeemer from scratch storage slot.
+            // The executor writes refund_to here before retry tx execution.
+            let internals = input.internals_mut();
+            internals
+                .load_account(ARBOS_STATE_ADDRESS)
+                .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+            let redeemer = internals
+                .sload(ARBOS_STATE_ADDRESS, current_redeemer_slot())
+                .map_err(|_| PrecompileError::other("sload failed"))?
+                .data;
             Ok(PrecompileOutput::new(
-                COPY_GAS.min(gas_limit),
-                U256::ZERO.to_be_bytes::<32>().to_vec().into(),
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                redeemer.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         SUBMIT_RETRYABLE => {

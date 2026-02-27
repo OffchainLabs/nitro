@@ -12,7 +12,7 @@ use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
-use alloy_primitives::{Address, Log, TxKind, U256};
+use alloy_primitives::{Address, B256, Log, TxKind, U256};
 use arb_chainspec;
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
@@ -1245,7 +1245,7 @@ where
         // Write the current retryable ticket ID to a scratch slot so the
         // Redeem precompile can reject self-modification during retry execution.
         {
-            use arb_precompiles::storage_slot::current_retryable_slot;
+            use arb_precompiles::storage_slot::{current_redeemer_slot, current_retryable_slot};
             let retryable_id = retry_context
                 .as_ref()
                 .map(|ctx| U256::from_be_bytes(ctx.ticket_id.0))
@@ -1254,6 +1254,16 @@ where
                 self.inner.evm_mut().db_mut(),
                 current_retryable_slot(),
                 retryable_id,
+            );
+            // Write the current redeemer (refund_to) so GetCurrentRedeemer can read it.
+            let redeemer = retry_context
+                .as_ref()
+                .map(|ctx| U256::from_be_bytes(B256::left_padding_from(ctx.refund_to.as_slice()).0))
+                .unwrap_or(U256::ZERO);
+            arb_storage::write_arbos_storage(
+                self.inner.evm_mut().db_mut(),
+                current_redeemer_slot(),
+                redeemer,
             );
         }
 
