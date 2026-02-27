@@ -722,12 +722,67 @@ where
                                 submission_fee_refund: info.submission_fee_refund,
                             });
                         }
-                        _ => {
-                            tracing::warn!(
-                                target: "arb::executor",
-                                ticket_id = %info.ticket_id,
-                                "retryable ticket not found or expired"
+                        Ok(None) => {
+                            // Retryable expired or not found — endTxNow=true.
+                            let tx_type = recovered.tx().tx_type();
+                            self.pending_tx = Some(PendingArbTx {
+                                sender,
+                                tx_gas_limit: 0,
+                                arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
+                                has_poster_costs: false,
+                                poster_gas: 0,
+                                calldata_units: 0,
+                                charged_multi_gas: MultiGas::default(),
+                                retry_context: None,
+                            });
+                            let err_msg = format!(
+                                "retryable ticket {} not found",
+                                info.ticket_id,
                             );
+                            return Ok(EthTxResult {
+                                result: revm::context::result::ResultAndState {
+                                    result: ExecutionResult::Revert {
+                                        gas_used: 0,
+                                        output: alloy_primitives::Bytes::from(
+                                            err_msg.into_bytes(),
+                                        ),
+                                    },
+                                    state: Default::default(),
+                                },
+                                blob_gas_used: 0,
+                                tx_type,
+                            });
+                        }
+                        Err(_) => {
+                            // State error opening retryable — endTxNow=true.
+                            let tx_type = recovered.tx().tx_type();
+                            self.pending_tx = Some(PendingArbTx {
+                                sender,
+                                tx_gas_limit: 0,
+                                arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
+                                has_poster_costs: false,
+                                poster_gas: 0,
+                                calldata_units: 0,
+                                charged_multi_gas: MultiGas::default(),
+                                retry_context: None,
+                            });
+                            return Ok(EthTxResult {
+                                result: revm::context::result::ResultAndState {
+                                    result: ExecutionResult::Revert {
+                                        gas_used: 0,
+                                        output: alloy_primitives::Bytes::from(
+                                            format!(
+                                                "error opening retryable {}",
+                                                info.ticket_id,
+                                            )
+                                            .into_bytes(),
+                                        ),
+                                    },
+                                    state: Default::default(),
+                                },
+                                blob_gas_used: 0,
+                                tx_type,
+                            });
                         }
                     }
                 }
