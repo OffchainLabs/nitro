@@ -250,18 +250,40 @@ where
         &mut self,
         ticket_id: alloy_primitives::B256,
         tx_type: <R::Transaction as TransactionEnvelope>::TxType,
-        info: arb_primitives::SubmitRetryableInfo,
+        mut info: arb_primitives::SubmitRetryableInfo,
     ) -> Result<EthTxResult<E::HaltReason, <R::Transaction as TransactionEnvelope>::TxType>, BlockExecutionError> {
         let sender = info.from;
 
-        // 2. Compute fees (read block info before mutably borrowing db).
+        // Check if this submit retryable is in the on-chain filter.
+        // If filtered, redirect fee_refund_addr and beneficiary to the
+        // filtered funds recipient. The retryable is still created but
+        // auto-redeem scheduling is skipped.
+        let is_filtered = {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            let state_ptr: *mut State<DB> = db as *mut State<DB>;
+            if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+                if arb_state.filtered_transactions.is_filtered_free(ticket_id) {
+                    if let Ok(recipient) = arb_state.filtered_funds_recipient_or_default() {
+                        info.fee_refund_addr = recipient;
+                        info.beneficiary = recipient;
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        // Compute fees (read block info before mutably borrowing db).
         let block = self.inner.evm().block();
         let current_time = revm::context::Block::timestamp(block).to::<u64>();
         let effective_base_fee = self.arb_ctx.basefee;
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
-        // 1. Mint deposit value to sender.
+        // Mint deposit value to sender.
         mint_balance(db, sender, info.deposit_value);
 
         // Get sender balance after minting.
@@ -351,27 +373,32 @@ where
                 transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
             }
 
-            // Schedule auto-redeem: construct a synthetic RetryTx and store
-            // its encoded form in scheduled_txs for later execution.
-            if let Some(hooks) = self.arb_hooks.as_mut() {
-                let retry_tx = arb_alloy_consensus::tx::ArbRetryTx {
-                    chain_id: U256::from(self.arb_ctx.chain_id),
-                    nonce: 0,
-                    from: sender,
-                    gas_fee_cap: effective_base_fee,
-                    gas: user_gas,
-                    to: info.retry_to,
-                    value: info.retry_value,
-                    data: info.retry_data.into(),
-                    ticket_id,
-                    refund_to: info.fee_refund_addr,
-                    max_refund: fees.available_refund,
-                    submission_fee_refund: fees.submission_fee,
-                };
-                let mut encoded = Vec::new();
-                encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
-                alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                hooks.tx_proc.scheduled_txs.push(encoded);
+            // For filtered retryables, skip auto-redeem scheduling.
+            // The retryable is created with a redirected beneficiary who
+            // can redeem manually.
+            if !is_filtered {
+                // Schedule auto-redeem: construct a synthetic RetryTx and store
+                // its encoded form in scheduled_txs for later execution.
+                if let Some(hooks) = self.arb_hooks.as_mut() {
+                    let retry_tx = arb_alloy_consensus::tx::ArbRetryTx {
+                        chain_id: U256::from(self.arb_ctx.chain_id),
+                        nonce: 0,
+                        from: sender,
+                        gas_fee_cap: effective_base_fee,
+                        gas: user_gas,
+                        to: info.retry_to,
+                        value: info.retry_value,
+                        data: info.retry_data.into(),
+                        ticket_id,
+                        refund_to: info.fee_refund_addr,
+                        max_refund: fees.available_refund,
+                        submission_fee_refund: fees.submission_fee,
+                    };
+                    let mut encoded = Vec::new();
+                    encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                    alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                    hooks.tx_proc.scheduled_txs.push(encoded);
+                }
             }
         } else if !fees.gas_cost_refund.is_zero() {
             // Can't pay for gas: refund gas cost from deposit.
@@ -625,18 +652,42 @@ where
         // No EVM execution — the value transfer is the entire transaction.
         if is_arb_deposit {
             let value = recovered.tx().value();
-            let to = match recovered.tx().kind() {
+            let mut to = match recovered.tx().kind() {
                 TxKind::Call(addr) => addr,
                 TxKind::Create => {
                     return Err(BlockExecutionError::msg("deposit tx has no To address"));
                 }
             };
             let tx_type = recovered.tx().tx_type();
+            let tx_hash = recovered.tx().trie_hash();
+
+            // Check if this deposit is in the on-chain filter.
+            // Deposits return endTxNow=true so RevertedTxHook is never reached;
+            // we must check here instead.
+            let mut is_filtered = false;
+            {
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                if let Ok(arb_state) =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                {
+                    if arb_state.filtered_transactions.is_filtered_free(tx_hash) {
+                        if let Ok(recipient) =
+                            arb_state.filtered_funds_recipient_or_default()
+                        {
+                            to = recipient;
+                        }
+                        is_filtered = true;
+                    }
+                }
+            }
 
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             // Mint deposit value to sender, then transfer to recipient.
             mint_balance(db, sender, value);
             transfer_balance(db, sender, to, value);
+
+            let _ = is_filtered; // filtered deposits still succeed, just redirected
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
