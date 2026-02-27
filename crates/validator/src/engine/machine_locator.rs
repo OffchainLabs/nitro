@@ -99,8 +99,7 @@ impl MachineLocator {
 
                 let dir_name = entry.file_name().to_string_lossy().to_string();
 
-                let module_root_hex = module_root.to_string();
-                if dir_name != "latest" && dir_name != module_root_hex {
+                if dir_name != "latest" && dir_name != module_root.to_string() {
                     continue;
                 }
 
