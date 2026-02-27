@@ -1232,6 +1232,21 @@ where
             );
         }
 
+        // Write the current retryable ticket ID to a scratch slot so the
+        // Redeem precompile can reject self-modification during retry execution.
+        {
+            use arb_precompiles::storage_slot::current_retryable_slot;
+            let retryable_id = retry_context
+                .as_ref()
+                .map(|ctx| U256::from_be_bytes(ctx.ticket_id.0))
+                .unwrap_or(U256::ZERO);
+            arb_storage::write_arbos_storage(
+                self.inner.evm_mut().db_mut(),
+                current_retryable_slot(),
+                retryable_id,
+            );
+        }
+
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
 
         // Capture gas_used as reported by reth's EVM (before our adjustments).

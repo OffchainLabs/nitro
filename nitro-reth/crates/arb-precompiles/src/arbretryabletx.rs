@@ -3,7 +3,8 @@ use alloy_primitives::{keccak256, Address, B256, Log, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    derive_subspace_key, map_slot, ARBOS_STATE_ADDRESS, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+    current_retryable_slot, derive_subspace_key, map_slot, ARBOS_STATE_ADDRESS,
+    RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
 };
 
 /// ArbRetryableTx precompile address (0x6e).
@@ -281,6 +282,19 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     internals
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+
+    // Guard: a retryable cannot redeem itself during its own retry execution.
+    let current_retryable = internals
+        .sload(ARBOS_STATE_ADDRESS, current_retryable_slot())
+        .map_err(|_| PrecompileError::other("sload failed"))?
+        .data;
+    if !current_retryable.is_zero()
+        && B256::from(current_retryable.to_be_bytes::<32>()) == ticket_id
+    {
+        return Err(PrecompileError::other(
+            "retryable cannot redeem itself",
+        ));
+    }
 
     // Open the retryable (verifies exists and not expired).
     let ticket_key = {

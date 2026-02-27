@@ -123,6 +123,17 @@ pub fn current_tx_poster_fee_slot() -> U256 {
     map_slot(ROOT_STORAGE_KEY, CURRENT_TX_POSTER_FEE_OFFSET)
 }
 
+/// Scratch slot for the currently-executing retryable ticket ID.
+/// Written by the executor before retry tx EVM execution so the Redeem
+/// precompile can reject self-modification attempts.
+/// Zero means no retryable is executing.
+pub const CURRENT_RETRYABLE_OFFSET: u64 = 254;
+
+/// Compute the storage slot for the current retryable ticket ID.
+pub fn current_retryable_slot() -> U256 {
+    map_slot(ROOT_STORAGE_KEY, CURRENT_RETRYABLE_OFFSET)
+}
+
 // ── L2 pricing vector helpers ────────────────────────────────────────
 
 /// L2 pricing subspace key (root → L2_PRICING_SUBSPACE).
