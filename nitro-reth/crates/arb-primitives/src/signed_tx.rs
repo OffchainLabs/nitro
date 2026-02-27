@@ -143,6 +143,33 @@ impl ArbTransactionSigned {
         }
     }
 
+    /// Construct from a signed Ethereum envelope (standard tx types only).
+    pub fn from_envelope(envelope: alloy_consensus::EthereumTxEnvelope<alloy_consensus::TxEip4844>) -> Self {
+        use alloy_consensus::EthereumTxEnvelope;
+        match envelope {
+            EthereumTxEnvelope::Legacy(signed) => {
+                let (tx, sig, hash) = signed.into_parts();
+                Self::new(ArbTypedTransaction::Legacy(tx), sig, hash)
+            }
+            EthereumTxEnvelope::Eip2930(signed) => {
+                let (tx, sig, hash) = signed.into_parts();
+                Self::new(ArbTypedTransaction::Eip2930(tx), sig, hash)
+            }
+            EthereumTxEnvelope::Eip1559(signed) => {
+                let (tx, sig, hash) = signed.into_parts();
+                Self::new(ArbTypedTransaction::Eip1559(tx), sig, hash)
+            }
+            EthereumTxEnvelope::Eip4844(signed) => {
+                let (tx, sig, hash) = signed.into_parts();
+                Self::new(ArbTypedTransaction::Eip4844(tx), sig, hash)
+            }
+            EthereumTxEnvelope::Eip7702(signed) => {
+                let (tx, sig, hash) = signed.into_parts();
+                Self::new(ArbTypedTransaction::Eip7702(tx), sig, hash)
+            }
+        }
+    }
+
     pub const fn signature(&self) -> &Signature {
         &self.signature
     }

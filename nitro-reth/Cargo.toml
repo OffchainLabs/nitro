@@ -77,6 +77,8 @@ reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", re
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-codecs = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
@@ -128,3 +130,5 @@ num = "0.4"
 hex = "0.4"
 brotli = "8"
 sha2 = "0.10"
+jsonrpsee-types = "0.26.0"
+dyn-clone = "1"

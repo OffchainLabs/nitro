@@ -1129,13 +1129,32 @@ dependencies = [
 name = "arb-rpc"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-evm",
+ "alloy-network",
  "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
+ "arb-evm",
+ "arb-payload",
  "arb-primitives",
+ "eyre",
+ "jsonrpsee-types",
+ "reth-chainspec",
+ "reth-evm",
+ "reth-node-api",
+ "reth-node-builder",
+ "reth-primitives-traits",
  "reth-provider",
+ "reth-rpc",
+ "reth-rpc-convert",
  "reth-rpc-eth-api",
+ "reth-rpc-eth-types",
+ "reth-rpc-server-types",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
