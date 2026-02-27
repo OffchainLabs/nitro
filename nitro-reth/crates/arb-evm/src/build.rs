@@ -145,6 +145,11 @@ struct PendingArbTx {
     has_poster_costs: bool,
     poster_gas: u64,
     calldata_units: u64,
+    /// Gas that reth's EVM actually charged the sender for (gas_used before
+    /// poster/compute adjustments). Zero for paths that bypass reth's EVM
+    /// (internal tx, deposit, submit retryable, pre-recorded revert, filtered tx).
+    /// Used to compute how much additional balance to debit from the sender.
+    evm_gas_used: u64,
     /// Multi-dimensional gas charged during gas charging (L1 calldata component).
     charged_multi_gas: MultiGas,
     /// Retry tx context for end-tx retryable processing.
@@ -445,6 +450,7 @@ where
             arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
             has_poster_costs: false, // No poster costs for submit retryable
             poster_gas: 0,
+            evm_gas_used: 0,
             calldata_units: 0,
             charged_multi_gas: if fees.can_pay_for_gas {
                 MultiGas::l2_calldata_gas(user_gas)
@@ -659,6 +665,7 @@ where
                 arb_tx_type: Some(ArbTxType::ArbitrumInternalTx),
                 has_poster_costs: false,
                 poster_gas: 0,
+                evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
                 retry_context: None,
@@ -736,6 +743,7 @@ where
                 arb_tx_type: Some(ArbTxType::ArbitrumDepositTx),
                 has_poster_costs: false,
                 poster_gas: 0,
+                evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
                 retry_context: None,
@@ -825,6 +833,7 @@ where
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
                                 poster_gas: 0,
+                                evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
                                 retry_context: None,
@@ -856,6 +865,7 @@ where
                                 arb_tx_type: Some(ArbTxType::ArbitrumRetryTx),
                                 has_poster_costs: false,
                                 poster_gas: 0,
+                                evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
                                 retry_context: None,
@@ -982,6 +992,7 @@ where
                             arb_tx_type,
                             has_poster_costs,
                             poster_gas,
+                            evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
                             retry_context,
@@ -1014,6 +1025,7 @@ where
                             arb_tx_type,
                             has_poster_costs,
                             poster_gas,
+                            evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
                             retry_context,
@@ -1056,11 +1068,17 @@ where
 
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
 
-        // Adjust gas_used in the result to include poster_gas.
-        // The receipt builder will see this adjusted value, producing correct
-        // cumulative gas and per-tx gas_used in receipts.
-        if poster_gas > 0 {
-            adjust_result_gas_used(&mut output.result.result, poster_gas);
+        // Capture gas_used as reported by reth's EVM (before our adjustments).
+        // This represents the gas cost reth already deducted from the sender.
+        let evm_gas_used = output.result.result.gas_used();
+
+        // Adjust gas_used to include poster_gas and compute_hold_gas.
+        // These were deducted from gas_limit before EVM execution, so reth's
+        // reported gas_used doesn't include them. Adding them back produces
+        // correct receipt gas_used matching Go's accounting.
+        let extra_gas = poster_gas.saturating_add(compute_hold_gas);
+        if extra_gas > 0 {
+            adjust_result_gas_used(&mut output.result.result, extra_gas);
         }
 
         // Store per-tx state for fee distribution in commit_transaction.
@@ -1073,6 +1091,7 @@ where
             arb_tx_type,
             has_poster_costs,
             poster_gas,
+            evm_gas_used,
             calldata_units,
             charged_multi_gas,
             retry_context,
@@ -1093,6 +1112,21 @@ where
         // --- Post-execution: fee distribution ---
         if let Some(pending) = pending {
             let is_retry = pending.retry_context.is_some();
+
+            // Charge the sender for gas costs that reth's internal buyGas
+            // didn't cover. For normal EVM txs, this is poster_gas +
+            // compute_hold_gas (deducted from gas_limit before reth sees it).
+            // For early-return paths (pre-recorded revert, filtered tx),
+            // reth's EVM was never invoked so evm_gas_used is 0 and the
+            // sender must pay the full gas_used.
+            let sender_extra_gas = gas_used_total
+                .saturating_sub(pending.evm_gas_used);
+            if sender_extra_gas > 0 {
+                let extra_cost = self.arb_ctx.basefee
+                    .saturating_mul(U256::from(sender_extra_gas));
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                burn_balance(db, pending.sender, extra_cost);
+            }
 
             if let Some(retry_ctx) = pending.retry_context {
                 // RetryTx end-of-tx: handle gas refunds, retryable cleanup.
