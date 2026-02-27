@@ -71,7 +71,7 @@ func BuildBlock(
 		return nil, nil
 	}
 
-	block, _, err := arbos.ProduceBlock(
+	block, _, _, err := arbos.ProduceBlock(
 		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, false, runCtx, false,
 	)
 	return block, err

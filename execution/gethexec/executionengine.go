@@ -673,7 +673,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
 	startTime := time.Now()
-	block, receipts, err := arbos.ProduceBlockAdvanced(
+	block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		delayedMessagesRead,
 		lastBlockHeader,
@@ -898,7 +898,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
 
-		block, receipts, err := arbos.ProduceBlockAdvanced(
+		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
 			msg.DelayedMessagesRead,
 			currentHeader,
@@ -936,7 +936,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return block, statedb, receipts, nil
 	}
 
-	block, receipts, err := arbos.ProduceBlock(
+	block, statedb, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		currentHeader,

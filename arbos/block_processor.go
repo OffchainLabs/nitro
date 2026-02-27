@@ -199,7 +199,7 @@ func ProduceBlock(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
-) (*types.Block, types.Receipts, error) {
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
@@ -225,15 +225,15 @@ func ProduceBlockAdvanced(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
-) (*types.Block, types.Receipts, error) {
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
-		return nil, nil, errors.New("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
+		return nil, nil, nil, errors.New("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
 	poster := l1Header.Poster
@@ -249,11 +249,11 @@ func ProduceBlockAdvanced(
 	l2Pricing := arbState.L2PricingState()
 	err = l2Pricing.CommitMultiGasFees()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	baseFee, err := l2Pricing.BaseFeeWei()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	header := createNewHeader(lastBlockHeader, l1Info, baseFee, chainConfig)
@@ -281,7 +281,7 @@ func ProduceBlockAdvanced(
 	var activeGroupCP *groupCheckpoint
 
 	rollbackToGroupCheckpoint := func() error {
-		statedb.RestoreFrom(activeGroupCP.backup)
+		statedb = activeGroupCP.backup
 		header.GasUsed = activeGroupCP.headerGasUsed
 		blockGasLeft = activeGroupCP.blockGasLeft
 		expectedBalanceDelta.Set(activeGroupCP.expectedBalanceDelta)
@@ -313,7 +313,7 @@ func ProduceBlockAdvanced(
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
-				return nil, nil, errors.New("retryable tx is somehow not a retryable")
+				return nil, nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
 			retryable, _ := arbState.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
@@ -326,7 +326,7 @@ func ProduceBlockAdvanced(
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", userTxsProcessed, err)
+				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", userTxsProcessed, err)
 			}
 			if tx == nil {
 				break
@@ -339,7 +339,7 @@ func ProduceBlockAdvanced(
 
 		startRefund := statedb.GetRefund()
 		if startRefund != 0 {
-			return nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
+			return nil, nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
 		}
 
 		var sender common.Address
@@ -467,7 +467,7 @@ func ProduceBlockAdvanced(
 			if !isUserTx && activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
 				userTxHash := activeGroupCP.userTxHash
 				if err := rollbackToGroupCheckpoint(); err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
 				continue
@@ -496,7 +496,7 @@ func ProduceBlockAdvanced(
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
 			arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
@@ -505,11 +505,11 @@ func ProduceBlockAdvanced(
 		}
 
 		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
-			return nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
+			return nil, nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
 		}
 
 		if preTxHeaderGasUsed > header.GasUsed {
-			return nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
+			return nil, nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
 		}
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
@@ -545,7 +545,7 @@ func ProduceBlockAdvanced(
 		}
 
 		if txGasUsed > tx.Gas() {
-			return nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
+			return nil, nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
 		}
 
 		// append any scheduled redeems
@@ -588,11 +588,11 @@ func ProduceBlockAdvanced(
 	}
 
 	if statedb.IsTxFiltered() {
-		return nil, nil, state.ErrArbTxFilter
+		return nil, nil, nil, state.ErrArbTxFilter
 	}
 
 	if err = sequencingHooks.BlockFilter(header, statedb, complete, receipts); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
@@ -613,20 +613,20 @@ func ProduceBlockAdvanced(
 	block := types.NewBlock(header, &types.Body{Transactions: complete}, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
+		return nil, nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+			return nil, nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 	}
 
-	return block, receipts, nil
+	return block, statedb, receipts, nil
 }
 
 // Also sets header.Root

@@ -158,7 +158,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		if !slices.Contains(wasmTargets, rawdb.LocalTarget()) {
 			wasmTargets = append(wasmTargets, rawdb.LocalTarget())
 		}
-		block, _, err := arbos.ProduceBlock(
+		block, _, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
 			prevHeader,
