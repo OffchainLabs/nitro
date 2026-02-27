@@ -141,7 +141,7 @@ impl<D: Database> RetryableState<D> {
         let escrow_address = retryable_escrow_address(id);
         let beneficiary_address = Address::from_slice(&beneficiary_val[12..]);
         let amount = balance_of(escrow_address);
-        let _ = transfer_fn(escrow_address, beneficiary_address, amount);
+        transfer_fn(escrow_address, beneficiary_address, amount)?;
 
         // Clear all storage slots.
         let _ = ret_storage.set_by_uint64(NUM_TRIES_OFFSET, B256::ZERO);
