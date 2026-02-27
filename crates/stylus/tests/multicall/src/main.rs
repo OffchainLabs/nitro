@@ -6,27 +6,22 @@
 extern crate alloc;
 
 use stylus_sdk::{
-    storage::{StorageCache, GlobalStorage},
     alloy_primitives::{Address, B256},
     alloy_sol_types::sol,
     call::RawCall,
     console,
-    evm,
+    host::VM,
     prelude::*,
+    storage::{GlobalStorage, StorageCache},
 };
 
-use wee_alloc::WeeAlloc;
-
-#[global_allocator]
-static ALLOC: WeeAlloc = WeeAlloc::INIT;
-
-sol!{
+sol! {
     event Called(address addr, uint8 count, bool success, bytes return_data);
     event Storage(bytes32 slot, bytes32 data, bool write);
 }
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let mut input = input.as_slice();
     let count = input[0];
     input = &input[1..];
@@ -65,29 +60,34 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             }
 
             let raw_call = match kind & 0x3 {
-                0 => RawCall::new_with_value(value.unwrap_or_default().into()),
-                1 => RawCall::new_delegate(),
-                2 => RawCall::new_static(),
+                0 => RawCall::new_with_value(&vm, value.unwrap_or_default().into()),
+                1 => RawCall::new_delegate(&vm),
+                2 => RawCall::new_static(&vm),
                 x => panic!("unknown call kind {x}"),
             };
             let (success, return_data) = match unsafe { raw_call.call(addr, data) } {
                 Ok(return_data) => (true, return_data),
                 Err(revert_data) => {
                     if kind & 0x4 == 0 {
-                        return Err(revert_data)
+                        return Err(revert_data);
                     }
                     (false, vec![])
-                },
+                }
             };
 
             if !return_data.is_empty() {
                 console!("Contract {addr} returned {} bytes", return_data.len());
             }
             if kind & 0x8 != 0 {
-                evm::log(Called { addr, count, success, return_data: return_data.clone() })
+                vm.log(Called {
+                    addr,
+                    count,
+                    success,
+                    return_data: return_data.clone().into(),
+                })
             }
             output.extend(return_data);
-        } else if kind & 0xf0 == 0x10  {
+        } else if kind & 0xf0 == 0x10 {
             // storage
             let slot = B256::try_from(&curr[..32]).unwrap();
             curr = &curr[32..];
@@ -97,25 +97,29 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                 console!("writing slot {}", curr.len());
                 data = B256::try_from(&curr[..32]).unwrap();
                 write = true;
-                unsafe { StorageCache::set_word(slot.into(), data.into()) };
+                unsafe { StorageCache::set_word(vm.clone(), slot.into(), data.into()) };
                 if kind & 0x7 == 0 {
-                    StorageCache::flush();
+                    vm.flush_cache(false);
                 }
-            } else if kind & 0x7 == 1{
+            } else if kind & 0x7 == 1 {
                 console!("reading slot");
                 write = false;
-                data = StorageCache::get_word(slot.into());
+                data = StorageCache::get_word(vm.clone(), slot.into());
                 output.extend(data.clone());
             } else {
                 panic!("unknown storage kind {kind}")
             }
             if kind & 0x8 != 0 {
                 console!("slot: {}, data: {}, write {write}", slot, data);
-                evm::log(Storage { slot: slot.into(), data: data.into(), write })
+                vm.log(Storage {
+                    slot: slot.into(),
+                    data: data.into(),
+                    write,
+                })
             }
         } else if kind & 0xf0 == 0x20 {
             console!("clearing cache");
-            StorageCache::clear();
+            vm.flush_cache(true);
         } else {
             panic!("unknown action {kind}")
         }

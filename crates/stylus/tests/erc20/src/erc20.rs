@@ -3,13 +3,13 @@
 
 // Warning: this code is for testing only and has not been audited
 
-use alloc::{string::String, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 use core::marker::PhantomData;
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
     alloy_sol_types::{sol, SolError},
-    evm, msg,
     prelude::*,
+    stylus_core::calls::errors::MethodError,
 };
 
 pub trait Erc20Params {
@@ -78,7 +78,7 @@ impl<T: Erc20Params> Erc20<T> {
         let mut to_balance = self.balances.setter(to);
         let new_to_balance = to_balance.get() + value;
         to_balance.set(new_to_balance);
-        evm::log(Transfer { from, to, value });
+        self.vm().log(Transfer { from, to, value });
         Ok(())
     }
 
@@ -87,7 +87,7 @@ impl<T: Erc20Params> Erc20<T> {
         let new_balance = balance.get() + value;
         balance.set(new_balance);
         self.total_supply.set(self.total_supply.get() + value);
-        evm::log(Transfer {
+        self.vm().log(Transfer {
             from: Address::ZERO,
             to: address,
             value,
@@ -106,7 +106,7 @@ impl<T: Erc20Params> Erc20<T> {
         }
         balance.set(old_balance - value);
         self.total_supply.set(self.total_supply.get() - value);
-        evm::log(Transfer {
+        self.vm().log(Transfer {
             from: address,
             to: Address::ZERO,
             value,
@@ -117,7 +117,7 @@ impl<T: Erc20Params> Erc20<T> {
 
 // These methods are external to other contracts
 // Note: modifying storage will become much prettier soon
-#[external]
+#[public]
 impl<T: Erc20Params> Erc20<T> {
     pub fn name() -> Result<String, Erc20Error> {
         Ok(T::NAME.into())
@@ -136,14 +136,16 @@ impl<T: Erc20Params> Erc20<T> {
     }
 
     pub fn transfer(&mut self, to: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.transfer_impl(msg::sender(), to, value)?;
+        self.transfer_impl(self.vm().msg_sender(), to, value)?;
         Ok(true)
     }
 
     pub fn approve(&mut self, spender: Address, value: U256) -> Result<bool, Erc20Error> {
-        self.allowances.setter(msg::sender()).insert(spender, value);
-        evm::log(Approval {
-            owner: msg::sender(),
+        self.allowances
+            .setter(self.vm().msg_sender())
+            .insert(spender, value);
+        self.vm().log(Approval {
+            owner: self.vm().msg_sender(),
             spender,
             value,
         });
@@ -156,13 +158,14 @@ impl<T: Erc20Params> Erc20<T> {
         to: Address,
         value: U256,
     ) -> Result<bool, Erc20Error> {
+        let sender = self.vm().msg_sender();
         let mut sender_allowances = self.allowances.setter(from);
-        let mut allowance = sender_allowances.setter(msg::sender());
+        let mut allowance = sender_allowances.setter(sender);
         let old_allowance = allowance.get();
         if old_allowance < value {
             return Err(Erc20Error::InsufficientAllowance(InsufficientAllowance {
                 owner: from,
-                spender: msg::sender(),
+                spender: sender,
                 have: old_allowance,
                 want: value,
             }));

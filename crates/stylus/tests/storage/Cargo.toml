@@ -12,4 +12,7 @@ strip = true
 lto = true
 panic = "abort"
 
+[features]
+contract-client-gen = []
+
 [workspace]

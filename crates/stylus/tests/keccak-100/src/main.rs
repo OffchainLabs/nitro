@@ -4,10 +4,10 @@
 #![no_main]
 
 use sha3::{Digest, Keccak256};
-use stylus_sdk::stylus_proc::entrypoint;
+use stylus_sdk::{host::VM, prelude::*};
 
 #[entrypoint]
-fn user_main(_: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(_: Vec<u8>, _vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let mut data = [0; 32];
     for _ in 0..100 {
         data = keccak(&data);

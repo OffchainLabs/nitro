@@ -7,54 +7,52 @@ extern crate alloc;
 
 use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
-    block,
     call::RawCall,
-    contract, evm, msg,
+    host::VM,
     prelude::*,
-    tx,
 };
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let balance_check_addr = Address::try_from(&input[..20]).unwrap();
     let eth_precompile_addr = Address::try_from(&input[20..40]).unwrap();
     let arb_test_addr = Address::try_from(&input[40..60]).unwrap();
     let contract_addr = Address::try_from(&input[60..80]).unwrap();
     let burn_call_data = &input[80..];
 
-    let address_balance = balance_check_addr.balance();
-    let eth_precompile_codehash = eth_precompile_addr.codehash();
-    let arb_precompile_codehash = arb_test_addr.codehash();
-    let contract_codehash = contract_addr.codehash();
+    let address_balance = vm.balance(balance_check_addr);
+    let eth_precompile_codehash = vm.code_hash(eth_precompile_addr);
+    let arb_precompile_codehash = vm.code_hash(arb_test_addr);
+    let contract_codehash = vm.code_hash(contract_addr);
 
-    let code = contract_addr.code();
-    assert_eq!(code.len(), contract_addr.code_size());
-    assert_eq!(arb_test_addr.code_size(), 1);
-    assert_eq!(arb_test_addr.code(), [0xfe]);
-    assert_eq!(eth_precompile_addr.code_size(), 0);
-    assert_eq!(eth_precompile_addr.code(), []);
+    let code = vm.code(contract_addr);
+    assert_eq!(code.len(), vm.code_size(contract_addr));
+    assert_eq!(vm.code_size(arb_test_addr), 1);
+    assert_eq!(vm.code(arb_test_addr), [0xfe]);
+    assert_eq!(vm.code_size(eth_precompile_addr), 0);
+    assert_eq!(vm.code(eth_precompile_addr), []);
 
-    let basefee = block::basefee();
-    let chainid = block::chainid();
-    let coinbase = block::coinbase();
-    let gas_limit = block::gas_limit();
-    let timestamp = block::timestamp();
-    let address = contract::address();
-    let sender = msg::sender();
-    let value = msg::value();
-    let origin = tx::origin();
-    let gas_price = tx::gas_price();
-    let ink_price = tx::ink_price();
+    let basefee = vm.block_basefee();
+    let chainid = vm.chain_id();
+    let coinbase = vm.block_coinbase();
+    let gas_limit = vm.block_gas_limit();
+    let timestamp = vm.block_timestamp();
+    let address = vm.contract_address();
+    let sender = vm.msg_sender();
+    let value = vm.msg_value();
+    let origin = vm.tx_origin();
+    let gas_price = vm.tx_gas_price();
+    let ink_price = vm.tx_ink_price();
 
-    let mut block_number = block::number();
+    let mut block_number = vm.block_number();
     block_number -= 1;
 
     // Call burnArbGas
-    let gas_left_before = evm::gas_left();
-    let ink_left_before = evm::ink_left();
-    RawCall::new().call(arb_test_addr, burn_call_data)?;
-    let gas_left_after = evm::gas_left();
-    let ink_left_after = evm::ink_left();
+    let gas_left_before = vm.evm_gas_left();
+    let ink_left_before = vm.evm_ink_left();
+    unsafe { RawCall::new(&vm).call(arb_test_addr, burn_call_data)? };
+    let gas_left_after = vm.evm_gas_left();
+    let ink_left_after = vm.evm_ink_left();
 
     let mut output = vec![];
     output.extend(B256::from(U256::from(block_number)));

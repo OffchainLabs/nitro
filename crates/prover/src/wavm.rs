@@ -860,12 +860,12 @@ pub fn wasm_to_wavm(
             I64Store8 { memarg } => store!(I64, memarg, 1),
             I64Store16 { memarg } => store!(I64, memarg, 2),
             I64Store32 { memarg } => store!(I64, memarg, 4),
-            MemorySize { mem, mem_byte } => {
-                ensure!(*mem == 0 && *mem_byte == 0, "MemorySize args must be 0");
+            MemorySize { mem } => {
+                ensure!(*mem == 0, "MemorySize args must be 0");
                 opcode!(MemorySize, @push 1)
             }
-            MemoryGrow { mem, mem_byte } => {
-                ensure!(*mem == 0 && *mem_byte == 0, "MemoryGrow args must be 0");
+            MemoryGrow { mem } => {
+                ensure!(*mem == 0, "MemoryGrow args must be 0");
                 opcode!(MemoryGrow)
             }
             I32Const { value } => opcode!(I32Const, *value as u32 as u64, @push 1),
@@ -1112,7 +1112,12 @@ pub fn wasm_to_wavm(
                     I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
                     I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                 )
-            ) => bail!("SIMD extension not supported {unsupported:?}")
+            ) => bail!("SIMD extension not supported {unsupported:?}"),
+            // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+            // include a wildcard arm even though we handle all known variants.
+            // If a new variant appears that we don't explicitly map yet, panic
+            // so that it is noticed and added with a proper opcode.
+            _ => bail!("reached unsupported opcode {op:?}"),
         };
     }
     Ok(())
