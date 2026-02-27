@@ -87,10 +87,10 @@ fn convert_single_receipt(input: ConvertReceiptInput<'_, ArbPrimitives>) -> Tran
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // Adjust gas for internal and deposit transactions.
-    let effective_gas_used = match tx_type {
-        0x64 | 0x6a => 0u64,
-        _ => gas_used,
+    // Internal (0x64), deposit (0x6a), and submit retryable (0x69) txs have no gas cost.
+    let (effective_gas_used, effective_gas_price) = match tx_type {
+        0x64 | 0x69 | 0x6a => (0u64, 0u128),
+        _ => (gas_used, meta.base_fee.unwrap_or(0) as u128),
     };
 
     TransactionReceipt {
@@ -100,7 +100,7 @@ fn convert_single_receipt(input: ConvertReceiptInput<'_, ArbPrimitives>) -> Tran
         block_hash: Some(meta.block_hash),
         block_number: Some(meta.block_number),
         gas_used: effective_gas_used,
-        effective_gas_price: 0,
+        effective_gas_price,
         blob_gas_used: None,
         blob_gas_price: None,
         from,

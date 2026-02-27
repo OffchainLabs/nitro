@@ -13,7 +13,7 @@ fn main() {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 
-    Cli::<EthereumChainSpecParser>::parse().run(async move |builder, _| {
+    let _ = Cli::<EthereumChainSpecParser>::parse().run(async move |builder, _| {
         info!(target: "reth::cli", "Launching arb-reth node");
         let handle = builder
             .node(ArbNode::default())

@@ -15,6 +15,7 @@ mod arbstatistics;
 mod arbsys;
 mod arbwasm;
 mod arbwasmcache;
+mod nodeinterface;
 mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
@@ -41,6 +42,7 @@ pub use arbsys::{
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
+pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS};
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::PrecompilesMap;
@@ -82,6 +84,10 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
         (
             ARBNATIVETOKENMANAGER_ADDRESS,
             create_arbnativetokenmanager_precompile(),
+        ),
+        (
+            NODE_INTERFACE_ADDRESS,
+            create_nodeinterface_precompile(),
         ),
     ]);
 }
