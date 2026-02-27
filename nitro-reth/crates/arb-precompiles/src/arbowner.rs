@@ -857,8 +857,8 @@ const CONSTRAINT_BACKLOG: u64 = 2;
 const MGC_MAX_WEIGHT: u64 = 3;
 const MGC_WEIGHTS_BASE: u64 = 4;
 const NUM_RESOURCE_KINDS: u64 = 8;
-const GAS_CONSTRAINTS_MAX_NUM: usize = 42;
-const MAX_PRICING_EXPONENT_BIPS: u64 = 63000;
+const GAS_CONSTRAINTS_MAX_NUM: usize = 20;
+const MAX_PRICING_EXPONENT_BIPS: u64 = 85_000;
 
 /// Derive the L2 pricing sub-storage key.
 fn l2_pricing_key() -> B256 {
