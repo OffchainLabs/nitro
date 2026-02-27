@@ -1105,6 +1105,7 @@ dependencies = [
  "bytes",
  "derive_more",
  "reth-codecs",
+ "reth-db-api",
  "reth-primitives-traits",
  "serde",
  "thiserror 2.0.18",

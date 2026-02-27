@@ -807,6 +807,25 @@ impl reth_codecs::Compact for ArbTransactionSigned {
 }
 
 // ---------------------------------------------------------------------------
+// Compress / Decompress — delegates to Compact for database storage
+// ---------------------------------------------------------------------------
+
+impl reth_db_api::table::Compress for ArbTransactionSigned {
+    type Compressed = Vec<u8>;
+
+    fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(&self, buf: &mut B) {
+        let _ = reth_codecs::Compact::to_compact(self, buf);
+    }
+}
+
+impl reth_db_api::table::Decompress for ArbTransactionSigned {
+    fn decompress(value: &[u8]) -> Result<Self, reth_db_api::DatabaseError> {
+        let (obj, _) = reth_codecs::Compact::from_compact(value, value.len());
+        Ok(obj)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Arbitrum transaction data extraction
 // ---------------------------------------------------------------------------
 

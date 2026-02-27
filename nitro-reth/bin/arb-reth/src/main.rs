@@ -9,11 +9,9 @@ fn main() {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 
-    // Node types, engine types, and all component builders (pool, network,
-    // payload, executor, consensus) are implemented. Full node launch requires
-    // ArbPrimitives to implement database codec traits (Compact, WrapperTypeEncode,
-    // WrapperTypeDecode) so that reth's BlockchainProvider can store and retrieve
-    // Arbitrum blocks. Once codecs are implemented, uncomment:
+    // Database codec traits (Compress/Decompress) are now implemented.
+    // Full node launch requires RethRpcAddOns (payload validator, engine
+    // validator, ETH API builder). Once add-ons are implemented, uncomment:
     //
     //   use clap::Parser;
     //   use reth::cli::Cli;
@@ -30,5 +28,5 @@ fn main() {
     //   })
 
     info!(target: "reth::cli", "arb-reth: Node types and component builders configured");
-    info!(target: "reth::cli", "arb-reth: Full launch pending database codec impls for ArbPrimitives");
+    info!(target: "reth::cli", "arb-reth: Full launch pending RPC add-ons implementation");
 }

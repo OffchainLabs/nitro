@@ -571,3 +571,22 @@ impl reth_codecs::Compact for ArbReceipt {
         (receipt, slice)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Compress / Decompress — delegates to Compact for database storage
+// ---------------------------------------------------------------------------
+
+impl reth_db_api::table::Compress for ArbReceipt {
+    type Compressed = Vec<u8>;
+
+    fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(&self, buf: &mut B) {
+        let _ = reth_codecs::Compact::to_compact(self, buf);
+    }
+}
+
+impl reth_db_api::table::Decompress for ArbReceipt {
+    fn decompress(value: &[u8]) -> Result<Self, reth_db_api::DatabaseError> {
+        let (obj, _) = reth_codecs::Compact::from_compact(value, value.len());
+        Ok(obj)
+    }
+}

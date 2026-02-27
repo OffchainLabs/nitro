@@ -16,6 +16,7 @@ arb-alloy-predeploys = { workspace = true }
 arb-alloy-util = { workspace = true }
 reth-primitives-traits = { workspace = true, features = ["serde-bincode-compat"] }
 reth-codecs = { workspace = true }
+reth-db-api = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
