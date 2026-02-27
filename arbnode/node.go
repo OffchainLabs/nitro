@@ -1296,7 +1296,7 @@ func registerAPIs(currentNode *Node, stack *node.Node, genesisBlockNum uint64) {
 func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	executionClient execution.ExecutionClient,
+	executionClient execution.FullExecutionClient,
 	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
