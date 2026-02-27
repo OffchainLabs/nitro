@@ -5,6 +5,7 @@ pub mod params;
 pub mod types;
 
 use alloy_primitives::B256;
+use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::Database;
 
@@ -327,9 +328,10 @@ impl<D: Database> Programs<D> {
     ///
     /// Computes gas costs, resolves program metadata, and delegates to the
     /// provided `call_fn` which handles the actual WASM runtime execution.
-    /// After execution, attributes residual gas to WasmComputation.
+    /// After execution, enforces return data cost parity with the EVM and
+    /// attributes residual gas to WasmComputation.
     ///
-    /// The `call_fn` receives `(program, prog_params, evm_data, calldata)`
+    /// The `call_fn` receives `(program, prog_params, evm_data, calldata, gas)`
     /// and returns `(output_bytes, gas_left)` or an error.
     pub fn call_program<F>(
         &self,
@@ -357,10 +359,30 @@ impl<D: Database> Programs<D> {
         }
 
         let gas_for_program = gas - call_cost;
-        let params = self.prog_params(program.version, debug_mode, &self.params().map_err(|_| "failed to load params")?);
+        let params = self.prog_params(
+            program.version,
+            debug_mode,
+            &self.params().map_err(|_| "failed to load params")?,
+        );
 
         let starting_gas = gas;
         let (output, gas_left) = call_fn(program, params, evm_data, calldata, gas_for_program)?;
+
+        // Ensure return data costs at least as much as it would in the EVM.
+        let gas_left = if !output.is_empty()
+            && self.arbos_version >= ARBOS_VERSION_STYLUS_FIXES
+        {
+            let evm_cost = evm_memory_cost(output.len() as u64);
+            if starting_gas < evm_cost {
+                // Burn all remaining gas.
+                attribute_wasm_computation(used_multi_gas, starting_gas, 0);
+                return Err("out of gas".into());
+            }
+            let max_gas_to_return = starting_gas - evm_cost;
+            gas_left.min(max_gas_to_return)
+        } else {
+            gas_left
+        };
 
         attribute_wasm_computation(used_multi_gas, starting_gas, gas_left);
 

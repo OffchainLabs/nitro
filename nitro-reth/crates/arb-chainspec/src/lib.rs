@@ -18,6 +18,9 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_20: u64 = 20;
     /// ArbOS version 40 — Prague EVM rules.
     pub const ARBOS_VERSION_40: u64 = 40;
+    /// ArbOS version 31 — Stylus fixes (return data cost check, etc.).
+    pub const ARBOS_VERSION_31: u64 = 31;
+    pub const ARBOS_VERSION_STYLUS_FIXES: u64 = ARBOS_VERSION_31;
     /// ArbOS version 50 — Osaka EVM rules (future).
     pub const ARBOS_VERSION_50: u64 = 50;
     /// ArbOS version 51 — multi-constraint fix.
