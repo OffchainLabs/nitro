@@ -273,6 +273,28 @@ func TestParseHashListJSON(t *testing.T) {
 		t.Errorf("expected 1 hash, got %d", len(hashes))
 	}
 
+	// Test with 0x-prefixed salt and hashes (lowercase)
+	prefixedPayload := map[string]interface{}{
+		"salt": "0x" + hex.EncodeToString([]byte("test-salt")),
+		"address_hashes": []map[string]interface{}{
+			{"hash": "0x" + hex.EncodeToString(hashed_addr1[:])},
+			{"hash": "0X" + hex.EncodeToString(hashed_addr2[:])},
+		},
+	}
+	prefixedJSON, _ := json.Marshal(prefixedPayload)
+	salt, hashes, err = parseHashListJSON(prefixedJSON)
+	if err != nil {
+		t.Fatalf("failed to parse 0x-prefixed JSON: %v", err)
+	}
+	if string(salt) != "test-salt" {
+		t.Errorf("expected salt 'test-salt', got '%s'", string(salt))
+	}
+	if len(hashes) != 2 {
+		t.Errorf("expected 2 hashes, got %d", len(hashes))
+	}
+	if hashes[0] != hashed_addr1 {
+		t.Errorf("hash[0] mismatch: got %x, want %x", hashes[0], hashed_addr1)
+	}
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
 		"salt": hex.EncodeToString([]byte("test-salt")),
