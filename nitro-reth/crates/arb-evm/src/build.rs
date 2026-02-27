@@ -631,26 +631,24 @@ where
                 retry_context: None,
             });
 
-            let result = if let Some(err) = tx_err {
-                ExecutionResult::Revert {
-                    gas_used: 0,
-                    output: alloy_primitives::Bytes::from(err.into_bytes()),
-                }
-            } else {
-                ExecutionResult::Success {
-                    reason: revm::context::result::SuccessReason::Return,
-                    gas_used: 0,
-                    gas_refunded: 0,
-                    output: revm::context::result::Output::Call(
-                        alloy_primitives::Bytes::new(),
-                    ),
-                    logs: Vec::new(),
-                }
-            };
+            // Internal tx errors are fatal — abort block production.
+            if let Some(err) = tx_err {
+                return Err(BlockExecutionError::msg(
+                    format!("failed to apply internal transaction: {err}"),
+                ));
+            }
 
             return Ok(EthTxResult {
                 result: revm::context::result::ResultAndState {
-                    result,
+                    result: ExecutionResult::Success {
+                        reason: revm::context::result::SuccessReason::Return,
+                        gas_used: 0,
+                        gas_refunded: 0,
+                        output: revm::context::result::Output::Call(
+                            alloy_primitives::Bytes::new(),
+                        ),
+                        logs: Vec::new(),
+                    },
                     state: Default::default(),
                 },
                 blob_gas_used: 0,
