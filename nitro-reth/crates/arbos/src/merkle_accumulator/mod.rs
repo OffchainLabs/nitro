@@ -30,12 +30,12 @@ pub fn open_merkle_accumulator<D: Database>(sto: Storage<D>) -> MerkleAccumulato
 }
 
 /// Returns the number of partial tree hashes needed for a given size.
+/// This is the bit-length of `size` (i.e. floor(log2(size)) + 1).
 pub fn calc_num_partials(size: u64) -> u64 {
     if size == 0 {
         return 0;
     }
-    // log2_ceil: number of bits needed to represent (size - 1), which equals 64 - leading_zeros
-    64 - (size - 1).leading_zeros() as u64
+    64 - size.leading_zeros() as u64
 }
 
 impl<D: Database> MerkleAccumulator<D> {
