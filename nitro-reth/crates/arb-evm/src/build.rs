@@ -13,6 +13,7 @@ use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
+use arbos::l1_pricing;
 use arbos::tx_processor::EndTxFeeDistribution;
 use revm::context::result::ExecutionResult;
 use revm::database::State;
@@ -195,7 +196,10 @@ where
         // Apply fee distribution to EVM state (borrows self.inner).
         if let Some(dist) = fee_dist {
             let db = self.inner.evm_mut().db_mut();
-            apply_fee_distribution(db, &dist);
+            // TODO: Wire up L1PricingState for l1_fees_available tracking.
+            // For now pass None; the block executor will handle this once
+            // full ArbOS state integration is complete.
+            apply_fee_distribution(db, &dist, None);
         }
 
         Ok(result)
@@ -244,11 +248,23 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 /// Apply a computed fee distribution to the EVM state.
 ///
 /// Mints ETH to the network fee account, infrastructure fee account,
-/// and poster fee destination (L1 pricer funds pool).
-fn apply_fee_distribution<DB: Database>(state: &mut State<DB>, dist: &EndTxFeeDistribution) {
+/// and poster fee destination (L1 pricer funds pool). Also updates
+/// L1 fees available in L1 pricing state when applicable.
+fn apply_fee_distribution<DB: Database>(
+    state: &mut State<DB>,
+    dist: &EndTxFeeDistribution,
+    l1_pricing: Option<&l1_pricing::L1PricingState<DB>>,
+) {
     mint_balance(state, dist.network_fee_account, dist.network_fee_amount);
     mint_balance(state, dist.infra_fee_account, dist.infra_fee_amount);
     mint_balance(state, dist.poster_fee_destination, dist.poster_fee_amount);
+
+    // Update L1 fees available for the pricing model.
+    if !dist.l1_fees_to_add.is_zero() {
+        if let Some(l1_state) = l1_pricing {
+            let _ = l1_state.add_to_l1_fees_available(dist.l1_fees_to_add);
+        }
+    }
 
     tracing::trace!(
         target: "arb::executor",
@@ -256,6 +272,7 @@ fn apply_fee_distribution<DB: Database>(state: &mut State<DB>, dist: &EndTxFeeDi
         infra_fee = %dist.infra_fee_amount,
         poster_fee = %dist.poster_fee_amount,
         poster_dest = %dist.poster_fee_destination,
+        l1_fees_added = %dist.l1_fees_to_add,
         backlog_gas = dist.compute_gas_for_backlog,
         "applied fee distribution"
     );

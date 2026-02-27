@@ -26,10 +26,11 @@ pub struct GasChargingContext {
     pub gas_price: U256,
     pub base_fee: U256,
     pub tx_type: ArbTxType,
-    /// Transaction calldata bytes for poster cost computation.
-    pub tx_data: Vec<u8>,
-    /// L1 base fee from L1PricingState for poster cost computation.
-    pub l1_base_fee: U256,
+    /// Pre-computed poster cost in ETH (price_per_unit * brotli_units).
+    /// Computed by the block executor using L1PricingState with brotli compression.
+    pub poster_cost: U256,
+    /// Pre-computed calldata units for L1 pricing state tracking.
+    pub calldata_units: u64,
 }
 
 /// Result from gas charging.
@@ -38,6 +39,8 @@ pub struct GasChargingResult {
     pub poster_cost: U256,
     pub poster_gas: u64,
     pub compute_hold_gas: u64,
+    /// Calldata units to add to L1 pricing state's units_since_update.
+    pub calldata_units: u64,
 }
 
 /// Context passed to the end-of-transaction hook.

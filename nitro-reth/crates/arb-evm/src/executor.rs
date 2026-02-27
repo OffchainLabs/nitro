@@ -2,7 +2,6 @@ use alloy_primitives::{Address, B256, U256};
 
 use arbos::tx_processor::{
     EndTxFeeDistribution, EndTxNormalParams, GasChargingError, GasChargingParams, TxProcessor,
-    get_poster_gas,
 };
 use arbos::util::tx_type_has_poster_costs;
 
@@ -100,23 +99,18 @@ impl ArbOsHooks for DefaultArbOsHooks {
         let mut gas_remaining = ctx.gas_limit.saturating_sub(ctx.intrinsic_gas);
 
         let skip_l1_charging = !tx_type_has_poster_costs(ctx.tx_type.as_u8());
+
+        // Use the pre-computed poster cost from L1PricingState (brotli-based).
         let poster_cost = if skip_l1_charging {
             U256::ZERO
         } else {
-            // Compute poster cost from calldata and L1 base fee.
-            let (poster_gas, _calldata_units) = get_poster_gas(
-                &ctx.tx_data,
-                ctx.l1_base_fee,
-                ctx.base_fee,
-                self.arbos_version,
-            );
-            ctx.l1_base_fee.saturating_mul(U256::from(poster_gas))
+            ctx.poster_cost
         };
 
         let params = GasChargingParams {
             base_fee: ctx.base_fee,
             poster_cost,
-            is_gas_estimation: false,
+            is_gas_estimation: self.is_eth_call,
             is_eth_call: self.is_eth_call,
             skip_l1_charging,
             min_base_fee: self.min_base_fee,
@@ -131,6 +125,7 @@ impl ArbOsHooks for DefaultArbOsHooks {
             poster_cost: self.tx_proc.poster_fee,
             poster_gas: self.tx_proc.poster_gas,
             compute_hold_gas: self.tx_proc.compute_hold_gas,
+            calldata_units: ctx.calldata_units,
         })
     }
 

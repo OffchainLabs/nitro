@@ -23,6 +23,18 @@ pub struct ArbBlockExecutionCtx {
     pub block_timestamp: u64,
     /// Block base fee.
     pub basefee: U256,
+    /// L1 pricing: price per unit from L1PricingState.
+    pub l1_price_per_unit: U256,
+    /// L1 pricing: brotli compression level from ArbOS state.
+    pub brotli_compression_level: u64,
+    /// ArbOS version.
+    pub arbos_version: u64,
+    /// Network fee account address.
+    pub network_fee_account: Address,
+    /// Infrastructure fee account address.
+    pub infra_fee_account: Address,
+    /// Minimum L2 base fee.
+    pub min_base_fee: U256,
 }
 
 /// Attributes for building the next Arbitrum block.

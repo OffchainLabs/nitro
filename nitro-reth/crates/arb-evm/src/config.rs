@@ -6,7 +6,7 @@ use alloy_consensus::{BlockHeader, Header};
 use alloy_eips::Decodable2718;
 use alloy_evm::eth::EthBlockExecutionCtx;
 use alloy_evm::eth::spec::EthExecutorSpec;
-use alloy_primitives::{Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_engine::ExecutionData;
 use arb_chainspec::ArbitrumChainSpec;
 use reth_chainspec::{EthChainSpec, Hardforks};
@@ -254,6 +254,13 @@ where
             chain_id: self.chain_spec.chain().id(),
             block_timestamp: header.timestamp,
             basefee: U256::from(header.base_fee_per_gas.unwrap_or_default()),
+            arbos_version: arbos_version_from_mix_hash(&mix_hash),
+            // State-derived fields populated by block executor after state open.
+            l1_price_per_unit: U256::ZERO,
+            brotli_compression_level: 0,
+            network_fee_account: Address::ZERO,
+            infra_fee_account: Address::ZERO,
+            min_base_fee: U256::ZERO,
         }
     }
 
@@ -274,6 +281,12 @@ where
             chain_id: self.chain_spec.chain().id(),
             block_timestamp: parent.timestamp(),
             basefee: U256::from(parent.base_fee_per_gas().unwrap_or_default()),
+            arbos_version: 0,
+            l1_price_per_unit: U256::ZERO,
+            brotli_compression_level: 0,
+            network_fee_account: Address::ZERO,
+            infra_fee_account: Address::ZERO,
+            min_base_fee: U256::ZERO,
         }
     }
 }
