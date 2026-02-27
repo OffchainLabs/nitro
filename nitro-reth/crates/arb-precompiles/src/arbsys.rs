@@ -195,14 +195,15 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at root offset 0.
-    let version = internals
+    // ArbOS version is at root offset 0. Add 55 because Nitro starts at version 56.
+    let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
+    let version = raw_version.data + U256::from(55);
 
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
-        version.data.to_be_bytes::<32>().to_vec().into(),
+        version.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
@@ -254,11 +255,11 @@ fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns remaining gas available for storage operations.
+    // Returns 0 — Nitro has no concept of storage gas.
     let gas_cost = COPY_GAS.min(input.gas);
     Ok(PrecompileOutput::new(
         gas_cost,
-        U256::from(input.gas).to_be_bytes::<32>().to_vec().into(),
+        U256::ZERO.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
@@ -322,6 +323,9 @@ fn do_send_tx_to_l1(
     let caller = input.caller;
     let value = input.value;
     let block_number = input.internals().block_number();
+    let timestamp = input.internals().block_timestamp();
+    let l2_block_u64: u64 = block_number.try_into().unwrap_or(0);
+    let l1_block_num = get_cached_l1_block_number(l2_block_u64).unwrap_or(0);
 
     let internals = input.internals_mut();
 
@@ -343,7 +347,9 @@ fn do_send_tx_to_l1(
     let send_hash = compute_send_hash(
         caller,
         destination,
-        leaf_num,
+        block_number,
+        U256::from(l1_block_num),
+        timestamp,
         value,
         calldata,
     );
@@ -386,8 +392,8 @@ fn do_send_tx_to_l1(
     event_data.extend_from_slice(&send_hash.0);
     event_data.extend_from_slice(&U256::from(leaf_num).to_be_bytes::<32>());
     event_data.extend_from_slice(&block_number.to_be_bytes::<32>());
-    event_data.extend_from_slice(&U256::ZERO.to_be_bytes::<32>()); // ethBlockNum
-    event_data.extend_from_slice(&U256::ZERO.to_be_bytes::<32>()); // timestamp
+    event_data.extend_from_slice(&U256::from(l1_block_num).to_be_bytes::<32>());
+    event_data.extend_from_slice(&timestamp.to_be_bytes::<32>());
     event_data.extend_from_slice(&value.to_be_bytes::<32>());
     // bytes offset + length + data
     event_data.extend_from_slice(&U256::from(7 * 32).to_be_bytes::<32>()); // offset to data
@@ -480,16 +486,19 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
 fn compute_send_hash(
     sender: Address,
     dest: Address,
-    position: u64,
+    arb_block_num: U256,
+    eth_block_num: U256,
+    timestamp: U256,
     value: U256,
     data: &[u8],
 ) -> B256 {
-    let mut preimage = Vec::with_capacity(160 + data.len());
-    preimage.extend_from_slice(&[0u8; 12]);
-    preimage.extend_from_slice(sender.as_slice());
-    preimage.extend_from_slice(&[0u8; 12]);
-    preimage.extend_from_slice(dest.as_slice());
-    preimage.extend_from_slice(&U256::from(position).to_be_bytes::<32>());
+    // Go uses raw 20-byte addresses (no left-padding to 32 bytes).
+    let mut preimage = Vec::with_capacity(200 + data.len());
+    preimage.extend_from_slice(sender.as_slice()); // 20 bytes
+    preimage.extend_from_slice(dest.as_slice()); // 20 bytes
+    preimage.extend_from_slice(&arb_block_num.to_be_bytes::<32>());
+    preimage.extend_from_slice(&eth_block_num.to_be_bytes::<32>());
+    preimage.extend_from_slice(&timestamp.to_be_bytes::<32>());
     preimage.extend_from_slice(&value.to_be_bytes::<32>());
     preimage.extend_from_slice(data);
     keccak256(&preimage)
