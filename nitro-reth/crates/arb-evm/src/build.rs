@@ -412,30 +412,36 @@ where
             }
 
             // For filtered retryables, skip auto-redeem scheduling.
-            // The retryable is created with a redirected beneficiary who
-            // can redeem manually.
             if !is_filtered {
-                // Schedule auto-redeem: construct a synthetic RetryTx and store
-                // its encoded form in scheduled_txs for later execution.
-                if let Some(hooks) = self.arb_hooks.as_mut() {
-                    let retry_tx = arb_alloy_consensus::tx::ArbRetryTx {
-                        chain_id: U256::from(self.arb_ctx.chain_id),
-                        nonce: 0,
-                        from: sender,
-                        gas_fee_cap: effective_base_fee,
-                        gas: user_gas,
-                        to: info.retry_to,
-                        value: info.retry_value,
-                        data: info.retry_data.into(),
+                // Schedule auto-redeem: use make_tx to construct from stored
+                // retryable fields (matching Go's MakeTx pattern), then
+                // increment num_tries.
+                let state_ptr2: *mut State<DB> = db as *mut State<DB>;
+                if let Ok(arb_state) = ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
+                    if let Ok(Some(retryable)) = arb_state.retryable_state.open_retryable(
                         ticket_id,
-                        refund_to: info.fee_refund_addr,
-                        max_refund: fees.available_refund,
-                        submission_fee_refund: fees.submission_fee,
-                    };
-                    let mut encoded = Vec::new();
-                    encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
-                    alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                    hooks.tx_proc.scheduled_txs.push(encoded);
+                        u64::MAX, // pass max time so it's always considered valid
+                    ) {
+                        let _ = retryable.increment_num_tries();
+
+                        if let Ok(retry_tx) = retryable.make_tx(
+                            U256::from(self.arb_ctx.chain_id),
+                            0, // nonce = 0 for first auto-redeem
+                            effective_base_fee,
+                            user_gas,
+                            ticket_id,
+                            info.fee_refund_addr,
+                            fees.available_refund,
+                            fees.submission_fee,
+                        ) {
+                            if let Some(hooks) = self.arb_hooks.as_mut() {
+                                let mut encoded = Vec::new();
+                                encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                                alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                                hooks.tx_proc.scheduled_txs.push(encoded);
+                            }
+                        }
+                    }
                 }
             }
         } else if !fees.gas_cost_refund.is_zero() {
