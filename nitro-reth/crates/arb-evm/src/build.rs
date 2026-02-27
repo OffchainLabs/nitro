@@ -1,11 +1,9 @@
-use core::cell::Cell;
-
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_eips::eip2718::Typed2718;
 use alloy_evm::block::{
     BlockExecutionError, BlockExecutionResult, BlockExecutor, BlockExecutorFactory,
-    BlockExecutorFor, CommitChanges, ExecutableTx, OnStateHook,
+    BlockExecutorFor, ExecutableTx, OnStateHook,
 };
 use alloy_evm::RecoveredTx;
 use alloy_evm::eth::EthTxResult;
@@ -15,16 +13,16 @@ use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
-use reth_evm::TransactionEnv;
+use arb_chainspec;
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
 use arbos::internal_tx::{self, InternalTxContext};
-use arb_primitives::multigas::MultiGas;
-use arb_primitives::tx_types::ArbTxType;
-use arb_chainspec;
 use arbos::l1_pricing;
 use arbos::tx_processor::{EndTxFeeDistribution, compute_poster_gas};
 use arbos::util::tx_type_has_poster_costs;
+use arb_primitives::multigas::MultiGas;
+use arb_primitives::tx_types::ArbTxType;
+use reth_evm::TransactionEnv;
 use revm::context::result::ExecutionResult;
 use revm::database::State;
 use revm::inspector::Inspector;
@@ -83,9 +81,6 @@ where
         DB: Database + 'a,
         I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
     {
-        // Capture header-derived fields from the Eth context before passing
-        // it to the inner executor. The rest is populated from state in
-        // apply_pre_execution_changes.
         let arb_ctx = ArbBlockExecutionCtx {
             parent_hash: ctx.parent_hash,
             parent_beacon_block_root: ctx.parent_beacon_block_root,
@@ -96,16 +91,31 @@ where
             inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
             arb_hooks: None,
             arb_ctx,
+            pending_tx: None,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Per-transaction state carried between execute and commit
+// ---------------------------------------------------------------------------
+
+/// Captured per-transaction state for fee distribution in `commit_transaction`.
+struct PendingArbTx {
+    sender: Address,
+    tx_gas_limit: u64,
+    arb_tx_type: Option<ArbTxType>,
+    has_poster_costs: bool,
+    poster_gas: u64,
+    calldata_units: u64,
 }
 
 /// Arbitrum block executor wrapping `EthBlockExecutor`.
 ///
 /// Adds ArbOS-specific pre/post execution logic:
 /// - Loads ArbOS state at block start (version, fee accounts)
-/// - Calls ArbOS hooks for gas charging on each transaction
-/// - Skips block rewards (Arbitrum has no mining rewards)
+/// - Adjusts gas accounting for L1 poster costs
+/// - Distributes fees to network/infra/poster accounts after each tx
 pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Inner Ethereum block executor.
     pub inner: EthBlockExecutor<'a, Evm, Spec, R>,
@@ -113,6 +123,8 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub arb_hooks: Option<DefaultArbOsHooks>,
     /// Arbitrum-specific block context.
     pub arb_ctx: ArbBlockExecutionCtx,
+    /// Per-tx state between execute and commit.
+    pending_tx: Option<PendingArbTx>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -219,7 +231,6 @@ where
         // Load ArbOS state parameters from the EVM database.
         // Block-start operations (pricing model update, retryable reaping, etc.)
         // are triggered by the startBlock internal tx, NOT here.
-        // We only commit multi-gas fees and read state parameters.
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
@@ -241,7 +252,7 @@ where
             basefee = %self.arb_ctx.basefee,
             arbos_version = self.arb_ctx.arbos_version,
             has_hooks = self.arb_hooks.is_some(),
-            "starting arbitrum block execution"
+            "starting block execution"
         );
 
         Ok(())
@@ -251,18 +262,6 @@ where
         &mut self,
         tx: impl ExecutableTx<Self>,
     ) -> Result<Self::Result, BlockExecutionError> {
-        self.inner.execute_transaction_without_commit(tx)
-    }
-
-    fn commit_transaction(&mut self, output: Self::Result) -> Result<u64, BlockExecutionError> {
-        self.inner.commit_transaction(output)
-    }
-
-    fn execute_transaction_with_commit_condition(
-        &mut self,
-        tx: impl ExecutableTx<Self>,
-        f: impl FnOnce(&ExecutionResult<<Self::Evm as Evm>::HaltReason>) -> CommitChanges,
-    ) -> Result<Option<u64>, BlockExecutionError> {
         // Decompose the transaction to extract sender, type, and gas limit.
         let (tx_env, recovered) = tx.into_parts();
         let sender = *recovered.signer();
@@ -275,8 +274,7 @@ where
         let is_arb_deposit = arb_tx_type == Some(ArbTxType::ArbitrumDepositTx);
         let has_poster_costs = tx_type_has_poster_costs(tx_type_raw);
 
-        // Reset per-tx processor state. Go creates a fresh TxProcessor per tx;
-        // we reset the mutable fields that accumulate across transactions.
+        // Reset per-tx processor state.
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
@@ -288,17 +286,12 @@ where
 
         // --- Pre-execution: apply special tx type state changes ---
 
-        // Internal txs: startBlock triggers block-start operations (pricing model
-        // update, retryable reaping, upgrade checks); batch posting reports
-        // update L1 pricing from batch poster spending.
         if is_arb_internal {
             let tx_data = recovered.tx().input().to_vec();
             if tx_data.len() >= 4 {
                 let selector: [u8; 4] = tx_data[0..4].try_into().unwrap();
                 let is_start_block = selector == internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID;
 
-                // Extract l1_base_fee and time_passed from startBlock data
-                // before dispatching, so we can update context afterwards.
                 if is_start_block {
                     if let Ok(start_data) = internal_tx::decode_start_block_data(&tx_data) {
                         self.arb_ctx.l1_base_fee = start_data.l1_base_fee;
@@ -333,8 +326,6 @@ where
                         );
                     }
 
-                    // After startBlock, re-read updated state params since the
-                    // pricing model update may have changed base fees.
                     if is_start_block {
                         self.load_state_params(&arb_state);
                     }
@@ -343,7 +334,6 @@ where
         }
 
         // Deposit txs mint ETH to the sender before EVM execution.
-        // The EVM then transfers value from sender to recipient naturally.
         if is_arb_deposit {
             let value = recovered.tx().value();
             if !value.is_zero() {
@@ -358,7 +348,7 @@ where
         let mut compute_hold_gas = 0u64;
         let calldata_units = if has_poster_costs {
             let tx_bytes = recovered.tx().encoded_2718();
-            let (poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
+            let (_poster_cost, units) = l1_pricing::compute_poster_cost_standalone(
                 &tx_bytes,
                 self.arb_ctx.coinbase,
                 self.arb_ctx.l1_price_per_unit,
@@ -368,13 +358,11 @@ where
             if let Some(hooks) = self.arb_hooks.as_mut() {
                 let base_fee = self.arb_ctx.basefee;
                 hooks.tx_proc.poster_gas =
-                    compute_poster_gas(poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
+                    compute_poster_gas(_poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
                 poster_gas = hooks.tx_proc.poster_gas;
 
-                // Compute gas held to cap computation per tx.
-                // Estimate intrinsic gas for the hold calculation.
                 let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx());
                 let gas_after_intrinsic =
                     tx_gas_limit.saturating_sub(intrinsic_estimate);
@@ -398,12 +386,7 @@ where
             0
         };
 
-        // --- Adjust gas limit for EVM execution ---
-        //
-        // Reduce the gas the EVM sees by poster_gas (L1 data cost expressed
-        // as L2 gas) and compute_hold_gas (excess gas held to enforce the
-        // per-block/per-tx gas limit). Both are accounted for in fee
-        // distribution after execution.
+        // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         let mut tx_env = tx_env;
         let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
         if gas_deduction > 0 {
@@ -413,78 +396,82 @@ where
 
         // --- Execute via inner EVM executor ---
 
-        let captured_gas_used = Cell::new(0u64);
-        let captured_success = Cell::new(false);
+        let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
 
-        let result = self.inner.execute_transaction_with_commit_condition(
-            (tx_env, recovered),
-            |exec_result| {
-                let (used, success) = match exec_result {
-                    ExecutionResult::Success { gas_used, .. } => (*gas_used, true),
-                    ExecutionResult::Revert { gas_used, .. } => (*gas_used, false),
-                    ExecutionResult::Halt { gas_used, .. } => (*gas_used, false),
-                };
-                captured_gas_used.set(used);
-                captured_success.set(success);
-                f(exec_result)
-            },
-        )?;
+        // Adjust gas_used in the result to include poster_gas.
+        // The receipt builder will see this adjusted value, producing correct
+        // cumulative gas and per-tx gas_used in receipts.
+        if poster_gas > 0 {
+            adjust_result_gas_used(&mut output.result.result, poster_gas);
+        }
+
+        // Store per-tx state for fee distribution in commit_transaction.
+        self.pending_tx = Some(PendingArbTx {
+            sender,
+            tx_gas_limit,
+            arb_tx_type,
+            has_poster_costs,
+            poster_gas,
+            calldata_units,
+        });
+
+        Ok(output)
+    }
+
+    fn commit_transaction(&mut self, output: Self::Result) -> Result<u64, BlockExecutionError> {
+        // Extract info needed for fee distribution before the output is consumed.
+        let pending = self.pending_tx.take();
+        let gas_used_total = output.result.result.gas_used();
+        let success = matches!(&output.result.result, ExecutionResult::Success { .. });
+
+        // Inner executor builds receipt with the adjusted gas_used and commits state.
+        let gas_used = self.inner.commit_transaction(output)?;
 
         // --- Post-execution: fee distribution (user txs only) ---
-        //
-        // The EVM's gas_used doesn't include poster_gas (we subtracted it
-        // from the gas limit). Add poster_gas back for correct total gas_used.
-        // compute_hold_gas is NOT consumed — it's returned to the user.
+        if let Some(pending) = pending {
+            if pending.has_poster_costs {
+                let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
 
-        if has_poster_costs {
-            let fee_dist = if result.is_some() {
-                let base_fee = self.arb_ctx.basefee;
-                let evm_gas_used = captured_gas_used.get();
-                let gas_used = evm_gas_used.saturating_add(poster_gas);
-                let gas_left = tx_gas_limit.saturating_sub(gas_used);
-
-                self.arb_hooks.as_ref().map(|hooks| {
+                let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
                     hooks.compute_end_tx_fees(&EndTxContext {
-                        sender,
+                        sender: pending.sender,
                         gas_left,
-                        gas_used,
-                        gas_price: base_fee,
-                        base_fee,
-                        tx_type: arb_tx_type
+                        gas_used: gas_used_total,
+                        gas_price: self.arb_ctx.basefee,
+                        base_fee: self.arb_ctx.basefee,
+                        tx_type: pending.arb_tx_type
                             .unwrap_or(ArbTxType::ArbitrumLegacyTx),
-                        success: captured_success.get(),
-                        refund_to: sender,
+                        success,
+                        refund_to: pending.sender,
                     })
-                })
-            } else {
-                None
-            };
+                });
 
-            if let Some(ref dist) = fee_dist {
-                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                apply_fee_distribution(db, dist, None);
+                if let Some(ref dist) = fee_dist {
+                    let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                    apply_fee_distribution(db, dist, None);
 
-                let state_ptr: *mut State<DB> = db as *mut State<DB>;
-                if let Ok(arb_state) =
-                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                {
-                    let _ = arb_state.l2_pricing_state.grow_backlog(
-                        dist.compute_gas_for_backlog,
-                        MultiGas::default(),
-                    );
-                    if !dist.l1_fees_to_add.is_zero() {
+                    let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                    if let Ok(arb_state) =
+                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                    {
+                        let _ = arb_state.l2_pricing_state.grow_backlog(
+                            dist.compute_gas_for_backlog,
+                            MultiGas::default(),
+                        );
+                        if !dist.l1_fees_to_add.is_zero() {
+                            let _ = arb_state
+                                .l1_pricing_state
+                                .add_to_l1_fees_available(dist.l1_fees_to_add);
+                        }
                         let _ = arb_state
                             .l1_pricing_state
-                            .add_to_l1_fees_available(dist.l1_fees_to_add);
+                            .add_to_units_since_update(pending.calldata_units);
                     }
-                    let _ = arb_state
-                        .l1_pricing_state
-                        .add_to_units_since_update(calldata_units);
                 }
             }
         }
 
-        Ok(result)
+        Ok(gas_used)
     }
 
     fn finish(
@@ -511,13 +498,22 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Fee distribution helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
-/// Mint balance to an address in the EVM state.
+/// Adjust gas_used in an `ExecutionResult` by adding extra gas.
 ///
-/// This is Arbitrum's mechanism for crediting fee accounts without
-/// a corresponding debit (ETH is minted into the L2).
+/// Used to account for poster gas (L1 data cost) which is deducted before
+/// EVM execution but must be reflected in the receipt's gas_used.
+fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
+    match result {
+        ExecutionResult::Success { gas_used, .. } => *gas_used += extra_gas,
+        ExecutionResult::Revert { gas_used, .. } => *gas_used += extra_gas,
+        ExecutionResult::Halt { gas_used, .. } => *gas_used += extra_gas,
+    }
+}
+
+/// Mint balance to an address in the EVM state.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() || address == Address::ZERO {
         return;
@@ -528,10 +524,6 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 }
 
 /// Apply a computed fee distribution to the EVM state.
-///
-/// Mints ETH to the network fee account, infrastructure fee account,
-/// and poster fee destination (L1 pricer funds pool). Also updates
-/// L1 fees available in L1 pricing state when applicable.
 fn apply_fee_distribution<DB: Database>(
     state: &mut State<DB>,
     dist: &EndTxFeeDistribution,
@@ -541,7 +533,6 @@ fn apply_fee_distribution<DB: Database>(
     mint_balance(state, dist.infra_fee_account, dist.infra_fee_amount);
     mint_balance(state, dist.poster_fee_destination, dist.poster_fee_amount);
 
-    // Update L1 fees available for the pricing model.
     if !dist.l1_fees_to_add.is_zero() {
         if let Some(l1_state) = l1_pricing {
             let _ = l1_state.add_to_l1_fees_available(dist.l1_fees_to_add);
@@ -561,9 +552,6 @@ fn apply_fee_distribution<DB: Database>(
 }
 
 /// Estimate intrinsic gas for a transaction.
-///
-/// Used to compute compute_hold_gas before passing the tx to the EVM.
-/// Matches the standard Ethereum intrinsic gas calculation.
 fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
     const TX_GAS: u64 = 21_000;
     const TX_CREATE_GAS: u64 = 32_000;
