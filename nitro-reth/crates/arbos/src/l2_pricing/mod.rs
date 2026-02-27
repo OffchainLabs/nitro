@@ -32,9 +32,9 @@ const MULTI_GAS_CONSTRAINTS_KEY: &[u8] = &[1];
 const MULTI_GAS_BASE_FEES_KEY: &[u8] = &[2];
 
 // Constants.
-pub const GETH_BLOCK_GAS_LIMIT: u64 = 1 << 63;
-pub const GAS_CONSTRAINTS_MAX_NUM: u64 = 42;
-pub const MAX_PRICING_EXPONENT_BIPS: u64 = 63000;
+pub const GETH_BLOCK_GAS_LIMIT: u64 = 1 << 50;
+pub const GAS_CONSTRAINTS_MAX_NUM: u64 = 20;
+pub const MAX_PRICING_EXPONENT_BIPS: u64 = 85_000;
 
 // Initial values.
 pub const INITIAL_SPEED_LIMIT_PER_SECOND_V0: u64 = 1_000_000;
