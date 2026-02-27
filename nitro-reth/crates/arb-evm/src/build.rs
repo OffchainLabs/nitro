@@ -304,10 +304,22 @@ where
         tx: impl ExecutableTx<Self>,
         f: impl FnOnce(&ExecutionResult<<Self::Evm as Evm>::HaltReason>) -> CommitChanges,
     ) -> Result<Option<u64>, BlockExecutionError> {
-        // Decompose the transaction to extract sender and type before execution.
+        // Decompose the transaction to extract sender, type, and gas limit.
         let (tx_env, recovered) = tx.into_parts();
         let sender = *recovered.signer();
         let tx_type_raw = recovered.tx().ty();
+        let tx_gas_limit = recovered.tx().gas_limit();
+
+        // Reset per-tx processor state. Go creates a fresh TxProcessor per tx;
+        // we reset the mutable fields that accumulate across transactions.
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            hooks.tx_proc.poster_fee = U256::ZERO;
+            hooks.tx_proc.poster_gas = 0;
+            hooks.tx_proc.compute_hold_gas = 0;
+            hooks.tx_proc.current_retryable = None;
+            hooks.tx_proc.current_refund_to = None;
+            hooks.tx_proc.scheduled_txs.clear();
+        }
 
         // Pre-compute poster costs for correct fee distribution.
         // Encode the tx to compute brotli-compressed L1 data cost.
@@ -353,16 +365,17 @@ where
         )?;
 
         // Post-execution: compute fee distribution.
-        let fee_dist = if let Some(committed_gas) = result {
+        let fee_dist = if result.is_some() {
             let base_fee = self.arb_ctx.basefee;
             let gas_used = captured_gas_used.get();
+            let gas_left = tx_gas_limit.saturating_sub(gas_used);
             let arb_tx_type = arb_primitives::tx_types::ArbTxType::from_u8(tx_type_raw)
                 .unwrap_or(arb_primitives::tx_types::ArbTxType::ArbitrumLegacyTx);
 
             self.arb_hooks.as_ref().map(|hooks| {
                 hooks.compute_end_tx_fees(&EndTxContext {
                     sender,
-                    gas_left: committed_gas.saturating_sub(gas_used),
+                    gas_left,
                     gas_used,
                     gas_price: base_fee,
                     base_fee,
