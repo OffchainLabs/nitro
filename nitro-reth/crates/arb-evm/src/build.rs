@@ -538,6 +538,16 @@ where
         let is_retry_tx = arb_tx_type == Some(ArbTxType::ArbitrumRetryTx);
         let has_poster_costs = tx_type_has_poster_costs(tx_type_raw);
 
+        // Block gas rate limit: reject user txs when block gas budget is
+        // exhausted. Internal, deposit, and submit retryable txs always proceed
+        // (they are block-critical or come from the delayed inbox).
+        let is_user_tx = !is_arb_internal && !is_arb_deposit
+            && !is_submit_retryable && !is_retry_tx;
+        const TX_GAS_MIN: u64 = 21_000;
+        if is_user_tx && self.block_gas_left < TX_GAS_MIN {
+            return Err(BlockExecutionError::msg("block gas limit reached"));
+        }
+
         // Reset per-tx processor state.
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
@@ -884,6 +894,15 @@ where
         } else {
             0
         };
+
+        // ArbOS < 50: reject user txs whose compute gas exceeds block gas left.
+        // ArbOS >= 50 uses per-tx gas limit clamping (compute_hold_gas) instead.
+        if is_user_tx && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+            let compute_gas = tx_gas_limit.saturating_sub(poster_gas);
+            if compute_gas > self.block_gas_left {
+                return Err(BlockExecutionError::msg("block gas limit reached"));
+            }
+        }
 
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
         let mut tx_env = tx_env;
