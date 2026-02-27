@@ -45,9 +45,13 @@ pub const INITIAL_EQUILIBRATION_UNITS_V6: u64 = 60 * 16 * 100_000;
 pub const INITIAL_PER_BATCH_GAS_COST_V6: i64 = 100_000;
 pub const INITIAL_PER_BATCH_GAS_COST_V12: i64 = 210_000;
 
+// EIP-2028 gas cost per non-zero byte of calldata.
+pub const TX_DATA_NON_ZERO_GAS_EIP2028: u64 = 16;
+
 // Estimation padding constants.
-const ESTIMATION_PADDING_UNITS: u64 = 16 * 16; // TX_DATA_NONZERO_GAS_EIP2028 * 16
-const ESTIMATION_PADDING_BASIS_POINTS: u64 = 100;
+pub const ESTIMATION_PADDING_UNITS: u64 = TX_DATA_NON_ZERO_GAS_EIP2028 * 16;
+pub const ESTIMATION_PADDING_BASIS_POINTS: u64 = 100;
+const ONE_IN_BIPS: u64 = 10000;
 
 /// L1 pricing state manages the cost model for L1 data posting.
 pub struct L1PricingState<D> {
@@ -297,8 +301,51 @@ impl<D: Database> L1PricingState<D> {
         }
     }
 
-    fn get_poster_units_without_cache(&self, tx_bytes: &[u8]) -> u64 {
-        byte_count_after_brotli_level(tx_bytes, 0)
+    /// Compute poster cost and units for a transaction on-chain.
+    ///
+    /// Returns `(l1_fee, units)` where `l1_fee = price_per_unit * units`.
+    pub fn compute_poster_cost(
+        &self,
+        poster: Address,
+        tx_bytes: &[u8],
+        brotli_compression_level: u64,
+    ) -> Result<(U256, u64), ()> {
+        if poster != BATCH_POSTER_ADDRESS {
+            return Ok((U256::ZERO, 0));
+        }
+        let units = self.get_poster_units_without_cache(tx_bytes, brotli_compression_level);
+        let price = self.price_per_unit()?;
+        Ok((price.saturating_mul(U256::from(units)), units))
+    }
+
+    /// Compute poster data cost for gas estimation (with padding).
+    ///
+    /// Used when we don't have an actual signed transaction, e.g. during
+    /// `eth_estimateGas`. Applies padding to account for tx encoding overhead.
+    pub fn poster_data_cost_for_estimation(
+        &self,
+        tx_bytes: &[u8],
+        brotli_compression_level: u64,
+    ) -> Result<(U256, u64), ()> {
+        let raw_units = self.get_poster_units_without_cache(tx_bytes, brotli_compression_level);
+        let padded = (raw_units.saturating_add(ESTIMATION_PADDING_UNITS))
+            .saturating_mul(ONE_IN_BIPS + ESTIMATION_PADDING_BASIS_POINTS)
+            / ONE_IN_BIPS;
+        let price = self.price_per_unit()?;
+        Ok((price.saturating_mul(U256::from(padded)), padded))
+    }
+
+    /// Compute the L1 calldata units for a transaction.
+    ///
+    /// Compresses the tx bytes with brotli and multiplies by the EIP-2028
+    /// non-zero gas cost (16) to get the unit count.
+    pub fn get_poster_units_without_cache(
+        &self,
+        tx_bytes: &[u8],
+        brotli_compression_level: u64,
+    ) -> u64 {
+        let l1_bytes = byte_count_after_brotli_level(tx_bytes, brotli_compression_level);
+        TX_DATA_NON_ZERO_GAS_EIP2028.saturating_mul(l1_bytes)
     }
 
     /// Update pricing based on a batch poster spending report.
@@ -524,9 +571,24 @@ fn signed_add(a_mag: U256, a_pos: bool, b_mag: U256, b_pos: bool) -> (U256, bool
     }
 }
 
-/// Estimate brotli-compressed size at a given compression level.
-fn byte_count_after_brotli_level(data: &[u8], _level: u64) -> u64 {
-    // Estimate: compressed size is roughly the original size
-    // In production this would use actual brotli compression
-    data.len() as u64
+/// Computes the brotli-compressed size at a given compression level.
+fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
+    let level = level.min(11) as u32;
+    let mut output = Vec::new();
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: level as i32,
+        ..Default::default()
+    };
+    if brotli::enc::BrotliCompress(
+        &mut std::io::Cursor::new(data),
+        &mut output,
+        &params,
+    )
+    .is_ok()
+    {
+        output.len() as u64
+    } else {
+        // Fallback: return uncompressed size if compression fails
+        data.len() as u64
+    }
 }
