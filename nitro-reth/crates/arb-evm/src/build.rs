@@ -152,6 +152,9 @@ struct PendingArbTx {
     evm_gas_used: u64,
     /// Multi-dimensional gas charged during gas charging (L1 calldata component).
     charged_multi_gas: MultiGas,
+    /// True when the tx's effective gas price is non-zero. Go skips backlog
+    /// updates when gas price is zero (test/estimation scenarios).
+    gas_price_positive: bool,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
 }
@@ -463,6 +466,7 @@ where
             } else {
                 MultiGas::default()
             },
+            gas_price_positive: true,
             retry_context: None,
         });
 
@@ -683,6 +687,7 @@ where
                 evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
+                gas_price_positive: true,
                 retry_context: None,
             });
 
@@ -761,6 +766,7 @@ where
                 evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
+                gas_price_positive: true,
                 retry_context: None,
             });
 
@@ -851,6 +857,7 @@ where
                                 evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
+                                gas_price_positive: true,
                                 retry_context: None,
                             });
                             let err_msg = format!(
@@ -883,6 +890,7 @@ where
                                 evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
+                                gas_price_positive: true,
                                 retry_context: None,
                             });
                             return Ok(EthTxResult {
@@ -1010,6 +1018,7 @@ where
                             evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
+                            gas_price_positive: true,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1043,6 +1052,7 @@ where
                             evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
+                            gas_price_positive: true,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1110,6 +1120,7 @@ where
             evm_gas_used,
             calldata_units,
             charged_multi_gas,
+            gas_price_positive: true,
             retry_context,
         });
 
@@ -1233,14 +1244,17 @@ where
                     }
 
                     // Grow gas backlog with the actual multi-gas used.
-                    // SAFETY: state_ptr is valid for the lifetime of this block.
-                    if let Ok(arb_state) =
-                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
-                    {
-                        let _ = arb_state.l2_pricing_state.grow_backlog(
-                            result.compute_gas_for_backlog,
-                            pending.charged_multi_gas,
-                        );
+                    // Go skips this when gas price is zero (test scenarios).
+                    if pending.gas_price_positive {
+                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                        if let Ok(arb_state) =
+                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                        {
+                            let _ = arb_state.l2_pricing_state.grow_backlog(
+                                result.compute_gas_for_backlog,
+                                pending.charged_multi_gas,
+                            );
+                        }
                     }
                 }
             } else if pending.has_poster_costs {
@@ -1303,10 +1317,13 @@ where
                     if let Ok(arb_state) =
                         ArbosState::open(state_ptr, SystemBurner::new(None, false))
                     {
-                        let _ = arb_state.l2_pricing_state.grow_backlog(
-                            dist.compute_gas_for_backlog,
-                            used_multi_gas,
-                        );
+                        // Go skips backlog update when gas price is zero.
+                        if pending.gas_price_positive {
+                            let _ = arb_state.l2_pricing_state.grow_backlog(
+                                dist.compute_gas_for_backlog,
+                                used_multi_gas,
+                            );
+                        }
                         if !dist.l1_fees_to_add.is_zero() {
                             let _ = arb_state
                                 .l1_pricing_state
