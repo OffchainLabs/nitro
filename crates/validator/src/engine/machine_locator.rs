@@ -247,7 +247,8 @@ mod tests {
 
             for _ in 0..root_count {
                 let random_module_root = gen_random_module_root();
-                let root_meta = get_or_create_root_path(&machines_dir, &random_module_root.to_string());
+                let root_meta =
+                    get_or_create_root_path(&machines_dir, &random_module_root.to_string());
 
                 root_metas.push(root_meta);
             }
