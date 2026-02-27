@@ -112,6 +112,43 @@ impl TxProcessor {
     }
 
     // -----------------------------------------------------------------
+    // Reverted Tx Hook
+    // -----------------------------------------------------------------
+
+    /// Check for pre-recorded reverted or filtered transactions.
+    ///
+    /// Returns an action describing how the caller should handle this tx
+    /// before normal execution. The caller should:
+    /// - `None`: proceed with normal execution
+    /// - `PreRecordedRevert`: increment sender nonce, deduct `gas_to_consume`
+    ///   from gas remaining, and return execution-reverted error
+    /// - `FilteredTx`: increment sender nonce, consume ALL remaining gas,
+    ///   and return filtered-tx error
+    pub fn reverted_tx_hook(
+        &self,
+        tx_hash: Option<B256>,
+        pre_recorded_gas: Option<u64>,
+        is_filtered: bool,
+    ) -> RevertedTxAction {
+        let Some(_hash) = tx_hash else {
+            return RevertedTxAction::None;
+        };
+
+        if let Some(l2_gas_used) = pre_recorded_gas {
+            let adjusted_gas = l2_gas_used.saturating_sub(TX_GAS);
+            return RevertedTxAction::PreRecordedRevert {
+                gas_to_consume: adjusted_gas,
+            };
+        }
+
+        if is_filtered {
+            return RevertedTxAction::FilteredTx;
+        }
+
+        RevertedTxAction::None
+    }
+
+    // -----------------------------------------------------------------
     // Start Tx Hook helpers
     // -----------------------------------------------------------------
 
@@ -448,6 +485,19 @@ pub struct EndTxRetryableResult {
     pub should_delete_retryable: bool,
     pub should_return_value_to_escrow: bool,
     pub escrow_address: Address,
+}
+
+/// Action to take for a reverted/filtered transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevertedTxAction {
+    /// No special handling; proceed with normal execution.
+    None,
+    /// Pre-recorded revert: increment nonce, consume specific gas, return revert.
+    PreRecordedRevert {
+        gas_to_consume: u64,
+    },
+    /// Filtered transaction: increment nonce, consume all remaining gas.
+    FilteredTx,
 }
 
 /// Parameters for computing submit retryable fees.
