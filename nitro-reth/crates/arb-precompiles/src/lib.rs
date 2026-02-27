@@ -37,8 +37,9 @@ pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRES
 pub use arbretryabletx::{create_arbretryabletx_precompile, ARBRETRYABLETX_ADDRESS};
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
 pub use arbsys::{
-    create_arbsys_precompile, get_cached_l1_block_number, set_cached_l1_block_number,
-    store_arbsys_state, take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
+    create_arbsys_precompile, get_cached_l1_block_number, get_tx_is_aliased,
+    set_cached_l1_block_number, set_tx_is_aliased, store_arbsys_state, take_arbsys_state,
+    ArbSysMerkleState, ARBSYS_ADDRESS,
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};

@@ -1,6 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::Database;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -64,6 +65,9 @@ pub struct ArbSysMerkleState {
 
 thread_local! {
     static ARBSYS_STATE: RefCell<Option<ArbSysMerkleState>> = RefCell::new(None);
+    /// Set to `true` when the current transaction is an aliasing type
+    /// (unsigned, contract, or retryable L1→L2 message).
+    static TX_IS_ALIASED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 static L1_BLOCK_CACHE: Mutex<Option<HashMap<u64, u64>>> = Mutex::new(None);
@@ -76,6 +80,16 @@ pub fn store_arbsys_state(state: ArbSysMerkleState) {
 /// Take the stored ArbSys state (clears it).
 pub fn take_arbsys_state() -> Option<ArbSysMerkleState> {
     ARBSYS_STATE.with(|cell| cell.borrow_mut().take())
+}
+
+/// Mark the current transaction as an aliased L1→L2 type.
+pub fn set_tx_is_aliased(aliased: bool) {
+    TX_IS_ALIASED.with(|cell| *cell.borrow_mut() = aliased);
+}
+
+/// Check whether the current transaction uses address aliasing.
+pub fn get_tx_is_aliased() -> bool {
+    TX_IS_ALIASED.with(|cell| *cell.borrow())
 }
 
 /// Set the cached L1 block number for a given L2 block.
@@ -135,10 +149,33 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
 }
 
 fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // ArbBlockHash returns the block hash for a given block number.
-    // The actual block hash lookup requires state access; return zero for now.
-    let gas_cost = COPY_GAS.min(input.gas);
-    Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+    let data = input.data;
+    if data.len() < 4 + 32 {
+        return Err(PrecompileError::other("input too short"));
+    }
+
+    let requested: u64 = U256::from_be_slice(&data[4..36])
+        .try_into()
+        .unwrap_or(u64::MAX);
+    let current: u64 = input
+        .internals()
+        .block_number()
+        .try_into()
+        .unwrap_or(u64::MAX);
+
+    // Must be strictly less than current and within 256 blocks.
+    if requested >= current || requested + 256 < current {
+        return Err(PrecompileError::other("invalid block number"));
+    }
+
+    let hash = input
+        .internals_mut()
+        .db_mut()
+        .block_hash(requested)
+        .map_err(|e| PrecompileError::other(format!("block_hash: {e}")))?;
+
+    let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
+    Ok(PrecompileOutput::new(gas_cost, hash.0.to_vec().into()))
 }
 
 fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -181,11 +218,15 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
 }
 
 fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Check if the caller's address was aliased (L1 → L2 address translation).
-    // This is determined by the tx processor, not accessible here directly.
-    // Return false (0) as default.
+    // True if this is a top-level call AND the tx type uses address aliasing.
+    let is_top = input.caller == input.internals().tx_origin();
+    let aliased = is_top && get_tx_is_aliased();
+    let val = if aliased { U256::from(1) } else { U256::ZERO };
     let gas_cost = COPY_GAS.min(input.gas);
-    Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
+    Ok(PrecompileOutput::new(
+        gas_cost,
+        val.to_be_bytes::<32>().to_vec().into(),
+    ))
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
