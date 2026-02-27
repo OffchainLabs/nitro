@@ -16,7 +16,7 @@ mod arbsys;
 mod arbwasm;
 mod arbwasmcache;
 mod nodeinterface;
-mod storage_slot;
+pub mod storage_slot;
 
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};

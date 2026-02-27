@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 arb-primitives = { workspace = true }
+arb-precompiles = { workspace = true }
 arb-evm = { workspace = true }
 arb-payload = { workspace = true }
 alloy-consensus = { workspace = true }
@@ -26,7 +27,12 @@ reth-rpc-convert = { workspace = true }
 reth-rpc-eth-api = { workspace = true }
 reth-rpc-eth-types = { workspace = true }
 reth-rpc-server-types = { workspace = true }
+reth-tasks = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-transaction-pool = { workspace = true }
 jsonrpsee-types = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
 revm = { workspace = true }
 eyre = { workspace = true }
 serde = { workspace = true }

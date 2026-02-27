@@ -4,6 +4,7 @@
 //! to serve the `eth_` namespace with Arbitrum-specific transaction,
 //! receipt, and header types.
 
+pub mod api;
 pub mod builder;
 pub mod header;
 pub mod receipt;
@@ -11,7 +12,8 @@ pub mod response;
 pub mod transaction;
 pub mod types;
 
-pub use builder::{ArbEthApi, ArbEthApiBuilder, ArbRpcConvert};
+pub use api::ArbEthApi;
+pub use builder::{ArbEthApiBuilder, ArbRpcConvert};
 pub use header::ArbHeaderConverter;
 pub use receipt::ArbReceiptConverter;
 pub use response::ArbRpcTxConverter;

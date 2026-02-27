@@ -13,10 +13,11 @@ use reth_node_builder::{
 use reth_rpc_convert::{RpcConvert, RpcConverter, RpcTypes, SignableTxRequest};
 use reth_rpc_eth_api::{
     helpers::pending_block::BuildPendingEnv,
-    FromEvmError,
+    FromEvmError, FullEthApiServer,
 };
 use reth_rpc_eth_types::EthApiError;
 
+use crate::api::ArbEthApi;
 use crate::header::ArbHeaderConverter;
 use crate::receipt::ArbReceiptConverter;
 use crate::response::ArbRpcTxConverter;
@@ -32,9 +33,6 @@ pub type ArbRpcConvert<N> = RpcConverter<
     (),
     ArbRpcTxConverter,
 >;
-
-/// Type alias for the Arbitrum EthApi.
-pub type ArbEthApi<N> = reth_rpc::EthApi<N, ArbRpcConvert<N>>;
 
 /// Builder for the Arbitrum Eth API.
 #[derive(Debug)]
@@ -64,8 +62,9 @@ where
         Evm = N::Evm,
     >,
     EthApiError: FromEvmError<N::Evm>,
+    ArbEthApi<N, ArbRpcConvert<N>>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
 {
-    type EthApi = reth_rpc::EthApi<N, ArbRpcConvert<N>>;
+    type EthApi = ArbEthApi<N, ArbRpcConvert<N>>;
 
     async fn build_eth_api(self, ctx: EthApiCtx<'_, N>) -> eyre::Result<Self::EthApi> {
         let rpc_converter =
@@ -73,9 +72,11 @@ where
                 .with_header_converter(ArbHeaderConverter)
                 .with_rpc_tx_converter(ArbRpcTxConverter);
 
-        Ok(ctx
+        let inner = ctx
             .eth_api_builder()
             .with_rpc_converter(rpc_converter)
-            .build())
+            .build_inner();
+
+        Ok(ArbEthApi::new(inner))
     }
 }
