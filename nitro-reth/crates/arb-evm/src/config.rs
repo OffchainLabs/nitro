@@ -15,7 +15,9 @@ use reth_evm::{
     ConfigureEngineEvm, ConfigureEvm, EvmEnv, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor,
     NextBlockEnvAttributes,
 };
-use reth_evm_ethereum::{EthBlockAssembler, RethReceiptBuilder};
+use reth_evm_ethereum::RethReceiptBuilder;
+
+use crate::assembler::ArbBlockAssembler;
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
 use revm::context::{BlockEnv, CfgEnv};
@@ -34,7 +36,7 @@ use crate::evm::ArbEvmFactory;
 pub struct ArbEvmConfig<ChainSpec = reth_chainspec::ChainSpec> {
     pub executor_factory:
         ArbBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>,
-    pub block_assembler: EthBlockAssembler<ChainSpec>,
+    pub block_assembler: ArbBlockAssembler<ChainSpec>,
     chain_spec: Arc<ChainSpec>,
 }
 
@@ -51,7 +53,7 @@ where
                 chain_spec.clone(),
                 evm_factory,
             ),
-            block_assembler: EthBlockAssembler::new(chain_spec.clone()),
+            block_assembler: ArbBlockAssembler::new(chain_spec.clone()),
             chain_spec,
         }
     }
@@ -72,7 +74,7 @@ where
     type NextBlockEnvCtx = NextBlockEnvAttributes;
     type BlockExecutorFactory =
         ArbBlockExecutorFactory<RethReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>;
-    type BlockAssembler = EthBlockAssembler<ChainSpec>;
+    type BlockAssembler = ArbBlockAssembler<ChainSpec>;
 
     fn block_executor_factory(&self) -> &Self::BlockExecutorFactory {
         &self.executor_factory

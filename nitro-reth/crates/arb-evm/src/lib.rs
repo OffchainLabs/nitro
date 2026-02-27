@@ -1,5 +1,6 @@
 extern crate alloc;
 
+pub mod assembler;
 pub mod build;
 pub mod config;
 pub mod context;
@@ -8,6 +9,7 @@ pub mod executor;
 pub mod hooks;
 pub mod transaction;
 
+pub use assembler::ArbBlockAssembler;
 pub use config::ArbEvmConfig;
 pub use context::{
     ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData, RecentWasms,
