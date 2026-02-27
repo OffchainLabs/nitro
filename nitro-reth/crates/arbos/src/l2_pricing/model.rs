@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use arb_primitives::multigas::MultiGas;
+use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use revm::Database;
 
 use super::{L2PricingState, MAX_PRICING_EXPONENT_BIPS};
@@ -176,18 +176,25 @@ impl<D: Database> L2PricingState<D> {
     fn update_pricing_model_multi_constraints(&self, time_passed: u64) -> Result<(), ()> {
         self.update_multi_gas_constraints_backlogs(time_passed)?;
 
-        let exponents = self.calc_multi_gas_constraints_exponents()?;
-        let mut max_exponent: u64 = 0;
-        for &e in &exponents {
-            if e > max_exponent {
-                max_exponent = e;
+        let exponent_per_kind = self.calc_multi_gas_constraints_exponents()?;
+
+        // Compute base fee per resource kind, store as next-block fee,
+        // and track the maximum for the overall base fee.
+        let mut max_base_fee = self.min_base_fee_wei()?;
+        let fees = &self.multi_gas_base_fees;
+
+        for (i, &exp) in exponent_per_kind.iter().enumerate() {
+            let base_fee = self.calc_base_fee_from_exponent(exp)?;
+            if let Some(kind) = ResourceKind::from_u8(i as u8) {
+                let mgf = super::multi_gas_fees::open_multi_gas_fees(fees.clone());
+                mgf.set_next_block_fee(kind, base_fee)?;
+            }
+            if base_fee > max_base_fee {
+                max_base_fee = base_fee;
             }
         }
 
-        let base_fee = self.calc_base_fee_from_exponent(max_exponent)?;
-        self.set_base_fee_wei(base_fee)?;
-
-        self.commit_multi_gas_fees(&exponents)
+        self.set_base_fee_wei(max_base_fee)
     }
 
     fn update_legacy_backlog(&self, time_passed: u64) -> Result<(), ()> {
@@ -224,25 +231,57 @@ impl<D: Database> L2PricingState<D> {
         Ok(())
     }
 
-    /// Calculate exponent (in basis points) for each multi-gas constraint.
-    pub fn calc_multi_gas_constraints_exponents(&self) -> Result<Vec<u64>, ()> {
+    /// Calculate exponent (in basis points) per resource kind across all constraints.
+    ///
+    /// Aggregates weighted backlog contributions from each constraint into
+    /// a per-resource-kind exponent array.
+    pub fn calc_multi_gas_constraints_exponents(
+        &self,
+    ) -> Result<[u64; NUM_RESOURCE_KIND], ()> {
         let len = self.multi_gas_constraints_length()?;
-        let mut exponents = Vec::with_capacity(len as usize);
+        let mut exponent_per_kind = [0u64; NUM_RESOURCE_KIND];
+
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
             let target = c.target()?;
-            let window = c.adjustment_window()?;
             let backlog = c.backlog()?;
 
-            let exponent = if target == 0 || window == 0 {
-                0
-            } else {
-                let e = (backlog as u128 * 10000) / (window as u128 * target as u128);
-                e.min(MAX_PRICING_EXPONENT_BIPS as u128) as u64
-            };
-            exponents.push(exponent);
+            if backlog == 0 {
+                continue;
+            }
+
+            let window = c.adjustment_window()?;
+            let max_weight = c.max_weight()?;
+
+            if target == 0 || window == 0 || max_weight == 0 {
+                continue;
+            }
+
+            let divisor = (window as u128)
+                .saturating_mul(target as u128)
+                .saturating_mul(max_weight as u128);
+
+            if divisor == 0 {
+                continue;
+            }
+
+            for kind in ResourceKind::ALL {
+                let weight = c.resource_weight(kind)?;
+                if weight == 0 {
+                    continue;
+                }
+
+                let dividend = (backlog as u128)
+                    .saturating_mul(weight as u128)
+                    .saturating_mul(10000);
+
+                let exp = (dividend / divisor).min(MAX_PRICING_EXPONENT_BIPS as u128) as u64;
+                exponent_per_kind[kind as usize] =
+                    exponent_per_kind[kind as usize].saturating_add(exp);
+            }
         }
-        Ok(exponents)
+
+        Ok(exponent_per_kind)
     }
 
     /// Calculate base fee from an exponent in basis points.
@@ -263,29 +302,33 @@ impl<D: Database> L2PricingState<D> {
         }
     }
 
-    /// Get multi-gas base fee per resource kind.
+    /// Get multi-gas current-block base fee per resource kind.
     pub fn get_multi_gas_base_fee_per_resource(
         &self,
-        exponents: &[u64],
-    ) -> Result<Vec<U256>, ()> {
-        let min_base_fee = self.min_base_fee_wei()?;
-        let mut fees = Vec::with_capacity(exponents.len());
-        for &e in exponents {
-            if e == 0 {
-                fees.push(min_base_fee);
-            } else {
-                let exp_result = approx_exp_basis_points(e as u128);
-                let fee = (min_base_fee * U256::from(exp_result)) / U256::from(10000u64);
-                fees.push(if fee < min_base_fee { min_base_fee } else { fee });
-            }
+    ) -> Result<[U256; NUM_RESOURCE_KIND], ()> {
+        let base_fee = self.base_fee_wei()?;
+        let mgf = super::multi_gas_fees::open_multi_gas_fees(
+            self.multi_gas_base_fees.clone(),
+        );
+        let mut fees = [U256::ZERO; NUM_RESOURCE_KIND];
+        for kind in ResourceKind::ALL {
+            let fee = mgf.get_current_block_fee(kind)?;
+            fees[kind as usize] = if fee.is_zero() { base_fee } else { fee };
         }
         Ok(fees)
     }
 
-    /// Commit multi-gas fees for the next block.
-    pub fn commit_multi_gas_fees(&self, _exponents: &[u64]) -> Result<(), ()> {
-        // TODO: implement full multi-gas fee commitment logic
-        Ok(())
+    /// Rotate next-block multi-gas fees into current-block fees.
+    ///
+    /// Called at block start before executing transactions.
+    pub fn commit_multi_gas_fees(&self) -> Result<(), ()> {
+        if self.gas_model_to_use()? != GasModel::MultiGasConstraints {
+            return Ok(());
+        }
+        let mgf = super::multi_gas_fees::open_multi_gas_fees(
+            self.multi_gas_base_fees.clone(),
+        );
+        mgf.commit_next_to_current()
     }
 
     /// Calculate the cost for a backlog update operation.
