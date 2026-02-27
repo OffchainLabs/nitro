@@ -830,6 +830,21 @@ where
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
 
+                // Compute multi-dimensional cost for refund (ArbOS v60+).
+                let multi_dimensional_cost = if self.arb_ctx.arbos_version
+                    >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
+                {
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                        .ok()
+                        .and_then(|s| {
+                            s.l2_pricing_state
+                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                                .ok()
+                        })
+                } else {
+                    None
+                };
+
                 let result = self.arb_hooks.as_ref().map(|hooks| {
                     hooks.tx_proc.end_tx_retryable(
                         &EndTxRetryableParams {
@@ -847,6 +862,8 @@ where
                             infra_fee_account: self.arb_ctx.infra_fee_account,
                             min_base_fee: self.arb_ctx.min_base_fee,
                             arbos_version: self.arb_ctx.arbos_version,
+                            multi_dimensional_cost,
+                            block_base_fee: self.arb_ctx.basefee,
                         },
                         |addr, amount| {
                             // SAFETY: closures execute sequentially within end_tx_retryable.
@@ -909,6 +926,34 @@ where
                 if let Some(ref dist) = fee_dist {
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
+
+                    // Multi-dimensional gas refund: if the multi-gas cost is less
+                    // than the single-gas cost, refund the difference to the sender.
+                    if self.arb_ctx.arbos_version
+                        >= arb_chainspec::arbos_version::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
+                    {
+                        let total_cost = self.arb_ctx.basefee
+                            .saturating_mul(U256::from(gas_used_total));
+                        let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                        if let Ok(arb_state) =
+                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                        {
+                            if let Ok(multi_cost) = arb_state
+                                .l2_pricing_state
+                                .multi_dimensional_price_for_refund(pending.charged_multi_gas)
+                            {
+                                if total_cost > multi_cost {
+                                    let refund_amount = total_cost.saturating_sub(multi_cost);
+                                    transfer_balance(
+                                        db,
+                                        dist.network_fee_account,
+                                        pending.sender,
+                                        refund_amount,
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     // Remove poster gas from the L1Calldata dimension: the
                     // poster gas was added during gas charging, but for backlog

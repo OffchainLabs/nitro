@@ -404,6 +404,25 @@ impl TxProcessor {
             &mut transfer_fn,
         );
 
+        // Multi-dimensional gas refund: if multi-gas cost < single-gas cost,
+        // refund the difference. Only when effective_base_fee == block_base_fee
+        // (skip during retryable gas estimation).
+        if let Some(multi_cost) = params.multi_dimensional_cost {
+            let should_refund = single_gas_cost > multi_cost
+                && effective_base_fee == params.block_base_fee;
+            if should_refund {
+                let refund_amount = single_gas_cost.saturating_sub(multi_cost);
+                refund_with_pool(
+                    params.network_fee_account,
+                    refund_amount,
+                    &mut max_refund,
+                    params.refund_to,
+                    params.from,
+                    &mut transfer_fn,
+                );
+            }
+        }
+
         let escrow = retryables::retryable_escrow_address(params.ticket_id);
 
         EndTxRetryableResult {
@@ -498,6 +517,13 @@ pub struct EndTxRetryableParams {
     pub infra_fee_account: Address,
     pub min_base_fee: U256,
     pub arbos_version: u64,
+    /// Multi-dimensional cost if ArbOS >= v60 (None otherwise).
+    /// When set and less than single-gas cost, the difference is refunded.
+    pub multi_dimensional_cost: Option<U256>,
+    /// Block base fee for comparing with effective_base_fee.
+    /// Multi-gas refund is skipped if effective_base_fee != block_base_fee
+    /// (retryable estimation case).
+    pub block_base_fee: U256,
 }
 
 /// Result from end-tx retryable hook.
