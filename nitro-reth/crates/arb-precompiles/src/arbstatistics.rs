@@ -33,10 +33,9 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
 
-    // Returns (blockNumber, 0, 0, 0, 0, 0) — classic stats are stubbed.
-    // block_number is not directly available on PrecompileInput,
-    // so we return zero for all fields as a safe default.
-    let block_number = U256::ZERO;
+    // Returns (blockNumber, 0, 0, 0, 0, 0).
+    // The five Classic-era stats are also zero in Nitro (never populated post-migration).
+    let block_number = input.internals().block_number();
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&block_number.to_be_bytes::<32>());
     for _ in 0..5 {
