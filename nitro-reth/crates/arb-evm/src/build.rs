@@ -18,15 +18,20 @@ use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
 use arbos::internal_tx::{self, InternalTxContext};
 use arbos::l1_pricing;
-use arbos::tx_processor::{EndTxFeeDistribution, compute_poster_gas};
+use arbos::retryables;
+use arbos::tx_processor::{
+    EndTxFeeDistribution, EndTxRetryableParams, SubmitRetryableParams,
+    compute_poster_gas, compute_submit_retryable_fees,
+};
 use arbos::util::tx_type_has_poster_costs;
 use arb_primitives::multigas::MultiGas;
+use arb_primitives::signed_tx::ArbTransactionExt;
 use arb_primitives::tx_types::ArbTxType;
 use reth_evm::TransactionEnv;
 use revm::context::result::ExecutionResult;
 use revm::database::State;
 use revm::inspector::Inspector;
-use revm_database::DatabaseCommitExt;
+use revm_database::{DatabaseCommit, DatabaseCommitExt};
 
 use crate::context::ArbBlockExecutionCtx;
 use crate::executor::DefaultArbOsHooks;
@@ -52,7 +57,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
 impl<R, Spec, EvmF> BlockExecutorFactory for ArbBlockExecutorFactory<R, Spec, EvmF>
 where
     R: ReceiptBuilder<
-            Transaction: Transaction + Encodable2718,
+            Transaction: Transaction + Encodable2718 + ArbTransactionExt,
             Receipt: TxReceipt<Log = Log>,
         > + 'static,
     Spec: EthExecutorSpec + Clone + 'static,
@@ -109,6 +114,17 @@ struct PendingArbTx {
     has_poster_costs: bool,
     poster_gas: u64,
     calldata_units: u64,
+    /// Retry tx context for end-tx retryable processing.
+    retry_context: Option<PendingRetryContext>,
+}
+
+/// Context for a retry tx that needs end-tx processing after EVM execution.
+struct PendingRetryContext {
+    ticket_id: alloy_primitives::B256,
+    refund_to: Address,
+    gas_fee_cap: U256,
+    max_refund: U256,
+    submission_fee_refund: U256,
 }
 
 /// Arbitrum block executor wrapping `EthBlockExecutor`.
@@ -193,6 +209,189 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     }
 }
 
+impl<'db, DB, E, Spec, R> ArbBlockExecutor<'_, E, Spec, R>
+where
+    DB: Database + 'db,
+    E: Evm<
+        DB = &'db mut State<DB>,
+        Tx: FromRecoveredTx<R::Transaction>
+            + FromTxWithEncoded<R::Transaction>
+            + TransactionEnv,
+    >,
+    Spec: EthExecutorSpec,
+    R: ReceiptBuilder<
+        Transaction: Transaction + Encodable2718 + ArbTransactionExt,
+        Receipt: TxReceipt<Log = Log>,
+    >,
+    R::Transaction: TransactionEnvelope,
+{
+    /// Handle SubmitRetryableTx: no EVM execution, all state changes done directly.
+    ///
+    /// Returns a synthetic execution result (endTxNow=true in Go terms).
+    fn execute_submit_retryable(
+        &mut self,
+        ticket_id: alloy_primitives::B256,
+        tx_type: <R::Transaction as TransactionEnvelope>::TxType,
+        info: arb_primitives::SubmitRetryableInfo,
+    ) -> Result<EthTxResult<E::HaltReason, <R::Transaction as TransactionEnvelope>::TxType>, BlockExecutionError> {
+        let sender = info.from;
+
+        // 2. Compute fees (read block info before mutably borrowing db).
+        let block = self.inner.evm().block();
+        let current_time = revm::context::Block::timestamp(block).to::<u64>();
+        let effective_base_fee = self.arb_ctx.basefee;
+
+        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+
+        // 1. Mint deposit value to sender.
+        mint_balance(db, sender, info.deposit_value);
+
+        // Get sender balance after minting.
+        let _ = db.load_cache_account(sender);
+        let balance_after_mint = db
+            .cache
+            .accounts
+            .get(&sender)
+            .and_then(|a| a.account.as_ref())
+            .map(|a| a.info.balance)
+            .unwrap_or(U256::ZERO);
+
+        let params = SubmitRetryableParams {
+            ticket_id,
+            deposit_value: info.deposit_value,
+            retry_value: info.retry_value,
+            gas_fee_cap: info.gas_fee_cap,
+            gas: info.gas,
+            max_submission_fee: info.max_submission_fee,
+            retry_data_len: info.retry_data.len(),
+            l1_base_fee: info.l1_base_fee,
+            effective_base_fee,
+            current_time,
+            balance_after_mint,
+            infra_fee_account: self.arb_ctx.infra_fee_account,
+            min_base_fee: self.arb_ctx.min_base_fee,
+            arbos_version: self.arb_ctx.arbos_version,
+        };
+
+        let fees = compute_submit_retryable_fees(&params);
+
+        if let Some(ref err) = fees.error {
+            tracing::warn!(
+                target: "arb::executor",
+                ticket_id = %ticket_id,
+                error = %err,
+                "submit retryable fee validation failed"
+            );
+        }
+
+        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+
+        // 3. Transfer submission fee to network fee account.
+        if !fees.submission_fee.is_zero() {
+            transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.submission_fee);
+        }
+
+        // 4. Refund excess submission fee.
+        if !fees.submission_fee_refund.is_zero() {
+            transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
+        }
+
+        // 5. Move call value into escrow.
+        if !info.retry_value.is_zero() {
+            transfer_balance(db, sender, fees.escrow, info.retry_value);
+        }
+
+        // 6. Create retryable ticket.
+        let state_ptr: *mut State<DB> = db as *mut State<DB>;
+        if let Ok(arb_state) = ArbosState::open(state_ptr, SystemBurner::new(None, false)) {
+            let _ = arb_state.retryable_state.create_retryable(
+                ticket_id,
+                fees.timeout,
+                sender,
+                info.retry_to,
+                info.retry_value,
+                info.beneficiary,
+                &info.retry_data,
+            );
+        }
+
+        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+        let user_gas = info.gas;
+
+        // 7. Handle gas fees if user can pay.
+        if fees.can_pay_for_gas {
+            // Pay infra fee.
+            if !fees.infra_cost.is_zero() {
+                transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
+            }
+            // Pay network fee.
+            if !fees.network_cost.is_zero() {
+                transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.network_cost);
+            }
+            // Gas price refund.
+            if !fees.gas_price_refund.is_zero() {
+                transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
+            }
+
+            // Schedule auto-redeem: construct a synthetic RetryTx and store
+            // its encoded form in scheduled_txs for later execution.
+            if let Some(hooks) = self.arb_hooks.as_mut() {
+                let retry_tx = arb_alloy_consensus::tx::ArbRetryTx {
+                    chain_id: U256::from(self.arb_ctx.chain_id),
+                    nonce: 0,
+                    from: sender,
+                    gas_fee_cap: effective_base_fee,
+                    gas: user_gas,
+                    to: info.retry_to,
+                    value: info.retry_value,
+                    data: info.retry_data.into(),
+                    ticket_id,
+                    refund_to: info.fee_refund_addr,
+                    max_refund: fees.available_refund,
+                    submission_fee_refund: fees.submission_fee,
+                };
+                let mut encoded = Vec::new();
+                encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                hooks.tx_proc.scheduled_txs.push(encoded);
+            }
+        } else if !fees.gas_cost_refund.is_zero() {
+            // Can't pay for gas: refund gas cost from deposit.
+            transfer_balance(db, sender, info.fee_refund_addr, fees.gas_cost_refund);
+        }
+
+        // Store pending state for commit_transaction.
+        self.pending_tx = Some(PendingArbTx {
+            sender,
+            tx_gas_limit: user_gas,
+            arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
+            has_poster_costs: false, // No poster costs for submit retryable
+            poster_gas: 0,
+            calldata_units: 0,
+            retry_context: None,
+        });
+
+        // Construct synthetic execution result (endTxNow=true: success, gas = usergas).
+        let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
+        Ok(EthTxResult {
+            result: revm::context::result::ResultAndState {
+                result: ExecutionResult::Success {
+                    reason: revm::context::result::SuccessReason::Return,
+                    gas_used,
+                    gas_refunded: 0,
+                    output: revm::context::result::Output::Call(
+                        alloy_primitives::Bytes::copy_from_slice(ticket_id.as_slice()),
+                    ),
+                    logs: Vec::new(),
+                },
+                state: Default::default(),
+            },
+            blob_gas_used: 0,
+            tx_type,
+        })
+    }
+}
+
 impl<'db, DB, E, Spec, R> BlockExecutor for ArbBlockExecutor<'_, E, Spec, R>
 where
     DB: Database + 'db,
@@ -204,7 +403,7 @@ where
     >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
-        Transaction: Transaction + Encodable2718,
+        Transaction: Transaction + Encodable2718 + ArbTransactionExt,
         Receipt: TxReceipt<Log = Log>,
     >,
     R::Transaction: TransactionEnvelope,
@@ -283,6 +482,8 @@ where
         let arb_tx_type = ArbTxType::from_u8(tx_type_raw).ok();
         let is_arb_internal = arb_tx_type == Some(ArbTxType::ArbitrumInternalTx);
         let is_arb_deposit = arb_tx_type == Some(ArbTxType::ArbitrumDepositTx);
+        let is_submit_retryable = arb_tx_type == Some(ArbTxType::ArbitrumSubmitRetryableTx);
+        let is_retry_tx = arb_tx_type == Some(ArbTxType::ArbitrumRetryTx);
         let has_poster_costs = tx_type_has_poster_costs(tx_type_raw);
 
         // Reset per-tx processor state.
@@ -350,6 +551,74 @@ where
             if !value.is_zero() {
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 mint_balance(db, sender, value);
+            }
+        }
+
+        // --- SubmitRetryable: skip EVM, handle fees/escrow/ticket creation ---
+        if is_submit_retryable {
+            if let Some(info) = recovered.tx().submit_retryable_info() {
+                let ticket_id = recovered.tx().trie_hash();
+                let tx_type = recovered.tx().tx_type();
+                return self.execute_submit_retryable(ticket_id, tx_type, info);
+            }
+        }
+
+        // --- RetryTx pre-processing: escrow transfer and prepaid gas ---
+        let mut retry_context = None;
+        if is_retry_tx {
+            if let Some(info) = recovered.tx().retry_tx_info() {
+                let block = self.inner.evm().block();
+                let current_time = revm::context::Block::timestamp(block).to::<u64>();
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+
+                // Open the retryable ticket.
+                if let Ok(arb_state) =
+                    ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                {
+                    let retryable = arb_state
+                        .retryable_state
+                        .open_retryable(info.ticket_id, current_time);
+
+                    match retryable {
+                        Ok(Some(_)) => {
+                            // Transfer call value from escrow to sender.
+                            let escrow = retryables::retryable_escrow_address(info.ticket_id);
+                            let value = recovered.tx().value();
+                            if !value.is_zero() {
+                                transfer_balance(db, escrow, sender, value);
+                            }
+
+                            // Mint prepaid gas to sender.
+                            let prepaid = self.arb_ctx.basefee
+                                .saturating_mul(U256::from(tx_gas_limit));
+                            mint_balance(db, sender, prepaid);
+
+                            // Set retry context for end-tx processing.
+                            if let Some(hooks) = self.arb_hooks.as_mut() {
+                                hooks.tx_proc.prepare_retry_tx(
+                                    info.ticket_id,
+                                    info.refund_to,
+                                );
+                            }
+
+                            retry_context = Some(PendingRetryContext {
+                                ticket_id: info.ticket_id,
+                                refund_to: info.refund_to,
+                                gas_fee_cap: info.gas_fee_cap,
+                                max_refund: info.max_refund,
+                                submission_fee_refund: info.submission_fee_refund,
+                            });
+                        }
+                        _ => {
+                            tracing::warn!(
+                                target: "arb::executor",
+                                ticket_id = %info.ticket_id,
+                                "retryable ticket not found or expired"
+                            );
+                        }
+                    }
+                }
             }
         }
 
@@ -424,6 +693,7 @@ where
             has_poster_costs,
             poster_gas,
             calldata_units,
+            retry_context,
         });
 
         Ok(output)
@@ -438,9 +708,77 @@ where
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
 
-        // --- Post-execution: fee distribution (user txs only) ---
+        // --- Post-execution: fee distribution ---
         if let Some(pending) = pending {
-            if pending.has_poster_costs {
+            let is_retry = pending.retry_context.is_some();
+
+            if let Some(retry_ctx) = pending.retry_context {
+                // RetryTx end-of-tx: handle gas refunds, retryable cleanup.
+                let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
+
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+
+                let result = self.arb_hooks.as_ref().map(|hooks| {
+                    hooks.tx_proc.end_tx_retryable(
+                        &EndTxRetryableParams {
+                            gas_left,
+                            gas_used: gas_used_total,
+                            effective_base_fee: self.arb_ctx.basefee,
+                            from: pending.sender,
+                            refund_to: retry_ctx.refund_to,
+                            max_refund: retry_ctx.max_refund,
+                            submission_fee_refund: retry_ctx.submission_fee_refund,
+                            ticket_id: retry_ctx.ticket_id,
+                            value: U256::ZERO, // Already transferred in pre-exec
+                            success,
+                            network_fee_account: self.arb_ctx.network_fee_account,
+                            infra_fee_account: self.arb_ctx.infra_fee_account,
+                            min_base_fee: self.arb_ctx.min_base_fee,
+                            arbos_version: self.arb_ctx.arbos_version,
+                        },
+                        |addr, amount| {
+                            // SAFETY: closures execute sequentially within end_tx_retryable.
+                            unsafe { burn_balance(&mut *state_ptr, addr, amount) };
+                        },
+                        |from, to, amount| {
+                            // SAFETY: closures execute sequentially within end_tx_retryable.
+                            unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                            Ok(())
+                        },
+                    )
+                });
+
+                if let Some(ref result) = result {
+                    if result.should_delete_retryable {
+                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                        if let Ok(arb_state) =
+                            ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                        {
+                            let _ = arb_state.retryable_state.delete_retryable(
+                                retry_ctx.ticket_id,
+                                |from, to, amount| {
+                                    // SAFETY: called sequentially within delete_retryable.
+                                    unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                                    Ok(())
+                                },
+                            );
+                        }
+                    }
+
+                    // Grow gas backlog.
+                    // SAFETY: state_ptr is valid for the lifetime of this block.
+                    if let Ok(arb_state) =
+                        ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                    {
+                        let _ = arb_state.l2_pricing_state.grow_backlog(
+                            result.compute_gas_for_backlog,
+                            MultiGas::default(),
+                        );
+                    }
+                }
+            } else if pending.has_poster_costs {
+                // Normal tx: fee distribution.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
 
                 let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
@@ -482,7 +820,6 @@ where
             }
 
             // Block gas rate limiting: deduct compute gas from block budget.
-            // computeUsed = gasUsed - posterGas, with a floor of TX_GAS.
             const TX_GAS: u64 = 21_000;
             let data_gas = pending.poster_gas;
             let compute_used = if gas_used_total < data_gas {
@@ -492,6 +829,8 @@ where
                 if compute < TX_GAS { TX_GAS } else { compute }
             };
             self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
+
+            let _ = is_retry; // suppress unused warning
         }
 
         Ok(gas_used)
@@ -544,6 +883,33 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
     let _ = state.load_cache_account(address);
     let amount_u128: u128 = amount.try_into().unwrap_or(u128::MAX);
     let _ = state.increment_balances(core::iter::once((address, amount_u128)));
+}
+
+/// Burn (deduct) balance from an address in the EVM state.
+fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
+    if amount.is_zero() {
+        return;
+    }
+    if let Ok(Some(mut info)) = revm::Database::basic(state, address) {
+        info.balance = info.balance.saturating_sub(amount);
+        let mut account = revm_state::Account::from(info);
+        account.mark_touch();
+        state.commit_iter(&mut core::iter::once((address, account)));
+    }
+}
+
+/// Transfer balance between two addresses in the EVM state.
+fn transfer_balance<DB: Database>(
+    state: &mut State<DB>,
+    from: Address,
+    to: Address,
+    amount: U256,
+) {
+    if amount.is_zero() || from == to {
+        return;
+    }
+    burn_balance(state, from, amount);
+    mint_balance(state, to, amount);
 }
 
 /// Apply a computed fee distribution to the EVM state.

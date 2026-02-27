@@ -10,7 +10,9 @@ arb-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-storage = { workspace = true }
 arb-precompiles = { workspace = true }
+arb-alloy-consensus = { workspace = true }
 arbos = { workspace = true }
+alloy-rlp = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true }

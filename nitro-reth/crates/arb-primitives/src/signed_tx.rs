@@ -757,6 +757,88 @@ impl reth_codecs::Compact for ArbTransactionSigned {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Arbitrum transaction data extraction
+// ---------------------------------------------------------------------------
+
+/// Data extracted from a SubmitRetryable transaction for processing.
+#[derive(Debug, Clone)]
+pub struct SubmitRetryableInfo {
+    pub from: Address,
+    pub deposit_value: U256,
+    pub retry_value: U256,
+    pub gas_fee_cap: U256,
+    pub gas: u64,
+    pub retry_to: Option<Address>,
+    pub retry_data: Vec<u8>,
+    pub beneficiary: Address,
+    pub max_submission_fee: U256,
+    pub fee_refund_addr: Address,
+    pub l1_base_fee: U256,
+    pub request_id: B256,
+}
+
+/// Data extracted from a RetryTx transaction for processing.
+#[derive(Debug, Clone)]
+pub struct RetryTxInfo {
+    pub from: Address,
+    pub ticket_id: B256,
+    pub refund_to: Address,
+    pub gas_fee_cap: U256,
+    pub max_refund: U256,
+    pub submission_fee_refund: U256,
+}
+
+/// Trait for extracting Arbitrum-specific transaction data beyond the
+/// standard `Transaction` trait.
+pub trait ArbTransactionExt {
+    fn submit_retryable_info(&self) -> Option<SubmitRetryableInfo> {
+        None
+    }
+    fn retry_tx_info(&self) -> Option<RetryTxInfo> {
+        None
+    }
+}
+
+impl ArbTransactionExt for ArbTransactionSigned {
+    fn submit_retryable_info(&self) -> Option<SubmitRetryableInfo> {
+        match &self.transaction {
+            ArbTypedTransaction::SubmitRetryable(tx) => Some(SubmitRetryableInfo {
+                from: tx.from,
+                deposit_value: tx.deposit_value,
+                retry_value: tx.retry_value,
+                gas_fee_cap: tx.gas_fee_cap,
+                gas: tx.gas,
+                retry_to: tx.retry_to,
+                retry_data: tx.retry_data.to_vec(),
+                beneficiary: tx.beneficiary,
+                max_submission_fee: tx.max_submission_fee,
+                fee_refund_addr: tx.fee_refund_addr,
+                l1_base_fee: tx.l1_base_fee,
+                request_id: tx.request_id,
+            }),
+            _ => None,
+        }
+    }
+
+    fn retry_tx_info(&self) -> Option<RetryTxInfo> {
+        match &self.transaction {
+            ArbTypedTransaction::Retry(tx) => Some(RetryTxInfo {
+                from: tx.from,
+                ticket_id: tx.ticket_id,
+                refund_to: tx.refund_to,
+                gas_fee_cap: tx.gas_fee_cap,
+                max_refund: tx.max_refund,
+                submission_fee_refund: tx.submission_fee_refund,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Standard Ethereum transaction envelopes don't carry retryable data.
+impl<T> ArbTransactionExt for alloy_consensus::EthereumTxEnvelope<T> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
