@@ -17,8 +17,9 @@ use alloy_evm::{Database, Evm, EvmFactory};
 use alloy_primitives::{Address, Log, U256};
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
+use arb_primitives::multigas::MultiGas;
 use arbos::l1_pricing;
-use arbos::tx_processor::EndTxFeeDistribution;
+use arbos::tx_processor::{EndTxFeeDistribution, compute_poster_gas};
 use revm::context::result::ExecutionResult;
 use revm::database::State;
 use revm::inspector::Inspector;
@@ -282,6 +283,31 @@ where
         let sender = *recovered.signer();
         let tx_type_raw = recovered.tx().ty();
 
+        // Pre-compute poster costs for correct fee distribution.
+        // Encode the tx to compute brotli-compressed L1 data cost.
+        let tx_bytes = recovered.tx().encoded_2718();
+        let coinbase = self
+            .arb_hooks
+            .as_ref()
+            .map(|h| h.coinbase)
+            .unwrap_or(Address::ZERO);
+        let (poster_cost, calldata_units) = l1_pricing::compute_poster_cost_standalone(
+            &tx_bytes,
+            coinbase,
+            self.arb_ctx.l1_price_per_unit,
+            self.arb_ctx.brotli_compression_level,
+        );
+
+        // Set poster_gas and poster_fee on the TxProcessor so fee distribution
+        // correctly splits between poster and compute costs.
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            let base_fee = self.arb_ctx.basefee;
+            hooks.tx_proc.poster_gas =
+                compute_poster_gas(poster_cost, base_fee, false, self.arb_ctx.min_base_fee);
+            hooks.tx_proc.poster_fee =
+                base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
+        }
+
         // Capture execution result info for post-tx hooks.
         let captured_gas_used = Cell::new(0u64);
         let captured_success = Cell::new(false);
@@ -323,10 +349,29 @@ where
             None
         };
 
-        // Apply fee distribution to EVM state.
-        if let Some(dist) = fee_dist {
-            let db = self.inner.evm_mut().db_mut();
-            apply_fee_distribution(db, &dist, None);
+        // Apply fee distribution and update pricing state.
+        if let Some(ref dist) = fee_dist {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            apply_fee_distribution(db, dist, None);
+
+            // Update gas backlog and L1 pricing state.
+            let state_ptr: *mut State<DB> = db as *mut State<DB>;
+            if let Ok(arb_state) =
+                ArbosState::open(state_ptr, SystemBurner::new(None, false))
+            {
+                let _ = arb_state.l2_pricing_state.grow_backlog(
+                    dist.compute_gas_for_backlog,
+                    MultiGas::default(),
+                );
+                if !dist.l1_fees_to_add.is_zero() {
+                    let _ = arb_state
+                        .l1_pricing_state
+                        .add_to_l1_fees_available(dist.l1_fees_to_add);
+                }
+                let _ = arb_state
+                    .l1_pricing_state
+                    .add_to_units_since_update(calldata_units);
+            }
         }
 
         Ok(result)
