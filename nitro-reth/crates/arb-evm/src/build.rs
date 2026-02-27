@@ -2,10 +2,12 @@ use core::cell::Cell;
 
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::Encodable2718;
+use alloy_eips::eip2718::Typed2718;
 use alloy_evm::block::{
     BlockExecutionError, BlockExecutionResult, BlockExecutor, BlockExecutorFactory,
     BlockExecutorFor, CommitChanges, ExecutableTx, OnStateHook,
 };
+use alloy_evm::RecoveredTx;
 use alloy_evm::eth::EthTxResult;
 use alloy_evm::eth::receipt_builder::ReceiptBuilder;
 use alloy_evm::eth::spec::EthExecutorSpec;
@@ -226,48 +228,55 @@ where
         tx: impl ExecutableTx<Self>,
         f: impl FnOnce(&ExecutionResult<<Self::Evm as Evm>::HaltReason>) -> CommitChanges,
     ) -> Result<Option<u64>, BlockExecutionError> {
+        // Decompose the transaction to extract sender and type before execution.
+        let (tx_env, recovered) = tx.into_parts();
+        let sender = *recovered.signer();
+        let tx_type_raw = recovered.tx().ty();
+
         // Capture execution result info for post-tx hooks.
         let captured_gas_used = Cell::new(0u64);
         let captured_success = Cell::new(false);
 
-        let result = self.inner.execute_transaction_with_commit_condition(tx, |exec_result| {
-            let (used, success) = match exec_result {
-                ExecutionResult::Success { gas_used, .. } => (*gas_used, true),
-                ExecutionResult::Revert { gas_used, .. } => (*gas_used, false),
-                ExecutionResult::Halt { gas_used, .. } => (*gas_used, false),
-            };
-            captured_gas_used.set(used);
-            captured_success.set(success);
-            f(exec_result)
-        })?;
+        let result = self.inner.execute_transaction_with_commit_condition(
+            (tx_env, recovered),
+            |exec_result| {
+                let (used, success) = match exec_result {
+                    ExecutionResult::Success { gas_used, .. } => (*gas_used, true),
+                    ExecutionResult::Revert { gas_used, .. } => (*gas_used, false),
+                    ExecutionResult::Halt { gas_used, .. } => (*gas_used, false),
+                };
+                captured_gas_used.set(used);
+                captured_success.set(success);
+                f(exec_result)
+            },
+        )?;
 
-        // Post-execution: compute fee distribution (borrows self.arb_hooks).
+        // Post-execution: compute fee distribution.
         let fee_dist = if let Some(committed_gas) = result {
             let base_fee = self.arb_ctx.basefee;
             let gas_used = captured_gas_used.get();
+            let arb_tx_type = arb_primitives::tx_types::ArbTxType::from_u8(tx_type_raw)
+                .unwrap_or(arb_primitives::tx_types::ArbTxType::ArbitrumLegacyTx);
 
             self.arb_hooks.as_ref().map(|hooks| {
                 hooks.compute_end_tx_fees(&EndTxContext {
-                    sender: Address::ZERO,
+                    sender,
                     gas_left: committed_gas.saturating_sub(gas_used),
                     gas_used,
                     gas_price: base_fee,
                     base_fee,
-                    tx_type: arb_primitives::tx_types::ArbTxType::ArbitrumUnsignedTx,
+                    tx_type: arb_tx_type,
                     success: captured_success.get(),
-                    refund_to: Address::ZERO,
+                    refund_to: sender,
                 })
             })
         } else {
             None
         };
 
-        // Apply fee distribution to EVM state (borrows self.inner).
+        // Apply fee distribution to EVM state.
         if let Some(dist) = fee_dist {
             let db = self.inner.evm_mut().db_mut();
-            // TODO: Wire up L1PricingState for l1_fees_available tracking.
-            // For now pass None; the block executor will handle this once
-            // full ArbOS state integration is complete.
             apply_fee_distribution(db, &dist, None);
         }
 
