@@ -129,6 +129,7 @@ where
             arb_ctx,
             pending_tx: None,
             block_gas_left: 0, // Set from state in apply_pre_execution_changes
+            gas_used_for_l1: Vec::new(),
         }
     }
 }
@@ -190,6 +191,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Remaining block gas for rate limiting.
     /// Starts at per_block_gas_limit and decreases with each tx's compute gas.
     pub block_gas_left: u64,
+    /// Per-receipt poster gas (L1 gas component), parallel to the receipts vector.
+    /// Used to populate `gasUsedForL1` in RPC receipt responses.
+    pub gas_used_for_l1: Vec<u64>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -1135,6 +1139,10 @@ where
 
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
+
+        // Track poster gas for this receipt (parallel to receipts vector).
+        let poster_gas_for_receipt = pending.as_ref().map_or(0, |p| p.poster_gas);
+        self.gas_used_for_l1.push(poster_gas_for_receipt);
 
         // --- Post-execution: fee distribution ---
         if let Some(pending) = pending {
