@@ -154,6 +154,7 @@ type BlockValidatorConfig struct {
 	ValidationServer                  rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationServerConfigs           []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
 	ValidationPoll                    time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	ClearMsgPreimagesPoll             time.Duration                 `koanf:"clear-msg-preimages-poll" reload:"hot"`
 	PrerecordedBlocks                 uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	RecordingIterLimit                uint64                        `koanf:"recording-iter-limit"`
 	ValidationSentLimit               uint64                        `koanf:"validation-sent-limit"`
@@ -238,6 +239,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
+	f.Duration(prefix+".clear-msg-preimages-poll", DefaultBlockValidatorConfig.ClearMsgPreimagesPoll, "poll time to clear validated msg preimages and relevant MEL state cache from MEL validator")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (stores batch-copy per block)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.Uint32(prefix+".batch-cache-limit", DefaultBlockValidatorConfig.BatchCacheLimit, "limit number of old batches to keep in block-validator")
@@ -270,6 +272,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:                  rpcclient.DefaultClientConfig,
 	RedisValidationClientConfig:       redis.DefaultValidationClientConfig,
 	ValidationPoll:                    time.Second,
+	ClearMsgPreimagesPoll:             time.Second,
 	ForwardBlocks:                     128,
 	PrerecordedBlocks:                 uint64(2 * util.GoMaxProcs()),
 	BatchCacheLimit:                   20,
@@ -291,6 +294,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServerConfigs:           []rpcclient.ClientConfig{rpcclient.TestClientConfig},
 	RedisValidationClientConfig:       redis.TestValidationClientConfig,
 	ValidationPoll:                    100 * time.Millisecond,
+	ClearMsgPreimagesPoll:             100 * time.Millisecond,
 	ForwardBlocks:                     128,
 	BatchCacheLimit:                   20,
 	PrerecordedBlocks:                 uint64(2 * util.GoMaxProcs()),
@@ -656,12 +660,12 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
-	recordSent := v.recordSent()
+	target := v.recordSent() + arbutil.MessageIndex(v.config().ForwardBlocks)
 	if v.config().EnableMEL {
-		v.melValidator.UpdateValidationTarget(recordSent + arbutil.MessageIndex(v.config().ForwardBlocks))
+		v.melValidator.UpdateValidationTarget(target)
 	}
 	pos := v.created()
-	if pos > recordSent+arbutil.MessageIndex(v.config().ForwardBlocks) {
+	if pos > target {
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
@@ -961,6 +965,10 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			log.Trace("advanceValidations: validation not done", "pos", pos, "status", validationStatus.getStatus())
 			return nil, nil
 		}
+		if err := v.updatelastValidGSIfNeeded(); err != nil {
+			log.Error("Error updating lastValidGS when MELMsgHash is empty", "pos", pos, "err", err)
+			return &pos, nil
+		}
 		if validationStatus.DoneEntry.Start != v.lastValidGS {
 			log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.DoneEntry.Start, "expected", v.lastValidGS)
 			validationStatus.Cancel()
@@ -1132,10 +1140,12 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 			v.possiblyFatal(err)
 		}
 	}
-	if v.config().EnableMEL {
-		v.melValidator.ClearValidatedMsgPreimages(v.validated())
-	}
 	return v.config().ValidationPoll
+}
+
+func (v *BlockValidator) iterativeClearValidatedMsgPreimages(ctx context.Context, ignored struct{}) time.Duration {
+	v.melValidator.ClearValidatedMsgPreimages(v.validated())
+	return v.config().ClearMsgPreimagesPoll
 }
 
 func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ignored struct{}) time.Duration {
@@ -1155,44 +1165,42 @@ func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ig
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
 func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
-	put := func(globalState validator.GoGlobalState) error {
-		info := GlobalStateValidatedInfo{
-			GlobalState: globalState,
-			WasmRoots:   wasmRoots,
-		}
-		encoded, err := rlp.EncodeToBytes(info)
-		if err != nil {
-			return err
-		}
-		err = v.db.Put(lastGlobalStateValidatedInfoKey, encoded)
-		if err != nil {
-			return err
-		}
-		return nil
+	v.lastValidGS = gs
+	info := GlobalStateValidatedInfo{
+		GlobalState: gs,
+		WasmRoots:   wasmRoots,
 	}
-	// Detect end global state that would lead to message extraction next, since validation of msg extraction
-	// is handled by melValidator we can be ok in adding the next expected startGs to db and set as lastValidGS
-	if v.config().EnableMEL && (gs.MELMsgHash == common.Hash{}) {
-		msg, err := v.streamer.GetMessage(arbutil.MessageIndex(gs.PosInBatch))
-		if err != nil {
-			return err
-		}
-		stateHash, err := v.melValidator.FetchMessageOriginMELStateHash(arbutil.MessageIndex(gs.PosInBatch))
-		if err != nil {
-			return err
-		}
-		gs = validator.GoGlobalState{
-			BlockHash:    gs.BlockHash,
-			SendRoot:     gs.SendRoot,
-			MELStateHash: stateHash,
-			MELMsgHash:   msg.Hash(),
-			PosInBatch:   gs.PosInBatch,
-		}
-	}
-	if err := put(gs); err != nil {
+	encoded, err := rlp.EncodeToBytes(info)
+	if err != nil {
 		return err
 	}
-	v.lastValidGS = gs
+	err = v.db.Put(lastGlobalStateValidatedInfoKey, encoded)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *BlockValidator) updatelastValidGSIfNeeded() error {
+	// Detect end global state that would lead to message extraction next, since validation of msg extraction
+	// is handled by melValidator we can be ok in adding the next expected startGs to db and set as lastValidGS
+	if v.config().EnableMEL && (v.lastValidGS.MELMsgHash == common.Hash{}) {
+		msg, err := v.streamer.GetMessage(arbutil.MessageIndex(v.lastValidGS.PosInBatch))
+		if err != nil {
+			return err
+		}
+		stateHash, err := v.melValidator.FetchMessageOriginMELStateHash(arbutil.MessageIndex(v.lastValidGS.PosInBatch))
+		if err != nil {
+			return err
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:    v.lastValidGS.BlockHash,
+			SendRoot:     v.lastValidGS.SendRoot,
+			MELStateHash: stateHash, // When MELMsgHash is not empty, MELStateHash should correspond to the state containing the corresponding message
+			MELMsgHash:   msg.Hash(),
+			PosInBatch:   v.lastValidGS.PosInBatch,
+		}
+	}
 	return nil
 }
 
@@ -1636,6 +1644,12 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	err = stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeValidationProgress, v.progressValidationsChan)
 	if err != nil {
 		v.possiblyFatal(err)
+	}
+	if v.config().EnableMEL {
+		err = stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe, v.iterativeClearValidatedMsgPreimages, nil)
+		if err != nil {
+			v.possiblyFatal(err)
+		}
 	}
 }
 

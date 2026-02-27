@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -322,7 +323,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validateMsgExtractionTill", mv.validateMsgExtractionTill.Load(), "err", err)
 			return time.Second
 		}
-		if entry == nil { // nothing to create, so lets wait for latestStakedAssertion to progress through blockValidator
+		if entry == nil { // nothing to create, so lets wait for parentChain or blockValidator to make progress
 			return time.Second
 		}
 
@@ -357,9 +358,11 @@ func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case parentChainBlockNumber := <-mv.melReorgDetector:
+			log.Info("MEL Validator: receieved a reorg event from message extractor", "parentChainBlockNumber", parentChainBlockNumber)
 			mv.rewindMutex.Lock()
 			if parentChainBlockNumber < mv.latestValidatedParentChainBlock {
 				mv.latestValidatedParentChainBlock = parentChainBlockNumber
+				mv.UpdateValidationTarget(0) // This makes the MEL validator wait until block validator asks it to validate msg extraction
 				// Remove stale msg preimages
 				mv.msgPreimagesAndStateCacheMutex.Lock()
 				for key, val := range mv.msgPreimagesAndStateCache {
@@ -456,6 +459,9 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	for i := lastValidatedParentChainBlock + 1; ; i++ {
 		header, err := mv.l1Client.HeaderByNumber(ctx, new(big.Int).SetUint64(i))
 		if err != nil {
+			if errors.Is(err, ethereum.NotFound) { // Wait for parent chain to progress
+				return nil, nil, nil
+			}
 			return nil, nil, err
 		}
 		encodedHeader, err := rlp.EncodeToBytes(header)
