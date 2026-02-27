@@ -128,6 +128,8 @@ struct PendingRetryContext {
     gas_fee_cap: U256,
     max_refund: U256,
     submission_fee_refund: U256,
+    /// Call value transferred from escrow; returned to escrow on failure.
+    call_value: U256,
 }
 
 /// Arbitrum block executor wrapping `EthBlockExecutor`.
@@ -780,6 +782,7 @@ where
                                 gas_fee_cap: info.gas_fee_cap,
                                 max_refund: info.max_refund,
                                 submission_fee_refund: info.submission_fee_refund,
+                                call_value: recovered.tx().value(),
                             });
                         }
                         Ok(None) => {
@@ -1112,6 +1115,18 @@ where
                                     unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
                                     Ok(())
                                 },
+                            );
+                        }
+                    } else if result.should_return_value_to_escrow
+                        && !retry_ctx.call_value.is_zero()
+                    {
+                        // Failed retry: return call value to escrow.
+                        unsafe {
+                            transfer_balance(
+                                &mut *state_ptr,
+                                pending.sender,
+                                result.escrow_address,
+                                retry_ctx.call_value,
                             );
                         }
                     }
