@@ -12,7 +12,7 @@ use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
-use alloy_primitives::{Address, B256, Log, TxKind, U256};
+use alloy_primitives::{Address, B256, Log, TxKind, U256, keccak256};
 use arb_chainspec;
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
@@ -394,7 +394,7 @@ where
                 evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
-                gas_price_positive: true,
+                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
             });
 
@@ -446,7 +446,7 @@ where
                     evm_gas_used: 0,
                     calldata_units: 0,
                     charged_multi_gas: MultiGas::default(),
-                    gas_price_positive: true,
+                    gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                     retry_context: None,
                 });
 
@@ -477,6 +477,19 @@ where
                 &info.retry_data,
             );
         }
+
+        // Emit TicketCreated event (always, after retryable creation).
+        let mut receipt_logs: Vec<Log> = Vec::new();
+        receipt_logs.push(Log {
+            address: arb_precompiles::ARBRETRYABLETX_ADDRESS,
+            data: alloy_primitives::LogData::new_unchecked(
+                vec![
+                    arb_precompiles::ticket_created_topic(),
+                    ticket_id,
+                ],
+                alloy_primitives::Bytes::new(),
+            ),
+        });
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
 
@@ -518,6 +531,34 @@ where
                             fees.available_refund,
                             fees.submission_fee,
                         ) {
+                            // Compute retry tx hash for the event.
+                            let retry_tx_hash = {
+                                let mut enc = Vec::new();
+                                enc.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                                alloy_rlp::Encodable::encode(&retry_tx, &mut enc);
+                                keccak256(&enc)
+                            };
+
+                            // Emit RedeemScheduled event.
+                            let mut event_data = Vec::with_capacity(128);
+                            event_data.extend_from_slice(&B256::left_padding_from(&user_gas.to_be_bytes()).0);
+                            event_data.extend_from_slice(&B256::left_padding_from(info.fee_refund_addr.as_slice()).0);
+                            event_data.extend_from_slice(&fees.available_refund.to_be_bytes::<32>());
+                            event_data.extend_from_slice(&fees.submission_fee.to_be_bytes::<32>());
+
+                            receipt_logs.push(Log {
+                                address: arb_precompiles::ARBRETRYABLETX_ADDRESS,
+                                data: alloy_primitives::LogData::new_unchecked(
+                                    vec![
+                                        arb_precompiles::redeem_scheduled_topic(),
+                                        ticket_id,
+                                        retry_tx_hash,
+                                        B256::left_padding_from(&0u64.to_be_bytes()),
+                                    ],
+                                    event_data.into(),
+                                ),
+                            });
+
                             if let Some(hooks) = self.arb_hooks.as_mut() {
                                 let mut encoded = Vec::new();
                                 encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
@@ -547,7 +588,7 @@ where
             } else {
                 MultiGas::default()
             },
-            gas_price_positive: true,
+            gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             retry_context: None,
         });
 
@@ -577,7 +618,7 @@ where
                         gas_used,
                         gas_refunded: 0,
                         output: revm::context::result::Output::Call(ticket_bytes),
-                        logs: Vec::new(),
+                        logs: receipt_logs,
                     },
                     state: Default::default(),
                 },
@@ -784,7 +825,7 @@ where
                 evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
-                gas_price_positive: true,
+                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
             });
 
@@ -861,7 +902,7 @@ where
                 evm_gas_used: 0,
                 calldata_units: 0,
                 charged_multi_gas: MultiGas::default(),
-                gas_price_positive: true,
+                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
             });
 
@@ -940,7 +981,7 @@ where
                                     evm_gas_used: 0,
                                     calldata_units: 0,
                                     charged_multi_gas: MultiGas::default(),
-                                    gas_price_positive: true,
+                                    gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                     retry_context: None,
                                 });
                                 return Ok(EthTxResult {
@@ -990,7 +1031,7 @@ where
                                 evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
-                                gas_price_positive: true,
+                                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
                             });
                             let err_msg = format!(
@@ -1023,7 +1064,7 @@ where
                                 evm_gas_used: 0,
                                 calldata_units: 0,
                                 charged_multi_gas: MultiGas::default(),
-                                gas_price_positive: true,
+                                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
                             });
                             return Ok(EthTxResult {
@@ -1155,7 +1196,7 @@ where
                             evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
-                            gas_price_positive: true,
+                            gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1189,7 +1230,7 @@ where
                             evm_gas_used: 0,
                             calldata_units,
                             charged_multi_gas,
-                            gas_price_positive: true,
+                            gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
                         });
                         return Ok(EthTxResult {
@@ -1370,7 +1411,7 @@ where
             evm_gas_used,
             calldata_units,
             charged_multi_gas,
-            gas_price_positive: true,
+            gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             retry_context,
         });
 

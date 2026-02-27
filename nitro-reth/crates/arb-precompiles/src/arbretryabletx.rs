@@ -57,6 +57,12 @@ const REDEEM_SCHEDULED_EVENT_COST: u64 =
 /// Static backlog update cost (StorageReadCost + StorageWriteCost).
 const BACKLOG_UPDATE_COST: u64 = SLOAD_GAS + SSTORE_GAS;
 
+/// TicketCreated event topic0.
+/// keccak256("TicketCreated(bytes32)")
+pub fn ticket_created_topic() -> B256 {
+    keccak256("TicketCreated(bytes32)")
+}
+
 /// RedeemScheduled event topic0.
 /// keccak256("RedeemScheduled(bytes32,bytes32,uint64,uint64,address,uint256,uint256)")
 pub fn redeem_scheduled_topic() -> B256 {
