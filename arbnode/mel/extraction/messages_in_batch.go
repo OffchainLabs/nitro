@@ -199,7 +199,7 @@ func extractDelayedMessageFromSegment(
 			DelayedMessagesRead: seqMsg.AfterDelayedMessages,
 		}, nil
 	}
-	delayed, err := delayedMsgDB.ReadDelayedMessage(ctx, melState, melState.DelayedMessagesRead)
+	delayed, err := delayedMsgDB.ReadDelayedMessage(melState, melState.DelayedMessagesRead)
 	if err != nil {
 		return nil, err
 	}

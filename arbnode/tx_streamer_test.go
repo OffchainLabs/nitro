@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -26,18 +27,18 @@ func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
 	consensusDB := rawdb.NewMemoryDatabase()
 	countBytes, err := rlp.EncodeToBytes(messageCount)
 	Require(t, err)
-	Require(t, consensusDB.Put(messageCountKey, countBytes))
+	Require(t, consensusDB.Put(schema.MessageCountKey, countBytes))
 	addKeys := func(start, end uint64, prefix []byte) {
 		for i := start; i <= end; i++ {
 			Require(t, consensusDB.Put(dbKey(prefix, i), []byte{}))
 		}
 	}
 	// 12, 13, 14, 18 have block metadata
-	addKeys(12, 14, blockMetadataInputFeedPrefix)
-	addKeys(18, 18, blockMetadataInputFeedPrefix)
+	addKeys(12, 14, schema.BlockMetadataInputFeedPrefix)
+	addKeys(18, 18, schema.BlockMetadataInputFeedPrefix)
 	// 15, 16, 17, 19 are missing
-	addKeys(15, 17, missingBlockMetadataInputFeedPrefix)
-	addKeys(19, 19, missingBlockMetadataInputFeedPrefix)
+	addKeys(15, 17, schema.MissingBlockMetadataInputFeedPrefix)
+	addKeys(19, 19, schema.MissingBlockMetadataInputFeedPrefix)
 
 	// Create tx streamer
 	txStreamer := &TransactionStreamer{db: consensusDB}
@@ -49,14 +50,14 @@ func TestTimeboostBackfillingsTrackersForMissingBlockMetadata(t *testing.T) {
 		iter := consensusDB.NewIterator([]byte("x"), nil)
 		pos := 0
 		for iter.Next() {
-			keyBytes := bytes.TrimPrefix(iter.Key(), missingBlockMetadataInputFeedPrefix)
+			keyBytes := bytes.TrimPrefix(iter.Key(), schema.MissingBlockMetadataInputFeedPrefix)
 			if binary.BigEndian.Uint64(keyBytes) != missingTrackers[pos] {
 				t.Fatalf("unexpected presence of blockMetadata. msgSeqNum: %d, expectedMsgSeqNum: %d", binary.BigEndian.Uint64(keyBytes), missingTrackers[pos])
 			}
 			pos++
 		}
 		if pos != len(missingTrackers) {
-			t.Fatalf("number of keys with blockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", len(missingTrackers), pos)
+			t.Fatalf("number of keys with schema.BlockMetadataInputFeedPrefix doesn't match expected value. Want: %d, Got: %d", len(missingTrackers), pos)
 		}
 		iter.Release()
 	}

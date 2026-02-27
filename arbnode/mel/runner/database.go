@@ -3,7 +3,6 @@
 package melrunner
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -27,16 +26,16 @@ func NewDatabase(db ethdb.KeyValueStore) *Database {
 	return &Database{db}
 }
 
-func (d *Database) GetHeadMelState(ctx context.Context) (*mel.State, error) {
+func (d *Database) GetHeadMelState() (*mel.State, error) {
 	headMelStateBlockNum, err := d.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, fmt.Errorf("error getting HeadMelStateBlockNum from database: %w", err)
 	}
-	return d.State(ctx, headMelStateBlockNum)
+	return d.State(headMelStateBlockNum)
 }
 
 // SaveState should exclusively be called for saving the recently generated "head" MEL state
-func (d *Database) SaveState(ctx context.Context, state *mel.State) error {
+func (d *Database) SaveState(state *mel.State) error {
 	dbBatch := d.db.NewBatch()
 	if err := d.setMelState(dbBatch, state.ParentChainBlockNumber, *state); err != nil {
 		return err
@@ -75,7 +74,7 @@ func (d *Database) GetHeadMelStateBlockNum() (uint64, error) {
 	return read.Value[uint64](d.db, schema.HeadMelStateBlockNumKey)
 }
 
-func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*mel.State, error) {
+func (d *Database) State(parentChainBlockNumber uint64) (*mel.State, error) {
 	state, err := read.Value[mel.State](d.db, read.Key(schema.MelStatePrefix, parentChainBlockNumber))
 	if err != nil {
 		return nil, err
@@ -83,7 +82,7 @@ func (d *Database) State(ctx context.Context, parentChainBlockNumber uint64) (*m
 	return &state, nil
 }
 
-func (d *Database) SaveBatchMetas(ctx context.Context, state *mel.State, batchMetas []*mel.BatchMetadata) error {
+func (d *Database) SaveBatchMetas(state *mel.State, batchMetas []*mel.BatchMetadata) error {
 	dbBatch := d.db.NewBatch()
 	if state.BatchCount < uint64(len(batchMetas)) {
 		return fmt.Errorf("mel state's BatchCount: %d is lower than number of batchMetadata: %d queued to be added", state.BatchCount, len(batchMetas))
@@ -112,7 +111,7 @@ func (d *Database) fetchBatchMetadata(seqNum uint64) (*mel.BatchMetadata, error)
 	return &batchMetadata, nil
 }
 
-func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
+func (d *Database) SaveDelayedMessages(state *mel.State, delayedMessages []*mel.DelayedInboxMessage) error {
 	dbBatch := d.db.NewBatch()
 	if state.DelayedMessagesSeen < uint64(len(delayedMessages)) {
 		return fmt.Errorf("mel state's DelayedMessagesSeen: %d is lower than number of delayed messages: %d queued to be added", state.DelayedMessagesSeen, len(delayedMessages))
@@ -133,7 +132,7 @@ func (d *Database) SaveDelayedMessages(ctx context.Context, state *mel.State, de
 	return dbBatch.Write()
 }
 
-func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
+func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
 		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
 		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
@@ -142,7 +141,7 @@ func (d *Database) ReadDelayedMessage(ctx context.Context, state *mel.State, ind
 	if err != nil {
 		return nil, err
 	}
-	if ok, err := d.checkAgainstAccumulator(ctx, state, delayed, index); err != nil {
+	if ok, err := d.checkAgainstAccumulator(state, delayed, index); err != nil {
 		return nil, fmt.Errorf("error checking if delayed message is part of the mel state accumulator: %w", err)
 	} else if !ok {
 		return nil, errors.New("delayed message message not part of the mel state accumulator")
@@ -163,7 +162,7 @@ func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, 
 // merkle accumulator that has accumulated messages till the position 'index' and then accumulate all the messages in the backlog i.e pre-reading them and we
 // update the readCountFromBacklog of the state accordingly. The optimization is done as it is unfeasible to store merkle partials for each delayed inbox message
 // and accumulate all the future seen but not read messages every single time
-func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
+func (d *Database) checkAgainstAccumulator(state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
 	delayedMessageBacklog := state.GetDelayedMessageBacklog()
 	delayedMeta, err := delayedMessageBacklog.Get(index)
 	if err != nil {
@@ -177,7 +176,7 @@ func (d *Database) checkAgainstAccumulator(ctx context.Context, state *mel.State
 		}
 		return true, nil
 	}
-	targetState, err := d.State(ctx, delayedMeta.MelStateParentChainBlockNum-1)
+	targetState, err := d.State(delayedMeta.MelStateParentChainBlockNum - 1)
 	if err != nil {
 		return false, err
 	}

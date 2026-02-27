@@ -65,7 +65,7 @@ func indexToParentChainBlockMap(ctx context.Context, targetDelayedMessagesRead u
 	delayedMsgIndexToParentChainBlockNum := make(map[uint64]uint64)
 	curr := state
 	for i := state.ParentChainBlockNumber - 1; i > 0; i-- {
-		prev, err = db.State(ctx, i)
+		prev, err = db.State(i)
 		if err != nil {
 			return nil, err
 		}
