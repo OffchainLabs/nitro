@@ -1,4 +1,5 @@
 use alloy_primitives::U256;
+use arb_primitives::multigas::MultiGas;
 use revm::Database;
 
 use super::{L2PricingState, MAX_PRICING_EXPONENT_BIPS};
@@ -36,19 +37,68 @@ impl<D: Database> L2PricingState<D> {
         Ok(GasModel::Legacy)
     }
 
-    /// Grow the gas backlog (less gas available).
-    pub fn grow_backlog(&self, gas_used: u64) -> Result<(), ()> {
-        let backlog = self.gas_backlog()?;
-        self.set_gas_backlog(backlog.saturating_add(gas_used))
+    /// Grow the gas backlog for the active pricing model.
+    pub fn grow_backlog(
+        &self,
+        used_gas: u64,
+        used_multi_gas: MultiGas,
+    ) -> Result<(), ()> {
+        self.update_backlog(BacklogOperation::Grow, used_gas, used_multi_gas)
     }
 
-    /// Shrink the gas backlog (more gas available over time).
-    pub fn shrink_backlog(&self, time_passed: u64) -> Result<(), ()> {
-        let speed_limit = self.speed_limit_per_second()?;
-        let gas_to_add = (time_passed as u128).saturating_mul(speed_limit as u128);
+    /// Dispatch backlog update to the active pricing model.
+    fn update_backlog(
+        &self,
+        op: BacklogOperation,
+        used_gas: u64,
+        used_multi_gas: MultiGas,
+    ) -> Result<(), ()> {
+        match self.gas_model_to_use()? {
+            GasModel::Legacy | GasModel::Unknown => {
+                self.update_legacy_backlog_op(op, used_gas)
+            }
+            GasModel::SingleGasConstraints => {
+                self.update_single_gas_constraints_backlogs_op(op, used_gas)
+            }
+            GasModel::MultiGasConstraints => {
+                self.update_multi_gas_constraints_backlogs_op(op, used_multi_gas)
+            }
+        }
+    }
+
+    fn update_legacy_backlog_op(&self, op: BacklogOperation, gas: u64) -> Result<(), ()> {
         let backlog = self.gas_backlog()?;
-        let new_backlog = backlog.saturating_sub(gas_to_add.min(u64::MAX as u128) as u64);
-        self.set_gas_backlog(new_backlog)
+        self.set_gas_backlog(apply_gas_delta_op(op, backlog, gas))
+    }
+
+    fn update_single_gas_constraints_backlogs_op(
+        &self,
+        op: BacklogOperation,
+        gas: u64,
+    ) -> Result<(), ()> {
+        let len = self.gas_constraints_length()?;
+        for i in 0..len {
+            let c = self.open_gas_constraint_at(i);
+            let backlog = c.backlog()?;
+            c.set_backlog(apply_gas_delta_op(op, backlog, gas))?;
+        }
+        Ok(())
+    }
+
+    fn update_multi_gas_constraints_backlogs_op(
+        &self,
+        op: BacklogOperation,
+        multi_gas: MultiGas,
+    ) -> Result<(), ()> {
+        let len = self.multi_gas_constraints_length()?;
+        for i in 0..len {
+            let c = self.open_multi_gas_constraint_at(i);
+            match op {
+                BacklogOperation::Grow => c.grow_backlog(multi_gas)?,
+                BacklogOperation::Shrink => c.shrink_backlog(multi_gas)?,
+            }
+        }
+        Ok(())
     }
 
     /// Update the pricing model for a new block.
@@ -307,11 +357,19 @@ fn approx_exp_basis_points(bips: u128) -> u128 {
     result
 }
 
-/// Apply a gas delta to a backlog value.
+/// Apply a gas delta to a backlog value (signed).
 pub fn apply_gas_delta(backlog: u64, delta: i64) -> u64 {
     if delta > 0 {
         backlog.saturating_add(delta as u64)
     } else {
         backlog.saturating_sub((-delta) as u64)
+    }
+}
+
+/// Apply a gas delta with a backlog operation.
+fn apply_gas_delta_op(op: BacklogOperation, backlog: u64, delta: u64) -> u64 {
+    match op {
+        BacklogOperation::Grow => backlog.saturating_add(delta),
+        BacklogOperation::Shrink => backlog.saturating_sub(delta),
     }
 }

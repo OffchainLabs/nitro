@@ -107,23 +107,33 @@ impl<D: Database> MultiGasConstraint<D> {
 
     /// Grow the backlog by the weighted resource usage.
     pub fn grow_backlog(&self, gas: MultiGas) -> Result<(), ()> {
-        let used = self.used_resources(gas)?;
-        self.update_backlog(used, super::model::BacklogOperation::Grow)
+        self.update_backlog(super::model::BacklogOperation::Grow, gas)
     }
 
-    /// Shrink the backlog by the target amount.
-    pub fn shrink_backlog(&self) -> Result<(), ()> {
-        let target = self.target.get()?;
-        self.update_backlog(target, super::model::BacklogOperation::Shrink)
+    /// Shrink the backlog by the weighted resource usage.
+    pub fn shrink_backlog(&self, gas: MultiGas) -> Result<(), ()> {
+        self.update_backlog(super::model::BacklogOperation::Shrink, gas)
     }
 
-    fn update_backlog(&self, amount: u64, op: super::model::BacklogOperation) -> Result<(), ()> {
-        let current = self.backlog.get()?;
-        let new = match op {
-            super::model::BacklogOperation::Grow => current.saturating_add(amount),
-            super::model::BacklogOperation::Shrink => current.saturating_sub(amount),
-        };
-        self.backlog.set(new)
+    fn update_backlog(
+        &self,
+        op: super::model::BacklogOperation,
+        gas: MultiGas,
+    ) -> Result<(), ()> {
+        let mut backlog = self.backlog.get()?;
+        for kind in ResourceKind::ALL {
+            let weight = self.resource_weight(kind)?;
+            if weight == 0 {
+                continue;
+            }
+            let amount = gas.get(kind);
+            let weighted = amount.saturating_mul(weight);
+            backlog = match op {
+                super::model::BacklogOperation::Grow => backlog.saturating_add(weighted),
+                super::model::BacklogOperation::Shrink => backlog.saturating_sub(weighted),
+            };
+        }
+        self.backlog.set(backlog)
     }
 
     pub fn clear(&self) -> Result<(), ()> {
