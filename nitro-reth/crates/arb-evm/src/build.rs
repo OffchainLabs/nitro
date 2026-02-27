@@ -372,6 +372,11 @@ where
 
         let fees = compute_submit_retryable_fees(&params);
 
+        let user_gas = info.gas;
+
+        // Fee validation errors end the transaction immediately with zero gas.
+        // The deposit was already minted (separate ArbitrumDepositTx), and no
+        // further transfers should occur.
         if let Some(ref err) = fees.error {
             tracing::warn!(
                 target: "arb::executor",
@@ -379,6 +384,31 @@ where
                 error = %err,
                 "submit retryable fee validation failed"
             );
+
+            self.pending_tx = Some(PendingArbTx {
+                sender,
+                tx_gas_limit: user_gas,
+                arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
+                has_poster_costs: false,
+                poster_gas: 0,
+                evm_gas_used: 0,
+                calldata_units: 0,
+                charged_multi_gas: MultiGas::default(),
+                gas_price_positive: true,
+                retry_context: None,
+            });
+
+            return Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result: ExecutionResult::Revert {
+                        gas_used: 0,
+                        output: alloy_primitives::Bytes::new(),
+                    },
+                    state: Default::default(),
+                },
+                blob_gas_used: 0,
+                tx_type,
+            });
         }
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
@@ -393,9 +423,45 @@ where
             transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
         }
 
-        // 5. Move call value into escrow.
+        // 5. Move call value into escrow. If sender has insufficient funds
+        //    (e.g. deposit didn't cover retry_value after fee deductions),
+        //    refund the submission fee and end the transaction.
         if !info.retry_value.is_zero() {
-            transfer_balance(db, sender, fees.escrow, info.retry_value);
+            if !try_transfer_balance(db, sender, fees.escrow, info.retry_value) {
+                // Refund submission fee from network account back to sender.
+                transfer_balance(
+                    db, self.arb_ctx.network_fee_account, sender, fees.submission_fee,
+                );
+                // Refund withheld portion of submission fee to fee refund address.
+                transfer_balance(
+                    db, sender, info.fee_refund_addr, fees.withheld_submission_fee,
+                );
+
+                self.pending_tx = Some(PendingArbTx {
+                    sender,
+                    tx_gas_limit: user_gas,
+                    arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
+                    has_poster_costs: false,
+                    poster_gas: 0,
+                    evm_gas_used: 0,
+                    calldata_units: 0,
+                    charged_multi_gas: MultiGas::default(),
+                    gas_price_positive: true,
+                    retry_context: None,
+                });
+
+                return Ok(EthTxResult {
+                    result: revm::context::result::ResultAndState {
+                        result: ExecutionResult::Revert {
+                            gas_used: 0,
+                            output: alloy_primitives::Bytes::new(),
+                        },
+                        state: Default::default(),
+                    },
+                    blob_gas_used: 0,
+                    tx_type,
+                });
+            }
         }
 
         // 6. Create retryable ticket.
@@ -413,7 +479,6 @@ where
         }
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-        let user_gas = info.gas;
 
         // 7. Handle gas fees if user can pay.
         if fees.can_pay_for_gas {
@@ -486,24 +551,40 @@ where
             retry_context: None,
         });
 
-        // Construct synthetic execution result (endTxNow=true: success, gas = usergas).
+        // Construct synthetic execution result. Filtered retryables always
+        // return a failure receipt (Go sets filteredErr). Non-filtered txs
+        // succeed even when can't pay for gas (retryable was created).
         let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
-        Ok(EthTxResult {
-            result: revm::context::result::ResultAndState {
-                result: ExecutionResult::Success {
-                    reason: revm::context::result::SuccessReason::Return,
-                    gas_used,
-                    gas_refunded: 0,
-                    output: revm::context::result::Output::Call(
-                        alloy_primitives::Bytes::copy_from_slice(ticket_id.as_slice()),
-                    ),
-                    logs: Vec::new(),
+        let ticket_bytes = alloy_primitives::Bytes::copy_from_slice(ticket_id.as_slice());
+
+        if is_filtered {
+            Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result: ExecutionResult::Revert {
+                        gas_used,
+                        output: ticket_bytes,
+                    },
+                    state: Default::default(),
                 },
-                state: Default::default(),
-            },
-            blob_gas_used: 0,
-            tx_type,
-        })
+                blob_gas_used: 0,
+                tx_type,
+            })
+        } else {
+            Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result: ExecutionResult::Success {
+                        reason: revm::context::result::SuccessReason::Return,
+                        gas_used,
+                        gas_refunded: 0,
+                        output: revm::context::result::Output::Call(ticket_bytes),
+                        logs: Vec::new(),
+                    },
+                    state: Default::default(),
+                },
+                blob_gas_used: 0,
+                tx_type,
+            })
+        }
     }
 }
 
@@ -1512,6 +1593,25 @@ fn transfer_balance<DB: Database>(
     }
     burn_balance(state, from, amount);
     mint_balance(state, to, amount);
+}
+
+/// Transfer balance with balance check. Returns false if sender has
+/// insufficient funds (no state changes in that case).
+fn try_transfer_balance<DB: Database>(
+    state: &mut State<DB>,
+    from: Address,
+    to: Address,
+    amount: U256,
+) -> bool {
+    if amount.is_zero() || from == to {
+        return true;
+    }
+    if get_balance(state, from) < amount {
+        return false;
+    }
+    burn_balance(state, from, amount);
+    mint_balance(state, to, amount);
+    true
 }
 
 /// Apply a computed fee distribution to the EVM state.
