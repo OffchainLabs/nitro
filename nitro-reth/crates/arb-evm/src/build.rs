@@ -129,6 +129,7 @@ where
             arb_ctx,
             pending_tx: None,
             block_gas_left: 0, // Set from state in apply_pre_execution_changes
+            user_txs_processed: 0,
             gas_used_for_l1: Vec::new(),
         }
     }
@@ -191,6 +192,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Remaining block gas for rate limiting.
     /// Starts at per_block_gas_limit and decreases with each tx's compute gas.
     pub block_gas_left: u64,
+    /// Number of user transactions successfully committed.
+    /// Used for ArbOS < 50 block gas check (first user tx may exceed limit).
+    user_txs_processed: u64,
     /// Per-receipt poster gas (L1 gas component), parallel to the receipts vector.
     /// Used to populate `gasUsedForL1` in RPC receipt responses.
     pub gas_used_for_l1: Vec<u64>,
@@ -207,6 +211,14 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     pub fn with_arb_ctx(mut self, ctx: ArbBlockExecutionCtx) -> Self {
         self.arb_ctx = ctx;
         self
+    }
+
+    /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
+    /// Call this when a transaction fails execution so the block budget
+    /// stays in sync (matching Go's behavior of charging TX_GAS for invalid txs).
+    pub fn deduct_failed_tx_gas(&mut self) {
+        const TX_GAS: u64 = 21_000;
+        self.block_gas_left = self.block_gas_left.saturating_sub(TX_GAS);
     }
 
     /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
@@ -964,9 +976,13 @@ where
             0
         };
 
-        // ArbOS < 50: reject user txs whose compute gas exceeds block gas left.
+        // ArbOS < 50: reject user txs whose compute gas exceeds block gas left,
+        // but always allow the first user tx through (matching Go's userTxsProcessed > 0).
         // ArbOS >= 50 uses per-tx gas limit clamping (compute_hold_gas) instead.
-        if is_user_tx && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50 {
+        if is_user_tx
+            && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50
+            && self.user_txs_processed > 0
+        {
             let compute_gas = tx_gas_limit.saturating_sub(poster_gas);
             if compute_gas > self.block_gas_left {
                 return Err(BlockExecutionError::msg("block gas limit reached"));
@@ -1371,6 +1387,18 @@ where
                 if compute < TX_GAS { TX_GAS } else { compute }
             };
             self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
+
+            // Track user txs for the ArbOS < 50 first-tx bypass.
+            let is_user_tx = !matches!(
+                pending.arb_tx_type,
+                Some(ArbTxType::ArbitrumInternalTx)
+                    | Some(ArbTxType::ArbitrumDepositTx)
+                    | Some(ArbTxType::ArbitrumSubmitRetryableTx)
+                    | Some(ArbTxType::ArbitrumRetryTx)
+            );
+            if is_user_tx {
+                self.user_txs_processed += 1;
+            }
 
             let _ = is_retry; // suppress unused warning
         }
