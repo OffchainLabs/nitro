@@ -5,10 +5,11 @@ use alloy_primitives::{Address, Bytes};
 use arb_precompiles::register_arb_precompiles;
 use core::fmt::Debug;
 use revm::context::result::EVMError;
-use revm::context::TxEnv;
 use revm::context_interface::result::{HaltReason, ResultAndState};
 use revm::inspector::NoOpInspector;
 use revm::primitives::hardfork::SpecId;
+
+use crate::transaction::ArbTransaction;
 
 /// Arbitrum EVM wrapper that registers custom precompiles.
 pub struct ArbEvm<DB: Database + Debug, I> {
@@ -34,7 +35,7 @@ where
     I: revm::inspector::Inspector<EthEvmContext<DB>>,
 {
     type DB = DB;
-    type Tx = TxEnv;
+    type Tx = ArbTransaction;
     type Error = EVMError<<DB as revm::Database>::Error>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
@@ -54,7 +55,7 @@ where
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.inner.transact_raw(tx)
+        self.inner.transact_raw(tx.into_inner())
     }
 
     fn transact_system_call(
@@ -98,7 +99,7 @@ impl ArbEvmFactory {
 impl EvmFactory for ArbEvmFactory {
     type Evm<DB: Database, I: revm::inspector::Inspector<EthEvmContext<DB>>> = ArbEvm<DB, I>;
     type Context<DB: Database> = EthEvmContext<DB>;
-    type Tx = TxEnv;
+    type Tx = ArbTransaction;
     type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError>;
     type HaltReason = HaltReason;
     type Spec = SpecId;

@@ -1,6 +1,8 @@
+use alloy_consensus::Transaction;
 use alloy_eips::eip2930::AccessList;
-use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
+use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded, IntoTxEnv};
 use alloy_primitives::{Address, Bytes, U256};
+use arb_primitives::ArbTransactionSigned;
 use reth_ethereum_primitives::TransactionSigned;
 use revm::context::TxEnv;
 
@@ -73,6 +75,12 @@ impl ArbTransaction {
 impl From<ArbTransaction> for TxEnv {
     fn from(arb_tx: ArbTransaction) -> Self {
         arb_tx.0
+    }
+}
+
+impl IntoTxEnv<ArbTransaction> for ArbTransaction {
+    fn into_tx_env(self) -> ArbTransaction {
+        self
     }
 }
 
@@ -156,5 +164,53 @@ impl FromRecoveredTx<TransactionSigned> for ArbTransaction {
 impl FromTxWithEncoded<TransactionSigned> for ArbTransaction {
     fn from_encoded_tx(tx: &TransactionSigned, sender: Address, encoded: Bytes) -> Self {
         ArbTransaction(TxEnv::from_encoded_tx(tx, sender, encoded))
+    }
+}
+
+/// Convert an ArbTransactionSigned into a TxEnv for EVM execution.
+fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
+    use alloy_consensus::Typed2718;
+    let arb_type = ArbTxType::from_u8(Typed2718::ty(tx)).ok();
+    let is_system_tx = matches!(
+        arb_type,
+        Some(ArbTxType::ArbitrumInternalTx | ArbTxType::ArbitrumDepositTx)
+    );
+    let is_submit_retryable = arb_type == Some(ArbTxType::ArbitrumSubmitRetryableTx);
+
+    let mut env = TxEnv::default();
+    env.caller = sender;
+    env.gas_limit = tx.gas_limit();
+    env.nonce = tx.nonce();
+    env.chain_id = tx.chain_id();
+    env.kind = tx.to().map_or(revm::primitives::TxKind::Create, revm::primitives::TxKind::Call);
+    env.data = tx.input().clone();
+    env.gas_priority_fee = Some(0);
+
+    if is_system_tx {
+        env.gas_price = 0;
+        env.value = U256::ZERO;
+        if env.gas_limit == 0 {
+            env.gas_limit = 1_000_000;
+        }
+    } else if is_submit_retryable {
+        env.gas_price = 0;
+        env.value = U256::ZERO;
+    } else {
+        env.gas_price = tx.max_fee_per_gas();
+        env.value = tx.value();
+    }
+
+    env
+}
+
+impl FromRecoveredTx<ArbTransactionSigned> for ArbTransaction {
+    fn from_recovered_tx(tx: &ArbTransactionSigned, sender: Address) -> Self {
+        ArbTransaction(arb_tx_to_tx_env(tx, sender))
+    }
+}
+
+impl FromTxWithEncoded<ArbTransactionSigned> for ArbTransaction {
+    fn from_encoded_tx(tx: &ArbTransactionSigned, sender: Address, _encoded: Bytes) -> Self {
+        ArbTransaction(arb_tx_to_tx_env(tx, sender))
     }
 }

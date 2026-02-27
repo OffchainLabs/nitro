@@ -59,6 +59,55 @@ pub enum ArbTxTypeLocal {
     Eip7702,
 }
 
+impl ArbTxTypeLocal {
+    /// Convert to the EIP-2718 type byte.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Legacy => 0x00,
+            Self::Eip2930 => 0x01,
+            Self::Eip1559 => 0x02,
+            Self::Eip4844 => 0x03,
+            Self::Eip7702 => 0x04,
+            Self::Deposit => ArbTxType::ArbitrumDepositTx.as_u8(),
+            Self::Unsigned => ArbTxType::ArbitrumUnsignedTx.as_u8(),
+            Self::Contract => ArbTxType::ArbitrumContractTx.as_u8(),
+            Self::Retry => ArbTxType::ArbitrumRetryTx.as_u8(),
+            Self::SubmitRetryable => ArbTxType::ArbitrumSubmitRetryableTx.as_u8(),
+            Self::Internal => ArbTxType::ArbitrumInternalTx.as_u8(),
+        }
+    }
+}
+
+impl Typed2718 for ArbTxTypeLocal {
+    fn is_legacy(&self) -> bool {
+        matches!(self, Self::Legacy)
+    }
+
+    fn ty(&self) -> u8 {
+        self.as_u8()
+    }
+}
+
+impl alloy_consensus::TransactionEnvelope for ArbTransactionSigned {
+    type TxType = ArbTxTypeLocal;
+
+    fn tx_type(&self) -> Self::TxType {
+        match &self.transaction {
+            ArbTypedTransaction::Legacy(_) => ArbTxTypeLocal::Legacy,
+            ArbTypedTransaction::Eip2930(_) => ArbTxTypeLocal::Eip2930,
+            ArbTypedTransaction::Eip1559(_) => ArbTxTypeLocal::Eip1559,
+            ArbTypedTransaction::Eip4844(_) => ArbTxTypeLocal::Eip4844,
+            ArbTypedTransaction::Eip7702(_) => ArbTxTypeLocal::Eip7702,
+            ArbTypedTransaction::Deposit(_) => ArbTxTypeLocal::Deposit,
+            ArbTypedTransaction::Unsigned(_) => ArbTxTypeLocal::Unsigned,
+            ArbTypedTransaction::Contract(_) => ArbTxTypeLocal::Contract,
+            ArbTypedTransaction::Retry(_) => ArbTxTypeLocal::Retry,
+            ArbTypedTransaction::SubmitRetryable(_) => ArbTxTypeLocal::SubmitRetryable,
+            ArbTypedTransaction::Internal(_) => ArbTxTypeLocal::Internal,
+        }
+    }
+}
+
 /// Signed Arbitrum transaction with lazy hash caching.
 #[derive(Clone, Debug, Eq)]
 pub struct ArbTransactionSigned {
