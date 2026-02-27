@@ -161,6 +161,16 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         self
     }
 
+    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
+    /// by the most recently committed transaction. The caller should decode and
+    /// re-inject these as new transactions in the same block.
+    pub fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
+        self.arb_hooks
+            .as_mut()
+            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
+            .unwrap_or_default()
+    }
+
     /// Read state parameters from ArbOS state into the execution context
     /// and create/update the hooks.
     fn load_state_params<D: Database>(
@@ -424,6 +434,7 @@ where
                 self.arb_ctx.block_timestamp = timestamp;
             }
             self.arb_ctx.coinbase = revm::context::Block::beneficiary(block);
+            self.arb_ctx.basefee = U256::from(revm::context::Block::basefee(block));
             if let Some(prevrandao) = revm::context::Block::prevrandao(block) {
                 if self.arb_ctx.l1_block_number == 0 {
                     self.arb_ctx.l1_block_number =
@@ -819,13 +830,30 @@ where
                 }
             }
 
+            // FixRedeemGas (ArbOS >= 11): subtract gas allocated to scheduled
+            // retry txs from this tx's gas_used for block rate limiting, since
+            // that gas will be accounted for when the retry tx itself executes.
+            let mut adjusted_gas_used = gas_used_total;
+            if self.arb_ctx.arbos_version
+                >= arb_chainspec::arbos_version::ARBOS_VERSION_FIX_REDEEM_GAS
+            {
+                if let Some(hooks) = self.arb_hooks.as_ref() {
+                    for scheduled in &hooks.tx_proc.scheduled_txs {
+                        if let Some(retry_gas) = decode_retry_tx_gas(scheduled) {
+                            adjusted_gas_used =
+                                adjusted_gas_used.saturating_sub(retry_gas);
+                        }
+                    }
+                }
+            }
+
             // Block gas rate limiting: deduct compute gas from block budget.
             const TX_GAS: u64 = 21_000;
             let data_gas = pending.poster_gas;
-            let compute_used = if gas_used_total < data_gas {
+            let compute_used = if adjusted_gas_used < data_gas {
                 TX_GAS
             } else {
-                let compute = gas_used_total - data_gas;
+                let compute = adjusted_gas_used - data_gas;
                 if compute < TX_GAS { TX_GAS } else { compute }
             };
             self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
@@ -957,4 +985,27 @@ fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
         .map(|&b| if b == 0 { TX_DATA_ZERO_GAS } else { TX_DATA_NON_ZERO_GAS })
         .sum();
     gas.saturating_add(data_gas)
+}
+
+/// Extract the gas field from a scheduled retry tx's encoded bytes.
+///
+/// The encoded format is `[type_byte][RLP(ArbRetryTx)]`.
+fn decode_retry_tx_gas(encoded: &[u8]) -> Option<u64> {
+    if encoded.is_empty() {
+        return None;
+    }
+    if encoded[0] != ArbTxType::ArbitrumRetryTx.as_u8() {
+        tracing::warn!(
+            target: "arb::executor",
+            tx_type = encoded[0],
+            "unexpected scheduled tx type"
+        );
+        return None;
+    }
+    let rlp_data = &encoded[1..];
+    let retry = <arb_alloy_consensus::tx::ArbRetryTx as alloy_rlp::Decodable>::decode(
+        &mut &rlp_data[..],
+    )
+    .ok()?;
+    Some(retry.gas)
 }

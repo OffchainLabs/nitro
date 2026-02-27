@@ -12,6 +12,8 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_10: u64 = 10;
     /// ArbOS version 11 — Shanghai EVM rules (PUSH0, etc.).
     pub const ARBOS_VERSION_11: u64 = 11;
+    /// Gas for scheduled retry txs is subtracted from parent tx gas used.
+    pub const ARBOS_VERSION_FIX_REDEEM_GAS: u64 = ARBOS_VERSION_11;
     /// ArbOS version 20 — Cancun EVM rules (transient storage, blob base fee).
     pub const ARBOS_VERSION_20: u64 = 20;
     /// ArbOS version 40 — Prague EVM rules.
