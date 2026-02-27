@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::storage_slot::{
-    derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, ROOT_STORAGE_KEY,
-    SEND_MERKLE_SUBSPACE,
+    derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
+    ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE,
 };
 
 /// ArbSys precompile address (0x64).
@@ -333,6 +333,28 @@ fn do_send_tx_to_l1(
     internals
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+
+    // ArbOS v41+: prevent sending value when native token owners exist.
+    if !value.is_zero() {
+        let raw_version = internals
+            .sload(ARBOS_STATE_ADDRESS, root_slot(0))
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
+        let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
+        if arbos_version >= 41 {
+            let nt_key = derive_subspace_key(ROOT_STORAGE_KEY, NATIVE_TOKEN_SUBSPACE);
+            let nt_size_slot = map_slot(nt_key.as_slice(), 0);
+            let num_owners = internals
+                .sload(ARBOS_STATE_ADDRESS, nt_size_slot)
+                .map_err(|_| PrecompileError::other("sload failed"))?
+                .data;
+            if !num_owners.is_zero() {
+                return Err(PrecompileError::other(
+                    "not allowed to send value when native token owners exist",
+                ));
+            }
+        }
+    }
 
     // Read current Merkle accumulator size.
     let merkle_key = derive_subspace_key(ROOT_STORAGE_KEY, SEND_MERKLE_SUBSPACE);
