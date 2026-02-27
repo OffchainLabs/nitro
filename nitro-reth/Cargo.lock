@@ -1037,6 +1037,7 @@ dependencies = [
  "alloy-evm",
  "arb-chainspec",
  "arb-evm",
+ "arb-payload",
  "arb-primitives",
  "clap",
  "eyre",
@@ -1045,6 +1046,7 @@ dependencies = [
  "reth-execution-types",
  "reth-node-builder",
  "reth-node-ethereum",
+ "reth-node-types",
  "reth-primitives-traits",
  "reth-storage-api",
 ]
@@ -1053,12 +1055,18 @@ dependencies = [
 name = "arb-payload"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-engine",
  "arb-primitives",
- "reth-payload-builder",
+ "reth-engine-primitives",
+ "reth-payload-primitives",
  "reth-primitives-traits",
  "serde",
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1100,7 +1108,11 @@ dependencies = [
 name = "arb-reth"
 version = "0.1.0"
 dependencies = [
+ "arb-chainspec",
+ "arb-node",
+ "reth-chainspec",
  "reth-cli-util",
+ "reth-node-builder",
  "tracing",
 ]
 

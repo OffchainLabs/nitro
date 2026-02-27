@@ -8,17 +8,22 @@ pub mod consensus;
 
 use std::sync::Arc;
 
-use arb_primitives::ArbPrimitives;
+use arb_payload::ArbEngineTypes;
+use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
     components::{ConsensusBuilder, ExecutorBuilder},
     BuilderContext, FullNodeTypes, NodeTypes,
 };
+use reth_storage_api::EthStorage;
 
 use arb_evm::ArbEvmConfig;
 
 use crate::args::RollupArgs;
 use crate::consensus::ArbConsensus;
+
+/// Arbitrum storage type.
+pub type ArbStorage = EthStorage<ArbTransactionSigned>;
 
 /// Arbitrum node configuration.
 #[derive(Debug, Clone, Default)]
@@ -34,8 +39,12 @@ impl ArbNode {
     }
 }
 
-// TODO: Implement NodeTypes once ArbPrimitives-compatible engine/payload types exist.
-// EthEngineTypes requires EthPrimitives; need ArbEngineTypes with ArbPrimitives payloads.
+impl NodeTypes for ArbNode {
+    type Primitives = ArbPrimitives;
+    type ChainSpec = ChainSpec;
+    type Storage = ArbStorage;
+    type Payload = ArbEngineTypes;
+}
 
 /// Builder for the Arbitrum EVM executor component.
 #[derive(Debug, Default, Clone, Copy)]
@@ -66,7 +75,3 @@ where
         Ok(Arc::new(ArbConsensus::new(ctx.chain_spec())))
     }
 }
-
-// TODO: Implement Node trait once ArbPrimitives-compatible pool builder and add-ons are available.
-// The Ethereum pool/network/add-ons builders hard-code EthPrimitives and cannot be used directly.
-// Need: ArbPoolBuilder (EthPoolTransaction for ArbTransactionSigned), ArbAddOns, ArbEngineValidator.

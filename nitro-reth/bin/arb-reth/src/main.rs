@@ -7,7 +7,11 @@ fn main() {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 
-    // TODO: Re-enable node launch once ArbPrimitives-compatible pool/add-ons builders exist.
-    // The Ethereum builders hard-code EthPrimitives which is incompatible with ArbPrimitives.
-    info!(target: "reth::cli", "arb-reth binary placeholder — node builder integration pending");
+    // Node types and engine types are now wired up (ArbNode, ArbEngineTypes).
+    // Full node launch requires implementing the Node trait with:
+    // - ArbPoolBuilder (transaction pool)
+    // - ArbNetworkBuilder (P2P networking)
+    // - ArbPayloadServiceBuilder (block building)
+    // These are tracked as follow-up work.
+    info!(target: "reth::cli", "arb-reth node types configured, full launch pending pool/network builders");
 }
