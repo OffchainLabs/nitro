@@ -141,6 +141,10 @@ where
         if let Ok(arb_state) =
             ArbosState::open(state_ptr, SystemBurner::new(None, false))
         {
+            // Rotate multi-gas fees: copy next-block fees to current-block.
+            // This must happen before reading the base fee or executing transactions.
+            let _ = arb_state.l2_pricing_state.commit_multi_gas_fees();
+
             let arbos_version = arb_state.arbos_version;
             let network_fee_account = arb_state
                 .network_fee_account
@@ -171,6 +175,11 @@ where
                 .l2_pricing_state
                 .per_tx_gas_limit()
                 .unwrap_or(0);
+            // Base fee from L2 pricing state (after multi-gas fee commit).
+            let base_fee = arb_state
+                .l2_pricing_state
+                .base_fee_wei()
+                .unwrap_or(U256::ZERO);
             // L1 base fee comes from the incoming message header, not ArbOS state.
             // It will be set when the start-block internal tx is executed.
             let l1_base_fee = U256::ZERO;
@@ -182,6 +191,7 @@ where
             self.arb_ctx.brotli_compression_level = brotli_compression_level;
             self.arb_ctx.l1_price_per_unit = l1_price_per_unit;
             self.arb_ctx.min_base_fee = min_base_fee;
+            self.arb_ctx.basefee = base_fee;
 
             // Create ArbOS hooks with the loaded state parameters.
             let coinbase = revm::context::Block::beneficiary(self.inner.evm().block());
