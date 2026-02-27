@@ -501,6 +501,7 @@ where
         let sender = *recovered.signer();
         let tx_type_raw = recovered.tx().ty();
         let tx_gas_limit = recovered.tx().gas_limit();
+        let envelope_tx_type = recovered.tx().tx_type();
 
         // Classify the transaction type.
         let arb_tx_type = ArbTxType::from_u8(tx_type_raw).ok();
@@ -841,6 +842,99 @@ where
             tx_env.set_gas_limit(current.saturating_sub(gas_deduction));
         }
 
+        // --- RevertedTxHook: check for pre-recorded reverted or filtered txs ---
+        // Called after gas charging but before EVM execution.
+        {
+            use arbos::tx_processor::RevertedTxAction;
+
+            // Get tx hash for filtered check.
+            let tx_hash = recovered.tx().trie_hash();
+
+            // Check if tx is in the filtered transactions list.
+            let is_filtered = {
+                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                ArbosState::open(state_ptr, SystemBurner::new(None, false))
+                    .ok()
+                    .map(|s| s.filtered_transactions.is_filtered_free(tx_hash))
+                    .unwrap_or(false)
+            };
+
+            if let Some(hooks) = self.arb_hooks.as_ref() {
+                let action = hooks.tx_proc.reverted_tx_hook(
+                    Some(tx_hash),
+                    None, // pre_recorded_gas: sequencer-specific, not used in state machine
+                    is_filtered,
+                );
+
+                match action {
+                    RevertedTxAction::PreRecordedRevert { gas_to_consume } => {
+                        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                        increment_nonce(db, sender);
+                        let gas_used = poster_gas + gas_to_consume;
+                        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+                            .saturating_add(MultiGas::computation_gas(gas_to_consume));
+                        self.pending_tx = Some(PendingArbTx {
+                            sender,
+                            tx_gas_limit,
+                            arb_tx_type,
+                            has_poster_costs,
+                            poster_gas,
+                            calldata_units,
+                            charged_multi_gas,
+                            retry_context,
+                        });
+                        return Ok(EthTxResult {
+                            result: revm::context::result::ResultAndState {
+                                result: ExecutionResult::Revert {
+                                    gas_used,
+                                    output: alloy_primitives::Bytes::new(),
+                                },
+                                state: Default::default(),
+                            },
+                            blob_gas_used: 0,
+                            tx_type: envelope_tx_type,
+                        });
+                    }
+                    RevertedTxAction::FilteredTx => {
+                        let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+                        increment_nonce(db, sender);
+                        // Consume all remaining gas.
+                        let gas_remaining = tx_gas_limit
+                            .saturating_sub(poster_gas)
+                            .saturating_sub(compute_hold_gas);
+                        let gas_used = tx_gas_limit;
+                        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+                            .saturating_add(MultiGas::computation_gas(gas_remaining));
+                        self.pending_tx = Some(PendingArbTx {
+                            sender,
+                            tx_gas_limit,
+                            arb_tx_type,
+                            has_poster_costs,
+                            poster_gas,
+                            calldata_units,
+                            charged_multi_gas,
+                            retry_context,
+                        });
+                        return Ok(EthTxResult {
+                            result: revm::context::result::ResultAndState {
+                                result: ExecutionResult::Revert {
+                                    gas_used,
+                                    output: alloy_primitives::Bytes::from(
+                                        "filtered transaction".as_bytes(),
+                                    ),
+                                },
+                                state: Default::default(),
+                            },
+                            blob_gas_used: 0,
+                            tx_type: envelope_tx_type,
+                        });
+                    }
+                    RevertedTxAction::None => {}
+                }
+            }
+        }
+
         // --- Execute via inner EVM executor ---
 
         let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
@@ -1131,6 +1225,16 @@ fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
     }
     if let Ok(Some(mut info)) = revm::Database::basic(state, address) {
         info.balance = info.balance.saturating_sub(amount);
+        let mut account = revm_state::Account::from(info);
+        account.mark_touch();
+        state.commit_iter(&mut core::iter::once((address, account)));
+    }
+}
+
+/// Increment the nonce of an account in the EVM state.
+fn increment_nonce<DB: Database>(state: &mut State<DB>, address: Address) {
+    if let Ok(Some(mut info)) = revm::Database::basic(state, address) {
+        info.nonce += 1;
         let mut account = revm_state::Account::from(info);
         account.mark_touch();
         state.commit_iter(&mut core::iter::once((address, account)));
