@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, U256, address};
+use alloy_primitives::{Address, Bytes, U256, address};
 use revm::Database;
 use std::collections::HashMap;
 
@@ -151,4 +151,113 @@ pub fn write_arbos_storage<D: Database>(
     };
 
     state.apply_transition(vec![(ARBOS_STATE_ADDRESS, transition)]);
+}
+
+/// Reads the balance of an account from the state.
+pub fn get_account_balance<D: Database>(
+    state: &mut revm::database::State<D>,
+    addr: Address,
+) -> U256 {
+    if let Some(cached_acc) = state.cache.accounts.get(&addr) {
+        if let Some(ref account) = cached_acc.account {
+            return account.info.balance;
+        }
+    }
+
+    state
+        .database
+        .basic(addr)
+        .ok()
+        .flatten()
+        .map(|info| info.balance)
+        .unwrap_or(U256::ZERO)
+}
+
+/// Sets the nonce of an account, loading it into cache if needed.
+pub fn set_account_nonce<D: Database>(
+    state: &mut revm::database::State<D>,
+    addr: Address,
+    nonce: u64,
+) {
+    let _ = state.load_cache_account(addr);
+
+    let (previous_info, previous_status, current_info, current_status) = {
+        let cached_acc = match state.cache.accounts.get_mut(&addr) {
+            Some(acc) => acc,
+            None => return,
+        };
+        let previous_status = cached_acc.status;
+        let previous_info = cached_acc.account.as_ref().map(|a| a.info.clone());
+
+        if let Some(ref mut account) = cached_acc.account {
+            account.info.nonce = nonce;
+        }
+
+        let had_no_nonce_and_code = previous_info
+            .as_ref()
+            .map(|info| info.has_no_code_and_nonce())
+            .unwrap_or_default();
+        cached_acc.status = cached_acc.status.on_changed(had_no_nonce_and_code);
+
+        let current_info = cached_acc.account.as_ref().map(|a| a.info.clone());
+        let current_status = cached_acc.status;
+        (previous_info, previous_status, current_info, current_status)
+    };
+
+    let transition = revm::database::TransitionAccount {
+        info: current_info,
+        status: current_status,
+        previous_info,
+        previous_status,
+        storage: HashMap::default(),
+        storage_was_destroyed: false,
+    };
+    state.apply_transition(vec![(addr, transition)]);
+}
+
+/// Sets the code of an account, loading it into cache if needed.
+pub fn set_account_code<D: Database>(
+    state: &mut revm::database::State<D>,
+    addr: Address,
+    code: Bytes,
+) {
+    use revm_state::Bytecode;
+
+    let _ = state.load_cache_account(addr);
+    let code_hash = alloy_primitives::keccak256(&code);
+    let bytecode = Bytecode::new_raw(code);
+
+    let (previous_info, previous_status, current_info, current_status) = {
+        let cached_acc = match state.cache.accounts.get_mut(&addr) {
+            Some(acc) => acc,
+            None => return,
+        };
+        let previous_status = cached_acc.status;
+        let previous_info = cached_acc.account.as_ref().map(|a| a.info.clone());
+
+        if let Some(ref mut account) = cached_acc.account {
+            account.info.code_hash = code_hash;
+            account.info.code = Some(bytecode);
+        }
+
+        let had_no_nonce_and_code = previous_info
+            .as_ref()
+            .map(|info| info.has_no_code_and_nonce())
+            .unwrap_or_default();
+        cached_acc.status = cached_acc.status.on_changed(had_no_nonce_and_code);
+
+        let current_info = cached_acc.account.as_ref().map(|a| a.info.clone());
+        let current_status = cached_acc.status;
+        (previous_info, previous_status, current_info, current_status)
+    };
+
+    let transition = revm::database::TransitionAccount {
+        info: current_info,
+        status: current_status,
+        previous_info,
+        previous_status,
+        storage: HashMap::default(),
+        storage_was_destroyed: false,
+    };
+    state.apply_transition(vec![(addr, transition)]);
 }

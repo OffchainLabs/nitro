@@ -1,9 +1,13 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use revm::Database;
 
+use arb_primitives::arbos_versions::{
+    HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
+};
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigUint,
-    StorageBackedBytes, StorageBackedUint64,
+    StorageBackedBytes, StorageBackedUint64, get_account_balance, set_account_code,
+    set_account_nonce,
 };
 
 use crate::address_set::{self, AddressSet};
@@ -12,8 +16,8 @@ use crate::blockhash::{self, Blockhashes};
 use crate::burn::Burner;
 use crate::features::{self, Features};
 use crate::filtered_transactions::FilteredTransactionsState;
-use crate::l1_pricing::L1PricingState;
-use crate::l2_pricing::L2PricingState;
+use crate::l1_pricing::{self, L1PricingState};
+use crate::l2_pricing::{self, L2PricingState};
 use crate::merkle_accumulator::{self, MerkleAccumulator};
 use crate::programs::Programs;
 use crate::retryables::RetryableState;
@@ -47,7 +51,7 @@ const TRANSACTION_FILTERING_SUBSPACE: &[u8] = &[11];
 const FILTERED_TRANSACTIONS_SUBSPACE: &[u8] = &[12];
 
 /// The maximum ArbOS version supported by this node.
-pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 40;
+pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = 60;
 
 /// Central ArbOS state aggregating all subsystem states.
 pub struct ArbosState<D, B: Burner> {
@@ -295,14 +299,11 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         }
 
         if scheduled_version > MAX_ARBOS_VERSION_SUPPORTED {
-            // Node is out of date
             return Err(());
         }
 
         let old_version = self.arbos_version;
-        while self.arbos_version < scheduled_version {
-            self.upgrade_arbos_version(self.arbos_version + 1)?;
-        }
+        self.upgrade_arbos_version(scheduled_version, false)?;
 
         // Clear the scheduled upgrade
         self.upgrade_version.set(0)?;
@@ -319,11 +320,159 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
         Ok(())
     }
 
-    /// Performs a single version upgrade step.
-    fn upgrade_arbos_version(&mut self, new_version: u64) -> Result<(), ()> {
-        self.set_format_version(new_version)?;
-        // Version-specific upgrade logic will be added as modules are implemented.
-        // Each version may need to initialize new storage fields or migrate data.
+    /// Performs version upgrade steps from current version up to `upgrade_to`.
+    ///
+    /// `first_time` is true during genesis initialization, which affects
+    /// some initial parameter values.
+    pub fn upgrade_arbos_version(
+        &mut self,
+        upgrade_to: u64,
+        first_time: bool,
+    ) -> Result<(), ()> {
+        while self.arbos_version < upgrade_to {
+            let next = self.arbos_version + 1;
+
+            match next {
+                2 => {
+                    self.l1_pricing_state.set_last_surplus(U256::ZERO, false)?;
+                }
+                3 => {
+                    self.l1_pricing_state.set_per_batch_gas_cost(0)?;
+                    self.l1_pricing_state.set_amortized_cost_cap_bips(u64::MAX)?;
+                }
+                4 | 5 | 6 | 7 | 8 | 9 => {
+                    // No state changes needed
+                }
+                10 => {
+                    let state = unsafe { &mut *self.backing_storage.state };
+                    let pool_balance =
+                        get_account_balance(state, l1_pricing::L1_PRICER_FUNDS_POOL_ADDRESS);
+                    self.l1_pricing_state.set_l1_fees_available(pool_balance)?;
+                }
+                11 => {
+                    self.l1_pricing_state
+                        .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V12)?;
+
+                    // Fix: math.MaxUint64 was incorrectly used for "disabled";
+                    // the correct disable value is 0.
+                    let old_cap = self.l1_pricing_state.amortized_cost_cap_bips()?;
+                    if old_cap == u64::MAX {
+                        self.l1_pricing_state.set_amortized_cost_cap_bips(0)?;
+                    }
+
+                    if !first_time {
+                        self.chain_owners.clear_list()?;
+                    }
+                }
+                // 12..=19: reserved for Orbit chains
+                12..=19 => {}
+                20 => {
+                    self.set_brotli_compression_level(1)?;
+                }
+                // 21..=29: reserved for Orbit chains
+                21..=29 => {}
+                30 => {
+                    Programs::initialize(
+                        next,
+                        &self.backing_storage.open_sub_storage(PROGRAMS_SUBSPACE),
+                    );
+                }
+                31 => {
+                    let mut params = self.programs.params()?;
+                    params.upgrade_to_version(2).map_err(|_| ())?;
+                    params
+                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
+                        .map_err(|_| ())?;
+                }
+                32 => {
+                    // No state changes needed
+                }
+                // 33..=39: reserved for Orbit chains
+                33..=39 => {}
+                40 => {
+                    // EIP-2935: historical block hashes
+                    let state = unsafe { &mut *self.backing_storage.state };
+                    set_account_nonce(state, HISTORY_STORAGE_ADDRESS, 1);
+                    set_account_code(
+                        state,
+                        HISTORY_STORAGE_ADDRESS,
+                        HISTORY_STORAGE_CODE_ARBITRUM.clone(),
+                    );
+                    // Upgrade Stylus params for version 40
+                    let mut params = self.programs.params()?;
+                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
+                    params
+                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
+                        .map_err(|_| ())?;
+                }
+                41 => {
+                    // No state changes needed
+                }
+                // 42..=49: reserved for Orbit chains
+                42..=49 => {}
+                50 => {
+                    let mut params = self.programs.params()?;
+                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
+                    params
+                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
+                        .map_err(|_| ())?;
+                    self.l2_pricing_state
+                        .set_max_per_tx_gas_limit(l2_pricing::INITIAL_PER_TX_GAS_LIMIT_V50)?;
+                }
+                51 => {
+                    // No state changes needed
+                }
+                // 52..=59: reserved for Orbit chains
+                52..=59 => {}
+                60 => {
+                    let mut params = self.programs.params()?;
+                    params.upgrade_to_arbos_version(next).map_err(|_| ())?;
+                    params
+                        .save(&self.programs.backing_storage.open_sub_storage(&[0]))
+                        .map_err(|_| ())?;
+                    // Initialize transaction filtering address set
+                    crate::address_set::initialize_address_set(
+                        &self
+                            .backing_storage
+                            .open_sub_storage(TRANSACTION_FILTERING_SUBSPACE),
+                    )?;
+                }
+                _ => {
+                    tracing::error!(version = next, "unsupported ArbOS version");
+                    return Err(());
+                }
+            }
+
+            // Install precompile code for newly introduced precompiles
+            for &(addr, version) in PRECOMPILE_MIN_ARBOS_VERSIONS {
+                if version == next {
+                    let state = unsafe { &mut *self.backing_storage.state };
+                    set_account_code(state, addr, Bytes::from_static(&[0xFE])); // INVALID opcode
+                }
+            }
+
+            self.arbos_version = next;
+            self.programs.arbos_version = next;
+            self.l1_pricing_state.arbos_version = next;
+        }
+
+        // First-time initialization overrides
+        if first_time && upgrade_to >= 6 {
+            if upgrade_to < 11 {
+                self.l1_pricing_state
+                    .set_per_batch_gas_cost(l1_pricing::INITIAL_PER_BATCH_GAS_COST_V6)?;
+            }
+            self.l1_pricing_state
+                .set_equilibration_units(U256::from(l1_pricing::INITIAL_EQUILIBRATION_UNITS_V6))?;
+            self.l2_pricing_state
+                .set_speed_limit_per_second(l2_pricing::INITIAL_SPEED_LIMIT_PER_SECOND_V6)?;
+            self.l2_pricing_state
+                .set_max_per_block_gas_limit(l2_pricing::INITIAL_PER_BLOCK_GAS_LIMIT_V6)?;
+        }
+
+        // Persist the final version
+        self.set_format_version(self.arbos_version)?;
+
         Ok(())
     }
 }
