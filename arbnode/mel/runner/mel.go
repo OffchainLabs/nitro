@@ -250,7 +250,7 @@ func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSync
 	}
 	batchSeen := headState.BatchCount // fallback when seqBatchCounter is nil or returns error
 	if m.seqBatchCounter != nil {
-		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber+1))
+		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber))
 		if err != nil {
 			if !strings.Contains(err.Error(), "header not found") {
 				log.Error("SequencerInbox GetBatchCount error", "err", err)
