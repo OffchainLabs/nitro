@@ -25,6 +25,7 @@ const SUBMIT_RETRYABLE: [u8; 4] = [0xc9, 0xf9, 0x5d, 0x32];
 
 /// Default retryable lifetime: 7 days in seconds.
 const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60;
+const RETRYABLE_REAP_PRICE: u64 = 58_000;
 
 // Retryable ticket storage field offsets (within the ticket's sub-storage).
 const NUM_TRIES_OFFSET: u64 = 0;
@@ -436,8 +437,9 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
 
-    // Gas: open_retryable(1 sload) + 2 sloads (timeout, windows) + queue_put(1 sload + 2 sstores) + 1 sstore (windows)
-    let gas_used = 4 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+    // Gas: open_retryable(1 sload) + 2 sloads (timeout, windows) + queue_put(1 sload + 2 sstores)
+    // + 1 sstore (windows) + RetryableReapPrice (prepays for future reaping of the queue entry)
+    let gas_used = 4 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS + RETRYABLE_REAP_PRICE;
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
