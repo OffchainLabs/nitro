@@ -12,7 +12,7 @@ use alloy_evm::eth::spec::EthExecutorSpec;
 use alloy_evm::eth::{EthBlockExecutionCtx, EthBlockExecutor};
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded};
 use alloy_evm::{Database, Evm, EvmFactory};
-use alloy_primitives::{Address, Log, U256};
+use alloy_primitives::{Address, Log, TxKind, U256};
 use arb_chainspec;
 use arbos::arbos_state::ArbosState;
 use arbos::burn::SystemBurner;
@@ -510,8 +510,20 @@ where
 
         // --- Pre-execution: apply special tx type state changes ---
 
+        // Internal txs: verify sender, apply state update, end immediately.
         if is_arb_internal {
+            use arbos::tx_processor::ARBOS_ADDRESS;
+
+            if sender != ARBOS_ADDRESS {
+                return Err(BlockExecutionError::msg(
+                    "internal tx not from ArbOS address",
+                ));
+            }
+
             let tx_data = recovered.tx().input().to_vec();
+            let tx_type = recovered.tx().tx_type();
+            let mut tx_err = None;
+
             if tx_data.len() >= 4 {
                 let selector: [u8; 4] = tx_data[0..4].try_into().unwrap();
                 let is_start_block = selector == internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID;
@@ -548,6 +560,7 @@ where
                             error = %e,
                             "internal tx processing failed"
                         );
+                        tx_err = Some(e);
                     }
 
                     if is_start_block {
@@ -555,15 +568,88 @@ where
                     }
                 }
             }
+
+            // Internal txs end immediately — no EVM execution.
+            self.pending_tx = Some(PendingArbTx {
+                sender,
+                tx_gas_limit: 0,
+                arb_tx_type: Some(ArbTxType::ArbitrumInternalTx),
+                has_poster_costs: false,
+                poster_gas: 0,
+                calldata_units: 0,
+                retry_context: None,
+            });
+
+            let result = if let Some(err) = tx_err {
+                ExecutionResult::Revert {
+                    gas_used: 0,
+                    output: alloy_primitives::Bytes::from(err.into_bytes()),
+                }
+            } else {
+                ExecutionResult::Success {
+                    reason: revm::context::result::SuccessReason::Return,
+                    gas_used: 0,
+                    gas_refunded: 0,
+                    output: revm::context::result::Output::Call(
+                        alloy_primitives::Bytes::new(),
+                    ),
+                    logs: Vec::new(),
+                }
+            };
+
+            return Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result,
+                    state: Default::default(),
+                },
+                blob_gas_used: 0,
+                tx_type,
+            });
         }
 
-        // Deposit txs mint ETH to the sender before EVM execution.
+        // Deposit txs: mint to sender, transfer to recipient, end immediately.
+        // No EVM execution — the value transfer is the entire transaction.
         if is_arb_deposit {
             let value = recovered.tx().value();
-            if !value.is_zero() {
-                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                mint_balance(db, sender, value);
-            }
+            let to = match recovered.tx().kind() {
+                TxKind::Call(addr) => addr,
+                TxKind::Create => {
+                    return Err(BlockExecutionError::msg("deposit tx has no To address"));
+                }
+            };
+            let tx_type = recovered.tx().tx_type();
+
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            // Mint deposit value to sender, then transfer to recipient.
+            mint_balance(db, sender, value);
+            transfer_balance(db, sender, to, value);
+
+            self.pending_tx = Some(PendingArbTx {
+                sender,
+                tx_gas_limit: 0,
+                arb_tx_type: Some(ArbTxType::ArbitrumDepositTx),
+                has_poster_costs: false,
+                poster_gas: 0,
+                calldata_units: 0,
+                retry_context: None,
+            });
+
+            return Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result: ExecutionResult::Success {
+                        reason: revm::context::result::SuccessReason::Return,
+                        gas_used: 0,
+                        gas_refunded: 0,
+                        output: revm::context::result::Output::Call(
+                            alloy_primitives::Bytes::new(),
+                        ),
+                        logs: Vec::new(),
+                    },
+                    state: Default::default(),
+                },
+                blob_gas_used: 0,
+                tx_type,
+            });
         }
 
         // --- SubmitRetryable: skip EVM, handle fees/escrow/ticket creation ---
