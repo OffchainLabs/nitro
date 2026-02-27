@@ -369,8 +369,41 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Convert single-gas constraints to multi-gas constraints (for upgrades).
+    ///
+    /// Iterates existing single-gas constraints, reads their target/window/backlog,
+    /// and creates corresponding multi-gas constraints with equal weights across
+    /// all resource dimensions.
     pub fn set_multi_gas_constraints_from_single_gas_constraints(&self) -> Result<(), ()> {
-        // TODO: implement when multi-gas constraint upgrade logic is needed
+        self.clear_multi_gas_constraints()?;
+
+        let length = self.gas_constraints_length()?;
+
+        for i in 0..length {
+            let c = self.open_gas_constraint_at(i);
+
+            let target = c.target()?;
+            let window = c.adjustment_window()?;
+            let backlog = c.backlog()?;
+
+            // Equal weights for all resource kinds.
+            let mut weights = [1u64; NUM_RESOURCE_KIND];
+            weights[0] = 1; // Unknown/default dimension also gets weight 1
+
+            let adjustment_window = if window > u32::MAX as u64 {
+                u32::MAX as u64
+            } else {
+                window
+            };
+
+            self.add_multi_gas_constraint(target, adjustment_window, &weights)?;
+
+            // Transfer existing backlog to the new multi-gas constraint.
+            let new_len = self.multi_gas_constraints_length()?;
+            if new_len > 0 {
+                let mc = self.open_multi_gas_constraint_at(new_len - 1);
+                mc.set_backlog(backlog)?;
+            }
+        }
         Ok(())
     }
 
