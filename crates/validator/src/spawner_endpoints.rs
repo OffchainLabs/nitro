@@ -134,7 +134,7 @@ pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl In
         .locator
         .module_roots()
         .iter()
-        .map(|root_meta| format!("0x{}", root_meta.module_root))
+        .map(|root_meta| root_meta.module_root.to_string())
         .collect();
     format!("[{}]", module_roots.join(", "))
 }

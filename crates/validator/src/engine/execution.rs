@@ -50,7 +50,7 @@ pub async fn validate_native(
 
     let binary_path = locator.get_machine_path(module_root)?;
     let binary = replay_binary(&binary_path);
-    info!("validate native serving request with module root 0x{module_root}");
+    info!("validate native serving request with module root {module_root}");
 
     let opts = jit::Opts {
         validator: jit::ValidatorOpts {
@@ -72,7 +72,7 @@ pub async fn validate_native(
         Some(compiled) => {
             jit::run_with_module(compiled, &opts).map_err(|error| format!("{error}"))?
         }
-        None => return Err(format!("module root 0x{module_root} not in cache")),
+        None => return Err(format!("module root {module_root} not in cache")),
     };
 
     if let Some(err) = result.error {
@@ -91,7 +91,7 @@ pub async fn validate_continuous(
         .module_root
         .unwrap_or_else(|| locator.latest_wasm_module_root().module_root);
 
-    info!("validate continuous serving request with module_root 0x{module_root}");
+    info!("validate continuous serving request with module_root {module_root}");
 
     let new_state = jit_manager
         .feed_machine_with_root(&request.validation_input, module_root)

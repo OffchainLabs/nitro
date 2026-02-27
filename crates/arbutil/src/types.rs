@@ -163,13 +163,13 @@ impl IntoIterator for Bytes32 {
 
 impl fmt::Display for Bytes32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self))
+        write!(f, "0x{}", hex::encode(self))
     }
 }
 
 impl fmt::Debug for Bytes32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self))
+        write!(f, "0x{}", hex::encode(self))
     }
 }
 
