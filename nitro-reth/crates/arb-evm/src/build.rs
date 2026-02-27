@@ -92,6 +92,7 @@ where
             arb_hooks: None,
             arb_ctx,
             pending_tx: None,
+            block_gas_left: 0, // Set from state in apply_pre_execution_changes
         }
     }
 }
@@ -116,6 +117,7 @@ struct PendingArbTx {
 /// - Loads ArbOS state at block start (version, fee accounts)
 /// - Adjusts gas accounting for L1 poster costs
 /// - Distributes fees to network/infra/poster accounts after each tx
+/// - Tracks block gas consumption for rate limiting
 pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Inner Ethereum block executor.
     pub inner: EthBlockExecutor<'a, Evm, Spec, R>,
@@ -125,6 +127,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub arb_ctx: ArbBlockExecutionCtx,
     /// Per-tx state between execute and commit.
     pending_tx: Option<PendingArbTx>,
+    /// Remaining block gas for rate limiting.
+    /// Starts at per_block_gas_limit and decreases with each tx's compute gas.
+    pub block_gas_left: u64,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -242,6 +247,12 @@ where
 
             // Read state parameters for the execution context and hooks.
             self.load_state_params(&arb_state);
+
+            // Initialize block gas rate limiting.
+            self.block_gas_left = arb_state
+                .l2_pricing_state
+                .per_block_gas_limit()
+                .unwrap_or(0);
         }
 
         tracing::trace!(
@@ -469,6 +480,18 @@ where
                     }
                 }
             }
+
+            // Block gas rate limiting: deduct compute gas from block budget.
+            // computeUsed = gasUsed - posterGas, with a floor of TX_GAS.
+            const TX_GAS: u64 = 21_000;
+            let data_gas = pending.poster_gas;
+            let compute_used = if gas_used_total < data_gas {
+                TX_GAS
+            } else {
+                let compute = gas_used_total - data_gas;
+                if compute < TX_GAS { TX_GAS } else { compute }
+            };
+            self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
         }
 
         Ok(gas_used)

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use alloy_consensus::{Block, BlockBody, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH, proofs};
 use alloy_evm::block::{BlockExecutionError, BlockExecutionResult, BlockExecutorFactory};
 use alloy_evm::eth::EthBlockExecutionCtx;
-use alloy_primitives::{B256, U256};
+use alloy_primitives::{B64, B256, U256};
 use reth_evm::execute::{BlockAssembler, BlockAssemblerInput};
 use reth_primitives_traits::{Receipt, SignedTransaction, logs_bloom};
 use revm::context::Block as RevmBlock;
