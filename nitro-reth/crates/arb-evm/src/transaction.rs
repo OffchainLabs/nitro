@@ -6,7 +6,7 @@ use revm::context::TxEnv;
 
 use arb_primitives::tx_types::ArbTxType;
 
-/// Wrapper around revm's TxEnv for Arbitrum transaction types.
+/// Helper for building Arbitrum-specific TxEnv values.
 ///
 /// Handles Arbitrum-specific conversion rules:
 /// - Internal/Deposit txs get 1M gas if zero, gas_price=0
@@ -63,29 +63,16 @@ impl ArbTransaction {
 
         ArbTransaction(tx)
     }
-}
 
-impl alloy_evm::IntoTxEnv<ArbTransaction> for ArbTransaction {
-    fn into_tx_env(self) -> ArbTransaction {
-        self
+    /// Unwrap into the inner TxEnv.
+    pub fn into_inner(self) -> TxEnv {
+        self.0
     }
 }
 
-impl reth_evm::TransactionEnv for ArbTransaction {
-    fn set_gas_limit(&mut self, gas_limit: u64) {
-        self.0.gas_limit = gas_limit;
-    }
-
-    fn nonce(&self) -> u64 {
-        self.0.nonce
-    }
-
-    fn set_nonce(&mut self, nonce: u64) {
-        self.0.nonce = nonce;
-    }
-
-    fn set_access_list(&mut self, access_list: AccessList) {
-        self.0.access_list = access_list;
+impl From<ArbTransaction> for TxEnv {
+    fn from(arb_tx: ArbTransaction) -> Self {
+        arb_tx.0
     }
 }
 
@@ -139,6 +126,24 @@ impl revm::context_interface::Transaction for ArbTransaction {
     }
     fn max_priority_fee_per_gas(&self) -> Option<u128> {
         revm::context_interface::Transaction::max_priority_fee_per_gas(&self.0)
+    }
+}
+
+impl reth_evm::TransactionEnv for ArbTransaction {
+    fn set_gas_limit(&mut self, gas_limit: u64) {
+        self.0.gas_limit = gas_limit;
+    }
+
+    fn nonce(&self) -> u64 {
+        self.0.nonce
+    }
+
+    fn set_nonce(&mut self, nonce: u64) {
+        self.0.nonce = nonce;
+    }
+
+    fn set_access_list(&mut self, access_list: AccessList) {
+        self.0.access_list = access_list;
     }
 }
 

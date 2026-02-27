@@ -10,7 +10,7 @@ pub mod transaction;
 
 pub use config::ArbEvmConfig;
 pub use context::{
-    ActivatedWasm, ArbBlockExecutionCtx, ArbitrumExtraData, ArbNextBlockEnvCtx, RecentWasms,
+    ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData, RecentWasms,
 };
 pub use evm::{ArbEvm, ArbEvmFactory};
 pub use build::{ArbBlockExecutor, ArbBlockExecutorFactory};

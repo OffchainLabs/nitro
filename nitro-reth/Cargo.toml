@@ -52,6 +52,7 @@ reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth.git", rev 
 reth-provider = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-storage-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-storage-errors = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
@@ -71,18 +72,20 @@ reth-cli-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2
 reth-tracing = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
 alloy-consensus = { version = "1.7", default-features = false }
 alloy-eips = { version = "1.7", default-features = false }
-alloy-evm = { version = "0.27" }
+alloy-evm = { version = "0.27", features = ["rpc"] }
+alloy-rpc-types-eth = { version = "1.7" }
 alloy-genesis = { version = "1.7" }
 alloy-network = { version = "1.7" }
 alloy-rlp = { version = "0.3", features = ["derive"] }
 alloy-rpc-types = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
-alloy-rpc-types-eth = { version = "1.7" }
 alloy-serde = { version = "1.7" }
 alloy-sol-types = { version = "1.5" }
 alloy-trie = { version = "0.9" }
