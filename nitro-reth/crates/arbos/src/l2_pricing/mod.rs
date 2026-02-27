@@ -26,10 +26,10 @@ const PRICING_INERTIA_OFFSET: u64 = 5;
 const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
 const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
 
-// Subspace keys.
-const GAS_CONSTRAINTS_KEY: &[u8] = b"gc";
-const MULTI_GAS_CONSTRAINTS_KEY: &[u8] = b"mgc";
-const MULTI_GAS_BASE_FEES_KEY: &[u8] = b"mgf";
+// Subspace keys (matching Go: gasConstraintsKey=[]byte{0}, etc.).
+const GAS_CONSTRAINTS_KEY: &[u8] = &[0];
+const MULTI_GAS_CONSTRAINTS_KEY: &[u8] = &[1];
+const MULTI_GAS_BASE_FEES_KEY: &[u8] = &[2];
 
 // Constants.
 pub const GETH_BLOCK_GAS_LIMIT: u64 = 1 << 63;
