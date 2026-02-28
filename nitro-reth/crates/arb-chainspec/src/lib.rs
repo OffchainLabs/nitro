@@ -7,8 +7,14 @@ use revm::primitives::hardfork::SpecId;
 /// These map to EVM spec upgrades gated by the ArbOS version
 /// stored in the block header's mix_hash.
 pub mod arbos_version {
+    pub const ARBOS_VERSION_2: u64 = 2;
     pub const ARBOS_VERSION_3: u64 = 3;
+    pub const ARBOS_VERSION_4: u64 = 4;
+    pub const ARBOS_VERSION_5: u64 = 5;
+    pub const ARBOS_VERSION_6: u64 = 6;
+    pub const ARBOS_VERSION_7: u64 = 7;
     pub const ARBOS_VERSION_8: u64 = 8;
+    pub const ARBOS_VERSION_9: u64 = 9;
     pub const ARBOS_VERSION_10: u64 = 10;
     /// ArbOS version 11 — Shanghai EVM rules (PUSH0, etc.).
     pub const ARBOS_VERSION_11: u64 = 11;
@@ -16,13 +22,23 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_FIX_REDEEM_GAS: u64 = ARBOS_VERSION_11;
     /// ArbOS version 20 — Cancun EVM rules (transient storage, blob base fee).
     pub const ARBOS_VERSION_20: u64 = 20;
-    /// ArbOS version 40 — Prague EVM rules.
-    pub const ARBOS_VERSION_40: u64 = 40;
+    /// ArbOS version 30 — Stylus support.
+    pub const ARBOS_VERSION_30: u64 = 30;
+    pub const ARBOS_VERSION_STYLUS: u64 = ARBOS_VERSION_30;
     /// ArbOS version 31 — Stylus fixes (return data cost check, etc.).
     pub const ARBOS_VERSION_31: u64 = 31;
     pub const ARBOS_VERSION_STYLUS_FIXES: u64 = ARBOS_VERSION_31;
-    /// ArbOS version 50 — Osaka EVM rules (future).
+    /// ArbOS version 32 — Stylus charging fixes.
+    pub const ARBOS_VERSION_32: u64 = 32;
+    pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = ARBOS_VERSION_32;
+    /// ArbOS version 40 — Prague EVM rules.
+    pub const ARBOS_VERSION_40: u64 = 40;
+    pub const ARBOS_VERSION_41: u64 = 41;
+    /// ArbOS version 50 — Dia upgrade.
     pub const ARBOS_VERSION_50: u64 = 50;
+    pub const ARBOS_VERSION_DIA: u64 = ARBOS_VERSION_50;
+    /// Maximum ArbOS version supported by this node.
+    pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = ARBOS_VERSION_50;
     /// ArbOS version 51 — multi-constraint fix.
     pub const ARBOS_VERSION_MULTI_CONSTRAINT_FIX: u64 = 51;
     /// ArbOS version 60 — multi-gas constraints.
