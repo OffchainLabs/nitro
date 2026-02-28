@@ -9,6 +9,7 @@ pub mod consensus;
 pub mod network;
 pub mod payload;
 pub mod pool;
+pub mod producer;
 pub mod validator;
 
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use reth_node_builder::{
     rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns, RpcContext},
     BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
-use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
+use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_rpc_eth_api::EthApiTypes;
 use reth_storage_api::EthStorage;
 
@@ -34,6 +35,7 @@ use crate::consensus::ArbConsensus;
 use crate::network::ArbNetworkBuilder;
 use crate::payload::ArbPayloadServiceBuilder;
 use crate::pool::ArbPoolBuilder;
+use crate::producer::ArbBlockProducer;
 
 /// Arbitrum RPC add-ons type alias.
 pub type ArbAddOns<N> = RpcAddOns<
@@ -140,15 +142,25 @@ where
 /// Registers the `arb_` and `nitroexecution_` RPC namespaces.
 fn register_arb_rpc<N, EthApi>(ctx: RpcContext<'_, N, EthApi>) -> eyre::Result<()>
 where
-    N: FullNodeComponents<Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider>,
+    N: FullNodeComponents<
+        Types: NodeTypes<ChainSpec = ChainSpec>,
+        Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + StateProviderFactory,
+    >,
     EthApi: EthApiTypes,
 {
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
 
+    // Create the block producer with full database access.
+    let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
+    let block_producer = Arc::new(ArbBlockProducer::new(
+        ctx.provider().clone(),
+        chain_spec,
+    ));
+
     // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
     // Nitro consensus connects to the auth RPC port with JWT authentication.
-    let nitro_exec = NitroExecutionHandler::new(ctx.provider().clone());
+    let nitro_exec = NitroExecutionHandler::new(ctx.provider().clone(), block_producer);
     let nitro_rpc = nitro_exec.into_rpc();
     ctx.modules.merge_configured(nitro_rpc.clone())?;
     ctx.auth_module.merge_auth_methods(nitro_rpc)?;

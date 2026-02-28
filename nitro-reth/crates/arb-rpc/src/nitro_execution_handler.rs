@@ -13,6 +13,7 @@ use parking_lot::RwLock;
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
+use crate::block_producer::{BlockProducer, BlockProductionInput};
 use crate::nitro_execution::{
     NitroExecutionApiServer, RpcConsensusSyncData, RpcFinalityData, RpcMaintenanceStatus,
     RpcMessageResult, RpcMessageWithMetadata, RpcMessageWithMetadataAndBlockInfo,
@@ -41,32 +42,30 @@ impl Default for NitroExecutionState {
 
 /// Handler for the `nitroexecution` RPC namespace.
 ///
-/// This is a read-only handler that responds to queries from Nitro consensus.
-/// Block production is not yet implemented - this handler allows the node to
-/// start up and respond to status queries while we develop the full
-/// execution engine.
-pub struct NitroExecutionHandler<Provider> {
+/// Receives L1 incoming messages from Nitro consensus and produces blocks.
+/// Delegates actual block production to the `BlockProducer` implementation.
+pub struct NitroExecutionHandler<Provider, BP> {
     provider: Provider,
+    block_producer: Arc<BP>,
     state: Arc<RwLock<NitroExecutionState>>,
 }
 
-impl<Provider> NitroExecutionHandler<Provider> {
-    /// Create a new handler.
-    pub fn new(provider: Provider) -> Self {
+impl<Provider, BP> NitroExecutionHandler<Provider, BP> {
+    /// Create a new handler with a block producer.
+    pub fn new(provider: Provider, block_producer: Arc<BP>) -> Self {
         Self {
             provider,
+            block_producer,
             state: Arc::new(RwLock::new(NitroExecutionState::default())),
         }
     }
 
     /// Convert a message index to a block number.
-    /// Matches Go: `MessageIndexToBlockNumber(msgIdx) = msgIdx + genesisBlockNum`
     fn message_index_to_block_number(msg_idx: u64) -> u64 {
         GENESIS_BLOCK_NUM + msg_idx
     }
 
     /// Convert a block number to a message index.
-    /// Matches Go: `BlockNumberToMessageIndex(blockNum) = blockNum - genesisBlockNum`
     fn block_number_to_message_index(block_num: u64) -> Option<u64> {
         if block_num < GENESIS_BLOCK_NUM {
             return None;
@@ -75,7 +74,7 @@ impl<Provider> NitroExecutionHandler<Provider> {
     }
 }
 
-impl<Provider> NitroExecutionHandler<Provider>
+impl<Provider, BP> NitroExecutionHandler<Provider, BP>
 where
     Provider: BlockReaderIdExt + HeaderProvider,
 {
@@ -111,10 +110,58 @@ fn internal_error(msg: impl Into<String>) -> jsonrpsee::types::ErrorObjectOwned 
     )
 }
 
+/// Decode the l2_msg field from the RPC message.
+///
+/// The field is base64-encoded in JSON. Returns empty vec if None.
+fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
+    use alloy_primitives::hex;
+    match l2_msg {
+        Some(s) if !s.is_empty() => {
+            // Try hex first (0x prefix), then base64
+            if let Some(hex_str) = s.strip_prefix("0x") {
+                hex::decode(hex_str).map_err(|e| format!("hex decode: {e}"))
+            } else {
+                // Go sends base64-encoded bytes
+                base64_decode(s).map_err(|e| format!("base64 decode: {e}"))
+            }
+        }
+        _ => Ok(vec![]),
+    }
+}
+
+/// Simple base64 decoder (standard alphabet with padding).
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let input = input.trim_end_matches('=');
+    let mut result = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+
+    for &byte in input.as_bytes() {
+        let val = ALPHABET
+            .iter()
+            .position(|&c| c == byte)
+            .ok_or_else(|| format!("invalid base64 character: {}", byte as char))?
+            as u32;
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            result.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+
+    Ok(result)
+}
+
 #[async_trait::async_trait]
-impl<Provider> NitroExecutionApiServer for NitroExecutionHandler<Provider>
+impl<Provider, BP> NitroExecutionApiServer for NitroExecutionHandler<Provider, BP>
 where
     Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + 'static,
+    BP: BlockProducer,
 {
     async fn digest_message(
         &self,
@@ -138,17 +185,46 @@ where
 
         // Handle init message (Kind=11) - returns existing genesis if available
         if kind == 11 {
-            // Init messages correspond to genesis. If we got here, genesis doesn't exist
-            // at the expected block number, which is unexpected.
             return Err(internal_error(format!(
                 "Init message received but genesis block {block_num} not found"
             )));
         }
 
-        // Block production not yet implemented - return error
-        Err(internal_error(format!(
-            "Block production not yet implemented for block {block_num}"
-        )))
+        // Decode the L2 message bytes
+        let l2_msg = decode_l2_msg(&message.message.l2_msg).map_err(internal_error)?;
+
+        // Build batch data stats if present
+        let batch_data_stats = message
+            .message
+            .batch_data_tokens
+            .as_ref()
+            .map(|s| (s.length, s.nonzeros));
+
+        // Build the block production input
+        let input = BlockProductionInput {
+            kind,
+            sender: message.message.header.sender,
+            l1_block_number: message.message.header.block_number,
+            l1_timestamp: message.message.header.timestamp,
+            request_id: message.message.header.request_id,
+            l1_base_fee: message.message.header.base_fee_l1,
+            l2_msg,
+            delayed_messages_read: message.delayed_messages_read,
+            batch_gas_cost: message.message.batch_gas_cost,
+            batch_data_stats,
+        };
+
+        // Delegate to the block producer
+        let result = self
+            .block_producer
+            .produce_block(msg_idx, input)
+            .await
+            .map_err(|e| internal_error(e.to_string()))?;
+
+        Ok(RpcMessageResult {
+            block_hash: result.block_hash,
+            send_root: result.send_root,
+        })
     }
 
     async fn reorg(

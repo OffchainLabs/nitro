@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod arb_api;
+pub mod block_producer;
 pub mod builder;
 pub mod header;
 pub mod nitro_execution;
@@ -19,6 +20,7 @@ pub use api::ArbEthApi;
 pub use arb_api::{ArbApiHandler, ArbApiServer};
 pub use builder::{ArbEthApiBuilder, ArbRpcConvert};
 pub use header::ArbHeaderConverter;
+pub use block_producer::{BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock};
 pub use nitro_execution::{NitroExecutionApiServer, RpcMessageResult, RpcMessageWithMetadata};
 pub use nitro_execution_handler::NitroExecutionHandler;
 pub use receipt::ArbReceiptConverter;
