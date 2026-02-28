@@ -114,7 +114,7 @@ where
             difficulty: U256::from(1),
             gas_used: *gas_used,
             extra_data,
-            parent_beacon_block_root: ctx.parent_beacon_block_root,
+            parent_beacon_block_root: None,
             blob_gas_used: None,
             excess_blob_gas: None,
             requests_hash: None,

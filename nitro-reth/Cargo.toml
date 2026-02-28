@@ -102,6 +102,7 @@ alloy-hardforks = { version = "0.4" }
 # Revm
 revm = { version = "34.0", features = [
     "optional_eip3541",
+    "optional_eip3607",
     "optional_priority_fee_check",
     "optional_eip7623",
     "optional_no_base_fee",
