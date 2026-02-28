@@ -2,7 +2,7 @@ use alloy_primitives::{Address, B256, U256};
 use std::io::{self, Cursor, Read};
 
 use crate::util::{
-    address_from_reader, bytestring_from_reader, hash_from_reader, uint256_from_reader,
+    address_from_256_from_reader, address_from_reader, hash_from_reader, uint256_from_reader,
     uint64_from_reader,
 };
 
@@ -85,8 +85,10 @@ impl L1IncomingMessage {
     pub fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.push(self.header.kind);
-        // poster (20 bytes)
-        buf.extend_from_slice(self.header.poster.as_slice());
+        // poster (32 bytes, left-padded address)
+        buf.extend_from_slice(
+            B256::left_padding_from(self.header.poster.as_slice()).as_slice(),
+        );
         // block number (8 bytes BE)
         buf.extend_from_slice(&self.header.block_number.to_be_bytes());
         // timestamp (8 bytes BE)
@@ -118,7 +120,7 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
     reader.read_exact(&mut kind_buf)?;
     let kind = kind_buf[0];
 
-    let poster = address_from_reader(&mut reader)?;
+    let poster = address_from_256_from_reader(&mut reader)?;
     let block_number = uint64_from_reader(&mut reader)?;
     let timestamp = uint64_from_reader(&mut reader)?;
     let request_id = hash_from_reader(&mut reader)?;
