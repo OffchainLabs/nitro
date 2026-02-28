@@ -183,6 +183,79 @@ fn pop_stylus_program(addr: Address) {
     });
 }
 
+// ── Stylus storage helpers ───────────────────────────────────────────
+
+use arb_precompiles::storage_slot::{
+    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
+    PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
+};
+
+/// Read a storage slot from ArbOS state via the journal.
+fn sload_arbos<DB: Database>(
+    journal: &mut revm::Journal<DB>,
+    slot: U256,
+) -> Option<U256> {
+    let _ = journal
+        .inner
+        .load_account(&mut journal.database, ARBOS_STATE_ADDRESS)
+        .ok()?;
+    let result = journal
+        .inner
+        .sload(&mut journal.database, ARBOS_STATE_ADDRESS, slot, false)
+        .ok()?;
+    Some(result.data)
+}
+
+/// Read StylusParams packed word from storage.
+fn read_stylus_params<DB: Database>(journal: &mut revm::Journal<DB>) -> Option<[u8; 32]> {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
+    let slot = map_slot(params_key.as_slice(), 0);
+    sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
+}
+
+/// Read program data by code hash.
+fn read_program_data<DB: Database>(
+    journal: &mut revm::Journal<DB>,
+    code_hash: B256,
+) -> Option<[u8; 32]> {
+    let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
+    let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
+    let slot = map_slot_b256(data_key.as_slice(), &code_hash);
+    sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
+}
+
+/// Parsed Stylus config from packed storage word.
+struct ParsedStylusConfig {
+    version: u16,
+    ink_price: u32,
+    max_depth: u32,
+}
+
+fn parse_stylus_config(word: &[u8; 32]) -> ParsedStylusConfig {
+    let version = u16::from_be_bytes([word[0], word[1]]);
+    let ink_price = (word[2] as u32) << 16 | (word[3] as u32) << 8 | word[4] as u32;
+    let max_depth = u32::from_be_bytes([word[5], word[6], word[7], word[8]]);
+    ParsedStylusConfig {
+        version,
+        ink_price,
+        max_depth,
+    }
+}
+
+/// Parsed program metadata from packed storage word.
+#[allow(dead_code)]
+struct ParsedProgram {
+    version: u16,
+    footprint: u16,
+}
+
+fn parse_program_meta(word: &[u8; 32]) -> ParsedProgram {
+    let version = u16::from_be_bytes([word[0], word[1]]);
+    let footprint = u16::from_be_bytes([word[6], word[7]]);
+    ParsedProgram { version, footprint }
+}
+
 // ── Stylus WASM dispatch ────────────────────────────────────────────
 
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
@@ -209,6 +282,23 @@ where
         }
     };
 
+    let code_hash = alloy_primitives::keccak256(bytecode);
+
+    // Read Stylus configuration from ArbOS state.
+    let (ink_price, max_depth, version, footprint) =
+        if let Some(params_word) = read_stylus_params(&mut context.journaled_state) {
+            let config = parse_stylus_config(&params_word);
+            let program_meta = read_program_data(&mut context.journaled_state, code_hash)
+                .map(|w| parse_program_meta(&w));
+            let footprint = program_meta.as_ref().map(|p| p.footprint).unwrap_or(0);
+            (config.ink_price, config.max_depth, config.version, footprint)
+        } else {
+            // Fallback defaults if storage read fails.
+            (10_000u32, 4 * 65536u32, 1u16, 0u16)
+        };
+
+    let stylus_config = StylusConfig::new(version, max_depth, ink_price);
+
     // Track reentrancy.
     let target_addr = inputs.target_address;
     let is_delegate = matches!(inputs.scheme, CallScheme::DelegateCall | CallScheme::CallCode);
@@ -221,14 +311,9 @@ where
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
-
-    // Default Stylus config (params come from ArbOS state in Phase 5).
-    let ink_price = 10_000u32;
-    let stylus_config = StylusConfig::new(1, 4 * 65536, ink_price);
+    evm_data.module_hash = code_hash;
 
     // Track pages — add this program's footprint.
-    // TODO: get actual footprint from program metadata in Phase 5.
-    let footprint: u16 = 0; // Placeholder until we look up program metadata.
     let (prev_open, _prev_ever) = add_stylus_pages(footprint);
 
     // Create the type-erased StylusEvmApi bridge.
@@ -236,14 +321,12 @@ where
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
     let evm_api = unsafe { StylusEvmApi::new(journal_ptr, target_addr, is_static) };
 
-    let code_hash = alloy_primitives::keccak256(bytecode);
-
     // Build the NativeInstance from the module bytes.
     let mut instance = match arb_stylus::NativeInstance::from_bytes(
         module_bytes,
         evm_api,
         evm_data,
-        &arb_stylus::CompileConfig::version(1, false),
+        &arb_stylus::CompileConfig::version(version, false),
         stylus_config,
     ) {
         Ok(inst) => inst,
