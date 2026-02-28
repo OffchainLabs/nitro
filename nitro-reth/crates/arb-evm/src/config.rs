@@ -93,12 +93,14 @@ where
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
 
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
+        // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
+        let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
             number: U256::from(l1_block_number),
             beneficiary: header.beneficiary(),
             timestamp: U256::from(header.timestamp()),
             difficulty: header.difficulty(),
-            prevrandao: header.mix_hash(),
+            prevrandao: Some(prevrandao),
             gas_limit: header.gas_limit(),
             basefee: header.base_fee_per_gas().unwrap_or_default(),
             // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
@@ -120,12 +122,14 @@ where
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&attributes.prev_randao);
+        // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
+        let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
             number: U256::from(l1_block_number),
             beneficiary: attributes.suggested_fee_recipient,
             timestamp: U256::from(attributes.timestamp),
             difficulty: U256::from(1),
-            prevrandao: Some(attributes.prev_randao),
+            prevrandao: Some(prevrandao),
             gas_limit: attributes.gas_limit,
             basefee: parent.base_fee_per_gas().unwrap_or_default(),
             // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
@@ -189,12 +193,14 @@ where
 
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&prev_randao);
+        // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
+        let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
             number: U256::from(l1_block_number),
             beneficiary: payload.payload.fee_recipient(),
             timestamp: U256::from(payload.payload.timestamp()),
-            difficulty: U256::ZERO,
-            prevrandao: Some(prev_randao),
+            difficulty: U256::from(1),
+            prevrandao: Some(prevrandao),
             gas_limit: payload.payload.gas_limit(),
             basefee: payload.payload.saturated_base_fee_per_gas(),
             // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.

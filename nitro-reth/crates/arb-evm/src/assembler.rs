@@ -115,8 +115,8 @@ where
             gas_used: *gas_used,
             extra_data,
             parent_beacon_block_root: ctx.parent_beacon_block_root,
-            blob_gas_used: Some(0),
-            excess_blob_gas: Some(0),
+            blob_gas_used: None,
+            excess_blob_gas: None,
             requests_hash: None,
         };
 

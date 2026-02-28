@@ -764,6 +764,7 @@ where
         let is_arb_deposit = arb_tx_type == Some(ArbTxType::ArbitrumDepositTx);
         let is_submit_retryable = arb_tx_type == Some(ArbTxType::ArbitrumSubmitRetryableTx);
         let is_retry_tx = arb_tx_type == Some(ArbTxType::ArbitrumRetryTx);
+        let is_contract_tx = arb_tx_type == Some(ArbTxType::ArbitrumContractTx);
         let has_poster_costs = tx_type_has_poster_costs(tx_type_raw);
 
         // Block gas rate limit: reject user txs when block gas budget is
@@ -1385,12 +1386,11 @@ where
             );
         }
 
-        // Fix nonce for retry txs: the encoded tx nonce is the retryable's
-        // numTries sequence number, not the sender's account nonce. Go's
-        // skipNonceChecks() returns true for ArbitrumRetryTx. Override the
-        // tx_env nonce to match the sender's current state nonce so revm's
-        // nonce validation passes. revm will then increment it (matching Go).
-        if is_retry_tx {
+        // Fix nonce for retry and contract txs: Go's skipNonceChecks() returns
+        // true for ArbitrumRetryTx and ArbitrumContractTx. Override the tx_env
+        // nonce to match the sender's current state nonce so revm's nonce
+        // validation passes. revm will then increment it (matching Go).
+        if is_retry_tx || is_contract_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let sender_nonce = db.load_cache_account(sender)
                 .map(|a| a.account_info().map(|i| i.nonce).unwrap_or(0))
