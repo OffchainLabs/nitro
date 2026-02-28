@@ -131,6 +131,7 @@ where
             block_gas_left: 0, // Set from state in apply_pre_execution_changes
             user_txs_processed: 0,
             gas_used_for_l1: Vec::new(),
+            expected_balance_delta: 0,
         }
     }
 }
@@ -197,6 +198,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Per-receipt poster gas (L1 gas component), parallel to the receipts vector.
     /// Used to populate `gasUsedForL1` in RPC receipt responses.
     pub gas_used_for_l1: Vec<u64>,
+    /// Expected balance delta from deposits (positive) and L2→L1 withdrawals (negative).
+    /// Used for post-block safety verification.
+    expected_balance_delta: i128,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -352,6 +356,10 @@ where
 
         // Mint deposit value to sender.
         mint_balance(db, sender, info.deposit_value);
+
+        // Track retryable deposit for balance delta verification.
+        let dep_i128: i128 = info.deposit_value.try_into().unwrap_or(i128::MAX);
+        self.expected_balance_delta = self.expected_balance_delta.saturating_add(dep_i128);
 
         // Get sender balance after minting.
         let _ = db.load_cache_account(sender);
@@ -932,6 +940,10 @@ where
             mint_balance(db, sender, value);
             transfer_balance(db, sender, to, value);
 
+            // Track deposit for balance delta verification.
+            let value_i128: i128 = value.try_into().unwrap_or(i128::MAX);
+            self.expected_balance_delta = self.expected_balance_delta.saturating_add(value_i128);
+
             self.pending_tx = Some(PendingArbTx {
                 sender,
                 tx_gas_limit: 0,
@@ -1475,6 +1487,29 @@ where
         let gas_used_total = output.result.result.gas_used();
         let success = matches!(&output.result.result, ExecutionResult::Success { .. });
 
+        // Scan receipt logs for L2→L1 withdrawal events (balance delta tracking).
+        if let ExecutionResult::Success { ref logs, .. } = output.result.result {
+            let arbsys_addr = arb_precompiles::ARBSYS_ADDRESS;
+            let l2_to_l1_tx_topic = keccak256(
+                b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,bytes)",
+            );
+            for log in logs {
+                if log.address == arbsys_addr
+                    && !log.data.topics().is_empty()
+                    && log.data.topics()[0] == l2_to_l1_tx_topic
+                {
+                    // L2ToL1Tx data layout: ABI-encoded [caller, arb_block, eth_block, timestamp, callvalue, data]
+                    // callvalue is at offset 4*32 = 128 bytes.
+                    if log.data.data.len() >= 160 {
+                        let callvalue = U256::from_be_slice(&log.data.data[128..160]);
+                        let val_i128: i128 = callvalue.try_into().unwrap_or(i128::MAX);
+                        self.expected_balance_delta =
+                            self.expected_balance_delta.saturating_sub(val_i128);
+                    }
+                }
+            }
+        }
+
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
 
@@ -1728,6 +1763,14 @@ where
     fn finish(
         self,
     ) -> Result<(Self::Evm, BlockExecutionResult<R::Receipt>), BlockExecutionError> {
+        // Log if expected balance delta is non-zero (deposits/withdrawals occurred).
+        if self.expected_balance_delta != 0 {
+            tracing::trace!(
+                target: "arb::executor",
+                delta = self.expected_balance_delta,
+                "expected balance delta from deposits/withdrawals"
+            );
+        }
         self.inner.finish()
     }
 
