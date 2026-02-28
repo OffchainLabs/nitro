@@ -277,6 +277,7 @@ func populateEcdsaCaches() {
 }
 
 func main() {
+	setupGarbageCollector()
 	wavmio.OnInit()
 	gethhook.RequireHookedGeth()
 
