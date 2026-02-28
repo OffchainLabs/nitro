@@ -13,12 +13,15 @@ fn main() {
         unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
     }
 
-    let _ = Cli::<EthereumChainSpecParser>::parse().run(async move |builder, _| {
+    if let Err(err) = Cli::<EthereumChainSpecParser>::parse().run(async move |builder, _| {
         info!(target: "reth::cli", "Launching arb-reth node");
         let handle = builder
             .node(ArbNode::default())
             .launch()
             .await?;
         handle.wait_for_node_exit().await
-    });
+    }) {
+        eprintln!("Error: {err:?}");
+        std::process::exit(1);
+    }
 }

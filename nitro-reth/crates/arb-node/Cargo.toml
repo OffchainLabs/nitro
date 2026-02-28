@@ -28,10 +28,14 @@ reth-rpc-eth-api = { workspace = true }
 reth-node-ethereum = { workspace = true }
 reth-node-types = { workspace = true }
 reth-payload-builder = { workspace = true }
+reth-payload-builder-primitives = { workspace = true }
 reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-transaction-pool = { workspace = true }
 eyre = { workspace = true }
 clap = { workspace = true }
+futures-util = "0.3"
+tokio = { workspace = true }
+tokio-stream = "0.1"
 tracing = { workspace = true }

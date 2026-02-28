@@ -50,6 +50,7 @@ reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20
 reth-node-core = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-node-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-payload-builder-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-provider = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
