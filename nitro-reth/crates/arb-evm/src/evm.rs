@@ -185,6 +185,9 @@ fn pop_stylus_program(addr: Address) {
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
+use arbos::programs::Program;
+use arbos::programs::memory::MemoryModel;
+use arbos::programs::params::StylusParams;
 use arb_precompiles::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
     PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
@@ -206,59 +209,75 @@ fn sload_arbos<DB: Database>(
     Some(result.data)
 }
 
-/// Read StylusParams packed word from storage.
-fn read_stylus_params<DB: Database>(journal: &mut revm::Journal<DB>) -> Option<[u8; 32]> {
+/// Read the StylusParams packed word from storage.
+fn read_params_word<DB: Database>(journal: &mut revm::Journal<DB>) -> Option<[u8; 32]> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let params_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_PARAMS_KEY);
     let slot = map_slot(params_key.as_slice(), 0);
     sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
 }
 
-/// Read program data by code hash.
-fn read_program_data<DB: Database>(
+/// Read program data word by code hash.
+fn read_program_word<DB: Database>(
     journal: &mut revm::Journal<DB>,
     code_hash: B256,
-) -> Option<[u8; 32]> {
+) -> Option<B256> {
     let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);
     let data_key = derive_subspace_key(programs_key.as_slice(), PROGRAMS_DATA_KEY);
     let slot = map_slot_b256(data_key.as_slice(), &code_hash);
-    sload_arbos(journal, slot).map(|v| v.to_be_bytes::<32>())
+    sload_arbos(journal, slot).map(|v| B256::from(v.to_be_bytes::<32>()))
 }
 
-/// Parsed Stylus config from packed storage word.
-struct ParsedStylusConfig {
-    version: u16,
-    ink_price: u32,
-    max_depth: u32,
-}
-
-fn parse_stylus_config(word: &[u8; 32]) -> ParsedStylusConfig {
-    let version = u16::from_be_bytes([word[0], word[1]]);
-    let ink_price = (word[2] as u32) << 16 | (word[3] as u32) << 8 | word[4] as u32;
-    let max_depth = u32::from_be_bytes([word[5], word[6], word[7], word[8]]);
-    ParsedStylusConfig {
-        version,
-        ink_price,
-        max_depth,
+/// Parse essential StylusParams fields from the packed storage word.
+/// This mirrors `StylusParams::load()` but works with raw bytes from journal sload.
+fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
+    StylusParams {
+        arbos_version,
+        version: u16::from_be_bytes([word[0], word[1]]),
+        ink_price: (word[2] as u32) << 16 | (word[3] as u32) << 8 | word[4] as u32,
+        max_stack_depth: u32::from_be_bytes([word[5], word[6], word[7], word[8]]),
+        free_pages: u16::from_be_bytes([word[9], word[10]]),
+        page_gas: u16::from_be_bytes([word[11], word[12]]),
+        page_ramp: arbos::programs::params::INITIAL_PAGE_RAMP,
+        page_limit: u16::from_be_bytes([word[13], word[14]]),
+        min_init_gas: word[15],
+        min_cached_init_gas: word[16],
+        init_cost_scalar: word[17],
+        cached_cost_scalar: word[18],
+        expiry_days: u16::from_be_bytes([word[19], word[20]]),
+        keepalive_days: u16::from_be_bytes([word[21], word[22]]),
+        block_cache_size: u16::from_be_bytes([word[23], word[24]]),
+        // These fields span to word 2; not needed for dispatch.
+        max_wasm_size: 0,
+        max_fragment_count: 0,
     }
 }
 
-/// Parsed program metadata from packed storage word.
-#[allow(dead_code)]
-struct ParsedProgram {
-    version: u16,
-    footprint: u16,
-}
+/// Compute upfront gas cost for a Stylus call, matching Go's `Programs.CallProgram`.
+fn stylus_call_gas_cost(
+    params: &StylusParams,
+    program: &Program,
+    pages_open: u16,
+) -> u64 {
+    let model = MemoryModel::new(params.free_pages, params.page_gas);
+    let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
 
-fn parse_program_meta(word: &[u8; 32]) -> ParsedProgram {
-    let version = u16::from_be_bytes([word[0], word[1]]);
-    let footprint = u16::from_be_bytes([word[6], word[7]]);
-    ParsedProgram { version, footprint }
+    let cached = program.cached;
+    if cached || program.version > 1 {
+        cost = cost.saturating_add(program.cached_gas(params));
+    }
+    if !cached {
+        cost = cost.saturating_add(program.init_gas(params));
+    }
+    cost
 }
 
 // ── Stylus WASM dispatch ────────────────────────────────────────────
 
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
+///
+/// Matches Go's `Programs.CallProgram`: validates the program, computes upfront
+/// gas costs (memory pages + init/cached gas), deducts them, then runs the WASM.
 fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
@@ -283,23 +302,52 @@ where
     };
 
     let code_hash = alloy_primitives::keccak256(bytecode);
+    let arbos_version = arb_precompiles::get_arbos_version();
+    let block_timestamp = arb_precompiles::get_block_timestamp();
 
-    // Read Stylus configuration from ArbOS state.
-    let (ink_price, max_depth, version, footprint) =
-        if let Some(params_word) = read_stylus_params(&mut context.journaled_state) {
-            let config = parse_stylus_config(&params_word);
-            let program_meta = read_program_data(&mut context.journaled_state, code_hash)
-                .map(|w| parse_program_meta(&w));
-            let footprint = program_meta.as_ref().map(|p| p.footprint).unwrap_or(0);
-            (config.ink_price, config.max_depth, config.version, footprint)
-        } else {
-            // Fallback defaults if storage read fails.
-            (10_000u32, 4 * 65536u32, 1u16, 0u16)
-        };
+    // ── Read and validate program metadata ──────────────────────────
+    let params_word = match read_params_word(&mut context.journaled_state) {
+        Some(w) => w,
+        None => {
+            tracing::warn!(target: "stylus", "failed to read StylusParams from storage");
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+    let params = parse_stylus_params(&params_word, arbos_version);
 
-    let stylus_config = StylusConfig::new(version, max_depth, ink_price);
+    let program_word = match read_program_word(&mut context.journaled_state, code_hash) {
+        Some(w) => w,
+        None => {
+            tracing::warn!(target: "stylus", codehash = %code_hash, "failed to read program data");
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+    let program = Program::from_storage(program_word, block_timestamp);
 
-    // Track reentrancy.
+    // Validate: program must be activated, correct version, not expired.
+    if program.version == 0 || program.version != params.version {
+        tracing::warn!(target: "stylus", codehash = %code_hash, program_ver = program.version, params_ver = params.version, "program version mismatch");
+        return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+    }
+    let expiry_seconds = (params.expiry_days as u64) * 24 * 3600;
+    if program.age_seconds > expiry_seconds {
+        tracing::warn!(target: "stylus", codehash = %code_hash, "program expired");
+        return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+    }
+
+    // ── Compute and deduct upfront gas costs ────────────────────────
+    let (pages_open, _pages_ever) = get_stylus_pages();
+    let upfront_cost = stylus_call_gas_cost(&params, &program, pages_open);
+    let total_gas = inputs.gas_limit;
+
+    if total_gas < upfront_cost {
+        return InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas());
+    }
+    let gas_for_wasm = total_gas - upfront_cost;
+
+    let stylus_config = StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
+
+    // ── Track reentrancy ────────────────────────────────────────────
     let target_addr = inputs.target_address;
     let is_delegate = matches!(inputs.scheme, CallScheme::DelegateCall | CallScheme::CallCode);
     let reentrant = if !is_delegate {
@@ -311,10 +359,11 @@ where
     // Build EvmData from the execution context.
     let mut evm_data = build_evm_data(context, inputs);
     evm_data.reentrant = reentrant as u32;
+    evm_data.cached = program.cached;
     evm_data.module_hash = code_hash;
 
     // Track pages — add this program's footprint.
-    let (prev_open, _prev_ever) = add_stylus_pages(footprint);
+    let (prev_open, _prev_ever) = add_stylus_pages(program.footprint);
 
     // Create the type-erased StylusEvmApi bridge.
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
@@ -326,7 +375,7 @@ where
         module_bytes,
         evm_api,
         evm_data,
-        &arb_stylus::CompileConfig::version(version, false),
+        &arb_stylus::CompileConfig::version(params.version, false),
         stylus_config,
     ) {
         Ok(inst) => inst,
@@ -340,9 +389,8 @@ where
         }
     };
 
-    // Convert EVM gas to ink.
-    let gas = inputs.gas_limit;
-    let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas));
+    // Convert EVM gas (after upfront deduction) to ink.
+    let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas_for_wasm));
 
     // Get calldata from CallInput enum.
     let calldata: &[u8] = match &inputs.input {
@@ -375,10 +423,25 @@ where
         arb_stylus::MachineMeter::Exhausted => arb_stylus::Ink(0),
     };
     let gas_left = stylus_config.pricing.ink_to_gas(ink_left).0;
+
+    // Return data cost parity with EVM (ArbOS >= StylusFixes).
+    let output: Bytes = instance.env().outs.clone().into();
+    let gas_left = if !output.is_empty()
+        && arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES
+    {
+        let evm_cost = arbos::programs::types::evm_memory_cost(output.len() as u64);
+        if total_gas < evm_cost {
+            0
+        } else {
+            gas_left.min(total_gas - evm_cost)
+        }
+    } else {
+        gas_left
+    };
+
     let gas_result = EvmGas::new(gas_left);
 
     // Map UserOutcome to InterpreterResult.
-    let output: Bytes = instance.env().outs.clone().into();
     match outcome {
         UserOutcome::Success => {
             InterpreterResult::new(InstructionResult::Return, output, gas_result)
