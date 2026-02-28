@@ -1448,8 +1448,11 @@ where
         }
 
         // Store per-tx state for fee distribution in commit_transaction.
-        // Build multi-gas: L1 calldata gas was charged for poster costs.
-        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas);
+        // Build multi-gas: L1 calldata from poster costs + EVM execution as computation.
+        // Note: revm doesn't track per-resource gas dimensions, so all EVM gas
+        // (intrinsic + opcode execution) is classified as computation gas.
+        let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
+            .saturating_add(MultiGas::computation_gas(evm_gas_used));
 
         self.pending_tx = Some(PendingArbTx {
             sender,
