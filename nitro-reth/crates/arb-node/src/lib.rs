@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
-use arb_rpc::{ArbApiHandler, ArbApiServer, ArbEthApiBuilder};
+use arb_rpc::{ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler};
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
     components::{ComponentsBuilder, ConsensusBuilder, ExecutorBuilder},
@@ -137,7 +137,7 @@ where
     }
 }
 
-/// Registers the `arb_` RPC namespace on all configured transports.
+/// Registers the `arb_` and `nitroexecution_` RPC namespaces.
 fn register_arb_rpc<N, EthApi>(ctx: RpcContext<'_, N, EthApi>) -> eyre::Result<()>
 where
     N: FullNodeComponents<Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider>,
@@ -145,6 +145,11 @@ where
 {
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
+
+    // Register the nitroexecution namespace for Nitro consensus communication.
+    let nitro_exec = NitroExecutionHandler::new(ctx.provider().clone());
+    ctx.modules.merge_configured(nitro_exec.into_rpc())?;
+
     Ok(())
 }
 
