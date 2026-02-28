@@ -810,6 +810,20 @@ where
                         current_time,
                         prev_hash: self.arb_ctx.parent_hash,
                     };
+
+                    // EIP-2935: Store parent block hash for ArbOS >= 40.
+                    if is_start_block
+                        && arb_state.arbos_version()
+                            >= arb_chainspec::arbos_version::ARBOS_VERSION_40
+                    {
+                        // SAFETY: state_ptr is valid for the lifetime of this block.
+                        process_parent_block_hash(
+                            unsafe { &mut *state_ptr },
+                            ctx.block_number,
+                            ctx.prev_hash,
+                        );
+                    }
+
                     let mut do_transfer = |from: Address, to: Address, amount: U256| {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
@@ -1932,6 +1946,29 @@ fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
     }
 
     gas
+}
+
+/// EIP-2935: Store the parent block hash in the history storage contract.
+///
+/// For Arbitrum, uses L2 block numbers and a buffer size of 393168 blocks.
+fn process_parent_block_hash<DB: Database>(
+    state: &mut State<DB>,
+    l2_block_number: u64,
+    prev_hash: B256,
+) {
+    use arb_primitives::arbos_versions::HISTORY_STORAGE_ADDRESS;
+
+    /// Arbitrum EIP-2935 buffer size (matching the Arbitrum history storage contract).
+    const HISTORY_SERVE_WINDOW: u64 = 393168;
+
+    if l2_block_number == 0 {
+        return;
+    }
+
+    let slot = U256::from((l2_block_number - 1) % HISTORY_SERVE_WINDOW);
+    let value = U256::from_be_slice(prev_hash.as_slice());
+
+    arb_storage::write_storage_at(state, HISTORY_STORAGE_ADDRESS, slot, value);
 }
 
 /// Extract the gas field from a scheduled retry tx's encoded bytes.
