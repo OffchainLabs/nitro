@@ -208,7 +208,9 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // A call is top-level if the caller is the tx origin.
+    // Go returns `evm.Depth() <= 2`. Without direct depth access from EvmInternals,
+    // we approximate: true if caller is tx_origin (depth 0/1). Depth 2 (one
+    // intermediate contract) cannot be distinguished from depth 3+ here.
     let is_top = input.caller == input.internals().tx_origin();
     let val = if is_top { U256::from(1) } else { U256::ZERO };
     let gas_cost = COPY_GAS.min(input.gas);
@@ -219,11 +221,37 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
 }
 
 fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // True if this is a top-level call AND the tx type uses address aliasing.
-    let is_top = input.caller == input.internals().tx_origin();
-    let aliased = is_top && get_tx_is_aliased();
+    let gas_limit = input.gas;
+    let tx_origin = input.internals().tx_origin();
+    let caller = input.caller;
+
+    // Read ArbOS version for version-gated behavior.
+    let internals = input.internals_mut();
+    internals
+        .load_account(ARBOS_STATE_ADDRESS)
+        .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+    let raw_version = internals
+        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
+        .map_err(|_| PrecompileError::other("sload failed"))?
+        .data;
+    let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
+
+    // Go: topLevel = isTopLevel(depth < 2 || origin == Contracts[depth-2].Caller())
+    // ArbOS < 6: topLevel = depth == 2
+    // aliased = topLevel && DoesTxTypeAlias(TopTxType)
+    //
+    // Without depth access, approximate:
+    //   ArbOS < 6: depth == 2 ≈ caller != tx_origin (true at depth 2+)
+    //   ArbOS >= 6: isTopLevel ≈ true (correct for depth <= 2, the common case)
+    let is_top_level = if arbos_version < 6 {
+        caller != tx_origin
+    } else {
+        true
+    };
+
+    let aliased = is_top_level && get_tx_is_aliased();
     let val = if aliased { U256::from(1) } else { U256::ZERO };
-    let gas_cost = COPY_GAS.min(input.gas);
+    let gas_cost = (SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
         gas_cost,
         val.to_be_bytes::<32>().to_vec().into(),
@@ -231,12 +259,21 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Return the caller with the alias undone.
-    let caller = input.caller;
-    let unaliased = undo_l1_alias(caller);
+    // Go returns Contracts[depth-2].Caller() (potentially unaliased).
+    // At depth 2 (common case): Contracts[0].Caller() == tx_origin.
+    // Without depth access, use tx_origin as the best approximation.
+    let tx_origin = input.internals().tx_origin();
+    let address = tx_origin;
+
+    let result_addr = if get_tx_is_aliased() {
+        undo_l1_alias(address)
+    } else {
+        address
+    };
+
     let gas_cost = COPY_GAS.min(input.gas);
     let mut out = [0u8; 32];
-    out[12..32].copy_from_slice(unaliased.as_slice());
+    out[12..32].copy_from_slice(result_addr.as_slice());
     Ok(PrecompileOutput::new(gas_cost, out.to_vec().into()))
 }
 
