@@ -10,28 +10,70 @@ use alloy_primitives::{B64, B256, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use parking_lot::Mutex;
 use reth_chainspec::ChainSpec;
-use reth_provider::{
-    BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory,
-};
+use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use tracing::{info, warn};
 
 use arb_rpc::block_producer::{BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock};
 use arbos::parse_l2::parse_l2_transactions;
+
+/// Type-erased block persister.
+///
+/// Wraps the concrete persistence operations so the block producer
+/// does not need to carry `DatabaseProviderFactory` and `CanonChainTracker`
+/// trait bounds, which cannot be threaded through reth's node builder
+/// without modifying upstream traits.
+struct ErasedPersister {
+    /// Persist a sealed block to the database.
+    persist_fn: Box<
+        dyn Fn(
+                &reth_primitives_traits::SealedBlock<Block<arb_primitives::ArbTransactionSigned>>,
+            ) -> Result<(), BlockProducerError>
+            + Send
+            + Sync,
+    >,
+}
+
+impl ErasedPersister {
+    fn persist_block(
+        &self,
+        sealed: &reth_primitives_traits::SealedBlock<Block<arb_primitives::ArbTransactionSigned>>,
+    ) -> Result<(), BlockProducerError> {
+        (self.persist_fn)(sealed)
+    }
+}
 
 /// Concrete block producer backed by reth's database.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     #[allow(dead_code)]
     chain_spec: Arc<ChainSpec>,
+    persister: ErasedPersister,
     /// Mutex to serialize block production.
     produce_lock: Mutex<()>,
 }
 
 impl<Provider> ArbBlockProducer<Provider> {
-    pub fn new(provider: Provider, chain_spec: Arc<ChainSpec>) -> Self {
+    /// Create a new block producer.
+    ///
+    /// The `persist_fn` closure handles writing blocks to the database.
+    /// It captures the concrete provider type so the producer itself
+    /// does not need `DatabaseProviderFactory` bounds.
+    pub fn new(
+        provider: Provider,
+        chain_spec: Arc<ChainSpec>,
+        persist_fn: impl Fn(
+                &reth_primitives_traits::SealedBlock<Block<arb_primitives::ArbTransactionSigned>>,
+            ) -> Result<(), BlockProducerError>
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         Self {
             provider,
             chain_spec,
+            persister: ErasedPersister {
+                persist_fn: Box::new(persist_fn),
+            },
             produce_lock: Mutex::new(()),
         }
     }
@@ -39,13 +81,19 @@ impl<Provider> ArbBlockProducer<Provider> {
 
 impl<Provider> ArbBlockProducer<Provider>
 where
-    Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + StateProviderFactory + Send + Sync + 'static,
+    Provider: BlockNumReader
+        + BlockReaderIdExt
+        + HeaderProvider
+        + StateProviderFactory
+        + Send
+        + Sync
+        + 'static,
     <Provider as HeaderProvider>::Header: BlockHeader,
 {
     /// Get the current head block number.
     fn head_block_number(&self) -> Result<u64, BlockProducerError> {
         self.provider
-            .best_block_number()
+            .last_block_number()
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))
     }
 
@@ -105,7 +153,7 @@ where
         };
 
         let block = Block::<arb_primitives::ArbTransactionSigned> {
-            header,
+            header: header.clone(),
             body: BlockBody {
                 transactions: vec![],
                 ommers: Default::default(),
@@ -118,11 +166,14 @@ where
         let block_hash = sealed.hash();
 
         // Extract send root from extra_data
-        let send_root = if sealed.header().extra_data.len() >= 32 {
-            B256::from_slice(&sealed.header().extra_data[..32])
+        let send_root = if header.extra_data.len() >= 32 {
+            B256::from_slice(&header.extra_data[..32])
         } else {
             B256::ZERO
         };
+
+        // Persist the block to the database
+        self.persister.persist_block(&sealed)?;
 
         info!(
             target: "block_producer",
@@ -142,7 +193,13 @@ where
 #[async_trait::async_trait]
 impl<Provider> BlockProducer for ArbBlockProducer<Provider>
 where
-    Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + StateProviderFactory + Send + Sync + 'static,
+    Provider: BlockNumReader
+        + BlockReaderIdExt
+        + HeaderProvider
+        + StateProviderFactory
+        + Send
+        + Sync
+        + 'static,
     <Provider as HeaderProvider>::Header: BlockHeader,
 {
     async fn produce_block(

@@ -23,9 +23,12 @@ use reth_node_builder::{
     rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns, RpcContext},
     BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
-use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
+use alloy_consensus::Header;
+use reth_provider::{
+    BlockNumReader, BlockReaderIdExt, DatabaseProviderFactory, HeaderProvider, StateProviderFactory,
+};
 use reth_rpc_eth_api::EthApiTypes;
-use reth_storage_api::EthStorage;
+use reth_storage_api::{BlockWriter, CanonChainTracker, DBProvider, EthStorage};
 
 use arb_evm::ArbEvmConfig;
 
@@ -96,6 +99,12 @@ impl NodeTypes for ArbNode {
 impl<N> Node<N> for ArbNode
 where
     N: FullNodeTypes<Types = Self>,
+    N::Provider: DatabaseProviderFactory<
+            ProviderRW: BlockWriter<
+                Block = alloy_consensus::Block<ArbTransactionSigned>,
+                Receipt = arb_primitives::ArbReceipt,
+            > + DBProvider,
+        > + CanonChainTracker<Header = Header>,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -143,19 +152,59 @@ where
 fn register_arb_rpc<N, EthApi>(ctx: RpcContext<'_, N, EthApi>) -> eyre::Result<()>
 where
     N: FullNodeComponents<
-        Types: NodeTypes<ChainSpec = ChainSpec>,
-        Provider: BlockNumReader + BlockReaderIdExt + HeaderProvider + StateProviderFactory,
+        Types: NodeTypes<ChainSpec = ChainSpec, Primitives = ArbPrimitives>,
+        Provider: BlockNumReader
+            + BlockReaderIdExt
+            + HeaderProvider
+            + StateProviderFactory
+            + DatabaseProviderFactory<
+                ProviderRW: BlockWriter<
+                    Block = alloy_consensus::Block<ArbTransactionSigned>,
+                    Receipt = arb_primitives::ArbReceipt,
+                > + DBProvider,
+            > + CanonChainTracker<Header = Header>,
     >,
     EthApi: EthApiTypes,
 {
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
 
-    // Create the block producer with full database access.
+    // Create the block producer with a persistence closure.
     let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
+    let persist_provider = ctx.provider().clone();
+    let persist_fn = move |sealed: &reth_primitives_traits::SealedBlock<
+        alloy_consensus::Block<ArbTransactionSigned>,
+    >| {
+        use reth_primitives_traits::RecoveredBlock;
+
+        let recovered = RecoveredBlock::new_sealed(sealed.clone(), vec![]);
+
+        let provider_rw = persist_provider
+            .database_provider_rw()
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        provider_rw
+            .insert_block(&recovered)
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        provider_rw
+            .commit()
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        // Update the in-memory canonical head so header lookups find the new block.
+        let sealed_header = reth_primitives_traits::SealedHeader::new(
+            sealed.header().clone(),
+            sealed.hash(),
+        );
+        persist_provider.set_canonical_head(sealed_header);
+
+        Ok(())
+    };
+
     let block_producer = Arc::new(ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
+        persist_fn,
     ));
 
     // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
