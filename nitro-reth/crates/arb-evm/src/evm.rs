@@ -66,10 +66,13 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     }
 
     // Standard selfdestruct logic (matching revm's EIP-6780 implementation).
-    let Some(target) = ctx.interpreter.stack.pop_address() else {
+    // We manually pop U256 and convert to Address instead of using pop_address()
+    // which triggers a const eval panic in ruint 1.17 due to byte size mismatch.
+    let Some(raw) = ctx.interpreter.stack.pop() else {
         ctx.interpreter.halt(InstructionResult::StackUnderflow);
         return;
     };
+    let target = Address::from_word(alloy_primitives::B256::from(raw.to_be_bytes()));
 
     let spec = ctx.interpreter.runtime_flag.spec_id();
     let cold_load_gas = ctx.host.gas_params().selfdestruct_cold_cost();
