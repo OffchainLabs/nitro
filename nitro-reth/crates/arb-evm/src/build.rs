@@ -1865,16 +1865,26 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
 }
 
 /// Transfer balance between two addresses in the EVM state.
+///
+/// If the sender has insufficient funds, the transfer is skipped entirely
+/// (no partial burn/mint). This matches Go's `util.TransferBalance` which
+/// is atomic — neither side is modified on insufficient funds.
 fn transfer_balance<DB: Database>(
     state: &mut State<DB>,
     from: Address,
     to: Address,
     amount: U256,
 ) {
-    if from == to {
+    if from == to || amount.is_zero() {
         return;
     }
-    if amount.is_zero() {
+    let balance = get_balance(state, from);
+    if balance < amount {
+        tracing::warn!(
+            target: "arb::executor",
+            %from, %to, %amount, %balance,
+            "transfer_balance: insufficient funds, skipping"
+        );
         return;
     }
     burn_balance(state, from, amount);
@@ -1885,6 +1895,7 @@ fn transfer_balance<DB: Database>(
 ///
 /// On ArbOS < 30, a zero-value transfer touching a self-destructed account
 /// creates a "zombie" (empty account preserved through finalization).
+/// Non-zero transfers are atomic: skipped if sender has insufficient funds.
 fn transfer_balance_with_zombie<DB: Database>(
     state: &mut State<DB>,
     from: Address,
@@ -1899,16 +1910,22 @@ fn transfer_balance_with_zombie<DB: Database>(
     if amount.is_zero() {
         // On pre-Stylus, create zombie if the account was self-destructed.
         if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
-            // Check if account was self-destructed by looking at the state.
             let account_exists = get_balance(state, from) > U256::ZERO
                 || state.cache.accounts.contains_key(&from);
             if !account_exists {
-                // Account doesn't exist (was destructed), create zombie.
                 extra_data.create_zombie(from);
-                // Touch the account so it exists as empty in the state.
                 mint_balance(state, from, U256::ZERO);
             }
         }
+        return;
+    }
+    let balance = get_balance(state, from);
+    if balance < amount {
+        tracing::warn!(
+            target: "arb::executor",
+            %from, %to, %amount, %balance,
+            "transfer_balance_with_zombie: insufficient funds, skipping"
+        );
         return;
     }
     burn_balance(state, from, amount);

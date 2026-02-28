@@ -20,17 +20,14 @@ pub use run::RunProgram;
 
 /// Prefix bytes that identify a Stylus WASM program in contract bytecode.
 ///
-/// The discriminant is `[0x00, 0xEF, 0xF0]`. The first byte is 0x00 (STOP opcode)
-/// so the EVM treats the bytecode as a no-op. The `0xEF` prefix is reserved by
-/// EIP-3541, preventing accidental deployment of non-Stylus code with this prefix.
-pub const STYLUS_DISCRIMINANT: [u8; 3] = [0x00, 0xEF, 0xF0];
-
-/// Magic bytes for Stylus WASM bytecode (reordered discriminant for header matching).
-pub const STYLUS_MAGIC: [u8; 3] = [0xEF, 0xF0, 0x00];
+/// The discriminant is `[0xEF, 0xF0, 0x00]`. The `0xEF` byte conflicts with
+/// EIP-3541, so EIP-3541 must be disabled for Stylus-era blocks to allow
+/// deployment. The third byte `0x00` is the EOF version marker.
+pub const STYLUS_DISCRIMINANT: [u8; 3] = [0xEF, 0xF0, 0x00];
 
 /// Returns `true` if the bytecode is a Stylus WASM program.
 ///
-/// Checks for the 3-byte discriminant prefix `[0x00, 0xEF, 0xF0]`.
+/// Checks for the 3-byte discriminant prefix `[0xEF, 0xF0, 0x00]`.
 pub fn is_stylus_program(bytecode: &[u8]) -> bool {
     bytecode.len() >= 4 && bytecode[..3] == STYLUS_DISCRIMINANT
 }
