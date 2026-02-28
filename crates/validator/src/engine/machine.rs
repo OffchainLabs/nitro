@@ -19,6 +19,7 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
+use crate::config::get_jit_path;
 use crate::engine::machine_locator::MachineLocator;
 use crate::engine::{
     replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT,
@@ -29,8 +30,7 @@ use std::net::TcpListener;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{
-    env::{self},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -203,18 +203,7 @@ impl JitProcessManager {
 }
 
 fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<JitMachine> {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let root_path: PathBuf = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf()) // Convert &Path to PathBuf
-        .unwrap_or_else(|| {
-            // This runs only if the parents don't exist
-            env::current_dir().expect("Failed to get current working directory")
-        });
-
-    // TODO: use helper to get jit_path (NIT-4347)
-    let jit_path = root_path.join("target").join("bin").join("jit");
+    let jit_path = get_jit_path(&None)?;
     let mut cmd = Command::new(jit_path);
 
     if jit_cranelift {
@@ -237,6 +226,8 @@ fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<
     debug!("Waiting for JIT process to come up");
     sleep(Duration::from_secs(2));
     ensure_process_is_alive(&mut child)?;
+
+    info!("Machine with bin path {prover_bin_path:?} is up");
 
     let stdin = child
         .stdin
