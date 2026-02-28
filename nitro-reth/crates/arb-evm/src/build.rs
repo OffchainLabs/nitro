@@ -264,6 +264,14 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             .per_tx_gas_limit()
             .unwrap_or(0);
 
+        // Read calldata pricing increase feature flag (ArbOS >= 40).
+        let calldata_pricing_increase_enabled =
+            arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_40
+                && arb_state
+                    .features
+                    .is_increased_calldata_price_enabled()
+                    .unwrap_or(false);
+
         let mut hooks = DefaultArbOsHooks::new(
             self.arb_ctx.coinbase,
             arbos_version,
@@ -274,6 +282,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             per_tx_gas_limit,
             false,
             self.arb_ctx.l1_base_fee,
+            calldata_pricing_increase_enabled,
         );
         // Populate L1 block number cache from header-derived context.
         if self.arb_ctx.l1_block_number > 0 {

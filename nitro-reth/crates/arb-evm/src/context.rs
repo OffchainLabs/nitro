@@ -122,3 +122,56 @@ pub struct ArbitrumExtraData {
     /// Whether transaction filtering is active.
     pub arb_tx_filter: bool,
 }
+
+impl ArbitrumExtraData {
+    /// Record a WASM activation for the given module hash.
+    ///
+    /// Validates that if the same module hash was already activated in this block,
+    /// the new activation has the same set of targets. This prevents inconsistent
+    /// compilations for different architectures within a single block.
+    pub fn activate_wasm(
+        &mut self,
+        module_hash: B256,
+        asm: HashMap<String, Vec<u8>>,
+        module: Vec<u8>,
+    ) -> Result<(), String> {
+        if let Some(existing) = self.activated_wasms.get(&module_hash) {
+            // Validate target consistency: the new activation must have the
+            // same set of targets as the prior one.
+            let existing_targets: Vec<&String> = existing.asm.keys().collect();
+            let new_targets: Vec<&String> = asm.keys().collect();
+            if existing_targets.len() != new_targets.len()
+                || !new_targets.iter().all(|t| existing.asm.contains_key(*t))
+            {
+                return Err(format!(
+                    "inconsistent WASM targets for module {module_hash}: \
+                     existing has {:?}, new has {:?}",
+                    existing.asm.keys().collect::<Vec<_>>(),
+                    asm.keys().collect::<Vec<_>>(),
+                ));
+            }
+        }
+        self.activated_wasms.insert(module_hash, ActivatedWasm { asm, module });
+        Ok(())
+    }
+
+    /// Register a balance burn from SELFDESTRUCT or native token burn.
+    ///
+    /// Adjusts `unexpected_balance_delta` so that post-block balance verification
+    /// accounts for the burned amount.
+    pub fn expect_balance_burn(&mut self, amount: u128) {
+        self.unexpected_balance_delta = self
+            .unexpected_balance_delta
+            .saturating_add(amount as i128);
+    }
+
+    /// Begin recording WASM modules for block validation.
+    pub fn start_recording(&mut self) {
+        self.user_wasms.clear();
+    }
+
+    /// Record a WASM module's compiled ASM for persistence.
+    pub fn record_program(&mut self, module_hash: B256, wasm: ActivatedWasm) {
+        self.user_wasms.insert(module_hash, wasm);
+    }
+}

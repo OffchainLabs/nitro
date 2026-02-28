@@ -36,6 +36,8 @@ pub struct DefaultArbOsHooks {
     pub is_eth_call: bool,
     /// Cached L1 base fee for poster cost computation.
     pub l1_base_fee: U256,
+    /// Whether calldata pricing increase feature is enabled (ArbOS >= 40 + feature flag).
+    pub calldata_pricing_increase_enabled: bool,
 }
 
 impl DefaultArbOsHooks {
@@ -49,6 +51,7 @@ impl DefaultArbOsHooks {
         per_tx_gas_limit: u64,
         is_eth_call: bool,
         l1_base_fee: U256,
+        calldata_pricing_increase_enabled: bool,
     ) -> Self {
         Self {
             tx_proc: TxProcessor::new(coinbase),
@@ -61,6 +64,7 @@ impl DefaultArbOsHooks {
             coinbase,
             is_eth_call,
             l1_base_fee,
+            calldata_pricing_increase_enabled,
         }
     }
 
@@ -181,8 +185,7 @@ impl ArbOsHooks for DefaultArbOsHooks {
     }
 
     fn is_calldata_pricing_increase_enabled(&self) -> bool {
-        // Feature gated by ArbOS state. Default to true for recent versions.
-        true
+        self.calldata_pricing_increase_enabled
     }
 }
 
