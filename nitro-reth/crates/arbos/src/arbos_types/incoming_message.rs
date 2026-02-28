@@ -203,8 +203,13 @@ pub fn get_data_stats(data: &[u8]) -> BatchDataStats {
 /// Estimates L1 gas cost using legacy pricing model.
 pub fn legacy_cost_for_stats(stats: &BatchDataStats) -> u64 {
     let zeros = stats.length.saturating_sub(stats.non_zeros);
-    // 4 gas per zero byte, 16 gas per non-zero byte
-    zeros * 4 + stats.non_zeros * 16
+    // Calldata gas: 4 gas per zero byte, 16 gas per non-zero byte.
+    let mut gas = zeros * 4 + stats.non_zeros * 16;
+    // Poster also pays to keccak the batch and write a batch posting report.
+    let keccak_words = (stats.length + 31) / 32;
+    gas += 30 + keccak_words * 6; // Keccak256Gas + words * Keccak256WordGas
+    gas += 2 * 20_000; // 2 × SstoreSetGasEIP2200
+    gas
 }
 
 /// Parses fields from a batch posting report message.
