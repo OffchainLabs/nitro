@@ -344,7 +344,12 @@ where
         .per_batch_gas_cost()
         .unwrap_or(0);
 
-    let gas_spent = (per_batch_gas.max(0) as u64).saturating_add(inputs.batch_data_gas);
+    // Go: gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
+    // Then SaturatingUCast[uint64](gasSpent) — clamps negative result to 0.
+    let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas)
+        .unwrap_or(i64::MAX);
+    let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
+    let gas_spent = gas_spent_signed.max(0) as u64;
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
