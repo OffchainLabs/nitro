@@ -1,6 +1,7 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
+use revm::primitives::Log;
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
@@ -23,6 +24,10 @@ const GET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0x3e, 0x7a, 0x47, 0xb1];
 const GET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x74, 0x33, 0x16, 0x04];
 const IS_CHAIN_OWNER: [u8; 4] = [0x26, 0xef, 0x69, 0x9d];
 const GET_ALL_CHAIN_OWNERS: [u8; 4] = [0x51, 0x6b, 0xaf, 0x03];
+
+// Chain owner management
+const ADD_CHAIN_OWNER: [u8; 4] = [0x48, 0x1f, 0x8d, 0xbf];
+const REMOVE_CHAIN_OWNER: [u8; 4] = [0x87, 0x92, 0x70, 0x1a];
 
 // Setters — ArbOS root state
 const SET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0xe1, 0xa3, 0x5b, 0x12];
@@ -154,6 +159,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         IS_NATIVE_TOKEN_OWNER => {
             handle_is_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
+
+        // ── Chain owner management ─────────────────────────────────
+        ADD_CHAIN_OWNER => handle_add_chain_owner(&mut input),
+        REMOVE_CHAIN_OWNER => handle_remove_chain_owner(&mut input),
 
         // ── Root state setters ───────────────────────────────────
         SET_NETWORK_FEE_ACCOUNT => write_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
@@ -450,6 +459,64 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 /// Get all chain owners. Returns ABI-encoded dynamic address array.
 fn handle_get_all_chain_owners(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     handle_get_all_members(input, CHAIN_OWNER_SUBSPACE)
+}
+
+/// Add a chain owner. Emits ChainOwnerAdded event for ArbOS >= 60.
+fn handle_add_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+
+    address_set_add(input, address_set_key(CHAIN_OWNER_SUBSPACE), addr)?;
+
+    // Emit ChainOwnerAdded event for ArbOS >= 60.
+    let arbos_version = read_arbos_version(input)? + 55;
+    if arbos_version >= 60 {
+        let topic0 = keccak256("ChainOwnerAdded(address)");
+        let topic1 = B256::left_padding_from(addr.as_slice());
+        input.internals_mut().log(Log::new_unchecked(
+            ARBOWNER_ADDRESS,
+            vec![topic0, topic1],
+            alloy_primitives::Bytes::new(),
+        ));
+    }
+
+    let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+/// Remove a chain owner. Emits ChainOwnerRemoved event for ArbOS >= 60.
+fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let addr = Address::from_slice(&data[16..36]);
+
+    let set_key = address_set_key(CHAIN_OWNER_SUBSPACE);
+    if !is_member_of(input, set_key, addr)? {
+        return Err(PrecompileError::other("tried to remove non-owner"));
+    }
+    address_set_remove(input, set_key, addr)?;
+
+    // Emit ChainOwnerRemoved event for ArbOS >= 60.
+    let arbos_version = read_arbos_version(input)? + 55;
+    if arbos_version >= 60 {
+        let topic0 = keccak256("ChainOwnerRemoved(address)");
+        let topic1 = B256::left_padding_from(addr.as_slice());
+        input.internals_mut().log(Log::new_unchecked(
+            ARBOWNER_ADDRESS,
+            vec![topic0, topic1],
+            alloy_primitives::Bytes::new(),
+        ));
+    }
+
+    let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
 
 /// Derive the storage key for an AddressSet at the given subspace.
