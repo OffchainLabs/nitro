@@ -33,6 +33,7 @@ type ClientConfig struct {
 	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors"`
 	RetryDelay                time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 	WebsocketMessageSizeLimit int64         `json:"websocket-message-size-limit,omitempty" koanf:"websocket-message-size-limit"`
+	ExecKeepAliveInterval     time.Duration `json:"exec-keep-alive-interval,omitempty" koanf:"exec-keep-alive-interval"`
 
 	retryErrors *regexp.Regexp
 }
@@ -60,6 +61,7 @@ var TestClientConfig = ClientConfig{
 	URL:                       "self",
 	JWTSecret:                 "",
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	ExecKeepAliveInterval:     time.Minute,
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -70,6 +72,7 @@ var DefaultClientConfig = ClientConfig{
 	RetryErrors:               "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit:               2048,
 	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
+	ExecKeepAliveInterval:     time.Minute,
 }
 
 func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientConfig) {
@@ -82,6 +85,7 @@ func RPCClientAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *ClientC
 	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
 	f.Duration(prefix+".retry-delay", defaultConfig.RetryDelay, "delay between retries")
 	f.Int64(prefix+".websocket-message-size-limit", defaultConfig.WebsocketMessageSizeLimit, "websocket message size limit used by the RPC client. 0 means no limit")
+	f.Duration(prefix+".exec-keep-alive-interval", defaultConfig.ExecKeepAliveInterval, "interval for sending keep-alive messages to execution client runs")
 }
 
 type RpcClient struct {
@@ -100,6 +104,10 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 
 func (c *RpcClient) Timeout() time.Duration {
 	return c.config().Timeout
+}
+
+func (c *RpcClient) ExecKeepAliveInterval() time.Duration {
+	return c.config().ExecKeepAliveInterval
 }
 
 func (c *RpcClient) Close() {
