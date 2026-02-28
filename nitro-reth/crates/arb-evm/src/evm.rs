@@ -1,7 +1,7 @@
 use alloy_evm::{
     eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
 };
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes};
 use arb_precompiles::register_arb_precompiles;
 use core::fmt::Debug;
 use revm::context::result::EVMError;
@@ -14,50 +14,11 @@ use revm::primitives::hardfork::SpecId;
 
 use crate::transaction::ArbTransaction;
 
-/// BLOCKHASH opcode (0x40).
-const BLOCKHASH_OPCODE: u8 = 0x40;
-
 /// BLOBBASEFEE opcode (0x4a).
 const BLOBBASEFEE_OPCODE: u8 = 0x4a;
 
 /// SELFDESTRUCT opcode (0xff).
 const SELFDESTRUCT_OPCODE: u8 = 0xff;
-
-/// Arbitrum BLOCKHASH: uses L1 block hashes with an adjusted range.
-///
-/// Go's opBlockhash calls `ProcessingHook.L1BlockNumber()` which returns
-/// `stored_l1_block_number + 1` (the next expected L1 block). This makes
-/// the current L1 block's hash available via BLOCKHASH, unlike standard
-/// Ethereum where `BLOCKHASH(NUMBER)` returns zero.
-///
-/// block_env.number = current L1 block number, so upper = number + 1
-/// to match Go's range of [upper - 256, upper).
-fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
-    let Some(([], number)) = ctx.interpreter.stack.popn_top::<0>() else {
-        ctx.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    };
-
-    let requested = number.to::<u64>();
-    let current = ctx.host.block_number().to::<u64>();
-    // Go uses L1BlockNumber() = current + 1 as upper bound.
-    let upper = current + 1;
-    let lower = upper.saturating_sub(256);
-
-    if requested >= lower && requested < upper {
-        match ctx.host.block_hash(requested) {
-            Some(hash) => *number = U256::from_be_bytes(hash.0),
-            None => {
-                ctx.interpreter.halt_fatal();
-                return;
-            }
-        }
-    } else {
-        *number = U256::ZERO;
-    }
-}
 
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
 fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
@@ -241,11 +202,6 @@ impl EvmFactory for ArbEvmFactory {
     ) -> Self::Evm<DB, NoOpInspector> {
         let eth_evm = self.0.create_evm(db, input);
         let mut inner = eth_evm.into_inner();
-        // BLOCKHASH: use L1 block hashes with adjusted range (upper = number + 1).
-        inner.instruction.insert_instruction(
-            BLOCKHASH_OPCODE,
-            revm::interpreter::Instruction::new(arb_blockhash, 20),
-        );
         // BLOBBASEFEE is not supported on Arbitrum — override to halt.
         inner.instruction.insert_instruction(
             BLOBBASEFEE_OPCODE,
@@ -271,11 +227,6 @@ impl EvmFactory for ArbEvmFactory {
     ) -> Self::Evm<DB, I> {
         let eth_evm = self.0.create_evm_with_inspector(db, input, inspector);
         let mut inner = eth_evm.into_inner();
-        // BLOCKHASH: use L1 block hashes with adjusted range (upper = number + 1).
-        inner.instruction.insert_instruction(
-            BLOCKHASH_OPCODE,
-            revm::interpreter::Instruction::new(arb_blockhash, 20),
-        );
         // BLOBBASEFEE is not supported on Arbitrum — override to halt.
         inner.instruction.insert_instruction(
             BLOBBASEFEE_OPCODE,
