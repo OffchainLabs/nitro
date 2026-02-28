@@ -5,6 +5,7 @@ package rpcserver
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -13,67 +14,102 @@ import (
 )
 
 type Server struct {
-	executionClient   execution.ExecutionClient
-	executionRecorder execution.ExecutionRecorder
+	client execution.FullExecutionClient
 }
 
-func NewServer(executionClient execution.ExecutionClient, executionRecorder execution.ExecutionRecorder) *Server {
-	return &Server{executionClient, executionRecorder}
+func NewServer(client execution.FullExecutionClient) *Server {
+	return &Server{client}
 }
 
 func (c *Server) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
-	return c.executionClient.DigestMessage(msgIdx, msg, msgForPrefetch).Await(ctx)
+	return c.client.DigestMessage(msgIdx, msg, msgForPrefetch).Await(ctx)
 }
 
 func (c *Server) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(ctx)
+	return c.client.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(ctx)
 }
 
 func (c *Server) HeadMessageIndex(ctx context.Context) (arbutil.MessageIndex, error) {
-	return c.executionClient.HeadMessageIndex().Await(ctx)
+	return c.client.HeadMessageIndex().Await(ctx)
 }
 
 func (c *Server) ResultAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return c.executionClient.ResultAtMessageIndex(msgIdx).Await(ctx)
+	return c.client.ResultAtMessageIndex(msgIdx).Await(ctx)
 }
 
 func (c *Server) SetFinalityData(ctx context.Context, safeFinalityData *arbutil.FinalityData, finalizedFinalityData *arbutil.FinalityData, validatedFinalityData *arbutil.FinalityData) error {
-	_, err := c.executionClient.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
+	_, err := c.client.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData).Await(ctx)
 	return err
 }
 
 func (c *Server) SetConsensusSyncData(ctx context.Context, syncData *execution.ConsensusSyncData) error {
-	_, err := c.executionClient.SetConsensusSyncData(syncData).Await(ctx)
+	_, err := c.client.SetConsensusSyncData(syncData).Await(ctx)
 	return err
 }
 
 func (c *Server) MarkFeedStart(ctx context.Context, to arbutil.MessageIndex) error {
-	_, err := c.executionClient.MarkFeedStart(to).Await(ctx)
+	_, err := c.client.MarkFeedStart(to).Await(ctx)
 	return err
 }
 
 func (c *Server) TriggerMaintenance(ctx context.Context) error {
-	_, err := c.executionClient.TriggerMaintenance().Await(ctx)
+	_, err := c.client.TriggerMaintenance().Await(ctx)
 	return err
 }
 
 func (c *Server) ShouldTriggerMaintenance(ctx context.Context) (bool, error) {
-	return c.executionClient.ShouldTriggerMaintenance().Await(ctx)
+	return c.client.ShouldTriggerMaintenance().Await(ctx)
 }
 
 func (c *Server) MaintenanceStatus(ctx context.Context) (*execution.MaintenanceStatus, error) {
-	return c.executionClient.MaintenanceStatus().Await(ctx)
+	return c.client.MaintenanceStatus().Await(ctx)
 }
 
 func (c *Server) ArbOSVersionForMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (uint64, error) {
-	return c.executionClient.ArbOSVersionForMessageIndex(msgIdx).Await(ctx)
+	return c.client.ArbOSVersionForMessageIndex(msgIdx).Await(ctx)
 }
 
 func (c *Server) RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
-	return c.executionRecorder.RecordBlockCreation(pos, msg, wasmTargets).Await(ctx)
+	return c.client.RecordBlockCreation(pos, msg, wasmTargets).Await(ctx)
 }
 
 func (c *Server) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
-	_, err := c.executionRecorder.PrepareForRecord(start, end).Await(ctx)
+	_, err := c.client.PrepareForRecord(start, end).Await(ctx)
 	return err
+}
+
+func (c *Server) Pause(ctx context.Context) error {
+	_, err := c.client.Pause().Await(ctx)
+	return err
+}
+
+func (c *Server) Activate(ctx context.Context) error {
+	_, err := c.client.Activate().Await(ctx)
+	return err
+}
+
+func (c *Server) ForwardTo(ctx context.Context, url string) error {
+	_, err := c.client.ForwardTo(url).Await(ctx)
+	return err
+}
+
+func (c *Server) SequenceDelayedMessage(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+	_, err := c.client.SequenceDelayedMessage(message, delayedSeqNum).Await(ctx)
+	return err
+}
+
+func (c *Server) NextDelayedMessageNumber(ctx context.Context) (uint64, error) {
+	return c.client.NextDelayedMessageNumber().Await(ctx)
+}
+
+func (c *Server) Synced(ctx context.Context) (bool, error) {
+	return c.client.Synced().Await(ctx)
+}
+
+func (c *Server) FullSyncProgressMap(ctx context.Context) (map[string]interface{}, error) {
+	return c.client.FullSyncProgressMap().Await(ctx)
+}
+
+func (c *Server) IsTxHashInOnchainFilter(ctx context.Context, txHash common.Hash) (bool, error) {
+	return c.client.IsTxHashInOnchainFilter(txHash).Await(ctx)
 }

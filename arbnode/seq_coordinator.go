@@ -525,7 +525,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		// we maintain chosen status if we had it and nobody in the priorities wants the lockout
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
-			err := c.sequencer.ForwardTo(nextChosen)
+			_, err := c.sequencer.ForwardTo(nextChosen).Await(ctx)
 			if err != nil {
 				// The error was already logged in ForwardTo, just clean up state.
 				// Setting prevChosenSequencer to an empty string will cause the next update to attempt to reconnect.
@@ -650,7 +650,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	if chosenSeq != c.config.Url() && chosenSeq != c.prevChosenSequencer {
 		var err error
 		if c.sequencer != nil {
-			err = c.sequencer.ForwardTo(chosenSeq)
+			_, err = c.sequencer.ForwardTo(chosenSeq).Await(ctx)
 		}
 		if err == nil {
 			c.prevChosenSequencer = chosenSeq
@@ -708,9 +708,15 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
 		var resString string
 		resString, msgReadErr = redisCoordinator.GetIfInQuorum(ctx, redisutil.MessageKeyFor(msgToRead))
-		if msgReadErr != nil && c.sequencer.Synced(ctx) {
-			log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
-			break
+		if msgReadErr != nil {
+			synced, err := c.sequencer.Synced().Await(ctx)
+			if err != nil {
+				log.Warn("sequencer sync status unavailable", "err", err)
+				break
+			} else if synced {
+				log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
+				break
+			}
 		}
 		rsBytes := []byte(resString)
 		var sigString string
@@ -787,14 +793,22 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 	}
 
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
-	synced := c.sequencer.Synced(ctx)
+	synced, err := c.sequencer.Synced().Await(ctx)
+	if err != nil {
+		log.Warn("sequencer sync status unavailable", "err", err)
+		return c.noRedisError(), nil
+	}
 	if !synced {
-		syncProgress := c.sequencer.FullSyncProgressMap(ctx)
-		var detailsList []interface{}
-		for key, value := range syncProgress {
-			detailsList = append(detailsList, key, value)
+		syncProgress, err := c.sequencer.FullSyncProgressMap().Await(ctx)
+		if err != nil {
+			log.Warn("sequencer is not synced and it failed to get progress map", "err", err)
+		} else {
+			var detailsList []interface{}
+			for key, value := range syncProgress {
+				detailsList = append(detailsList, key, value)
+			}
+			log.Warn("sequencer is not synced", detailsList...)
 		}
-		log.Warn("sequencer is not synced", detailsList...)
 	}
 
 	// can take over as main sequencer?
@@ -811,7 +825,10 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 		if processedMessages >= localMsgCount {
 			// we're here because we don't currently hold the lock
 			// sequencer is already either paused or forwarding
-			c.sequencer.Pause()
+			if _, err := c.sequencer.Pause().Await(ctx); err != nil {
+				log.Warn("coordinator failed to pause sequencer", "processedMessages", processedMessages, "localMsgCount", localMsgCount, "err", err)
+				return c.noRedisError(), errors.New("coordinator failed to pause sequencer")
+			}
 			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil, nil)
 			if err != nil {
 				// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -836,7 +853,10 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			if err != nil {
 				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
 			}
-			c.sequencer.Activate()
+			if _, err := c.sequencer.Activate().Await(ctx); err != nil {
+				log.Warn("sequencer failed to activate after becoming chosen", "err", err)
+				return c.noRedisError(), errors.New("coordinator failed to activate after becoming chosen")
+			}
 			c.prevChosenSequencer = c.config.Url()
 			return c.noRedisError(), nil
 		}
@@ -1127,7 +1147,11 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	log.Info("seeking lockout", "myUrl", c.config.Url())
-	if c.sequencer.Synced(ctx) {
+
+	synced, err := c.sequencer.Synced().Await(ctx)
+	if err != nil {
+		log.Warn("sequencer sync status unavailable", "err", err)
+	} else if synced {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx, c.RedisCoordinator().Client)
 		if err != nil {
