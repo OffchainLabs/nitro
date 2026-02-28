@@ -60,16 +60,18 @@ impl<Provider> NitroExecutionHandler<Provider> {
     }
 
     /// Convert a message index to a block number.
+    /// Matches Go: `MessageIndexToBlockNumber(msgIdx) = msgIdx + genesisBlockNum`
     fn message_index_to_block_number(msg_idx: u64) -> u64 {
-        GENESIS_BLOCK_NUM + 1 + msg_idx
+        GENESIS_BLOCK_NUM + msg_idx
     }
 
     /// Convert a block number to a message index.
+    /// Matches Go: `BlockNumberToMessageIndex(blockNum) = blockNum - genesisBlockNum`
     fn block_number_to_message_index(block_num: u64) -> Option<u64> {
-        if block_num <= GENESIS_BLOCK_NUM {
+        if block_num < GENESIS_BLOCK_NUM {
             return None;
         }
-        Some(block_num - GENESIS_BLOCK_NUM - 1)
+        Some(block_num - GENESIS_BLOCK_NUM)
     }
 }
 
@@ -154,10 +156,6 @@ where
             .provider
             .best_block_number()
             .map_err(|e| internal_error(e.to_string()))?;
-
-        if best <= GENESIS_BLOCK_NUM {
-            return Ok(0);
-        }
 
         let msg_idx = Self::block_number_to_message_index(best).unwrap_or(0);
         debug!(target: "nitroexecution", best, msg_idx, "headMessageIndex");

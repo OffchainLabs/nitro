@@ -14,20 +14,22 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// L1 incoming message header.
+/// Go fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RpcL1IncomingMessageHeader {
     pub kind: u8,
     pub sender: Address,
+    #[serde(rename = "blockNumber")]
     pub block_number: u64,
     pub timestamp: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "requestId")]
     pub request_id: Option<B256>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "baseFeeL1")]
     pub base_fee_l1: Option<U256>,
 }
 
 /// Batch data statistics for L1 cost estimation.
+/// Go fields have explicit JSON tags (lowercase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcBatchDataStats {
     pub length: u64,
@@ -35,33 +37,36 @@ pub struct RpcBatchDataStats {
 }
 
 /// L1 incoming message containing header and L2 payload.
+/// Go fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RpcL1IncomingMessage {
     pub header: RpcL1IncomingMessageHeader,
     /// Base64-encoded L2 message bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "l2Msg")]
     pub l2_msg: Option<String>,
     /// Legacy batch gas cost (for older batch posting reports).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "batchGasCost")]
     pub batch_gas_cost: Option<u64>,
     /// Batch data statistics (for newer batch posting reports).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "batchDataTokens")]
     pub batch_data_tokens: Option<RpcBatchDataStats>,
 }
 
 /// Message with metadata, sent by Nitro consensus to the execution client.
+/// Go fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RpcMessageWithMetadata {
     pub message: RpcL1IncomingMessage,
+    #[serde(rename = "delayedMessagesRead")]
     pub delayed_messages_read: u64,
 }
 
 /// Extended message info including block hash and metadata.
+/// Go struct has NO JSON tags, uses PascalCase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct RpcMessageWithMetadataAndBlockInfo {
+    #[serde(rename = "MessageWithMeta")]
     pub message: RpcMessageWithMetadata,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_hash: Option<B256>,
@@ -70,6 +75,7 @@ pub struct RpcMessageWithMetadataAndBlockInfo {
 }
 
 /// Result of block production: block hash and send root.
+/// Go struct has NO JSON tags, uses PascalCase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcMessageResult {
@@ -78,8 +84,9 @@ pub struct RpcMessageResult {
 }
 
 /// Finality data pushed from consensus.
+/// Go struct has NO JSON tags, uses PascalCase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct RpcFinalityData {
     #[serde(default)]
     pub msg_idx: u64,
@@ -88,8 +95,9 @@ pub struct RpcFinalityData {
 }
 
 /// Consensus sync data pushed from consensus.
+/// Go struct has NO JSON tags, uses PascalCase.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct RpcConsensusSyncData {
     pub synced: bool,
     pub max_message_count: u64,
@@ -100,8 +108,9 @@ pub struct RpcConsensusSyncData {
 }
 
 /// Maintenance status.
+/// Go struct has NO JSON tags, uses PascalCase.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct RpcMaintenanceStatus {
     pub is_running: bool,
 }
