@@ -215,17 +215,35 @@ pub fn legacy_cost_for_stats(stats: &BatchDataStats) -> u64 {
 /// Parses fields from a batch posting report message.
 pub fn parse_batch_posting_report_fields(data: &[u8]) -> io::Result<BatchPostingReportFields> {
     let mut reader = Cursor::new(data);
-    let batch_timestamp = uint64_from_reader(&mut reader)?;
+
+    let batch_timestamp_u256 = uint256_from_reader(&mut reader)?;
+    let batch_timestamp: u64 = batch_timestamp_u256.try_into().map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidData, "batch timestamp too large")
+    })?;
+
     let batch_poster = address_from_reader(&mut reader)?;
-    let batch_number = uint64_from_reader(&mut reader)?;
-    let batch_data_gas = uint64_from_reader(&mut reader)?;
+    let data_hash = hash_from_reader(&mut reader)?;
+
+    let batch_number_u256 = uint256_from_reader(&mut reader)?;
+    let batch_number: u64 = batch_number_u256.try_into().map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidData, "batch number too large")
+    })?;
+
     let l1_base_fee_estimate = uint256_from_reader(&mut reader)?;
+
+    let extra_gas = match uint64_from_reader(&mut reader) {
+        Ok(v) => v,
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => 0,
+        Err(e) => return Err(e),
+    };
+
     Ok(BatchPostingReportFields {
         batch_timestamp,
         batch_poster,
+        data_hash,
         batch_number,
-        batch_data_gas,
         l1_base_fee_estimate,
+        extra_gas,
     })
 }
 
@@ -234,7 +252,8 @@ pub fn parse_batch_posting_report_fields(data: &[u8]) -> io::Result<BatchPosting
 pub struct BatchPostingReportFields {
     pub batch_timestamp: u64,
     pub batch_poster: Address,
+    pub data_hash: B256,
     pub batch_number: u64,
-    pub batch_data_gas: u64,
     pub l1_base_fee_estimate: U256,
+    pub extra_gas: u64,
 }
