@@ -593,13 +593,18 @@ where
         }
 
         // Store pending state for commit_transaction.
+        // evm_gas_used must equal gas_used when can_pay_for_gas because the gas
+        // fees were already transferred inside execute_submit_retryable. Setting
+        // evm_gas_used = gas_used prevents the sender_extra_gas burn in
+        // commit_transaction from double-charging the sender.
+        let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
         self.pending_tx = Some(PendingArbTx {
             sender,
             tx_gas_limit: user_gas,
             arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
             has_poster_costs: false, // No poster costs for submit retryable
             poster_gas: 0,
-            evm_gas_used: 0,
+            evm_gas_used: gas_used,
             charged_multi_gas: if fees.can_pay_for_gas {
                 MultiGas::l2_calldata_gas(user_gas)
             } else {
@@ -612,7 +617,6 @@ where
         // Construct synthetic execution result. Filtered retryables always
         // return a failure receipt (Go sets filteredErr). Non-filtered txs
         // succeed even when can't pay for gas (retryable was created).
-        let gas_used = if fees.can_pay_for_gas { user_gas } else { 0 };
         let ticket_bytes = alloy_primitives::Bytes::copy_from_slice(ticket_id.as_slice());
 
         if is_filtered {
