@@ -145,3 +145,4 @@ jsonrpsee-types = "0.26.0"
 dyn-clone = "1"
 wasmer = { version = "4.4", default-features = false, features = ["sys", "cranelift"] }
 schnellru = "0.2"
+
