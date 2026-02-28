@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use alloy_consensus::{Block, BlockBody, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH, proofs};
+use alloy_consensus::{Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH, proofs};
 use alloy_evm::block::{BlockExecutionError, BlockExecutionResult, BlockExecutorFactory};
 use alloy_evm::eth::EthBlockExecutionCtx;
 use alloy_primitives::{B64, B256, U256};
@@ -47,7 +47,7 @@ where
         let BlockAssemblerInput {
             evm_env,
             execution_ctx: ctx,
-            parent: _,
+            parent,
             transactions,
             output: BlockExecutionResult { receipts, gas_used, .. },
             bundle_state,
@@ -55,6 +55,10 @@ where
             state_root,
             ..
         } = input;
+
+        // L2 block number is parent + 1. We cannot use block_env.number because
+        // Arbitrum overrides it to hold the L1 block number (for the NUMBER opcode).
+        let l2_block_number = parent.number().saturating_add(1);
 
         let timestamp = evm_env.block_env.timestamp().saturating_to();
 
@@ -105,7 +109,7 @@ where
             mix_hash,
             nonce: B64::from(delayed_messages_read.to_be_bytes()),
             base_fee_per_gas: Some(evm_env.block_env.basefee()),
-            number: evm_env.block_env.number().saturating_to(),
+            number: l2_block_number,
             gas_limit: evm_env.block_env.gas_limit(),
             difficulty: U256::from(1),
             gas_used: *gas_used,

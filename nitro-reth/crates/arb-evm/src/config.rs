@@ -86,15 +86,18 @@ where
 
     fn evm_env(&self, header: &Header) -> Result<EvmEnv<SpecId>, Self::Error> {
         let chain_id = self.chain_spec.chain().id();
-        let arbos_version =
-            arbos_version_from_mix_hash(&header.mix_hash().unwrap_or_default());
+        let mix_hash = header.mix_hash().unwrap_or_default();
+        let arbos_version = arbos_version_from_mix_hash(&mix_hash);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
+
+        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
+        let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
 
         let cfg_env = CfgEnv::new()
             .with_chain_id(chain_id)
             .with_spec_and_mainnet_gas_params(spec);
         let block_env = BlockEnv {
-            number: U256::from(header.number()),
+            number: U256::from(l1_block_number),
             beneficiary: header.beneficiary(),
             timestamp: U256::from(header.timestamp()),
             difficulty: header.difficulty(),
@@ -122,9 +125,10 @@ where
         let cfg_env = CfgEnv::new()
             .with_chain_id(chain_id)
             .with_spec_and_mainnet_gas_params(spec);
-        let next_number = parent.number().saturating_add(1);
+        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
+        let l1_block_number = l1_block_number_from_mix_hash(&attributes.prev_randao);
         let block_env = BlockEnv {
-            number: U256::from(next_number),
+            number: U256::from(l1_block_number),
             beneficiary: attributes.suggested_fee_recipient,
             timestamp: U256::from(attributes.timestamp),
             difficulty: U256::from(1),
@@ -194,8 +198,10 @@ where
             .with_chain_id(self.chain_spec.chain().id())
             .with_spec_and_mainnet_gas_params(spec);
 
+        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
+        let l1_block_number = l1_block_number_from_mix_hash(&prev_randao);
         let block_env = BlockEnv {
-            number: U256::from(payload.payload.block_number()),
+            number: U256::from(l1_block_number),
             beneficiary: payload.payload.fee_recipient(),
             timestamp: U256::from(payload.payload.timestamp()),
             difficulty: U256::ZERO,

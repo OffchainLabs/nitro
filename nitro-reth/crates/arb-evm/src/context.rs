@@ -86,14 +86,19 @@ impl RecentWasms {
         }
     }
 
-    pub fn insert(&mut self, hash: B256) {
-        if let Some(pos) = self.hashes.iter().position(|h| *h == hash) {
+    /// Insert a hash, returning `true` if it was already present.
+    pub fn insert(&mut self, hash: B256) -> bool {
+        let was_present = if let Some(pos) = self.hashes.iter().position(|h| *h == hash) {
             self.hashes.remove(pos);
-        }
+            true
+        } else {
+            false
+        };
         self.hashes.push(hash);
         if self.hashes.len() > self.max_entries {
             self.hashes.remove(0);
         }
+        was_present
     }
 
     pub fn contains(&self, hash: &B256) -> bool {
@@ -158,11 +163,80 @@ impl ArbitrumExtraData {
     /// Register a balance burn from SELFDESTRUCT or native token burn.
     ///
     /// Adjusts `unexpected_balance_delta` so that post-block balance verification
-    /// accounts for the burned amount.
+    /// accounts for the burned amount (adds to delta).
     pub fn expect_balance_burn(&mut self, amount: u128) {
         self.unexpected_balance_delta = self
             .unexpected_balance_delta
             .saturating_add(amount as i128);
+    }
+
+    /// Register a balance mint from native token minting.
+    ///
+    /// Adjusts `unexpected_balance_delta` so that post-block balance verification
+    /// accounts for the minted amount (subtracts from delta).
+    pub fn expect_balance_mint(&mut self, amount: u128) {
+        self.unexpected_balance_delta = self
+            .unexpected_balance_delta
+            .saturating_sub(amount as i128);
+    }
+
+    /// Returns the current unexpected balance delta.
+    pub fn unexpected_balance_delta(&self) -> i128 {
+        self.unexpected_balance_delta
+    }
+
+    // --- Stylus WASM page tracking ---
+
+    /// Returns (open_pages, ever_pages) for Stylus memory accounting.
+    pub fn get_stylus_pages(&self) -> (u16, u16) {
+        (self.open_wasm_pages, self.ever_wasm_pages)
+    }
+
+    /// Returns the current number of open WASM memory pages.
+    pub fn get_stylus_pages_open(&self) -> u16 {
+        self.open_wasm_pages
+    }
+
+    /// Sets the current number of open WASM memory pages.
+    pub fn set_stylus_pages_open(&mut self, pages: u16) {
+        self.open_wasm_pages = pages;
+    }
+
+    /// Adds WASM pages, saturating at u16::MAX.
+    /// Returns the previous (open, ever) values.
+    pub fn add_stylus_pages(&mut self, new_pages: u16) -> (u16, u16) {
+        let prev = (self.open_wasm_pages, self.ever_wasm_pages);
+        self.open_wasm_pages = self.open_wasm_pages.saturating_add(new_pages);
+        self.ever_wasm_pages = self.ever_wasm_pages.max(self.open_wasm_pages);
+        prev
+    }
+
+    /// Adds to the ever-pages high watermark, saturating at u16::MAX.
+    pub fn add_stylus_pages_ever(&mut self, new_pages: u16) {
+        self.ever_wasm_pages = self.ever_wasm_pages.saturating_add(new_pages);
+    }
+
+    /// Resets per-transaction Stylus page counters (called at tx start).
+    pub fn reset_stylus_pages(&mut self) {
+        self.open_wasm_pages = 0;
+        self.ever_wasm_pages = 0;
+    }
+
+    // --- Transaction filter ---
+
+    /// Mark transaction as filtered (will be excluded at commit).
+    pub fn filter_tx(&mut self) {
+        self.arb_tx_filter = true;
+    }
+
+    /// Clear the transaction filter flag.
+    pub fn clear_tx_filter(&mut self) {
+        self.arb_tx_filter = false;
+    }
+
+    /// Returns whether a transaction is currently filtered.
+    pub fn is_tx_filtered(&self) -> bool {
+        self.arb_tx_filter
     }
 
     /// Begin recording WASM modules for block validation.
