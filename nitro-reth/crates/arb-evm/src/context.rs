@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, B256, U256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Arbitrum-specific block execution context.
 ///
@@ -126,6 +126,10 @@ pub struct ArbitrumExtraData {
     pub recent_wasms: RecentWasms,
     /// Whether transaction filtering is active.
     pub arb_tx_filter: bool,
+    /// Zombie accounts: addresses that were self-destructed then touched by
+    /// a zero-value transfer on pre-Stylus ArbOS (< v30). These must be
+    /// preserved as empty accounts during finalization to match Nitro behavior.
+    pub zombie_accounts: HashSet<Address>,
 }
 
 impl ArbitrumExtraData {
@@ -237,6 +241,20 @@ impl ArbitrumExtraData {
     /// Returns whether a transaction is currently filtered.
     pub fn is_tx_filtered(&self) -> bool {
         self.arb_tx_filter
+    }
+
+    // --- Zombie accounts ---
+
+    /// On pre-Stylus ArbOS (< v30), a zero-value transfer touching a
+    /// self-destructed address creates a "zombie" empty account that must
+    /// survive finalization. Call this when the condition is met.
+    pub fn create_zombie(&mut self, addr: Address) {
+        self.zombie_accounts.insert(addr);
+    }
+
+    /// Returns whether the address is a zombie that should be preserved.
+    pub fn is_zombie(&self, addr: &Address) -> bool {
+        self.zombie_accounts.contains(addr)
     }
 
     /// Begin recording WASM modules for block validation.

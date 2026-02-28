@@ -1777,7 +1777,44 @@ fn transfer_balance<DB: Database>(
     to: Address,
     amount: U256,
 ) {
-    if amount.is_zero() || from == to {
+    if from == to {
+        return;
+    }
+    if amount.is_zero() {
+        return;
+    }
+    burn_balance(state, from, amount);
+    mint_balance(state, to, amount);
+}
+
+/// Transfer balance with zombie account creation for pre-Stylus ArbOS.
+///
+/// On ArbOS < 30, a zero-value transfer touching a self-destructed account
+/// creates a "zombie" (empty account preserved through finalization).
+fn transfer_balance_with_zombie<DB: Database>(
+    state: &mut State<DB>,
+    from: Address,
+    to: Address,
+    amount: U256,
+    arbos_version: u64,
+    extra_data: &mut crate::context::ArbitrumExtraData,
+) {
+    if from == to {
+        return;
+    }
+    if amount.is_zero() {
+        // On pre-Stylus, create zombie if the account was self-destructed.
+        if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+            // Check if account was self-destructed by looking at the state.
+            let account_exists = get_balance(state, from) > U256::ZERO
+                || state.cache.accounts.contains_key(&from);
+            if !account_exists {
+                // Account doesn't exist (was destructed), create zombie.
+                extra_data.create_zombie(from);
+                // Touch the account so it exists as empty in the state.
+                mint_balance(state, from, U256::ZERO);
+            }
+        }
         return;
     }
     burn_balance(state, from, amount);
