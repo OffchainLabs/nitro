@@ -138,24 +138,26 @@ impl<D: Database> L2PricingState<D> {
     }
 
     fn update_pricing_model_legacy(&self, time_passed: u64) -> Result<(), ()> {
-        self.update_legacy_backlog(time_passed)?;
+        let speed_limit = self.speed_limit_per_second()?;
+        let drain = time_passed.saturating_mul(speed_limit);
+        self.update_legacy_backlog_op(BacklogOperation::Shrink, drain)?;
 
         let inertia = self.pricing_inertia()?;
         let tolerance = self.backlog_tolerance()?;
-        let speed_limit = self.speed_limit_per_second()?;
         let backlog = self.gas_backlog()?;
         let min_base_fee = self.min_base_fee_wei()?;
 
-        if speed_limit == 0 || inertia == 0 {
-            return Ok(());
-        }
-
-        let tolerance_limit = tolerance.saturating_mul(speed_limit);
+        // Go uses plain `tolerance * speedLimit` (wrapping on overflow).
+        // We match the wrapping behavior for consensus parity.
+        let tolerance_limit = tolerance.wrapping_mul(speed_limit);
         let base_fee = if backlog > tolerance_limit {
-            let excess = backlog.saturating_sub(tolerance_limit);
-            let exponent_bips =
-                (excess as u128 * 10000) / (inertia as u128 * speed_limit as u128);
-            self.calc_base_fee_from_exponent(exponent_bips.min(u64::MAX as u128) as u64)?
+            // Go: SaturatingCast[int64](backlog - tolerance*speedLimit)
+            let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
+            // Go: NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
+            let exponent_bips = natural_to_bips(excess)
+                / saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
+            // Go: BigMulByBips(minBaseFee, ApproxExpBasisPoints(exponentBips, 4))
+            self.calc_base_fee_from_exponent(exponent_bips.max(0) as u64)?
         } else {
             min_base_fee
         };
@@ -165,34 +167,34 @@ impl<D: Database> L2PricingState<D> {
 
     fn update_pricing_model_single_constraints(&self, time_passed: u64) -> Result<(), ()> {
         // Drain backlogs and compute total exponent (sum across all constraints).
-        let mut total_exponent: u64 = 0;
+        // Uses signed Bips (int64) arithmetic matching Go.
+        let mut total_exponent: i64 = 0;
         let len = self.gas_constraints_length()?;
 
         for i in 0..len {
             let c = self.open_gas_constraint_at(i);
             let target = c.target()?;
 
-            // Drain backlog.
+            // Pay off backlog: gas = SaturatingUMul(timePassed, target)
             let backlog = c.backlog()?;
-            let drain = (time_passed as u128).saturating_mul(target as u128);
-            let new_backlog = backlog.saturating_sub(drain.min(u64::MAX as u128) as u64);
+            let gas = time_passed.saturating_mul(target);
+            let new_backlog = backlog.saturating_sub(gas);
             c.set_backlog(new_backlog)?;
 
-            if new_backlog == 0 {
-                continue;
+            // Calculate exponent with the formula backlog/divisor
+            if new_backlog > 0 {
+                let window = c.adjustment_window()?;
+                // divisor = SaturatingCastToBips(SaturatingUMul(inertia, target))
+                let divisor = saturating_cast_to_i64(window.saturating_mul(target));
+                if divisor != 0 {
+                    // NaturalToBips(SaturatingCast[int64](backlog))
+                    let exponent = natural_to_bips(saturating_cast_to_i64(new_backlog)) / divisor;
+                    total_exponent = total_exponent.saturating_add(exponent);
+                }
             }
-
-            let window = c.adjustment_window()?;
-            if target == 0 || window == 0 {
-                continue;
-            }
-
-            let exponent = (new_backlog as u128 * 10000) / (window as u128 * target as u128);
-            let exponent = exponent.min(u64::MAX as u128) as u64;
-            total_exponent = total_exponent.saturating_add(exponent);
         }
 
-        let base_fee = self.calc_base_fee_from_exponent(total_exponent)?;
+        let base_fee = self.calc_base_fee_from_exponent(total_exponent.max(0) as u64)?;
         self.set_base_fee_wei(base_fee)
     }
 
@@ -220,23 +222,14 @@ impl<D: Database> L2PricingState<D> {
         self.set_base_fee_wei(max_base_fee)
     }
 
-    fn update_legacy_backlog(&self, time_passed: u64) -> Result<(), ()> {
-        let speed_limit = self.speed_limit_per_second()?;
-        let gas_to_drain = (time_passed as u128).saturating_mul(speed_limit as u128);
-        let backlog = self.gas_backlog()?;
-        let new_backlog = backlog.saturating_sub(gas_to_drain.min(u64::MAX as u128) as u64);
-        self.set_gas_backlog(new_backlog)
-    }
-
-
     fn update_multi_gas_constraints_backlogs(&self, time_passed: u64) -> Result<(), ()> {
         let len = self.multi_gas_constraints_length()?;
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
             let target = c.target()?;
-            let drain = (time_passed as u128).saturating_mul(target as u128);
             let backlog = c.backlog()?;
-            let new_backlog = backlog.saturating_sub(drain.min(u64::MAX as u128) as u64);
+            let gas = time_passed.saturating_mul(target);
+            let new_backlog = backlog.saturating_sub(gas);
             c.set_backlog(new_backlog)?;
         }
         Ok(())
@@ -246,11 +239,16 @@ impl<D: Database> L2PricingState<D> {
     ///
     /// Aggregates weighted backlog contributions from each constraint into
     /// a per-resource-kind exponent array.
+    ///
+    /// Uses signed saturation arithmetic matching Go's Bips (int64) computation:
+    /// dividend = NaturalToBips(SaturatingCast[int64](SaturatingUMul(backlog, weight)))
+    /// divisor  = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
+    /// exp      = dividend / divisor  (signed int64 division)
     pub fn calc_multi_gas_constraints_exponents(
         &self,
     ) -> Result<[u64; NUM_RESOURCE_KIND], ()> {
         let len = self.multi_gas_constraints_length()?;
-        let mut exponent_per_kind = [0u64; NUM_RESOURCE_KIND];
+        let mut exponent_per_kind = [0i64; NUM_RESOURCE_KIND];
 
         for i in 0..len {
             let c = self.open_multi_gas_constraint_at(i);
@@ -268,10 +266,10 @@ impl<D: Database> L2PricingState<D> {
                 continue;
             }
 
-            let divisor = (window as u128)
-                .saturating_mul(target as u128)
-                .saturating_mul(max_weight as u128);
-
+            // divisor = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
+            let divisor_u64 = (window as u64)
+                .saturating_mul(target.saturating_mul(max_weight));
+            let divisor = saturating_cast_to_i64(divisor_u64);
             if divisor == 0 {
                 continue;
             }
@@ -282,17 +280,23 @@ impl<D: Database> L2PricingState<D> {
                     continue;
                 }
 
-                let dividend = (backlog as u128)
-                    .saturating_mul(weight as u128)
-                    .saturating_mul(10000);
+                // dividend = NaturalToBips(SaturatingCast[int64](SaturatingUMul(backlog, weight)))
+                let product = backlog.saturating_mul(weight);
+                let cast = saturating_cast_to_i64(product);
+                let dividend = natural_to_bips(cast);
 
-                let exp = (dividend / divisor).min(u64::MAX as u128) as u64;
+                let exp = dividend / divisor;
                 exponent_per_kind[kind as usize] =
                     exponent_per_kind[kind as usize].saturating_add(exp);
             }
         }
 
-        Ok(exponent_per_kind)
+        // Convert back to u64 for the caller (exponents are always non-negative).
+        let mut result = [0u64; NUM_RESOURCE_KIND];
+        for i in 0..NUM_RESOURCE_KIND {
+            result[i] = exponent_per_kind[i].max(0) as u64;
+        }
+        Ok(result)
     }
 
     /// Calculate base fee from an exponent in basis points.
@@ -479,6 +483,22 @@ fn approx_exp_basis_points(bips: u64) -> u64 {
     }
 
     res
+}
+
+/// Saturating cast from u64 to i64, capping at i64::MAX.
+/// Matches Go's `SaturatingCast[int64](value uint64)`.
+fn saturating_cast_to_i64(value: u64) -> i64 {
+    if value > i64::MAX as u64 {
+        i64::MAX
+    } else {
+        value as i64
+    }
+}
+
+/// Convert a natural number to basis points (multiply by 10000), saturating.
+/// Matches Go's `NaturalToBips(natural int64) Bips`.
+fn natural_to_bips(natural: i64) -> i64 {
+    natural.saturating_mul(10000)
 }
 
 /// Apply a gas delta to a backlog value (signed).
