@@ -154,6 +154,14 @@ fn convert_single_receipt(
         );
     }
 
+    // multiGasUsed: multi-dimensional gas breakdown.
+    if !receipt.multi_gas_used.is_zero() {
+        other.insert(
+            "multiGasUsed".to_string(),
+            serde_json::to_value(&receipt.multi_gas_used).unwrap_or_default(),
+        );
+    }
+
     WithOtherFields {
         inner: base_receipt,
         other: alloy_serde::OtherFields::new(other),

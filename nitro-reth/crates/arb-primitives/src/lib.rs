@@ -7,7 +7,7 @@ pub mod receipt;
 pub mod signed_tx;
 pub mod tx_types;
 
-pub use receipt::{ArbDepositReceipt, ArbReceipt, ArbReceiptKind, SetL1Gas};
+pub use receipt::{ArbDepositReceipt, ArbReceipt, ArbReceiptKind, SetArbReceiptFields};
 pub use signed_tx::{
     ArbTransactionExt, ArbTransactionSigned, ArbTxTypeLocal, ArbTypedTransaction,
     RetryTxInfo, SubmitRetryableInfo,

@@ -80,6 +80,11 @@ impl MultiGas {
         }
     }
 
+    /// Construct from raw arrays (used in deserialization).
+    pub const fn from_raw(gas: [u64; NUM_RESOURCE_KIND], total: u64, refund: u64) -> Self {
+        Self { gas, total, refund }
+    }
+
     pub fn new(kind: ResourceKind, amount: u64) -> Self {
         let mut mg = Self::zero();
         mg.gas[kind as usize] = amount;

@@ -79,7 +79,7 @@ impl<R, Spec, EvmF> BlockExecutorFactory for ArbBlockExecutorFactory<R, Spec, Ev
 where
     R: ReceiptBuilder<
             Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-            Receipt: TxReceipt<Log = Log> + arb_primitives::SetL1Gas,
+            Receipt: TxReceipt<Log = Log> + arb_primitives::SetArbReceiptFields,
         > + 'static,
     Spec: EthExecutorSpec + Clone + 'static,
     EvmF: EvmFactory<
@@ -131,6 +131,7 @@ where
             block_gas_left: 0, // Set from state in apply_pre_execution_changes
             user_txs_processed: 0,
             gas_used_for_l1: Vec::new(),
+            multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
         }
     }
@@ -198,6 +199,8 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Per-receipt poster gas (L1 gas component), parallel to the receipts vector.
     /// Used to populate `gasUsedForL1` in RPC receipt responses.
     pub gas_used_for_l1: Vec<u64>,
+    /// Per-receipt multi-dimensional gas, parallel to the receipts vector.
+    pub multi_gas_used: Vec<MultiGas>,
     /// Expected balance delta from deposits (positive) and L2→L1 withdrawals (negative).
     /// Used for post-block safety verification.
     expected_balance_delta: i128,
@@ -662,7 +665,7 @@ where
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
         Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-        Receipt: TxReceipt<Log = Log> + arb_primitives::SetL1Gas,
+        Receipt: TxReceipt<Log = Log> + arb_primitives::SetArbReceiptFields,
     >,
     R::Transaction: TransactionEnvelope,
 {
@@ -1542,9 +1545,11 @@ where
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
 
-        // Track poster gas for this receipt (parallel to receipts vector).
+        // Track poster gas and multi-gas for this receipt (parallel to receipts vector).
         let poster_gas_for_receipt = pending.as_ref().map_or(0, |p| p.poster_gas);
         self.gas_used_for_l1.push(poster_gas_for_receipt);
+        let multi_gas_for_receipt = pending.as_ref().map_or(MultiGas::zero(), |p| p.charged_multi_gas);
+        self.multi_gas_used.push(multi_gas_for_receipt);
 
         // --- Post-execution: fee distribution ---
         if let Some(pending) = pending {
@@ -1808,9 +1813,14 @@ where
             );
         }
         let (evm, mut result) = self.inner.finish()?;
-        // Set gas_used_for_l1 on each receipt from the parallel tracking vector.
-        for (receipt, &l1_gas) in result.receipts.iter_mut().zip(self.gas_used_for_l1.iter()) {
-            arb_primitives::SetL1Gas::set_gas_used_for_l1(receipt, l1_gas);
+        // Set Arbitrum-specific fields on each receipt from tracking vectors.
+        for (i, receipt) in result.receipts.iter_mut().enumerate() {
+            if let Some(&l1_gas) = self.gas_used_for_l1.get(i) {
+                arb_primitives::SetArbReceiptFields::set_gas_used_for_l1(receipt, l1_gas);
+            }
+            if let Some(&multi_gas) = self.multi_gas_used.get(i) {
+                arb_primitives::SetArbReceiptFields::set_multi_gas_used(receipt, multi_gas);
+            }
         }
         Ok((evm, result))
     }

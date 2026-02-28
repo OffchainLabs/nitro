@@ -9,6 +9,8 @@ use alloy_rlp::{Decodable, Encodable};
 use arb_alloy_consensus::tx::ArbTxType;
 use reth_primitives_traits::InMemorySize;
 
+use crate::multigas::MultiGas;
+
 /// Arbitrum receipt: wraps the per-type receipt kind with L1 gas metadata.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArbReceipt {
@@ -16,12 +18,15 @@ pub struct ArbReceipt {
     /// Gas units used for L1 calldata posting (poster gas).
     /// Populated by the block executor after receipt construction.
     pub gas_used_for_l1: u64,
+    /// Multi-dimensional gas usage breakdown.
+    /// Populated when multi-gas tracking is enabled (ArbOS v60+).
+    pub multi_gas_used: MultiGas,
 }
 
 impl ArbReceipt {
     /// Create a new receipt with no L1 gas usage (filled in later).
     pub fn new(kind: ArbReceiptKind) -> Self {
-        Self { kind, gas_used_for_l1: 0 }
+        Self { kind, gas_used_for_l1: 0, multi_gas_used: MultiGas::zero() }
     }
 
     pub fn with_gas_used_for_l1(mut self, gas: u64) -> Self {
@@ -30,14 +35,19 @@ impl ArbReceipt {
     }
 }
 
-/// Trait for setting the L1 gas usage on a receipt after construction.
-pub trait SetL1Gas {
+/// Trait for setting Arbitrum-specific fields on a receipt after construction.
+pub trait SetArbReceiptFields {
     fn set_gas_used_for_l1(&mut self, gas: u64);
+    fn set_multi_gas_used(&mut self, multi_gas: MultiGas);
 }
 
-impl SetL1Gas for ArbReceipt {
+impl SetArbReceiptFields for ArbReceipt {
     fn set_gas_used_for_l1(&mut self, gas: u64) {
         self.gas_used_for_l1 = gas;
+    }
+
+    fn set_multi_gas_used(&mut self, multi_gas: MultiGas) {
+        self.multi_gas_used = multi_gas;
     }
 }
 
@@ -269,6 +279,7 @@ impl ArbReceiptKind {
 impl InMemorySize for ArbReceipt {
     fn size(&self) -> usize {
         core::mem::size_of::<u64>() // gas_used_for_l1
+            + core::mem::size_of::<MultiGas>() // multi_gas_used
     }
 }
 
@@ -494,11 +505,12 @@ impl serde::Serialize for ArbReceipt {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("ArbReceipt", 4)?;
+        let mut state = serializer.serialize_struct("ArbReceipt", 5)?;
         state.serialize_field("status", &self.status())?;
         state.serialize_field("cumulative_gas_used", &self.cumulative_gas_used())?;
         state.serialize_field("ty", &self.ty())?;
         state.serialize_field("gas_used_for_l1", &self.gas_used_for_l1)?;
+        state.serialize_field("multi_gas_used", &self.multi_gas_used)?;
         state.end()
     }
 }
@@ -516,6 +528,8 @@ impl<'de> serde::Deserialize<'de> for ArbReceipt {
             ty: u8,
             #[serde(default)]
             gas_used_for_l1: u64,
+            #[serde(default)]
+            multi_gas_used: MultiGas,
         }
         let helper = Helper::deserialize(deserializer)?;
         let kind = if helper.ty == 0x64 {
@@ -528,7 +542,11 @@ impl<'de> serde::Deserialize<'de> for ArbReceipt {
             };
             ArbReceiptKind::Legacy(receipt)
         };
-        Ok(ArbReceipt { kind, gas_used_for_l1: helper.gas_used_for_l1 })
+        Ok(ArbReceipt {
+            kind,
+            gas_used_for_l1: helper.gas_used_for_l1,
+            multi_gas_used: helper.multi_gas_used,
+        })
     }
 }
 
@@ -555,6 +573,14 @@ impl reth_codecs::Compact for ArbReceipt {
         buf.put_slice(&encoded);
         // Append gas_used_for_l1 for storage.
         buf.put_u64(self.gas_used_for_l1);
+        // Append multi_gas_used (8 dimensions + total + refund = 10 u64s).
+        for i in 0..crate::multigas::NUM_RESOURCE_KIND {
+            buf.put_u64(self.multi_gas_used.get(
+                crate::multigas::ResourceKind::from_u8(i as u8).unwrap_or(crate::multigas::ResourceKind::Unknown),
+            ));
+        }
+        buf.put_u64(self.multi_gas_used.total());
+        buf.put_u64(self.multi_gas_used.refund());
         0
     }
 
@@ -577,6 +603,17 @@ impl reth_codecs::Compact for ArbReceipt {
         // Read gas_used_for_l1 if present.
         if slice.len() >= 8 {
             receipt.gas_used_for_l1 = slice.get_u64();
+        }
+
+        // Read multi_gas_used if present (10 u64s = 80 bytes).
+        if slice.len() >= 80 {
+            let mut gas = [0u64; crate::multigas::NUM_RESOURCE_KIND];
+            for g in &mut gas {
+                *g = slice.get_u64();
+            }
+            let total = slice.get_u64();
+            let refund = slice.get_u64();
+            receipt.multi_gas_used = MultiGas::from_raw(gas, total, refund);
         }
 
         (receipt, slice)
