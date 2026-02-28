@@ -208,10 +208,10 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Go returns `evm.Depth() <= 2`. Without direct depth access from EvmInternals,
-    // we approximate: true if caller is tx_origin (depth 0/1). Depth 2 (one
-    // intermediate contract) cannot be distinguished from depth 3+ here.
-    let is_top = input.caller == input.internals().tx_origin();
+    // Go returns `evm.Depth() <= 2`.
+    // Depth 1 = direct precompile call from tx, depth 2 = one intermediate contract.
+    let depth = crate::get_evm_depth();
+    let is_top = depth <= 2;
     let val = if is_top { U256::from(1) } else { U256::ZERO };
     let gas_cost = COPY_GAS.min(input.gas);
     Ok(PrecompileOutput::new(
@@ -239,14 +239,11 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Go: topLevel = isTopLevel(depth < 2 || origin == Contracts[depth-2].Caller())
     // ArbOS < 6: topLevel = depth == 2
     // aliased = topLevel && DoesTxTypeAlias(TopTxType)
-    //
-    // Without depth access, approximate:
-    //   ArbOS < 6: depth == 2 ≈ caller != tx_origin (true at depth 2+)
-    //   ArbOS >= 6: isTopLevel ≈ true (correct for depth <= 2, the common case)
+    let depth = crate::get_evm_depth();
     let is_top_level = if arbos_version < 6 {
-        caller != tx_origin
+        depth == 2
     } else {
-        true
+        depth <= 2 || tx_origin == caller
     };
 
     let aliased = is_top_level && get_tx_is_aliased();

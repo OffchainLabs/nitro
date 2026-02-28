@@ -7,9 +7,14 @@ use core::fmt::Debug;
 use revm::context::result::EVMError;
 use revm::context_interface::host::LoadError;
 use revm::context_interface::result::{HaltReason, ResultAndState};
+use revm::handler::instructions::EthInstructions;
+use revm::handler::{EthFrame, PrecompileProvider};
 use revm::inspector::NoOpInspector;
+use revm::interpreter::interpreter::EthInterpreter;
 use revm::interpreter::interpreter_types::{InputsTr, RuntimeFlag, StackTr};
-use revm::interpreter::{Host, InstructionContext, InstructionResult, InterpreterTypes};
+use revm::interpreter::{
+    CallInputs, Host, InstructionContext, InstructionResult, InterpreterResult, InterpreterTypes,
+};
 use revm::primitives::hardfork::SpecId;
 
 use crate::transaction::ArbTransaction;
@@ -100,27 +105,85 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
-/// Arbitrum EVM wrapper that registers custom precompiles.
-pub struct ArbEvm<DB: Database + Debug, I> {
-    inner: alloy_evm::EthEvm<DB, I, PrecompilesMap>,
+// ── Depth-tracking precompile provider ─────────────────────────────
+
+/// Wraps [`PrecompilesMap`] to set the thread-local EVM call depth before
+/// each precompile invocation. The depth is read from revm's journal, which
+/// mirrors Go's `evm.Depth()` counter used by `ArbSys.isTopLevelCall`.
+#[derive(Clone, Debug)]
+pub struct ArbPrecompilesMap(pub PrecompilesMap);
+
+impl<BlockEnv, TxEnv, CfgEnv, DB, Chain>
+    PrecompileProvider<revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>>
+    for ArbPrecompilesMap
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    type Output = InterpreterResult;
+
+    fn set_spec(&mut self, spec: CfgEnv::Spec) -> bool {
+        <PrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::set_spec(&mut self.0, spec)
+    }
+
+    fn run(
+        &mut self,
+        context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        inputs: &CallInputs,
+    ) -> Result<Option<Self::Output>, String> {
+        // Sync the thread-local depth from revm's journal before the precompile runs.
+        // The journal depth is incremented by checkpoint() at the start of each call
+        // frame, matching Go's evm.Depth() semantics exactly.
+        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
+        <PrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::run(&mut self.0, context, inputs)
+    }
+
+    fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
+        <PrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::warm_addresses(&self.0)
+    }
+
+    fn contains(&self, address: &Address) -> bool {
+        <PrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::contains(&self.0, address)
+    }
+}
+
+// ── ArbEvm ─────────────────────────────────────────────────────────
+
+/// Arbitrum EVM wrapper with depth-tracking precompiles and custom opcodes.
+///
+/// Internally stores `EthEvm<DB, I, ArbPrecompilesMap>` for depth tracking,
+/// but exposes `Precompiles = PrecompilesMap` to satisfy reth's
+/// `ConfigureEvm` constraint.
+pub struct ArbEvm<DB: Database, I> {
+    inner: alloy_evm::EthEvm<DB, I, ArbPrecompilesMap>,
 }
 
 impl<DB, I> ArbEvm<DB, I>
 where
-    DB: Database + Debug,
+    DB: Database,
 {
-    pub fn new(inner: alloy_evm::EthEvm<DB, I, PrecompilesMap>) -> Self {
+    pub fn new(inner: alloy_evm::EthEvm<DB, I, ArbPrecompilesMap>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> alloy_evm::EthEvm<DB, I, PrecompilesMap> {
+    pub fn into_inner(self) -> alloy_evm::EthEvm<DB, I, ArbPrecompilesMap> {
         self.inner
     }
 }
 
 impl<DB, I> Evm for ArbEvm<DB, I>
 where
-    DB: Database + Debug,
+    DB: Database,
     I: revm::inspector::Inspector<EthEvmContext<DB>>,
 {
     type DB = DB;
@@ -165,15 +228,19 @@ where
     }
 
     fn components(&self) -> (&Self::DB, &Self::Inspector, &Self::Precompiles) {
-        self.inner.components()
+        let (db, inspector, arb_precompiles) = self.inner.components();
+        (db, inspector, &arb_precompiles.0)
     }
 
     fn components_mut(
         &mut self,
     ) -> (&mut Self::DB, &mut Self::Inspector, &mut Self::Precompiles) {
-        self.inner.components_mut()
+        let (db, inspector, arb_precompiles) = self.inner.components_mut();
+        (db, inspector, &mut arb_precompiles.0)
     }
 }
+
+// ── ArbEvmFactory ──────────────────────────────────────────────────
 
 /// Factory for creating Arbitrum EVM instances with custom precompiles.
 #[derive(Default, Debug, Clone, Copy)]
@@ -183,6 +250,48 @@ impl ArbEvmFactory {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+/// Helper: customize instruction table and register Arb precompiles on the
+/// inner revm EVM, then wrap in `EthEvm<DB, I, ArbPrecompilesMap>`.
+fn build_arb_evm<DB: Database, I>(
+    inner: revm::context::Evm<
+        EthEvmContext<DB>,
+        I,
+        EthInstructions<EthInterpreter, EthEvmContext<DB>>,
+        PrecompilesMap,
+        EthFrame,
+    >,
+    inspect: bool,
+) -> ArbEvm<DB, I> {
+    // Destructure to access and wrap precompiles with a different type.
+    let revm::context::Evm {
+        ctx,
+        inspector,
+        mut instruction,
+        mut precompiles,
+        frame_stack: _,
+    } = inner;
+
+    // BLOBBASEFEE is not supported on Arbitrum — override to halt.
+    instruction.insert_instruction(
+        BLOBBASEFEE_OPCODE,
+        revm::interpreter::Instruction::new(arb_blob_basefee, 2),
+    );
+    // SELFDESTRUCT: revert if the acting account is a Stylus program.
+    instruction.insert_instruction(
+        SELFDESTRUCT_OPCODE,
+        revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+    );
+
+    // Register Arbitrum precompiles, then wrap in depth-tracking provider.
+    register_arb_precompiles(&mut precompiles);
+    let arb_precompiles = ArbPrecompilesMap(precompiles);
+
+    let revm_evm =
+        revm::context::Evm::new_with_inspector(ctx, inspector, instruction, arb_precompiles);
+    let eth_evm = alloy_evm::eth::EthEvm::new(revm_evm, inspect);
+    ArbEvm::new(eth_evm)
 }
 
 impl EvmFactory for ArbEvmFactory {
@@ -201,22 +310,7 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
         let eth_evm = self.0.create_evm(db, input);
-        let mut inner = eth_evm.into_inner();
-        // BLOBBASEFEE is not supported on Arbitrum — override to halt.
-        inner.instruction.insert_instruction(
-            BLOBBASEFEE_OPCODE,
-            revm::interpreter::Instruction::new(arb_blob_basefee, 2),
-        );
-        // SELFDESTRUCT: revert if the acting account is a Stylus program.
-        inner.instruction.insert_instruction(
-            SELFDESTRUCT_OPCODE,
-            revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
-        );
-        let eth_evm = alloy_evm::eth::EthEvm::new(inner, false);
-        let mut evm = ArbEvm::new(eth_evm);
-        let (_, _, precompiles) = evm.components_mut();
-        register_arb_precompiles(precompiles);
-        evm
+        build_arb_evm(eth_evm.into_inner(), false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: revm::inspector::Inspector<Self::Context<DB>>>(
@@ -226,21 +320,6 @@ impl EvmFactory for ArbEvmFactory {
         inspector: I,
     ) -> Self::Evm<DB, I> {
         let eth_evm = self.0.create_evm_with_inspector(db, input, inspector);
-        let mut inner = eth_evm.into_inner();
-        // BLOBBASEFEE is not supported on Arbitrum — override to halt.
-        inner.instruction.insert_instruction(
-            BLOBBASEFEE_OPCODE,
-            revm::interpreter::Instruction::new(arb_blob_basefee, 2),
-        );
-        // SELFDESTRUCT: revert if the acting account is a Stylus program.
-        inner.instruction.insert_instruction(
-            SELFDESTRUCT_OPCODE,
-            revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
-        );
-        let eth_evm = alloy_evm::eth::EthEvm::new(inner, true);
-        let mut evm = ArbEvm::new(eth_evm);
-        let (_, _, precompiles) = evm.components_mut();
-        register_arb_precompiles(precompiles);
-        evm
+        build_arb_evm(eth_evm.into_inner(), true)
     }
 }

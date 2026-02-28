@@ -1041,6 +1041,7 @@ dependencies = [
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
+ "arb-stylus",
  "arbos",
  "reth-chainspec",
  "reth-ethereum-primitives",
