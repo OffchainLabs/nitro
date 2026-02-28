@@ -100,7 +100,12 @@ alloy-trie = { version = "0.9" }
 alloy-hardforks = { version = "0.4" }
 
 # Revm
-revm = { version = "34.0" }
+revm = { version = "34.0", features = [
+    "optional_eip3541",
+    "optional_priority_fee_check",
+    "optional_eip7623",
+    "optional_no_base_fee",
+] }
 revm-database = { version = "10.0" }
 revm-database-interface = { version = "9.0" }
 revm-state = { version = "9.0" }

@@ -21,7 +21,6 @@ use crate::receipt::ArbReceiptBuilder;
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
 use revm::context::{BlockEnv, CfgEnv};
-use revm::context_interface::block::BlobExcessGasAndPrice;
 use revm::primitives::hardfork::SpecId;
 
 use crate::build::ArbBlockExecutorFactory;
@@ -93,9 +92,7 @@ where
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
 
-        let cfg_env = CfgEnv::new()
-            .with_chain_id(chain_id)
-            .with_spec_and_mainnet_gas_params(spec);
+        let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         let block_env = BlockEnv {
             number: U256::from(l1_block_number),
             beneficiary: header.beneficiary(),
@@ -104,10 +101,8 @@ where
             prevrandao: header.mix_hash(),
             gas_limit: header.gas_limit(),
             basefee: header.base_fee_per_gas().unwrap_or_default(),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 1,
-            }),
+            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
+            blob_excess_gas_and_price: None,
         };
 
         Ok(EvmEnv { cfg_env, block_env })
@@ -122,9 +117,7 @@ where
         let arbos_version = arbos_version_from_mix_hash(&attributes.prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
-        let cfg_env = CfgEnv::new()
-            .with_chain_id(chain_id)
-            .with_spec_and_mainnet_gas_params(spec);
+        let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&attributes.prev_randao);
         let block_env = BlockEnv {
@@ -135,10 +128,8 @@ where
             prevrandao: Some(attributes.prev_randao),
             gas_limit: attributes.gas_limit,
             basefee: parent.base_fee_per_gas().unwrap_or_default(),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 1,
-            }),
+            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
+            blob_excess_gas_and_price: None,
         };
 
         Ok(EvmEnv { cfg_env, block_env })
@@ -194,9 +185,7 @@ where
         let arbos_version = arbos_version_from_mix_hash(&prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
-        let cfg_env = CfgEnv::new()
-            .with_chain_id(self.chain_spec.chain().id())
-            .with_spec_and_mainnet_gas_params(spec);
+        let cfg_env = arb_cfg_env(self.chain_spec.chain().id(), spec, arbos_version);
 
         // Arbitrum overrides NUMBER to return the L1 block number, not L2.
         let l1_block_number = l1_block_number_from_mix_hash(&prev_randao);
@@ -208,10 +197,8 @@ where
             prevrandao: Some(prev_randao),
             gas_limit: payload.payload.gas_limit(),
             basefee: payload.payload.saturated_base_fee_per_gas(),
-            blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
-                excess_blob_gas: 0,
-                blob_gasprice: 1,
-            }),
+            // Arbitrum has no blobs — BLOBBASEFEE opcode returns 0.
+            blob_excess_gas_and_price: None,
         };
 
         Ok(EvmEnv { cfg_env, block_env })
@@ -307,6 +294,27 @@ where
             min_base_fee: U256::ZERO,
         }
     }
+}
+
+/// Build a `CfgEnv` with Arbitrum-specific overrides.
+///
+/// Disables EIP-3541 (0xEF rejection) for Stylus-era blocks so that
+/// Stylus WASM programs can be deployed. Disables the priority fee
+/// ordering check (Arbitrum tips are always dropped). Disables EIP-7623
+/// increased calldata cost (irrelevant on L2 without blobs).
+fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
+    let mut cfg = CfgEnv::new()
+        .with_chain_id(chain_id)
+        .with_spec_and_mainnet_gas_params(spec);
+    // Arbitrum drops tips — max_priority_fee can exceed max_fee.
+    cfg.disable_priority_fee_check = true;
+    // EIP-7623 increases calldata cost for blob-less chains; irrelevant on L2.
+    cfg.disable_eip7623 = true;
+    // Stylus programs start with 0xEF; allow deployment once Stylus is live.
+    if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+        cfg.disable_eip3541 = true;
+    }
+    cfg
 }
 
 /// Extract ArbOS version from header mix_hash (bytes 16-23).
