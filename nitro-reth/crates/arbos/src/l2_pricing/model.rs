@@ -151,11 +151,16 @@ impl<D: Database> L2PricingState<D> {
         // We match the wrapping behavior for consensus parity.
         let tolerance_limit = tolerance.wrapping_mul(speed_limit);
         let base_fee = if backlog > tolerance_limit {
+            // Divisor: SaturatingUMul(inertia, speedLimit). If zero, Go panics.
+            // Guard against division by zero (speed_limit/inertia are validated nonzero by ArbOwner).
+            let divisor = saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
+            if divisor == 0 {
+                return self.set_base_fee_wei(min_base_fee);
+            }
             // Go: SaturatingCast[int64](backlog - tolerance*speedLimit)
             let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
             // Go: NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
-            let exponent_bips = natural_to_bips(excess)
-                / saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
+            let exponent_bips = natural_to_bips(excess) / divisor;
             // Go: BigMulByBips(minBaseFee, ApproxExpBasisPoints(exponentBips, 4))
             self.calc_base_fee_from_exponent(exponent_bips.max(0) as u64)?
         } else {
