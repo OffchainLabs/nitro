@@ -106,7 +106,7 @@ where
             basefee: header.base_fee_per_gas().unwrap_or_default(),
             blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
                 excess_blob_gas: 0,
-                blob_gasprice: 0,
+                blob_gasprice: 1,
             }),
         };
 
@@ -137,7 +137,7 @@ where
             basefee: parent.base_fee_per_gas().unwrap_or_default(),
             blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
                 excess_blob_gas: 0,
-                blob_gasprice: 0,
+                blob_gasprice: 1,
             }),
         };
 
@@ -210,7 +210,7 @@ where
             basefee: payload.payload.saturated_base_fee_per_gas(),
             blob_excess_gas_and_price: Some(BlobExcessGasAndPrice {
                 excess_blob_gas: 0,
-                blob_gasprice: 0,
+                blob_gasprice: 1,
             }),
         };
 

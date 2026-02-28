@@ -697,6 +697,22 @@ where
                 .l2_pricing_state
                 .per_block_gas_limit()
                 .unwrap_or(0);
+
+            // Pre-populate the State's block_hashes cache with L1 block hashes
+            // from ArbOS state. Arbitrum overrides the BLOCKHASH opcode to return
+            // L1 block hashes (not L2). Since block_env.number is already set to
+            // the L1 block number, revm's range check uses L1 numbers — we just
+            // need to ensure the hash lookup returns L1 hashes.
+            if let Ok(l1_block_number) = arb_state.blockhashes.l1_block_number() {
+                let lower = l1_block_number.saturating_sub(256);
+                // SAFETY: state_ptr is valid for the lifetime of this block.
+                let state_ref = unsafe { &mut *state_ptr };
+                for n in lower..l1_block_number {
+                    if let Ok(Some(hash)) = arb_state.blockhashes.block_hash(n) {
+                        state_ref.block_hashes.insert(n, hash);
+                    }
+                }
+            }
         }
 
         tracing::trace!(
