@@ -168,7 +168,19 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
         SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
-        SET_MAX_TX_GAS_LIMIT => write_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
+        SET_MAX_TX_GAS_LIMIT => {
+            // ArbOS < 50: write to per-block gas limit; >= 50: per-tx gas limit.
+            let version_slot = root_slot(0); // VERSION_OFFSET
+            load_arbos(&mut input)?;
+            let raw_version = sload_field(&mut input, version_slot)?.to::<u64>();
+            let arbos_version = raw_version + 55;
+            let offset = if arbos_version < 50 {
+                L2_PER_BLOCK_GAS_LIMIT
+            } else {
+                L2_PER_TX_GAS_LIMIT
+            };
+            write_l2_field(&mut input, offset)
+        }
         SET_L2_GAS_PRICING_INERTIA => write_l2_field(&mut input, L2_PRICING_INERTIA),
         SET_L2_GAS_BACKLOG_TOLERANCE => write_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
         SET_GAS_BACKLOG => write_l2_field(&mut input, L2_GAS_BACKLOG),
