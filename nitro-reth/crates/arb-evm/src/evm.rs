@@ -7,9 +7,20 @@ use core::fmt::Debug;
 use revm::context::result::EVMError;
 use revm::context_interface::result::{HaltReason, ResultAndState};
 use revm::inspector::NoOpInspector;
+use revm::interpreter::{Host, InstructionContext, InstructionResult, InterpreterTypes};
 use revm::primitives::hardfork::SpecId;
 
 use crate::transaction::ArbTransaction;
+
+/// BLOBBASEFEE opcode (0x4a).
+const BLOBBASEFEE_OPCODE: u8 = 0x4a;
+
+/// BLOBBASEFEE is not supported on Arbitrum — execution halts.
+fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    ctx.interpreter.halt(InstructionResult::OpcodeNotFound);
+}
 
 /// Arbitrum EVM wrapper that registers custom precompiles.
 pub struct ArbEvm<DB: Database + Debug, I> {
@@ -111,7 +122,15 @@ impl EvmFactory for ArbEvmFactory {
         db: DB,
         input: EvmEnv<Self::Spec>,
     ) -> Self::Evm<DB, NoOpInspector> {
-        let mut evm = ArbEvm::new(self.0.create_evm(db, input));
+        let eth_evm = self.0.create_evm(db, input);
+        let mut inner = eth_evm.into_inner();
+        // BLOBBASEFEE is not supported on Arbitrum — override to halt.
+        inner.instruction.insert_instruction(
+            BLOBBASEFEE_OPCODE,
+            revm::interpreter::Instruction::new(arb_blob_basefee, 2),
+        );
+        let eth_evm = alloy_evm::eth::EthEvm::new(inner, false);
+        let mut evm = ArbEvm::new(eth_evm);
         let (_, _, precompiles) = evm.components_mut();
         register_arb_precompiles(precompiles);
         evm
@@ -123,7 +142,15 @@ impl EvmFactory for ArbEvmFactory {
         input: EvmEnv<Self::Spec>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let mut evm = ArbEvm::new(self.0.create_evm_with_inspector(db, input, inspector));
+        let eth_evm = self.0.create_evm_with_inspector(db, input, inspector);
+        let mut inner = eth_evm.into_inner();
+        // BLOBBASEFEE is not supported on Arbitrum — override to halt.
+        inner.instruction.insert_instruction(
+            BLOBBASEFEE_OPCODE,
+            revm::interpreter::Instruction::new(arb_blob_basefee, 2),
+        );
+        let eth_evm = alloy_evm::eth::EthEvm::new(inner, true);
+        let mut evm = ArbEvm::new(eth_evm);
         let (_, _, precompiles) = evm.components_mut();
         register_arb_precompiles(precompiles);
         evm
