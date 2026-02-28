@@ -179,7 +179,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SCHEDULE_ARBOS_UPGRADE => handle_schedule_upgrade(&mut input),
 
         // ── L2 pricing setters ───────────────────────────────────
-        SET_SPEED_LIMIT => write_l2_field(&mut input, L2_SPEED_LIMIT),
+        SET_SPEED_LIMIT => {
+            let val = U256::from_be_slice(&input.data.get(4..36)
+                .ok_or_else(|| PrecompileError::other("input too short"))?);
+            if val.is_zero() {
+                return Err(PrecompileError::other("speed limit must be nonzero"));
+            }
+            write_l2_field(&mut input, L2_SPEED_LIMIT)
+        }
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
         SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
@@ -196,7 +203,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             };
             write_l2_field(&mut input, offset)
         }
-        SET_L2_GAS_PRICING_INERTIA => write_l2_field(&mut input, L2_PRICING_INERTIA),
+        SET_L2_GAS_PRICING_INERTIA => {
+            let val = U256::from_be_slice(&input.data.get(4..36)
+                .ok_or_else(|| PrecompileError::other("input too short"))?);
+            if val.is_zero() {
+                return Err(PrecompileError::other("price inertia must be nonzero"));
+            }
+            write_l2_field(&mut input, L2_PRICING_INERTIA)
+        }
         SET_L2_GAS_BACKLOG_TOLERANCE => write_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
         SET_GAS_BACKLOG => write_l2_field(&mut input, L2_GAS_BACKLOG),
 
