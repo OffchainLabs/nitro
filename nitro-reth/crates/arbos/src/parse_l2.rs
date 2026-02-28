@@ -1,9 +1,9 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_primitives::signed_tx::ArbTransactionSigned;
 use arb_primitives::tx_types::{
     ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read};
 
 use crate::arbos_types::{
     L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
@@ -40,6 +40,7 @@ pub enum ParsedTransaction {
         to: Option<Address>,
         value: U256,
         gas: u64,
+        gas_fee_cap: U256,
         nonce: u64,
         data: Vec<u8>,
     },
@@ -49,6 +50,7 @@ pub enum ParsedTransaction {
         to: Option<Address>,
         value: U256,
         gas: u64,
+        gas_fee_cap: U256,
         data: Vec<u8>,
         request_id: B256,
     },
@@ -97,7 +99,7 @@ pub fn parse_l2_transactions(
     l1_base_fee: Option<U256>,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     match kind {
-        L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, 0),
+        L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0),
         L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
         L1_MESSAGE_TYPE_L2_FUNDED_BY_L1 => {
             let request_id = request_id.unwrap_or(B256::ZERO);
@@ -116,13 +118,20 @@ pub fn parse_l2_transactions(
             let request_id = request_id.unwrap_or(B256::ZERO);
             parse_batch_posting_report(l2_msg, poster, request_id)
         }
-        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => parse_l2_message(l2_msg, 0),
+        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => {
+            parse_l2_message(l2_msg, poster, request_id, 0)
+        }
         L1_MESSAGE_TYPE_INITIALIZE | L1_MESSAGE_TYPE_ROLLUP_EVENT => Ok(vec![]),
         _ => Ok(vec![]),
     }
 }
 
-fn parse_l2_message(data: &[u8], depth: u32) -> Result<Vec<ParsedTransaction>, io::Error> {
+fn parse_l2_message(
+    data: &[u8],
+    poster: Address,
+    request_id: Option<B256>,
+    depth: u32,
+) -> Result<Vec<ParsedTransaction>, io::Error> {
     const MAX_DEPTH: u32 = 16;
     if depth > MAX_DEPTH || data.is_empty() {
         return Ok(vec![]);
@@ -136,7 +145,11 @@ fn parse_l2_message(data: &[u8], depth: u32) -> Result<Vec<ParsedTransaction>, i
             Ok(vec![ParsedTransaction::Signed(payload.to_vec())])
         }
         L2_MESSAGE_KIND_UNSIGNED_USER_TX => {
-            let tx = parse_unsigned_tx(payload)?;
+            let tx = parse_unsigned_tx(payload, poster, request_id, kind)?;
+            Ok(vec![tx])
+        }
+        L2_MESSAGE_KIND_CONTRACT_TX => {
+            let tx = parse_unsigned_tx(payload, poster, request_id, kind)?;
             Ok(vec![tx])
         }
         L2_MESSAGE_KIND_BATCH => {
@@ -144,7 +157,7 @@ fn parse_l2_message(data: &[u8], depth: u32) -> Result<Vec<ParsedTransaction>, i
             let mut txs = Vec::new();
             while reader.position() < payload.len() as u64 {
                 let segment = bytestring_from_reader(&mut reader)?;
-                let mut sub_txs = parse_l2_message(&segment, depth + 1)?;
+                let mut sub_txs = parse_l2_message(&segment, poster, request_id, depth + 1)?;
                 txs.append(&mut sub_txs);
             }
             Ok(txs)
@@ -155,24 +168,80 @@ fn parse_l2_message(data: &[u8], depth: u32) -> Result<Vec<ParsedTransaction>, i
     }
 }
 
-fn parse_unsigned_tx(data: &[u8]) -> Result<ParsedTransaction, io::Error> {
+/// Parse an unsigned tx or contract tx from the binary format.
+///
+/// Field format (all 32-byte big-endian):
+///   gasLimit: Hash (32 bytes) → u64
+///   maxFeePerGas: Hash (32 bytes) → U256
+///   nonce: Hash (32 bytes) → u64 (only for UnsignedUserTx kind)
+///   to: AddressFrom256 (32 bytes) → Address
+///   value: Hash (32 bytes) → U256
+///   calldata: remaining bytes (ReadAll)
+fn parse_unsigned_tx(
+    data: &[u8],
+    poster: Address,
+    request_id: Option<B256>,
+    kind: u8,
+) -> Result<ParsedTransaction, io::Error> {
     let mut reader = Cursor::new(data);
-    let gas = uint64_from_reader(&mut reader)?;
-    let gas_price = uint256_from_reader(&mut reader)?;
-    let nonce = uint64_from_reader(&mut reader)?;
-    let to = address_from_reader(&mut reader)?;
+
+    let gas_limit = uint256_from_reader(&mut reader)?;
+    let gas_limit: u64 = gas_limit.try_into().map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidData, "unsigned user tx gas limit >= 2^64")
+    })?;
+
+    let max_fee_per_gas = uint256_from_reader(&mut reader)?;
+
+    let nonce = if kind == L2_MESSAGE_KIND_UNSIGNED_USER_TX {
+        let nonce_u256 = uint256_from_reader(&mut reader)?;
+        let n: u64 = nonce_u256.try_into().map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "unsigned user tx nonce >= 2^64")
+        })?;
+        n
+    } else {
+        0
+    };
+
+    let to = address_from_256_from_reader(&mut reader)?;
+    let destination = if to == Address::ZERO { None } else { Some(to) };
+
     let value = uint256_from_reader(&mut reader)?;
-    let calldata = bytestring_from_reader(&mut reader)?;
-    let _ = gas_price; // Gas price is part of the format but not used in unsigned txs.
-    let to_addr = if to == Address::ZERO { None } else { Some(to) };
-    Ok(ParsedTransaction::UnsignedUserTx {
-        from: Address::ZERO, // Set by caller based on poster.
-        to: to_addr,
-        value,
-        gas,
-        nonce,
-        data: calldata,
-    })
+
+    let mut calldata = Vec::new();
+    reader.read_to_end(&mut calldata)?;
+
+    match kind {
+        L2_MESSAGE_KIND_UNSIGNED_USER_TX => Ok(ParsedTransaction::UnsignedUserTx {
+            from: poster,
+            to: destination,
+            value,
+            gas: gas_limit,
+            gas_fee_cap: max_fee_per_gas,
+            nonce,
+            data: calldata,
+        }),
+        L2_MESSAGE_KIND_CONTRACT_TX => {
+            let req_id = request_id.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "cannot issue contract tx without L1 request id",
+                )
+            })?;
+            Ok(ParsedTransaction::ContractTx {
+                from: poster,
+                to: destination,
+                value,
+                gas: gas_limit,
+                gas_fee_cap: max_fee_per_gas,
+                data: calldata,
+                request_id: req_id,
+            })
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid L2 tx type in parseUnsignedTx",
+        )),
+    }
 }
 
 fn parse_l2_funded_by_l1(
@@ -180,21 +249,42 @@ fn parse_l2_funded_by_l1(
     poster: Address,
     request_id: B256,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
-    let mut reader = Cursor::new(data);
-    let gas = uint64_from_reader(&mut reader)?;
-    let _gas_price = uint256_from_reader(&mut reader)?;
-    let to = address_from_reader(&mut reader)?;
-    let value = uint256_from_reader(&mut reader)?;
-    let calldata = bytestring_from_reader(&mut reader)?;
-    let to_addr = if to == Address::ZERO { None } else { Some(to) };
-    Ok(vec![ParsedTransaction::ContractTx {
-        from: poster,
-        to: to_addr,
-        value,
-        gas,
-        data: calldata,
-        request_id,
-    }])
+    if data.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "L2FundedByL1 message has no data",
+        ));
+    }
+
+    let kind = data[0];
+
+    // Derive sub-request IDs: keccak256(requestId ++ U256(0)) and keccak256(requestId ++ U256(1))
+    let mut deposit_preimage = [0u8; 64];
+    deposit_preimage[..32].copy_from_slice(request_id.as_slice());
+    // U256(0) is already zeroed
+    let deposit_request_id = B256::from(keccak256(&deposit_preimage));
+
+    let mut unsigned_preimage = [0u8; 64];
+    unsigned_preimage[..32].copy_from_slice(request_id.as_slice());
+    unsigned_preimage[63] = 1; // U256(1) in big-endian
+    let unsigned_request_id = B256::from(keccak256(&unsigned_preimage));
+
+    let tx = parse_unsigned_tx(&data[1..], poster, Some(unsigned_request_id), kind)?;
+
+    // Extract value from the parsed tx for the deposit.
+    let tx_value = match &tx {
+        ParsedTransaction::UnsignedUserTx { value, .. } => *value,
+        ParsedTransaction::ContractTx { value, .. } => *value,
+        _ => U256::ZERO,
+    };
+
+    let deposit = ParsedTransaction::EthDeposit {
+        to: poster,
+        value: tx_value,
+        request_id: deposit_request_id,
+    };
+
+    Ok(vec![deposit, tx])
 }
 
 fn parse_eth_deposit_message(
@@ -312,13 +402,14 @@ pub fn parsed_tx_to_signed(
             to,
             value,
             gas,
+            gas_fee_cap,
             nonce,
             data,
         } => ArbTypedTransaction::Unsigned(ArbUnsignedTx {
             chain_id: chain_id_u256,
             from: *from,
             nonce: *nonce,
-            gas_fee_cap: U256::ZERO,
+            gas_fee_cap: *gas_fee_cap,
             gas: *gas,
             to: *to,
             value: *value,
@@ -329,13 +420,14 @@ pub fn parsed_tx_to_signed(
             to,
             value,
             gas,
+            gas_fee_cap,
             data,
             request_id,
         } => ArbTypedTransaction::Contract(ArbContractTx {
             chain_id: chain_id_u256,
             request_id: *request_id,
             from: *from,
-            gas_fee_cap: U256::ZERO,
+            gas_fee_cap: *gas_fee_cap,
             gas: *gas,
             to: *to,
             value: *value,
