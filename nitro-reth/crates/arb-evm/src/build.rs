@@ -1145,7 +1145,7 @@ where
             }
         }
 
-        // --- Poster cost and gas limiting (user txs only) ---
+        // --- Poster cost and gas limiting ---
 
         let mut poster_gas = 0u64;
         let mut compute_hold_gas = 0u64;
@@ -1165,7 +1165,19 @@ where
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
                 poster_gas = hooks.tx_proc.poster_gas;
+            }
 
+            units
+        } else {
+            0
+        };
+
+        // Compute hold gas: clamp gas available for EVM execution to the
+        // per-block (< v50) or per-tx (>= v50) gas limit. Applies to ALL
+        // non-endTxNow txs (including retry txs with poster_gas=0), matching
+        // Go's GasChargingHook which runs for every tx that enters the EVM.
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            if !hooks.is_eth_call {
                 let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx());
                 let gas_after_intrinsic =
                     tx_gas_limit.saturating_sub(intrinsic_estimate);
@@ -1183,11 +1195,7 @@ where
                     hooks.tx_proc.compute_hold_gas = compute_hold_gas;
                 }
             }
-
-            units
-        } else {
-            0
-        };
+        }
 
         // ArbOS < 50: reject user txs whose compute gas exceeds block gas left,
         // but always allow the first user tx through (matching Go's userTxsProcessed > 0).
