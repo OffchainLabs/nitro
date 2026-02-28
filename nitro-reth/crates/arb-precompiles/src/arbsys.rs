@@ -445,15 +445,34 @@ fn do_send_tx_to_l1(
         block_number: block_number.try_into().unwrap_or(0),
     });
 
-    // Return the leaf number.
-    let gas_cost = (4 * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    // Read ArbOS version for return value versioning.
+    let raw_version = internals
+        .sload(ARBOS_STATE_ADDRESS, root_slot(0))
+        .map_err(|_| PrecompileError::other("sload failed"))?
+        .data;
+    let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
+
+    // ArbOS >= 4: return leafNum; older versions return sendHash.
+    let return_val = if arbos_version >= 4 {
+        U256::from(leaf_num)
+    } else {
+        U256::from_be_bytes(send_hash.0)
+    };
+
+    let gas_cost = (5 * SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
         gas_cost,
-        U256::from(leaf_num).to_be_bytes::<32>().to_vec().into(),
+        return_val.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
 fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    // Only callable by address zero (for state export).
+    if input.caller != Address::ZERO {
+        return Err(PrecompileError::other(
+            "method can only be called by address zero",
+        ));
+    }
     let gas_limit = input.gas;
     let internals = input.internals_mut();
 
