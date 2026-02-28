@@ -258,7 +258,8 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Go returns Contracts[depth-2].Caller() (potentially unaliased).
     // At depth 2 (common case): Contracts[0].Caller() == tx_origin.
-    // Without depth access, use tx_origin as the best approximation.
+    // For deeper calls we'd need the call stack, which isn't available
+    // through PrecompileInput. tx_origin is correct at depth <= 2.
     let tx_origin = input.internals().tx_origin();
     let address = tx_origin;
 

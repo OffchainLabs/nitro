@@ -3,9 +3,10 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    current_tx_poster_fee_slot, gas_constraints_vec_key, map_slot, multi_gas_base_fees_subspace,
-    multi_gas_constraints_vec_key, subspace_slot, vector_element_field, vector_element_key,
-    vector_length_slot, ARBOS_STATE_ADDRESS, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    current_tx_poster_fee_slot, derive_subspace_key, gas_constraints_vec_key, map_slot,
+    multi_gas_base_fees_subspace, multi_gas_constraints_vec_key, subspace_slot,
+    vector_element_field, vector_element_key, vector_length_slot, ARBOS_STATE_ADDRESS,
+    L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
 };
 
 /// ArbGasInfo precompile address (0x6c).
@@ -78,6 +79,17 @@ const TX_DATA_NON_ZERO_GAS: u64 = 16;
 const ASSUMED_SIMPLE_TX_SIZE: u64 = 140;
 const STORAGE_WRITE_COST: u64 = 20_000;
 
+/// Batch poster table subspace key within L1 pricing.
+const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
+/// TotalFundsDue offset within batch poster table subspace.
+const TOTAL_FUNDS_DUE_OFFSET: u64 = 0;
+
+/// L1 pricer funds pool address (0xa4b05...fffffffffffffffffffffffffffffffffff).
+const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
+    0xa4, 0xb0, 0x5f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff,
+]);
+
 pub fn create_arbgasinfo_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbgasinfo"), handler)
 }
@@ -115,10 +127,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_GAS_BACKLOG => read_l2_field(&mut input, L2_GAS_BACKLOG),
         GET_PRICING_INERTIA => read_l2_field(&mut input, L2_PRICING_INERTIA),
         GET_GAS_BACKLOG_TOLERANCE => read_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
-        // GetL1PricingSurplus: v10+ computes live, pre-v10 uses stored surplus.
-        // TODO: v10+ should compute surplus = L1FeesAvailable - (TotalFundsDue + FundsDueForRewards)
-        // For now, reads stored last surplus (matches pre-v10 behavior only).
-        GET_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
+        GET_L1_PRICING_SURPLUS => handle_l1_pricing_surplus(&mut input),
         GET_PER_BATCH_GAS_CHARGE => read_l1_field(&mut input, L1_PER_BATCH_GAS_COST),
         GET_AMORTIZED_COST_CAP_BIPS => read_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
         // GetL1FeesAvailable: ArbOS >= 10
@@ -227,6 +236,56 @@ fn read_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResu
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
+    ))
+}
+
+/// Compute L1 pricing surplus.
+/// v10+: `L1FeesAvailable - (TotalFundsDue + FundsDueForRewards)` (signed).
+/// pre-v10: `Balance(L1PricerFundsPool) - (TotalFundsDue + FundsDueForRewards)`.
+fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
+    let arbos_version = crate::get_arbos_version();
+
+    load_arbos(input)?;
+
+    // Read TotalFundsDue from batch poster table subspace.
+    let l1_sub_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
+    let bpt_key = derive_subspace_key(l1_sub_key.as_slice(), BATCH_POSTER_TABLE_KEY);
+    let total_funds_due_slot = map_slot(bpt_key.as_slice(), TOTAL_FUNDS_DUE_OFFSET);
+    let total_funds_due = sload_field(input, total_funds_due_slot)?;
+
+    // Read FundsDueForRewards from L1 pricing subspace.
+    let fdr_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_FUNDS_DUE_FOR_REWARDS);
+    let funds_due_for_rewards = sload_field(input, fdr_slot)?;
+
+    let need_funds = total_funds_due.saturating_add(funds_due_for_rewards);
+
+    let have_funds = if arbos_version >= 10 {
+        // v10+: read from stored L1FeesAvailable.
+        let slot = subspace_slot(L1_PRICING_SUBSPACE, L1_FEES_AVAILABLE);
+        sload_field(input, slot)?
+    } else {
+        // pre-v10: read actual balance of L1PricerFundsPool.
+        let account = input
+            .internals_mut()
+            .load_account(L1_PRICER_FUNDS_POOL_ADDRESS)
+            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        account.data.info.balance
+    };
+
+    // Signed result: surplus can be negative.
+    let surplus = if have_funds >= need_funds {
+        have_funds - need_funds
+    } else {
+        // Two's complement encoding for negative value.
+        let deficit = need_funds - have_funds;
+        U256::ZERO.wrapping_sub(deficit)
+    };
+
+    let gas_cost = (3 * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    Ok(PrecompileOutput::new(
+        gas_cost,
+        surplus.to_be_bytes::<32>().to_vec().into(),
     ))
 }
 
