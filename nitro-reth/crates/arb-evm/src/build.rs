@@ -282,7 +282,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
                     .is_increased_calldata_price_enabled()
                     .unwrap_or(false);
 
-        let mut hooks = DefaultArbOsHooks::new(
+        let hooks = DefaultArbOsHooks::new(
             self.arb_ctx.coinbase,
             arbos_version,
             self.arb_ctx.network_fee_account,
@@ -294,10 +294,6 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_base_fee,
             calldata_pricing_increase_enabled,
         );
-        // Populate L1 block number cache from header-derived context.
-        if self.arb_ctx.l1_block_number > 0 {
-            hooks.tx_proc.set_l1_block_number(self.arb_ctx.l1_block_number);
-        }
         self.arb_hooks = Some(hooks);
     }
 }

@@ -38,10 +38,6 @@ pub struct TxProcessor {
     pub current_retryable: Option<B256>,
     /// The refund-to address for retryable redeems.
     pub current_refund_to: Option<Address>,
-    /// Cache for L1 block number (for NUMBER opcode).
-    pub cached_l1_block_number: Option<u64>,
-    /// Cache for L1 block hashes (for BLOCKHASH opcode).
-    pub cached_l1_block_hashes: HashMap<u64, B256>,
     /// Scheduled transactions (e.g., retryable auto-redeems).
     pub scheduled_txs: Vec<Vec<u8>>,
     /// Count of open Stylus program contexts per contract address.
@@ -59,8 +55,6 @@ impl Default for TxProcessor {
             top_tx_type: None,
             current_retryable: None,
             current_refund_to: None,
-            cached_l1_block_number: None,
-            cached_l1_block_hashes: HashMap::new(),
             scheduled_txs: Vec::new(),
             programs_depth: HashMap::new(),
         }
@@ -113,30 +107,6 @@ impl TxProcessor {
     /// Fill receipt info with the poster gas used for L1.
     pub fn fill_receipt_gas_used_for_l1(&self) -> u64 {
         self.poster_gas
-    }
-
-    // -----------------------------------------------------------------
-    // L1 Block Number / Hash Caching
-    // -----------------------------------------------------------------
-
-    /// Set the cached L1 block number (from ArbOS blockhashes state).
-    pub fn set_l1_block_number(&mut self, block_number: u64) {
-        self.cached_l1_block_number = Some(block_number);
-    }
-
-    /// Get the cached L1 block number.
-    pub fn l1_block_number(&self) -> Option<u64> {
-        self.cached_l1_block_number
-    }
-
-    /// Cache an L1 block hash for the given block number.
-    pub fn set_l1_block_hash(&mut self, block_number: u64, hash: B256) {
-        self.cached_l1_block_hashes.insert(block_number, hash);
-    }
-
-    /// Get a cached L1 block hash.
-    pub fn l1_block_hash(&self, block_number: u64) -> Option<B256> {
-        self.cached_l1_block_hashes.get(&block_number).copied()
     }
 
     // -----------------------------------------------------------------

@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, U256};
 
 use arb_primitives::multigas::MultiGas;
 use arb_primitives::tx_types::ArbTxType;
@@ -88,12 +88,6 @@ pub trait ArbOsHooks {
     /// Returns scheduled internal transactions generated during execution.
     fn scheduled_txs(&mut self) -> Vec<Vec<u8>>;
 
-    /// Returns the cached L1 block number.
-    fn l1_block_number(&self) -> Result<u64, Self::Error>;
-
-    /// Returns an L1 block hash.
-    fn l1_block_hash(&self, block_number: u64) -> Result<B256, Self::Error>;
-
     /// Whether the priority fee tip should be dropped (not sent to coinbase).
     fn drop_tip(&self) -> bool;
 
@@ -135,14 +129,6 @@ impl ArbOsHooks for NoopArbOsHooks {
 
     fn scheduled_txs(&mut self) -> Vec<Vec<u8>> {
         vec![]
-    }
-
-    fn l1_block_number(&self) -> Result<u64, ()> {
-        Ok(0)
-    }
-
-    fn l1_block_hash(&self, _block_number: u64) -> Result<B256, ()> {
-        Ok(B256::ZERO)
     }
 
     fn drop_tip(&self) -> bool {

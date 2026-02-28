@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, U256};
 
 use arb_primitives::multigas::MultiGas;
 use arbos::tx_processor::{
@@ -154,22 +154,6 @@ impl ArbOsHooks for DefaultArbOsHooks {
 
     fn scheduled_txs(&mut self) -> Vec<Vec<u8>> {
         core::mem::take(&mut self.tx_proc.scheduled_txs)
-    }
-
-    fn l1_block_number(&self) -> Result<u64, Self::Error> {
-        self.tx_proc
-            .cached_l1_block_number
-            .ok_or_else(|| ArbHookError::StateAccess("L1 block number not cached".into()))
-    }
-
-    fn l1_block_hash(&self, block_number: u64) -> Result<B256, Self::Error> {
-        self.tx_proc
-            .cached_l1_block_hashes
-            .get(&block_number)
-            .copied()
-            .ok_or_else(|| {
-                ArbHookError::StateAccess(format!("L1 block hash not cached for {block_number}"))
-            })
     }
 
     fn drop_tip(&self) -> bool {
