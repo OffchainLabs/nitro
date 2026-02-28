@@ -62,6 +62,9 @@ thread_local! {
     /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
     /// the call stack position. Reset to 0 at transaction start.
     static EVM_CALL_DEPTH: Cell<usize> = const { Cell::new(0) };
+    /// Current block timestamp, set before transaction execution.
+    /// Used by ArbWasm to compute program age for expiry checks.
+    static BLOCK_TIMESTAMP: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Set the current ArbOS version for precompile version gating.
@@ -83,6 +86,16 @@ pub fn set_evm_depth(depth: usize) {
 /// Get the current EVM call depth.
 pub fn get_evm_depth() -> usize {
     EVM_CALL_DEPTH.with(|v| v.get())
+}
+
+/// Set the current block timestamp for precompile queries.
+pub fn set_block_timestamp(timestamp: u64) {
+    BLOCK_TIMESTAMP.with(|v| v.set(timestamp));
+}
+
+/// Get the current block timestamp.
+pub fn get_block_timestamp() -> u64 {
+    BLOCK_TIMESTAMP.with(|v| v.get())
 }
 
 /// Check precompile-level version gate. If the current ArbOS version is below

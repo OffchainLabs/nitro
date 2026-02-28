@@ -22,6 +22,7 @@ pub const TRANSACTION_FILTERER_SUBSPACE: &[u8] = &[11];
 
 /// Subspace keys within the PROGRAMS subspace.
 pub const PROGRAMS_PARAMS_KEY: &[u8] = &[0];
+pub const PROGRAMS_DATA_KEY: &[u8] = &[1];
 pub const CACHE_MANAGERS_KEY: &[u8] = &[4];
 
 /// Cache managers subspace within ArbOS (PROGRAMS → CACHE_MANAGERS).
