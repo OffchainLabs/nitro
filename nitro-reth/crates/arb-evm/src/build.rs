@@ -217,11 +217,15 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     }
 
     /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
-    /// Call this when a transaction fails execution so the block budget
-    /// stays in sync (matching Go's behavior of charging TX_GAS for invalid txs).
-    pub fn deduct_failed_tx_gas(&mut self) {
+    /// Call this when a user transaction fails execution so the block budget
+    /// and user-tx counter stay in sync (matching Go's behavior of charging
+    /// TX_GAS for invalid txs and incrementing userTxsProcessed).
+    pub fn deduct_failed_tx_gas(&mut self, is_user_tx: bool) {
         const TX_GAS: u64 = 21_000;
         self.block_gas_left = self.block_gas_left.saturating_sub(TX_GAS);
+        if is_user_tx {
+            self.user_txs_processed += 1;
+        }
     }
 
     /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
