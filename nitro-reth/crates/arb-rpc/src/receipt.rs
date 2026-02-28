@@ -110,12 +110,8 @@ fn convert_single_receipt(
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // On Arbitrum, effective gas price is always the base fee (tips are dropped).
-    // Internal, deposit, and submit retryable txs have zero gas cost.
-    let effective_gas_price = match tx_type {
-        0x64 | 0x69 | 0x6a => 0u128,
-        _ => meta.base_fee.unwrap_or(0) as u128,
-    };
+    // On Arbitrum, effective gas price is always the block base fee for all tx types.
+    let effective_gas_price = meta.base_fee.unwrap_or(0) as u128;
 
     let base_receipt = TransactionReceipt {
         inner: envelope,

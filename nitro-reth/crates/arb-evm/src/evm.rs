@@ -5,8 +5,10 @@ use alloy_primitives::{Address, Bytes};
 use arb_precompiles::register_arb_precompiles;
 use core::fmt::Debug;
 use revm::context::result::EVMError;
+use revm::context_interface::host::LoadError;
 use revm::context_interface::result::{HaltReason, ResultAndState};
 use revm::inspector::NoOpInspector;
+use revm::interpreter::interpreter_types::{InputsTr, RuntimeFlag, StackTr};
 use revm::interpreter::{Host, InstructionContext, InstructionResult, InterpreterTypes};
 use revm::primitives::hardfork::SpecId;
 
@@ -15,11 +17,87 @@ use crate::transaction::ArbTransaction;
 /// BLOBBASEFEE opcode (0x4a).
 const BLOBBASEFEE_OPCODE: u8 = 0x4a;
 
+/// SELFDESTRUCT opcode (0xff).
+const SELFDESTRUCT_OPCODE: u8 = 0xff;
+
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
 fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
 ) {
     ctx.interpreter.halt(InstructionResult::OpcodeNotFound);
+}
+
+/// Arbitrum SELFDESTRUCT: reverts if the acting account is a Stylus program,
+/// otherwise delegates to the standard EIP-6780 selfdestruct logic.
+fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    if ctx.interpreter.runtime_flag.is_static() {
+        ctx.interpreter
+            .halt(InstructionResult::StateChangeDuringStaticCall);
+        return;
+    }
+
+    // Stylus programs cannot be self-destructed.
+    let acting_addr = ctx.interpreter.input.target_address();
+    match ctx.host.load_account_code(acting_addr) {
+        Some(code_load) => {
+            if arb_stylus::is_stylus_program(&code_load.data) {
+                ctx.interpreter.halt(InstructionResult::Revert);
+                return;
+            }
+        }
+        None => {
+            ctx.interpreter.halt_fatal();
+            return;
+        }
+    }
+
+    // Standard selfdestruct logic (matching revm's EIP-6780 implementation).
+    let Some(target) = ctx.interpreter.stack.pop_address() else {
+        ctx.interpreter.halt(InstructionResult::StackUnderflow);
+        return;
+    };
+
+    let spec = ctx.interpreter.runtime_flag.spec_id();
+    let cold_load_gas = ctx.host.gas_params().selfdestruct_cold_cost();
+    let skip_cold_load = ctx.interpreter.gas.remaining() < cold_load_gas;
+
+    let res = match ctx.host.selfdestruct(acting_addr, target, skip_cold_load) {
+        Ok(res) => res,
+        Err(LoadError::ColdLoadSkipped) => {
+            ctx.interpreter.halt_oog();
+            return;
+        }
+        Err(LoadError::DBError) => {
+            ctx.interpreter.halt_fatal();
+            return;
+        }
+    };
+
+    // EIP-161: State trie clearing.
+    let should_charge_topup = if spec.is_enabled_in(SpecId::SPURIOUS_DRAGON) {
+        res.had_value && !res.target_exists
+    } else {
+        !res.target_exists
+    };
+
+    let gas_cost = ctx
+        .host
+        .gas_params()
+        .selfdestruct_cost(should_charge_topup, res.is_cold);
+    if !ctx.interpreter.gas.record_cost(gas_cost) {
+        ctx.interpreter.halt_oog();
+        return;
+    }
+
+    if !res.previously_destroyed {
+        ctx.interpreter
+            .gas
+            .record_refund(ctx.host.gas_params().selfdestruct_refund());
+    }
+
+    ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
 /// Arbitrum EVM wrapper that registers custom precompiles.
@@ -129,6 +207,11 @@ impl EvmFactory for ArbEvmFactory {
             BLOBBASEFEE_OPCODE,
             revm::interpreter::Instruction::new(arb_blob_basefee, 2),
         );
+        // SELFDESTRUCT: revert if the acting account is a Stylus program.
+        inner.instruction.insert_instruction(
+            SELFDESTRUCT_OPCODE,
+            revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+        );
         let eth_evm = alloy_evm::eth::EthEvm::new(inner, false);
         let mut evm = ArbEvm::new(eth_evm);
         let (_, _, precompiles) = evm.components_mut();
@@ -148,6 +231,11 @@ impl EvmFactory for ArbEvmFactory {
         inner.instruction.insert_instruction(
             BLOBBASEFEE_OPCODE,
             revm::interpreter::Instruction::new(arb_blob_basefee, 2),
+        );
+        // SELFDESTRUCT: revert if the acting account is a Stylus program.
+        inner.instruction.insert_instruction(
+            SELFDESTRUCT_OPCODE,
+            revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
         );
         let eth_evm = alloy_evm::eth::EthEvm::new(inner, true);
         let mut evm = ArbEvm::new(eth_evm);
