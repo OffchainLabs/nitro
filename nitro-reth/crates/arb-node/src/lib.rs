@@ -146,9 +146,12 @@ where
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
 
-    // Register the nitroexecution namespace for Nitro consensus communication.
+    // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
+    // Nitro consensus connects to the auth RPC port with JWT authentication.
     let nitro_exec = NitroExecutionHandler::new(ctx.provider().clone());
-    ctx.modules.merge_configured(nitro_exec.into_rpc())?;
+    let nitro_rpc = nitro_exec.into_rpc();
+    ctx.modules.merge_configured(nitro_rpc.clone())?;
+    ctx.auth_module.merge_auth_methods(nitro_rpc)?;
 
     Ok(())
 }
