@@ -2,7 +2,7 @@ use alloy_evm::Evm;
 use alloy_evm::eth::receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx};
 use alloy_primitives::Log;
 
-use arb_primitives::{ArbReceipt, ArbTransactionSigned};
+use arb_primitives::{ArbReceipt, ArbReceiptKind, ArbTransactionSigned};
 use arb_primitives::signed_tx::ArbTxTypeLocal;
 
 /// Builds `ArbReceipt` from execution results.
@@ -27,18 +27,21 @@ impl ReceiptBuilder for ArbReceiptBuilder {
             logs,
         };
 
-        match tx_type {
-            ArbTxTypeLocal::Legacy => ArbReceipt::Legacy(inner),
-            ArbTxTypeLocal::Eip2930 => ArbReceipt::Eip2930(inner),
-            ArbTxTypeLocal::Eip1559 => ArbReceipt::Eip1559(inner),
-            ArbTxTypeLocal::Eip4844 => ArbReceipt::Eip1559(inner),
-            ArbTxTypeLocal::Eip7702 => ArbReceipt::Eip7702(inner),
-            ArbTxTypeLocal::Deposit => ArbReceipt::Deposit(arb_primitives::ArbDepositReceipt),
-            ArbTxTypeLocal::Unsigned => ArbReceipt::Unsigned(inner),
-            ArbTxTypeLocal::Contract => ArbReceipt::Contract(inner),
-            ArbTxTypeLocal::Retry => ArbReceipt::Retry(inner),
-            ArbTxTypeLocal::SubmitRetryable => ArbReceipt::SubmitRetryable(inner),
-            ArbTxTypeLocal::Internal => ArbReceipt::Internal(inner),
-        }
+        let kind = match tx_type {
+            ArbTxTypeLocal::Legacy => ArbReceiptKind::Legacy(inner),
+            ArbTxTypeLocal::Eip2930 => ArbReceiptKind::Eip2930(inner),
+            ArbTxTypeLocal::Eip1559 => ArbReceiptKind::Eip1559(inner),
+            ArbTxTypeLocal::Eip4844 => ArbReceiptKind::Eip1559(inner),
+            ArbTxTypeLocal::Eip7702 => ArbReceiptKind::Eip7702(inner),
+            ArbTxTypeLocal::Deposit => ArbReceiptKind::Deposit(arb_primitives::ArbDepositReceipt),
+            ArbTxTypeLocal::Unsigned => ArbReceiptKind::Unsigned(inner),
+            ArbTxTypeLocal::Contract => ArbReceiptKind::Contract(inner),
+            ArbTxTypeLocal::Retry => ArbReceiptKind::Retry(inner),
+            ArbTxTypeLocal::SubmitRetryable => ArbReceiptKind::SubmitRetryable(inner),
+            ArbTxTypeLocal::Internal => ArbReceiptKind::Internal(inner),
+        };
+
+        // gas_used_for_l1 is populated later by the block executor.
+        ArbReceipt::new(kind)
     }
 }

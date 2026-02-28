@@ -11,6 +11,11 @@ use reth_primitives_traits::SealedHeader;
 use reth_rpc_convert::transaction::HeaderConverter;
 use std::convert::Infallible;
 
+/// Extract L1 block number from header mix_hash (bytes 8-15).
+pub fn l1_block_number_from_mix_hash(mix_hash: &B256) -> u64 {
+    u64::from_be_bytes(mix_hash.0[8..16].try_into().unwrap_or_default())
+}
+
 /// Converts consensus headers to RPC headers with Arbitrum extension fields.
 #[derive(Debug, Clone)]
 pub struct ArbHeaderConverter;

@@ -3,31 +3,53 @@
 use alloy_consensus::{Receipt, ReceiptEnvelope, ReceiptWithBloom, TxReceipt, Typed2718};
 use alloy_primitives::{Address, Bloom, TxKind};
 use alloy_rpc_types_eth::TransactionReceipt;
+use alloy_serde::WithOtherFields;
 use arb_primitives::ArbPrimitives;
+use reth_primitives_traits::SealedBlock;
 use reth_rpc_convert::transaction::{ConvertReceiptInput, ReceiptConverter};
 use reth_rpc_eth_types::EthApiError;
 
-/// Converts Arbitrum receipts to RPC transaction receipts.
+use crate::header::l1_block_number_from_mix_hash;
+
+/// Converts Arbitrum receipts to RPC transaction receipts with extension fields.
 #[derive(Debug, Clone)]
 pub struct ArbReceiptConverter;
 
 impl ReceiptConverter<ArbPrimitives> for ArbReceiptConverter {
-    type RpcReceipt = TransactionReceipt;
+    type RpcReceipt = WithOtherFields<TransactionReceipt>;
     type Error = EthApiError;
 
     fn convert_receipts(
         &self,
         receipts: Vec<ConvertReceiptInput<'_, ArbPrimitives>>,
-    ) -> Result<Vec<TransactionReceipt>, EthApiError> {
+    ) -> Result<Vec<Self::RpcReceipt>, EthApiError> {
         let results = receipts
             .into_iter()
-            .map(convert_single_receipt)
+            .map(|input| convert_single_receipt(input, None))
+            .collect();
+        Ok(results)
+    }
+
+    fn convert_receipts_with_block(
+        &self,
+        receipts: Vec<ConvertReceiptInput<'_, ArbPrimitives>>,
+        block: &SealedBlock<alloy_consensus::Block<arb_primitives::ArbTransactionSigned>>,
+    ) -> Result<Vec<Self::RpcReceipt>, Self::Error> {
+        let mix_hash = block.header().mix_hash;
+        let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
+
+        let results = receipts
+            .into_iter()
+            .map(|input| convert_single_receipt(input, Some(l1_block_number)))
             .collect();
         Ok(results)
     }
 }
 
-fn convert_single_receipt(input: ConvertReceiptInput<'_, ArbPrimitives>) -> TransactionReceipt {
+fn convert_single_receipt(
+    input: ConvertReceiptInput<'_, ArbPrimitives>,
+    l1_block_number: Option<u64>,
+) -> WithOtherFields<TransactionReceipt> {
     use alloy_consensus::{transaction::TxHashRef, Transaction};
 
     let ConvertReceiptInput {
@@ -49,6 +71,7 @@ fn convert_single_receipt(input: ConvertReceiptInput<'_, ArbPrimitives>) -> Tran
 
     let cumulative_gas_used = receipt.cumulative_gas_used();
     let status = receipt.status_or_post_state();
+    let gas_used_for_l1 = receipt.gas_used_for_l1;
 
     // Convert primitive logs to RPC logs with block/tx metadata.
     let rpc_logs: Vec<alloy_rpc_types_eth::Log> = receipt
@@ -87,24 +110,47 @@ fn convert_single_receipt(input: ConvertReceiptInput<'_, ArbPrimitives>) -> Tran
         _ => ReceiptEnvelope::Legacy(receipt_with_bloom),
     };
 
-    // Internal (0x64), deposit (0x6a), and submit retryable (0x69) txs have no gas cost.
-    let (effective_gas_used, effective_gas_price) = match tx_type {
-        0x64 | 0x69 | 0x6a => (0u64, 0u128),
-        _ => (gas_used, meta.base_fee.unwrap_or(0) as u128),
+    // On Arbitrum, effective gas price is always the base fee (tips are dropped).
+    // Internal, deposit, and submit retryable txs have zero gas cost.
+    let effective_gas_price = match tx_type {
+        0x64 | 0x69 | 0x6a => 0u128,
+        _ => meta.base_fee.unwrap_or(0) as u128,
     };
 
-    TransactionReceipt {
+    let base_receipt = TransactionReceipt {
         inner: envelope,
         transaction_hash: tx_hash,
         transaction_index: Some(meta.index),
         block_hash: Some(meta.block_hash),
         block_number: Some(meta.block_number),
-        gas_used: effective_gas_used,
+        gas_used,
         effective_gas_price,
         blob_gas_used: None,
         blob_gas_price: None,
         from,
         to,
         contract_address,
+    };
+
+    // Add Arbitrum-specific extension fields.
+    let mut other = std::collections::BTreeMap::new();
+
+    // gasUsedForL1: always present on Arbitrum receipts.
+    other.insert(
+        "gasUsedForL1".to_string(),
+        serde_json::to_value(format!("{:#x}", gas_used_for_l1)).unwrap_or_default(),
+    );
+
+    // l1BlockNumber: included when block header is available.
+    if let Some(l1_bn) = l1_block_number {
+        other.insert(
+            "l1BlockNumber".to_string(),
+            serde_json::to_value(format!("{l1_bn:#x}")).unwrap_or_default(),
+        );
+    }
+
+    WithOtherFields {
+        inner: base_receipt,
+        other: alloy_serde::OtherFields::new(other),
     }
 }

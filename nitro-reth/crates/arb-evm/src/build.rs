@@ -79,7 +79,7 @@ impl<R, Spec, EvmF> BlockExecutorFactory for ArbBlockExecutorFactory<R, Spec, Ev
 where
     R: ReceiptBuilder<
             Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-            Receipt: TxReceipt<Log = Log>,
+            Receipt: TxReceipt<Log = Log> + arb_primitives::SetL1Gas,
         > + 'static,
     Spec: EthExecutorSpec + Clone + 'static,
     EvmF: EvmFactory<
@@ -666,7 +666,7 @@ where
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
         Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-        Receipt: TxReceipt<Log = Log>,
+        Receipt: TxReceipt<Log = Log> + arb_primitives::SetL1Gas,
     >,
     R::Transaction: TransactionEnvelope,
 {
@@ -1787,7 +1787,12 @@ where
                 "expected balance delta from deposits/withdrawals"
             );
         }
-        self.inner.finish()
+        let (evm, mut result) = self.inner.finish()?;
+        // Set gas_used_for_l1 on each receipt from the parallel tracking vector.
+        for (receipt, &l1_gas) in result.receipts.iter_mut().zip(self.gas_used_for_l1.iter()) {
+            arb_primitives::SetL1Gas::set_gas_used_for_l1(receipt, l1_gas);
+        }
+        Ok((evm, result))
     }
 
     fn set_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>) {

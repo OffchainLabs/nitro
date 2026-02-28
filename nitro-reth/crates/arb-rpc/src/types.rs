@@ -13,7 +13,7 @@ pub struct ArbRpcTypes;
 
 impl reth_rpc_convert::RpcTypes for ArbRpcTypes {
     type Header = WithOtherFields<RpcHeader<Header>>;
-    type Receipt = TransactionReceipt;
+    type Receipt = WithOtherFields<TransactionReceipt>;
     type TransactionResponse =
         WithOtherFields<alloy_rpc_types_eth::Transaction<ArbTransactionSigned>>;
     type TransactionRequest = ArbTransactionRequest;
