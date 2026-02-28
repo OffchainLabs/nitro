@@ -119,6 +119,12 @@ const L2_PRICING_INERTIA: u64 = 5;
 const L2_BACKLOG_TOLERANCE: u64 = 6;
 const L2_PER_TX_GAS_LIMIT: u64 = 7;
 
+/// L1 pricer funds pool address.
+const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
+    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xf6,
+]);
+
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
@@ -205,16 +211,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_AMORTIZED_COST_CAP_BIPS => write_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
         SET_L1_BASEFEE_ESTIMATE_INERTIA => write_l1_field(&mut input, L1_INERTIA),
         RELEASE_L1_PRICER_SURPLUS_FUNDS => {
-            // Release L1 pricer surplus — reads available then zeros it.
-            let gas_limit = input.gas;
-            load_arbos(&mut input)?;
-            let avail_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_FEES_AVAILABLE);
-            let available = sload_field(&mut input, avail_slot)?;
-            sstore_field(&mut input, avail_slot, U256::ZERO)?;
-            Ok(PrecompileOutput::new(
-                (SLOAD_GAS + SSTORE_GAS + COPY_GAS).min(gas_limit),
-                available.to_be_bytes::<32>().to_vec().into(),
-            ))
+            handle_release_l1_pricer_surplus_funds(&mut input)
         }
 
         // ── Stylus/Wasm parameter setters ────────────────────────
@@ -517,6 +514,56 @@ fn handle_remove_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResul
 
     let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+}
+
+/// Release surplus L1 pricer funds.
+///
+/// surplus = pool_balance - recognized_fees; capped by maxWeiToRelease.
+/// Adds the released amount to L1FeesAvailable rather than zeroing it.
+fn handle_release_l1_pricer_surplus_funds(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data = input.data;
+    if data.len() < 36 {
+        return Err(PrecompileError::other("input too short"));
+    }
+    let gas_limit = input.gas;
+    let max_wei = U256::from_be_slice(&data[4..36]);
+
+    // Read pool account balance.
+    let pool_balance = {
+        let acct = input
+            .internals_mut()
+            .load_account(L1_PRICER_FUNDS_POOL_ADDRESS)
+            .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
+        acct.data.info.balance
+    };
+
+    // Read recognized fees (L1FeesAvailable).
+    load_arbos(input)?;
+    let avail_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_FEES_AVAILABLE);
+    let recognized = sload_field(input, avail_slot)?;
+
+    // Compute surplus = pool_balance - recognized.
+    if pool_balance <= recognized {
+        // No surplus.
+        return Ok(PrecompileOutput::new(
+            (SLOAD_GAS + COPY_GAS + 100).min(gas_limit),
+            U256::ZERO.to_be_bytes::<32>().to_vec().into(),
+        ));
+    }
+
+    let mut wei_to_transfer = pool_balance - recognized;
+    if wei_to_transfer > max_wei {
+        wei_to_transfer = max_wei;
+    }
+
+    // Add to L1FeesAvailable.
+    let new_available = recognized + wei_to_transfer;
+    sstore_field(input, avail_slot, new_available)?;
+
+    Ok(PrecompileOutput::new(
+        (SLOAD_GAS + SSTORE_GAS + COPY_GAS + 100).min(gas_limit),
+        wei_to_transfer.to_be_bytes::<32>().to_vec().into(),
+    ))
 }
 
 /// Derive the storage key for an AddressSet at the given subspace.
