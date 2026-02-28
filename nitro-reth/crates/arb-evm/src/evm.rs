@@ -370,22 +370,35 @@ where
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
     let evm_api = unsafe { StylusEvmApi::new(journal_ptr, target_addr, is_static) };
 
-    // Build the NativeInstance from the module bytes.
-    let mut instance = match arb_stylus::NativeInstance::from_bytes(
-        module_bytes,
-        evm_api,
-        evm_data,
-        &arb_stylus::CompileConfig::version(params.version, false),
-        stylus_config,
-    ) {
-        Ok(inst) => inst,
-        Err(e) => {
-            tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to create WASM instance");
-            set_stylus_pages_open(prev_open);
-            if !is_delegate {
-                pop_stylus_program(target_addr);
+    // Try the module cache first; compile from WASM on miss and populate cache.
+    let long_term_tag = if program.cached { 1u32 } else { 0u32 };
+    let mut instance = if let Some((module, store)) =
+        arb_stylus::cache::InitCache::get(code_hash, params.version, long_term_tag, false)
+    {
+        let compile = arb_stylus::CompileConfig::version(params.version, false);
+        let env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
+        match arb_stylus::NativeInstance::from_module(module, store, env) {
+            Ok(inst) => inst,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
+                set_stylus_pages_open(prev_open);
+                if !is_delegate { pop_stylus_program(target_addr); }
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
-            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    } else {
+        // Compile from WASM source.
+        let compile = arb_stylus::CompileConfig::version(params.version, false);
+        match arb_stylus::NativeInstance::from_bytes(
+            module_bytes, evm_api, evm_data, &compile, stylus_config,
+        ) {
+            Ok(inst) => inst,
+            Err(e) => {
+                tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
+                set_stylus_pages_open(prev_open);
+                if !is_delegate { pop_stylus_program(target_addr); }
+                return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+            }
         }
     };
 

@@ -94,7 +94,7 @@ impl<E: EvmApi> NativeInstance<E> {
         Self::from_module(module, store, env)
     }
 
-    fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
+    pub fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
 
