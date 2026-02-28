@@ -13,7 +13,7 @@ use crate::arbos_types::{
     L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
 };
 use crate::util::{
-    address_from_256_from_reader, address_from_reader, bytestring_from_reader,
+    address_from_256_from_reader, address_from_reader, bytestring_from_reader, hash_from_reader,
     uint256_from_reader, uint64_from_reader,
 };
 
@@ -65,9 +65,11 @@ pub enum ParsedTransaction {
         deposit: U256,
         callvalue: U256,
         gas_feature_cap: U256,
+        gas_limit: u64,
         max_submission_fee: U256,
         from: Address,
-        to: Address,
+        to: Option<Address>,
+        fee_refund_addr: Address,
         beneficiary: Address,
         data: Vec<u8>,
     },
@@ -104,7 +106,7 @@ pub fn parse_l2_transactions(
         L1_MESSAGE_TYPE_SUBMIT_RETRYABLE => {
             let request_id = request_id.unwrap_or(B256::ZERO);
             let l1_base_fee = l1_base_fee.unwrap_or(U256::ZERO);
-            parse_submit_retryable_message(l2_msg, request_id, l1_base_fee)
+            parse_submit_retryable_message(l2_msg, poster, request_id, l1_base_fee)
         }
         L1_MESSAGE_TYPE_ETH_DEPOSIT => {
             let request_id = request_id.unwrap_or(B256::ZERO);
@@ -211,21 +213,40 @@ fn parse_eth_deposit_message(
 
 fn parse_submit_retryable_message(
     data: &[u8],
+    poster: Address,
     request_id: B256,
     l1_base_fee: U256,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     let mut reader = Cursor::new(data);
-    let deposit = uint256_from_reader(&mut reader)?;
+
+    // Field order matches Go's parseSubmitRetryableMessage exactly.
+    let retry_to = address_from_256_from_reader(&mut reader)?;
     let callvalue = uint256_from_reader(&mut reader)?;
-    let gas_feature_cap = uint256_from_reader(&mut reader)?;
+    let deposit = uint256_from_reader(&mut reader)?;
     let max_submission_fee = uint256_from_reader(&mut reader)?;
-    let _fee_refund_addr = address_from_256_from_reader(&mut reader)?;
+    let fee_refund_addr = address_from_256_from_reader(&mut reader)?;
     let beneficiary = address_from_256_from_reader(&mut reader)?;
-    let _max_refund = uint256_from_reader(&mut reader)?;
-    let calldata = bytestring_from_reader(&mut reader)?;
-    // `from` and `to` are extracted from the data layout
-    let from = address_from_256_from_reader(&mut reader)?;
-    let to = address_from_256_from_reader(&mut reader)?;
+    let gas_limit_u256 = uint256_from_reader(&mut reader)?;
+    let gas_limit = gas_limit_u256.try_into().map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidData, "gas limit too large")
+    })?;
+    let gas_feature_cap = uint256_from_reader(&mut reader)?;
+
+    // Data length is encoded as a 32-byte hash, then raw bytes follow.
+    let data_length_hash = hash_from_reader(&mut reader)?;
+    let data_length = U256::from_be_bytes(data_length_hash.0)
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "data length too large"))?;
+    let mut calldata = vec![0u8; data_length];
+    if data_length > 0 {
+        io::Read::read_exact(&mut reader, &mut calldata)?;
+    }
+
+    let to = if retry_to == Address::ZERO {
+        None
+    } else {
+        Some(retry_to)
+    };
 
     Ok(vec![ParsedTransaction::SubmitRetryable {
         request_id,
@@ -233,9 +254,11 @@ fn parse_submit_retryable_message(
         deposit,
         callvalue,
         gas_feature_cap,
+        gas_limit,
         max_submission_fee,
-        from,
+        from: poster,
         to,
+        fee_refund_addr,
         beneficiary,
         data: calldata,
     }])
@@ -335,9 +358,11 @@ pub fn parsed_tx_to_signed(
             deposit,
             callvalue,
             gas_feature_cap,
+            gas_limit,
             max_submission_fee,
             from,
             to,
+            fee_refund_addr,
             beneficiary,
             data,
         } => ArbTypedTransaction::SubmitRetryable(ArbSubmitRetryableTx {
@@ -347,12 +372,12 @@ pub fn parsed_tx_to_signed(
             l1_base_fee: *l1_base_fee,
             deposit_value: *deposit,
             gas_fee_cap: *gas_feature_cap,
-            gas: 0, // Gas derived from gas_feature_cap later
-            retry_to: if *to == Address::ZERO { None } else { Some(*to) },
+            gas: *gas_limit,
+            retry_to: *to,
             retry_value: *callvalue,
             beneficiary: *beneficiary,
             max_submission_fee: *max_submission_fee,
-            fee_refund_addr: Address::ZERO, // Set by caller
+            fee_refund_addr: *fee_refund_addr,
             retry_data: Bytes::copy_from_slice(data),
         }),
         ParsedTransaction::BatchPostingReport { .. } => {
