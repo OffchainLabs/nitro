@@ -1221,11 +1221,13 @@ where
         // ArbOS < 50: reject user txs whose compute gas exceeds block gas left,
         // but always allow the first user tx through (matching Go's userTxsProcessed > 0).
         // ArbOS >= 50 uses per-tx gas limit clamping (compute_hold_gas) instead.
+        // Go clamps computeGas to at least TxGas before this check.
         if is_user_tx
             && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50
             && self.user_txs_processed > 0
         {
-            let compute_gas = tx_gas_limit.saturating_sub(poster_gas);
+            const TX_GAS: u64 = 21_000;
+            let compute_gas = tx_gas_limit.saturating_sub(poster_gas).max(TX_GAS);
             if compute_gas > self.block_gas_left {
                 return Err(BlockExecutionError::msg("block gas limit reached"));
             }
