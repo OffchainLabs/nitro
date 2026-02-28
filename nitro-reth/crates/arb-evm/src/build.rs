@@ -867,6 +867,23 @@ where
 
                     if is_start_block {
                         self.load_state_params(&arb_state);
+
+                        // Refresh L1 block hashes cache after StartBlock.
+                        // StartBlock calls record_new_l1_block which may add
+                        // gap hashes that weren't in the initial pre-population.
+                        if let Ok(l1_block_number) =
+                            arb_state.blockhashes.l1_block_number()
+                        {
+                            let lower = l1_block_number.saturating_sub(256);
+                            let state_ref = unsafe { &mut *state_ptr };
+                            for n in lower..l1_block_number {
+                                if let Ok(Some(hash)) =
+                                    arb_state.blockhashes.block_hash(n)
+                                {
+                                    state_ref.block_hashes.insert(n, hash);
+                                }
+                            }
+                        }
                     }
                 }
             }
