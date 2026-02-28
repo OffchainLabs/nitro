@@ -119,11 +119,12 @@ where
     async fn digest_message(
         &self,
         msg_idx: u64,
-        _message: RpcMessageWithMetadata,
+        message: RpcMessageWithMetadata,
         _message_for_prefetch: Option<RpcMessageWithMetadata>,
     ) -> RpcResult<RpcMessageResult> {
         let block_num = Self::message_index_to_block_number(msg_idx);
-        info!(target: "nitroexecution", msg_idx, block_num, "digestMessage called");
+        let kind = message.message.header.kind;
+        info!(target: "nitroexecution", msg_idx, block_num, kind, "digestMessage called");
 
         // Check if we already have this block (idempotent)
         if let Some(header) = self.get_header(block_num).map_err(internal_error)? {
@@ -133,6 +134,15 @@ where
                 block_hash: header.hash(),
                 send_root,
             });
+        }
+
+        // Handle init message (Kind=11) - returns existing genesis if available
+        if kind == 11 {
+            // Init messages correspond to genesis. If we got here, genesis doesn't exist
+            // at the expected block number, which is unexpected.
+            return Err(internal_error(format!(
+                "Init message received but genesis block {block_num} not found"
+            )));
         }
 
         // Block production not yet implemented - return error
