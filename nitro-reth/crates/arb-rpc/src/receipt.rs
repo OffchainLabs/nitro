@@ -131,6 +131,15 @@ fn convert_single_receipt(
     // Add Arbitrum-specific extension fields.
     let mut other = std::collections::BTreeMap::new();
 
+    // Override `type` for Arbitrum tx types (0x64+) since ReceiptEnvelope
+    // only supports standard Ethereum types and falls back to Legacy (0x0).
+    if tx_type >= 0x64 {
+        other.insert(
+            "type".to_string(),
+            serde_json::to_value(format!("{tx_type:#x}")).unwrap_or_default(),
+        );
+    }
+
     // gasUsedForL1: always present on Arbitrum receipts.
     other.insert(
         "gasUsedForL1".to_string(),
