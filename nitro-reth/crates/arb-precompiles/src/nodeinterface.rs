@@ -59,17 +59,16 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
         BLOCK_L1_NUM => handle_block_l1_num(&mut input),
-        // Methods requiring chain-level access beyond EVM state.
-        // Full implementations are at the RPC layer.
-        L2_BLOCK_RANGE_FOR_L1 => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 64].into())),
-        ESTIMATE_RETRYABLE_TICKET => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 32].into())),
-        CONSTRUCT_OUTBOX_PROOF => Ok(PrecompileOutput::new(COPY_GAS, vec![].into())),
-        FIND_BATCH_CONTAINING_BLOCK => {
-            Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 32].into()))
-        }
-        GET_L1_CONFIRMATIONS => Ok(PrecompileOutput::new(COPY_GAS, vec![0u8; 32].into())),
-        LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => {
-            Ok(PrecompileOutput::new(COPY_GAS, vec![].into()))
+        // Methods requiring chain-level access (blockchain history, batch data, logs).
+        // In Go these are handled at the RPC layer via InterceptRPCMessage, not as
+        // EVM precompiles. Revert here since the required backend is not available.
+        L2_BLOCK_RANGE_FOR_L1
+        | ESTIMATE_RETRYABLE_TICKET
+        | CONSTRUCT_OUTBOX_PROOF
+        | FIND_BATCH_CONTAINING_BLOCK
+        | GET_L1_CONFIRMATIONS
+        | LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => {
+            Err(PrecompileError::other("method only available via RPC"))
         }
         _ => Err(PrecompileError::other("unknown selector")),
     }
