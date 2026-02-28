@@ -17,19 +17,19 @@ pub const ARBSYS_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x64,
 ]);
 
-// Function selectors.
-const WITHDRAW_ETH: [u8; 4] = [0x25, 0xe1, 0x60, 0x63];
-const SEND_TX_TO_L1: [u8; 4] = [0x92, 0x8c, 0x16, 0x9a];
-const ARB_BLOCK_NUMBER: [u8; 4] = [0xa3, 0xb1, 0xb3, 0x1d];
-const ARB_BLOCK_HASH: [u8; 4] = [0x2b, 0x40, 0x7a, 0x49];
-const ARB_CHAIN_ID: [u8; 4] = [0xd1, 0x27, 0x00, 0x44];
-const ARB_OS_VERSION: [u8; 4] = [0x05, 0x1e, 0xd6, 0xa3];
-const GET_STORAGE_GAS_AVAILABLE: [u8; 4] = [0xf3, 0x38, 0x14, 0x0e];
-const IS_TOP_LEVEL_CALL: [u8; 4] = [0x08, 0xbd, 0x62, 0x4c];
-const MAP_L1_SENDER: [u8; 4] = [0xb6, 0xc6, 0xb7, 0x05]; // mapL1SenderContractAddressToL2Alias
-const WAS_ALIASED: [u8; 4] = [0x69, 0x52, 0x75, 0xf7]; // wasMyCallersAddressAliased
-const CALLER_WITHOUT_ALIAS: [u8; 4] = [0xd7, 0x4c, 0x83, 0xa3]; // myCallersAddressWithoutAliasing
-const SEND_MERKLE_TREE_STATE: [u8; 4] = [0xae, 0x6e, 0x33, 0x08];
+// Function selectors (keccak256 of canonical signature, first 4 bytes).
+const WITHDRAW_ETH: [u8; 4] = [0x25, 0xe1, 0x60, 0x63]; // withdrawEth(address)
+const SEND_TX_TO_L1: [u8; 4] = [0x92, 0x8c, 0x16, 0x9a]; // sendTxToL1(address,bytes)
+const ARB_BLOCK_NUMBER: [u8; 4] = [0xa3, 0xb1, 0xb3, 0x1d]; // arbBlockNumber()
+const ARB_BLOCK_HASH: [u8; 4] = [0x2b, 0x40, 0x7a, 0x82]; // arbBlockHash(uint256)
+const ARB_CHAIN_ID: [u8; 4] = [0xd1, 0x27, 0xf5, 0x4a]; // arbChainID()
+const ARB_OS_VERSION: [u8; 4] = [0x05, 0x10, 0x38, 0xf2]; // arbOSVersion()
+const GET_STORAGE_GAS_AVAILABLE: [u8; 4] = [0xa9, 0x45, 0x97, 0xff]; // getStorageGasAvailable()
+const IS_TOP_LEVEL_CALL: [u8; 4] = [0x08, 0xbd, 0x62, 0x4c]; // isTopLevelCall()
+const MAP_L1_SENDER: [u8; 4] = [0x4d, 0xbb, 0xd5, 0x06]; // mapL1SenderContractAddressToL2Alias(address,address)
+const WAS_ALIASED: [u8; 4] = [0x17, 0x5a, 0x26, 0x0b]; // wasMyCallersAddressAliased()
+const CALLER_WITHOUT_ALIAS: [u8; 4] = [0xd7, 0x45, 0x23, 0xb3]; // myCallersAddressWithoutAliasing()
+const SEND_MERKLE_TREE_STATE: [u8; 4] = [0x7a, 0xee, 0xcd, 0x2a]; // sendMerkleTreeState()
 
 // L1 alias offset: 0x1111000000000000000000000000000000001111
 const L1_ALIAS_OFFSET: Address = Address::new([
@@ -400,7 +400,7 @@ fn do_send_tx_to_l1(
         .sload(ARBOS_STATE_ADDRESS, size_slot)
         .map_err(|_| PrecompileError::other("sload failed"))?
         .data;
-    let leaf_num: u64 = current_size.try_into().unwrap_or(0);
+    let old_size: u64 = current_size.try_into().unwrap_or(0);
 
     // Compute the send hash.
     let send_hash = compute_send_hash(
@@ -413,13 +413,12 @@ fn do_send_tx_to_l1(
         calldata,
     );
 
-    // Update Merkle accumulator: insert leaf and update partials.
-    let new_size = leaf_num + 1;
-    let partials = update_merkle_accumulator(
+    // Update Merkle accumulator: insert leaf and collect intermediate node events.
+    let (new_size, merkle_events, partials) = update_merkle_accumulator(
         internals,
         &merkle_key,
         send_hash,
-        leaf_num,
+        old_size,
     )?;
 
     // Write new size.
@@ -427,35 +426,48 @@ fn do_send_tx_to_l1(
         .sstore(ARBOS_STATE_ADDRESS, size_slot, U256::from(new_size))
         .map_err(|_| PrecompileError::other("sstore failed"))?;
 
-    // Emit SendMerkleUpdate event.
-    let merkle_root = compute_merkle_root(&partials, new_size);
+    // Emit SendMerkleUpdate events (one per intermediate node, all topics, empty data).
     let update_topic = send_merkle_update_topic();
-    let mut update_data = Vec::with_capacity(96);
-    update_data.extend_from_slice(&U256::from(0u64).to_be_bytes::<32>()); // reserved
-    update_data.extend_from_slice(&merkle_root.0);
-    update_data.extend_from_slice(&U256::from(new_size).to_be_bytes::<32>());
-    internals.log(Log::new_unchecked(
-        ARBSYS_ADDRESS,
-        vec![update_topic],
-        update_data.into(),
-    ));
+    for evt in &merkle_events {
+        // position = (level << 192) + numLeaves
+        let position: U256 = (U256::from(evt.level) << 192) | U256::from(evt.num_leaves);
+        internals.log(Log::new_unchecked(
+            ARBSYS_ADDRESS,
+            vec![
+                update_topic,
+                B256::from(U256::ZERO.to_be_bytes::<32>()), // reserved = 0
+                B256::from(evt.hash.to_be_bytes::<32>()),    // hash
+                B256::from(position.to_be_bytes::<32>()),     // position
+            ],
+            Default::default(), // empty data (all fields indexed)
+        ));
+    }
+
+    let leaf_num = new_size - 1;
 
     // Emit L2ToL1Tx event.
+    // Topics: [event_id, destination (indexed), hash (indexed), position (indexed)]
+    // Data: ABI-encoded [caller, arbBlockNum, ethBlockNum, timestamp, callvalue, bytes]
     let l2l1_topic = l2_to_l1_tx_topic();
-    let mut event_data = Vec::with_capacity(256);
-    // caller (indexed topic)
-    let caller_topic = B256::left_padding_from(caller.as_slice());
-    // destination (indexed topic)
     let dest_topic = B256::left_padding_from(destination.as_slice());
-    // hash, position, arbBlockNum, ethBlockNum, timestamp, callvalue, data
-    event_data.extend_from_slice(&send_hash.0);
-    event_data.extend_from_slice(&U256::from(leaf_num).to_be_bytes::<32>());
+    let hash_topic = B256::from(U256::from_be_bytes(send_hash.0).to_be_bytes::<32>());
+    let position_topic = B256::from(U256::from(leaf_num).to_be_bytes::<32>());
+
+    let mut event_data = Vec::with_capacity(256);
+    // address caller (left-padded to 32 bytes)
+    let mut caller_padded = [0u8; 32];
+    caller_padded[12..32].copy_from_slice(caller.as_slice());
+    event_data.extend_from_slice(&caller_padded);
+    // uint256 arbBlockNum
     event_data.extend_from_slice(&block_number.to_be_bytes::<32>());
+    // uint256 ethBlockNum
     event_data.extend_from_slice(&U256::from(l1_block_num).to_be_bytes::<32>());
+    // uint256 timestamp
     event_data.extend_from_slice(&timestamp.to_be_bytes::<32>());
+    // uint256 callvalue
     event_data.extend_from_slice(&value.to_be_bytes::<32>());
-    // bytes offset + length + data
-    event_data.extend_from_slice(&U256::from(7 * 32).to_be_bytes::<32>()); // offset to data
+    // bytes data (ABI dynamic type: offset, then length, then data, then padding)
+    event_data.extend_from_slice(&U256::from(6 * 32).to_be_bytes::<32>()); // offset = 6 words
     event_data.extend_from_slice(&U256::from(calldata.len()).to_be_bytes::<32>());
     event_data.extend_from_slice(calldata);
     // Pad to 32-byte boundary.
@@ -464,7 +476,7 @@ fn do_send_tx_to_l1(
 
     internals.log(Log::new_unchecked(
         ARBSYS_ADDRESS,
-        vec![l2l1_topic, caller_topic, dest_topic],
+        vec![l2l1_topic, dest_topic, hash_topic, position_topic],
         event_data.into(),
     ));
 
@@ -527,11 +539,9 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
     let size_u64: u64 = size.try_into().unwrap_or(0);
 
     // Read partials — stored at offset (2 + level) in the accumulator storage.
+    let num_partials = calc_num_partials(size_u64);
     let mut partials = Vec::new();
-    for i in 0..64u64 {
-        if (size_u64 >> i) == 0 {
-            break;
-        }
+    for i in 0..num_partials {
         let slot = map_slot(merkle_key.as_slice(), 2 + i);
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
@@ -540,7 +550,11 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
         partials.push(val);
     }
 
-    let root = compute_merkle_root_from_u256(&partials, size_u64);
+    let b256_partials: Vec<B256> = partials
+        .iter()
+        .map(|p| B256::from(p.to_be_bytes::<32>()))
+        .collect();
+    let root = compute_merkle_root(&b256_partials, size_u64);
 
     // Return (size, root, partials...)
     // ABI: uint256 size, bytes32 root, bytes32[] partials
@@ -582,90 +596,154 @@ fn compute_send_hash(
     keccak256(&preimage)
 }
 
+/// Intermediate node event from merkle accumulator append.
+struct MerkleTreeNodeEvent {
+    level: u64,
+    num_leaves: u64,
+    hash: U256,
+}
+
+/// Append a leaf to the merkle accumulator, matching Go's MerkleAccumulator.Append.
+///
+/// Returns (new_size, events, partials_for_root_computation).
 fn update_merkle_accumulator(
     internals: &mut alloy_evm::EvmInternals<'_>,
     merkle_key: &B256,
-    leaf_hash: B256,
-    index: u64,
-) -> Result<Vec<B256>, PrecompileError> {
-    let mut hash = U256::from_be_bytes(leaf_hash.0);
-    let mut level = 0u64;
-    let mut idx = index;
-    let mut updated_partials = Vec::new();
+    item_hash: B256,
+    old_size: u64,
+) -> Result<(u64, Vec<MerkleTreeNodeEvent>, Vec<B256>), PrecompileError> {
+    let new_size = old_size + 1;
+    let mut events = Vec::new();
 
-    while idx & 1 == 1 {
-        // Read the sibling partial at this level (offset = 2 + level).
+    // Hash the leaf before insertion (Go: soFar = crypto.Keccak256(itemHash.Bytes())).
+    let mut so_far = keccak256(item_hash.as_slice()).to_vec();
+
+    let num_partials_old = calc_num_partials(old_size);
+    let mut level = 0u64;
+
+    loop {
+        if level == num_partials_old {
+            // Store at new top level.
+            let h = U256::from_be_slice(&so_far);
+            let slot = map_slot(merkle_key.as_slice(), 2 + level);
+            internals
+                .sstore(ARBOS_STATE_ADDRESS, slot, h)
+                .map_err(|_| PrecompileError::other("sstore failed"))?;
+            break;
+        }
+
+        // Read partial at this level.
         let slot = map_slot(merkle_key.as_slice(), 2 + level);
-        let sibling = internals
+        let this_level = internals
             .sload(ARBOS_STATE_ADDRESS, slot)
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
 
-        // hash = keccak256(sibling || hash)
-        let mut preimage = [0u8; 64];
-        preimage[..32].copy_from_slice(&sibling.to_be_bytes::<32>());
-        preimage[32..].copy_from_slice(&hash.to_be_bytes::<32>());
-        hash = U256::from_be_bytes(keccak256(preimage).0);
-
-        idx >>= 1;
-        level += 1;
-    }
-
-    // Store the hash at the current level (offset = 2 + level).
-    let slot = map_slot(merkle_key.as_slice(), 2 + level);
-    internals
-        .sstore(ARBOS_STATE_ADDRESS, slot, hash)
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
-
-    // Re-read all partials for root computation.
-    let new_size = index + 1;
-    for i in 0..64u64 {
-        if (new_size >> i) == 0 {
+        if this_level.is_zero() {
+            // Empty slot: store and stop.
+            let h = U256::from_be_slice(&so_far);
+            internals
+                .sstore(ARBOS_STATE_ADDRESS, slot, h)
+                .map_err(|_| PrecompileError::other("sstore failed"))?;
             break;
         }
+
+        // Combine: soFar = keccak256(thisLevel || soFar)
+        let mut preimage = [0u8; 64];
+        preimage[..32].copy_from_slice(&this_level.to_be_bytes::<32>());
+        preimage[32..].copy_from_slice(&so_far);
+        so_far = keccak256(preimage).to_vec();
+
+        // Clear the partial at this level (Go sets it to zero hash).
+        internals
+            .sstore(ARBOS_STATE_ADDRESS, slot, U256::ZERO)
+            .map_err(|_| PrecompileError::other("sstore failed"))?;
+
+        level += 1;
+
+        // Record event for this intermediate node.
+        events.push(MerkleTreeNodeEvent {
+            level,
+            num_leaves: new_size - 1,
+            hash: U256::from_be_slice(&so_far),
+        });
+    }
+
+    // Read all partials for root computation.
+    let num_partials = calc_num_partials(new_size);
+    let mut partials = Vec::with_capacity(num_partials as usize);
+    for i in 0..num_partials {
         let pslot = map_slot(merkle_key.as_slice(), 2 + i);
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, pslot)
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
-        updated_partials.push(B256::from(val.to_be_bytes::<32>()));
+        partials.push(B256::from(val.to_be_bytes::<32>()));
     }
 
-    Ok(updated_partials)
+    Ok((new_size, events, partials))
 }
 
+/// Calculate number of partials for a given size (Go: Log2ceil).
+fn calc_num_partials(size: u64) -> u64 {
+    if size == 0 {
+        return 0;
+    }
+    64 - size.leading_zeros() as u64
+}
+
+/// Compute the merkle root from partials, matching Go's MerkleAccumulator.Root().
+///
+/// The Go algorithm pads with zero hashes when capacity gaps exist between
+/// populated partial levels.
 fn compute_merkle_root(partials: &[B256], size: u64) -> B256 {
     if partials.is_empty() || size == 0 {
         return B256::ZERO;
     }
 
-    let mut accumulator = B256::ZERO;
-    let mut started = false;
+    let num_partials = calc_num_partials(size);
+    let mut hash_so_far: Option<B256> = None;
+    let mut capacity_in_hash: u64 = 0;
+    let mut capacity: u64 = 1;
 
-    for (i, partial) in partials.iter().enumerate() {
-        if size & (1 << i) != 0 {
-            if !started {
-                accumulator = *partial;
-                started = true;
-            } else {
-                // accumulator = keccak256(partial || accumulator)
-                let mut preimage = [0u8; 64];
-                preimage[..32].copy_from_slice(partial.as_slice());
-                preimage[32..].copy_from_slice(accumulator.as_slice());
-                accumulator = keccak256(preimage);
+    for level in 0..num_partials {
+        let partial = if (level as usize) < partials.len() {
+            partials[level as usize]
+        } else {
+            B256::ZERO
+        };
+
+        if partial != B256::ZERO {
+            match hash_so_far {
+                None => {
+                    hash_so_far = Some(partial);
+                    capacity_in_hash = capacity;
+                }
+                Some(ref h) => {
+                    // Pad with zero hashes until capacity matches.
+                    let mut current = *h;
+                    let mut cap = capacity_in_hash;
+                    while cap < capacity {
+                        let mut preimage = [0u8; 64];
+                        preimage[..32].copy_from_slice(current.as_slice());
+                        // second 32 bytes remain zero
+                        current = keccak256(preimage);
+                        cap *= 2;
+                    }
+                    // Combine: keccak256(partial || current)
+                    let mut preimage = [0u8; 64];
+                    preimage[..32].copy_from_slice(partial.as_slice());
+                    preimage[32..].copy_from_slice(current.as_slice());
+                    let combined = keccak256(preimage);
+                    hash_so_far = Some(combined);
+                    capacity_in_hash = 2 * capacity;
+                }
             }
         }
+        capacity *= 2;
     }
 
-    accumulator
-}
-
-fn compute_merkle_root_from_u256(partials: &[U256], size: u64) -> B256 {
-    let b256_partials: Vec<B256> = partials
-        .iter()
-        .map(|p| B256::from(p.to_be_bytes::<32>()))
-        .collect();
-    compute_merkle_root(&b256_partials, size)
+    hash_so_far.unwrap_or(B256::ZERO)
 }
 
 // ── L1 alias helpers ─────────────────────────────────────────────────
