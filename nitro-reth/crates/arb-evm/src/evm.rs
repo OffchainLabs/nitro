@@ -66,8 +66,8 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     }
 
     // Standard selfdestruct logic (matching revm's EIP-6780 implementation).
-    // We manually pop U256 and convert to Address instead of using pop_address()
-    // which triggers a const eval panic in ruint 1.17 due to byte size mismatch.
+    // Pop U256 and convert to Address manually (avoids pop_address() which
+    // triggers a ruint 1.17 const eval panic due to U256->Address byte size mismatch).
     let Some(raw) = ctx.interpreter.stack.pop() else {
         ctx.interpreter.halt(InstructionResult::StackUnderflow);
         return;
@@ -115,6 +115,74 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
+// ── Stylus page tracking & reentrancy ───────────────────────────────
+
+use std::cell::Cell;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+thread_local! {
+    /// Currently open WASM memory pages across all active Stylus calls.
+    static STYLUS_PAGES_OPEN: Cell<u16> = const { Cell::new(0) };
+    /// High-water mark of pages ever open during this transaction.
+    static STYLUS_PAGES_EVER: Cell<u16> = const { Cell::new(0) };
+    /// Per-address count of open Stylus execution contexts (for reentrancy).
+    static STYLUS_PROGRAM_COUNTS: RefCell<HashMap<Address, u32>> = RefCell::new(HashMap::new());
+}
+
+/// Reset Stylus page counters at transaction start.
+pub fn reset_stylus_pages() {
+    STYLUS_PAGES_OPEN.with(|v| v.set(0));
+    STYLUS_PAGES_EVER.with(|v| v.set(0));
+    STYLUS_PROGRAM_COUNTS.with(|v| v.borrow_mut().clear());
+}
+
+/// Get current (open, ever) page counts.
+pub fn get_stylus_pages() -> (u16, u16) {
+    let open = STYLUS_PAGES_OPEN.with(|v| v.get());
+    let ever = STYLUS_PAGES_EVER.with(|v| v.get());
+    (open, ever)
+}
+
+/// Add pages for a new Stylus call. Returns previous (open, ever).
+fn add_stylus_pages(footprint: u16) -> (u16, u16) {
+    let open = STYLUS_PAGES_OPEN.with(|v| v.get());
+    let ever = STYLUS_PAGES_EVER.with(|v| v.get());
+    let new_open = open.saturating_add(footprint);
+    STYLUS_PAGES_OPEN.with(|v| v.set(new_open));
+    STYLUS_PAGES_EVER.with(|v| v.set(ever.max(new_open)));
+    (open, ever)
+}
+
+/// Restore page count after Stylus call returns.
+fn set_stylus_pages_open(open: u16) {
+    STYLUS_PAGES_OPEN.with(|v| v.set(open));
+}
+
+/// Push a Stylus program address onto the reentrancy tracker.
+/// Returns true if this is a reentrant call (address was already active).
+fn push_stylus_program(addr: Address) -> bool {
+    STYLUS_PROGRAM_COUNTS.with(|v| {
+        let mut map = v.borrow_mut();
+        let count = map.entry(addr).or_insert(0);
+        *count += 1;
+        *count > 1
+    })
+}
+
+/// Pop a Stylus program address from the reentrancy tracker.
+fn pop_stylus_program(addr: Address) {
+    STYLUS_PROGRAM_COUNTS.with(|v| {
+        let mut map = v.borrow_mut();
+        if let Some(count) = map.get_mut(&addr) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                map.remove(&addr);
+            }
+        }
+    });
+}
+
 // ── Stylus WASM dispatch ────────────────────────────────────────────
 
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
@@ -141,17 +209,32 @@ where
         }
     };
 
+    // Track reentrancy.
+    let target_addr = inputs.target_address;
+    let is_delegate = matches!(inputs.scheme, CallScheme::DelegateCall | CallScheme::CallCode);
+    let reentrant = if !is_delegate {
+        push_stylus_program(target_addr)
+    } else {
+        false
+    };
+
     // Build EvmData from the execution context.
-    let evm_data = build_evm_data(context, inputs);
+    let mut evm_data = build_evm_data(context, inputs);
+    evm_data.reentrant = reentrant as u32;
 
     // Default Stylus config (params come from ArbOS state in Phase 5).
     let ink_price = 10_000u32;
     let stylus_config = StylusConfig::new(1, 4 * 65536, ink_price);
 
+    // Track pages — add this program's footprint.
+    // TODO: get actual footprint from program metadata in Phase 5.
+    let footprint: u16 = 0; // Placeholder until we look up program metadata.
+    let (prev_open, _prev_ever) = add_stylus_pages(footprint);
+
     // Create the type-erased StylusEvmApi bridge.
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
-    let evm_api = unsafe { StylusEvmApi::new(journal_ptr, inputs.target_address, is_static) };
+    let evm_api = unsafe { StylusEvmApi::new(journal_ptr, target_addr, is_static) };
 
     let code_hash = alloy_primitives::keccak256(bytecode);
 
@@ -166,6 +249,10 @@ where
         Ok(inst) => inst,
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to create WASM instance");
+            set_stylus_pages_open(prev_open);
+            if !is_delegate {
+                pop_stylus_program(target_addr);
+            }
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
@@ -185,9 +272,19 @@ where
         Ok(outcome) => outcome,
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
+            set_stylus_pages_open(prev_open);
+            if !is_delegate {
+                pop_stylus_program(target_addr);
+            }
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
+
+    // Restore page count and pop reentrancy.
+    set_stylus_pages_open(prev_open);
+    if !is_delegate {
+        pop_stylus_program(target_addr);
+    }
 
     // Convert remaining ink back to gas.
     let ink_left = match instance.ink_left() {
@@ -337,10 +434,6 @@ where
 // ── ArbEvm ─────────────────────────────────────────────────────────
 
 /// Arbitrum EVM wrapper with depth-tracking precompiles and custom opcodes.
-///
-/// Internally stores `EthEvm<DB, I, ArbPrecompilesMap>` for depth tracking,
-/// but exposes `Precompiles = PrecompilesMap` to satisfy reth's
-/// `ConfigureEvm` constraint.
 pub struct ArbEvm<DB: Database, I> {
     inner: alloy_evm::EthEvm<DB, I, ArbPrecompilesMap>,
 }
@@ -429,8 +522,6 @@ impl ArbEvmFactory {
     }
 }
 
-/// Helper: customize instruction table and register Arb precompiles on the
-/// inner revm EVM, then wrap in `EthEvm<DB, I, ArbPrecompilesMap>`.
 fn build_arb_evm<DB: Database, I>(
     inner: revm::context::Evm<
         EthEvmContext<DB>,
@@ -441,7 +532,6 @@ fn build_arb_evm<DB: Database, I>(
     >,
     inspect: bool,
 ) -> ArbEvm<DB, I> {
-    // Destructure to access and wrap precompiles with a different type.
     let revm::context::Evm {
         ctx,
         inspector,
@@ -450,18 +540,15 @@ fn build_arb_evm<DB: Database, I>(
         frame_stack: _,
     } = inner;
 
-    // BLOBBASEFEE is not supported on Arbitrum — override to halt.
     instruction.insert_instruction(
         BLOBBASEFEE_OPCODE,
         revm::interpreter::Instruction::new(arb_blob_basefee, 2),
     );
-    // SELFDESTRUCT: revert if the acting account is a Stylus program.
     instruction.insert_instruction(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
     );
 
-    // Register Arbitrum precompiles, then wrap in depth-tracking provider.
     register_arb_precompiles(&mut precompiles);
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 

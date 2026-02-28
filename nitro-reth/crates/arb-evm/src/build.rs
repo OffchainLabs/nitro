@@ -778,6 +778,7 @@ where
         }
 
         // Reset per-tx processor state.
+        crate::evm::reset_stylus_pages();
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
