@@ -30,6 +30,7 @@ pub struct RetryableState<D> {
 /// A single retryable ticket.
 pub struct Retryable<D> {
     pub id: B256,
+    #[allow(dead_code)]
     backing_storage: Storage<D>,
     num_tries: StorageBackedUint64<D>,
     from: StorageBackedAddress<D>,
@@ -162,7 +163,7 @@ impl<D: Database> RetryableState<D> {
         ticket_id: B256,
         current_timestamp: u64,
         limit_before_add: u64,
-        time_to_add: u64,
+        _time_to_add: u64,
     ) -> Result<u64, ()> {
         let retryable = self.open_retryable(ticket_id, current_timestamp)?;
         let retryable = retryable.ok_or(())?;

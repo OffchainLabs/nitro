@@ -1920,6 +1920,7 @@ fn transfer_balance<DB: Database>(
     mint_balance(state, to, amount);
 }
 
+#[allow(dead_code)]
 /// Transfer balance with zombie account creation for pre-Stylus ArbOS.
 ///
 /// On ArbOS < 30, a zero-value transfer touching a self-destructed account

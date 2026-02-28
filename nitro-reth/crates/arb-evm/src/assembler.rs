@@ -20,6 +20,7 @@ use arbos::header::{ArbHeaderInfo, derive_arb_header_info};
 /// - `difficulty`: always 1
 #[derive(Debug, Clone)]
 pub struct ArbBlockAssembler<ChainSpec> {
+    #[allow(dead_code)]
     chain_spec: Arc<ChainSpec>,
 }
 
