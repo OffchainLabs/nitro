@@ -1,8 +1,14 @@
 use alloy_evm::{
     eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
 };
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::{Address, Bytes, B256, U256};
+use arbos::programs::types::EvmData;
 use arb_precompiles::register_arb_precompiles;
+use arb_stylus::config::StylusConfig;
+use arb_stylus::ink::Gas as StylusGas;
+use arb_stylus::meter::MeteredMachine;
+use arb_stylus::run::RunProgram;
+use arb_stylus::StylusEvmApi;
 use core::fmt::Debug;
 use revm::context::result::EVMError;
 use revm::context_interface::host::LoadError;
@@ -13,7 +19,8 @@ use revm::inspector::NoOpInspector;
 use revm::interpreter::interpreter::EthInterpreter;
 use revm::interpreter::interpreter_types::{InputsTr, RuntimeFlag, StackTr};
 use revm::interpreter::{
-    CallInputs, Host, InstructionContext, InstructionResult, InterpreterResult, InterpreterTypes,
+    CallInput, CallInputs, CallScheme, Gas as EvmGas, Host, InstructionContext, InstructionResult,
+    InterpreterResult, InterpreterTypes,
 };
 use revm::primitives::hardfork::SpecId;
 
@@ -105,6 +112,144 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::SelfDestruct);
 }
 
+// ── Stylus WASM dispatch ────────────────────────────────────────────
+
+/// Execute a Stylus WASM program by creating a NativeInstance and running it.
+fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+    context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+    inputs: &CallInputs,
+    bytecode: &[u8],
+) -> InterpreterResult
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    use arbos::programs::types::UserOutcome;
+
+    let zero_gas = || EvmGas::new(0);
+
+    // Strip the 4-byte Stylus prefix to get the serialized module.
+    let (module_bytes, _version_byte) = match arb_stylus::strip_stylus_prefix(bytecode) {
+        Ok(v) => v,
+        Err(_) => {
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+
+    // Build EvmData from the execution context.
+    let evm_data = build_evm_data(context, inputs);
+
+    // Default Stylus config (params come from ArbOS state in Phase 5).
+    let ink_price = 10_000u32;
+    let stylus_config = StylusConfig::new(1, 4 * 65536, ink_price);
+
+    // Create the type-erased StylusEvmApi bridge.
+    let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
+    let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
+    let evm_api = unsafe { StylusEvmApi::new(journal_ptr, inputs.target_address, is_static) };
+
+    let code_hash = alloy_primitives::keccak256(bytecode);
+
+    // Build the NativeInstance from the module bytes.
+    let mut instance = match arb_stylus::NativeInstance::from_bytes(
+        module_bytes,
+        evm_api,
+        evm_data,
+        &arb_stylus::CompileConfig::version(1, false),
+        stylus_config,
+    ) {
+        Ok(inst) => inst,
+        Err(e) => {
+            tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to create WASM instance");
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+
+    // Convert EVM gas to ink.
+    let gas = inputs.gas_limit;
+    let ink = stylus_config.pricing.gas_to_ink(StylusGas(gas));
+
+    // Get calldata from CallInput enum.
+    let calldata: &[u8] = match &inputs.input {
+        CallInput::Bytes(bytes) => bytes,
+        CallInput::SharedBuffer(_) => &[],
+    };
+
+    // Execute the WASM program.
+    let outcome = match instance.run_main(calldata, stylus_config, ink) {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
+            return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
+        }
+    };
+
+    // Convert remaining ink back to gas.
+    let ink_left = match instance.ink_left() {
+        arb_stylus::MachineMeter::Ready(ink_val) => ink_val,
+        arb_stylus::MachineMeter::Exhausted => arb_stylus::Ink(0),
+    };
+    let gas_left = stylus_config.pricing.ink_to_gas(ink_left).0;
+    let gas_result = EvmGas::new(gas_left);
+
+    // Map UserOutcome to InterpreterResult.
+    let output: Bytes = instance.env().outs.clone().into();
+    match outcome {
+        UserOutcome::Success => {
+            InterpreterResult::new(InstructionResult::Return, output, gas_result)
+        }
+        UserOutcome::Revert => {
+            InterpreterResult::new(InstructionResult::Revert, output, gas_result)
+        }
+        UserOutcome::OutOfInk => {
+            InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas())
+        }
+        UserOutcome::OutOfStack => {
+            InterpreterResult::new(InstructionResult::CallTooDeep, Bytes::new(), zero_gas())
+        }
+        UserOutcome::Failure => {
+            InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas())
+        }
+    }
+}
+
+/// Build [`EvmData`] from the current execution context.
+fn build_evm_data<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+    context: &revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+    inputs: &CallInputs,
+) -> EvmData
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    let basefee = U256::from(context.block.basefee());
+    let gas_price = U256::from(context.tx.gas_price());
+    let value = inputs.value.get();
+
+    EvmData {
+        arbos_version: arb_precompiles::get_arbos_version(),
+        block_basefee: B256::from(basefee.to_be_bytes()),
+        chain_id: context.cfg.chain_id(),
+        block_coinbase: context.block.beneficiary(),
+        block_gas_limit: context.block.gas_limit(),
+        block_number: context.block.number().saturating_to(),
+        block_timestamp: context.block.timestamp().saturating_to(),
+        contract_address: inputs.target_address,
+        module_hash: alloy_primitives::keccak256(b""),
+        msg_sender: inputs.caller,
+        msg_value: B256::from(value.to_be_bytes()),
+        tx_gas_price: B256::from(gas_price.to_be_bytes()),
+        tx_origin: context.tx.caller(),
+        reentrant: 0,
+        cached: false,
+        tracing: false,
+    }
+}
+
 // ── Depth-tracking precompile provider ─────────────────────────────
 
 /// Wraps [`PrecompilesMap`] to set the thread-local EVM call depth before
@@ -136,12 +281,41 @@ where
         inputs: &CallInputs,
     ) -> Result<Option<Self::Output>, String> {
         // Sync the thread-local depth from revm's journal before the precompile runs.
-        // The journal depth is incremented by checkpoint() at the start of each call
-        // frame, matching Go's evm.Depth() semantics exactly.
         arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
-        <PrecompilesMap as PrecompileProvider<
+
+        // Check precompiles first.
+        if let result @ Some(_) = <PrecompilesMap as PrecompileProvider<
             revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-        >>::run(&mut self.0, context, inputs)
+        >>::run(&mut self.0, context, inputs)?
+        {
+            return Ok(result);
+        }
+
+        // Load the target's bytecode to check for Stylus discriminant.
+        let bytecode = if let Some((_hash, ref code)) = inputs.known_bytecode {
+            code.original_bytes()
+        } else {
+            let account = context
+                .journaled_state
+                .inner
+                .load_code(&mut context.journaled_state.database, inputs.bytecode_address)
+                .map_err(|_| "failed to load bytecode for Stylus check".to_string())?;
+            account
+                .data
+                .info
+                .code
+                .as_ref()
+                .map(|c| c.original_bytes())
+                .unwrap_or_default()
+        };
+
+        if arb_stylus::is_stylus_program(&bytecode) {
+            let result = execute_stylus_program(context, inputs, &bytecode);
+            return Ok(Some(result));
+        }
+
+        // Not a precompile or Stylus program — fall through to normal EVM.
+        Ok(None)
     }
 
     fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {

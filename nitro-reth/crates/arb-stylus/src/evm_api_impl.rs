@@ -1,6 +1,4 @@
 use alloy_primitives::{Address, Log, B256, U256};
-use revm::context::journal::JournalInner;
-use revm::JournalEntry;
 use revm::Database;
 
 use crate::evm_api::{CreateResponse, EvmApi, UserOutcomeKind};
@@ -12,18 +10,113 @@ const WARM_STORAGE_READ_COST: u64 = 100;
 const COLD_ACCOUNT_ACCESS_COST: u64 = 2600;
 const WARM_ACCOUNT_ACCESS_COST: u64 = 100;
 
+// ── Type-erased journal access ──────────────────────────────────────
+
+/// Flattened SSTORE result without revm generics.
+pub struct SStoreInfo {
+    pub is_cold: bool,
+    pub original_value: U256,
+    pub present_value: U256,
+    pub new_value: U256,
+}
+
+/// Object-safe trait wrapping `Journal<DB>` operations needed by Stylus.
+///
+/// By erasing the `DB` type parameter, [`StylusEvmApi`] becomes non-generic
+/// and trivially satisfies `'static` (required by wasmer's `FunctionEnv`).
+pub trait JournalAccess {
+    fn sload(&mut self, addr: Address, key: U256) -> eyre::Result<(U256, bool)>;
+    fn sstore(&mut self, addr: Address, key: U256, value: U256) -> eyre::Result<SStoreInfo>;
+    fn tload(&mut self, addr: Address, key: U256) -> U256;
+    fn tstore(&mut self, addr: Address, key: U256, value: U256);
+    fn log(&mut self, log: Log);
+    fn account_balance(&mut self, addr: Address) -> eyre::Result<(U256, bool)>;
+    fn account_code(&mut self, addr: Address) -> eyre::Result<(Vec<u8>, bool)>;
+    fn account_codehash(&mut self, addr: Address) -> eyre::Result<(B256, bool)>;
+}
+
+impl<DB: Database> JournalAccess for revm::Journal<DB> {
+    fn sload(&mut self, addr: Address, key: U256) -> eyre::Result<(U256, bool)> {
+        let result = self
+            .inner
+            .sload(&mut self.database, addr, key, false)
+            .map_err(|e| eyre::eyre!("sload failed: {e:?}"))?;
+        Ok((result.data, result.is_cold))
+    }
+
+    fn sstore(&mut self, addr: Address, key: U256, value: U256) -> eyre::Result<SStoreInfo> {
+        let result = self
+            .inner
+            .sstore(&mut self.database, addr, key, value, false)
+            .map_err(|e| eyre::eyre!("sstore failed: {e:?}"))?;
+        Ok(SStoreInfo {
+            is_cold: result.is_cold,
+            original_value: result.data.original_value,
+            present_value: result.data.present_value,
+            new_value: result.data.new_value,
+        })
+    }
+
+    fn tload(&mut self, addr: Address, key: U256) -> U256 {
+        self.inner.tload(addr, key)
+    }
+
+    fn tstore(&mut self, addr: Address, key: U256, value: U256) {
+        self.inner.tstore(addr, key, value);
+    }
+
+    fn log(&mut self, log: Log) {
+        self.inner.log(log);
+    }
+
+    fn account_balance(&mut self, addr: Address) -> eyre::Result<(U256, bool)> {
+        let result = self
+            .inner
+            .load_account(&mut self.database, addr)
+            .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
+        Ok((result.data.info.balance, result.is_cold))
+    }
+
+    fn account_code(&mut self, addr: Address) -> eyre::Result<(Vec<u8>, bool)> {
+        let result = self
+            .inner
+            .load_code(&mut self.database, addr)
+            .map_err(|e| eyre::eyre!("load_code failed: {e:?}"))?;
+        let code = result
+            .data
+            .info
+            .code
+            .as_ref()
+            .map(|c: &revm::bytecode::Bytecode| c.original_bytes().to_vec())
+            .unwrap_or_default();
+        Ok((code, result.is_cold))
+    }
+
+    fn account_codehash(&mut self, addr: Address) -> eyre::Result<(B256, bool)> {
+        let result = self
+            .inner
+            .load_account(&mut self.database, addr)
+            .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
+        Ok((result.data.info.code_hash, result.is_cold))
+    }
+}
+
+// ── StylusEvmApi ────────────────────────────────────────────────────
+
 /// Concrete [`EvmApi`] bridging WASM host function calls to revm's journaled state.
 ///
-/// Holds raw pointers to the revm journal and database. The pointers remain valid
-/// for the lifetime of a single Stylus program execution within a precompile call.
+/// Uses a type-erased raw pointer to [`JournalAccess`] so that the `DB` generic
+/// parameter is erased. This allows `StylusEvmApi` to be `'static` without
+/// requiring `DB: 'static`, which is needed for wasmer's `FunctionEnv`.
 ///
 /// # Safety
 ///
 /// Wasmer executes WASM programs synchronously on the calling thread, so no
 /// cross-thread sharing occurs despite the `Send` bound on [`EvmApi`].
-pub struct StylusEvmApi<DB: Database> {
-    /// Raw pointer to the journal (contains both JournalInner and DB).
-    journal: *mut revm::Journal<DB>,
+/// The raw pointer must remain valid for the lifetime of the Stylus execution.
+pub struct StylusEvmApi {
+    /// Type-erased raw pointer to the journal (implements [`JournalAccess`]).
+    journal: *mut dyn JournalAccess,
     /// The contract address being executed.
     address: Address,
     /// Cached storage writes (key, value pairs), flushed on demand.
@@ -35,22 +128,22 @@ pub struct StylusEvmApi<DB: Database> {
 }
 
 // Safety: Wasmer executes synchronously on the calling thread. No cross-thread access occurs.
-unsafe impl<DB: Database> Send for StylusEvmApi<DB> {}
+unsafe impl Send for StylusEvmApi {}
 
-impl<DB: Database> StylusEvmApi<DB> {
-    /// Create a new StylusEvmApi from a raw pointer to the revm Journal.
+impl StylusEvmApi {
+    /// Create a new StylusEvmApi from a raw pointer to a revm Journal.
     ///
     /// # Safety
     ///
     /// The `journal` pointer must remain valid for the lifetime of this struct.
     /// The caller must ensure exclusive mutable access through this pointer.
-    pub unsafe fn new(
+    pub unsafe fn new<DB: Database>(
         journal: *mut revm::Journal<DB>,
         address: Address,
         read_only: bool,
     ) -> Self {
         Self {
-            journal,
+            journal: journal as *mut dyn JournalAccess,
             address,
             storage_cache: Vec::new(),
             return_data: Vec::new(),
@@ -58,25 +151,13 @@ impl<DB: Database> StylusEvmApi<DB> {
         }
     }
 
-    /// Get mutable references to both the journal inner and the database.
-    ///
-    /// # Safety
-    ///
-    /// The raw pointer must be valid and the caller must ensure no aliased references exist.
-    fn journal_and_db(&mut self) -> (&mut JournalInner<JournalEntry>, &mut DB) {
-        unsafe {
-            let journal = &mut *self.journal;
-            (&mut journal.inner, &mut journal.database)
-        }
-    }
-
-    /// Get a mutable reference to the journal inner only.
-    fn journal_inner(&mut self) -> &mut JournalInner<JournalEntry> {
-        unsafe { &mut (*self.journal).inner }
+    /// Get a mutable reference to the type-erased journal.
+    fn journal(&mut self) -> &mut dyn JournalAccess {
+        unsafe { &mut *self.journal }
     }
 }
 
-impl<DB: Database> std::fmt::Debug for StylusEvmApi<DB> {
+impl std::fmt::Debug for StylusEvmApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StylusEvmApi")
             .field("address", &self.address)
@@ -86,21 +167,13 @@ impl<DB: Database> std::fmt::Debug for StylusEvmApi<DB> {
     }
 }
 
-impl<DB: Database + 'static> EvmApi for StylusEvmApi<DB>
-where
-    DB::Error: std::fmt::Display + std::fmt::Debug,
-{
+impl EvmApi for StylusEvmApi {
     fn get_bytes32(&mut self, key: B256, _evm_api_gas_to_use: Gas) -> eyre::Result<(B256, Gas)> {
         let storage_key = U256::from_be_bytes(key.0);
         let addr = self.address;
-        let (journal, db) = self.journal_and_db();
-        let result = journal
-            .sload(db, addr, storage_key, false)
-            .map_err(|e| eyre::eyre!("sload failed: {e:?}"))?;
-
-        let value_u256: U256 = result.data;
+        let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
         let value = B256::from(value_u256.to_be_bytes());
-        let gas_cost = if result.is_cold {
+        let gas_cost = if is_cold {
             COLD_SLOAD_COST
         } else {
             WARM_STORAGE_READ_COST
@@ -136,13 +209,9 @@ where
             let storage_value = U256::from_be_bytes(value.0);
 
             let addr = self.address;
-            let (journal, db) = self.journal_and_db();
-            let result = journal
-                .sstore(db, addr, storage_key, storage_value, false)
-                .map_err(|e| eyre::eyre!("sstore failed: {e:?}"))?;
+            let info = self.journal().sstore(addr, storage_key, storage_value)?;
 
-            // Compute gas cost based on cold/warm and original/present/new values.
-            let sstore_cost = sstore_gas_cost(result.is_cold, &result.data);
+            let sstore_cost = sstore_gas_cost(&info);
             if sstore_cost > remaining {
                 return Ok((Gas(total_gas), UserOutcomeKind::OutOfInk));
             }
@@ -156,8 +225,7 @@ where
     fn get_transient_bytes32(&mut self, key: B256) -> eyre::Result<B256> {
         let storage_key = U256::from_be_bytes(key.0);
         let addr = self.address;
-        let journal = self.journal_inner();
-        let value = journal.tload(addr, storage_key);
+        let value = self.journal().tload(addr, storage_key);
         Ok(B256::from(value.to_be_bytes()))
     }
 
@@ -168,8 +236,7 @@ where
         let storage_key = U256::from_be_bytes(key.0);
         let storage_value = U256::from_be_bytes(value.0);
         let addr = self.address;
-        let journal = self.journal_inner();
-        journal.tstore(addr, storage_key, storage_value);
+        self.journal().tstore(addr, storage_key, storage_value);
         Ok(UserOutcomeKind::Success)
     }
 
@@ -181,8 +248,6 @@ where
         _gas_req: Gas,
         _value: U256,
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
-        // Sub-calls from Stylus programs require recursive EVM dispatch.
-        // This is wired in Phase 2 when the full execution context is available.
         self.return_data = b"Stylus sub-calls not yet wired".to_vec();
         Ok((
             self.return_data.len() as u32,
@@ -242,7 +307,7 @@ where
         _salt: B256,
         _gas: Gas,
     ) -> eyre::Result<(CreateResponse, u32, Gas)> {
-        self.return_data = b"Stylus creates not yet wired".into();
+        self.return_data = b"Stylus creates not yet wired".to_vec();
         Ok((
             CreateResponse::Fail("not yet wired".into()),
             self.return_data.len() as u32,
@@ -259,8 +324,6 @@ where
             return Err(eyre::eyre!("cannot emit log in static context"));
         }
 
-        // The data layout from Stylus: first `topics * 32` bytes are topic hashes,
-        // followed by the log data.
         let topic_bytes = (topics as usize) * 32;
         if data.len() < topic_bytes {
             return Err(eyre::eyre!("log data too short for {topics} topics"));
@@ -277,25 +340,15 @@ where
         let log_data = data[topic_bytes..].to_vec();
 
         let addr = self.address;
-        let log = Log::new(
-            addr,
-            topic_list,
-            log_data.into(),
-        )
-        .expect("too many log topics");
+        let log = Log::new(addr, topic_list, log_data.into()).expect("too many log topics");
 
-        self.journal_inner().log(log);
+        self.journal().log(log);
         Ok(())
     }
 
     fn account_balance(&mut self, address: Address) -> eyre::Result<(U256, Gas)> {
-        let (journal, db) = self.journal_and_db();
-        let result = journal
-            .load_account(db, address)
-            .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
-
-        let balance = result.data.info.balance;
-        let gas_cost = if result.is_cold {
+        let (balance, is_cold) = self.journal().account_balance(address)?;
+        let gas_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
             WARM_ACCOUNT_ACCESS_COST
@@ -309,19 +362,8 @@ where
         address: Address,
         _gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
-        let (journal, db) = self.journal_and_db();
-        let result = journal
-            .load_code(db, address)
-            .map_err(|e| eyre::eyre!("load_code failed: {e:?}"))?;
-
-        let code = result
-            .data
-            .info
-            .code
-            .as_ref()
-            .map(|c: &revm::bytecode::Bytecode| c.original_bytes().to_vec())
-            .unwrap_or_default();
-        let gas_cost = if result.is_cold {
+        let (code, is_cold) = self.journal().account_code(address)?;
+        let gas_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
             WARM_ACCOUNT_ACCESS_COST
@@ -330,13 +372,8 @@ where
     }
 
     fn account_codehash(&mut self, address: Address) -> eyre::Result<(B256, Gas)> {
-        let (journal, db) = self.journal_and_db();
-        let result = journal
-            .load_account(db, address)
-            .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
-
-        let hash = result.data.info.code_hash;
-        let gas_cost = if result.is_cold {
+        let (hash, is_cold) = self.journal().account_codehash(address)?;
+        let gas_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
             WARM_ACCOUNT_ACCESS_COST
@@ -345,8 +382,6 @@ where
     }
 
     fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {
-        // Page cost is computed by the caller using the MemoryModel.
-        // The thread-local page counter is updated by the dispatch layer.
         Ok(Gas(0))
     }
 
@@ -362,29 +397,20 @@ where
     }
 }
 
-/// Compute SSTORE gas cost from cold/warm status and the slot values.
-///
-/// Follows EIP-2929 + EIP-3529 (post-London) gas schedule.
-fn sstore_gas_cost(
-    is_cold: bool,
-    result: &revm::context_interface::context::SStoreResult,
-) -> u64 {
-    // Base cost depends on whether the value is being set, reset, or cleared.
-    let base = if result.original_value == result.new_value {
-        // No-op store (value unchanged).
+/// Compute SSTORE gas cost following EIP-2929 + EIP-3529 (post-London).
+fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
+    let base = if info.original_value == info.new_value {
         WARM_STORAGE_READ_COST
-    } else if result.original_value == result.present_value {
-        // Fresh write.
-        if result.original_value.is_zero() {
+    } else if info.original_value == info.present_value {
+        if info.original_value.is_zero() {
             20_000 // SSTORE_SET_GAS
         } else {
             2_900 // SSTORE_RESET_GAS (5000 - 2100)
         }
     } else {
-        // Dirty write (slot already modified in this tx).
         WARM_STORAGE_READ_COST
     };
 
-    let cold_cost = if is_cold { COLD_SLOAD_COST } else { 0 };
+    let cold_cost = if info.is_cold { COLD_SLOAD_COST } else { 0 };
     base + cold_cost
 }
