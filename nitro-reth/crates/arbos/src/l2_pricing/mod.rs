@@ -36,6 +36,10 @@ pub const GETH_BLOCK_GAS_LIMIT: u64 = 1 << 50;
 pub const GAS_CONSTRAINTS_MAX_NUM: u64 = 20;
 pub const MAX_PRICING_EXPONENT_BIPS: u64 = 85_000;
 
+// EIP-2200 storage costs.
+pub const STORAGE_READ_COST: u64 = 800; // SloadGasEIP2200
+pub const STORAGE_WRITE_COST: u64 = 20_000; // SstoreSetGasEIP2200
+
 // Initial values.
 pub const INITIAL_SPEED_LIMIT_PER_SECOND_V0: u64 = 1_000_000;
 pub const INITIAL_SPEED_LIMIT_PER_SECOND_V6: u64 = 7_000_000;
@@ -45,7 +49,7 @@ pub const INITIAL_MINIMUM_BASE_FEE_WEI: u64 = 100_000_000; // 0.1 Gwei
 pub const INITIAL_BASE_FEE_WEI: u64 = INITIAL_MINIMUM_BASE_FEE_WEI;
 pub const INITIAL_PRICING_INERTIA: u64 = 102;
 pub const INITIAL_BACKLOG_TOLERANCE: u64 = 10;
-pub const INITIAL_PER_TX_GAS_LIMIT_V50: u64 = 256_000_000;
+pub const INITIAL_PER_TX_GAS_LIMIT_V50: u64 = 32_000_000;
 
 /// L2 pricing state manages gas pricing for L2 execution.
 pub struct L2PricingState<D> {
@@ -64,15 +68,16 @@ pub struct L2PricingState<D> {
     multi_gas_base_fees: Storage<D>,
 }
 
-pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>, initial_base_fee: U256) {
+pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>) {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
     let _ = StorageBackedUint64::new(state, base_key, SPEED_LIMIT_PER_SECOND_OFFSET)
-        .set(INITIAL_SPEED_LIMIT_PER_SECOND_V6);
+        .set(INITIAL_SPEED_LIMIT_PER_SECOND_V0);
     let _ = StorageBackedUint64::new(state, base_key, PER_BLOCK_GAS_LIMIT_OFFSET)
-        .set(INITIAL_PER_BLOCK_GAS_LIMIT_V6);
-    let _ = StorageBackedBigUint::new(state, base_key, BASE_FEE_WEI_OFFSET).set(initial_base_fee);
+        .set(INITIAL_PER_BLOCK_GAS_LIMIT_V0);
+    let _ = StorageBackedUint64::new(state, base_key, BASE_FEE_WEI_OFFSET)
+        .set(INITIAL_BASE_FEE_WEI);
     let _ = StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET)
         .set(U256::from(INITIAL_MINIMUM_BASE_FEE_WEI));
     let _ = StorageBackedUint64::new(state, base_key, GAS_BACKLOG_OFFSET).set(0);
@@ -120,8 +125,8 @@ impl<D: Database> L2PricingState<D> {
         open_l2_pricing_state(sto, arbos_version)
     }
 
-    pub fn initialize(sto: &Storage<D>, initial_base_fee: U256) {
-        initialize_l2_pricing_state(sto, initial_base_fee);
+    pub fn initialize(sto: &Storage<D>) {
+        initialize_l2_pricing_state(sto);
     }
 
     // --- Getters/Setters ---
@@ -204,11 +209,13 @@ impl<D: Database> L2PricingState<D> {
         &self,
         target: u64,
         adjustment_window: u64,
+        backlog: u64,
     ) -> Result<(), ()> {
         let sto = self.gas_constraints.push()?;
         let c = open_gas_constraint(sto);
         c.set_target(target)?;
         c.set_adjustment_window(adjustment_window)?;
+        c.set_backlog(backlog)?;
         Ok(())
     }
 
@@ -238,13 +245,15 @@ impl<D: Database> L2PricingState<D> {
     pub fn add_multi_gas_constraint(
         &self,
         target: u64,
-        adjustment_window: u64,
+        adjustment_window: u32,
+        backlog: u64,
         weights: &[u64; NUM_RESOURCE_KIND],
     ) -> Result<(), ()> {
         let sto = self.multi_gas_constraints.push()?;
         let c = open_multi_gas_constraint(sto);
         c.set_target(target)?;
         c.set_adjustment_window(adjustment_window)?;
+        c.set_backlog(backlog)?;
         c.set_resource_weights(weights)?;
         Ok(())
     }

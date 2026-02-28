@@ -1,7 +1,7 @@
 use revm::Database;
 
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
-use arb_storage::{Storage, StorageBackedUint64};
+use arb_storage::{Storage, StorageBackedUint32, StorageBackedUint64};
 
 const TARGET_OFFSET: u64 = 0;
 const ADJUSTMENT_WINDOW_OFFSET: u64 = 1;
@@ -13,7 +13,7 @@ const WEIGHTED_RESOURCES_BASE_OFFSET: u64 = 4;
 pub struct MultiGasConstraint<D> {
     storage: Storage<D>,
     target: StorageBackedUint64<D>,
-    adjustment_window: StorageBackedUint64<D>,
+    adjustment_window: StorageBackedUint32<D>,
     backlog: StorageBackedUint64<D>,
     max_weight: StorageBackedUint64<D>,
 }
@@ -23,7 +23,7 @@ pub fn open_multi_gas_constraint<D: Database>(sto: Storage<D>) -> MultiGasConstr
     let base_key = sto.base_key();
     MultiGasConstraint {
         target: StorageBackedUint64::new(state, base_key, TARGET_OFFSET),
-        adjustment_window: StorageBackedUint64::new(state, base_key, ADJUSTMENT_WINDOW_OFFSET),
+        adjustment_window: StorageBackedUint32::new(state, base_key, ADJUSTMENT_WINDOW_OFFSET),
         backlog: StorageBackedUint64::new(state, base_key, BACKLOG_OFFSET),
         max_weight: StorageBackedUint64::new(state, base_key, MAX_WEIGHT_OFFSET),
         storage: sto,
@@ -39,11 +39,11 @@ impl<D: Database> MultiGasConstraint<D> {
         self.target.set(val)
     }
 
-    pub fn adjustment_window(&self) -> Result<u64, ()> {
+    pub fn adjustment_window(&self) -> Result<u32, ()> {
         self.adjustment_window.get()
     }
 
-    pub fn set_adjustment_window(&self, val: u64) -> Result<(), ()> {
+    pub fn set_adjustment_window(&self, val: u32) -> Result<(), ()> {
         self.adjustment_window.set(val)
     }
 

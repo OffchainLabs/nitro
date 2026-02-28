@@ -4,7 +4,7 @@ use revm::Database;
 
 use arb_chainspec::arbos_version as version;
 
-use super::{L2PricingState, MAX_PRICING_EXPONENT_BIPS};
+use super::L2PricingState;
 
 /// Which gas pricing model to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,7 +23,8 @@ pub enum BacklogOperation {
 }
 
 // Initial constants for pricing model.
-pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 500;
+// StorageReadCost (SloadGasEIP2200 = 800) + StorageWriteCost (SstoreSetGasEIP2200 = 20000)
+pub const MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST: u64 = 20_800;
 
 impl<D: Database> L2PricingState<D> {
     /// Determine which gas model to use based on ArbOS version and stored constraints.
@@ -285,7 +286,7 @@ impl<D: Database> L2PricingState<D> {
                     .saturating_mul(weight as u128)
                     .saturating_mul(10000);
 
-                let exp = (dividend / divisor).min(MAX_PRICING_EXPONENT_BIPS as u128) as u64;
+                let exp = (dividend / divisor).min(u64::MAX as u128) as u64;
                 exponent_per_kind[kind as usize] =
                     exponent_per_kind[kind as usize].saturating_add(exp);
             }
@@ -350,40 +351,58 @@ impl<D: Database> L2PricingState<D> {
     }
 
     /// Calculate the cost for a backlog update operation.
+    ///
+    /// Version-gated cost accounting matching the Go implementation:
+    /// - v60+: static cost (StorageReadCost + StorageWriteCost)
+    /// - v51+: overhead for single-gas constraint traversal
+    /// - v50+: base overhead for GasModelToUse() read
+    /// - legacy: read + write for backlog
     pub fn backlog_update_cost(&self) -> Result<u64, ()> {
-        match self.gas_model_to_use()? {
-            GasModel::Legacy | GasModel::Unknown => Ok(0),
-            GasModel::SingleGasConstraints => {
-                let len = self.gas_constraints_length()?;
-                Ok(len * 100)
-            }
-            GasModel::MultiGasConstraints => {
-                let len = self.multi_gas_constraints_length()?;
-                Ok(MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST + len * 100)
-            }
+        use super::{STORAGE_READ_COST, STORAGE_WRITE_COST};
+
+        // v60+: charge a flat static price regardless of gas model
+        if self.arbos_version >= version::ARBOS_VERSION_60 {
+            return Ok(MULTI_CONSTRAINT_STATIC_BACKLOG_UPDATE_COST);
         }
+
+        let mut result = 0u64;
+
+        // v50+: overhead for reading gas constraints length in GasModelToUse()
+        if self.arbos_version >= version::ARBOS_VERSION_50 {
+            result += STORAGE_READ_COST;
+        }
+
+        // v51+ (multi-constraint fix): per-constraint read+write costs
+        if self.arbos_version >= version::ARBOS_VERSION_MULTI_CONSTRAINT_FIX {
+            let constraints_length = self.gas_constraints_length()?;
+            if constraints_length > 0 {
+                // Read length to traverse
+                result += STORAGE_READ_COST;
+                // Read + write backlog for each constraint
+                result += constraints_length * (STORAGE_READ_COST + STORAGE_WRITE_COST);
+                return Ok(result);
+            }
+            // No return here -- fallthrough to legacy costs
+        }
+
+        // Legacy pricer: single read + write
+        result += STORAGE_READ_COST + STORAGE_WRITE_COST;
+
+        Ok(result)
     }
 
     /// Set gas constraints from legacy parameters (for upgrades).
     pub fn set_gas_constraints_from_legacy(&self) -> Result<(), ()> {
         self.clear_gas_constraints()?;
-        let speed_limit = self.speed_limit_per_second()?;
-        let inertia = self.pricing_inertia()?;
-        let tolerance = self.backlog_tolerance()?;
-        let backlog = self.gas_backlog()?;
+        let target = self.speed_limit_per_second()?;
+        let adjustment_window = self.pricing_inertia()?;
+        let old_backlog = self.gas_backlog()?;
+        let backlog_tolerance = self.backlog_tolerance()?;
 
-        if speed_limit > 0 && inertia > 0 {
-            let target = speed_limit;
-            let window = inertia;
-            self.add_gas_constraint(target, window)?;
-
-            // Transfer existing backlog
-            let c = self.open_gas_constraint_at(0);
-            let tolerance_offset = tolerance.saturating_mul(speed_limit);
-            let effective_backlog = backlog.saturating_sub(tolerance_offset);
-            c.set_backlog(effective_backlog)?;
-        }
-        Ok(())
+        let backlog = old_backlog.saturating_sub(
+            backlog_tolerance.saturating_mul(target),
+        );
+        self.add_gas_constraint(target, adjustment_window, backlog)
     }
 
     /// Convert single-gas constraints to multi-gas constraints (for upgrades).
@@ -404,23 +423,16 @@ impl<D: Database> L2PricingState<D> {
             let backlog = c.backlog()?;
 
             // Equal weights for all resource kinds.
-            let mut weights = [1u64; NUM_RESOURCE_KIND];
-            weights[0] = 1; // Unknown/default dimension also gets weight 1
+            let weights = [1u64; NUM_RESOURCE_KIND];
 
-            let adjustment_window = if window > u32::MAX as u64 {
-                u32::MAX as u64
+            // Cap adjustment_window to u32::MAX (matching Go's uint32 type).
+            let adjustment_window: u32 = if window > u32::MAX as u64 {
+                u32::MAX
             } else {
-                window
+                window as u32
             };
 
-            self.add_multi_gas_constraint(target, adjustment_window, &weights)?;
-
-            // Transfer existing backlog to the new multi-gas constraint.
-            let new_len = self.multi_gas_constraints_length()?;
-            if new_len > 0 {
-                let mc = self.open_multi_gas_constraint_at(new_len - 1);
-                mc.set_backlog(backlog)?;
-            }
+            self.add_multi_gas_constraint(target, adjustment_window, backlog, &weights)?;
         }
         Ok(())
     }
