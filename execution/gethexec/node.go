@@ -639,7 +639,7 @@ func (n *ExecutionNode) SetFinalityData(
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
-	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	err := n.SyncMonitor.SetFinalityData(n.ExecutionDB, safeFinalityData, finalizedFinalityData, validatedFinalityData)
 	if err != nil {
 		return containers.NewReadyPromise(struct{}{}, err)
 	}
