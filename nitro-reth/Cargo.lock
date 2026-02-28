@@ -1230,6 +1230,7 @@ dependencies = [
  "eyre",
  "lazy_static",
  "parking_lot",
+ "revm",
  "thiserror 2.0.18",
  "tracing",
  "wasmer",
