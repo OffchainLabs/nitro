@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, Log, B256, U256};
-use revm::context::journaled_state::entry::JournalEntry;
-use revm::context::journal::inner::JournalInner;
+use revm::context::journal::JournalInner;
+use revm::JournalEntry;
 use revm::Database;
 
 use crate::evm_api::{CreateResponse, EvmApi, UserOutcomeKind};

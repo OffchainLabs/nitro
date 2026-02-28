@@ -16,6 +16,9 @@ alloy-primitives = { workspace = true }
 # Wasmer
 wasmer = { workspace = true }
 
+# Revm
+revm = { workspace = true }
+
 # Common
 thiserror = { workspace = true }
 tracing = { workspace = true }
