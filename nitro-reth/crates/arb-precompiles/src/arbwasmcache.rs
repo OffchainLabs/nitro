@@ -23,6 +23,13 @@ pub fn create_arbwasmcache_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    // ArbWasmCache requires ArbOS >= 30 (Stylus).
+    if let Some(result) = crate::check_precompile_version(
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+    ) {
+        return result;
+    }
+
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -32,6 +39,28 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let gas_cost = COPY_GAS.min(input.gas);
 
     match selector {
+        // CacheCodehash: available only on ArbOS 30, replaced by CacheProgram at 31.
+        CACHE_CODEHASH => {
+            if let Some(result) = crate::check_method_version(
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+            ) {
+                return result;
+            }
+            let _ = &mut input;
+            Err(PrecompileError::other("caller is not a cache manager"))
+        }
+        // CacheProgram: requires ArbOS >= 31 (StylusFixes).
+        CACHE_PROGRAM => {
+            if let Some(result) = crate::check_method_version(
+                arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_FIXES,
+                0,
+            ) {
+                return result;
+            }
+            let _ = &mut input;
+            Err(PrecompileError::other("caller is not a cache manager"))
+        }
         IS_CACHE_MANAGER => {
             // Returns false (no cache managers registered).
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
@@ -47,7 +76,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             // Returns false.
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
-        CACHE_CODEHASH | CACHE_PROGRAM | EVICT_CODEHASH => {
+        EVICT_CODEHASH => {
             let _ = &mut input;
             Err(PrecompileError::other("caller is not a cache manager"))
         }

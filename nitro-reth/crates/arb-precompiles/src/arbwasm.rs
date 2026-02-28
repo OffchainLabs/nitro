@@ -37,6 +37,13 @@ pub fn create_arbwasm_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    // ArbWasm requires ArbOS >= 30 (Stylus).
+    if let Some(result) = crate::check_precompile_version(
+        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
+    ) {
+        return result;
+    }
+
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));

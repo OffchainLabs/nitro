@@ -61,40 +61,67 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     match selector {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        GET_INFRA_FEE_ACCOUNT => read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET),
+        // GetInfraFeeAccount: ArbOS >= 5
+        GET_INFRA_FEE_ACCOUNT => {
+            if let Some(r) = crate::check_method_version(5, 0) { return r; }
+            read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+        }
+        // GetBrotliCompressionLevel: ArbOS >= 20
         GET_BROTLI_COMPRESSION_LEVEL => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
-        GET_SCHEDULED_UPGRADE => handle_scheduled_upgrade(&mut input),
+        // GetScheduledUpgrade: ArbOS >= 20
+        GET_SCHEDULED_UPGRADE => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            handle_scheduled_upgrade(&mut input)
+        }
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
+        // RectifyChainOwner: ArbOS >= 11
         RECTIFY_CHAIN_OWNER => {
-            // Rectify is a no-op if the address is already an owner.
+            if let Some(r) = crate::check_method_version(11, 0) { return r; }
             let gas_cost = COPY_GAS.min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
+        // IsNativeTokenOwner: ArbOS >= 41
         IS_NATIVE_TOKEN_OWNER => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
+        // IsTransactionFilterer: ArbOS >= 60 (TransactionFiltering)
         IS_TRANSACTION_FILTERER => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
+        // GetAllNativeTokenOwners: ArbOS >= 41
         GET_ALL_NATIVE_TOKEN_OWNERS => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
+        // GetAllTransactionFilterers: ArbOS >= 60 (TransactionFiltering)
         GET_ALL_TRANSACTION_FILTERERS => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
+        // GetNativeTokenManagementFrom: ArbOS >= 50
         GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
+        // GetTransactionFilteringFrom: ArbOS >= 60 (TransactionFiltering)
         GET_TRANSACTION_FILTERING_FROM => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
+        // GetFilteredFundsRecipient: ArbOS >= 60 (TransactionFiltering)
         GET_FILTERED_FUNDS_RECIPIENT => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
+        // IsCalldataPriceIncreaseEnabled: ArbOS >= 40
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
+            if let Some(r) = crate::check_method_version(40, 0) { return r; }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
@@ -107,7 +134,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 enabled.to_be_bytes::<32>().to_vec().into(),
             ))
         }
+        // GetParentGasFloorPerToken: ArbOS >= 50
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
@@ -117,8 +146,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
+        // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            // Return 0 (Stylus config not yet stored in state).
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             let gas_cost = COPY_GAS.min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }

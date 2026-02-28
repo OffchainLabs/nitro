@@ -116,20 +116,56 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
         GET_PER_BATCH_GAS_CHARGE => read_l1_field(&mut input, L1_PER_BATCH_GAS_COST),
         GET_AMORTIZED_COST_CAP_BIPS => read_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
-        GET_L1_FEES_AVAILABLE => read_l1_field(&mut input, L1_FEES_AVAILABLE),
-        GET_L1_REWARD_RATE => read_l1_field(&mut input, L1_PER_UNIT_REWARD),
-        GET_L1_REWARD_RECIPIENT => read_l1_field(&mut input, L1_PAY_REWARDS_TO),
+        // GetL1FeesAvailable: ArbOS >= 10
+        GET_L1_FEES_AVAILABLE => {
+            if let Some(r) = crate::check_method_version(10, 0) { return r; }
+            read_l1_field(&mut input, L1_FEES_AVAILABLE)
+        }
+        // GetL1RewardRate: ArbOS >= 11
+        GET_L1_REWARD_RATE => {
+            if let Some(r) = crate::check_method_version(11, 0) { return r; }
+            read_l1_field(&mut input, L1_PER_UNIT_REWARD)
+        }
+        // GetL1RewardRecipient: ArbOS >= 11
+        GET_L1_REWARD_RECIPIENT => {
+            if let Some(r) = crate::check_method_version(11, 0) { return r; }
+            read_l1_field(&mut input, L1_PAY_REWARDS_TO)
+        }
+        // GetL1PricingEquilibrationUnits: ArbOS >= 20
         GET_L1_PRICING_EQUILIBRATION_UNITS => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
             read_l1_field(&mut input, L1_EQUILIBRATION_UNITS)
         }
-        GET_LAST_L1_PRICING_UPDATE_TIME => read_l1_field(&mut input, L1_LAST_UPDATE_TIME),
+        // GetLastL1PricingUpdateTime: ArbOS >= 20
+        GET_LAST_L1_PRICING_UPDATE_TIME => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            read_l1_field(&mut input, L1_LAST_UPDATE_TIME)
+        }
+        // GetL1PricingFundsDueForRewards: ArbOS >= 20
         GET_L1_PRICING_FUNDS_DUE_FOR_REWARDS => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
             read_l1_field(&mut input, L1_FUNDS_DUE_FOR_REWARDS)
         }
-        GET_L1_PRICING_UNITS_SINCE_UPDATE => read_l1_field(&mut input, L1_UNITS_SINCE),
-        GET_LAST_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
-        GET_MAX_BLOCK_GAS_LIMIT => read_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
-        GET_MAX_TX_GAS_LIMIT => read_l2_field(&mut input, L2_PER_TX_GAS_LIMIT),
+        // GetL1PricingUnitsSinceUpdate: ArbOS >= 20
+        GET_L1_PRICING_UNITS_SINCE_UPDATE => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            read_l1_field(&mut input, L1_UNITS_SINCE)
+        }
+        // GetLastL1PricingSurplus: ArbOS >= 20
+        GET_LAST_L1_PRICING_SURPLUS => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            read_l1_field(&mut input, L1_LAST_SURPLUS)
+        }
+        // GetMaxBlockGasLimit: ArbOS >= 50
+        GET_MAX_BLOCK_GAS_LIMIT => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            read_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
+        }
+        // GetMaxTxGasLimit: ArbOS >= 50
+        GET_MAX_TX_GAS_LIMIT => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            read_l2_field(&mut input, L2_PER_TX_GAS_LIMIT)
+        }
         GET_L1_PRICING_PARENT_GAS_FLOOR => {
             read_l1_field(&mut input, L1_GAS_FLOOR_PER_TOKEN)
         }
@@ -137,9 +173,21 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         PRE_V4_GET_PRICES_IN_WEI => handle_prices_in_wei(&mut input),
         PRE_V4_GET_PRICES_IN_ARBGAS => handle_prices_in_arbgas(&mut input),
         PRE_V10_GET_L1_PRICING_SURPLUS => read_l1_field(&mut input, L1_LAST_SURPLUS),
-        GET_GAS_PRICING_CONSTRAINTS => handle_gas_pricing_constraints(&mut input),
-        GET_MULTI_GAS_PRICING_CONSTRAINTS => handle_multi_gas_pricing_constraints(&mut input),
-        GET_MULTI_GAS_BASE_FEE => handle_multi_gas_base_fee(&mut input),
+        // GetGasPricingConstraints: ArbOS >= 50
+        GET_GAS_PRICING_CONSTRAINTS => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            handle_gas_pricing_constraints(&mut input)
+        }
+        // GetMultiGasPricingConstraints: ArbOS >= 60
+        GET_MULTI_GAS_PRICING_CONSTRAINTS => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            handle_multi_gas_pricing_constraints(&mut input)
+        }
+        // GetMultiGasBaseFee: ArbOS >= 60
+        GET_MULTI_GAS_BASE_FEE => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            handle_multi_gas_base_fee(&mut input)
+        }
         _ => Err(PrecompileError::other("unknown selector")),
     }
 }

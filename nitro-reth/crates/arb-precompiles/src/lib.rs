@@ -50,6 +50,47 @@ pub use nodeinterface::{create_nodeinterface_precompile, NODE_INTERFACE_ADDRESS}
 pub use storage_slot::ARBOS_STATE_ADDRESS;
 
 use alloy_evm::precompiles::PrecompilesMap;
+use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileResult};
+use std::cell::Cell;
+
+// ── ArbOS version thread-local ──────────────────────────────────────
+
+thread_local! {
+    /// Current ArbOS version, set by the block executor before transaction execution.
+    static ARBOS_VERSION: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Set the current ArbOS version for precompile version gating.
+pub fn set_arbos_version(version: u64) {
+    ARBOS_VERSION.with(|v| v.set(version));
+}
+
+/// Get the current ArbOS version.
+pub fn get_arbos_version() -> u64 {
+    ARBOS_VERSION.with(|v| v.get())
+}
+
+/// Check precompile-level version gate. If the current ArbOS version is below
+/// `min_version`, the precompile is not yet active and we return success with
+/// empty bytes (as if calling a contract that doesn't exist).
+fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
+    if get_arbos_version() < min_version {
+        Some(Ok(PrecompileOutput::new(0, Default::default())))
+    } else {
+        None
+    }
+}
+
+/// Check method-level version gate. If the current ArbOS version is below
+/// `min_version` or above `max_version` (when non-zero), the method reverts.
+fn check_method_version(min_version: u64, max_version: u64) -> Option<PrecompileResult> {
+    let v = get_arbos_version();
+    if v < min_version || (max_version > 0 && v > max_version) {
+        Some(Err(PrecompileError::other("method not available at this ArbOS version")))
+    } else {
+        None
+    }
+}
 
 /// Register all Arbitrum precompiles into a [`PrecompilesMap`].
 pub fn register_arb_precompiles(map: &mut PrecompilesMap) {

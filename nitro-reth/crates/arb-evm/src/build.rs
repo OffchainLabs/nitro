@@ -238,6 +238,8 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     ) {
         let arbos_version = arb_state.arbos_version();
         self.arb_ctx.arbos_version = arbos_version;
+        // Set the thread-local ArbOS version for precompile version gating.
+        arb_precompiles::set_arbos_version(arbos_version);
 
         if let Ok(addr) = arb_state.network_fee_account() {
             self.arb_ctx.network_fee_account = addr;

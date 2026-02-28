@@ -30,6 +30,13 @@ pub fn create_arbfilteredtxmanager_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    // ArbFilteredTransactionsManager requires ArbOS >= 60 (TransactionFiltering).
+    if let Some(result) = crate::check_precompile_version(
+        arb_chainspec::arbos_version::ARBOS_VERSION_TRANSACTION_FILTERING,
+    ) {
+        return result;
+    }
+
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));

@@ -41,9 +41,11 @@ pub mod arbos_version {
     pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = ARBOS_VERSION_50;
     /// ArbOS version 51 — multi-constraint fix.
     pub const ARBOS_VERSION_MULTI_CONSTRAINT_FIX: u64 = 51;
-    /// ArbOS version 60 — multi-gas constraints.
+    /// ArbOS version 60 — multi-gas constraints + Stylus contract limit + transaction filtering.
     pub const ARBOS_VERSION_MULTI_GAS_CONSTRAINTS: u64 = 60;
     pub const ARBOS_VERSION_60: u64 = 60;
+    pub const ARBOS_VERSION_STYLUS_CONTRACT_LIMIT: u64 = ARBOS_VERSION_60;
+    pub const ARBOS_VERSION_TRANSACTION_FILTERING: u64 = ARBOS_VERSION_60;
 }
 
 /// Trait for Arbitrum chain specifications.

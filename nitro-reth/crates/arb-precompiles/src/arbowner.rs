@@ -147,22 +147,36 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     match selector {
         // ── Getters ──────────────────────────────────────────────
         GET_NETWORK_FEE_ACCOUNT => read_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        GET_INFRA_FEE_ACCOUNT => read_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET),
+        // GetInfraFeeAccount: ArbOS >= 5
+        GET_INFRA_FEE_ACCOUNT => {
+            if let Some(r) = crate::check_method_version(5, 0) { return r; }
+            read_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+        }
+        // GetFilteredFundsRecipient: ArbOS >= 60
         GET_FILTERED_FUNDS_RECIPIENT => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             read_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_chain_owners(&mut input),
+        // GetAllTransactionFilterers: ArbOS >= 60
         GET_ALL_TRANSACTION_FILTERERS => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_get_all_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
+        // GetAllNativeTokenOwners: ArbOS >= 41
         GET_ALL_NATIVE_TOKEN_OWNERS => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_get_all_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
+        // IsTransactionFilterer: ArbOS >= 60
         IS_TRANSACTION_FILTERER => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_is_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
+        // IsNativeTokenOwner: ArbOS >= 41
         IS_NATIVE_TOKEN_OWNER => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_is_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
 
@@ -172,8 +186,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         // ── Root state setters ───────────────────────────────────
         SET_NETWORK_FEE_ACCOUNT => write_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
-        SET_INFRA_FEE_ACCOUNT => write_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET),
+        // SetInfraFeeAccount: ArbOS >= 5
+        SET_INFRA_FEE_ACCOUNT => {
+            if let Some(r) = crate::check_method_version(5, 0) { return r; }
+            write_root_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
+        }
+        // SetBrotliCompressionLevel: ArbOS >= 20
         SET_BROTLI_COMPRESSION_LEVEL => {
+            if let Some(r) = crate::check_method_version(20, 0) { return r; }
             write_root_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
         SCHEDULE_ARBOS_UPGRADE => handle_schedule_upgrade(&mut input),
@@ -189,7 +209,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         SET_L2_BASE_FEE => write_l2_field(&mut input, L2_BASE_FEE),
         SET_MINIMUM_L2_BASE_FEE => write_l2_field(&mut input, L2_MIN_BASE_FEE),
-        SET_MAX_BLOCK_GAS_LIMIT => write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT),
+        // SetMaxBlockGasLimit: ArbOS >= 50
+        SET_MAX_BLOCK_GAS_LIMIT => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            write_l2_field(&mut input, L2_PER_BLOCK_GAS_LIMIT)
+        }
         SET_MAX_TX_GAS_LIMIT => {
             // ArbOS < 50: write to per-block gas limit; >= 50: per-tx gas limit.
             let version_slot = root_slot(0); // VERSION_OFFSET
@@ -212,7 +236,11 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             write_l2_field(&mut input, L2_PRICING_INERTIA)
         }
         SET_L2_GAS_BACKLOG_TOLERANCE => write_l2_field(&mut input, L2_BACKLOG_TOLERANCE),
-        SET_GAS_BACKLOG => write_l2_field(&mut input, L2_GAS_BACKLOG),
+        // SetGasBacklog: ArbOS >= 50
+        SET_GAS_BACKLOG => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            write_l2_field(&mut input, L2_GAS_BACKLOG)
+        }
 
         // ── L1 pricing setters ───────────────────────────────────
         SET_L1_PRICING_EQUILIBRATION_UNITS => write_l1_field(&mut input, L1_EQUILIBRATION_UNITS),
@@ -220,16 +248,23 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_L1_PRICING_REWARD_RECIPIENT => write_l1_field(&mut input, L1_PAY_REWARDS_TO),
         SET_L1_PRICING_REWARD_RATE => write_l1_field(&mut input, L1_PER_UNIT_REWARD),
         SET_L1_PRICE_PER_UNIT => write_l1_field(&mut input, L1_PRICE_PER_UNIT),
-        SET_PARENT_GAS_FLOOR_PER_TOKEN => write_l1_field(&mut input, L1_GAS_FLOOR_PER_TOKEN),
+        // SetParentGasFloorPerToken: ArbOS >= 50
+        SET_PARENT_GAS_FLOOR_PER_TOKEN => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            write_l1_field(&mut input, L1_GAS_FLOOR_PER_TOKEN)
+        }
         SET_PER_BATCH_GAS_CHARGE => write_l1_field(&mut input, L1_PER_BATCH_GAS_COST),
         SET_AMORTIZED_COST_CAP_BIPS => write_l1_field(&mut input, L1_AMORTIZED_COST_CAP_BIPS),
         SET_L1_BASEFEE_ESTIMATE_INERTIA => write_l1_field(&mut input, L1_INERTIA),
+        // ReleaseL1PricerSurplusFunds: ArbOS >= 10
         RELEASE_L1_PRICER_SURPLUS_FUNDS => {
+            if let Some(r) = crate::check_method_version(10, 0) { return r; }
             handle_release_l1_pricer_surplus_funds(&mut input)
         }
 
-        // ── Stylus/Wasm parameter setters ────────────────────────
+        // ── Stylus/Wasm parameter setters (all require ArbOS >= 30) ──
         SET_INK_PRICE => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             if val == 0 || val > 0xFF_FFFF {
                 return Err(PrecompileError::other("ink price must be a positive uint24"));
@@ -237,61 +272,81 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             write_stylus_param(&mut input, StylusField::InkPrice, val as u64)
         }
         SET_WASM_MAX_STACK_DEPTH => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxStackDepth, val as u64)
         }
         SET_WASM_FREE_PAGES => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::FreePages, val as u64)
         }
         SET_WASM_PAGE_GAS => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::PageGas, val as u64)
         }
         SET_WASM_PAGE_LIMIT => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::PageLimit, val as u64)
         }
         SET_WASM_MIN_INIT_GAS => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MinInitGas, val as u64)
         }
         SET_WASM_INIT_COST_SCALAR => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::InitCostScalar, val as u64)
         }
         SET_WASM_EXPIRY_DAYS => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::ExpiryDays, val as u64)
         }
         SET_WASM_KEEPALIVE_DAYS => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::KeepaliveDays, val as u64)
         }
         SET_WASM_BLOCK_CACHE_SIZE => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::BlockCacheSize, val as u64)
         }
+        // SetWasmMaxSize: ArbOS >= 40
         SET_WASM_MAX_SIZE => {
+            if let Some(r) = crate::check_method_version(40, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxWasmSize, val as u64)
         }
+        // SetMaxStylusContractFragments: ArbOS >= 60
         SET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             let val = read_u32_param(data)?;
             write_stylus_param(&mut input, StylusField::MaxFragmentCount, val as u64)
         }
+        // AddWasmCacheManager: ArbOS >= 30
         ADD_WASM_CACHE_MANAGER => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             handle_add_cache_manager(&mut input)
         }
+        // RemoveWasmCacheManager: ArbOS >= 30
         REMOVE_WASM_CACHE_MANAGER => {
+            if let Some(r) = crate::check_method_version(30, 0) { return r; }
             handle_remove_cache_manager(&mut input)
         }
+        // SetCalldataPriceIncrease: ArbOS >= 40
         SET_CALLDATA_PRICE_INCREASE => {
+            if let Some(r) = crate::check_method_version(40, 0) { return r; }
             handle_set_calldata_price_increase(&mut input)
         }
 
-        // ── Transaction filtering ──────────────────────────────────
+        // ── Transaction filtering (all ArbOS >= 60) ──────────────
         ADD_TRANSACTION_FILTERER => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_add_to_set_with_feature_check(
                 &mut input,
                 TRANSACTION_FILTERER_SUBSPACE,
@@ -299,26 +354,32 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         REMOVE_TRANSACTION_FILTERER => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_remove_from_set(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         SET_TRANSACTION_FILTERING_FROM => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             handle_set_feature_time(
                 &mut input,
                 TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
             )
         }
+        // SetFilteredFundsRecipient: ArbOS >= 60
         SET_FILTERED_FUNDS_RECIPIENT => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
             write_root_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
 
-        // ── Native token management ─────────────────────────────
+        // ── Native token management (all ArbOS >= 41) ─────────────
         SET_NATIVE_TOKEN_MANAGEMENT_FROM => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_set_feature_time(
                 &mut input,
                 NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET,
             )
         }
         ADD_NATIVE_TOKEN_OWNER => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_add_to_set_with_feature_check(
                 &mut input,
                 NATIVE_TOKEN_SUBSPACE,
@@ -326,15 +387,27 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         REMOVE_NATIVE_TOKEN_OWNER => {
+            if let Some(r) = crate::check_method_version(41, 0) { return r; }
             handle_remove_from_set(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
 
         // ── Gas pricing constraints ──────────────────────────────
-        SET_GAS_PRICING_CONSTRAINTS => handle_set_gas_pricing_constraints(&mut input),
-        SET_MULTI_GAS_PRICING_CONSTRAINTS => handle_set_multi_gas_pricing_constraints(&mut input),
+        // SetGasPricingConstraints: ArbOS >= 50
+        SET_GAS_PRICING_CONSTRAINTS => {
+            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            handle_set_gas_pricing_constraints(&mut input)
+        }
+        // SetMultiGasPricingConstraints: ArbOS >= 60
+        SET_MULTI_GAS_PRICING_CONSTRAINTS => {
+            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            handle_set_multi_gas_pricing_constraints(&mut input)
+        }
 
-        // ── Chain config ────────────────────────────────────────
-        SET_CHAIN_CONFIG => handle_set_chain_config(&mut input),
+        // ── Chain config (ArbOS >= 11) ──────────────────────────
+        SET_CHAIN_CONFIG => {
+            if let Some(r) = crate::check_method_version(11, 0) { return r; }
+            handle_set_chain_config(&mut input)
+        }
 
         _ => Err(PrecompileError::other("unknown ArbOwner selector")),
     }
