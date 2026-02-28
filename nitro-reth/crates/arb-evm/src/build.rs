@@ -1589,9 +1589,9 @@ where
                         }
                     }
 
-                    // Grow gas backlog with the actual multi-gas used.
-                    // Go skips this when gas price is zero (test scenarios).
-                    if pending.gas_price_positive {
+                    // Grow gas backlog unconditionally for retryable txs.
+                    // Unlike normal txs, Go does NOT guard on gas price > 0 here.
+                    {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         if let Ok(arb_state) =
                             ArbosState::open(state_ptr, SystemBurner::new(None, false))
