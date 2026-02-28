@@ -1537,6 +1537,13 @@ where
         if let Some(pending) = pending {
             let is_retry = pending.retry_context.is_some();
 
+            // Safety check: gas refund should never exceed gas limit.
+            debug_assert!(
+                gas_used_total <= pending.tx_gas_limit,
+                "gas_used ({gas_used_total}) exceeds gas_limit ({})",
+                pending.tx_gas_limit
+            );
+
             // Charge the sender for gas costs that reth's internal buyGas
             // didn't cover. For normal EVM txs, this equals poster_gas
             // (deducted from gas_limit before reth sees it; compute_hold_gas
