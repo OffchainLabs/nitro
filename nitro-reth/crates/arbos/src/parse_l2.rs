@@ -30,6 +30,9 @@ pub const L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX: u8 = 7;
 /// The ArbOS version at which heartbeat messages were disabled.
 pub const HEARTBEATS_DISABLED_AT: u64 = 6;
 
+/// Maximum size of an L2 message segment (256 KB).
+pub const MAX_L2_MESSAGE_SIZE: usize = 256 * 1024;
+
 /// Represents a parsed L2 transaction from an L1 message.
 #[derive(Debug, Clone)]
 pub enum ParsedTransaction {
@@ -57,6 +60,7 @@ pub enum ParsedTransaction {
     },
     /// An ETH deposit from L1.
     EthDeposit {
+        from: Address,
         to: Address,
         value: U256,
         request_id: B256,
@@ -115,14 +119,17 @@ pub fn parse_l2_transactions(
         }
         L1_MESSAGE_TYPE_ETH_DEPOSIT => {
             let request_id = request_id.unwrap_or(B256::ZERO);
-            parse_eth_deposit_message(l2_msg, request_id)
+            parse_eth_deposit_message(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_BATCH_POSTING_REPORT => {
             let request_id = request_id.unwrap_or(B256::ZERO);
             parse_batch_posting_report(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => {
-            parse_l2_message(l2_msg, poster, request_id, 0, chain_id)
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "L1 message type BatchForGasEstimation is unimplemented",
+            ));
         }
         L1_MESSAGE_TYPE_INITIALIZE | L1_MESSAGE_TYPE_ROLLUP_EVENT => Ok(vec![]),
         _ => Ok(vec![]),
@@ -145,7 +152,13 @@ fn parse_l2_message(
     let payload = &data[1..];
 
     match kind {
-        L2_MESSAGE_KIND_SIGNED_TX | L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => {
+        L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "L2 message kind SignedCompressedTx is unimplemented",
+            ));
+        }
+        L2_MESSAGE_KIND_SIGNED_TX => {
             // Decode and validate the tx type: reject Arbitrum internal types and blob txs.
             // Go Nitro does NOT check chain ID here — legacy txs with v=27/28 (no EIP-155
             // chain ID) are valid (e.g. deterministic deploy txs).
@@ -177,9 +190,26 @@ fn parse_l2_message(
         L2_MESSAGE_KIND_BATCH => {
             let mut reader = Cursor::new(payload);
             let mut txs = Vec::new();
-            while reader.position() < payload.len() as u64 {
-                let segment = bytestring_from_reader(&mut reader)?;
-                let mut sub_txs = parse_l2_message(&segment, poster, request_id, depth + 1, chain_id)?;
+            let mut index: u64 = 0;
+            loop {
+                let segment = match bytestring_from_reader(&mut reader) {
+                    Ok(seg) => seg,
+                    Err(_) => break, // end of batch
+                };
+                if segment.len() > MAX_L2_MESSAGE_SIZE {
+                    break;
+                }
+                // Derive sub-request ID if parent has one
+                let sub_request_id = request_id.map(|parent_id| {
+                    let mut preimage = [0u8; 64];
+                    preimage[..32].copy_from_slice(parent_id.as_slice());
+                    preimage[32..].copy_from_slice(&U256::from(index).to_be_bytes::<32>());
+                    B256::from(keccak256(&preimage))
+                });
+                index += 1;
+                let mut sub_txs = parse_l2_message(
+                    &segment, poster, sub_request_id, depth + 1, chain_id,
+                )?;
                 txs.append(&mut sub_txs);
             }
             Ok(txs)
@@ -301,6 +331,7 @@ fn parse_l2_funded_by_l1(
     };
 
     let deposit = ParsedTransaction::EthDeposit {
+        from: poster,
         to: poster,
         value: tx_value,
         request_id: deposit_request_id,
@@ -311,12 +342,14 @@ fn parse_l2_funded_by_l1(
 
 fn parse_eth_deposit_message(
     data: &[u8],
+    poster: Address,
     request_id: B256,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     let mut reader = Cursor::new(data);
     let to = address_from_reader(&mut reader)?;
     let value = uint256_from_reader(&mut reader)?;
     Ok(vec![ParsedTransaction::EthDeposit {
+        from: poster,
         to,
         value,
         request_id,
@@ -478,13 +511,14 @@ pub fn parsed_tx_to_signed(
             data: Bytes::copy_from_slice(data),
         }),
         ParsedTransaction::EthDeposit {
+            from,
             to,
             value,
             request_id,
         } => ArbTypedTransaction::Deposit(ArbDepositTx {
             chain_id: chain_id_u256,
             l1_request_id: *request_id,
-            from: Address::ZERO, // Set by aliased L1 sender
+            from: *from,
             to: *to,
             value: *value,
         }),
