@@ -27,6 +27,14 @@ Thumbs.db
 scripts/
 test_*.sh
 
+# Docker/infra (not committed)
+Dockerfile
+docker-compose.yml
+docker-compose*.yml
+*.dockerignore
+arbreth-data/
+nitro-data/
+
 # MCP config
 .mcp.json
 
