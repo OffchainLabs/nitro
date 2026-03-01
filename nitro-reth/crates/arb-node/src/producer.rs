@@ -518,52 +518,6 @@ where
             "HashedPostState from bundle"
         );
 
-        // Diagnostic: dump bundle account addresses and storage slot counts.
-        if l2_block_number <= 3 {
-            for (addr, acct) in bundle.state.iter() {
-                let info_str = match &acct.info {
-                    Some(i) => format!("nonce={} balance={} code_hash={:?}", i.nonce, i.balance, i.code_hash),
-                    None => "None".to_string(),
-                };
-                info!(
-                    target: "block_producer",
-                    addr = ?addr,
-                    slots = acct.storage.len(),
-                    status = ?acct.status,
-                    info = %info_str,
-                    "Bundle account"
-                );
-                // For ArbOS account, dump all storage slot keys and values
-                if *addr == arb_storage::ARBOS_STATE_ADDRESS {
-                    let mut sorted_slots: Vec<_> = acct.storage.iter().collect();
-                    sorted_slots.sort_by_key(|(k, _)| **k);
-                    for (slot, value) in sorted_slots {
-                        // Only show slots that changed (present != original)
-                        if value.present_value != value.original_value() {
-                            info!(
-                                target: "block_producer",
-                                slot = %format!("{:#066x}", slot),
-                                present = %format!("{:#066x}", value.present_value),
-                                original = %format!("{:#066x}", value.original_value()),
-                                "ArbOS storage CHANGED"
-                            );
-                        }
-                    }
-                    // Count unchanged
-                    let unchanged = acct.storage.iter()
-                        .filter(|(_, v)| v.present_value == v.original_value())
-                        .count();
-                    if unchanged > 0 {
-                        info!(
-                            target: "block_producer",
-                            unchanged,
-                            "ArbOS unchanged slots in bundle"
-                        );
-                    }
-                }
-            }
-        }
-
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
 
