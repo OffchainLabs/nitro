@@ -176,31 +176,6 @@ pub fn encode_batch_posting_report(
     data
 }
 
-/// Creates ABI-encoded data for a batchPostingReport from a delayed message (kind=13).
-///
-/// The parameter order matches the ABI exactly: timestamp, poster, dataHash,
-/// batchNum, l1BaseFee. The extraGas field is appended as a uint64 if non-zero.
-pub fn encode_batch_posting_report_from_delayed(
-    batch_timestamp: u64,
-    batch_poster: Address,
-    data_hash: B256,
-    batch_number: u64,
-    l1_base_fee_estimate: U256,
-    extra_gas: u64,
-) -> Vec<u8> {
-    let mut data = Vec::with_capacity(4 + 32 * 5 + 8);
-    data.extend_from_slice(&INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID);
-    data.extend_from_slice(&B256::left_padding_from(&batch_timestamp.to_be_bytes()).0);
-    data.extend_from_slice(&B256::left_padding_from(batch_poster.as_slice()).0);
-    data.extend_from_slice(&data_hash.0);
-    data.extend_from_slice(&B256::left_padding_from(&batch_number.to_be_bytes()).0);
-    data.extend_from_slice(&l1_base_fee_estimate.to_be_bytes::<32>());
-    if extra_gas > 0 {
-        data.extend_from_slice(&extra_gas.to_be_bytes());
-    }
-    data
-}
-
 /// Creates the ABI-encoded data for a batchPostingReportV2 internal transaction.
 pub fn encode_batch_posting_report_v2(
     batch_timestamp: u64,

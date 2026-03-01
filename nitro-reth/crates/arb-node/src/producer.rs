@@ -295,36 +295,7 @@ where
         execute_and_commit_tx(&mut executor, &start_block_tx, "StartBlock")?;
         all_txs.push(start_block_tx);
 
-        // 2. Generate batch posting report if batch data stats are present.
-        if let Some((length, non_zeros)) = input.batch_data_stats {
-            let batch_report_data = internal_tx::encode_batch_posting_report_v2(
-                input.l1_timestamp,
-                input.sender,
-                0, // batch_number: not critical for state machine
-                length,
-                non_zeros,
-                0, // extra_gas
-                l1_base_fee,
-            );
-
-            let batch_tx = create_internal_tx(chain_id, &batch_report_data);
-            execute_and_commit_tx(&mut executor, &batch_tx, "BatchPostingReportV2")?;
-            all_txs.push(batch_tx);
-        } else if let Some(batch_gas_cost) = input.batch_gas_cost {
-            let batch_report_data = internal_tx::encode_batch_posting_report(
-                input.l1_timestamp,
-                input.sender,
-                0, // batch_number
-                batch_gas_cost,
-                l1_base_fee,
-            );
-
-            let batch_tx = create_internal_tx(chain_id, &batch_report_data);
-            execute_and_commit_tx(&mut executor, &batch_tx, "BatchPostingReport")?;
-            all_txs.push(batch_tx);
-        }
-
-        // 3. Execute parsed user transactions.
+        // 2. Execute parsed user transactions.
         for parsed in &parsed_txs {
             match parsed {
                 ParsedTransaction::InternalStartBlock { .. } => {
@@ -334,21 +305,41 @@ where
                 ParsedTransaction::BatchPostingReport {
                     batch_timestamp,
                     batch_poster,
-                    data_hash,
                     batch_number,
                     l1_base_fee_estimate,
                     extra_gas,
+                    ..
                 } => {
                     // Delayed message kind=13 contains a batch posting report.
-                    // Create an internal tx with the parsed data.
-                    let report_data = internal_tx::encode_batch_posting_report_from_delayed(
-                        *batch_timestamp,
-                        *batch_poster,
-                        *data_hash,
-                        *batch_number,
-                        *l1_base_fee_estimate,
-                        *extra_gas,
-                    );
+                    // Encode as V1 or V2 based on parent ArbOS version, matching
+                    // Go's createBatchPostingReportTransaction.
+                    let report_data = if parent_arbos_version
+                        >= arb_chainspec::arbos_version::ARBOS_VERSION_50
+                    {
+                        // V2: pass raw batch data stats + extra_gas.
+                        let (length, non_zeros) =
+                            input.batch_data_stats.unwrap_or((0, 0));
+                        internal_tx::encode_batch_posting_report_v2(
+                            *batch_timestamp,
+                            *batch_poster,
+                            *batch_number,
+                            length,
+                            non_zeros,
+                            *extra_gas,
+                            *l1_base_fee_estimate,
+                        )
+                    } else {
+                        // V1: combine legacy gas cost + extra_gas into single field.
+                        let legacy_gas = input.batch_gas_cost.unwrap_or(0);
+                        let batch_data_gas = legacy_gas.saturating_add(*extra_gas);
+                        internal_tx::encode_batch_posting_report(
+                            *batch_timestamp,
+                            *batch_poster,
+                            *batch_number,
+                            batch_data_gas,
+                            *l1_base_fee_estimate,
+                        )
+                    };
                     let report_tx = create_internal_tx(chain_id, &report_data);
                     execute_and_commit_tx(&mut executor, &report_tx, "BatchPostingReport")?;
                     all_txs.push(report_tx);
