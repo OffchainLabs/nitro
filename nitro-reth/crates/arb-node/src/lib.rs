@@ -105,6 +105,7 @@ where
                 Block = alloy_consensus::Block<ArbTransactionSigned>,
                 Receipt = arb_primitives::ArbReceipt,
             > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
+              + reth_storage_api::TrieWriter
               + DBProvider,
         > + CanonChainTracker<Header = Header>,
 {
@@ -164,6 +165,7 @@ where
                     Block = alloy_consensus::Block<ArbTransactionSigned>,
                     Receipt = arb_primitives::ArbReceipt,
                 > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
+                  + reth_storage_api::TrieWriter
                   + DBProvider,
             > + CanonChainTracker<Header = Header>,
     >,
@@ -180,11 +182,13 @@ where
         alloy_consensus::Block<ArbTransactionSigned>,
     >,
                            receipts: Vec<arb_primitives::ArbReceipt>,
-                           bundle_state: revm::database::BundleState| {
+                           bundle_state: revm::database::BundleState,
+                           hashed_state: reth_trie_common::HashedPostState,
+                           trie_updates: reth_trie_common::updates::TrieUpdates| {
         use alloy_consensus::BlockHeader;
         use reth_execution_types::BlockExecutionOutput;
         use reth_primitives_traits::RecoveredBlock;
-        use reth_storage_api::StateWriter;
+        use reth_storage_api::{StateWriter, TrieWriter};
         use alloy_evm::block::BlockExecutionResult;
 
         let block_number = sealed.header().number();
@@ -199,7 +203,7 @@ where
             .insert_block(&recovered)
             .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
-        // Write state changes and receipts.
+        // Write state changes and receipts to plain state tables.
         let exec_output = BlockExecutionOutput {
             state: bundle_state,
             result: BlockExecutionResult {
@@ -219,6 +223,17 @@ where
                 revm_database::OriginalValuesKnown::No,
                 reth_storage_api::StateWriteConfig::default(),
             )
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        // Write hashed state (HashedAccounts, HashedStorages tables).
+        // Required for state_by_block_hash() to see updated state.
+        provider_rw
+            .write_hashed_state(&hashed_state.into_sorted())
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        // Write trie intermediate nodes for incremental trie updates.
+        provider_rw
+            .write_trie_updates(trie_updates)
             .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
         provider_rw

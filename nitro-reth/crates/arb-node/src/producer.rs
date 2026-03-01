@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use alloy_consensus::transaction::{Recovered, SignerRecoverable};
+use alloy_consensus::transaction::SignerRecoverable;
 use alloy_consensus::{Block, BlockBody, BlockHeader, Header, TxReceipt, proofs, EMPTY_OMMER_ROOT_HASH};
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::block::{BlockExecutor, BlockExecutorFactory};
@@ -20,6 +20,7 @@ use reth_primitives_traits::{SealedHeader, logs_bloom};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::StateProvider;
 use reth_trie_common::HashedPostState;
+use reth_trie_common::updates::TrieUpdates;
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
@@ -28,7 +29,7 @@ use arb_evm::config::{ArbEvmConfig, arbos_version_from_mix_hash};
 use arb_primitives::signed_tx::ArbTransactionSigned;
 use arb_primitives::tx_types::ArbInternalTx;
 use arb_rpc::block_producer::{BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock};
-use arbos::arbos_types::{L1_MESSAGE_TYPE_INITIALIZE, parse_init_message};
+use arbos::arbos_types::parse_init_message;
 use arbos::header::{ArbHeaderInfo, derive_arb_header_info};
 use arbos::internal_tx;
 use arbos::parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed};
@@ -48,6 +49,8 @@ pub(crate) struct ErasedPersister {
                 &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
                 Vec<arb_primitives::ArbReceipt>,
                 BundleState,
+                HashedPostState,
+                TrieUpdates,
             ) -> Result<(), BlockProducerError>
             + Send
             + Sync,
@@ -60,8 +63,10 @@ impl ErasedPersister {
         sealed: &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
         receipts: Vec<arb_primitives::ArbReceipt>,
         bundle_state: BundleState,
+        hashed_state: HashedPostState,
+        trie_updates: TrieUpdates,
     ) -> Result<(), BlockProducerError> {
-        (self.persist_fn)(sealed, receipts, bundle_state)
+        (self.persist_fn)(sealed, receipts, bundle_state, hashed_state, trie_updates)
     }
 }
 
@@ -73,8 +78,8 @@ pub struct ArbBlockProducer<Provider> {
     persister: ErasedPersister,
     /// Mutex to serialize block production.
     produce_lock: Mutex<()>,
-    /// Whether ArbOS genesis initialization has been done.
-    genesis_initialized: Mutex<bool>,
+    /// Cached Init message params, applied during the first block's execution.
+    cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
 
 impl<Provider> ArbBlockProducer<Provider> {
@@ -91,6 +96,8 @@ impl<Provider> ArbBlockProducer<Provider> {
                 &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
                 Vec<arb_primitives::ArbReceipt>,
                 BundleState,
+                HashedPostState,
+                TrieUpdates,
             ) -> Result<(), BlockProducerError>
             + Send
             + Sync
@@ -104,7 +111,7 @@ impl<Provider> ArbBlockProducer<Provider> {
                 persist_fn: Box::new(persist_fn),
             },
             produce_lock: Mutex::new(()),
-            genesis_initialized: Mutex::new(false),
+            cached_init: Mutex::new(None),
         }
     }
 }
@@ -137,141 +144,6 @@ where
             .ok_or_else(|| {
                 BlockProducerError::StateAccess(format!("Parent block {head_num} not found"))
             })
-    }
-
-    /// Handle the Initialize message (Kind=11).
-    ///
-    /// This initializes ArbOS state in the database and produces the genesis block.
-    fn handle_initialize_message(
-        &self,
-        input: &BlockProductionInput,
-    ) -> Result<ProducedBlock, BlockProducerError> {
-        let init_msg = parse_init_message(&input.l2_msg)
-            .map_err(|e| BlockProducerError::Parse(format!("init message: {e}")))?;
-
-        let chain_id = self.chain_spec.chain().id();
-
-        info!(
-            target: "block_producer",
-            chain_id,
-            init_chain_id = %init_msg.chain_id,
-            initial_l1_base_fee = %init_msg.initial_l1_base_fee,
-            "Processing Initialize message"
-        );
-
-        // Open state at genesis (latest = genesis state from alloc).
-        let state_provider = self
-            .provider
-            .latest()
-            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
-
-        let mut db = StateBuilder::new()
-            .with_database(StateProviderDatabase::new(state_provider.as_ref()))
-            .with_bundle_update()
-            .build();
-
-        // Initialize ArbOS state.
-        genesis::initialize_arbos_state(
-            &mut db,
-            &init_msg,
-            chain_id,
-            genesis::INITIAL_ARBOS_VERSION,
-            genesis::DEFAULT_CHAIN_OWNER,
-        )
-        .map_err(|e| BlockProducerError::Execution(e))?;
-
-        // Merge state changes and produce the genesis block.
-        db.merge_transitions(BundleRetention::Reverts);
-        let bundle = db.take_bundle();
-
-        // Compute state root over the genesis alloc + ArbOS init changes.
-        let hashed_state =
-            HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
-        let state_root = state_provider
-            .state_root(hashed_state)
-            .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
-
-        // Read the send root from the ArbOS state via the bundle.
-        let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
-
-        let mix_hash = arb_info
-            .as_ref()
-            .map(|info| info.compute_mix_hash())
-            .unwrap_or_default();
-
-        let extra_data: Bytes = arb_info
-            .as_ref()
-            .map(|info| {
-                let mut data = info.send_root.to_vec();
-                data.resize(32, 0);
-                data.into()
-            })
-            .unwrap_or_default();
-
-        let send_root = arb_info
-            .as_ref()
-            .map(|info| info.send_root)
-            .unwrap_or(B256::ZERO);
-
-        // Build genesis block header.
-        let head_num = self.head_block_number()?;
-        let parent_header = self.parent_header(head_num)?;
-        let l2_block_number = head_num + 1;
-
-        let header = Header {
-            parent_hash: parent_header.hash(),
-            ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: input.sender,
-            state_root,
-            transactions_root: proofs::calculate_transaction_root::<ArbTransactionSigned>(&[]),
-            receipts_root: proofs::calculate_receipt_root::<arb_primitives::ArbReceipt>(&[]),
-            withdrawals_root: None,
-            logs_bloom: Default::default(),
-            timestamp: input.l1_timestamp.max(parent_header.timestamp()),
-            mix_hash,
-            nonce: B64::from(input.delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: parent_header.base_fee_per_gas(),
-            number: l2_block_number,
-            gas_limit: parent_header.gas_limit(),
-            difficulty: U256::from(1),
-            gas_used: 0,
-            extra_data,
-            parent_beacon_block_root: None,
-            blob_gas_used: None,
-            excess_blob_gas: None,
-            requests_hash: None,
-        };
-
-        let block = Block::<ArbTransactionSigned> {
-            header: header.clone(),
-            body: BlockBody {
-                transactions: vec![],
-                ommers: Default::default(),
-                withdrawals: None,
-            },
-        };
-
-        let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
-        let block_hash = sealed.hash();
-
-        // Persist block and state changes.
-        self.persister.persist(&sealed, vec![], bundle)?;
-
-        info!(
-            target: "block_producer",
-            block_num = l2_block_number,
-            ?block_hash,
-            ?send_root,
-            ?state_root,
-            "Produced genesis init block"
-        );
-
-        *self.genesis_initialized.lock() = true;
-
-        Ok(ProducedBlock {
-            block_hash,
-            send_root,
-        })
     }
 
     /// Produce a block with full transaction execution.
@@ -332,18 +204,49 @@ where
             .evm_env(&provisional_header)
             .map_err(|_| BlockProducerError::Execution("evm_env construction failed".into()))?;
 
-        // Open state at parent block.
+        // Open state at parent block via block hash (matches reth fork pattern).
         let state_provider = self
             .provider
-            .latest()
+            .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
+        // without_state_clear() disables EIP-161 empty account pruning.
+        // Arbitrum needs this for zombie accounts (e.g. retryable escrow
+        // accounts that are created and destroyed within a single block).
         let mut db = StateBuilder::new()
             .with_database(StateProviderDatabase::new(state_provider.as_ref()))
             .with_bundle_update()
+            .without_state_clear()
             .build();
 
         let chain_id = self.chain_spec.chain().id();
+
+        // If Init params were cached, apply ArbOS initialization now.
+        // This makes the Init state changes part of block 1's delta so the
+        // state root correctly includes both Init and execution changes.
+        // Skip if genesis alloc already includes ArbOS state.
+        if let Some(init_msg) = self.cached_init.lock().take() {
+            if !genesis::is_arbos_initialized(&mut db) {
+                info!(
+                    target: "block_producer",
+                    "Applying cached ArbOS Init during block {} execution",
+                    l2_block_number
+                );
+                genesis::initialize_arbos_state(
+                    &mut db,
+                    &init_msg,
+                    chain_id,
+                    genesis::INITIAL_ARBOS_VERSION,
+                    genesis::DEFAULT_CHAIN_OWNER,
+                )
+                .map_err(|e| BlockProducerError::Execution(e))?;
+            } else {
+                debug!(
+                    target: "block_producer",
+                    "ArbOS already initialized in genesis alloc, skipping Init"
+                );
+            }
+        }
 
         // Build execution context: extra_data carries send_root + delayed_messages_read.
         let parent_extra = parent_header.extra_data().to_vec();
@@ -370,7 +273,7 @@ where
         let mut executor = self
             .evm_config
             .block_executor_factory()
-            .create_executor(evm, exec_ctx);
+            .create_arb_executor(evm, exec_ctx, chain_id);
 
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
@@ -462,6 +365,64 @@ where
                     match executor.commit_transaction(result) {
                         Ok(_gas_used) => {
                             all_txs.push(signed_tx);
+
+                            // Drain and execute any scheduled txs (auto-redeems).
+                            // After a SubmitRetryable or manual Redeem precompile call,
+                            // the executor queues retry txs that must execute in the
+                            // same block, immediately after the triggering tx.
+                            loop {
+                                let scheduled = executor.drain_scheduled_txs();
+                                debug!(
+                                    target: "block_producer",
+                                    count = scheduled.len(),
+                                    "Drained scheduled txs"
+                                );
+                                if scheduled.is_empty() {
+                                    break;
+                                }
+                                for encoded in scheduled {
+                                    let retry_tx: Option<ArbTransactionSigned> =
+                                        ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok();
+                                    if let Some(retry_tx) = retry_tx
+                                    {
+                                        let retry_signed = retry_tx.clone();
+                                        match retry_tx.try_into_recovered() {
+                                            Ok(recovered_retry) => {
+                                                match executor.execute_transaction_without_commit(recovered_retry) {
+                                                    Ok(retry_result) => {
+                                                        match executor.commit_transaction(retry_result) {
+                                                            Ok(_) => {
+                                                                all_txs.push(retry_signed);
+                                                            }
+                                                            Err(e) => {
+                                                                warn!(
+                                                                    target: "block_producer",
+                                                                    error = %e,
+                                                                    "Failed to commit auto-redeem tx"
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        warn!(
+                                                            target: "block_producer",
+                                                            error = %e,
+                                                            "Auto-redeem tx execution failed"
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    target: "block_producer",
+                                                    error = %e,
+                                                    "Failed to recover auto-redeem tx sender"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             warn!(
@@ -499,14 +460,32 @@ where
 
         // After executor is dropped, we can access the db again.
         db.merge_transitions(BundleRetention::Reverts);
-        let bundle = db.take_bundle();
+        let mut bundle = db.take_bundle();
 
-        // Compute the state root from the bundle state overlay.
+        // Augment bundle with direct cache modifications (bypass txs,
+        // post-commit hooks) that didn't go through revm's commit.
+        augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
+
+        // Build HashedPostState from the augmented bundle state.
+        // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
+        // Use state_root_with_updates() to get both the root AND trie updates needed
+        // for persistence (write_hashed_state + write_trie_updates).
         let hashed_state =
-            HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
-        let state_root = state_provider
-            .state_root(hashed_state)
+            HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
+                bundle.state(),
+            );
+        let (state_root, trie_updates) = state_provider
+            .state_root_with_updates(hashed_state.clone())
             .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+
+        debug!(
+            target: "block_producer",
+            changed_accounts = hashed_state.accounts.len(),
+            changed_storages = hashed_state.storages.len(),
+            total_storage_slots = hashed_state.storages.values().map(|s| s.storage.len()).sum::<usize>(),
+            ?state_root,
+            "HashedPostState from bundle"
+        );
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
@@ -586,8 +565,8 @@ where
         let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
         let block_hash = sealed.hash();
 
-        // Persist block, receipts, and state changes.
-        self.persister.persist(&sealed, receipts, bundle)?;
+        // Persist block, receipts, state changes, hashed state, and trie updates.
+        self.persister.persist(&sealed, receipts, bundle, hashed_state, trie_updates)?;
 
         info!(
             target: "block_producer",
@@ -629,6 +608,21 @@ where
         + Sync
         + 'static,
 {
+    fn cache_init_message(&self, l2_msg: &[u8]) -> Result<(), BlockProducerError> {
+        let init_msg = parse_init_message(l2_msg)
+            .map_err(|e| BlockProducerError::Parse(format!("init message: {e}")))?;
+
+        info!(
+            target: "block_producer",
+            chain_id = %init_msg.chain_id,
+            initial_l1_base_fee = %init_msg.initial_l1_base_fee,
+            "Cached Init message params"
+        );
+
+        *self.cached_init.lock() = Some(init_msg);
+        Ok(())
+    }
+
     async fn produce_block(
         &self,
         msg_idx: u64,
@@ -645,11 +639,6 @@ where
             return Err(BlockProducerError::Unexpected(format!(
                 "Expected block {expected_block} but got msg_idx {msg_idx} (block {actual_block})"
             )));
-        }
-
-        // Handle Initialize message (Kind=11) — bootstraps ArbOS state.
-        if input.kind == L1_MESSAGE_TYPE_INITIALIZE {
-            return self.handle_initialize_message(&input);
         }
 
         // Parse L2 transactions from the message.
@@ -714,13 +703,6 @@ where
     Ok(())
 }
 
-/// Decode a scheduled retry tx from its encoded bytes and recover the sender.
-fn _decode_and_recover_retry_tx(
-    encoded: &[u8],
-) -> Option<Recovered<ArbTransactionSigned>> {
-    let tx = ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok()?;
-    tx.try_into_recovered().ok()
-}
 
 /// Construct a mix_hash from send_count, l1_block_number, and arbos_version.
 fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
@@ -748,3 +730,119 @@ fn derive_header_info_from_state(
 
     derive_arb_header_info(&read_slot)
 }
+
+/// Augment the bundle state from direct cache modifications.
+///
+/// Arbitrum's bypass tx types (deposit, internal, submit-retryable) and
+/// post-commit hooks modify the `State<DB>` cache directly without going
+/// through revm's commit mechanism. Those changes don't create transitions
+/// and are missing from the bundle state.
+///
+/// This function diffs the cache against the state provider and adds any
+/// missing or updated entries to the bundle so that both state root
+/// computation and persistence see the complete state.
+fn augment_bundle_from_cache(
+    bundle: &mut BundleState,
+    cache: &revm_database::CacheState,
+    state_provider: &dyn StateProvider,
+) {
+    use revm_database::states::plain_account::StorageSlot;
+
+    for (addr, cache_acct) in &cache.accounts {
+        let current_info = cache_acct.account.as_ref().map(|a| a.info.clone());
+        let current_storage = cache_acct
+            .account
+            .as_ref()
+            .map(|a| &a.storage)
+            .cloned()
+            .unwrap_or_default();
+
+        if let Some(bundle_acct) = bundle.state.get_mut(addr) {
+            // Account already in bundle — update info and storage from cache
+            // to capture post-commit modifications.
+            bundle_acct.info = current_info;
+
+            for (key, value) in &current_storage {
+                if let Some(slot) = bundle_acct.storage.get_mut(key) {
+                    slot.present_value = *value;
+                } else {
+                    // Storage slot written via direct cache mod, not by EVM.
+                    let original_value = state_provider
+                        .storage(*addr, B256::from(*key))
+                        .ok()
+                        .flatten()
+                        .unwrap_or(U256::ZERO);
+                    if *value != original_value {
+                        bundle_acct.storage.insert(
+                            *key,
+                            StorageSlot {
+                                previous_or_original_value: original_value,
+                                present_value: *value,
+                            },
+                        );
+                    }
+                }
+            }
+        } else {
+            // Account not in bundle — check if it was modified from original.
+            let original = state_provider.basic_account(addr).ok().flatten();
+
+            let info_changed = match (&original, &current_info) {
+                (None, None) => false,
+                (Some(_), None) | (None, Some(_)) => true,
+                (Some(orig), Some(curr)) => {
+                    orig.balance != curr.balance
+                        || orig.nonce != curr.nonce
+                        || orig.bytecode_hash.unwrap_or(alloy_primitives::KECCAK256_EMPTY)
+                            != curr.code_hash
+                }
+            };
+
+            let storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
+                current_storage
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        let original_value = state_provider
+                            .storage(*addr, B256::from(*key))
+                            .ok()
+                            .flatten()
+                            .unwrap_or(U256::ZERO);
+                        if original_value != *value {
+                            Some((
+                                *key,
+                                StorageSlot {
+                                    previous_or_original_value: original_value,
+                                    present_value: *value,
+                                },
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+            if info_changed || !storage_changes.is_empty() {
+                // For OriginalValuesKnown::No persistence, original_info
+                // is not relied upon; set to None for simplicity.
+                let original_info = None;
+
+                let status = if original.is_some() {
+                    revm_database::AccountStatus::Changed
+                } else {
+                    revm_database::AccountStatus::InMemoryChange
+                };
+
+                bundle.state.insert(
+                    *addr,
+                    revm_database::BundleAccount {
+                        info: current_info,
+                        original_info,
+                        storage: storage_changes,
+                        status,
+                    },
+                );
+            }
+        }
+    }
+}
+
