@@ -104,7 +104,8 @@ where
             ProviderRW: BlockWriter<
                 Block = alloy_consensus::Block<ArbTransactionSigned>,
                 Receipt = arb_primitives::ArbReceipt,
-            > + DBProvider,
+            > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
+              + DBProvider,
         > + CanonChainTracker<Header = Header>,
 {
     type ComponentsBuilder = ComponentsBuilder<
@@ -162,7 +163,8 @@ where
                 ProviderRW: BlockWriter<
                     Block = alloy_consensus::Block<ArbTransactionSigned>,
                     Receipt = arb_primitives::ArbReceipt,
-                > + DBProvider,
+                > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
+                  + DBProvider,
             > + CanonChainTracker<Header = Header>,
     >,
     EthApi: EthApiTypes,
@@ -172,20 +174,51 @@ where
 
     // Create the block producer with a persistence closure.
     let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
+    let evm_config = ArbEvmConfig::new(chain_spec.clone());
     let persist_provider = ctx.provider().clone();
     let persist_fn = move |sealed: &reth_primitives_traits::SealedBlock<
         alloy_consensus::Block<ArbTransactionSigned>,
-    >| {
+    >,
+                           receipts: Vec<arb_primitives::ArbReceipt>,
+                           bundle_state: revm::database::BundleState| {
+        use alloy_consensus::BlockHeader;
+        use reth_execution_types::BlockExecutionOutput;
         use reth_primitives_traits::RecoveredBlock;
+        use reth_storage_api::StateWriter;
+        use alloy_evm::block::BlockExecutionResult;
 
+        let block_number = sealed.header().number();
         let recovered = RecoveredBlock::new_sealed(sealed.clone(), vec![]);
 
         let provider_rw = persist_provider
             .database_provider_rw()
             .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
+        // Write the block (header, body, senders).
         provider_rw
             .insert_block(&recovered)
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        // Write state changes and receipts.
+        let exec_output = BlockExecutionOutput {
+            state: bundle_state,
+            result: BlockExecutionResult {
+                receipts,
+                requests: Default::default(),
+                gas_used: sealed.header().gas_used() as u64,
+                blob_gas_used: 0,
+            },
+        };
+
+        provider_rw
+            .write_state(
+                reth_storage_api::WriteStateInput::Single {
+                    outcome: &exec_output,
+                    block: block_number,
+                },
+                revm_database::OriginalValuesKnown::No,
+                reth_storage_api::StateWriteConfig::default(),
+            )
             .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
         provider_rw
@@ -205,6 +238,7 @@ where
     let block_producer = Arc::new(ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
+        evm_config,
         persist_fn,
     ));
 
