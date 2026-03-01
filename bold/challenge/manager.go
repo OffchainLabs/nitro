@@ -360,7 +360,7 @@ func (m *Manager) tickAtInterval(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Second):
+		case <-ticker.C:
 			m.newBlockNotifier.Broadcast(ctx, nil)
 		}
 	}
@@ -373,7 +373,7 @@ func (m *Manager) fastTickWhileCatchingUp(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Second):
+		case <-ticker.C:
 			m.newBlockNotifier.Broadcast(ctx, nil)
 			if m.watcher.IsSynced() {
 				return
