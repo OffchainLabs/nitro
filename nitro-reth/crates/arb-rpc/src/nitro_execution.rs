@@ -9,6 +9,69 @@ use alloy_primitives::{Address, B256, U256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 
+/// Deserializer that accepts U256 as either hex string ("0x...") or decimal string ("12345").
+/// Go's `*big.Int` marshals to decimal, alloy's U256 expects hex.
+#[allow(dead_code)]
+mod u256_dec_or_hex {
+    use alloy_primitives::U256;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde::Serialize::serialize(value, serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<U256, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+            U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
+        } else {
+            U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
+        }
+    }
+}
+
+/// Optional variant of u256_dec_or_hex.
+mod opt_u256_dec_or_hex {
+    use alloy_primitives::U256;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<U256>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serde::Serialize::serialize(v, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<U256>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        match opt {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(None),
+            Some(s) => {
+                let val = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+                {
+                    U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)?
+                } else {
+                    U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)?
+                };
+                Ok(Some(val))
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // RPC data types (JSON-serializable, matching Go's JSON tags)
 // ---------------------------------------------------------------------------
@@ -24,7 +87,12 @@ pub struct RpcL1IncomingMessageHeader {
     pub timestamp: u64,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "requestId")]
     pub request_id: Option<B256>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "baseFeeL1")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "baseFeeL1",
+        with = "opt_u256_dec_or_hex"
+    )]
     pub base_fee_l1: Option<U256>,
 }
 
