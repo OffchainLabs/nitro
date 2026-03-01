@@ -6,6 +6,7 @@
 pub mod addons;
 pub mod args;
 pub mod consensus;
+pub mod genesis;
 pub mod network;
 pub mod payload;
 pub mod pool;
