@@ -16,6 +16,10 @@ pub static PRECOMPILE_MIN_ARBOS_VERSIONS: &[(Address, u64)] = &[
     (address!("0000000000000000000000000000000000000071"), 30),
     // ArbWasmCache: introduced in ArbOS 30
     (address!("0000000000000000000000000000000000000072"), 30),
+    // ArbNativeTokenManager: introduced in ArbOS 41
+    (address!("0000000000000000000000000000000000000073"), 41),
+    // ArbFilteredTransactionsManager: introduced in ArbOS 60
+    (address!("0000000000000000000000000000000000000074"), 60),
 ];
 
 /// ArbOS version identifiers.
