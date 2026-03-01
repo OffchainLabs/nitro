@@ -89,6 +89,7 @@ func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config
 
 // waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
+	timeout := time.After(limit)
 	for {
 		select {
 		case <-ctx.Done():
@@ -101,7 +102,7 @@ func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclien
 			if headerA.Number.Cmp(headerB.Number) == 0 {
 				return
 			}
-		case <-time.After(limit):
+		case <-timeout:
 			t.Fatal("waitForBlocksToCatchup didnt finish")
 		}
 	}
