@@ -327,9 +327,31 @@ where
         // 3. Execute parsed user transactions.
         for parsed in &parsed_txs {
             match parsed {
-                ParsedTransaction::BatchPostingReport { .. }
-                | ParsedTransaction::InternalStartBlock { .. } => {
-                    // These are handled above as internal txs, skip.
+                ParsedTransaction::InternalStartBlock { .. } => {
+                    // StartBlock is handled above, skip.
+                    continue;
+                }
+                ParsedTransaction::BatchPostingReport {
+                    batch_timestamp,
+                    batch_poster,
+                    data_hash,
+                    batch_number,
+                    l1_base_fee_estimate,
+                    extra_gas,
+                } => {
+                    // Delayed message kind=13 contains a batch posting report.
+                    // Create an internal tx with the parsed data.
+                    let report_data = internal_tx::encode_batch_posting_report_from_delayed(
+                        *batch_timestamp,
+                        *batch_poster,
+                        *data_hash,
+                        *batch_number,
+                        *l1_base_fee_estimate,
+                        *extra_gas,
+                    );
+                    let report_tx = create_internal_tx(chain_id, &report_data);
+                    execute_and_commit_tx(&mut executor, &report_tx, "BatchPostingReport")?;
+                    all_txs.push(report_tx);
                     continue;
                 }
                 _ => {}
