@@ -2035,9 +2035,9 @@ where
 /// EVM execution but must be reflected in the receipt's gas_used.
 fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
     match result {
-        ExecutionResult::Success { gas_used, .. } => *gas_used += extra_gas,
-        ExecutionResult::Revert { gas_used, .. } => *gas_used += extra_gas,
-        ExecutionResult::Halt { gas_used, .. } => *gas_used += extra_gas,
+        ExecutionResult::Success { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
+        ExecutionResult::Revert { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
+        ExecutionResult::Halt { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
     }
 }
 
