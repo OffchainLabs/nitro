@@ -466,7 +466,13 @@ where
         // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
-        // Build HashedPostState from the augmented bundle state.
+        // Filter bundle to only include actually changed storage slots.
+        // revm's bundle may include storage slots that were loaded (read) but
+        // not modified. Including unchanged slots in the HashedPostState would
+        // produce an incorrect state root.
+        filter_unchanged_storage(&mut bundle);
+
+        // Build HashedPostState from the filtered bundle state.
         // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
         // Use state_root_with_updates() to get both the root AND trie updates needed
         // for persistence (write_hashed_state + write_trie_updates).
@@ -711,6 +717,20 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
     bytes[8..16].copy_from_slice(&l1_block_number.to_be_bytes());
     bytes[16..24].copy_from_slice(&arbos_version.to_be_bytes());
     B256::from(bytes)
+}
+
+/// Filter bundle state to retain only storage slots that actually changed.
+///
+/// revm's bundle may include storage slots that were loaded by SLOAD but
+/// never modified. Including these in the HashedPostState would produce an
+/// incorrect state root because `from_bundle_state()` treats every entry
+/// as a changed value.
+fn filter_unchanged_storage(bundle: &mut BundleState) {
+    for (_addr, account) in bundle.state.iter_mut() {
+        account
+            .storage
+            .retain(|_key, slot| slot.present_value != slot.previous_or_original_value);
+    }
 }
 
 /// Derive ArbHeaderInfo from post-execution state.
