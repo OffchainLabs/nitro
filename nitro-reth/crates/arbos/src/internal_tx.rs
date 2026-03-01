@@ -395,6 +395,19 @@ where
     let gas_spent = gas_spent_signed.max(0) as u64;
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
 
+    tracing::info!(
+        target: "arb::debug",
+        batch_timestamp = inputs.batch_timestamp,
+        batch_poster = %inputs.batch_poster,
+        batch_data_gas = inputs.batch_data_gas,
+        l1_base_fee = %inputs.l1_base_fee,
+        per_batch_gas,
+        gas_spent,
+        wei_spent = %wei_spent,
+        current_time = ctx.current_time,
+        "BatchPostingReport V1 inputs"
+    );
+
     if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
         inputs.batch_timestamp,
         ctx.current_time,

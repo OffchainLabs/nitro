@@ -163,6 +163,16 @@ pub fn write_storage_at<D: Database>(
         return;
     }
 
+    tracing::info!(
+        target: "arb::storage_write",
+        %account,
+        slot = %slot,
+        prev = %prev_value,
+        new = %value,
+        original_db = %original_value,
+        "write_storage_at"
+    );
+
     // Modify cache entry
     let (previous_info, previous_status, current_info, current_status) = {
         let cached_acc = match state.cache.accounts.get_mut(&account) {
