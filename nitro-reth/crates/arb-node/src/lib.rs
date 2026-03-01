@@ -250,6 +250,10 @@ where
         Ok(())
     };
 
+    // Genesis block number: read from chain spec genesis header.
+    // 0 for Arbitrum Sepolia, 22207817 for Arbitrum One.
+    let genesis_block_num = chain_spec.genesis_header().number;
+
     let block_producer = Arc::new(ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
@@ -259,7 +263,8 @@ where
 
     // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
     // Nitro consensus connects to the auth RPC port with JWT authentication.
-    let nitro_exec = NitroExecutionHandler::new(ctx.provider().clone(), block_producer);
+    let nitro_exec =
+        NitroExecutionHandler::new(ctx.provider().clone(), block_producer, genesis_block_num);
     let nitro_rpc = nitro_exec.into_rpc();
     ctx.modules.merge_configured(nitro_rpc.clone())?;
     ctx.auth_module.merge_auth_methods(nitro_rpc)?;

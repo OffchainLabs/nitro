@@ -19,9 +19,6 @@ use crate::nitro_execution::{
     RpcMessageResult, RpcMessageWithMetadata, RpcMessageWithMetadataAndBlockInfo,
 };
 
-/// Genesis block number for the chain (0 for Arbitrum Sepolia).
-const GENESIS_BLOCK_NUM: u64 = 0;
-
 /// State shared between the RPC handler and the node.
 #[derive(Debug)]
 pub struct NitroExecutionState {
@@ -48,29 +45,32 @@ pub struct NitroExecutionHandler<Provider, BP> {
     provider: Provider,
     block_producer: Arc<BP>,
     state: Arc<RwLock<NitroExecutionState>>,
+    /// Genesis block number (0 for Arbitrum Sepolia, 22207817 for Arbitrum One).
+    genesis_block_num: u64,
 }
 
 impl<Provider, BP> NitroExecutionHandler<Provider, BP> {
     /// Create a new handler with a block producer.
-    pub fn new(provider: Provider, block_producer: Arc<BP>) -> Self {
+    pub fn new(provider: Provider, block_producer: Arc<BP>, genesis_block_num: u64) -> Self {
         Self {
             provider,
             block_producer,
             state: Arc::new(RwLock::new(NitroExecutionState::default())),
+            genesis_block_num,
         }
     }
 
     /// Convert a message index to a block number.
-    fn message_index_to_block_number(msg_idx: u64) -> u64 {
-        GENESIS_BLOCK_NUM + msg_idx
+    fn message_index_to_block_number(&self, msg_idx: u64) -> u64 {
+        self.genesis_block_num + msg_idx
     }
 
     /// Convert a block number to a message index.
-    fn block_number_to_message_index(block_num: u64) -> Option<u64> {
-        if block_num < GENESIS_BLOCK_NUM {
+    fn block_number_to_message_index(&self, block_num: u64) -> Option<u64> {
+        if block_num < self.genesis_block_num {
             return None;
         }
-        Some(block_num - GENESIS_BLOCK_NUM)
+        Some(block_num - self.genesis_block_num)
     }
 }
 
@@ -169,7 +169,7 @@ where
         message: RpcMessageWithMetadata,
         _message_for_prefetch: Option<RpcMessageWithMetadata>,
     ) -> RpcResult<RpcMessageResult> {
-        let block_num = Self::message_index_to_block_number(msg_idx);
+        let block_num = self.message_index_to_block_number(msg_idx);
         let kind = message.message.header.kind;
         info!(target: "nitroexecution", msg_idx, block_num, kind, "digestMessage called");
 
@@ -184,7 +184,7 @@ where
 
             // Return the genesis block info.
             let genesis_header = self
-                .get_header(GENESIS_BLOCK_NUM)
+                .get_header(self.genesis_block_num)
                 .map_err(internal_error)?
                 .ok_or_else(|| internal_error("Genesis block not found for Init message"))?;
             let send_root = Self::send_root_from_header(genesis_header.header());
@@ -258,13 +258,13 @@ where
             .best_block_number()
             .map_err(|e| internal_error(e.to_string()))?;
 
-        let msg_idx = Self::block_number_to_message_index(best).unwrap_or(0);
+        let msg_idx = self.block_number_to_message_index(best).unwrap_or(0);
         debug!(target: "nitroexecution", best, msg_idx, "headMessageIndex");
         Ok(msg_idx)
     }
 
     async fn result_at_message_index(&self, msg_idx: u64) -> RpcResult<RpcMessageResult> {
-        let block_num = Self::message_index_to_block_number(msg_idx);
+        let block_num = self.message_index_to_block_number(msg_idx);
 
         let header = self
             .get_header(block_num)
@@ -315,7 +315,7 @@ where
     }
 
     async fn arbos_version_for_message_index(&self, msg_idx: u64) -> RpcResult<u64> {
-        let block_num = Self::message_index_to_block_number(msg_idx);
+        let block_num = self.message_index_to_block_number(msg_idx);
 
         let header = self
             .get_header(block_num)
