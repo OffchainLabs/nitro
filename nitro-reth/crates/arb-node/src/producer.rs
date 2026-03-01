@@ -332,17 +332,6 @@ where
                         // V1: combine legacy gas cost + extra_gas into single field.
                         let legacy_gas = input.batch_gas_cost.unwrap_or(0);
                         let batch_data_gas = legacy_gas.saturating_add(*extra_gas);
-                        tracing::info!(
-                            target: "arb::debug",
-                            legacy_gas,
-                            extra_gas,
-                            batch_data_gas,
-                            batch_timestamp,
-                            batch_poster = %batch_poster,
-                            batch_number,
-                            l1_base_fee_estimate = %l1_base_fee_estimate,
-                            "BatchPostingReport V1: constructing internal tx"
-                        );
                         internal_tx::encode_batch_posting_report(
                             *batch_timestamp,
                             *batch_poster,
@@ -491,24 +480,6 @@ where
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
 
-        // Debug: dump bundle state before augmentation
-        tracing::info!(
-            target: "arb::debug",
-            bundle_accounts = bundle.state.len(),
-            bundle_total_slots = bundle.state.values().map(|a| a.storage.len()).sum::<usize>(),
-            "Bundle state BEFORE augmentation"
-        );
-        for (addr, acct) in &bundle.state {
-            tracing::info!(
-                target: "arb::debug",
-                addr = %addr,
-                has_info = acct.info.is_some(),
-                slots = acct.storage.len(),
-                status = ?acct.status,
-                "  Bundle account"
-            );
-        }
-
         // Augment bundle with direct cache modifications (bypass txs,
         // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
@@ -525,34 +496,6 @@ where
         // manually mark empty accounts for trie deletion by setting info=None,
         // except for zombie accounts which are preserved.
         delete_empty_accounts(&mut bundle, &zombie_accounts);
-
-        // Debug: dump bundle state after all processing
-        tracing::info!(
-            target: "arb::debug",
-            bundle_accounts = bundle.state.len(),
-            bundle_total_slots = bundle.state.values().map(|a| a.storage.len()).sum::<usize>(),
-            "Bundle state AFTER augmentation + filter + delete"
-        );
-        for (addr, acct) in &bundle.state {
-            tracing::info!(
-                target: "arb::debug",
-                addr = %addr,
-                has_info = acct.info.is_some(),
-                slots = acct.storage.len(),
-                status = ?acct.status,
-                "  Final bundle account"
-            );
-            for (key, slot) in &acct.storage {
-                tracing::info!(
-                    target: "arb::debug",
-                    addr = %addr,
-                    key = %key,
-                    prev = %slot.previous_or_original_value,
-                    present = %slot.present_value,
-                    "    Storage slot"
-                );
-            }
-        }
 
         // Build HashedPostState from the filtered bundle state.
         // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
@@ -900,15 +843,6 @@ fn augment_bundle_from_cache(
         if let Some(bundle_acct) = bundle.state.get_mut(addr) {
             // Account already in bundle — update info and storage from cache
             // to capture post-commit modifications.
-            if bundle_acct.info != current_info {
-                tracing::info!(
-                    target: "arb::debug",
-                    addr = %addr,
-                    bundle_info = ?bundle_acct.info,
-                    cache_info = ?current_info,
-                    "augment_bundle: updating account info from cache"
-                );
-            }
             bundle_acct.info = current_info;
 
             for (key, value) in &current_storage {
@@ -971,13 +905,6 @@ fn augment_bundle_from_cache(
                     .collect();
 
             if info_changed || !storage_changes.is_empty() {
-                tracing::info!(
-                    target: "arb::debug",
-                    addr = %addr,
-                    info_changed,
-                    storage_changes = storage_changes.len(),
-                    "augment_bundle: adding NEW account from cache"
-                );
                 // For OriginalValuesKnown::No persistence, original_info
                 // is not relied upon; set to None for simplicity.
                 let original_info = None;

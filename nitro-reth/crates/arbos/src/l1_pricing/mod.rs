@@ -387,13 +387,6 @@ impl<D: Database> L1PricingState<D> {
         }
 
         if update_time > current_time || update_time < last_update_time {
-            tracing::warn!(
-                target: "arb::debug",
-                update_time,
-                current_time,
-                last_update_time,
-                "UpdateForBatchPosterSpending: invalid time range"
-            );
             return Err(());
         }
 
@@ -412,22 +405,6 @@ impl<D: Database> L1PricingState<D> {
             .unwrap_or(0);
         let _ = self.set_units_since_update(units_since.saturating_sub(units_allocated));
 
-        tracing::info!(
-            target: "arb::debug",
-            arbos_version = self.arbos_version,
-            funds_due_for_rewards = %funds_due_for_rewards,
-            l1_fees_available = %l1_fees_available,
-            last_update_time,
-            update_time,
-            current_time,
-            alloc_num,
-            alloc_denom,
-            units_since,
-            units_allocated,
-            wei_spent = %wei_spent,
-            "UpdateForBatchPosterSpending: state before update"
-        );
-
         let mut wei_spent = wei_spent;
         if self.arbos_version >= 3 {
             let cap_bips = self.amortized_cost_cap_bips().unwrap_or(0);
@@ -443,28 +420,12 @@ impl<D: Database> L1PricingState<D> {
             }
         }
 
-        let cap_bips = self.amortized_cost_cap_bips().unwrap_or(0);
-        tracing::info!(
-            target: "arb::debug",
-            cap_bips,
-            "UpdateForBatchPosterSpending: amortized cost cap"
-        );
-
         let due = poster_state.funds_due().unwrap_or(U256::ZERO);
         let _ = poster_state.set_funds_due(due.saturating_add(wei_spent), &bpt.total_funds_due);
 
         let per_unit_reward = self.per_unit_reward().unwrap_or(0);
         let reward_amount = U256::from(units_allocated).saturating_mul(U256::from(per_unit_reward));
         let _ = self.set_funds_due_for_rewards(funds_due_for_rewards.saturating_add(reward_amount));
-
-        tracing::info!(
-            target: "arb::debug",
-            poster_funds_due_before = %due,
-            poster_funds_due_after = %(due.saturating_add(wei_spent)),
-            per_unit_reward,
-            reward_amount = %reward_amount,
-            "UpdateForBatchPosterSpending: poster & rewards"
-        );
 
         let mut l1_fees = l1_fees_available;
         let mut payment_for_rewards = reward_amount;
@@ -478,13 +439,6 @@ impl<D: Database> L1PricingState<D> {
         );
 
         let pay_rewards_to = self.pay_rewards_to().unwrap_or(Address::ZERO);
-        tracing::info!(
-            target: "arb::debug",
-            payment_for_rewards = %payment_for_rewards,
-            pay_rewards_to = %pay_rewards_to,
-            l1_fees_before_reward = %l1_fees,
-            "UpdateForBatchPosterSpending: reward payment"
-        );
         if payment_for_rewards > U256::ZERO {
             let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, pay_rewards_to, payment_for_rewards);
             l1_fees = l1_fees.saturating_sub(payment_for_rewards);
@@ -496,16 +450,8 @@ impl<D: Database> L1PricingState<D> {
         if l1_fees < transfer_amount {
             transfer_amount = l1_fees;
         }
-        tracing::info!(
-            target: "arb::debug",
-            balance_due = %balance_due,
-            transfer_amount = %transfer_amount,
-            l1_fees_before_poster = %l1_fees,
-            "UpdateForBatchPosterSpending: poster payment"
-        );
         if transfer_amount > U256::ZERO {
             let addr_to_pay = poster_state.pay_to().unwrap_or(batch_poster);
-            tracing::info!(target: "arb::debug", addr_to_pay = %addr_to_pay, "paying poster");
             let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, addr_to_pay, transfer_amount);
             l1_fees = l1_fees.saturating_sub(transfer_amount);
             let _ = self.set_l1_fees_available(l1_fees);
