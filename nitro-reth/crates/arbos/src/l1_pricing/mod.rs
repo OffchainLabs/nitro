@@ -602,24 +602,29 @@ impl<D: Database> L1PricingState<D> {
 /// Euclidean division matching Go's big.Int.Div (remainder is always non-negative).
 ///
 /// For a negative dividend with a positive divisor, this rounds toward negative
-/// infinity rather than toward zero: -7 / 2 = -4 (not -3).
+/// infinity rather than toward zero: -7 / 2 = -4 (not -3), -3 / 10 = -1 (not 0).
 fn signed_div(mag: U256, positive: bool, divisor: U256) -> (U256, bool) {
     if divisor.is_zero() {
         return (U256::ZERO, true);
     }
 
-    let quotient = mag / divisor;
+    if positive {
+        // Positive / positive: truncation and Euclidean are the same.
+        return (mag / divisor, true);
+    }
 
-    if positive || quotient.is_zero() {
-        (quotient, true)
-    } else {
-        // Euclidean: if there's a remainder, round away from zero (more negative).
-        let remainder = mag % divisor;
-        if remainder.is_zero() {
-            (quotient, false)
+    // Negative dividend: Euclidean rounds toward negative infinity.
+    let quotient = mag / divisor;
+    let remainder = mag % divisor;
+    if remainder.is_zero() {
+        if quotient.is_zero() {
+            (U256::ZERO, true) // -0 = +0
         } else {
-            (quotient + U256::from(1), false)
+            (quotient, false)
         }
+    } else {
+        // Non-zero remainder: round away from zero (more negative).
+        (quotient + U256::from(1), false)
     }
 }
 
