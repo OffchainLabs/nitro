@@ -15,6 +15,7 @@ arb-rpc = { workspace = true }
 arb-txpool = { workspace = true }
 arbos = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rpc-types-engine = { workspace = true }
@@ -37,6 +38,7 @@ reth-payload-builder = { workspace = true }
 reth-payload-builder-primitives = { workspace = true }
 reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
+reth-revm = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-trie = { workspace = true }
 reth-trie-common = { workspace = true }
