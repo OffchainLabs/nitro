@@ -173,7 +173,29 @@ where
         let kind = message.message.header.kind;
         info!(target: "nitroexecution", msg_idx, block_num, kind, "digestMessage called");
 
-        // Check if we already have this block (idempotent)
+        // Handle init message (Kind=11) — cache params, return genesis block.
+        // The Init message does NOT produce a block. Its params are applied
+        // during the first real block's execution.
+        if kind == 11 {
+            let l2_msg = decode_l2_msg(&message.message.l2_msg).map_err(internal_error)?;
+            self.block_producer
+                .cache_init_message(&l2_msg)
+                .map_err(|e| internal_error(e.to_string()))?;
+
+            // Return the genesis block info.
+            let genesis_header = self
+                .get_header(GENESIS_BLOCK_NUM)
+                .map_err(internal_error)?
+                .ok_or_else(|| internal_error("Genesis block not found for Init message"))?;
+            let send_root = Self::send_root_from_header(genesis_header.header());
+            info!(target: "nitroexecution", "Init message cached, returning genesis block");
+            return Ok(RpcMessageResult {
+                block_hash: genesis_header.hash(),
+                send_root,
+            });
+        }
+
+        // Check if we already have this block (idempotent).
         if let Some(header) = self.get_header(block_num).map_err(internal_error)? {
             let send_root = Self::send_root_from_header(header.header());
             debug!(target: "nitroexecution", block_num, ?send_root, "Block already exists");
@@ -181,13 +203,6 @@ where
                 block_hash: header.hash(),
                 send_root,
             });
-        }
-
-        // Handle init message (Kind=11) - returns existing genesis if available
-        if kind == 11 {
-            return Err(internal_error(format!(
-                "Init message received but genesis block {block_num} not found"
-            )));
         }
 
         // Decode the L2 message bytes

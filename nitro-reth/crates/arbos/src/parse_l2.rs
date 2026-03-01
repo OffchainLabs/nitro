@@ -1,3 +1,4 @@
+use alloy_eips::eip2718::{Decodable2718, Typed2718};
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use arb_primitives::signed_tx::ArbTransactionSigned;
 use arb_primitives::tx_types::{
@@ -98,9 +99,10 @@ pub fn parse_l2_transactions(
     l2_msg: &[u8],
     request_id: Option<B256>,
     l1_base_fee: Option<U256>,
+    chain_id: u64,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     match kind {
-        L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0),
+        L1_MESSAGE_TYPE_L2_MESSAGE => parse_l2_message(l2_msg, poster, request_id, 0, chain_id),
         L1_MESSAGE_TYPE_END_OF_BLOCK => Ok(vec![]),
         L1_MESSAGE_TYPE_L2_FUNDED_BY_L1 => {
             let request_id = request_id.unwrap_or(B256::ZERO);
@@ -120,7 +122,7 @@ pub fn parse_l2_transactions(
             parse_batch_posting_report(l2_msg, poster, request_id)
         }
         L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => {
-            parse_l2_message(l2_msg, poster, request_id, 0)
+            parse_l2_message(l2_msg, poster, request_id, 0, chain_id)
         }
         L1_MESSAGE_TYPE_INITIALIZE | L1_MESSAGE_TYPE_ROLLUP_EVENT => Ok(vec![]),
         _ => Ok(vec![]),
@@ -132,6 +134,7 @@ fn parse_l2_message(
     poster: Address,
     request_id: Option<B256>,
     depth: u32,
+    chain_id: u64,
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     const MAX_DEPTH: u32 = 16;
     if depth > MAX_DEPTH || data.is_empty() {
@@ -143,7 +146,25 @@ fn parse_l2_message(
 
     match kind {
         L2_MESSAGE_KIND_SIGNED_TX | L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => {
-            Ok(vec![ParsedTransaction::Signed(payload.to_vec())])
+            // Decode and validate the tx type: reject Arbitrum internal types and blob txs.
+            // Go Nitro does NOT check chain ID here — legacy txs with v=27/28 (no EIP-155
+            // chain ID) are valid (e.g. deterministic deploy txs).
+            match ArbTransactionSigned::decode_2718(&mut &payload[..]) {
+                Ok(tx) => {
+                    let ty = tx.ty();
+                    if ty >= 0x64 || ty == 3 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("unsupported tx type: {ty}"),
+                        ));
+                    }
+                    Ok(vec![ParsedTransaction::Signed(payload.to_vec())])
+                }
+                Err(_) => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "failed to decode signed transaction",
+                )),
+            }
         }
         L2_MESSAGE_KIND_UNSIGNED_USER_TX => {
             let tx = parse_unsigned_tx(payload, poster, request_id, kind)?;
@@ -158,7 +179,7 @@ fn parse_l2_message(
             let mut txs = Vec::new();
             while reader.position() < payload.len() as u64 {
                 let segment = bytestring_from_reader(&mut reader)?;
-                let mut sub_txs = parse_l2_message(&segment, poster, request_id, depth + 1)?;
+                let mut sub_txs = parse_l2_message(&segment, poster, request_id, depth + 1, chain_id)?;
                 txs.append(&mut sub_txs);
             }
             Ok(txs)

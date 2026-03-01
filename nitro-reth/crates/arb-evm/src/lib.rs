@@ -16,7 +16,7 @@ pub use context::{
     ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData, RecentWasms,
 };
 pub use evm::{ArbEvm, ArbEvmFactory};
-pub use build::{ArbBlockExecutor, ArbBlockExecutorFactory, ArbTransactionEnv};
+pub use build::{ArbBlockExecutor, ArbBlockExecutorFactory, ArbScheduledTxDrain, ArbTransactionEnv};
 pub use executor::DefaultArbOsHooks;
 pub use hooks::{ArbOsHooks, NoopArbOsHooks};
 pub use receipt::ArbReceiptBuilder;

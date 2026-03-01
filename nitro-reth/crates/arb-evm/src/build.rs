@@ -58,6 +58,26 @@ impl ArbTransactionEnv for TxEnv {
     }
 }
 
+/// Extension trait for draining scheduled transactions from the executor.
+///
+/// After executing a SubmitRetryable or a manual Redeem precompile call,
+/// auto-redeem retry transactions may be queued. The block producer must
+/// drain and re-inject them in the same block.
+pub trait ArbScheduledTxDrain {
+    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
+    /// by the most recently committed transaction.
+    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>>;
+}
+
+impl<'a, Evm, Spec, R: ReceiptBuilder> ArbScheduledTxDrain for ArbBlockExecutor<'a, Evm, Spec, R> {
+    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
+        self.arb_hooks
+            .as_mut()
+            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
+            .unwrap_or_default()
+    }
+}
+
 /// Arbitrum block executor factory.
 ///
 /// Wraps an `EthBlockExecutor` with ArbOS-specific hooks for gas charging,
@@ -72,6 +92,52 @@ pub struct ArbBlockExecutorFactory<R, Spec, EvmF> {
 impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
     pub fn new(receipt_builder: R, spec: Spec, evm_factory: EvmF) -> Self {
         Self { receipt_builder, spec, evm_factory }
+    }
+
+    /// Create an executor with the concrete `ArbBlockExecutor` return type.
+    ///
+    /// Unlike the trait method which returns an opaque type, this provides
+    /// access to Arbitrum-specific methods like `drain_scheduled_txs`.
+    pub fn create_arb_executor<'a, DB, I>(
+        &'a self,
+        evm: EvmF::Evm<&'a mut State<DB>, I>,
+        ctx: EthBlockExecutionCtx<'a>,
+        chain_id: u64,
+    ) -> ArbBlockExecutor<'a, EvmF::Evm<&'a mut State<DB>, I>, &'a Spec, &'a R>
+    where
+        DB: Database + 'a,
+        R: ReceiptBuilder,
+        Spec: EthExecutorSpec + Clone,
+        I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
+        EvmF: EvmFactory,
+    {
+        let extra_bytes = ctx.extra_data.as_ref();
+        let delayed_messages_read = if extra_bytes.len() >= 40 {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&extra_bytes[32..40]);
+            u64::from_be_bytes(buf)
+        } else {
+            0
+        };
+        let arb_ctx = ArbBlockExecutionCtx {
+            parent_hash: ctx.parent_hash,
+            parent_beacon_block_root: ctx.parent_beacon_block_root,
+            extra_data: extra_bytes[..core::cmp::min(extra_bytes.len(), 32)].to_vec(),
+            delayed_messages_read,
+            chain_id,
+            ..Default::default()
+        };
+        ArbBlockExecutor {
+            inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
+            arb_hooks: None,
+            arb_ctx,
+            pending_tx: None,
+            block_gas_left: 0,
+            user_txs_processed: 0,
+            gas_used_for_l1: Vec::new(),
+            multi_gas_used: Vec::new(),
+            expected_balance_delta: 0,
+        }
     }
 }
 
@@ -217,6 +283,17 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     pub fn with_arb_ctx(mut self, ctx: ArbBlockExecutionCtx) -> Self {
         self.arb_ctx = ctx;
         self
+    }
+
+    /// Returns the set of zombie account addresses.
+    ///
+    /// Zombie accounts are empty accounts that should be preserved in the
+    /// state trie (not deleted by EIP-161) because they were re-created by
+    /// a zero-value transfer on pre-Stylus ArbOS.
+    pub fn zombie_accounts(&self) -> std::collections::HashSet<Address> {
+        // TODO: Wire transfer_balance_with_zombie into the execution path
+        // so zombie accounts are actually tracked. For now returns empty set.
+        std::collections::HashSet::new()
     }
 
     /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
@@ -394,6 +471,14 @@ where
 
         let fees = compute_submit_retryable_fees(&params);
 
+        tracing::debug!(
+            target: "arb::executor",
+            can_pay = fees.can_pay_for_gas,
+            has_error = fees.error.is_some(),
+            submission_fee = %fees.submission_fee,
+            "submit retryable fee computation"
+        );
+
         let user_gas = info.gas;
 
         // Fee validation errors end the transaction immediately with zero gas.
@@ -531,19 +616,26 @@ where
             }
 
             // For filtered retryables, skip auto-redeem scheduling.
+            tracing::debug!(
+                target: "arb::executor",
+                filtered = is_filtered,
+                "auto-redeem: checking is_filtered"
+            );
             if !is_filtered {
                 // Schedule auto-redeem: use make_tx to construct from stored
                 // retryable fields (matching Go's MakeTx pattern), then
                 // increment num_tries.
                 let state_ptr2: *mut State<DB> = db as *mut State<DB>;
-                if let Ok(arb_state) = ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
-                    if let Ok(Some(retryable)) = arb_state.retryable_state.open_retryable(
+                match ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
+                    Ok(arb_state) => {
+                    match arb_state.retryable_state.open_retryable(
                         ticket_id,
-                        u64::MAX, // pass max time so it's always considered valid
+                        0, // pass 0 so any non-zero timeout is valid
                     ) {
+                        Ok(Some(retryable)) => {
                         let _ = retryable.increment_num_tries();
 
-                        if let Ok(retry_tx) = retryable.make_tx(
+                        match retryable.make_tx(
                             U256::from(self.arb_ctx.chain_id),
                             0, // nonce = 0 for first auto-redeem
                             effective_base_fee,
@@ -553,6 +645,7 @@ where
                             fees.available_refund,
                             fees.submission_fee,
                         ) {
+                            Ok(retry_tx) => {
                             // Compute retry tx hash for the event.
                             let retry_tx_hash = {
                                 let mut enc = Vec::new();
@@ -585,9 +678,47 @@ where
                                 let mut encoded = Vec::new();
                                 encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                                 alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                                tracing::debug!(
+                                    target: "arb::executor",
+                                    encoded_len = encoded.len(),
+                                    "Scheduling auto-redeem retry tx"
+                                );
                                 hooks.tx_proc.scheduled_txs.push(encoded);
+                            } else {
+                                tracing::warn!(
+                                    target: "arb::executor",
+                                    "Cannot schedule auto-redeem: arb_hooks is None"
+                                );
+                            }
+                            }
+                            Err(_) => {
+                                tracing::warn!(
+                                    target: "arb::executor",
+                                    "Auto-redeem make_tx failed"
+                                );
                             }
                         }
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                target: "arb::executor",
+                                %ticket_id,
+                                "open_retryable returned None after create"
+                            );
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                target: "arb::executor",
+                                "open_retryable failed"
+                            );
+                        }
+                    }
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            target: "arb::executor",
+                            "ArbosState::open failed for auto-redeem"
+                        );
                     }
                 }
             }
@@ -1352,6 +1483,11 @@ where
 
         // --- Execute via inner EVM executor ---
 
+        // Save the original gas price before tip drop for upfront balance check.
+        // Go Nitro checks balance using GasFeeCap (full gas price), not the
+        // effective gas price after tip drop.
+        let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
+
         // Drop the priority fee tip: cap gas price to the base fee.
         // In Arbitrum, fees go to network/infra accounts via EndTxHook, not to coinbase.
         // Without this, revm's reward_beneficiary sends the tip to coinbase.
@@ -1360,8 +1496,7 @@ where
             .unwrap_or(false);
         if should_drop_tip {
             let base_fee: u128 = self.arb_ctx.basefee.try_into().unwrap_or(u128::MAX);
-            let current_price = revm::context_interface::Transaction::gas_price(&tx_env);
-            if current_price > base_fee {
+            if upfront_gas_price > base_fee {
                 tx_env.set_gas_price(base_fee);
                 tx_env.set_gas_priority_fee(Some(0));
             }
@@ -1406,10 +1541,40 @@ where
             );
         }
 
+        // Manual balance and nonce validation for user txs. Revm's checks are
+        // disabled globally in arb_cfg_env (internal/deposit/retryable txs need
+        // to bypass them). User txs from the delayed inbox may have insufficient
+        // funds or wrong nonces and must be rejected here.
+        if is_user_tx {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            let account = db.load_cache_account(sender).ok().and_then(|a| a.account_info());
+            let sender_balance = account.as_ref().map(|a| a.balance).unwrap_or(U256::ZERO);
+            let sender_nonce = account.as_ref().map(|a| a.nonce).unwrap_or(0);
+
+            // Nonce check: tx nonce must match sender's current nonce.
+            let tx_nonce = revm::context_interface::Transaction::nonce(&tx_env);
+            if tx_nonce != sender_nonce {
+                return Err(BlockExecutionError::msg(format!(
+                    "nonce mismatch: address {sender} tx nonce {tx_nonce} != state nonce {sender_nonce}"
+                )));
+            }
+
+            // Balance check: sender must cover gas * upfront_gas_price + value.
+            // Uses the original gas price (before tip drop) matching Go Nitro's
+            // state_transition.go which uses GasFeeCap for the balance check.
+            let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
+            let tx_value = revm::context_interface::Transaction::value(&tx_env);
+            let total_cost = gas_cost.saturating_add(tx_value);
+            if sender_balance < total_cost {
+                return Err(BlockExecutionError::msg(format!(
+                    "insufficient funds: address {sender} have {sender_balance} want {total_cost}"
+                )));
+            }
+        }
+
         // Fix nonce for retry and contract txs: Go's skipNonceChecks() returns
-        // true for ArbitrumRetryTx and ArbitrumContractTx. Override the tx_env
-        // nonce to match the sender's current state nonce so revm's nonce
-        // validation passes. revm will then increment it (matching Go).
+        // true for these types. Override the tx_env nonce to match the sender's
+        // current state nonce so revm increments it correctly (matching Go).
         if is_retry_tx || is_contract_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let sender_nonce = db.load_cache_account(sender)
@@ -1800,6 +1965,20 @@ where
             }
 
             let _ = is_retry; // suppress unused warning
+        }
+
+        // Clear per-tx scratch slots so they don't affect the state root.
+        // In Go Nitro these are in-memory fields on TxProcessor, not in storage.
+        // We write them to storage so precompiles can read them via sload, but
+        // must clear them after each tx to avoid polluting the state trie.
+        {
+            use arb_precompiles::storage_slot::{
+                current_redeemer_slot, current_retryable_slot, current_tx_poster_fee_slot,
+            };
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
+            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
+            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
         }
 
         Ok(gas_used)

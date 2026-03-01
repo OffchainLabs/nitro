@@ -324,6 +324,13 @@ fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
         cfg.disable_eip3541 = true;
     }
+    // Disable revm's nonce and balance validation globally. Arbitrum's internal,
+    // deposit, and retryable tx types need to bypass these checks (special
+    // balance/nonce semantics). We manually validate balance for user txs in
+    // execute_transaction_without_commit. disable_nonce_check only disables
+    // validation, not increment — the nonce is still incremented after execution.
+    cfg.disable_balance_check = true;
+    cfg.disable_nonce_check = true;
     cfg
 }
 

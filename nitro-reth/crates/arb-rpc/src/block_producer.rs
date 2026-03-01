@@ -61,6 +61,13 @@ pub struct BlockProductionInput {
 /// access is available.
 #[async_trait::async_trait]
 pub trait BlockProducer: Send + Sync + 'static {
+    /// Cache the Init message params for later use during block 1 execution.
+    ///
+    /// The Init message (Kind=11) does NOT produce a block. Its params are
+    /// applied during the first real block's pre-execution so that the
+    /// state root for block 1 includes both Init and execution changes.
+    fn cache_init_message(&self, l2_msg: &[u8]) -> Result<(), BlockProducerError>;
+
     /// Produce a block from the given L1 incoming message.
     ///
     /// The implementation should:

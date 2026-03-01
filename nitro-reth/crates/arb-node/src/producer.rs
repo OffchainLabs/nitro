@@ -450,6 +450,11 @@ where
             }
         }
 
+        // Extract zombie accounts before finish() consumes the executor.
+        // Zombie accounts are empty accounts preserved by pre-Stylus ArbOS
+        // (CreateZombieIfDeleted) and must NOT be deleted during EIP-161 cleanup.
+        let zombie_accounts = executor.zombie_accounts().clone();
+
         // Finalize execution: finish() consumes the executor and returns
         // the EVM and BlockExecutionResult containing receipts.
         let (_, exec_result) = executor
@@ -472,6 +477,13 @@ where
         // produce an incorrect state root.
         filter_unchanged_storage(&mut bundle);
 
+        // EIP-161: Delete empty accounts from the bundle (matching Go Nitro's
+        // IntermediateRoot(true) → Finalise(true) behavior).
+        // With without_state_clear(), revm preserves all accounts. We must
+        // manually mark empty accounts for trie deletion by setting info=None,
+        // except for zombie accounts which are preserved.
+        delete_empty_accounts(&mut bundle, &zombie_accounts);
+
         // Build HashedPostState from the filtered bundle state.
         // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
         // Use state_root_with_updates() to get both the root AND trie updates needed
@@ -492,6 +504,52 @@ where
             ?state_root,
             "HashedPostState from bundle"
         );
+
+        // Diagnostic: dump bundle account addresses and storage slot counts.
+        if l2_block_number <= 3 {
+            for (addr, acct) in bundle.state.iter() {
+                let info_str = match &acct.info {
+                    Some(i) => format!("nonce={} balance={} code_hash={:?}", i.nonce, i.balance, i.code_hash),
+                    None => "None".to_string(),
+                };
+                info!(
+                    target: "block_producer",
+                    addr = ?addr,
+                    slots = acct.storage.len(),
+                    status = ?acct.status,
+                    info = %info_str,
+                    "Bundle account"
+                );
+                // For ArbOS account, dump all storage slot keys and values
+                if *addr == arb_storage::ARBOS_STATE_ADDRESS {
+                    let mut sorted_slots: Vec<_> = acct.storage.iter().collect();
+                    sorted_slots.sort_by_key(|(k, _)| **k);
+                    for (slot, value) in sorted_slots {
+                        // Only show slots that changed (present != original)
+                        if value.present_value != value.original_value() {
+                            info!(
+                                target: "block_producer",
+                                slot = %format!("{:#066x}", slot),
+                                present = %format!("{:#066x}", value.present_value),
+                                original = %format!("{:#066x}", value.original_value()),
+                                "ArbOS storage CHANGED"
+                            );
+                        }
+                    }
+                    // Count unchanged
+                    let unchanged = acct.storage.iter()
+                        .filter(|(_, v)| v.present_value == v.original_value())
+                        .count();
+                    if unchanged > 0 {
+                        info!(
+                            target: "block_producer",
+                            unchanged,
+                            "ArbOS unchanged slots in bundle"
+                        );
+                    }
+                }
+            }
+        }
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
@@ -648,14 +706,20 @@ where
         }
 
         // Parse L2 transactions from the message.
+        let chain_id = self.chain_spec.chain().id();
         let parsed_txs = parse_l2_transactions(
             input.kind,
             input.sender,
             &input.l2_msg,
             input.request_id,
             input.l1_base_fee,
+            chain_id,
         )
-        .map_err(|e| BlockProducerError::Parse(e.to_string()))?;
+        .unwrap_or_else(|e| {
+            // Go Nitro: if ParseL2Transactions returns an error, treat as empty.
+            warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
+            vec![]
+        });
 
         debug!(
             target: "block_producer",
@@ -725,6 +789,38 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
 /// never modified. Including these in the HashedPostState would produce an
 /// incorrect state root because `from_bundle_state()` treats every entry
 /// as a changed value.
+/// EIP-161 empty account deletion matching Go Nitro's Finalise(true).
+///
+/// In Go Nitro, `IntermediateRoot(true)` calls `Finalise(true)` which deletes
+/// empty accounts (nonce=0, balance=0, code_hash=KECCAK_EMPTY) from the state
+/// trie. Zombie accounts (re-created by zero-value transfers on pre-Stylus
+/// ArbOS) are preserved.
+///
+/// Since we use `without_state_clear()`, revm preserves all accounts in the
+/// bundle. This function marks empty non-zombie accounts for trie deletion
+/// by setting their info to `None`.
+fn delete_empty_accounts(
+    bundle: &mut BundleState,
+    zombie_accounts: &std::collections::HashSet<Address>,
+) {
+    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+    for (addr, account) in bundle.state.iter_mut() {
+        if let Some(ref info) = account.info {
+            let is_empty = info.nonce == 0
+                && info.balance.is_zero()
+                && info.code_hash == keccak_empty;
+            if is_empty && !zombie_accounts.contains(addr) {
+                debug!(
+                    target: "block_producer",
+                    addr = ?addr,
+                    "EIP-161: deleting empty account from state"
+                );
+                account.info = None;
+            }
+        }
+    }
+}
+
 fn filter_unchanged_storage(bundle: &mut BundleState) {
     for (_addr, account) in bundle.state.iter_mut() {
         account
