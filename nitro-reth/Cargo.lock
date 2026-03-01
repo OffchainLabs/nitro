@@ -1066,6 +1066,7 @@ name = "arb-node"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
  "alloy-rpc-types-engine",
@@ -1075,6 +1076,7 @@ dependencies = [
  "arb-payload",
  "arb-primitives",
  "arb-rpc",
+ "arb-storage",
  "arb-txpool",
  "arbos",
  "async-trait",
@@ -1099,6 +1101,7 @@ dependencies = [
  "reth-payload-primitives",
  "reth-primitives-traits",
  "reth-provider",
+ "reth-revm",
  "reth-rpc-eth-api",
  "reth-storage-api",
  "reth-transaction-pool",

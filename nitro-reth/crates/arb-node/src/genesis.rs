@@ -22,7 +22,7 @@ const PRECOMPILE_LAST: u8 = 0xff;
 
 /// The initial ArbOS version for Arbitrum Sepolia genesis.
 /// The upgrade_arbos_version path handles stepping through all intermediate versions.
-pub const INITIAL_ARBOS_VERSION: u64 = 32;
+pub const INITIAL_ARBOS_VERSION: u64 = 10;
 
 /// Default chain owner for Arbitrum Sepolia.
 pub const DEFAULT_CHAIN_OWNER: Address = address!("0000000000000000000000000000000000000000");
