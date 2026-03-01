@@ -246,5 +246,29 @@ mod tests {
         );
     }
 
-    // TODO: Add tests for get_jit_path(Some("path"))
+    #[test]
+    fn test_get_jit_path_with_valid_custom_path() {
+        let temp_dir = tempdir::TempDir::new("jit-test").unwrap();
+        let jit_file = temp_dir.path().join("jit");
+        std::fs::write(&jit_file, b"fake-jit-binary").unwrap();
+
+        let path_str = jit_file.to_str().unwrap().to_string();
+        let result = get_jit_path(&Some(path_str));
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), jit_file);
+    }
+
+    #[test]
+    fn test_get_jit_path_with_nonexistent_custom_path() {
+        let path = "/tmp/definitely/does/not/exist/jit".to_string();
+        let result = get_jit_path(&Some(path.clone()));
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Custom JIT path provided but not found"),
+            "Unexpected error message: {err_msg}",
+        );
+    }
 }
