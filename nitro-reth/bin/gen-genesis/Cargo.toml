@@ -1,0 +1,20 @@
+[package]
+name = "gen-genesis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gen-genesis"
+path = "src/main.rs"
+
+[dependencies]
+arb-node = { workspace = true }
+arb-storage = { workspace = true }
+arbos = { workspace = true }
+alloy-primitives = { workspace = true }
+revm = { workspace = true }
+revm-database = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }

@@ -9,16 +9,33 @@ use revm::database::State;
 use revm::Database;
 use tracing::info;
 
-use arb_storage::{Storage, StorageBackedBigUint, set_account_code};
+use arb_storage::{Storage, StorageBackedBigUint, StorageBackedBytes, ARBOS_STATE_ADDRESS, set_account_code, set_account_nonce};
 use arbos::arbos_state::ArbosState;
 use arbos::arbos_types::ParsedInitMessage;
 use arbos::burn::SystemBurner;
 use arbos::l1_pricing;
 use arbos::l2_pricing;
 
-/// Well-known precompile address range: 0x64 through 0xff.
-const PRECOMPILE_FIRST: u8 = 0x64;
-const PRECOMPILE_LAST: u8 = 0xff;
+/// Precompile addresses that exist at genesis (version 0).
+/// Only these get the `[0xFE]` invalid code marker at init time.
+/// Later precompiles (ArbWasm, ArbWasmCache, etc.) get code when their
+/// ArbOS version is reached during the upgrade path.
+const GENESIS_PRECOMPILE_ADDRESSES: [Address; 14] = [
+    address!("0000000000000000000000000000000000000064"), // ArbSys
+    address!("0000000000000000000000000000000000000065"), // ArbInfo
+    address!("0000000000000000000000000000000000000066"), // ArbAddressTable
+    address!("0000000000000000000000000000000000000067"), // ArbBLS
+    address!("0000000000000000000000000000000000000068"), // ArbFunctionTable
+    address!("0000000000000000000000000000000000000069"), // ArbosTest
+    address!("000000000000000000000000000000000000006b"), // ArbOwnerPublic
+    address!("000000000000000000000000000000000000006c"), // ArbGasInfo
+    address!("000000000000000000000000000000000000006d"), // ArbAggregator
+    address!("000000000000000000000000000000000000006e"), // ArbRetryableTx
+    address!("000000000000000000000000000000000000006f"), // ArbStatistics
+    address!("0000000000000000000000000000000000000070"), // ArbOwner
+    address!("00000000000000000000000000000000000000ff"), // ArbDebug
+    address!("00000000000000000000000000000000000a4b05"), // ArbosActs
+];
 
 /// The initial ArbOS version for Arbitrum Sepolia genesis.
 /// The upgrade_arbos_version path handles stepping through all intermediate versions.
@@ -61,6 +78,9 @@ pub fn initialize_arbos_state<D: Database>(
         "Initializing ArbOS state"
     );
 
+    // 0. Set ArbOS state account nonce to 1.
+    set_account_nonce(state, ARBOS_STATE_ADDRESS, 1);
+
     // 1. Set version to 1 (base version before upgrades).
     backing
         .set_by_uint64(0, B256::from(U256::from(1u64)))
@@ -71,19 +91,39 @@ pub fn initialize_arbos_state<D: Database>(
         .set(U256::from(chain_id))
         .map_err(|_| "failed to set chain ID")?;
 
-    // 3. Install precompile code markers (0x64 through 0xff).
-    for addr_byte in PRECOMPILE_FIRST..=PRECOMPILE_LAST {
-        let mut addr_bytes = [0u8; 20];
-        addr_bytes[19] = addr_byte;
-        let addr = Address::new(addr_bytes);
-        set_account_code(state, addr, Bytes::from_static(&[0xFE]));
+    // 3. Install precompile code markers for version-0 precompiles only.
+    for addr in &GENESIS_PRECOMPILE_ADDRESSES {
+        set_account_code(state, *addr, Bytes::from_static(&[0xFE]));
+    }
+
+    // 3b. Set network fee account (chain owner for version >= 2).
+    if target_arbos_version >= 2 {
+        let mut hash = B256::ZERO;
+        hash[12..32].copy_from_slice(chain_owner.as_slice());
+        backing
+            .set_by_uint64(3, hash)
+            .map_err(|_| "failed to set network fee account")?;
+    }
+
+    // 3c. Store serialized chain config.
+    if !init_msg.serialized_chain_config.is_empty() {
+        let cc_sto = backing.open_sub_storage(&[7]); // CHAIN_CONFIG_SUBSPACE
+        let cc_bytes = StorageBackedBytes::new(cc_sto);
+        cc_bytes
+            .set(&init_msg.serialized_chain_config)
+            .map_err(|_| "failed to store chain config")?;
     }
 
     // 4. Initialize L1 pricing state.
     let l1_sto = backing.open_sub_storage(&[0]); // L1_PRICING_SUBSPACE
+    let rewards_recipient = if target_arbos_version >= 2 {
+        chain_owner
+    } else {
+        Address::ZERO
+    };
     l1_pricing::L1PricingState::initialize(
         &l1_sto,
-        Address::ZERO, // rewards recipient (initially zero)
+        rewards_recipient,
         init_msg.initial_l1_base_fee,
     );
 

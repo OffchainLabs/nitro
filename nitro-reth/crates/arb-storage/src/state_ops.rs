@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, Bytes, U256, address};
+use alloy_primitives::{Address, Bytes, U256, address, keccak256};
 use revm::Database;
 use std::collections::HashMap;
 
@@ -34,7 +34,7 @@ pub fn ensure_account_in_bundle<D: Database>(
         Some(AccountInfo {
             balance: U256::ZERO,
             nonce: 1,
-            code_hash: alloy_primitives::keccak256([]),
+            code_hash: keccak256([]),
             code: None,
             account_id: None,
         })
@@ -47,6 +47,30 @@ pub fn ensure_account_in_bundle<D: Database>(
         status: AccountStatus::Loaded,
     };
     state.bundle_state.state.insert(addr, acc);
+}
+
+/// Ensures the account exists in the cache. If the account doesn't exist
+/// (database returned None), creates it with default values (nonce=0, balance=0).
+fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr: Address) {
+    use revm_database::AccountStatus;
+
+    let _ = state.load_cache_account(addr);
+
+    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+        if cached.account.is_none() {
+            cached.account = Some(revm_database::PlainAccount {
+                info: revm_state::AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 0,
+                    code_hash: keccak256([]),
+                    code: None,
+                    account_id: None,
+                },
+                storage: Default::default(),
+            });
+            cached.status = AccountStatus::InMemoryChange;
+        }
+    }
 }
 
 /// Reads a storage slot from the ArbOS account, checking cache -> bundle -> database.
@@ -107,8 +131,8 @@ pub fn write_storage_at<D: Database>(
 ) {
     use revm_database::states::StorageSlot;
 
-    // Load account into cache
-    let _ = state.load_cache_account(account);
+    // Ensure account exists in cache (creates it if database returns None).
+    ensure_cache_account(state, account);
 
     // Get current value from cache/bundle, and original from DB
     let current_value = {
@@ -206,7 +230,7 @@ pub fn set_account_nonce<D: Database>(
     addr: Address,
     nonce: u64,
 ) {
-    let _ = state.load_cache_account(addr);
+    ensure_cache_account(state, addr);
 
     let (previous_info, previous_status, current_info, current_status) = {
         let cached_acc = match state.cache.accounts.get_mut(&addr) {
@@ -250,8 +274,8 @@ pub fn set_account_code<D: Database>(
 ) {
     use revm_state::Bytecode;
 
-    let _ = state.load_cache_account(addr);
-    let code_hash = alloy_primitives::keccak256(&code);
+    ensure_cache_account(state, addr);
+    let code_hash = keccak256(&code);
     let bytecode = Bytecode::new_raw(code);
 
     let (previous_info, previous_status, current_info, current_status) = {

@@ -12,6 +12,7 @@ members = [
     "crates/arb-stylus",
     "crates/arbos",
     "bin/arb-reth",
+    "bin/gen-genesis",
 ]
 resolver = "2"
 

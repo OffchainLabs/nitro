@@ -48,9 +48,9 @@ impl<D: Database> StorageBackedBytes<D> {
             offset += 1;
         }
         if !remaining.is_empty() {
-            // Left-pad the remaining bytes (Go's common.BytesToHash right-aligns)
+            // Right-align remaining bytes (matching Go's common.BytesToHash).
             let mut slot = [0u8; 32];
-            slot[..remaining.len()].copy_from_slice(remaining);
+            slot[32 - remaining.len()..].copy_from_slice(remaining);
             self.storage.set_by_uint64(offset, B256::from(slot))?;
         }
         Ok(())

@@ -56,6 +56,8 @@ pub struct L1IncomingMessage {
 pub struct ParsedInitMessage {
     pub chain_id: U256,
     pub initial_l1_base_fee: U256,
+    /// Serialized chain config JSON bytes (stored in ArbOS state).
+    pub serialized_chain_config: Vec<u8>,
 }
 
 impl L1IncomingMessageHeader {
@@ -160,6 +162,7 @@ pub fn parse_init_message(data: &[u8]) -> io::Result<ParsedInitMessage> {
         return Ok(ParsedInitMessage {
             chain_id: U256::ZERO,
             initial_l1_base_fee: U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+            serialized_chain_config: Vec::new(),
         });
     }
 
@@ -173,17 +176,23 @@ pub fn parse_init_message(data: &[u8]) -> io::Result<ParsedInitMessage> {
     match version {
         0 => {
             let chain_id = uint256_from_reader(&mut reader)?;
+            let mut serialized_chain_config = Vec::new();
+            reader.read_to_end(&mut serialized_chain_config)?;
             Ok(ParsedInitMessage {
                 chain_id,
                 initial_l1_base_fee: U256::from(DEFAULT_INITIAL_L1_BASE_FEE),
+                serialized_chain_config,
             })
         }
         1 => {
             let chain_id = uint256_from_reader(&mut reader)?;
             let initial_l1_base_fee = uint256_from_reader(&mut reader)?;
+            let mut serialized_chain_config = Vec::new();
+            reader.read_to_end(&mut serialized_chain_config)?;
             Ok(ParsedInitMessage {
                 chain_id,
                 initial_l1_base_fee,
+                serialized_chain_config,
             })
         }
         _ => Err(io::Error::new(
