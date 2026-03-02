@@ -20,12 +20,8 @@ use validation::transfer::receive_validation_input;
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    let Some(global) = exec.large_globals.get(idx as usize) else {
-        return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32");
-    };
-    mem.write_slice(out_ptr, &global[..32]);
-    Ok(())
+    caller_env::wavmio::get_global_state_bytes32(&mut mem, exec, idx, out_ptr)
+        .map_err(Escape::HostIO)
 }
 
 /// Writes 32-bytes of global state.
