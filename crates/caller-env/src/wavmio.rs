@@ -1,6 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use alloc::string::String;
 use crate::{GuestPtr, MemAccess};
 
 /// Trait for accessing wavmio host state (globals, inbox, preimages).
