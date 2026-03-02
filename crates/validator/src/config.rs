@@ -149,19 +149,7 @@ impl ServerConfig {
     }
 }
 
-pub fn get_jit_path(config_path: &Option<String>) -> Result<PathBuf> {
-    // 1. If a custom path is provided, use it directly
-    if let Some(jit_path) = config_path {
-        let path = Path::new(&jit_path);
-        if path.exists() {
-            return Ok(path.to_path_buf());
-        }
-        return Err(anyhow!(
-            "Custom JIT path provided but not found: {jit_path}",
-        ));
-    }
-
-    // 2. Fall back to auto-detection
+pub fn get_jit_path() -> Result<PathBuf> {
     let current_exe = env::current_exe().context("failed to get path of current executable")?;
 
     let exe_string = current_exe.to_string_lossy();
@@ -229,7 +217,7 @@ mod tests {
 
     #[test]
     fn test_get_jit_path() {
-        let jit_path = get_jit_path(&None).unwrap();
+        let jit_path = get_jit_path().unwrap();
 
         assert!(jit_path.exists(), "JIT binary does not exist");
         assert!(
@@ -243,32 +231,6 @@ mod tests {
             path_str.contains("nitro/target/bin/jit"),
             "Path {:?} did not contain expected substring 'nitro/target/bin/jit'",
             jit_path
-        );
-    }
-
-    #[test]
-    fn test_get_jit_path_with_valid_custom_path() {
-        let temp_dir = tempdir::TempDir::new("jit-test").unwrap();
-        let jit_file = temp_dir.path().join("jit");
-        std::fs::write(&jit_file, b"fake-jit-binary").unwrap();
-
-        let path_str = jit_file.to_str().unwrap().to_string();
-        let result = get_jit_path(&Some(path_str));
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), jit_file);
-    }
-
-    #[test]
-    fn test_get_jit_path_with_nonexistent_custom_path() {
-        let path = "/tmp/definitely/does/not/exist/jit".to_string();
-        let result = get_jit_path(&Some(path.clone()));
-
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("Custom JIT path provided but not found"),
-            "Unexpected error message: {err_msg}",
         );
     }
 }

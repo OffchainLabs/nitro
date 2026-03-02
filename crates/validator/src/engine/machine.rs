@@ -203,7 +203,7 @@ impl JitProcessManager {
 }
 
 fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<JitMachine> {
-    let jit_path = get_jit_path(&None)?;
+    let jit_path = get_jit_path()?;
     let mut cmd = Command::new(jit_path);
 
     if jit_cranelift {
