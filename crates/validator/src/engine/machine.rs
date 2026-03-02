@@ -135,21 +135,13 @@ pub struct JitProcessManager {
 }
 
 impl JitProcessManager {
-    pub fn new_empty() -> Self {
-        Self {
-            wasm_memory_usage_limit: DEFAULT_WASM_MEMORY_USAGE_LIMIT,
-            machines: RwLock::new(HashMap::new()),
-            shutting_down: AtomicBool::new(false),
-        }
-    }
-
     pub fn new(locator: &MachineLocator) -> Result<Self> {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
             .iter()
             .cloned()
             .map(|root_meta| {
-                let root_path = replay_binary(root_meta.path);
+                let root_path = replay_binary(&root_meta.path);
                 let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;
                 Ok::<(ModuleRoot, Arc<JitMachine>), anyhow::Error>((
                     root_meta.module_root,
