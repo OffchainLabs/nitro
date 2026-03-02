@@ -3,6 +3,7 @@
 
 use crate::{GuestPtr, MemAccess};
 use alloc::string::String;
+use alloc::format;
 use core::cmp::min;
 
 /// Trait for accessing wavmio host state (globals, inbox, preimages).
