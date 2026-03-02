@@ -1066,7 +1066,7 @@ func testMemory(t *testing.T, jit bool) {
 	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
-	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	multiAddr := deployWasm(t, ctx, auth, l2client, watFile("multicall.wasm"))
 	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
 	growFixed := deployWasm(t, ctx, auth, l2client, watFile("grow/fixed"))
 	memWrite := deployWasm(t, ctx, auth, l2client, watFile("grow/mem-write"))
