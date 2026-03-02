@@ -6,15 +6,9 @@
 //! the same bytes in both compression and decompression.
 
 use crate::{Escape, Ptr, read_slice, replay::CustomEnvData};
-use brotli::{Allocator, CompressorWriter, Decompressor, HeapAlloc, SliceWrapperMut};
+use brotli::{BrotliStatus, Dictionary};
 use std::io::{Cursor, Read, Write};
 use wasmer::FunctionEnvMut;
-
-const STYLUS_DICTIONARY: &[u8] =
-    include_bytes!("../../../../arbitrator/brotli/src/dicts/stylus-program-11.lz");
-
-// Following Arbitrum's convention
-pub const BROTLI_SUCCESS: u32 = 1;
 
 pub fn brotli_compress(
     mut ctx: FunctionEnvMut<CustomEnvData>,
@@ -26,27 +20,30 @@ pub fn brotli_compress(
     window_size: u32,
     dictionary: u8,
 ) -> Result<u32, Escape> {
+    let dictionary: Dictionary = dictionary.try_into().unwrap();
+
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     let input = read_slice(in_buf_ptr, in_buf_len as usize, &memory)?;
-    let mut output = vec![];
-    {
-        let mut writer = CompressorWriter::new(&mut output, 4096, level, window_size);
-        match dictionary {
-            0 => (), // Empty dictionary
-            1 => writer.set_custom_dictionary(STYLUS_DICTIONARY),
-            _ => panic!("Unknown dictionary value: {dictionary}"),
+    let out_len = out_len_ptr.read(&memory)?;    
+    let mut output = Vec::with_capacity(out_len as usize);
+
+    let result = brotli::compress_fixed(
+        &input,
+        output.spare_capacity_mut(),
+        level,
+        window_size,
+        dictionary,
+    );
+    Ok(match result {
+        Ok(slice) => {
+            memory.write(out_buf_ptr.offset() as u64, slice)?;
+            out_len_ptr.write(&memory, slice.len() as u32)?;
+            BrotliStatus::Success
         }
-        writer.write_all(&input)?;
-    }
-    let out_len = out_len_ptr.read(&memory)?;
-    assert!(output.len() <= out_len as usize);
-
-    memory.write(out_buf_ptr.offset() as u64, &output)?;
-    out_len_ptr.write(&memory, output.len() as u32)?;
-
-    Ok(BROTLI_SUCCESS)
+        Err(status) => status,
+    } as u32)
 }
 
 pub fn brotli_decompress(
@@ -57,31 +54,22 @@ pub fn brotli_decompress(
     out_len_ptr: Ptr,
     dictionary: u8,
 ) -> Result<u32, Escape> {
-    // Keep the allocator alive for the duration of this method
-    let mut allocator = HeapAlloc::default();
+    let dictionary: Dictionary = dictionary.try_into().unwrap();
 
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
 
     let input = read_slice(in_buf_ptr, in_buf_len as usize, &memory)?;
-    let mut decompressor = match dictionary {
-        0 => Decompressor::new(Cursor::new(input), 4096),
-        1 => {
-            // This is slow(requires copying for every operation), but it might work now.
-            let mut buffer = allocator.alloc_cell(STYLUS_DICTIONARY.len());
-            buffer.slice_mut().copy_from_slice(STYLUS_DICTIONARY);
-            Decompressor::new_with_custom_dict(Cursor::new(input), 4096, buffer)
+    let out_len = out_len_ptr.read(&memory)?;    
+    let mut output = Vec::with_capacity(out_len as usize);
+
+    let result = brotli::decompress_fixed(&input, output.spare_capacity_mut(), dictionary);
+    Ok(match result {
+        Ok(slice) => {
+            memory.write(out_buf_ptr.offset() as u64, slice)?;
+            out_len_ptr.write(&memory, slice.len() as u32)?;
+            BrotliStatus::Success            
         }
-        _ => panic!("Unknown dictionary value: {dictionary}"),
-    };
-    let mut output = vec![];
-    decompressor.read_to_end(&mut output)?;
-
-    let out_len = out_len_ptr.read(&memory)?;
-    assert!(output.len() <= out_len as usize);
-
-    memory.write(out_buf_ptr.offset() as u64, &output)?;
-    out_len_ptr.write(&memory, output.len() as u32)?;
-
-    Ok(BROTLI_SUCCESS)
+        Err(status) => status,
+    } as u32)
 }

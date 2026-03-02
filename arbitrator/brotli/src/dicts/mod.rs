@@ -32,9 +32,11 @@ struct ForceSync<T>(T);
 
 unsafe impl<T> Sync for ForceSync<T> {}
 
+// This change is required by SP1. SP1 uses Rust 1.93.0 by default. When compiling nitro code using this
+// version, it will complain that `*const EncoderPreparedDictionary` is not Send, so ForceSync cannot be Sync.
 lazy_static! {
     /// Memoizes dictionary preperation.
-    static ref STYLUS_PROGRAM_DICT: ForceSync<*const EncoderPreparedDictionary> =
+    static ref STYLUS_PROGRAM_DICT: ForceSync<usize> =
         ForceSync(unsafe {
             let data = Dictionary::StylusProgram.slice().unwrap();
             let dict = BrotliEncoderPrepareDictionary(
@@ -75,7 +77,7 @@ impl Dictionary {
         level: u32,
     ) -> Result<Option<*const EncoderPreparedDictionary>, BrotliStatus> {
         Ok(match self {
-            Self::StylusProgram if level == 11 => Some(STYLUS_PROGRAM_DICT.0),
+            Self::StylusProgram if level == 11 => Some(STYLUS_PROGRAM_DICT.0 as _),
             Self::StylusProgram => return Err(BrotliStatus::Failure),
             _ => None,
         })

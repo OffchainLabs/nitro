@@ -6,6 +6,41 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 export TOP=$SCRIPT_DIR/..
 
 cd $TOP
+
+# Download RISC-V C toolchain if needed
+PARENT_DIR=""
+if [ ! -d "target/build-sp1/riscv" ]; then
+    TOOLCHAIN_URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.02.13/riscv64-elf-ubuntu-24.04-gcc.tar.xz"
+
+    echo "Downloading riscv-toolchain from $TOOLCHAIN_URL, note we are only downloading for x86-64 Linux for now, if you are using macOS you might need to install the toolchain manually for now."
+
+    mkdir -p target/build-sp1
+    curl -L "$TOOLCHAIN_URL" | tar -xJ -C target/build-sp1
+
+    echo "Testing riscv64-unknown-elf-gcc..."
+    ./target/build-sp1/riscv/bin/riscv64-unknown-elf-gcc --version
+fi
+
+# Build brotli for SP1
+cp sp1-crates/brotli_cmake_patch.txt brotli/CMakeLists.txt
+rm -rf target/build-sp1/brotli target/lib-sp1
+mkdir -p target/build-sp1/brotli
+cd target/build-sp1/brotli
+cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+  -DCMAKE_SYSTEM_NAME=Generic \
+  -DCMAKE_C_COMPILER=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-gcc \
+  -DCMAKE_C_FLAGS="-march=rv64im -mabi=lp64 -DBROTLI_BUILD_PORTABLE -mcmodel=medany -ffunction-sections -fdata-sections -fPIC" \
+  -DCMAKE_AR=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-ar \
+  -DCMAKE_RANLIB=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-ranlib \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=$TOP/target/lib-sp1 \
+  -DBROTLI_DISABLE_TESTS=ON \
+  $TOP/brotli
+make
+make install
+cd $TOP
+
 # Build nitro dependencies
 make build-replay-env test-go-deps
 rm -rf target/sp1
