@@ -615,24 +615,34 @@ pub fn poster_units_from_bytes(tx_bytes: &[u8], brotli_compression_level: u64) -
     TX_DATA_NON_ZERO_GAS_EIP2028.saturating_mul(l1_bytes)
 }
 
+/// Brotli window size matching the reference C implementation.
+const BROTLI_DEFAULT_WINDOW_SIZE: i32 = 22;
+
 /// Computes the brotli-compressed size at a given compression level.
+///
+/// Uses `BrotliCompressCustomAlloc` with a full-size input buffer to process
+/// the entire input in a single shot. The standard `BrotliCompress` uses a
+/// 4096-byte chunked input buffer which produces different output for inputs
+/// exceeding that size.
 pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
-    let level = level.min(11) as u32;
-    let mut output = Vec::new();
-    let params = brotli::enc::BrotliEncoderParams {
-        quality: level as i32,
-        ..Default::default()
-    };
-    if brotli::enc::BrotliCompress(
+    let quality = level.min(11) as i32;
+    let mut params = brotli::enc::BrotliEncoderParams::default();
+    params.quality = quality;
+    params.lgwin = BROTLI_DEFAULT_WINDOW_SIZE;
+
+    let mut compressed = Vec::new();
+    let mut input_buffer = data.to_vec();
+    let mut output_buffer = vec![0u8; data.len() + 1024];
+
+    match brotli::BrotliCompressCustomAlloc(
         &mut std::io::Cursor::new(data),
-        &mut output,
+        &mut compressed,
+        &mut input_buffer[..],
+        &mut output_buffer[..],
         &params,
-    )
-    .is_ok()
-    {
-        output.len() as u64
-    } else {
-        // Fallback: return uncompressed size if compression fails
-        data.len() as u64
+        brotli::enc::StandardAlloc::default(),
+    ) {
+        Ok(_) => compressed.len() as u64,
+        Err(_) => data.len() as u64,
     }
 }
