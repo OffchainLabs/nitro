@@ -1,7 +1,7 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use arbutil::Bytes32;
 
@@ -15,6 +15,6 @@ const REPLAY_WASM: &str = "replay.wasm";
 
 pub type ModuleRoot = Bytes32;
 
-pub fn replay_binary(binary_path: PathBuf) -> PathBuf {
+pub fn replay_binary(binary_path: &Path) -> PathBuf {
     binary_path.join(REPLAY_WASM)
 }
