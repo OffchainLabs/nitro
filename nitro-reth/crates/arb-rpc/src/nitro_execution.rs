@@ -9,8 +9,8 @@ use alloy_primitives::{Address, B256, U256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 
-/// Deserializer that accepts U256 as either hex string ("0x...") or decimal string ("12345").
-/// Go's `*big.Int` marshals to decimal, alloy's U256 expects hex.
+/// Deserializer that accepts U256 as hex string ("0x..."), decimal string ("12345"),
+/// or bare JSON number (12345). Go's `*big.Int` marshals to a bare JSON number.
 #[allow(dead_code)]
 mod u256_dec_or_hex {
     use alloy_primitives::U256;
@@ -27,11 +27,24 @@ mod u256_dec_or_hex {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-            U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
-        } else {
-            U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
+        let v = serde_json::Value::deserialize(deserializer)?;
+        match v {
+            serde_json::Value::Number(n) => {
+                if let Some(u) = n.as_u64() {
+                    Ok(U256::from(u))
+                } else {
+                    // Large number: parse from string representation
+                    U256::from_str_radix(&n.to_string(), 10).map_err(serde::de::Error::custom)
+                }
+            }
+            serde_json::Value::String(s) => {
+                if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+                    U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
+                } else {
+                    U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
+                }
+            }
+            _ => Err(serde::de::Error::custom("expected number or string for U256")),
         }
     }
 }
@@ -55,11 +68,20 @@ mod opt_u256_dec_or_hex {
     where
         D: Deserializer<'de>,
     {
-        let opt: Option<String> = Option::deserialize(deserializer)?;
-        match opt {
-            None => Ok(None),
-            Some(s) if s.is_empty() => Ok(None),
-            Some(s) => {
+        let v = serde_json::Value::deserialize(deserializer)?;
+        match v {
+            serde_json::Value::Null => Ok(None),
+            serde_json::Value::Number(n) => {
+                if let Some(u) = n.as_u64() {
+                    Ok(Some(U256::from(u)))
+                } else {
+                    let val = U256::from_str_radix(&n.to_string(), 10)
+                        .map_err(serde::de::Error::custom)?;
+                    Ok(Some(val))
+                }
+            }
+            serde_json::Value::String(s) if s.is_empty() => Ok(None),
+            serde_json::Value::String(s) => {
                 let val = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
                 {
                     U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)?
@@ -68,6 +90,7 @@ mod opt_u256_dec_or_hex {
                 };
                 Ok(Some(val))
             }
+            _ => Err(serde::de::Error::custom("expected number, string, or null for U256")),
         }
     }
 }
