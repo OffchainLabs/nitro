@@ -6,22 +6,17 @@
 use crate::{Escape, MaybeEscape, Ptr, read_bytes32, replay::CustomEnvData};
 use std::ops::Deref;
 use wasmer::{FunctionEnvMut, MemoryView};
+use caller_env::GuestPtr;
+use crate::caller_env_adapters::Sp1Env;
 
 pub fn get_global_state_bytes32(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     idx: u32,
     out_ptr: Ptr,
 ) -> MaybeEscape {
-    let (data, store) = ctx.data_and_store_mut();
-    let memory = data.memory.clone().unwrap().view(&store);
-
-    let Some(global) = data.input().large_globals.get(idx as usize) else {
-        return Escape::logical("global read out of bounds in wavmio.getGlobalStateBytes32");
-    };
-
-    memory.write(out_ptr.offset() as u64, &global[..32])?;
-
-    Ok(())
+    let (mut mem, state) = ctx.sp1_env();
+    caller_env::wavmio::get_global_state_bytes32(&mut mem, &state, idx, GuestPtr(out_ptr.offset()))
+        .map_err(Escape::Logical)
 }
 
 pub fn set_global_state_bytes32(
