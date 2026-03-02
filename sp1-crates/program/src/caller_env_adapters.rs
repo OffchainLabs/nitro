@@ -1,0 +1,142 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+use caller_env::wavmio::WavmState;
+use caller_env::{GuestPtr, MemAccess};
+use prover::binary_input::Input;
+use wasmer::{FunctionEnvMut, Memory, StoreMut};
+
+use crate::replay::CustomEnvData;
+
+/// Adapter implementing MemAccess over wasmer MemoryView.
+pub(crate) struct Sp1MemAccess<'s> {
+    pub memory: Memory,
+    pub store: StoreMut<'s>,
+}
+
+impl Sp1MemAccess<'_> {
+    fn view(&self) -> wasmer::MemoryView<'_> {
+        self.memory.view(&self.store)
+    }
+}
+
+impl MemAccess for Sp1MemAccess<'_> {
+    fn read_u8(&self, ptr: GuestPtr) -> u8 {
+        let mut buf = [0u8; 1];
+        self.view().read(ptr.to_u64(), &mut buf).unwrap();
+        buf[0]
+    }
+
+    fn read_u16(&self, ptr: GuestPtr) -> u16 {
+        let mut buf = [0u8; 2];
+        self.view().read(ptr.to_u64(), &mut buf).unwrap();
+        u16::from_le_bytes(buf)
+    }
+
+    fn read_u32(&self, ptr: GuestPtr) -> u32 {
+        let mut buf = [0u8; 4];
+        self.view().read(ptr.to_u64(), &mut buf).unwrap();
+        u32::from_le_bytes(buf)
+    }
+
+    fn read_u64(&self, ptr: GuestPtr) -> u64 {
+        let mut buf = [0u8; 8];
+        self.view().read(ptr.to_u64(), &mut buf).unwrap();
+        u64::from_le_bytes(buf)
+    }
+
+    fn write_u8(&mut self, ptr: GuestPtr, x: u8) {
+        self.view().write(ptr.to_u64(), &[x]).unwrap();
+    }
+
+    fn write_u16(&mut self, ptr: GuestPtr, x: u16) {
+        self.view().write(ptr.to_u64(), &x.to_le_bytes()).unwrap();
+    }
+
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) {
+        self.view().write(ptr.to_u64(), &x.to_le_bytes()).unwrap();
+    }
+
+    fn write_u64(&mut self, ptr: GuestPtr, x: u64) {
+        self.view().write(ptr.to_u64(), &x.to_le_bytes()).unwrap();
+    }
+
+    fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
+        let mut data = vec![0u8; len];
+        self.view().read(ptr.to_u64(), &mut data).unwrap();
+        data
+    }
+
+    fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
+        let mut buf = [0u8; N];
+        self.view().read(ptr.to_u64(), &mut buf).unwrap();
+        buf
+    }
+
+    fn write_slice(&mut self, ptr: GuestPtr, data: &[u8]) {
+        self.view().write(ptr.to_u64(), data).unwrap();
+    }
+}
+
+/// Newtype wrapper to implement WavmState for Input (orphan rule).
+pub(crate) struct WavmInput<'a>(pub &'a mut Input);
+
+impl WavmState for WavmInput<'_> {
+    fn get_u64_global(&self, idx: usize) -> Option<u64> {
+        self.0.small_globals.get(idx).copied()
+    }
+
+    fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
+        match self.0.small_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
+        self.0.large_globals.get(idx)
+    }
+
+    fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
+        match self.0.large_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
+        self.0.sequencer_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
+        self.0.delayed_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
+        self.0
+            .preimages
+            .get(&preimage_type)
+            .and_then(|m| m.get(hash))
+            .map(|v| v.as_slice())
+    }
+}
+
+/// Extraction trait for splitting FunctionEnvMut into MemAccess + WavmState.
+pub(crate) trait Sp1Env {
+    fn sp1_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>);
+}
+
+impl Sp1Env for FunctionEnvMut<'_, CustomEnvData> {
+    fn sp1_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>) {
+        let memory = self.data().memory.clone().unwrap();
+        let (data, store) = self.data_and_store_mut();
+        let input = data.input_mut();
+        (Sp1MemAccess { memory, store }, WavmInput(input))
+    }
+}

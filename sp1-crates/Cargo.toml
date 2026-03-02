@@ -5,6 +5,7 @@ members = ["program", "builder", "stylus-compiler-program", "prover", "runner"]
 
 [workspace.dependencies]
 arbutil = { path = "../crates/arbutil" }
+caller-env = { path = "../crates/caller-env", default-features = false }
 prover = { path = "prover", default-features = false, features = ["sp1"] }
 validation = { path = "../crates/validation", default-features = false }
 

@@ -5,6 +5,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+caller-env = { workspace = true }
 sp1-zkvm = { workspace = true }
 wasmer = { workspace = true }
 wasmer-types = { workspace = true }
