@@ -28,8 +28,7 @@ pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr)
-        .map_err(Escape::HostIO)
+    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
 }
 
 /// Reads 8-bytes of global state
@@ -164,7 +163,12 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, exec) = env.jit_env();
-    Ok(caller_env::wavmio::validate_certificate(&mem, exec, preimage_type, hash_ptr))
+    Ok(caller_env::wavmio::validate_certificate(
+        &mem,
+        exec,
+        preimage_type,
+        hash_ptr,
+    ))
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {

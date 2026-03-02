@@ -1,9 +1,9 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use core::cmp::min;
-use alloc::string::String;
 use crate::{GuestPtr, MemAccess};
+use alloc::string::String;
+use core::cmp::min;
 
 /// Trait for accessing wavmio host state (globals, inbox, preimages).
 pub trait WavmState {
@@ -53,11 +53,7 @@ pub fn get_global_state_u64<S: WavmState>(state: &S, idx: u32) -> Result<u64, St
 }
 
 /// Writes 8-bytes of global state.
-pub fn set_global_state_u64<S: WavmState>(
-    state: &mut S,
-    idx: u32,
-    val: u64,
-) -> Result<(), String> {
+pub fn set_global_state_u64<S: WavmState>(state: &mut S, idx: u32, val: u64) -> Result<(), String> {
     if !state.set_u64_global(idx as usize, val) {
         return Err("global write out of bounds in wavmio.setGlobalStateU64".into());
     }
