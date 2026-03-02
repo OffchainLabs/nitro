@@ -319,10 +319,7 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 	c.eventFilter = filter
 }
 
-// preCheckAddressFilter speculatively executes the transaction to detect
-// filtered addresses. Mirrors PostTxFilter from the sequencer path: executes
-// the tx, touches sender/to/retryable/event-log addresses, then checks
-// IsAddressFiltered.
+// preCheckAddressFilter speculatively executes the transaction to detect filtered addresses.
 func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender common.Address, header *types.Header) error {
 	if c.addressChecker == nil {
 		return nil
@@ -332,18 +329,16 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 		return err
 	}
 	statedb.SetAddressChecker(c.addressChecker)
-	statedb.SetTxContext(tx.Hash(), 0)
 
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
-	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
+	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
+	runCtx := core.NewMessageEthcallContext()
 
-	msg, err := core.TransactionToMessage(tx, types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion), header.BaseFee, core.NewMessageEthcallContext())
+	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
 	if err != nil {
-		return nil
+		return err
 	}
-	// Override gas and value fields so the speculative execution always
-	// proceeds past balance and gas checks. We only care about which
-	// addresses are touched during execution.
+
 	msg.GasLimit = math.MaxUint64
 	msg.GasPrice = new(big.Int)
 	msg.GasFeeCap = new(big.Int)
@@ -351,19 +346,14 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	msg.SkipNonceChecks = true
 	msg.SkipTransactionChecks = true
 
+	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
 	gasPool := core.GasPool(math.MaxUint64)
 	var usedGas uint64
 
+	statedb.SetTxContext(tx.Hash(), 0)
 	_, _, err = core.ApplyTransactionWithEVM(
-		msg,
-		&gasPool,
-		statedb,
-		header.Number,
-		header.Hash(),
-		header.Time,
-		tx,
-		&usedGas,
-		evm,
+		msg, &gasPool, statedb, header.Number, header.Hash(), header.Time,
+		tx, &usedGas, evm,
 		func(result *core.ExecutionResult) error {
 			statedb.TouchAddress(sender)
 			if tx.To() != nil {
@@ -374,8 +364,16 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 				statedb.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 			}
 			touchRetryableAddresses(statedb, tx)
-			if c.eventFilter != nil {
-				applyEventFilter(c.eventFilter, statedb)
+			applyEventFilter(c.eventFilter, statedb)
+
+			// Touch addresses from scheduled retry txes (redeems).
+			for _, scheduledTx := range result.ScheduledTxes {
+				if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
+					statedb.TouchAddress(inner.From)
+					if inner.To != nil {
+						statedb.TouchAddress(*inner.To)
+					}
+				}
 			}
 
 			if statedb.IsAddressFiltered() {
@@ -388,5 +386,6 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 		txPreCheckerAddressFilterRejectedCounter.Inc(1)
 		return err
 	}
+
 	return nil
 }

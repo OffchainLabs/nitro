@@ -332,7 +332,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
-	addressFilterService, err := addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
+	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address filter service: %w", err)
 	}

@@ -300,7 +300,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Wait for sequencer to process the retryable
-	seqReceipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
+	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
 	require.NoError(t, err)
 
 	// Verify ticket survived the failed auto-redeem
@@ -309,8 +309,10 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
 	require.NoError(t, err, "retryable ticket should exist after failed auto-redeem")
 
-	// Wait for forwarder to sync past the retryable submission block
-	waitForForwarderSync(t, ctx, forwarder, seqReceipt.BlockNumber.Uint64()+2)
+	// Wait for forwarder to sync to the sequencer's latest block
+	seqLatest, err := builder.L2.Client.BlockNumber(ctx)
+	require.NoError(t, err)
+	waitForForwarderSync(t, ctx, forwarder, seqLatest)
 
 	// Set filter on forwarder's prechecker targeting the contract
 	filter := newHashedChecker([]common.Address{contractAddr})
@@ -384,7 +386,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Wait for sequencer to process the retryable
-	seqReceipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
+	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
 	require.NoError(t, err)
 
 	// Verify ticket survived the failed auto-redeem
@@ -393,8 +395,10 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
 	require.NoError(t, err, "retryable ticket should exist after failed auto-redeem")
 
-	// Wait for forwarder to sync past the retryable submission block
-	waitForForwarderSync(t, ctx, forwarder, seqReceipt.BlockNumber.Uint64()+2)
+	// Wait for forwarder to sync to the sequencer's latest block
+	seqLatest, err := builder.L2.Client.BlockNumber(ctx)
+	require.NoError(t, err)
+	waitForForwarderSync(t, ctx, forwarder, seqLatest)
 
 	// Set filter on forwarder's prechecker targeting contract A
 	filter := newHashedChecker([]common.Address{destAddr})
