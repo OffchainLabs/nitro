@@ -112,18 +112,12 @@ fn internal_error(msg: impl Into<String>) -> jsonrpsee::types::ErrorObjectOwned 
 
 /// Decode the l2_msg field from the RPC message.
 ///
-/// The field is base64-encoded in JSON. Returns empty vec if None.
+/// Go's encoding/json always base64-encodes []byte fields. The base64 output
+/// can start with "0x" as valid base64 characters, so always decode as base64.
 fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
-    use alloy_primitives::hex;
     match l2_msg {
         Some(s) if !s.is_empty() => {
-            // Try hex first (0x prefix), then base64
-            if let Some(hex_str) = s.strip_prefix("0x") {
-                hex::decode(hex_str).map_err(|e| format!("hex decode: {e}"))
-            } else {
-                // Go sends base64-encoded bytes
-                base64_decode(s).map_err(|e| format!("base64 decode: {e}"))
-            }
+            base64_decode(s).map_err(|e| format!("base64 decode: {e}"))
         }
         _ => Ok(vec![]),
     }
