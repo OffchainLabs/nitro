@@ -608,6 +608,7 @@ checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 name = "caller-env"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "k256 0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "rand_pcg",
