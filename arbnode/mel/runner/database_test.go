@@ -5,6 +5,7 @@ package melrunner
 import (
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -160,5 +161,5 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.NoError(t, consensusDB.Put(key, delayedBytes))
 	// ReadDelayedMessage should fail with not part of accumulator error
 	_, err = melDB.ReadDelayedMessage(state, corruptIndex)
-	require.True(t, err.Error() == "delayed message message not part of the mel state accumulator")
+	require.True(t, strings.Contains(err.Error(), "delayed message not part of the mel state accumulator"))
 }
