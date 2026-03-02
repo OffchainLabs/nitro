@@ -66,7 +66,7 @@ func (r *DelayedMsgDatabase) ReadDelayedMessage(ctx context.Context, state *mel.
 	if err != nil {
 		return nil, err
 	}
-	delayedMsgBytes, err := rlp.EncodeToBytes(delayed.WithOnlyMELConsensusFields())
+	delayedMsgBytes, err := rlp.EncodeToBytes(delayed)
 	if err != nil {
 		return nil, err
 	}

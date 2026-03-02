@@ -68,22 +68,33 @@ jobs:
             fi
 
             # 3. Send 2 validation requests
-            RESPONSE1=$(curl -s -X POST http://localhost:4141/validation_validate \
-              -H "Content-Type: application/json" \
-              -d @${{ env.INPUT_FILE }})
+            RESPONSE1=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
+              '{jsonrpc: "2.0", id: 1, method: "validation_validate", params: [$input[0]]}' | \
+              curl -s -X POST http://localhost:4141/validation_validate \
+                -H "Content-Type: application/json" -d @-)
 
-            RESPONSE2=$(curl -s -X POST http://localhost:4141/validation_validate \
-              -H "Content-Type: application/json" \
-              -d @${{ env.INPUT_FILE }})
+            RESPONSE2=$(jq -n --slurpfile input ${{ env.INPUT_FILE }} \
+              '{jsonrpc: "2.0", id: 2, method: "validation_validate", params: [$input[0]]}' | \
+              curl -s -X POST http://localhost:4141/validation_validate \
+                -H "Content-Type: application/json" -d @-)
 
             # 4. Stop the server
             kill $SERVER_PID
             wait $SERVER_PID 2>/dev/null || true
 
-            # 5. Compare hashes      
-            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.BlockHash')
-            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.BlockHash')
-            
+            # 5. Verify JSON-RPC response IDs match request IDs
+            RESP_ID1=$(echo "$RESPONSE1" | jq -r '.id')
+            RESP_ID2=$(echo "$RESPONSE2" | jq -r '.id')
+
+            if [ "$RESP_ID1" != "1" ] || [ "$RESP_ID2" != "2" ]; then
+              echo "❌ $MODE_NAME JSON-RPC response ID mismatch: expected 1 and 2, got $RESP_ID1 and $RESP_ID2"
+              exit 1
+            fi
+
+            # 6. Compare hashes
+            SERVER_HASH1=$(echo "$RESPONSE1" | jq -r '.result.BlockHash')
+            SERVER_HASH2=$(echo "$RESPONSE2" | jq -r '.result.BlockHash')
+
             echo "JIT Hash:               $JIT_HASH"
             echo "Server response 1 Hash: $SERVER_HASH1"
             echo "Server response 2 Hash: $SERVER_HASH2"
