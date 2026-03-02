@@ -2,7 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::{WasmEnv, WasmEnvMut};
-use arbutil::{Bytes20, Bytes32};
+use arbutil::{Bytes20, Bytes32, PreimageType};
+use caller_env::wavmio::WavmState;
 use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use std::mem::{self, MaybeUninit};
@@ -130,5 +131,51 @@ impl ExecEnv for JitExecEnv<'_> {
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
             }
         }
+    }
+}
+
+impl WavmState for WasmEnv {
+    fn get_u64_global(&self, idx: usize) -> Option<u64> {
+        self.small_globals.get(idx).copied()
+    }
+
+    fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
+        match self.small_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
+        self.large_globals.get(idx).map(|b| &b.0)
+    }
+
+    fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
+        match self.large_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
+        self.sequencer_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
+        self.delayed_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
+        let pt: PreimageType = preimage_type.try_into().ok()?;
+        self.preimages
+            .get(&pt)
+            .and_then(|m| m.get(&Bytes32::from(*hash)))
+            .map(|v| v.as_slice())
     }
 }
