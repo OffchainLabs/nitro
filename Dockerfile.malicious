@@ -1,0 +1,207 @@
+# Dockerfile.malicious
+#
+# Option B: Build malicious native binaries, use official WASM machine files.
+# This ensures the module root matches the honest node exactly.
+#
+# Usage:
+#   docker build -f Dockerfile.malicious \
+#     --build-arg HONEST_IMAGE=offchainlabs/nitro-node:v3.9.5-66e42c4-validator \
+#     -t nitro-malicious .
+
+ARG HONEST_IMAGE=offchainlabs/nitro-node:v3.9.5-66e42c4-validator
+
+# ─── Extract artifacts from the honest image ────────────────────────────────
+FROM ${HONEST_IMAGE} AS honest
+
+# ─── Build brotli WASM (needed for prover header) ──────────────────────────
+FROM debian:bookworm-slim AS brotli-wasm-builder
+WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
+
+FROM scratch AS brotli-wasm-export
+COPY --from=brotli-wasm-builder /workspace/install/ /
+
+# ─── Build brotli native library ───────────────────────────────────────────
+FROM debian:bookworm-slim AS brotli-library-builder
+WORKDIR /workspace
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && \
+    apt-get install -y cmake make gcc git && \
+    ./scripts/build-brotli.sh -l -t /workspace/install/
+
+FROM scratch AS brotli-library-export
+COPY --from=brotli-library-builder /workspace/install/ /
+
+# ─── Build contracts (needed for Go solgen) ─────────────────────────────────
+FROM node:24.4.1-bookworm-slim AS contracts-builder
+RUN apt-get update && \
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
+WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
+COPY contracts/package.json contracts/yarn.lock contracts/
+RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
+COPY contracts-local contracts-local/
+COPY contracts contracts/
+COPY safe-smart-account safe-smart-account/
+COPY Makefile .
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+
+# ─── Build prover C header (cbindgen) ──────────────────────────────────────
+FROM rust:1.88.0-slim-bookworm AS prover-header-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make clang wabt cmake && \
+    cargo install --force cbindgen --version 0.24.3
+COPY arbitrator/Cargo.* arbitrator/
+COPY ./Makefile ./
+COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
+COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
+COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+
+FROM scratch AS prover-header-export
+COPY --from=prover-header-builder /workspace/target/ /
+
+# ─── Build malicious prover + JIT (Rust native binaries) ───────────────────
+FROM rust:1.88.0-slim-bookworm AS prover-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
+COPY arbitrator/Cargo.* arbitrator/
+COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
+COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+COPY arbitrator/prover/benches arbitrator/prover/benches
+COPY arbitrator/bench/Cargo.toml arbitrator/bench/
+COPY arbitrator/jit/Cargo.toml arbitrator/jit/
+COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
+# Pre-build dependencies with stubs for caching
+RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
+RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
+    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
+    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
+    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
+    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
+    rm arbitrator/prover/benches/merkle_bench.rs && \
+    rm arbitrator/bench/src/lib.rs
+# Copy real sources (with malicious changes in machine.rs and wavmio.rs)
+COPY ./Makefile ./
+COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
+COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN touch -a -m arbitrator/prover/src/lib.rs
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+
+FROM scratch AS prover-export
+COPY --from=prover-builder /workspace/target/ /
+
+# ─── Build malicious Go binaries ───────────────────────────────────────────
+FROM golang:1.25-bookworm AS node-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt
+COPY go.mod go.sum ./
+COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
+RUN go mod download
+COPY . ./
+COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
+COPY --from=contracts-builder workspace/contracts-local/out/ contracts-local/out/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
+COPY --from=contracts-builder workspace/.make/ .make/
+COPY --from=prover-header-export / target/
+COPY --from=brotli-library-export / target/
+COPY --from=prover-export / target/
+RUN mkdir -p target/bin
+COPY .nitro-tag.txt /nitro-tag.txt
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+
+# ─── Final image: malicious binaries + honest WASM machine files ───────────
+FROM debian:bookworm-slim AS nitro-malicious
+WORKDIR /home/user
+
+# Malicious native binaries
+COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/prover /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/dbconv /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/datool /usr/local/bin/
+COPY --from=prover-export /bin/jit /usr/local/bin/
+
+# WASM machine files from honest image (unchanged — same module root)
+COPY --from=honest /home/user/target/machines /home/user/target/machines
+
+COPY ./scripts/convert-databases.bash /usr/local/bin/
+
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    ca-certificates \
+    wabt \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils \
+    sysstat && \
+    /usr/sbin/update-ca-certificates && \
+    useradd -s /bin/bash user && \
+    mkdir -p /home/user/l1keystore && \
+    mkdir -p /home/user/.arbitrum/local/nitro && \
+    chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /var/log/* && \
+    nitro --version
+
+USER user
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro", "--validation.wasm.allowed-wasm-module-roots", "/home/user/target/machines" ]

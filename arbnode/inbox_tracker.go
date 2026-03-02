@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/malicious"
 )
 
 var (
@@ -39,14 +40,14 @@ type InboxTracker struct {
 	txStreamer     *TransactionStreamer
 	mutex          sync.Mutex
 	validator      *staker.BlockValidator
-	dapReaders     *daprovider.DAProviderRegistry
+	dapReaders     *daprovider.ReaderRegistry
 	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.ReaderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:             db,
 		txStreamer:     txStreamer,
@@ -233,9 +234,6 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 	if err != nil {
 		return 0, false, err
 	}
-	if batchCount == 0 {
-		return 0, false, nil
-	}
 	low := uint64(0)
 	high := batchCount - 1
 	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
@@ -293,11 +291,6 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
 		}
 	}
-
-	if t.txStreamer == nil {
-		return errors.New("txStreamer is nil")
-	}
-
 	messageCount, err := t.txStreamer.GetMessageCount()
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
@@ -317,15 +310,10 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 
 		blockMetadata, err := t.txStreamer.BlockMetadataAtMessageIndex(seqNum)
 		if err != nil {
-			log.Warn("error getting blockMetadata byte array from tx streamer", "err", err)
+			log.Warn("Error getting blockMetadata byte array from tx streamer", "err", err)
 		}
 
-		messageWithInfo := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: *message,
-			BlockHash:       blockHash,
-			BlockMetadata:   blockMetadata,
-		}
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(messageWithInfo, seqNum)
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash, blockMetadata)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
@@ -359,15 +347,15 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 }
 
 func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
-	msg, acc, parentChainBlockNumber, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
+	msg, acc, blockNum, err := t.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
 	if err != nil {
-		return msg, acc, parentChainBlockNumber, err
+		return msg, acc, blockNum, err
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(ctx, batchNum, parentChainBlockNumber)
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})
-	return msg, acc, parentChainBlockNumber, err
+	return msg, acc, blockNum, err
 }
 
 // does not return message, so does not need to fill in batchGasFields
@@ -655,6 +643,7 @@ func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
 	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
+	bytes = malicious.MutateInboxMessage(bytes)
 	return bytes, b.batches[0].BlockHash, err
 }
 
@@ -781,13 +770,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(
-		backend,
-		prevbatchmeta.DelayedMessageCount,
-		t.dapReaders,
-		daprovider.KeysetValidate,
-		t.txStreamer.chainConfig,
-	)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentPos := prevbatchmeta.MessageCount + 1
 	for {

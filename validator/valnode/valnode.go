@@ -1,5 +1,3 @@
-// Copyright 2023-2026, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package valnode
 
 import (
@@ -23,18 +21,24 @@ type WasmConfig struct {
 	RootPath               string   `koanf:"root-path"`
 	EnableWasmrootsCheck   bool     `koanf:"enable-wasmroots-check"`
 	AllowedWasmModuleRoots []string `koanf:"allowed-wasm-module-roots"`
+	MaliciousMode          bool     `koanf:"malicious-mode"`
+	AllowGasEstimateFail   bool     `koanf:"allow-gas-estimation-failure"`
 }
 
 func WasmConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (machine.wavm.br, replay.wasm)")
 	f.Bool(prefix+".enable-wasmroots-check", DefaultWasmConfig.EnableWasmrootsCheck, "enable check for compatibility of on-chain WASM module root with node")
 	f.StringSlice(prefix+".allowed-wasm-module-roots", DefaultWasmConfig.AllowedWasmModuleRoots, "list of WASM module roots or machine base paths to match against on-chain WasmModuleRoot")
+	f.Bool(prefix+".malicious-mode", DefaultWasmConfig.MaliciousMode, "enable malicious validation behaviors (experimental)")
+	f.Bool(prefix+".allow-gas-estimation-failure", DefaultWasmConfig.AllowGasEstimateFail, "allow sending OSP transactions even if gas estimation fails")
 }
 
 var DefaultWasmConfig = WasmConfig{
 	RootPath:               "",
 	EnableWasmrootsCheck:   true,
 	AllowedWasmModuleRoots: []string{},
+	MaliciousMode:          false,
+	AllowGasEstimateFail:   false,
 }
 
 type Config struct {
