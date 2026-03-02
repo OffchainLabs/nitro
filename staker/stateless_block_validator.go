@@ -55,10 +55,8 @@ type BlockValidatorRegistrer interface {
 }
 
 type InboxTrackerInterface interface {
-	BlockValidatorRegistrer
 	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
-	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
 	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
@@ -74,13 +72,11 @@ type TransactionStreamerInterface interface {
 }
 
 type MELValidatorInterface interface {
+	UpdateValidationTarget(pos arbutil.MessageIndex)
 	LatestValidatedMELState(context.Context) (*mel.State, error)
 	FetchMsgPreimagesAndRelevantState(ctx context.Context, l2BlockNum arbutil.MessageIndex) (*MsgPreimagesAndRelevantState, error)
+	FetchMessageOriginMELStateHash(pos arbutil.MessageIndex) (common.Hash, error)
 	ClearValidatedMsgPreimages(lastValidatedL2BlockNumber arbutil.MessageIndex)
-}
-
-type MELRunnerInterface interface {
-	GetState(ctx context.Context, blockNumber uint64) (*mel.State, error)
 }
 
 type InboxReaderInterface interface {

@@ -724,7 +724,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
 	}
-	if b.nodeConfig.BlockValidator.Enable {
+	if b.nodeConfig.BlockValidator.Enable && !b.nodeConfig.BlockValidator.EnableMEL {
 		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
@@ -740,7 +740,12 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	}
 	b.L1 = NewTestClient(b.ctx)
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig)
-	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	var locator *server_common.MachineLocator
+	if b.nodeConfig.UseUnifiedModuleRoot() {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	}
 	Require(t, err)
 	deployConfig := DeployConfig{
 		DeployBold:                 b.deployBold,
@@ -829,7 +834,12 @@ func buildOnParentChain(
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
 	fatalErrChan := make(chan error, 10)
-	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
+	var locator *server_common.MachineLocator
+	if nodeConfig.UseUnifiedModuleRoot() {
+		locator, err = server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
+	}
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
 	chainTestClient.ConsensusNode, err = arbnode.CreateConsensusNode(
@@ -857,7 +867,13 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
-	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
+	var locator *server_common.MachineLocator
+	var err error
+	if b.l3Config.nodeConfig.UseUnifiedModuleRoot() {
+		locator, err = server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
+	}
 	Require(t, err)
 
 	parentChainReaderConfig := headerreader.TestConfig
@@ -1015,7 +1031,12 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
 	fatalErrChan := make(chan error, 10)
-	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	var locator *server_common.MachineLocator
+	if b.nodeConfig.UseUnifiedModuleRoot() {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	}
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateConsensusNode(
@@ -1077,7 +1098,12 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
-	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	var locator *server_common.MachineLocator
+	if b.nodeConfig.UseUnifiedModuleRoot() {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath, server_common.WithMELEnabled())
+	} else {
+		locator, err = server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
+	}
 	Require(t, err)
 	var sequencerTxOpts *bind.TransactOpts
 	var validatorTxOpts *bind.TransactOpts
@@ -1688,10 +1714,7 @@ func currentRootModule(t *testing.T) common.Hash {
 	return locator.LatestWasmModuleRoot()
 }
 
-func AddMELValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
-	if !nodeConfig.MELValidatorRequired() {
-		return
-	}
+func AddMELValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1706,7 +1729,7 @@ func AddMELValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnod
 
 func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
 	if nodeConfig.MELValidator.Enable {
-		AddMELValNodeIfNeeded(t, ctx, nodeConfig, false, redisURL, wasmRootDir) // TODO: currently useJit is false remove this once jit validation for MEL is enabled
+		AddMELValNode(t, ctx, nodeConfig, false, redisURL, wasmRootDir) // TODO: currently useJit is false remove this once jit validation for MEL is enabled
 		return
 	}
 	if !nodeConfig.ValidatorRequired() || nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
