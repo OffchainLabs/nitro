@@ -89,10 +89,7 @@ pub async fn jsonrpc_dispatch(
         "validation_stylusArchs" => Ok(json!([validation::local_target()])),
         "validation_wasmModuleRoots" => Ok(json!(module_roots(state))),
         "validation_capacity" => Ok(json!(state.available_workers)),
-        "validation_validate" => match validate(&state, req).await {
-            Ok(value) => value,
-            Err(value) => return value,
-        },
+        "validation_validate" => validate(&state, &req.params).await,
         method => Err(format!("Method not found: {method}")),
     };
 
@@ -111,30 +108,16 @@ fn module_roots(state: Arc<ServerState>) -> Vec<String> {
         .collect()
 }
 
-async fn validate(
-    state: &Arc<ServerState>,
-    req: JsonRpcRequest,
-) -> Result<Result<Value, String>, Json<JsonRpcResponse<Value>>> {
-    let validation_input: ValidationInput = match req.params.first() {
-        Some(value) => match serde_json::from_value(value.clone()) {
-            Ok(input) => input,
-            Err(e) => {
-                return Err(Json(JsonRpcResponse::error(
-                    req.id,
-                    format!("Failed to parse validation input: {e}"),
-                )))
-            }
-        },
-        None => {
-            return Err(Json(JsonRpcResponse::error(
-                req.id,
-                "Missing params".into(),
-            )))
-        }
-    };
+async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, String> {
+    let validation_input: ValidationInput = params
+        .first()
+        .ok_or_else(|| "Missing params".to_string())
+        .and_then(|v| {
+            serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to parse validation input: {e}"))
+        })?;
 
-    let module_root: Option<ModuleRoot> = req
-        .params
+    let module_root: Option<ModuleRoot> = params
         .get(1)
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
@@ -144,20 +127,14 @@ async fn validate(
         module_root,
     };
 
-    let result = match &state.execution {
+    let Json(gs) = match &state.execution {
         ExecutionMode::Native { module_cache } => {
             validate_native(&state.locator, module_cache, request).await
         }
         ExecutionMode::Continuous { jit_manager } => {
             validate_continuous(&state.locator, jit_manager, request).await
         }
-    };
+    }?;
 
-    Ok(match result {
-        Ok(Json(gs)) => match serde_json::to_value(gs) {
-            Ok(v) => Ok(v),
-            Err(e) => Err(format!("Serialization error: {e}")),
-        },
-        Err(e) => Err(e),
-    })
+    serde_json::to_value(gs).map_err(|e| format!("Serialization error: {e}"))
 }
