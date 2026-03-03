@@ -369,18 +369,6 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	return msg.Message, common.Hash{}, nil
 }
 
-// CheckAccumulatorReorg checks if there has been a reorg in the parent chain by
-// comparing certain onchain accumulators. This is not relevant in MEL and is a no-op
-// in the message extractor simply to satisfy an interface.
-func (m *MessageExtractor) CheckAccumulatorReorg(
-	_ context.Context,
-	_ common.Hash,
-	_ uint64,
-	_ common.Hash,
-	_ uint64,
-) error {
-	return nil
-}
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)

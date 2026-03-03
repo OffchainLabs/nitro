@@ -43,13 +43,6 @@ type DelayedMessageFetcher interface {
 	FinalizedDelayedMessageAtPosition(
 		ctx context.Context, finalizedPosition uint64, lastDelayedAccumulator common.Hash, requestedPosition uint64,
 	) (*arbostypes.L1IncomingMessage, common.Hash, error)
-	CheckAccumulatorReorg(
-		ctx context.Context,
-		lastDelayedAcc common.Hash,
-		pos uint64,
-		finalizedHash common.Hash,
-		finalized uint64,
-	) error
 }
 
 type DelayedSequencer struct {
@@ -249,10 +242,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		if err := d.delayedCountFetcher.CheckAccumulatorReorg(
-			ctx, lastDelayedAcc, pos, finalizedHash, finalized,
-		); err != nil {
-			return err
+		if d.reader != nil {
+			if err := d.reader.Tracker().CheckAccumulatorReorg(
+				ctx, lastDelayedAcc, pos, finalizedHash, finalized,
+			); err != nil {
+				return err
+			}
 		}
 		for i, msg := range messages {
 			// #nosec G115
