@@ -51,6 +51,7 @@ var (
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
 	validatorMemoryLimitExceededGuage        = metrics.NewRegisteredGauge("arb/validator/memory/limit_exceeded", nil)
+	validatorTimeoutValidationsCounter       = metrics.NewRegisteredCounter("arb/validator/validations/timeout", nil)
 )
 
 // WorkerThrottler tracks concurrent validation executions for a spawner
@@ -329,6 +330,7 @@ type validationStatus struct {
 
 type validationDoneEntry struct {
 	Success         bool
+	Timeout         bool // true if the failure was due to a timeout (should not be fatal)
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
@@ -905,8 +907,13 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
-			return &pos, nil // if not fatal - retry
+			if validationStatus.DoneEntry.Timeout {
+				// Timeout is transient — log a warning and retry without crashing.
+				log.Warn("validation timed out, scheduling retry", "pos", pos, "start", validationStatus.DoneEntry.Start)
+			} else {
+				v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			}
+			return &pos, nil // retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
@@ -1029,6 +1036,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 			}()
 			markSuccess := len(runs) > 0
+			isTimeout := false
 
 			// validationStatus might be removed from under us
 			// trigger validation progress when done
@@ -1040,12 +1048,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				if err != nil {
 					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
-					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					if validator.IsTimeoutError(err) {
+						isTimeout = true
+						validatorTimeoutValidationsCounter.Inc(1)
+						log.Warn("validation timed out, will retry", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					} else {
+						log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					}
 					break
 				}
 				validatorValidValidationsCounter.Inc(1)
 			}
 			validationStatus.DoneEntry.Success = markSuccess
+			validationStatus.DoneEntry.Timeout = isTimeout
 			validatorProfileRunningHist.Update(validationStatus.profileStep())
 			replaced := validationStatus.replaceStatus(SendingValidation, ValidationDone)
 			if !replaced {
