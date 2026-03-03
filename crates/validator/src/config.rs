@@ -152,10 +152,7 @@ impl ServerConfig {
 pub fn get_jit_path() -> Result<PathBuf> {
     let current_exe = env::current_exe().context("failed to get path of current executable")?;
 
-    let exe_string = current_exe.to_string_lossy();
-    let is_test_env = exe_string.contains("test")
-        || exe_string.contains("deps")
-        || exe_string.contains("system_tests");
+    let is_test_env = current_exe.to_string_lossy().contains("deps");
 
     let candidate = if is_test_env {
         // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
