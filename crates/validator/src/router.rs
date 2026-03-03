@@ -19,20 +19,8 @@ pub fn create_router() -> Router<Arc<ServerState>> {
             get(spawner_endpoints::capacity),
         )
         .route(
-            &format!("{BASE_NAMESPACE}_name"),
-            get(spawner_endpoints::name),
-        )
-        .route(
-            &format!("{BASE_NAMESPACE}_stylusArchs"),
-            get(validation::local_target()),
-        )
-        .route(
             &format!("{BASE_NAMESPACE}_validate"),
             post(spawner_endpoints::validate),
-        )
-        .route(
-            &format!("{BASE_NAMESPACE}_wasmModuleRoots"),
-            get(spawner_endpoints::wasm_module_roots),
         )
         .layer(TraceLayer::new_for_http())
 }

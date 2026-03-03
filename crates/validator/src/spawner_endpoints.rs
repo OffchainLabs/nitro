@@ -15,8 +15,8 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use validation::{GoGlobalState, ValidationInput};
 
 /// JSON-RPC 2.0 request envelope.
@@ -126,20 +126,6 @@ pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoRespons
     format!("{:?}", state.available_workers)
 }
 
-pub async fn name() -> impl IntoResponse {
-    "Rust JIT validator"
-}
-
-pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    let module_roots: Vec<String> = state
-        .locator
-        .module_roots()
-        .iter()
-        .map(|root_meta| root_meta.module_root.to_string())
-        .collect();
-    format!("[{}]", module_roots.join(", "))
-}
-
 /// JSON-RPC 2.0 dispatch request with `method` field.
 #[derive(Deserialize)]
 pub struct DispatchJsonRpcRequest {
@@ -161,15 +147,7 @@ pub async fn jsonrpc_dispatch(
     let result = match req.method.as_str() {
         "validation_name" => Ok(json!("Rust JIT validator")),
         "validation_stylusArchs" => Ok(json!([validation::local_target()])),
-        "validation_wasmModuleRoots" => {
-            let roots: Vec<String> = state
-                .locator
-                .module_roots()
-                .iter()
-                .map(|m| m.module_root.to_string())
-                .collect();
-            Ok(json!(roots))
-        }
+        "validation_wasmModuleRoots" => Ok(json!(module_roots(state))),
         "validation_capacity" => Ok(json!(state.available_workers)),
         method => Err(format!("Method not found: {method}")),
     };
@@ -178,4 +156,13 @@ pub async fn jsonrpc_dispatch(
         Ok(value) => Json(JsonRpcResponse::success(id, value)),
         Err(msg) => Json(JsonRpcResponse::error(id, msg)),
     }
+}
+
+fn module_roots(state: Arc<ServerState>) -> Vec<String> {
+    state
+        .locator
+        .module_roots()
+        .iter()
+        .map(|root_meta| root_meta.module_root.to_string())
+        .collect()
 }
