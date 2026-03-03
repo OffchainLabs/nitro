@@ -24,10 +24,19 @@ import (
 
 const filterQueueSize = 100
 
+type filterRequest struct {
+	ctx  context.Context
+	hash common.Hash
+	// response fields, written by consumer before closing done
+	txHash common.Hash
+	err    error
+	done   chan struct{}
+}
+
 type TransactionFiltererAPI struct {
 	stopwaiter.StopWaiter
 
-	queue chan func()
+	queue chan *filterRequest
 
 	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
 	txOpts                         *bind.TransactOpts
@@ -40,46 +49,53 @@ func NewTransactionFiltererAPI(
 	return &TransactionFiltererAPI{
 		arbFilteredTransactionsManager: manager,
 		txOpts:                         txOpts,
-		queue:                          make(chan func(), filterQueueSize),
+		queue:                          make(chan *filterRequest, filterQueueSize),
 	}
 }
 
 func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 	t.StopWaiter.Start(ctx, t)
-	return stopwaiter.CallWhenTriggeredWith(t, func(_ context.Context, f func()) {
-		f()
+	return stopwaiter.CallWhenTriggeredWith(&t.StopWaiterSafe, func(_ context.Context, req *filterRequest) {
+		if req.ctx.Err() != nil {
+			req.err = req.ctx.Err()
+		} else {
+			req.txHash, req.err = t.filter(req.ctx, req.hash)
+		}
+		close(req.done)
 	}, t.queue)
+}
+
+func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
+	if t.arbFilteredTransactionsManager == nil {
+		return common.Hash{}, errors.New("sequencer client not set yet")
+	}
+	txOpts := *t.txOpts
+	txOpts.Context = ctx
+	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
+	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
+	if err != nil {
+		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
+		return common.Hash{}, err
+	}
+	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
+	return tx.Hash(), nil
 }
 
 // Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
-	reply := make(chan error, 1)
-	var txHash common.Hash
+	req := &filterRequest{
+		ctx:  ctx,
+		hash: txHashToFilter,
+		done: make(chan struct{}),
+	}
 	select {
-	case t.queue <- func() {
-		if t.arbFilteredTransactionsManager == nil {
-			reply <- errors.New("sequencer client not set yet")
-			return
-		}
-		txOpts := *t.txOpts
-		txOpts.Context = ctx
-		log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
-		tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
-		if err != nil {
-			log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
-			reply <- err
-			return
-		}
-		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
-		txHash = tx.Hash()
-		reply <- nil
-	}:
+	case t.queue <- req:
 	case <-ctx.Done():
 		return common.Hash{}, ctx.Err()
 	}
 	select {
-	case err := <-reply:
-		return txHash, err
+	case <-req.done:
+		return req.txHash, req.err
 	case <-ctx.Done():
 		return common.Hash{}, ctx.Err()
 	}
@@ -99,10 +115,7 @@ func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClien
 	if err != nil {
 		return err
 	}
-
-	t.queue <- func() {
-		t.arbFilteredTransactionsManager = arbFilteredTransactionsManager
-	}
+	t.arbFilteredTransactionsManager = arbFilteredTransactionsManager
 	return nil
 }
 
