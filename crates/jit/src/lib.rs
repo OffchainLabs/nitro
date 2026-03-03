@@ -16,6 +16,7 @@ mod arbcompress;
 mod arbcrypto;
 mod caller_env;
 pub mod machine;
+mod memory;
 mod prepare;
 pub mod program;
 pub mod stylus_backend;

@@ -3,6 +3,7 @@ pub mod platform;
 pub mod replay;
 pub mod stylus;
 mod caller_env_adapters;
+mod memory;
 
 use arbutil::{
     Bytes20, Bytes32,
