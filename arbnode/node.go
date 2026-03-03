@@ -758,7 +758,9 @@ func getInboxTrackerAndReader(
 	if err != nil {
 		return nil, nil, err
 	}
-	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
+	if err := txStreamer.SetInboxReaders(inboxReader, delayedBridge); err != nil {
+		return nil, nil, err
+	}
 
 	return inboxTracker, inboxReader, nil
 }
@@ -770,7 +772,6 @@ func getMessageExtractor(
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	arbDb ethdb.Database,
-	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
 	sequencerInbox *SequencerInbox,
 	l1Reader *headerreader.HeaderReader,
@@ -794,7 +795,6 @@ func getMessageExtractor(
 		l2Config,
 		deployInfo,
 		melDB,
-		txStreamer,
 		dapRegistry,
 		sequencerInbox,
 		l1Reader,
@@ -803,7 +803,6 @@ func getMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
-	txStreamer.SetMsgExtractor(msgExtractor)
 	return msgExtractor, nil
 }
 
@@ -1278,9 +1277,17 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry, sequencerInbox, l1Reader)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, dapRegistry, sequencerInbox, l1Reader)
 	if err != nil {
 		return nil, err
+	}
+	if messageExtractor != nil {
+		if err := txStreamer.SetMsgExtractor(messageExtractor); err != nil {
+			return nil, err
+		}
+		if err := messageExtractor.SetMessageConsumer(txStreamer); err != nil {
+			return nil, err
+		}
 	}
 
 	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)

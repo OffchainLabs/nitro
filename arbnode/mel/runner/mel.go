@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -130,7 +131,6 @@ func NewMessageExtractor(
 	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
-	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
 	seqBatchCounter SequencerBatchCountFetcher,
 	l1Reader *headerreader.HeaderReader,
@@ -146,7 +146,6 @@ func NewMessageExtractor(
 		chainConfig:         chainConfig,
 		addrs:               rollupAddrs,
 		melDB:               melDB,
-		msgConsumer:         msgConsumer,
 		dataProviders:       dapRegistry,
 		fsm:                 fsm,
 		caughtUpChan:        make(chan struct{}),
@@ -156,6 +155,17 @@ func NewMessageExtractor(
 	}, nil
 }
 
+func (m *MessageExtractor) SetMessageConsumer(consumer mel.MessageConsumer) error {
+	if m.Started() {
+		return errors.New("cannot set message consumer after start")
+	}
+	if m.msgConsumer != nil {
+		return errors.New("message consumer already set")
+	}
+	m.msgConsumer = consumer
+	return nil
+}
+
 // Starts a message extraction service using a stopwaiter. The message extraction
 // "loop" consists of a ticking a finite state machine (FSM) that performs different
 // responsibilities based on its current state. For instance, processing a parent chain
@@ -163,6 +173,9 @@ func NewMessageExtractor(
 // resilient to errors, and each error will retry the same FSM state after a specified interval
 // in this Start method.
 func (m *MessageExtractor) Start(ctxIn context.Context) error {
+	if m.msgConsumer == nil {
+		return errors.New("message consumer not set")
+	}
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
 	if m.config.ReadMode != "latest" {

@@ -38,13 +38,13 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
 		NewDatabase(rawdb.NewMemoryDatabase()),
-		&mockMessageConsumer{},
 		daprovider.NewDAProviderRegistry(),
 		nil,
 		nil,
 		nil,
 	)
 	require.NoError(t, err)
+	require.NoError(t, extractor.SetMessageConsumer(&mockMessageConsumer{}))
 	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 0)
 	require.NoError(t, extractor.Start(ctx))
 	// MEL will be stuck at the 'Start' state as HeadMelState is not yet stored in the db
@@ -80,12 +80,13 @@ func TestMessageExtractor(t *testing.T) {
 		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
 		melDB,
-		messageConsumer,
 		daprovider.NewDAProviderRegistry(),
 		nil,
 		nil,
 		nil,
 	)
+	require.NoError(t, err)
+	require.NoError(t, extractor.SetMessageConsumer(messageConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 	require.NoError(t, err)
 	require.True(t, extractor.CurrentFSMState() == Start)
