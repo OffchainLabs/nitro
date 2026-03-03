@@ -8,7 +8,6 @@ package arbtest
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,21 +97,4 @@ func projectRoot(t *testing.T) string {
 		Fatal(t, "could not determine project root")
 	}
 	return filepath.Dir(filepath.Dir(filename))
-}
-
-func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
-		if err == nil {
-			err := conn.Close()
-			if err != nil {
-				t.Logf("warning: failed to close connection: %v", err)
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	Fatal(t, "timed out waiting for TCP", addr)
 }
