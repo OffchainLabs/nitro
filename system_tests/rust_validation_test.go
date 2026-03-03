@@ -60,7 +60,7 @@ func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 		t.Skipf("Rust validator binary not found at %s; run 'make build-validation-server'", validatorBin)
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
+	addr := fmt.Sprintf("127.0.0.1:%d", getRandomPort(t))
 	cmd := exec.CommandContext(ctx, validatorBin, "--address", addr)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -98,23 +98,6 @@ func projectRoot(t *testing.T) string {
 		Fatal(t, "could not determine project root")
 	}
 	return filepath.Dir(filepath.Dir(filename))
-}
-
-func getFreePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	Require(t, err)
-	defer func(l net.Listener) {
-		err := l.Close()
-		if err != nil {
-			t.Logf("warning: failed to close listener: %v", err)
-		}
-	}(l)
-	tcpAddr, ok := l.Addr().(*net.TCPAddr)
-	if !ok {
-		Fatal(t, "listener address is not *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
