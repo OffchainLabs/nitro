@@ -1351,7 +1351,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		v.currentWasmModuleRoot = v.GetLatestWasmModuleRoot()
 	case "current":
 		if (v.currentWasmModuleRoot == common.Hash{}) {
-			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
+			return errors.New("wasmModuleRoot set to 'current' but not set from chain, enable staker in at least watchtower mode")
 		}
 	default:
 		v.currentWasmModuleRoot = common.HexToHash(currentModuleRoot)
