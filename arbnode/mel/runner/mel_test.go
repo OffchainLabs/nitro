@@ -41,6 +41,8 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 		&mockMessageConsumer{},
 		daprovider.NewDAProviderRegistry(),
 		nil,
+		nil,
+		nil,
 	)
 	require.NoError(t, err)
 	require.True(t, stuckFSMIndicatingGauge.Snapshot().Value() == 0)
@@ -80,6 +82,8 @@ func TestMessageExtractor(t *testing.T) {
 		melDB,
 		messageConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil,
+		nil,
 		nil,
 	)
 	extractor.StopWaiter.Start(ctx, extractor)

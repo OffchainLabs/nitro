@@ -10,7 +10,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
 use validation::{BatchInfo, UserWasm};
-use wasmer::{FrameInfo, Pages};
+use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
 
 mod arbcompress;
 mod arbcrypto;
@@ -22,6 +22,8 @@ pub mod stylus_backend;
 mod test;
 mod wasip1_stub;
 mod wavmio;
+
+pub use machine::CompiledModule;
 
 #[derive(Clone, Debug, Parser)]
 pub struct Opts {
@@ -141,15 +143,34 @@ pub struct RunResult {
     pub socket: Option<BufWriter<TcpStream>>,
 }
 
+/// Runs JIT validation, compiling the binary fresh each time.
+///
+/// For repeated executions with the same binary, prefer [`run_with_module`]
+/// with a cached [`CompiledModule`].
 pub fn run(opts: &Opts) -> eyre::Result<RunResult> {
     let (instance, env, mut store) = machine::create(opts)?;
-    let outcome = instance
-        .exports
-        .get_function("_start")?
-        .call(&mut store, &[]);
+    run_instance(instance, env, &mut store)
+}
 
-    let memory_used = instance.exports.get_memory("memory")?.view(&store).size();
-    let env = env.as_mut(&mut store);
+/// Runs JIT validation using a pre-compiled module.
+///
+/// This avoids re-compiling the WASM binary on every call. The caller is
+/// responsible for caching the [`CompiledModule`] (e.g. per `module_root`).
+pub fn run_with_module(compiled: &CompiledModule, opts: &Opts) -> eyre::Result<RunResult> {
+    let (instance, env, mut store) = machine::instantiate(compiled, opts)?;
+    run_instance(instance, env, &mut store)
+}
+
+/// Runs a fully-instantiated WASM instance and collects the result.
+fn run_instance(
+    instance: Instance,
+    env: FunctionEnv<machine::WasmEnv>,
+    store: &mut Store,
+) -> eyre::Result<RunResult> {
+    let outcome = instance.exports.get_function("_start")?.call(store, &[]);
+
+    let memory_used = instance.exports.get_memory("memory")?.view(store).size();
+    let env = env.as_mut(store);
 
     let mut result = RunResult {
         memory_used,
