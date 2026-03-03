@@ -3,7 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::{jit_env, JitExecEnv};
+use crate::caller_env::jit_env;
 use crate::machine::{Escape, WasmEnvMut};
 use caller_env::{self, wasip1_stub::Errno, GuestPtr};
 
@@ -15,8 +15,8 @@ macro_rules! wrap {
     ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
         $(
             pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-                let (mut mem, state) = jit_env(&mut src);
-                Ok(caller_env::wasip1_stub::$func_name(&mut mem, &mut JitExecEnv { wenv: state.0 }, $($arg_name),*))
+                let (mut mem, mut state) = jit_env(&mut src);
+                Ok(caller_env::wasip1_stub::$func_name(&mut mem, &mut state, $($arg_name),*))
             }
         )*
     };

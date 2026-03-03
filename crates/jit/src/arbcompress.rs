@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::caller_env::{jit_env, JitExecEnv};
+use crate::caller_env::jit_env;
 use crate::machine::Escape;
 use crate::machine::WasmEnvMut;
 use brotli::{BrotliStatus, Dictionary};
@@ -12,8 +12,8 @@ macro_rules! wrap {
         $(
             #[allow(clippy::too_many_arguments)]
             pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-                let (mut mem, state) = jit_env(&mut src);
-                Ok(caller_env::brotli::$func_name(&mut mem, &mut JitExecEnv { wenv: state.0 }, $($arg_name),*))
+                let (mut mem, mut state) = jit_env(&mut src);
+                Ok(caller_env::brotli::$func_name(&mut mem, &mut state, $($arg_name),*))
             }
         )*
     };

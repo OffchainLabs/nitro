@@ -14,10 +14,6 @@ pub struct JitMemAccess<'s> {
     pub store: StoreMut<'s>,
 }
 
-pub struct JitExecEnv<'s> {
-    pub wenv: &'s mut WasmEnv,
-}
-
 /// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
 pub(crate) struct JitWavm<'e>(pub WasmEnvMut<'e>);
 
@@ -120,17 +116,17 @@ impl MemAccess for JitMemAccess<'_> {
     }
 }
 
-impl ExecEnv for JitExecEnv<'_> {
+impl ExecEnv for JitState<'_> {
     fn advance_time(&mut self, ns: u64) {
-        self.wenv.go_state.time += ns;
+        self.0.go_state.time += ns;
     }
 
     fn get_time(&self) -> u64 {
-        self.wenv.go_state.time
+        self.0.go_state.time
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        self.wenv.go_state.rng.next_u32()
+        self.0.go_state.rng.next_u32()
     }
 
     fn print_string(&mut self, bytes: &[u8]) {
