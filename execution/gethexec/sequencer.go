@@ -520,7 +520,7 @@ type Sequencer struct {
 	addressFilterService *addressfilter.FilterService
 }
 
-func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
+func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -539,7 +539,7 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 	}
 
 	var addressFilterService *addressfilter.FilterService
-	addressFilterService, err = addressfilter.NewFilterService(ctx, &config.TransactionFiltering.AddressFilter)
+	addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create restricted addr service: %w", err)
 	}
@@ -576,6 +576,7 @@ func NewSequencer(ctx context.Context, execEngine *ExecutionEngine, l1Reader *he
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
+	execEngine.SetEventFilter(eventFilter)
 	return s, nil
 }
 
