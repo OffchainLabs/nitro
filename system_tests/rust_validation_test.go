@@ -110,7 +110,11 @@ func getFreePort(t *testing.T) int {
 			t.Logf("warning: failed to close listener: %v", err)
 		}
 	}(l)
-	return l.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		Fatal(t, "listener address is not *net.TCPAddr")
+	}
+	return tcpAddr.Port
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
