@@ -79,9 +79,9 @@ impl MemAccess for Sp1MemAccess<'_> {
 }
 
 /// Newtype wrapper to implement WavmState for Input (orphan rule).
-pub(crate) struct WavmInput<'a>(pub &'a mut Input);
+pub(crate) struct Sp1State<'a>(pub &'a mut Input);
 
-impl WavmState for WavmInput<'_> {
+impl WavmState for Sp1State<'_> {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
         self.0.small_globals.get(idx).copied()
     }
@@ -132,12 +132,12 @@ pub(crate) struct Sp1Wavm<'e>(pub FunctionEnvMut<'e, CustomEnvData>);
 
 impl WavmEnv for Sp1Wavm<'_> {
     type Mem<'a> = Sp1MemAccess<'a> where Self: 'a;
-    type State<'a> = WavmInput<'a> where Self: 'a;
+    type State<'a> = Sp1State<'a> where Self: 'a;
 
-    fn wavm_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>) {
+    fn wavm_env(&mut self) -> (Sp1MemAccess<'_>, Sp1State<'_>) {
         let memory = self.0.data().memory.clone().unwrap();
         let (data, store) = self.0.data_and_store_mut();
         let input = data.input_mut();
-        (Sp1MemAccess { memory, store }, WavmInput(input))
+        (Sp1MemAccess { memory, store }, Sp1State(input))
     }
 }
