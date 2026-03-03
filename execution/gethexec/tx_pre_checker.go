@@ -25,7 +25,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	arbosutil "github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -319,6 +318,38 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 	c.eventFilter = filter
 }
 
+// speculativeFilterExec executes a transaction speculatively and runs resultFilter
+// to check for filtered addresses. Returns ErrArbTxFilter if a filtered address is touched.
+func (c *TxPreChecker) speculativeFilterExec(
+	statedb *state.StateDB, evm *vm.EVM, signer types.Signer, runCtx *core.MessageRunContext,
+	header *types.Header, tx *types.Transaction, txIndex int,
+	resultFilter func(*core.ExecutionResult) error,
+) error {
+	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
+	if err != nil {
+		return err
+	}
+	msg.GasLimit = math.MaxUint64
+	msg.GasPrice = new(big.Int)
+	msg.GasFeeCap = new(big.Int)
+	msg.GasTipCap = new(big.Int)
+	msg.SkipNonceChecks = true
+	msg.SkipTransactionChecks = true
+
+	gasPool := core.GasPool(math.MaxUint64)
+	var usedGas uint64
+	statedb.SetTxContext(tx.Hash(), txIndex)
+	_, _, err = core.ApplyTransactionWithEVM(
+		msg, &gasPool, statedb, header.Number, header.Hash(), header.Time,
+		tx, &usedGas, evm, resultFilter,
+	)
+	if errors.Is(err, state.ErrArbTxFilter) {
+		txPreCheckerAddressFilterRejectedCounter.Inc(1)
+		return err
+	}
+	return nil
+}
+
 // preCheckAddressFilter speculatively executes the transaction to detect filtered addresses.
 func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender common.Address, header *types.Header) error {
 	if c.addressChecker == nil {
@@ -333,38 +364,12 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
 	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
 	runCtx := core.NewMessageEthcallContext()
-
-	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
-	if err != nil {
-		return err
-	}
-
-	msg.GasLimit = math.MaxUint64
-	msg.GasPrice = new(big.Int)
-	msg.GasFeeCap = new(big.Int)
-	msg.GasTipCap = new(big.Int)
-	msg.SkipNonceChecks = true
-	msg.SkipTransactionChecks = true
-
 	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
-	gasPool := core.GasPool(math.MaxUint64)
-	var usedGas uint64
 
-	statedb.SetTxContext(tx.Hash(), 0)
-	_, _, err = core.ApplyTransactionWithEVM(
-		msg, &gasPool, statedb, header.Number, header.Hash(), header.Time,
-		tx, &usedGas, evm,
+	var scheduledTxes types.Transactions
+	err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, tx, 0,
 		func(result *core.ExecutionResult) error {
-			statedb.TouchAddress(sender)
-			if tx.To() != nil {
-				statedb.TouchAddress(*tx.To())
-			}
-			txType := tx.Type()
-			if arbosutil.DoesTxTypeAlias(&txType) {
-				statedb.TouchAddress(arbosutil.InverseRemapL1Address(sender))
-			}
-			touchRetryableAddresses(statedb, tx)
-			applyEventFilter(c.eventFilter, statedb)
+			touchFilterAddresses(statedb, c.eventFilter, tx, sender)
 
 			// Touch addresses from scheduled retry txes (redeems).
 			for _, scheduledTx := range result.ScheduledTxes {
@@ -379,12 +384,32 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 			if statedb.IsAddressFiltered() {
 				return state.ErrArbTxFilter
 			}
+			scheduledTxes = result.ScheduledTxes
 			return nil
 		},
 	)
-	if errors.Is(err, state.ErrArbTxFilter) {
-		txPreCheckerAddressFilterRejectedCounter.Inc(1)
+	if err != nil {
 		return err
+	}
+
+	// Execute scheduled redeems to capture their event logs for filtering.
+	for i, redeemTx := range scheduledTxes {
+		redeemSender, err := types.Sender(signer, redeemTx)
+		if err != nil {
+			continue
+		}
+		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, i+1,
+			func(result *core.ExecutionResult) error {
+				touchFilterAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
+				if statedb.IsAddressFiltered() {
+					return state.ErrArbTxFilter
+				}
+				return nil
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
