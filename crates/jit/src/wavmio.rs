@@ -6,7 +6,8 @@ use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
 use arbutil::Color;
-use caller_env::GuestPtr;
+use ::caller_env::wavmio as caller_env;
+use ::caller_env::GuestPtr;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -16,36 +17,30 @@ use std::{
 use validation::local_target;
 use validation::transfer::receive_validation_input;
 
-/// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::get_global_state_bytes32(&mut mem, exec, idx, out_ptr)
-        .map_err(Escape::HostIO)
+    caller_env::get_global_state_bytes32(&mut mem, exec, idx, out_ptr).map_err(Escape::HostIO)
 }
 
-/// Writes 32-bytes of global state.
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
+    caller_env::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
 }
 
-/// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::get_global_state_u64(exec, idx).map_err(Escape::HostIO)
+    caller_env::get_global_state_u64(exec, idx).map_err(Escape::HostIO)
 }
 
-/// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::set_global_state_u64(exec, idx, val).map_err(Escape::HostIO)
+    caller_env::set_global_state_u64(exec, idx, val).map_err(Escape::HostIO)
 }
 
-/// Reads an inbox message.
 pub fn read_inbox_message(
     mut env: WasmEnvMut,
     msg_num: u64,
@@ -54,11 +49,9 @@ pub fn read_inbox_message(
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::read_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
-        .map_err(Escape::HostIO)
+    caller_env::read_inbox_message(&mut mem, exec, msg_num, offset, out_ptr).map_err(Escape::HostIO)
 }
 
-/// Reads a delayed inbox message.
 pub fn read_delayed_inbox_message(
     mut env: WasmEnvMut,
     msg_num: u64,
@@ -67,11 +60,10 @@ pub fn read_delayed_inbox_message(
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-    caller_env::wavmio::read_delayed_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
+    caller_env::read_delayed_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
         .map_err(Escape::HostIO)
 }
 
-/// Retrieves the preimage of the given hash.
 #[deprecated] // we're just keeping this around until we no longer need to validate old replay binaries
 pub fn resolve_keccak_preimage(
     env: WasmEnvMut,
@@ -127,12 +119,11 @@ fn resolve_preimage_impl(
             .get(&preimage_type)
             .and_then(|m| m.get(&hash))
         {
-            // Check if preimage rehashes to the provided hash. Exclude blob preimages
             let calculated_hash: [u8; 32] = match preimage_type {
                 PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
                 PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
                 PreimageType::EthVersionedHash => *hash,
-                PreimageType::DACertificate => *hash, // Can't verify DACertificate hash, just accept it
+                PreimageType::DACertificate => *hash,
             };
             if calculated_hash != *hash {
                 return Escape::hostio(format!(
@@ -145,7 +136,7 @@ fn resolve_preimage_impl(
         }
     }
 
-    caller_env::wavmio::resolve_preimage(
+    caller_env::resolve_preimage(
         &mut mem,
         exec,
         preimage_type,
@@ -163,7 +154,7 @@ pub fn validate_certificate(
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
     let (mem, exec) = env.jit_env();
-    Ok(caller_env::wavmio::validate_certificate(
+    Ok(caller_env::validate_certificate(
         &mem,
         exec,
         preimage_type,
