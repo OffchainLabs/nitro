@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use caller_env::wavmio::{WavmEnv, WavmState};
-use caller_env::{GuestPtr, MemAccess};
-use prover::binary_input::Input;
+use caller_env::{ExecEnv, GuestPtr, MemAccess};
+use rand::RngCore;
 use wasmer::{FunctionEnvMut, Memory, StoreMut};
 
 use crate::replay::CustomEnvData;
@@ -78,16 +78,34 @@ impl MemAccess for Sp1MemAccess<'_> {
     }
 }
 
-/// Newtype wrapper to implement WavmState for Input (orphan rule).
-pub(crate) struct Sp1State<'a>(pub &'a mut Input);
+/// Newtype wrapper to implement WavmState and ExecEnv over CustomEnvData.
+pub(crate) struct Sp1State<'a>(pub &'a mut CustomEnvData);
+
+impl ExecEnv for Sp1State<'_> {
+    fn advance_time(&mut self, ns: u64) {
+        self.0.time += ns;
+    }
+
+    fn get_time(&self) -> u64 {
+        self.0.time
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        self.0.pcg.next_u32()
+    }
+
+    fn print_string(&mut self, bytes: &[u8]) {
+        crate::platform::print_string(2, bytes);
+    }
+}
 
 impl WavmState for Sp1State<'_> {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
-        self.0.small_globals.get(idx).copied()
+        self.0.input().small_globals.get(idx).copied()
     }
 
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
-        match self.0.small_globals.get_mut(idx) {
+        match self.0.input_mut().small_globals.get_mut(idx) {
             Some(g) => {
                 *g = val;
                 true
@@ -97,11 +115,11 @@ impl WavmState for Sp1State<'_> {
     }
 
     fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
-        self.0.large_globals.get(idx)
+        self.0.input().large_globals.get(idx)
     }
 
     fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
-        match self.0.large_globals.get_mut(idx) {
+        match self.0.input_mut().large_globals.get_mut(idx) {
             Some(g) => {
                 *g = val;
                 true
@@ -111,15 +129,16 @@ impl WavmState for Sp1State<'_> {
     }
 
     fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
-        self.0.sequencer_messages.get(&num).map(|v| v.as_slice())
+        self.0.input().sequencer_messages.get(&num).map(|v| v.as_slice())
     }
 
     fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
-        self.0.delayed_messages.get(&num).map(|v| v.as_slice())
+        self.0.input().delayed_messages.get(&num).map(|v| v.as_slice())
     }
 
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
         self.0
+            .input()
             .preimages
             .get(&preimage_type)
             .and_then(|m| m.get(hash))
@@ -137,7 +156,11 @@ impl WavmEnv for Sp1Wavm<'_> {
     fn wavm_env(&mut self) -> (Sp1MemAccess<'_>, Sp1State<'_>) {
         let memory = self.0.data().memory.clone().unwrap();
         let (data, store) = self.0.data_and_store_mut();
-        let input = data.input_mut();
-        (Sp1MemAccess { memory, store }, Sp1State(input))
+        (Sp1MemAccess { memory, store }, Sp1State(data))
     }
+}
+
+/// Converts a wasmer `Ptr` (WasmPtr<u32>) to a caller-env `GuestPtr`.
+pub(crate) fn gp(p: crate::Ptr) -> GuestPtr {
+    GuestPtr(p.offset())
 }

@@ -1,16 +1,12 @@
 //! wavmio functions — thin wrappers delegating to caller_env::wavmio.
 
 use crate::{
-    Escape, MaybeEscape, Ptr, caller_env_adapters::Sp1Wavm, read_bytes32, replay::CustomEnvData,
+    Escape, MaybeEscape, Ptr, caller_env_adapters::{Sp1Wavm, gp}, read_bytes32,
+    replay::CustomEnvData,
 };
 use ::caller_env::wavmio as caller_env;
-use ::caller_env::GuestPtr;
 use core::ops::Deref;
 use wasmer::{FunctionEnvMut, MemoryView};
-
-fn gp(p: Ptr) -> GuestPtr {
-    GuestPtr(p.offset())
-}
 
 pub fn get_global_state_bytes32(ctx: FunctionEnvMut<CustomEnvData>, idx: u32, out_ptr: Ptr) -> MaybeEscape {
     caller_env::get_global_state_bytes32(&mut Sp1Wavm(ctx), idx, gp(out_ptr)).map_err(Escape::Logical)
