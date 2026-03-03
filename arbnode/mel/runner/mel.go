@@ -341,34 +341,32 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 	return false
 }
 
-// FinalizedDelayedMessageAtPosition checks if the delayed message at the
-// requested position is finalized based on the finalized position, and returns the message
-// if it is finalized. If the message is not finalized, it returns a boolean
-// indicating that as well. An error is returned if there was an issue
-// fetching the finalized position or the message.
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
 	_ common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, bool, error) {
+) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
 	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
-			return nil, common.Hash{}, false, err
+		if strings.Contains(err.Error(), "not found") {
+			return nil, common.Hash{}, nil
 		}
-		// If the message was not found, return nil.
-		return nil, common.Hash{}, false, nil
+		return nil, common.Hash{}, err
 	}
 	if requestedPosition > finalizedPos {
-		// Message isn't finalized yet, return false.
-		return nil, common.Hash{}, false, nil
+		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 	}
 	msg, err := m.GetDelayedMessage(requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, false, err
+		return nil, common.Hash{}, err
 	}
-	return msg.Message, common.Hash{}, true, nil
+	return msg.Message, common.Hash{}, nil
 }
 
 // CheckAccumulatorReorg checks if there has been a reorg in the parent chain by

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -41,7 +42,7 @@ type DelayedMessageFetcher interface {
 	GetDelayedCount() (uint64, error)
 	FinalizedDelayedMessageAtPosition(
 		ctx context.Context, finalizedPosition uint64, lastDelayedAccumulator common.Hash, requestedPosition uint64,
-	) (*arbostypes.L1IncomingMessage, common.Hash, bool, error)
+	) (*arbostypes.L1IncomingMessage, common.Hash, error)
 	CheckAccumulatorReorg(
 		ctx context.Context,
 		lastDelayedAcc common.Hash,
@@ -232,18 +233,14 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, isFinalized, err := d.delayedCountFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
-		if err != nil {
-			return err
-		}
-		if msg == nil {
-			return nil
-		}
-		if !isFinalized {
+		msg, acc, err := d.delayedCountFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
+		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
 			// Message isn't finalized yet; wait for it to be
 			// TODO: Old impl uses parentChainBlockNumber instead of pos. Figure out if safe.
 			d.waitingForFinalizedBlock = &pos
 			break
+		} else if err != nil {
+			return err
 		}
 		lastDelayedAcc = acc
 		messages = append(messages, msg)
