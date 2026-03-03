@@ -18,31 +18,25 @@ pub struct JitExecEnv<'s> {
     pub wenv: &'s mut WasmEnv,
 }
 
-pub(crate) trait JitEnv<'a> {
-    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv);
-}
-
-impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
-    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv) {
-        let memory = self.data().memory.clone().unwrap();
-        let (wenv, store) = self.data_and_store_mut();
-        (JitMemAccess { memory, store }, wenv)
-    }
-}
-
 /// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
 pub(crate) struct JitWavm<'e>(pub WasmEnvMut<'e>);
 
 /// Newtype wrapping &mut WasmEnv to implement WavmState (orphan rule).
 pub(crate) struct JitState<'a>(pub &'a mut WasmEnv);
 
+/// Extracts (JitMemAccess, JitState) from a WasmEnvMut in place.
+pub(crate) fn jit_env<'a>(env: &'a mut WasmEnvMut) -> (JitMemAccess<'a>, JitState<'a>) {
+    let memory = env.data().memory.clone().unwrap();
+    let (wenv, store) = env.data_and_store_mut();
+    (JitMemAccess { memory, store }, JitState(wenv))
+}
+
 impl WavmEnv for JitWavm<'_> {
     type Mem<'a> = JitMemAccess<'a> where Self: 'a;
     type State<'a> = JitState<'a> where Self: 'a;
 
     fn wavm_env(&mut self) -> (JitMemAccess<'_>, JitState<'_>) {
-        let (mem, wenv) = self.0.jit_env();
-        (mem, JitState(wenv))
+        jit_env(&mut self.0)
     }
 }
 

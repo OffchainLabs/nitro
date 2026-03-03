@@ -3,7 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::JitEnv;
+use crate::caller_env::jit_env;
 use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use crate::stylus_backend::{exec_wasm, MessageFromCothread};
 use arbutil::evm::api::Gas;
@@ -73,7 +73,7 @@ pub fn activate_v2(
     err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    let (mut mem, _) = env.jit_env();
+    let (mut mem, _) = jit_env(&mut env);
     let wasm = mem.read_slice(wasm_ptr, wasm_size as usize);
     let codehash = &mem.read_bytes32(codehash);
     let debug = debug != 0;
@@ -125,21 +125,21 @@ pub fn new_program(
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
+    let (mut mem, state) = jit_env(&mut env);
     let compiled_hash = mem.read_bytes32(compiled_hash_ptr);
     let calldata = mem.read_slice(calldata_ptr, calldata_size as usize);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
     let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
-    let Some(module) = exec.module_asms.get(&compiled_hash).cloned() else {
+    let Some(module) = state.0.module_asms.get(&compiled_hash).cloned() else {
         return Err(Escape::Failure(format!(
             "module hash {:?} not found in {:?}",
             compiled_hash,
-            exec.module_asms.keys()
+            state.0.module_asms.keys()
         )));
     };
 
-    launch_program_thread(exec, module, calldata, config, evm_data, gas)
+    launch_program_thread(state.0, module, calldata, config, evm_data, gas)
 }
 
 pub fn launch_program_thread(
@@ -173,8 +173,8 @@ pub fn launch_program_thread(
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
-    let (_, exec) = env.jit_env();
-    start_program_with_wasm_env(exec, module)
+    let (_, state) = jit_env(&mut env);
+    start_program_with_wasm_env(state.0, module)
 }
 
 /// program_requires_prepare
@@ -216,8 +216,8 @@ pub fn start_program_with_wasm_env(exec: &mut WasmEnv, module: u32) -> Result<u3
 /// gets information about request according to id
 /// request_id MUST be last request id returned from start_program or send_response
 pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
-    let msg = get_last_msg(exec, id)?;
+    let (mut mem, state) = jit_env(&mut env);
+    let msg = get_last_msg(state.0, id)?;
     mem.write_u32(len_ptr, msg.req_data.len() as u32);
     Ok(msg.req_type)
 }
@@ -235,8 +235,8 @@ pub fn get_last_msg(exec: &mut WasmEnv, id: u32) -> Result<MessageFromCothread, 
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> MaybeEscape {
-    let (mut mem, exec) = env.jit_env();
-    let msg = get_last_msg(exec, id)?;
+    let (mut mem, state) = jit_env(&mut env);
+    let msg = get_last_msg(state.0, id)?;
     mem.write_slice(data_ptr, &msg.req_data);
     Ok(())
 }
@@ -252,11 +252,11 @@ pub fn set_response(
     raw_data_ptr: GuestPtr,
     raw_data_len: u32,
 ) -> MaybeEscape {
-    let (mem, exec) = env.jit_env();
+    let (mem, state) = jit_env(&mut env);
     let result = mem.read_slice(result_ptr, result_len as usize);
     let raw_data = mem.read_slice(raw_data_ptr, raw_data_len as usize);
 
-    set_response_with_wasm_env(exec, id, gas, result, raw_data)
+    set_response_with_wasm_env(state.0, id, gas, result, raw_data)
 }
 
 pub fn set_response_with_wasm_env(
@@ -274,8 +274,8 @@ pub fn set_response_with_wasm_env(
 /// MUST be called right after set_response to the same id
 /// returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
-    let (_, exec) = env.jit_env();
-    let thread = exec.threads.last_mut().unwrap();
+    let (_, state) = jit_env(&mut env);
+    let thread = state.0.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != req_id {
         return Escape::hostio("get_request id doesn't match");
@@ -287,8 +287,8 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
 
 /// removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
-    let (_, exec) = env.jit_env();
-    pop_with_wasm_env(exec)
+    let (_, state) = jit_env(&mut env);
+    pop_with_wasm_env(state.0)
 }
 
 pub fn pop_with_wasm_env(exec: &mut WasmEnv) -> MaybeEscape {
@@ -377,7 +377,7 @@ pub fn create_evm_data_v2(
     cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let (mut mem, _) = env.jit_env();
+    let (mut mem, _) = jit_env(&mut env);
 
     let evm_data = EvmData {
         arbos_version,

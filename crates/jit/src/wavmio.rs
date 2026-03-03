@@ -96,12 +96,12 @@ fn resolve_preimage_impl(
 
     #[cfg(debug_assertions)]
     {
-        use crate::caller_env::JitEnv;
+        use crate::caller_env::jit_env;
         use arbutil::PreimageType;
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
 
-        let (mut mem, exec) = env.jit_env();
+        let (mut mem, state) = jit_env(&mut env);
         let hash = mem.read_bytes32(hash_ptr);
 
         let Ok(preimage_type) = preimage_type.try_into() else {
@@ -109,7 +109,7 @@ fn resolve_preimage_impl(
             return Ok(0);
         };
 
-        if let Some(preimage) = exec
+        if let Some(preimage) = state.0
             .preimages
             .get(&preimage_type)
             .and_then(|m| m.get(&hash))
