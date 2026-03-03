@@ -66,7 +66,7 @@ pub struct ValidationRequest {
 
 /// JSON-RPC 2.0 dispatch request with `method` field.
 #[derive(Deserialize)]
-pub struct DispatchJsonRpcRequest {
+pub struct JsonRpcRequest {
     pub id: Value,
     pub method: String,
     #[serde(default)]
@@ -80,7 +80,7 @@ pub struct DispatchJsonRpcRequest {
 /// logic based on the method name.
 pub async fn jsonrpc_dispatch(
     State(state): State<Arc<ServerState>>,
-    Json(req): Json<DispatchJsonRpcRequest>,
+    Json(req): Json<JsonRpcRequest>,
 ) -> Json<JsonRpcResponse<Value>> {
     let id = req.id.clone();
 
@@ -113,7 +113,7 @@ fn module_roots(state: Arc<ServerState>) -> Vec<String> {
 
 async fn validate(
     state: &Arc<ServerState>,
-    req: DispatchJsonRpcRequest,
+    req: JsonRpcRequest,
 ) -> Result<Result<Value, String>, Json<JsonRpcResponse<Value>>> {
     let validation_input: ValidationInput = match req.params.first() {
         Some(value) => match serde_json::from_value(value.clone()) {
