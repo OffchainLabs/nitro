@@ -16,20 +16,21 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use serde_json::{json, Value};
 use validation::{GoGlobalState, ValidationInput};
 
 /// JSON-RPC 2.0 request envelope.
 #[derive(Deserialize)]
 pub struct JsonRpcRequest {
-    pub id: serde_json::Value,
-    pub params: Vec<serde_json::Value>,
+    pub id: Value,
+    pub params: Vec<Value>,
 }
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]
 pub struct JsonRpcResponse<T: Serialize> {
     pub jsonrpc: &'static str,
-    pub id: serde_json::Value,
+    pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,7 +44,7 @@ pub struct JsonRpcError {
 }
 
 impl<T: Serialize> JsonRpcResponse<T> {
-    fn success(id: serde_json::Value, result: T) -> Self {
+    fn success(id: Value, result: T) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -52,7 +53,7 @@ impl<T: Serialize> JsonRpcResponse<T> {
         }
     }
 
-    fn error(id: serde_json::Value, message: String) -> Self {
+    fn error(id: Value, message: String) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -137,4 +138,44 @@ pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl In
         .map(|root_meta| root_meta.module_root.to_string())
         .collect();
     format!("[{}]", module_roots.join(", "))
+}
+
+/// JSON-RPC 2.0 dispatch request with `method` field.
+#[derive(Deserialize)]
+pub struct DispatchJsonRpcRequest {
+    pub id: Value,
+    pub method: String,
+}
+
+/// Standard JSON-RPC 2.0 dispatch endpoint (`POST /`).
+///
+/// go-ethereum's `rpc.Client` sends all requests to the base URL with the
+/// `method` field in the JSON body. This handler dispatches to the appropriate
+/// logic based on the method name.
+pub async fn jsonrpc_dispatch(
+    State(state): State<Arc<ServerState>>,
+    Json(req): Json<DispatchJsonRpcRequest>,
+) -> Json<JsonRpcResponse<Value>> {
+    let id = req.id;
+
+    let result = match req.method.as_str() {
+        "validation_name" => Ok(json!("Rust JIT validator")),
+        "validation_stylusArchs" => Ok(json!([validation::local_target()])),
+        "validation_wasmModuleRoots" => {
+            let roots: Vec<String> = state
+                .locator
+                .module_roots()
+                .iter()
+                .map(|m| m.module_root.to_string())
+                .collect();
+            Ok(json!(roots))
+        }
+        "validation_capacity" => Ok(json!(state.available_workers)),
+        method => Err(format!("Method not found: {method}")),
+    };
+
+    match result {
+        Ok(value) => Json(JsonRpcResponse::success(id, value)),
+        Err(msg) => Json(JsonRpcResponse::error(id, msg)),
+    }
 }
