@@ -871,8 +871,9 @@ func getMessageExtractor(
 	dapRegistry *daprovider.DAProviderRegistry,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
-		// HeadMelStateBlockNumKey shouldn't exist, because if it does that means node was started earlier
-		// with MEL and now trying to run with inbox reader and tracker. Error to prevent DB corruption
+		// Prevent database corruption. If HeadMelStateBlockNumKey exists,
+		// it indicates this node was previously run with Message Extraction (MEL) enabled.
+		// Switching back to the standard inbox reader/tracker is not allowed.
 		hasHeadMelStateBlockNumKey, err := consensusDB.Has(schema.HeadMelStateBlockNumKey)
 		if err != nil {
 			return nil, err
