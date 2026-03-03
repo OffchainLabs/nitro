@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -196,18 +197,22 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 		}
 		batchData, err := batchFetcher(batchNum, parentChainBlockNumber)
 		if err != nil {
-			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			if msg.LegacyBatchGasCost == nil {
+				return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+			}
+			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
 		} else {
 			gotHash := crypto.Keccak256Hash(batchData)
 			if gotHash != batchHash {
 				return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 			}
 			msg.BatchDataStats = GetDataStats(batchData)
+
+			legacyCost := LegacyCostForStats(msg.BatchDataStats)
+			msg.LegacyBatchGasCost = &legacyCost
 		}
 	}
 
-	legacyCost := LegacyCostForStats(msg.BatchDataStats)
-	msg.LegacyBatchGasCost = &legacyCost
 	return nil
 }
 

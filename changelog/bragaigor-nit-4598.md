@@ -1,2 +1,2 @@
 ### Fixed
- - Always return error if batchFetcher returns error
+ - If batchFetcher returns error use existing LegacyBatchGasCost value
