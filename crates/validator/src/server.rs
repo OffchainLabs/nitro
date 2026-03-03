@@ -119,7 +119,7 @@ mod tests {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 
@@ -143,9 +143,9 @@ mod tests {
             assert!(machines.get(&module_root).is_none());
         }
 
-        // 9. Verify same request from above fails expectadly
+        // 9. Verify same request from above fails expectedly
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 

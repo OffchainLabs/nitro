@@ -12,7 +12,6 @@ use crate::engine::execution::{validate_continuous, validate_native};
 use crate::engine::ModuleRoot;
 use crate::ServerState;
 use axum::extract::State;
-use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -120,10 +119,6 @@ pub async fn validate(
         Ok(Json(global_state)) => Json(JsonRpcResponse::success(id, global_state)),
         Err(e) => Json(JsonRpcResponse::error(id, e)),
     }
-}
-
-pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("{:?}", state.available_workers)
 }
 
 /// JSON-RPC 2.0 dispatch request with `method` field.

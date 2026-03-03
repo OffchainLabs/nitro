@@ -7,20 +7,14 @@ use axum::Router;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
-const BASE_NAMESPACE: &str = "/validation";
-
 pub fn create_router() -> Router<Arc<ServerState>> {
-    Router::new()
+    let router = Router::new()
         // Standard JSON-RPC 2.0 dispatch endpoint (used by go-ethereum's rpc.Client)
         .route("/", post(spawner_endpoints::jsonrpc_dispatch))
         // Path-based endpoints (used by direct HTTP callers)
-        .route(
-            &format!("{BASE_NAMESPACE}_capacity"),
-            get(spawner_endpoints::capacity),
-        )
-        .route(
-            &format!("{BASE_NAMESPACE}_validate"),
-            post(spawner_endpoints::validate),
-        )
-        .layer(TraceLayer::new_for_http())
+        .route("/validate", post(spawner_endpoints::validate))
+        .layer(TraceLayer::new_for_http());
+    #[cfg(test)]
+    let router = router.route("/test", get(|| async { "OK" }));
+    router
 }
