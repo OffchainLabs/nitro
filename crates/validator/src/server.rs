@@ -3,12 +3,15 @@
 use anyhow::Result;
 use std::future::Future;
 use std::sync::Arc;
+use axum::Router;
+use axum::routing::{get, post};
 use tokio::net::TcpListener;
 use tokio::signal;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::ServerState;
-use crate::router::create_router;
+use crate::spawner_endpoints;
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
@@ -26,6 +29,18 @@ async fn run_server_internal(
     info!("Shutdown signal received. Running cleanup...");
 
     state.shutdown().await
+}
+
+fn create_router() -> Router<Arc<ServerState>> {
+    let router = Router::new()
+        .route("/", post(spawner_endpoints::jsonrpc_dispatch))
+        .layer(TraceLayer::new_for_http());
+
+    // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
+    #[cfg(test)]
+    let router = router.route("/test", get(|| async { "OK" }));
+
+    router
 }
 
 // Listens for Ctrl+C or SIGTERM
