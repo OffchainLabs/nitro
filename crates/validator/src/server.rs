@@ -1,10 +1,10 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use anyhow::Result;
+use axum::routing::post;
+use axum::Router;
 use std::future::Future;
 use std::sync::Arc;
-use axum::Router;
-use axum::routing::{get, post};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tower_http::trace::TraceLayer;
@@ -38,7 +38,7 @@ fn create_router() -> Router<Arc<ServerState>> {
 
     // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
     #[cfg(test)]
-    let router = router.route("/test", get(|| async { "OK" }));
+    let router = router.route("/test", axum::routing::get(|| async { "OK" }));
 
     router
 }

@@ -16,14 +16,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use validation::{GoGlobalState, ValidationInput};
-
-/// JSON-RPC 2.0 request envelope.
-#[derive(Deserialize)]
-pub struct JsonRpcRequest {
-    pub id: Value,
-    pub params: Vec<Value>,
-}
+use validation::ValidationInput;
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]
@@ -71,31 +64,76 @@ pub struct ValidationRequest {
     pub module_root: Option<ModuleRoot>,
 }
 
-pub async fn validate(
-    State(state): State<Arc<ServerState>>,
-    Json(rpc_request): Json<JsonRpcRequest>,
-) -> Json<JsonRpcResponse<GoGlobalState>> {
-    let id = rpc_request.id;
+/// JSON-RPC 2.0 dispatch request with `method` field.
+#[derive(Deserialize)]
+pub struct DispatchJsonRpcRequest {
+    pub id: Value,
+    pub method: String,
+    #[serde(default)]
+    pub params: Vec<Value>,
+}
 
-    let validation_input: ValidationInput = match rpc_request.params.first() {
+/// Standard JSON-RPC 2.0 dispatch endpoint (`POST /`).
+///
+/// go-ethereum's `rpc.Client` sends all requests to the base URL with the
+/// `method` field in the JSON body. This handler dispatches to the appropriate
+/// logic based on the method name.
+pub async fn jsonrpc_dispatch(
+    State(state): State<Arc<ServerState>>,
+    Json(req): Json<DispatchJsonRpcRequest>,
+) -> Json<JsonRpcResponse<Value>> {
+    let id = req.id.clone();
+
+    let result = match req.method.as_str() {
+        "validation_name" => Ok(json!("Rust JIT validator")),
+        "validation_stylusArchs" => Ok(json!([validation::local_target()])),
+        "validation_wasmModuleRoots" => Ok(json!(module_roots(state))),
+        "validation_capacity" => Ok(json!(state.available_workers)),
+        "validation_validate" => match validate(&state, req).await {
+            Ok(value) => value,
+            Err(value) => return value,
+        },
+        method => Err(format!("Method not found: {method}")),
+    };
+
+    match result {
+        Ok(value) => Json(JsonRpcResponse::success(id, value)),
+        Err(msg) => Json(JsonRpcResponse::error(id, msg)),
+    }
+}
+
+fn module_roots(state: Arc<ServerState>) -> Vec<String> {
+    state
+        .locator
+        .module_roots()
+        .iter()
+        .map(|root_meta| root_meta.module_root.to_string())
+        .collect()
+}
+
+async fn validate(
+    state: &Arc<ServerState>,
+    req: DispatchJsonRpcRequest,
+) -> Result<Result<Value, String>, Json<JsonRpcResponse<Value>>> {
+    let validation_input: ValidationInput = match req.params.first() {
         Some(value) => match serde_json::from_value(value.clone()) {
             Ok(input) => input,
             Err(e) => {
-                return Json(JsonRpcResponse::error(
-                    id,
+                return Err(Json(JsonRpcResponse::error(
+                    req.id,
                     format!("Failed to parse validation input: {e}"),
-                ))
+                )))
             }
         },
         None => {
-            return Json(JsonRpcResponse::error(
-                id,
-                "Missing validation input in params".to_string(),
-            ))
+            return Err(Json(JsonRpcResponse::error(
+                req.id,
+                "Missing params".into(),
+            )))
         }
     };
 
-    let module_root: Option<ModuleRoot> = rpc_request
+    let module_root: Option<ModuleRoot> = req
         .params
         .get(1)
         .and_then(|v| v.as_str())
@@ -115,49 +153,11 @@ pub async fn validate(
         }
     };
 
-    match result {
-        Ok(Json(global_state)) => Json(JsonRpcResponse::success(id, global_state)),
-        Err(e) => Json(JsonRpcResponse::error(id, e)),
-    }
-}
-
-/// JSON-RPC 2.0 dispatch request with `method` field.
-#[derive(Deserialize)]
-pub struct DispatchJsonRpcRequest {
-    pub id: Value,
-    pub method: String,
-}
-
-/// Standard JSON-RPC 2.0 dispatch endpoint (`POST /`).
-///
-/// go-ethereum's `rpc.Client` sends all requests to the base URL with the
-/// `method` field in the JSON body. This handler dispatches to the appropriate
-/// logic based on the method name.
-pub async fn jsonrpc_dispatch(
-    State(state): State<Arc<ServerState>>,
-    Json(req): Json<DispatchJsonRpcRequest>,
-) -> Json<JsonRpcResponse<Value>> {
-    let id = req.id;
-
-    let result = match req.method.as_str() {
-        "validation_name" => Ok(json!("Rust JIT validator")),
-        "validation_stylusArchs" => Ok(json!([validation::local_target()])),
-        "validation_wasmModuleRoots" => Ok(json!(module_roots(state))),
-        "validation_capacity" => Ok(json!(state.available_workers)),
-        method => Err(format!("Method not found: {method}")),
-    };
-
-    match result {
-        Ok(value) => Json(JsonRpcResponse::success(id, value)),
-        Err(msg) => Json(JsonRpcResponse::error(id, msg)),
-    }
-}
-
-fn module_roots(state: Arc<ServerState>) -> Vec<String> {
-    state
-        .locator
-        .module_roots()
-        .iter()
-        .map(|root_meta| root_meta.module_root.to_string())
-        .collect()
+    Ok(match result {
+        Ok(Json(gs)) => match serde_json::to_value(gs) {
+            Ok(v) => Ok(v),
+            Err(e) => Err(format!("Serialization error: {e}")),
+        },
+        Err(e) => Err(e),
+    })
 }
