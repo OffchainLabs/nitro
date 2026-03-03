@@ -14,7 +14,7 @@ import (
 
 func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
 	// Start from the latest MEL state we have in the database
-	melState, err := m.melDB.GetHeadMelState(ctx)
+	melState, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return m.config.RetryInterval, err
 	}

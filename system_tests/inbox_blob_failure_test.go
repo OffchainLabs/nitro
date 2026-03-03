@@ -89,7 +89,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	var batchNum uint64
 	for i := 0; i < 30; i++ {
 		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(ctx, arbutil.MessageIndex(l2Block.NumberU64()))
+		batchNum, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
 		Require(t, err)
 		if found {
 			break
@@ -102,9 +102,9 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Record sequencer state before starting follower
-	seqDelayed, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount(ctx, 0)
+	seqDelayed, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount(0)
 	Require(t, err)
-	seqBatch, err := builder.L2.ConsensusNode.MessageExtractor.GetBatchCount(ctx)
+	seqBatch, err := builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
 	Require(t, err)
 
 	// Build follower with failing blob reader
@@ -124,9 +124,9 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Check if follower is out of sync
-	follDelayed, err := testClientB.ConsensusNode.MessageExtractor.GetDelayedCount(ctx, 0)
+	follDelayed, err := testClientB.ConsensusNode.MessageExtractor.GetDelayedCount(0)
 	Require(t, err)
-	follBatch, err := testClientB.ConsensusNode.MessageExtractor.GetBatchCount(ctx)
+	follBatch, err := testClientB.ConsensusNode.MessageExtractor.GetBatchCount()
 	Require(t, err)
 
 	if follDelayed == seqDelayed && follBatch < seqBatch {
@@ -190,7 +190,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
 		if verifyReceipt != nil {
 			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
-			_, found, err := builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(ctx, arbutil.MessageIndex(verifyBlock.NumberU64()))
+			_, found, err := builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
 			if err == nil && found {
 				break
 			}

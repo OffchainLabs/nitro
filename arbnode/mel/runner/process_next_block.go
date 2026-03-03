@@ -89,10 +89,6 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	if err != nil {
 		return m.config.RetryInterval, err
 	}
-	// After processing every 100 parent chain blocks, print a status log
-	if postState.ParentChainBlockNumber%100 == 0 {
-		log.Info("Message extraction successful", "parentChainBlockNumber", postState.ParentChainBlockNumber, "msgCount", postState.MsgCount)
-	}
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{
 		preStateMsgCount: preState.MsgCount,

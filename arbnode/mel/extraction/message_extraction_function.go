@@ -23,7 +23,6 @@ import (
 // Defines a method that can read a delayed message from an external database.
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
-		ctx context.Context,
 		state *mel.State,
 		index uint64,
 	) (*mel.DelayedInboxMessage, error)
