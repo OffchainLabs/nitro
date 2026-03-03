@@ -3,7 +3,7 @@
 
 use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32, PreimageType};
-use caller_env::wavmio::WavmState;
+use caller_env::wavmio::{WavmEnv, WavmState};
 use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use std::mem::{self, MaybeUninit};
@@ -27,6 +27,22 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
         let memory = self.data().memory.clone().unwrap();
         let (wenv, store) = self.data_and_store_mut();
         (JitMemAccess { memory, store }, wenv)
+    }
+}
+
+/// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
+pub(crate) struct JitWavm<'e>(pub WasmEnvMut<'e>);
+
+/// Newtype wrapping &mut WasmEnv to implement WavmState (orphan rule).
+pub(crate) struct JitState<'a>(pub &'a mut WasmEnv);
+
+impl WavmEnv for JitWavm<'_> {
+    type Mem<'a> = JitMemAccess<'a> where Self: 'a;
+    type State<'a> = JitState<'a> where Self: 'a;
+
+    fn wavm_env(&mut self) -> (JitMemAccess<'_>, JitState<'_>) {
+        let (mem, wenv) = self.0.jit_env();
+        (mem, JitState(wenv))
     }
 }
 
@@ -134,13 +150,13 @@ impl ExecEnv for JitExecEnv<'_> {
     }
 }
 
-impl WavmState for WasmEnv {
+impl WavmState for JitState<'_> {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
-        self.small_globals.get(idx).copied()
+        self.0.small_globals.get(idx).copied()
     }
 
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
-        match self.small_globals.get_mut(idx) {
+        match self.0.small_globals.get_mut(idx) {
             Some(g) => {
                 *g = val;
                 true
@@ -150,11 +166,11 @@ impl WavmState for WasmEnv {
     }
 
     fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
-        self.large_globals.get(idx).map(|b| &b.0)
+        self.0.large_globals.get(idx).map(|b| &b.0)
     }
 
     fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
-        match self.large_globals.get_mut(idx) {
+        match self.0.large_globals.get_mut(idx) {
             Some(g) => {
                 *g = val.into();
                 true
@@ -164,16 +180,17 @@ impl WavmState for WasmEnv {
     }
 
     fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
-        self.sequencer_messages.get(&num).map(|v| v.as_slice())
+        self.0.sequencer_messages.get(&num).map(|v| v.as_slice())
     }
 
     fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
-        self.delayed_messages.get(&num).map(|v| v.as_slice())
+        self.0.delayed_messages.get(&num).map(|v| v.as_slice())
     }
 
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
         let pt: PreimageType = preimage_type.try_into().ok()?;
-        self.preimages
+        self.0
+            .preimages
             .get(&pt)
             .and_then(|m| m.get(&Bytes32::from(*hash)))
             .map(|v| v.as_slice())

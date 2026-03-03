@@ -1,10 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    caller_env::JitEnv,
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-};
+use crate::caller_env::JitWavm;
+use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::Color;
 use ::caller_env::wavmio as caller_env;
 use ::caller_env::GuestPtr;
@@ -18,27 +16,23 @@ use validation::local_target;
 use validation::transfer::receive_validation_input;
 
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
-    let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::get_global_state_bytes32(&mut mem, exec, idx, out_ptr).map_err(Escape::HostIO)
+    ready_hostio(env.data_mut())?;
+    caller_env::get_global_state_bytes32(&mut JitWavm(env), idx, out_ptr).map_err(Escape::HostIO)
 }
 
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
-    let (mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
+    ready_hostio(env.data_mut())?;
+    caller_env::set_global_state_bytes32(&mut JitWavm(env), idx, src_ptr).map_err(Escape::HostIO)
 }
 
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
-    let (_, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::get_global_state_u64(exec, idx).map_err(Escape::HostIO)
+    ready_hostio(env.data_mut())?;
+    caller_env::get_global_state_u64(&mut JitWavm(env), idx).map_err(Escape::HostIO)
 }
 
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
-    let (_, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::set_global_state_u64(exec, idx, val).map_err(Escape::HostIO)
+    ready_hostio(env.data_mut())?;
+    caller_env::set_global_state_u64(&mut JitWavm(env), idx, val).map_err(Escape::HostIO)
 }
 
 pub fn read_inbox_message(
@@ -47,9 +41,9 @@ pub fn read_inbox_message(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::read_inbox_message(&mut mem, exec, msg_num, offset, out_ptr).map_err(Escape::HostIO)
+    ready_hostio(env.data_mut())?;
+    caller_env::read_inbox_message(&mut JitWavm(env), msg_num, offset, out_ptr)
+        .map_err(Escape::HostIO)
 }
 
 pub fn read_delayed_inbox_message(
@@ -58,9 +52,8 @@ pub fn read_delayed_inbox_message(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
-    ready_hostio(exec)?;
-    caller_env::read_delayed_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
+    ready_hostio(env.data_mut())?;
+    caller_env::read_delayed_inbox_message(&mut JitWavm(env), msg_num, offset, out_ptr)
         .map_err(Escape::HostIO)
 }
 
@@ -99,14 +92,16 @@ fn resolve_preimage_impl(
     out_ptr: GuestPtr,
     name: &str,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
+    ready_hostio(env.data_mut())?;
 
     #[cfg(debug_assertions)]
     {
+        use crate::caller_env::JitEnv;
         use arbutil::PreimageType;
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
 
+        let (mut mem, exec) = env.jit_env();
         let hash = mem.read_bytes32(hash_ptr);
 
         let Ok(preimage_type) = preimage_type.try_into() else {
@@ -136,30 +131,16 @@ fn resolve_preimage_impl(
         }
     }
 
-    caller_env::resolve_preimage(
-        &mut mem,
-        exec,
-        preimage_type,
-        hash_ptr,
-        offset,
-        out_ptr,
-        name,
-    )
-    .map_err(Escape::HostIO)
+    caller_env::resolve_preimage(&mut JitWavm(env), preimage_type, hash_ptr, offset, out_ptr, name)
+        .map_err(Escape::HostIO)
 }
 
 pub fn validate_certificate(
-    mut env: WasmEnvMut,
+    env: WasmEnvMut,
     preimage_type: u8,
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
-    let (mem, exec) = env.jit_env();
-    Ok(caller_env::validate_certificate(
-        &mem,
-        exec,
-        preimage_type,
-        hash_ptr,
-    ))
+    Ok(caller_env::validate_certificate(&mut JitWavm(env), preimage_type, hash_ptr))
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {

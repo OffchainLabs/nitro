@@ -17,13 +17,20 @@ pub trait WavmState {
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]>;
 }
 
+/// Unified environment trait: implementors split their wasmer FunctionEnvMut into (MemAccess, WavmState).
+pub trait WavmEnv {
+    type Mem<'a>: MemAccess where Self: 'a;
+    type State<'a>: WavmState where Self: 'a;
+    fn wavm_env(&mut self) -> (Self::Mem<'_>, Self::State<'_>);
+}
+
 /// Reads 32-bytes of global state and writes to guest memory.
-pub fn get_global_state_bytes32<M: MemAccess, S: WavmState>(
-    mem: &mut M,
-    state: &S,
+pub fn get_global_state_bytes32(
+    env: &mut impl WavmEnv,
     idx: u32,
     out_ptr: GuestPtr,
 ) -> Result<(), String> {
+    let (mut mem, state) = env.wavm_env();
     let Some(global) = state.get_bytes32_global(idx as usize) else {
         return Err("global read out of bounds in wavmio.getGlobalStateBytes32".into());
     };
@@ -32,12 +39,12 @@ pub fn get_global_state_bytes32<M: MemAccess, S: WavmState>(
 }
 
 /// Reads 32-bytes from guest memory and writes to global state.
-pub fn set_global_state_bytes32<M: MemAccess, S: WavmState>(
-    mem: &M,
-    state: &mut S,
+pub fn set_global_state_bytes32(
+    env: &mut impl WavmEnv,
     idx: u32,
     src_ptr: GuestPtr,
 ) -> Result<(), String> {
+    let (mem, mut state) = env.wavm_env();
     let val = mem.read_fixed(src_ptr);
     if !state.set_bytes32_global(idx as usize, val) {
         return Err("global write oob in wavmio.setGlobalStateBytes32".into());
@@ -46,7 +53,11 @@ pub fn set_global_state_bytes32<M: MemAccess, S: WavmState>(
 }
 
 /// Reads 8-bytes of global state.
-pub fn get_global_state_u64<S: WavmState>(state: &S, idx: u32) -> Result<u64, String> {
+pub fn get_global_state_u64(
+    env: &mut impl WavmEnv,
+    idx: u32,
+) -> Result<u64, String> {
+    let (_mem, state) = env.wavm_env();
     match state.get_u64_global(idx as usize) {
         Some(val) => Ok(val),
         None => Err("global read out of bounds in wavmio.getGlobalStateU64".into()),
@@ -54,7 +65,12 @@ pub fn get_global_state_u64<S: WavmState>(state: &S, idx: u32) -> Result<u64, St
 }
 
 /// Writes 8-bytes of global state.
-pub fn set_global_state_u64<S: WavmState>(state: &mut S, idx: u32, val: u64) -> Result<(), String> {
+pub fn set_global_state_u64(
+    env: &mut impl WavmEnv,
+    idx: u32,
+    val: u64,
+) -> Result<(), String> {
+    let (_mem, mut state) = env.wavm_env();
     if !state.set_u64_global(idx as usize, val) {
         return Err("global write out of bounds in wavmio.setGlobalStateU64".into());
     }
@@ -62,13 +78,13 @@ pub fn set_global_state_u64<S: WavmState>(state: &mut S, idx: u32, val: u64) -> 
 }
 
 /// Reads up to 32 bytes of a sequencer inbox message at the given offset.
-pub fn read_inbox_message<M: MemAccess, S: WavmState>(
-    mem: &mut M,
-    state: &S,
+pub fn read_inbox_message(
+    env: &mut impl WavmEnv,
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, String> {
+    let (mut mem, state) = env.wavm_env();
     let message = match state.get_sequencer_message(msg_num) {
         Some(message) => message,
         None => return Err(format!("missing sequencer inbox message {msg_num}")),
@@ -81,13 +97,13 @@ pub fn read_inbox_message<M: MemAccess, S: WavmState>(
 }
 
 /// Reads up to 32 bytes of a delayed inbox message at the given offset.
-pub fn read_delayed_inbox_message<M: MemAccess, S: WavmState>(
-    mem: &mut M,
-    state: &S,
+pub fn read_delayed_inbox_message(
+    env: &mut impl WavmEnv,
     msg_num: u64,
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, String> {
+    let (mut mem, state) = env.wavm_env();
     let message = match state.get_delayed_message(msg_num) {
         Some(message) => message,
         None => return Err(format!("missing delayed inbox message {msg_num}")),
@@ -100,15 +116,15 @@ pub fn read_delayed_inbox_message<M: MemAccess, S: WavmState>(
 }
 
 /// Looks up a preimage by type and hash, reads up to 32 bytes at an aligned offset.
-pub fn resolve_preimage<M: MemAccess, S: WavmState>(
-    mem: &mut M,
-    state: &S,
+pub fn resolve_preimage(
+    env: &mut impl WavmEnv,
     preimage_type: u8,
     hash_ptr: GuestPtr,
     offset: u32,
     out_ptr: GuestPtr,
     name: &str,
 ) -> Result<u32, String> {
+    let (mut mem, state) = env.wavm_env();
     let hash = mem.read_fixed(hash_ptr);
     let offset = offset as usize;
 
@@ -130,12 +146,12 @@ pub fn resolve_preimage<M: MemAccess, S: WavmState>(
 }
 
 /// Returns 1 if a preimage exists for the given type and hash, 0 otherwise.
-pub fn validate_certificate<M: MemAccess, S: WavmState>(
-    mem: &M,
-    state: &S,
+pub fn validate_certificate(
+    env: &mut impl WavmEnv,
     preimage_type: u8,
     hash_ptr: GuestPtr,
 ) -> u8 {
+    let (mem, state) = env.wavm_env();
     let hash = mem.read_fixed(hash_ptr);
     match state.get_preimage(preimage_type, &hash) {
         Some(_) => 1,

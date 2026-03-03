@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::wavmio::WavmState;
+use caller_env::wavmio::{WavmEnv, WavmState};
 use caller_env::{GuestPtr, MemAccess};
 use prover::binary_input::Input;
 use wasmer::{FunctionEnvMut, Memory, StoreMut};
@@ -127,15 +127,16 @@ impl WavmState for WavmInput<'_> {
     }
 }
 
-/// Extraction trait for splitting FunctionEnvMut into MemAccess + WavmState.
-pub(crate) trait Sp1Env {
-    fn sp1_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>);
-}
+/// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
+pub(crate) struct Sp1Wavm<'e>(pub FunctionEnvMut<'e, CustomEnvData>);
 
-impl Sp1Env for FunctionEnvMut<'_, CustomEnvData> {
-    fn sp1_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>) {
-        let memory = self.data().memory.clone().unwrap();
-        let (data, store) = self.data_and_store_mut();
+impl WavmEnv for Sp1Wavm<'_> {
+    type Mem<'a> = Sp1MemAccess<'a> where Self: 'a;
+    type State<'a> = WavmInput<'a> where Self: 'a;
+
+    fn wavm_env(&mut self) -> (Sp1MemAccess<'_>, WavmInput<'_>) {
+        let memory = self.0.data().memory.clone().unwrap();
+        let (data, store) = self.0.data_and_store_mut();
         let input = data.input_mut();
         (Sp1MemAccess { memory, store }, WavmInput(input))
     }
