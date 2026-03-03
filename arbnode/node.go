@@ -26,6 +26,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
@@ -811,35 +812,86 @@ func getInboxTrackerAndReader(
 	return inboxTracker, inboxReader, nil
 }
 
+func validateAndInitializeDBForMEL(
+	ctx context.Context,
+	l1client *ethclient.Client,
+	deployInfo *chaininfo.RollupAddresses,
+	consensusDB ethdb.Database,
+) error {
+	melDB := melrunner.NewDatabase(consensusDB)
+	_, err := melDB.GetHeadMelState()
+	if err != nil {
+		if !rawdb.IsDbErrNotFound(err) {
+			return err
+		}
+		// SequencerBatchCountKey shouldn't exist
+		hasSequencerBatchCountKey, err := consensusDB.Has(schema.SequencerBatchCountKey)
+		if err != nil {
+			return err
+		}
+		if hasSequencerBatchCountKey {
+			return errors.New("MEL being initialized when DB already has stale keys from inbox reader")
+		}
+		// DelayedMessageCountKey shouldn't exist
+		hasDelayedMessageCountKey, err := consensusDB.Has(schema.DelayedMessageCountKey)
+		if err != nil {
+			return err
+		}
+		if hasDelayedMessageCountKey {
+			return errors.New("MEL being initialized when DB already has stale keys from inbox reader")
+		}
+		// MessageCountKey should be zero (since TxStreamer initializes it to zero if it doesn't exist)
+		msgCount, err := read.Value[uint64](consensusDB, schema.MessageCountKey)
+		if err != nil {
+			return err
+		}
+		if msgCount != 0 {
+			return errors.New("MEL being initialized when DB already has stale msgs")
+		}
+		// Create Initial MEL state
+		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+		if err != nil {
+			return err
+		}
+		if err = melDB.SaveState(initialState); err != nil {
+			return fmt.Errorf("failed to save initial mel state: %w", err)
+		}
+	}
+	return nil
+}
+
 func getMessageExtractor(
 	ctx context.Context,
 	config *Config,
 	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
-		return nil, nil
-	}
-	melDB := melrunner.NewDatabase(arbDb)
-	if _, err := melDB.GetHeadMelState(); err != nil {
-		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+		// Prevent database corruption. If HeadMelStateBlockNumKey exists,
+		// it indicates this node was previously run with Message Extraction (MEL) enabled.
+		// Switching back to the standard inbox reader/tracker is not allowed.
+		hasHeadMelStateBlockNumKey, err := consensusDB.Has(schema.HeadMelStateBlockNumKey)
 		if err != nil {
 			return nil, err
 		}
-		if err = melDB.SaveState(initialState); err != nil {
-			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+		if hasHeadMelStateBlockNumKey {
+			return nil, errors.New("node alredy has MEL related database entries and is trying to start inbox reader and tracker, not allowed")
 		}
+		return nil, nil
+	}
+	if err := validateAndInitializeDBForMEL(ctx, l1client, deployInfo, consensusDB); err != nil {
+		return nil, err
 	}
 	msgExtractor, err := melrunner.NewMessageExtractor(
 		config.MessageExtraction,
 		l1client,
 		l2Config,
 		deployInfo,
-		melDB,
+		melrunner.NewDatabase(consensusDB),
 		txStreamer,
 		dapRegistry,
 		nil,
