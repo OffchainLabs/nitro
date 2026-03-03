@@ -244,7 +244,7 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 }
 
 func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return mel.MessageSyncProgress{}, err
 	}
@@ -307,7 +307,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 }
 
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
-	state, err := m.melDB.State(ctx, parentChainBlockNum)
+	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
 		return 0, err
 	}
@@ -330,7 +330,7 @@ func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uin
 }
 
 func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
-	state, err := m.melDB.GetHeadMelState(m.GetContext())
+	state, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return 0, err
 	}
