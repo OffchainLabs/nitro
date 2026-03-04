@@ -158,27 +158,29 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 
 	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
-	progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
-	if err != nil {
-		log.Error("Error getting sync progress", "err", err)
-		res["batchMetadataError"] = err.Error()
-	} else {
-		res["batchSeen"] = progress.BatchSeen
-		res["batchProcessed"] = progress.BatchProcessed
-		if progress.BatchProcessed > 0 {
-			res["messageOfProcessedBatch"] = progress.MsgCount
-		}
-	}
-
-	l1reader := s.syncProgressFetcher.GetL1Reader()
-	if l1reader != nil {
-		header, err := l1reader.LastHeaderWithError()
+	if s.syncProgressFetcher != nil {
+		progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
 		if err != nil {
-			res["lastL1HeaderErr"] = err
+			log.Error("Error getting sync progress", "err", err)
+			res["batchMetadataError"] = err.Error()
+		} else {
+			res["batchSeen"] = progress.BatchSeen
+			res["batchProcessed"] = progress.BatchProcessed
+			if progress.BatchProcessed > 0 {
+				res["messageOfProcessedBatch"] = progress.MsgCount
+			}
 		}
-		if header != nil {
-			res["lastL1BlockNum"] = header.Number
-			res["lastl1BlockHash"] = header.Hash()
+
+		l1reader := s.syncProgressFetcher.GetL1Reader()
+		if l1reader != nil {
+			header, err := l1reader.LastHeaderWithError()
+			if err != nil {
+				res["lastL1HeaderErr"] = err
+			}
+			if header != nil {
+				res["lastL1BlockNum"] = header.Number
+				res["lastl1BlockHash"] = header.Hash()
+			}
 		}
 	}
 
