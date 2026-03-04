@@ -19,19 +19,15 @@ Thumbs.db
 !CLAUDE.md
 !README.md
 
-# Environment
+# Environment (keep .env.example tracked)
 .env
-.env.*
+!.env.example
 
 # Test scripts
 scripts/
 test_*.sh
 
-# Docker/infra (not committed)
-Dockerfile
-docker-compose.yml
-docker-compose*.yml
-*.dockerignore
+# Docker data volumes
 arbreth-data/
 nitro-data/
 

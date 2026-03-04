@@ -1,0 +1,57 @@
+services:
+  arbreth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8545:8545"
+      - "8551:8551"
+    volumes:
+      - ./arbreth-data:/data
+    command:
+      - node
+      - --chain=/genesis/arbitrum-sepolia.json
+      - --datadir=/data/db
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,web3,net
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --authrpc.jwtsecret=/data/jwt.hex
+      - -d
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8551'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - arb
+
+  nitro:
+    image: offchainlabs/nitro-node:v3.10.0-rc.2-746bda2
+    depends_on:
+      arbreth:
+        condition: service_healthy
+    volumes:
+      - ./nitro-data:/tmp/nitro-data
+      - ./arbreth-data:/arbreth-data:ro
+    command:
+      - --init.empty=true
+      - --init.validate-genesis-assertion=false
+      - --persistent.global-config=/tmp/nitro-data
+      - --parent-chain.connection.url=${PARENT_CHAIN_RPC_URL}
+      - --parent-chain.blob-client.beacon-url=${PARENT_CHAIN_BEACON_URL}
+      - --chain.id=${CHAIN_ID:-421614}
+      - --execution.forwarding-target=null
+      - --log-level=${LOG_LEVEL:-INFO}
+      - --node.execution-rpc-client.url=http://arbreth:8551
+      - --node.execution-rpc-client.jwtsecret=/arbreth-data/jwt.hex
+      - --node.sequencer=false
+    networks:
+      - arb
+
+networks:
+  arb:
+    driver: bridge

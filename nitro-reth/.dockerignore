@@ -1,0 +1,14 @@
+target/
+.git/
+.idea/
+.vscode/
+.claude/
+arbreth-data/
+nitro-data/
+scripts/
+*.md
+.env
+.env.*
+.gitignore
+.dockerignore
+docker-compose*.yml
