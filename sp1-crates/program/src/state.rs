@@ -12,24 +12,6 @@ use crate::replay::CustomEnvData;
 /// Newtype wrapper to implement WavmIo and ExecEnv for CustomEnvData.
 pub(crate) struct Sp1State<'a>(pub &'a mut CustomEnvData);
 
-impl ExecEnv for Sp1State<'_> {
-    fn advance_time(&mut self, ns: u64) {
-        self.0.time += ns;
-    }
-
-    fn get_time(&self) -> u64 {
-        self.0.time
-    }
-
-    fn next_rand_u32(&mut self) -> u32 {
-        self.0.pcg.next_u32()
-    }
-
-    fn print_string(&mut self, bytes: &[u8]) {
-        crate::platform::print_string(2, bytes);
-    }
-}
-
 impl WavmIo for Sp1State<'_> {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
         self.0.input().small_globals.get(idx).copied()
