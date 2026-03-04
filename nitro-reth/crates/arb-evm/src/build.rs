@@ -137,6 +137,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
+            zombie_accounts: std::collections::HashSet::new(),
         }
     }
 }
@@ -199,6 +200,7 @@ where
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
+            zombie_accounts: std::collections::HashSet::new(),
         }
     }
 }
@@ -270,6 +272,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Expected balance delta from deposits (positive) and L2→L1 withdrawals (negative).
     /// Used for post-block safety verification.
     expected_balance_delta: i128,
+    /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
+    /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
+    zombie_accounts: std::collections::HashSet<Address>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -291,9 +296,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// state trie (not deleted by EIP-161) because they were re-created by
     /// a zero-value transfer on pre-Stylus ArbOS.
     pub fn zombie_accounts(&self) -> std::collections::HashSet<Address> {
-        // TODO: Wire transfer_balance_with_zombie into the execution path
-        // so zombie accounts are actually tracked. For now returns empty set.
-        std::collections::HashSet::new()
+        self.zombie_accounts.clone()
     }
 
     /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
@@ -1176,6 +1179,19 @@ where
                             // Transfer call value from escrow to sender.
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
+
+                            // Go always calls TransferBalance(escrow, sender, value).
+                            // When value=0 and ArbOS < Stylus, this triggers
+                            // CreateZombieIfDeleted(escrow): if the escrow was
+                            // emptied earlier in the block, preserve it as a zombie
+                            // so EIP-161 doesn't prune it from the state trie.
+                            if value.is_zero()
+                                && self.arb_ctx.arbos_version
+                                    < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                            {
+                                self.zombie_accounts.insert(escrow);
+                            }
+
                             if !value.is_zero()
                                 && !try_transfer_balance(db, escrow, sender, value)
                             {
