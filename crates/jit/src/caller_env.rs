@@ -133,30 +133,6 @@ impl ExecEnv for JitExecEnv<'_> {
     }
 }
 
-impl ExecEnv for WasmEnv {
-    fn advance_time(&mut self, ns: u64) {
-        self.go_state.time += ns;
-    }
-
-    fn get_time(&self) -> u64 {
-        self.go_state.time
-    }
-
-    fn next_rand_u32(&mut self) -> u32 {
-        self.go_state.rng.next_u32()
-    }
-
-    fn print_string(&mut self, bytes: &[u8]) {
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(s) => eprintln!("JIT: WASM says: {s}"),
-            Err(e) => {
-                let bytes = e.as_bytes();
-                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
-            }
-        }
-    }
-}
-
 impl WavmIo for WasmEnv {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
         self.small_globals.get(idx).copied()
