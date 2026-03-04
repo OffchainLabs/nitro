@@ -617,6 +617,23 @@ func (ts *accumulatingTransactionStreamer) getMessages() []*message.BroadcastFee
 	return result
 }
 
+// awaitCount waits until at least count messages have been received.
+// The timeout is a safety net to prevent the test from hanging.
+func (ts *accumulatingTransactionStreamer) awaitCount(t *testing.T, count int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if len(ts.getMessages()) >= count {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d messages, got %d", count, len(ts.getMessages()))
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
