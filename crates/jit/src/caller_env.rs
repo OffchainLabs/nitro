@@ -139,7 +139,9 @@ impl WavmIo for WasmEnv {
     }
 
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
-        let Some(g) = self.small_globals.get_mut(idx) else { return false };
+        let Some(g) = self.small_globals.get_mut(idx) else {
+            return false;
+        };
         *g = val;
         true
     }
@@ -149,7 +151,9 @@ impl WavmIo for WasmEnv {
     }
 
     fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
-        let Some(g) = self.large_globals.get_mut(idx) else { return false };
+        let Some(g) = self.large_globals.get_mut(idx) else {
+            return false;
+        };
         *g = val.into();
         true
     }

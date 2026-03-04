@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{GuestPtr, MemAccess};
-use alloc::string::String;
 use alloc::format;
+use alloc::string::String;
 use core::cmp::min;
 
 /// Read validation inputs and set outputs for the `wavmio` host functions.
@@ -46,10 +46,7 @@ pub fn set_global_state_bytes32(
 }
 
 /// Reads 8-bytes of global state.
-pub fn get_global_state_u64(
-    io: &impl WavmIo,
-    idx: u32,
-) -> Result<u64, String> {
+pub fn get_global_state_u64(io: &impl WavmIo, idx: u32) -> Result<u64, String> {
     match io.get_u64_global(idx as usize) {
         Some(val) => Ok(val),
         None => Err("global read out of bounds in wavmio.getGlobalStateU64".into()),
@@ -57,11 +54,7 @@ pub fn get_global_state_u64(
 }
 
 /// Writes 8-bytes of global state.
-pub fn set_global_state_u64(
-    io: &mut impl WavmIo,
-    idx: u32,
-    val: u64,
-) -> Result<(), String> {
+pub fn set_global_state_u64(io: &mut impl WavmIo, idx: u32, val: u64) -> Result<(), String> {
     if !io.set_u64_global(idx as usize, val) {
         return Err("global write out of bounds in wavmio.setGlobalStateU64".into());
     }
