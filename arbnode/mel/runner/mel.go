@@ -382,7 +382,6 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	return msg.Message, common.Hash{}, nil
 }
 
-
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
 	if err != nil {
