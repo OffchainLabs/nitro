@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::wavmio::WavmState;
+use caller_env::wavmio::WavmIo;
 use caller_env::{ExecEnv, GuestPtr};
 use rand::RngCore;
 use wasmer::FunctionEnvMut;
@@ -9,7 +9,7 @@ use wasmer::FunctionEnvMut;
 use crate::memory::Sp1MemAccess;
 use crate::replay::CustomEnvData;
 
-/// Newtype wrapper to implement WavmState and ExecEnv over CustomEnvData.
+/// Newtype wrapper to implement WavmIo and ExecEnv for CustomEnvData.
 pub(crate) struct Sp1State<'a>(pub &'a mut CustomEnvData);
 
 impl ExecEnv for Sp1State<'_> {
@@ -30,7 +30,7 @@ impl ExecEnv for Sp1State<'_> {
     }
 }
 
-impl WavmState for Sp1State<'_> {
+impl WavmIo for Sp1State<'_> {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
         self.0.input().small_globals.get(idx).copied()
     }

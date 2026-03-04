@@ -3,7 +3,7 @@
 
 use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32, PreimageType};
-use caller_env::{wavmio::WavmState, ExecEnv, GuestPtr, MemAccess};
+use caller_env::{wavmio::WavmIo, ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
@@ -157,7 +157,7 @@ impl ExecEnv for WasmEnv {
     }
 }
 
-impl WavmState for WasmEnv {
+impl WavmIo for WasmEnv {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
         self.small_globals.get(idx).copied()
     }
