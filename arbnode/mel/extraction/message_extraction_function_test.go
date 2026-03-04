@@ -64,11 +64,11 @@ func TestExtractMessages(t *testing.T) {
 			expectedError:      "failed to lookup delayed messages",
 		},
 		{
-			name:               "mismatched number of batch posting reports vs batches",
+			name:               "number of batch posting reports higher than batches",
 			melStateParentHash: prevParentBlockHash,
 			lookupBatches:      emptyLookupBatches,          // 0 batches
 			lookupDelayedMsgs:  successfulLookupDelayedMsgs, // 1 batch posting report
-			expectedError:      "batch posting reports 1 do not match the number of batches 0",
+			expectedError:      "number of batch posting reports 1 higher than the number of batches 0",
 		},
 		{
 			name:               "batch serialization fails",
@@ -94,7 +94,7 @@ func TestExtractMessages(t *testing.T) {
 			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
 			serializer:         emptySerializer,  // Returns nil, hash will be different from parseReport
 			parseReport:        emptyParseReport, // Returns empty hash
-			expectedError:      "batch data hash incorrect",
+			expectedError:      "not all batch posting reports processed.",
 		},
 		{
 			name:               "parse sequencer message fails",
