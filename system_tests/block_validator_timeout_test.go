@@ -140,6 +140,7 @@ func TestBlockValidatorTimeoutRetry(t *testing.T) {
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.BlockValidator.FailureIsFatal = true
 	validatorConfig.BlockValidator.ValidationSpawningAllowedAttempts = 1
+	validatorConfig.BlockValidator.ValidationSpawningAllowedTimeouts = 5
 	configByValidationNode(validatorConfig, proxyStack)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})

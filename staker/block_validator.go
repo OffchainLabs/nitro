@@ -162,6 +162,7 @@ type BlockValidatorConfig struct {
 	MemoryFreeLimit                   string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList       string                        `koanf:"validation-server-configs-list"`
 	ValidationSpawningAllowedAttempts uint64                        `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
+	ValidationSpawningAllowedTimeouts uint64                        `koanf:"validation-spawning-allowed-timeouts" reload:"hot"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -245,6 +246,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Uint64(prefix+".validation-spawning-allowed-timeouts", DefaultBlockValidatorConfig.ValidationSpawningAllowedTimeouts, "number of timeout errors allowed per validation attempt before treating it as a fatal error (separate from allowed-attempts)")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -276,6 +278,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RecordingIterLimit:                20,
 	ValidationSentLimit:               1024,
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -296,6 +299,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	BlockInputsFilePath:               "./target/validation_inputs",
 	MemoryFreeLimit:                   "default",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -1012,7 +1016,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
+			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
