@@ -76,6 +76,28 @@ type AuctioneerServerConfig struct {
 	DbDirectory               string                   `koanf:"db-directory"`
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
+	BidFloorAgentAddress      string                   `koanf:"bid-floor-agent-address"`
+}
+
+func (c *AuctioneerServerConfig) Validate() error {
+	if c.AuctionContractAddress != "" && !common.IsHexAddress(c.AuctionContractAddress) {
+		return errors.New("invalid auctioneer-server.auction-contract-address")
+	}
+
+	if c.BidFloorAgentAddress != "" {
+		if !common.IsHexAddress(c.BidFloorAgentAddress) {
+			return errors.New("invalid auctioneer-server.bid-floor-agent-address")
+		}
+
+		if common.HexToAddress(c.BidFloorAgentAddress) == (common.Address{}) {
+			return errors.New("auctioneer-server.bid-floor-agent-address cannot be the zero address")
+		}
+	}
+
+	if err := c.S3Storage.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
@@ -115,6 +137,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
+	f.String(prefix+".bid-floor-agent-address", DefaultAuctioneerServerConfig.BidFloorAgentAddress, "bid floor agent address, on-chain auction resolution is skipped if this address wins")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -138,6 +161,7 @@ type AuctioneerServer struct {
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
 	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
+	bidFloorAgentAddr              common.Address
 
 	// Coordination fields
 	redisClient               redis.UniversalClient
@@ -171,6 +195,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		}
 	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
+	bidFloorAgentAddr := common.HexToAddress(cfg.BidFloorAgentAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
@@ -228,10 +253,18 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, err
 	}
 
+	if cfg.BidFloorAgentAddress != "" {
+		log.Info(
+			"BidFloorAgent configured, on-chain auction resolution will be skipped when this address wins",
+			"address",
+			bidFloorAgentAddr.String(),
+		)
+	}
+
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
 		uuid.New().String()[:8], // Short UUID
-		time.Now().UnixNano())   // Timestamp for uniqueness
+		time.Now().UnixNano()) // Timestamp for uniqueness
 
 	log.Info("Auctioneer coordinator initialized", "id", myId)
 
@@ -254,6 +287,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		redisClient:                    redisClient,
 		myId:                           myId,
 		auctioneerLivenessTimeout:      cfg.ConsumerConfig.IdletimeToAutoclaim * 3,
+		bidFloorAgentAddr:              bidFloorAgentAddr,
 	}, nil
 }
 
@@ -497,15 +531,47 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		if second == nil {
 			log.Info("No bids received for auction resolution", "round", upcomingRound)
 			return nil
-		} else {
-			return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
 		}
+
+		return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
 	}
 
 	// Once resolveAuction returns, we acknowledge all bids to remove them from redis.
 	// We remove them unconditionally, since resolveAuction retries until the round ends,
 	// and there is no way to use them after the round ends.
 	defer a.acknowledgeAllBids(ctx, upcomingRound)
+
+	// If BidFloorAgent is configured, and it won this round, skip on-chain auction resolution
+	if a.bidFloorAgentAddr != (common.Address{}) && a.bidFloorAgentAddr == first.Bidder {
+		FirstBidValueGauge.Update(first.Amount.Int64())
+		if second == nil {
+			log.Info(
+				"Only BidFloorAgent bid received for auction resolution",
+				"round",
+				upcomingRound,
+				"firstBid",
+				first.Amount.String(),
+				"firstBidder",
+				first.Bidder.Hex(),
+			)
+		} else {
+			SecondBidValueGauge.Update(second.Amount.Int64())
+			log.Info(
+				"BidFloorAgent won round so skipping auction resolution",
+				"round",
+				upcomingRound,
+				"firstBid",
+				first.Amount.String(),
+				"secondBid",
+				second.Amount.String(),
+				"firstBidder",
+				first.Bidder.Hex(),
+				"secondBidder",
+				second.Bidder.Hex(),
+			)
+		}
+		return nil
+	}
 
 	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
