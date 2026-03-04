@@ -6,7 +6,7 @@ use alloc::string::String;
 use alloc::format;
 use core::cmp::min;
 
-/// Trait for accessing wavmio host state (globals, inbox, preimages).
+/// Read validation inputs and set outputs for the `wavmio` host functions.
 pub trait WavmIo {
     fn get_u64_global(&self, idx: usize) -> Option<u64>;
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool;
