@@ -4,12 +4,9 @@
 use crate::machine::{WasmEnv, WasmEnvMut};
 use crate::memory::JitMemAccess;
 use arbutil::{Bytes32, PreimageType};
-use caller_env::wavmio::{WavmEnv, WavmState};
+use caller_env::wavmio::WavmState;
 use caller_env::ExecEnv;
 use rand::RngCore;
-
-/// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
-pub(crate) struct JitWavm<'e>(pub WasmEnvMut<'e>);
 
 /// Newtype wrapping &mut WasmEnv to implement WavmState (orphan rule).
 pub(crate) struct JitState<'a>(pub &'a mut WasmEnv);
@@ -19,15 +16,6 @@ pub(crate) fn jit_env<'a>(env: &'a mut WasmEnvMut) -> (JitMemAccess<'a>, JitStat
     let memory = env.data().memory.clone().unwrap();
     let (wenv, store) = env.data_and_store_mut();
     (JitMemAccess { memory, store }, JitState(wenv))
-}
-
-impl WavmEnv for JitWavm<'_> {
-    type Mem<'a> = JitMemAccess<'a> where Self: 'a;
-    type State<'a> = JitState<'a> where Self: 'a;
-
-    fn wavm_env(&mut self) -> (JitMemAccess<'_>, JitState<'_>) {
-        jit_env(&mut self.0)
-    }
 }
 
 impl ExecEnv for JitState<'_> {

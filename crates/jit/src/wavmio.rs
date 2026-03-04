@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::state::JitWavm;
+use crate::state::jit_env;
 use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::Color;
 use ::caller_env::wavmio as caller_env;
@@ -17,22 +17,26 @@ use validation::transfer::receive_validation_input;
 
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     ready_hostio(env.data_mut())?;
-    caller_env::get_global_state_bytes32(&mut JitWavm(env), idx, out_ptr).map_err(Escape::HostIO)
+    let (mut mem, state) = jit_env(&mut env);
+    caller_env::get_global_state_bytes32(&mut mem, &state, idx, out_ptr).map_err(Escape::HostIO)
 }
 
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     ready_hostio(env.data_mut())?;
-    caller_env::set_global_state_bytes32(&mut JitWavm(env), idx, src_ptr).map_err(Escape::HostIO)
+    let (mem, mut state) = jit_env(&mut env);
+    caller_env::set_global_state_bytes32(&mem, &mut state, idx, src_ptr).map_err(Escape::HostIO)
 }
 
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     ready_hostio(env.data_mut())?;
-    caller_env::get_global_state_u64(&mut JitWavm(env), idx).map_err(Escape::HostIO)
+    let (_mem, state) = jit_env(&mut env);
+    caller_env::get_global_state_u64(&state, idx).map_err(Escape::HostIO)
 }
 
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     ready_hostio(env.data_mut())?;
-    caller_env::set_global_state_u64(&mut JitWavm(env), idx, val).map_err(Escape::HostIO)
+    let (_mem, mut state) = jit_env(&mut env);
+    caller_env::set_global_state_u64(&mut state, idx, val).map_err(Escape::HostIO)
 }
 
 pub fn read_inbox_message(
@@ -42,7 +46,8 @@ pub fn read_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     ready_hostio(env.data_mut())?;
-    caller_env::read_inbox_message(&mut JitWavm(env), msg_num, offset, out_ptr)
+    let (mut mem, state) = jit_env(&mut env);
+    caller_env::read_inbox_message(&mut mem, &state, msg_num, offset, out_ptr)
         .map_err(Escape::HostIO)
 }
 
@@ -53,7 +58,8 @@ pub fn read_delayed_inbox_message(
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     ready_hostio(env.data_mut())?;
-    caller_env::read_delayed_inbox_message(&mut JitWavm(env), msg_num, offset, out_ptr)
+    let (mut mem, state) = jit_env(&mut env);
+    caller_env::read_delayed_inbox_message(&mut mem, &state, msg_num, offset, out_ptr)
         .map_err(Escape::HostIO)
 }
 
@@ -131,16 +137,18 @@ fn resolve_preimage_impl(
         }
     }
 
-    caller_env::resolve_preimage(&mut JitWavm(env), preimage_type, hash_ptr, offset, out_ptr, name)
+    let (mut mem, state) = jit_env(&mut env);
+    caller_env::resolve_preimage(&mut mem, &state, preimage_type, hash_ptr, offset, out_ptr, name)
         .map_err(Escape::HostIO)
 }
 
 pub fn validate_certificate(
-    env: WasmEnvMut,
+    mut env: WasmEnvMut,
     preimage_type: u8,
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
-    Ok(caller_env::validate_certificate(&mut JitWavm(env), preimage_type, hash_ptr))
+    let (mem, state) = jit_env(&mut env);
+    Ok(caller_env::validate_certificate(&mem, &state, preimage_type, hash_ptr))
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {

@@ -6,7 +6,7 @@
 
 use caller_env::{
     self,
-    static_caller::StaticWasmEnv,
+    static_caller::{StaticExecEnv, StaticMem},
     wasip1_stub::Errno,
     GuestPtr,
 };
@@ -44,7 +44,8 @@ macro_rules! wrap {
                 #[no_mangle]
                 pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::wasip1_stub::$func_name(
-                        &mut StaticWasmEnv,
+                        &mut StaticMem,
+                        &mut StaticExecEnv,
                         $($arg_name),*
                     )
                 }

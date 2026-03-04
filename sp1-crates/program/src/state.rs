@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::wavmio::{WavmEnv, WavmState};
+use caller_env::wavmio::WavmState;
 use caller_env::{ExecEnv, GuestPtr};
 use rand::RngCore;
 use wasmer::FunctionEnvMut;
@@ -77,18 +77,13 @@ impl WavmState for Sp1State<'_> {
     }
 }
 
-/// Newtype for implementing WavmEnv (orphan rule: FunctionEnvMut is foreign).
-pub(crate) struct Sp1Wavm<'e>(pub FunctionEnvMut<'e, CustomEnvData>);
-
-impl WavmEnv for Sp1Wavm<'_> {
-    type Mem<'a> = Sp1MemAccess<'a> where Self: 'a;
-    type State<'a> = Sp1State<'a> where Self: 'a;
-
-    fn wavm_env(&mut self) -> (Sp1MemAccess<'_>, Sp1State<'_>) {
-        let memory = self.0.data().memory.clone().unwrap();
-        let (data, store) = self.0.data_and_store_mut();
-        (Sp1MemAccess { memory, store }, Sp1State(data))
-    }
+/// Extracts (Sp1MemAccess, Sp1State) from a FunctionEnvMut in place.
+pub(crate) fn sp1_env<'a>(
+    ctx: &'a mut FunctionEnvMut<'_, CustomEnvData>,
+) -> (Sp1MemAccess<'a>, Sp1State<'a>) {
+    let memory = ctx.data().memory.clone().unwrap();
+    let (data, store) = ctx.data_and_store_mut();
+    (Sp1MemAccess { memory, store }, Sp1State(data))
 }
 
 /// Converts a wasmer `Ptr` (WasmPtr<u32>) to a caller-env `GuestPtr`.
