@@ -634,7 +634,7 @@ func (ts *accumulatingTransactionStreamer) awaitCount(t *testing.T, count int, t
 	}
 }
 
-func TestInvalidSignature(t *testing.T) {
+func TestInvalidSignatureMessagesAreSkipped(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
