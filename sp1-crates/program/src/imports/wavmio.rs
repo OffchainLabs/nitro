@@ -1,7 +1,7 @@
 //! wavmio functions — thin wrappers delegating to caller_env::wavmio.
 
 use crate::{
-    Escape, MaybeEscape, Ptr, caller_env_adapters::{Sp1Wavm, gp}, read_bytes32,
+    Escape, MaybeEscape, Ptr, state::{Sp1Wavm, gp}, read_bytes32,
     replay::CustomEnvData,
 };
 use ::caller_env::wavmio as caller_env;

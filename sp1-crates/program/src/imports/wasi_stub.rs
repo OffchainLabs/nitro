@@ -2,7 +2,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::{Escape, Ptr, caller_env_adapters::{Sp1Wavm, gp}, platform, replay::CustomEnvData};
+use crate::{Escape, Ptr, state::{Sp1Wavm, gp}, platform, replay::CustomEnvData};
 use caller_env;
 use wasmer::FunctionEnvMut;
 

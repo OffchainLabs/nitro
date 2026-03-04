@@ -3,7 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::JitWavm;
+use crate::state::JitWavm;
 use crate::machine::{Escape, WasmEnvMut};
 use caller_env::{self, wasip1_stub::Errno, GuestPtr};
 

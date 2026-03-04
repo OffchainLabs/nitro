@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::caller_env::jit_env;
+use crate::state::jit_env;
 use crate::machine::Escape;
 use crate::machine::WasmEnvMut;
 use brotli::{BrotliStatus, Dictionary};

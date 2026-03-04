@@ -3,7 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::jit_env;
+use crate::state::jit_env;
 use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use crate::stylus_backend::{exec_wasm, MessageFromCothread};
 use arbutil::evm::api::Gas;
