@@ -14,9 +14,8 @@ use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
 
 mod arbcompress;
 mod arbcrypto;
-mod state;
+mod caller_env;
 pub mod machine;
-mod memory;
 mod prepare;
 pub mod program;
 pub mod stylus_backend;

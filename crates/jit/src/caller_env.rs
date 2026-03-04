@@ -1,14 +1,32 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32};
-use caller_env::{GuestPtr, MemAccess};
+use caller_env::{ExecEnv, GuestPtr, MemAccess};
+use rand::RngCore;
 use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
 pub struct JitMemAccess<'s> {
     pub memory: Memory,
     pub store: StoreMut<'s>,
+}
+
+pub struct JitExecEnv<'s> {
+    pub wenv: &'s mut WasmEnv,
+}
+
+pub(crate) trait JitEnv<'a> {
+    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv);
+}
+
+impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
+    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv) {
+        let memory = self.data().memory.clone().unwrap();
+        let (wenv, store) = self.data_and_store_mut();
+        (JitMemAccess { memory, store }, wenv)
+    }
 }
 
 impl JitMemAccess<'_> {
@@ -88,5 +106,29 @@ impl MemAccess for JitMemAccess<'_> {
 
     fn write_slice(&mut self, ptr: GuestPtr, src: &[u8]) {
         self.view().write(ptr.into(), src).unwrap();
+    }
+}
+
+impl ExecEnv for JitExecEnv<'_> {
+    fn advance_time(&mut self, ns: u64) {
+        self.wenv.go_state.time += ns;
+    }
+
+    fn get_time(&self) -> u64 {
+        self.wenv.go_state.time
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        self.wenv.go_state.rng.next_u32()
+    }
+
+    fn print_string(&mut self, bytes: &[u8]) {
+        match String::from_utf8(bytes.to_vec()) {
+            Ok(s) => eprintln!("JIT: WASM says: {s}"), // TODO: this adds too many newlines since go calls this in chunks
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
+            }
+        }
     }
 }
