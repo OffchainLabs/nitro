@@ -29,20 +29,15 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func feedMessages(t *testing.T, b *broadcaster.Broadcaster, seqNums ...arbutil.MessageIndex) []*message.BroadcastFeedMessage {
-	t.Helper()
-	msgs := make([]*message.BroadcastFeedMessage, len(seqNums))
-	for i, seqNum := range seqNums {
-		msg := arbostypes.MessageWithMetadataAndBlockInfo{
-			MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
-			BlockHash:       nil,
-			BlockMetadata:   nil,
-		}
-		broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
-		Require(t, err)
-		msgs[i] = broadcastMsg
+func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	msg := arbostypes.MessageWithMetadataAndBlockInfo{
+		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+		BlockHash:       nil,
+		BlockMetadata:   nil,
 	}
-	return msgs
+	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+	Require(t, err)
+	return []*message.BroadcastFeedMessage{broadcastMsg}
 }
 
 func TestReceiveMessages(t *testing.T) {
@@ -107,7 +102,7 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			err = b.BroadcastFeedMessages(feedMessages(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
 			Require(t, err)
 		}
 	}()
@@ -257,7 +252,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
 	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
@@ -330,7 +325,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
 	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
@@ -681,17 +676,19 @@ func TestInvalidSignatureMessagesAreSkipped(t *testing.T) {
 	defer broadcastClient.StopAndWait()
 
 	// Batch 1: valid messages (seq 0, 1) - should be delivered.
-	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessages(t, trustedBroadcaster, 0, 1)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 0)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 1)))
 	ts.awaitCount(t, 2, 10*time.Second)
 
 	// Batch 2: invalid messages (seq 2, 3) signed with untrusted key - should be skipped.
-	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessages(t, untrustedBroadcaster, 2, 3)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, untrustedBroadcaster, 2)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, untrustedBroadcaster, 3)))
 
 	// Sentinel (seq 2): a valid message that deterministically proves the client has
 	// processed and skipped the invalid messages. WebSocket messages are ordered, so the
 	// sentinel can only arrive after the invalid ones have been processed (and skipped).
 	// Invalid messages don't advance nextSeqNum (stays at 2), so the sentinel is seq 2.
-	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessages(t, trustedBroadcaster, 2)))
+	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 2)))
 	ts.awaitCount(t, 3, 10*time.Second)
 
 	// Verify: only valid messages were delivered, and all have trusted signatures.
@@ -796,9 +793,9 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
 	Require(t, err)
-	err = b.BroadcastFeedMessages(feedMessages(t, b, 1))
+	err = b.BroadcastFeedMessages(feedMessage(t, b, 1))
 	Require(t, err)
 
 	var wg sync.WaitGroup
