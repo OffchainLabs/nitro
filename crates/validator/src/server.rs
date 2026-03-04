@@ -25,7 +25,7 @@ async fn run_server_internal(
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.jit_manager.complete_machines().await
+    state.shutdown().await
 }
 
 // Listens for Ctrl+C or SIGTERM
@@ -72,7 +72,7 @@ mod tests {
     };
 
     use crate::{
-        config::{ServerConfig, ServerState},
+        config::{ExecutionMode, ServerConfig, ServerState},
         engine::ModuleRoot,
         server::run_server_internal,
     };
@@ -138,11 +138,10 @@ mod tests {
         assert!(result.is_ok(), "Server should exit successfully");
 
         // 8. Verify jit_manager Cleanup
-        let machine_arc = {
-            let machines = test_config.state.jit_manager.machines.read().await;
-            machines.get(&module_root).cloned()
-        };
-        assert!(machine_arc.is_none());
+        if let ExecutionMode::Continuous { jit_manager } = &test_config.state.execution {
+            let machines = jit_manager.machines.read().await;
+            assert!(machines.get(&module_root).is_none());
+        }
 
         // 9. Verify same request from above fails expectadly
         let resp = client
