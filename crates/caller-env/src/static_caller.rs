@@ -1,7 +1,7 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
+use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess, wavmio::WasmEnv};
 use alloc::vec::Vec;
 use rand::RngCore;
 use spin::{Lazy, Mutex, MutexGuard};
@@ -12,6 +12,16 @@ extern crate alloc;
 pub struct StaticMem;
 /// Static execution environment for Go runtime in WAVM.
 pub struct StaticExecEnv;
+/// Bundled static environment implementing WasmEnv.
+pub struct StaticWasmEnv;
+
+impl WasmEnv for StaticWasmEnv {
+    type Mem<'a> = StaticMem;
+    type State<'a> = StaticExecEnv;
+    fn wasm_env(&mut self) -> (StaticMem, StaticExecEnv) {
+        (StaticMem, StaticExecEnv)
+    }
+}
 
 static GO_RUNTIME_STATE: Lazy<Mutex<GoRuntimeState>> = Lazy::new(Default::default);
 

@@ -17,11 +17,28 @@ pub trait WavmState: ExecEnv {
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]>;
 }
 
-/// Unified environment trait: implementors split their wasmer FunctionEnvMut into (MemAccess, WavmState).
+/// Base environment trait: splits a context into (MemAccess, ExecEnv).
+/// Used by wasip1_stub which only needs mem + exec.
+pub trait WasmEnv {
+    type Mem<'a>: MemAccess where Self: 'a;
+    type State<'a>: ExecEnv where Self: 'a;
+    fn wasm_env(&mut self) -> (Self::Mem<'_>, Self::State<'_>);
+}
+
+/// Extended environment for wavmio: State additionally implements WavmState.
 pub trait WavmEnv {
     type Mem<'a>: MemAccess where Self: 'a;
     type State<'a>: WavmState where Self: 'a;
     fn wavm_env(&mut self) -> (Self::Mem<'_>, Self::State<'_>);
+}
+
+/// Every WavmEnv is automatically a WasmEnv.
+impl<T: WavmEnv> WasmEnv for T {
+    type Mem<'a> = <T as WavmEnv>::Mem<'a> where Self: 'a;
+    type State<'a> = <T as WavmEnv>::State<'a> where Self: 'a;
+    fn wasm_env(&mut self) -> (Self::Mem<'_>, Self::State<'_>) {
+        self.wavm_env()
+    }
 }
 
 /// Reads 32-bytes of global state and writes to guest memory.
