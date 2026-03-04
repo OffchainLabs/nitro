@@ -697,7 +697,7 @@ func TestInvalidSignatureMessagesAreSkipped(t *testing.T) {
 		t.Fatalf("expected 3 messages, got %d", len(got))
 	}
 	for i, msg := range got {
-		if msg.SequenceNumber != arbutil.MessageIndex(i) {
+		if msg.SequenceNumber != arbutil.MessageIndex(i) { // nolint: gosec
 			t.Fatalf("message %d: unexpected seq number: %d", i, msg.SequenceNumber)
 		}
 		hash := msg.SignatureHash(chainId)
