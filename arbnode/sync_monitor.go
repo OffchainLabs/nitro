@@ -19,7 +19,7 @@ import (
 
 type MessageSyncProgressFetcher interface {
 	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetMsgCount() (arbutil.MessageIndex, error)
 	GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error)
 	GetL1Reader() *headerreader.HeaderReader
 }
@@ -107,7 +107,7 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 		msgCount = pending
 	}
 
-	fetched, err := s.syncProgressFetcher.GetMsgCount(s.GetContext())
+	fetched, err := s.syncProgressFetcher.GetMsgCount()
 	if err != nil {
 		return msgCount, err
 	}
