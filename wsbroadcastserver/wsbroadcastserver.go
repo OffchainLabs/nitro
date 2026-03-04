@@ -31,7 +31,6 @@ import (
 )
 
 var (
-	HTTPHeaderCloudflareConnectingIP  = textproto.CanonicalMIMEHeaderKey("CF-Connecting-IP")
 	HTTPHeaderFeedServerVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Server-Version")
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
@@ -252,6 +251,12 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			}
 			negotiate = compress.Negotiate
 		}
+		// Build set of canonical header names we need to collect for IP detection.
+		clientIPHeaders := make(map[string]bool, len(config.ConnectionLimits.ClientIPHeader))
+		for _, h := range config.ConnectionLimits.ClientIPHeader {
+			clientIPHeaders[textproto.CanonicalMIMEHeaderKey(h)] = true
+		}
+		ipHeaderValues := make(map[string]string)
 		var feedClientVersionSeen bool
 		var connectingIP net.IP
 		var requestedSeqNum arbutil.MessageIndex
@@ -290,9 +295,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 						)
 					}
 					requestedSeqNum = arbutil.MessageIndex(num)
-				} else if headerName == HTTPHeaderCloudflareConnectingIP {
-					connectingIP = net.ParseIP(string(value))
-					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
+				} else if clientIPHeaders[headerName] {
+					ipHeaderValues[headerName] = string(value)
 				}
 
 				return nil
@@ -304,7 +308,15 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 						ws.RejectionReason(fmt.Sprintf("Missing HTTP header %s", HTTPHeaderFeedClientVersion)),
 					)
 				}
-				if connectingIP == nil {
+				// Resolve client IP from configured headers in priority order.
+				connectingIP = resolveClientIP(
+					ipHeaderValues,
+					config.ConnectionLimits.ClientIPHeader,
+					config.ConnectionLimits.ClientIPHeaderNthElement,
+				)
+				if connectingIP != nil {
+					log.Trace("Client IP parsed from header", "ip", connectingIP)
+				} else if connectingIP == nil {
 					if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 						connectingIP = addr.IP
 						log.Trace("Client IP taken from socket", "ip", connectingIP, "remoteAddr", conn.RemoteAddr())
@@ -556,4 +568,31 @@ func (d writeDeadliner) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return d.Conn.Write(p)
+}
+
+// resolveClientIP extracts a client IP from collected header values using the
+// configured header priority list and nth-element-from-right selection. It
+// returns nil if no valid IP can be resolved from the headers.
+func resolveClientIP(headerValues map[string]string, clientIPHeaders []string, nthElements []int) net.IP {
+	for i, h := range clientIPHeaders {
+		val, ok := headerValues[textproto.CanonicalMIMEHeaderKey(h)]
+		if !ok {
+			continue
+		}
+		parts := strings.Split(val, ",")
+		// nth element from the right, default to 0 (rightmost).
+		nthFromRight := 0
+		if i < len(nthElements) {
+			nthFromRight = nthElements[i]
+		}
+		idx := len(parts) - 1 - nthFromRight
+		if idx < 0 || idx >= len(parts) {
+			continue
+		}
+		ip := net.ParseIP(strings.TrimSpace(parts[idx]))
+		if ip != nil {
+			return ip
+		}
+	}
+	return nil
 }

@@ -23,15 +23,19 @@ type ConnectionLimiterConfig struct {
 	PerIpLimit              int           `koanf:"per-ip-limit" reload:"hot"`
 	PerIpv6Cidr48Limit      int           `koanf:"per-ipv6-cidr-48-limit" reload:"hot"`
 	PerIpv6Cidr64Limit      int           `koanf:"per-ipv6-cidr-64-limit" reload:"hot"`
-	ReconnectCooldownPeriod time.Duration `koanf:"reconnect-cooldown-period" reload:"hot"`
+	ReconnectCooldownPeriod    time.Duration `koanf:"reconnect-cooldown-period" reload:"hot"`
+	ClientIPHeader             []string      `koanf:"client-ip-header" reload:"hot"`
+	ClientIPHeaderNthElement   []int         `koanf:"client-ip-header-nth-element" reload:"hot"`
 }
 
 var DefaultConnectionLimiterConfig = ConnectionLimiterConfig{
-	Enable:                  false,
-	PerIpLimit:              5,
-	PerIpv6Cidr48Limit:      20,
-	PerIpv6Cidr64Limit:      10,
-	ReconnectCooldownPeriod: 0,
+	Enable:                   false,
+	PerIpLimit:               5,
+	PerIpv6Cidr48Limit:       20,
+	PerIpv6Cidr64Limit:       10,
+	ReconnectCooldownPeriod:  0,
+	ClientIPHeader:           []string{"CF-Connecting-IP"},
+	ClientIPHeaderNthElement: []int{0},
 }
 
 func ConnectionLimiterConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -40,6 +44,8 @@ func ConnectionLimiterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".per-ipv6-cidr-48-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr48Limit, "limit ipv6 clients, as identified by IPv6 address masked with /48, to this many connections to this relay")
 	f.Int(prefix+".per-ipv6-cidr-64-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr64Limit, "limit ipv6 clients, as identified by IPv6 address masked with /64, to this many connections to this relay")
 	f.Duration(prefix+".reconnect-cooldown-period", DefaultConnectionLimiterConfig.ReconnectCooldownPeriod, "time to wait after a relay client disconnects before the disconnect is registered with respect to the limit for this client")
+	f.StringSlice(prefix+".client-ip-header", DefaultConnectionLimiterConfig.ClientIPHeader, "ordered list of HTTP headers to use for client IP detection, tried in order until one is found (e.g. CF-Connecting-IP, X-Real-Ip, X-Forwarded-For)")
+	f.IntSlice(prefix+".client-ip-header-nth-element", DefaultConnectionLimiterConfig.ClientIPHeaderNthElement, "for each client-ip-header, the nth element from the right (0-indexed) to use as the client IP from comma-separated values")
 }
 
 type ConnectionLimiterConfigFetcher func() *ConnectionLimiterConfig
