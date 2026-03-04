@@ -10,9 +10,12 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/pubsub"
 )
 
-const rpcTimeoutErrorCode = -32002 // errcodeTimeout from go-ethereum/rpc/errors.go
+const (
+	ioTimeoutMessage = "i/o timeout" // net package timeout
+)
 
 // IsTimeoutError returns true if the error represents a timeout condition from
 // any validation path: direct RPC, JIT machine TCP, or Redis producer.
@@ -27,18 +30,15 @@ func IsTimeoutError(err error) bool {
 
 	// Typed detection
 
-	// 1. Context deadline exceeded (RPC client-side timeout, validation context timeout)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 
-	// 2. RPC server timeout: jsonError with code -32002 ("request timed out")
 	var rpcErr rpc.Error
-	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == rpcTimeoutErrorCode {
+	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == rpc.ErrcodeTimeout {
 		return true
 	}
 
-	// 3. Network timeout (JIT machine TCP deadline exceeded)
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
@@ -47,24 +47,10 @@ func IsTimeoutError(err error) bool {
 	// String-based detection
 
 	errMsg := err.Error()
-
-	// Redis producer timeout (pubsub/producer.go)
-	if strings.Contains(errMsg, "request has been waiting for too long") {
-		return true
-	}
-
-	// RPC server timeout message (go-ethereum/rpc/errors.go errMsgTimeout)
-	if strings.Contains(errMsg, "request timed out") {
-		return true
-	}
-
-	// context.DeadlineExceeded serialized as string
-	if strings.Contains(errMsg, "context deadline exceeded") {
-		return true
-	}
-
-	// Network I/O timeout serialized as string
-	if strings.Contains(errMsg, "i/o timeout") {
+	if strings.Contains(errMsg, pubsub.TimeoutErrorMessage) ||
+		strings.Contains(errMsg, rpc.ErrMsgTimeout) ||
+		strings.Contains(errMsg, context.DeadlineExceeded.Error()) ||
+		strings.Contains(errMsg, ioTimeoutMessage) {
 		return true
 	}
 
