@@ -200,19 +200,30 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 			if msg.LegacyBatchGasCost == nil {
 				return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
 			}
+			// Pre-arbos50, LegacyBatchGasCost and BatchDataStats are interchangeable.
+			// Post-arbos50, BatchDataStats is required. However, this code doesn't
+			// know which arbos version applies to the current block.
+			//
+			// Since we already have LegacyBatchGasCost, we don't return an error here.
+			// Instead, we assume this is a pre-arbos50 block and proceed without
+			// BatchDataStats. If that assumption is wrong (i.e. this is actually
+			// post-arbos50), createBatchPostingReportTransaction will detect the
+			// missing BatchDataStats and fail there, since it does know the arbos
+			// version. In practice, any node that supports arbos50 populates both
+			// fields together, so this fallback path should not be reached.
 			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
+			return nil
 		} else {
 			gotHash := crypto.Keccak256Hash(batchData)
 			if gotHash != batchHash {
 				return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 			}
 			msg.BatchDataStats = GetDataStats(batchData)
-
-			legacyCost := LegacyCostForStats(msg.BatchDataStats)
-			msg.LegacyBatchGasCost = &legacyCost
 		}
 	}
 
+	legacyCost := LegacyCostForStats(msg.BatchDataStats)
+	msg.LegacyBatchGasCost = &legacyCost
 	return nil
 }
 
