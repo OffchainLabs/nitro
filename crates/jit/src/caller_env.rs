@@ -139,13 +139,9 @@ impl WavmIo for WasmEnv {
     }
 
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
-        match self.small_globals.get_mut(idx) {
-            Some(g) => {
-                *g = val;
-                true
-            }
-            None => false,
-        }
+        let Some(g) = self.small_globals.get_mut(idx) else { return false };
+        *g = val;
+        true
     }
 
     fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
@@ -153,13 +149,9 @@ impl WavmIo for WasmEnv {
     }
 
     fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
-        match self.large_globals.get_mut(idx) {
-            Some(g) => {
-                *g = val.into();
-                true
-            }
-            None => false,
-        }
+        let Some(g) = self.large_globals.get_mut(idx) else { return false };
+        *g = val.into();
+        true
     }
 
     fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
