@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::{WasmEnv, WasmEnvMut};
-use arbutil::{Bytes20, Bytes32};
-use caller_env::{ExecEnv, GuestPtr, MemAccess};
+use arbutil::{Bytes20, Bytes32, PreimageType};
+use caller_env::{wavmio::WavmState, ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
@@ -130,5 +130,75 @@ impl ExecEnv for JitExecEnv<'_> {
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
             }
         }
+    }
+}
+
+impl ExecEnv for WasmEnv {
+    fn advance_time(&mut self, ns: u64) {
+        self.go_state.time += ns;
+    }
+
+    fn get_time(&self) -> u64 {
+        self.go_state.time
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        self.go_state.rng.next_u32()
+    }
+
+    fn print_string(&mut self, bytes: &[u8]) {
+        match String::from_utf8(bytes.to_vec()) {
+            Ok(s) => eprintln!("JIT: WASM says: {s}"),
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
+            }
+        }
+    }
+}
+
+impl WavmState for WasmEnv {
+    fn get_u64_global(&self, idx: usize) -> Option<u64> {
+        self.small_globals.get(idx).copied()
+    }
+
+    fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
+        match self.small_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
+        self.large_globals.get(idx).map(|b| &b.0)
+    }
+
+    fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
+        match self.large_globals.get_mut(idx) {
+            Some(g) => {
+                *g = val.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
+        self.sequencer_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
+        self.delayed_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
+        let pt: PreimageType = preimage_type.try_into().ok()?;
+        self.preimages
+            .get(&pt)
+            .and_then(|m| m.get(&Bytes32(*hash)))
+            .map(|v| v.as_slice())
     }
 }
