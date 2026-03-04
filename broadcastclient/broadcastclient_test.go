@@ -29,15 +29,20 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
-	msg := arbostypes.MessageWithMetadataAndBlockInfo{
-		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
-		BlockHash:       nil,
-		BlockMetadata:   nil,
+func feedMessages(t *testing.T, b *broadcaster.Broadcaster, seqNums ...arbutil.MessageIndex) []*message.BroadcastFeedMessage {
+	t.Helper()
+	msgs := make([]*message.BroadcastFeedMessage, len(seqNums))
+	for i, seqNum := range seqNums {
+		msg := arbostypes.MessageWithMetadataAndBlockInfo{
+			MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+			BlockHash:       nil,
+			BlockMetadata:   nil,
+		}
+		broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
+		Require(t, err)
+		msgs[i] = broadcastMsg
 	}
-	broadcastMsg, err := b.NewBroadcastFeedMessage(msg, seqNum)
-	Require(t, err)
-	return []*message.BroadcastFeedMessage{broadcastMsg}
+	return msgs
 }
 
 func TestReceiveMessages(t *testing.T) {
@@ -102,7 +107,7 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
+			err = b.BroadcastFeedMessages(feedMessages(t, b, arbutil.MessageIndex(i))) // #nosec G115
 			Require(t, err)
 		}
 	}()
@@ -252,7 +257,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
 	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
@@ -325,7 +330,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
 	Require(t, err)
 
 	// Wait for client to receive batch to ensure it is connected
@@ -668,9 +673,9 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	err = b.BroadcastFeedMessages(feedMessage(t, b, 0))
+	err = b.BroadcastFeedMessages(feedMessages(t, b, 0))
 	Require(t, err)
-	err = b.BroadcastFeedMessages(feedMessage(t, b, 1))
+	err = b.BroadcastFeedMessages(feedMessages(t, b, 1))
 	Require(t, err)
 
 	var wg sync.WaitGroup
