@@ -1572,9 +1572,11 @@ where
             }
         }
 
-        // Fix nonce for retry and contract txs: Go's skipNonceChecks() returns
-        // true for these types. Override the tx_env nonce to match the sender's
-        // current state nonce so revm increments it correctly (matching Go).
+        // Fix nonce for retry and contract txs: Go's skipNonceChecks() skips
+        // the preCheck nonce validation but Go still increments the nonce in
+        // TransitionDb (line 690) for non-CREATE calls. Override the tx_env
+        // nonce to match the sender's current state nonce so revm increments
+        // from the right value.
         if is_retry_tx || is_contract_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let sender_nonce = db.load_cache_account(sender)
