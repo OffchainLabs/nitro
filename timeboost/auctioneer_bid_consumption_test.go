@@ -412,6 +412,19 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 		// No on-chain call made, no error → BidFloorAgent path hit
 	})
 
+	t.Run("Spoofed ExpressLaneController does not skip resolution", func(t *testing.T) {
+		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
+		otherAddr := testSetup.accounts[3].accountAddr
+		auctioneer.bidCache.add(&ValidatedBid{
+			Bidder:                otherAddr,
+			ExpressLaneController: bidFloorAddr,
+			Amount:                big.NewInt(200),
+		})
+
+		err := auctioneer.resolveAuction(ctx)
+		require.Error(t, err)
+	})
+
 	t.Run("BidFloorAgent wins with second place - skip resolution", func(t *testing.T) {
 		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
 		otherAddr := testSetup.accounts[2].accountAddr

@@ -566,7 +566,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				upcomingRound,
 				"firstBid",
 				first.Amount.String(),
-				"firstAddress",
+				"firstBidder",
 				first.Bidder.Hex(),
 			)
 		} else {
@@ -579,9 +579,9 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				first.Amount.String(),
 				"secondBid",
 				second.Amount.String(),
-				"firstAddress",
+				"firstBidder",
 				first.Bidder.Hex(),
-				"secondAddress",
+				"secondBidder",
 				second.Bidder.Hex(),
 			)
 		}
