@@ -597,6 +597,26 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 	}
 }
 
+type accumulatingTransactionStreamer struct {
+	mu       sync.Mutex
+	messages []*message.BroadcastFeedMessage
+}
+
+func (ts *accumulatingTransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.messages = append(ts.messages, feedMessages...)
+	return nil
+}
+
+func (ts *accumulatingTransactionStreamer) getMessages() []*message.BroadcastFeedMessage {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	result := make([]*message.BroadcastFeedMessage, len(ts.messages))
+	copy(result, ts.messages)
+	return result
+}
+
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
