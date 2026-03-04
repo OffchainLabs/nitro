@@ -251,7 +251,7 @@ test-go-redis: test-go-deps
 
 .PHONY: test-go-experimental
 test-go-experimental: test-go-deps
-	.github/workflows/gotestsum.sh --timeout 120m --run TestExperimental --tags debugblock --nolog
+	.github/workflows/gotestsum.sh --timeout 120m --run TestExperimental --tags experimental --nolog
 	@printf $(done)
 
 .PHONY: test-gen-proofs
@@ -368,7 +368,7 @@ $(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
 
 # nitro built with experimental tooling enabled
 $(output_root)/bin/nitro-experimental: $(DEP_PREDICATE) build-node-deps
-	go build $(GOLANG_PARAMS) --tags debugblock -o $@ "$(CURDIR)/cmd/nitro"
+	go build $(GOLANG_PARAMS) --tags experimental -o $@ "$(CURDIR)/cmd/nitro"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
