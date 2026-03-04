@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -912,23 +912,23 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	return t.txStreamer.ReorgAtAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
 }
 
-// FinalizedDelayedMessageAtPosition checks if the delayed message at the
-// requested position is finalized based on the finalized position, and returns the message
-// if it is finalized. If the message is not finalized, it returns a boolean
-// indicating that as well. An error is returned if there was an issue
-// fetching the finalized position or the message.
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
 func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
 	lastDelayedAccumulator common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, bool, error) {
+) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	msg, acc, parentChainBlockNumber, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, false, err
+		return nil, common.Hash{}, err
 	}
 	if parentChainBlockNumber > finalizedPosition {
-		return nil, common.Hash{}, false, nil
+		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 	}
 	if lastDelayedAccumulator != (common.Hash{}) {
 		// Ensure that there hasn't been a reorg and this message follows the last
@@ -938,7 +938,7 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 			ParentChainBlockNumber: parentChainBlockNumber,
 		}
 		if fullMsg.AfterInboxAcc() != acc {
-			return nil, common.Hash{}, false, errors.New("delayed message accumulator mismatch while sequencing")
+			return nil, common.Hash{}, errors.New("delayed message accumulator mismatch while sequencing")
 		}
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
@@ -948,9 +948,9 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 		return data, err
 	})
 	if err != nil {
-		return nil, common.Hash{}, false, err
+		return nil, common.Hash{}, err
 	}
-	return msg, acc, true, nil
+	return msg, acc, nil
 }
 
 func (t *InboxTracker) CheckAccumulatorReorg(

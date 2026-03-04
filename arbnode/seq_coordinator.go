@@ -189,7 +189,9 @@ func NewSeqCoordinator(
 		config:           config,
 		signer:           signer,
 	}
-	streamer.SetSeqCoordinator(coordinator)
+	if err := streamer.SetSeqCoordinator(coordinator); err != nil {
+		return nil, err
+	}
 	return coordinator, nil
 }
 

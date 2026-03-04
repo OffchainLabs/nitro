@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -130,7 +131,6 @@ func NewMessageExtractor(
 	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
-	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
 	seqBatchCounter SequencerBatchCountFetcher,
 	l1Reader *headerreader.HeaderReader,
@@ -146,7 +146,6 @@ func NewMessageExtractor(
 		chainConfig:         chainConfig,
 		addrs:               rollupAddrs,
 		melDB:               melDB,
-		msgConsumer:         msgConsumer,
 		dataProviders:       dapRegistry,
 		fsm:                 fsm,
 		caughtUpChan:        make(chan struct{}),
@@ -156,6 +155,17 @@ func NewMessageExtractor(
 	}, nil
 }
 
+func (m *MessageExtractor) SetMessageConsumer(consumer mel.MessageConsumer) error {
+	if m.Started() {
+		return errors.New("cannot set message consumer after start")
+	}
+	if m.msgConsumer != nil {
+		return errors.New("message consumer already set")
+	}
+	m.msgConsumer = consumer
+	return nil
+}
+
 // Starts a message extraction service using a stopwaiter. The message extraction
 // "loop" consists of a ticking a finite state machine (FSM) that performs different
 // responsibilities based on its current state. For instance, processing a parent chain
@@ -163,6 +173,9 @@ func NewMessageExtractor(
 // resilient to errors, and each error will retry the same FSM state after a specified interval
 // in this Start method.
 func (m *MessageExtractor) Start(ctxIn context.Context) error {
+	if m.msgConsumer == nil {
+		return errors.New("message consumer not set")
+	}
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
 	if m.config.ReadMode != "latest" {
@@ -356,48 +369,34 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 	return false
 }
 
-// FinalizedDelayedMessageAtPosition checks if the delayed message at the
-// requested position is finalized based on the finalized position, and returns the message
-// if it is finalized. If the message is not finalized, it returns a boolean
-// indicating that as well. An error is returned if there was an issue
-// fetching the finalized position or the message.
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
 	_ common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, bool, error) {
+) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
 	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
-			return nil, common.Hash{}, false, err
+		if strings.Contains(err.Error(), "not found") {
+			return nil, common.Hash{}, nil
 		}
-		// If the message was not found, return nil.
-		return nil, common.Hash{}, false, nil
+		return nil, common.Hash{}, err
 	}
 	if requestedPosition > finalizedPos {
-		// Message isn't finalized yet, return false.
-		return nil, common.Hash{}, false, nil
+		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 	}
 	msg, err := m.GetDelayedMessage(requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, false, err
+		return nil, common.Hash{}, err
 	}
-	return msg.Message, common.Hash{}, true, nil
+	return msg.Message, common.Hash{}, nil
 }
 
-// CheckAccumulatorReorg checks if there has been a reorg in the parent chain by
-// comparing certain onchain accumulators. This is not relevant in MEL and is a no-op
-// in the message extractor simply to satisfy an interface.
-func (m *MessageExtractor) CheckAccumulatorReorg(
-	_ context.Context,
-	_ common.Hash,
-	_ uint64,
-	_ common.Hash,
-	_ uint64,
-) error {
-	return nil
-}
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)

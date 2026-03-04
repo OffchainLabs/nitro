@@ -3,6 +3,8 @@
 package mel
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -13,6 +15,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+var ErrDelayedMessageNotYetFinalized = errors.New("delayed message not yet finalized")
 
 type BatchDataLocation uint8
 
