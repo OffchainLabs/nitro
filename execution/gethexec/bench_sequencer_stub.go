@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//go:build !benchmarking-sequencer
+//go:build !experimental
 
 package gethexec
 
@@ -17,7 +17,7 @@ func BenchmarkingSequencerConfigAddOptions(_ string, _ *pflag.FlagSet) {
 
 func (c *BenchmarkingSequencerConfig) Validate() error {
 	if c.Enable {
-		log.Warn("benchmarking sequencer requested but not supported in this build (missing benchmarking-sequencer build tag)")
+		log.Warn("benchmarking sequencer requested but not supported in this build (missing experimental build tag)")
 	}
 	return nil
 }

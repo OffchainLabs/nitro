@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // DANGER! this file is included in all builds
-// DANGER! do not place any benchmarking-sequencer tag logic here
+// DANGER! do not place any experimental tag logic here
 
 package gethexec
 

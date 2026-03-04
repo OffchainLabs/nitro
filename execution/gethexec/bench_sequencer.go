@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//go:build benchmarking-sequencer
+//go:build experimental
 
 package gethexec
 
@@ -15,7 +15,7 @@ import (
 )
 
 func BenchmarkingSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", BenchmarkingSequencerConfigDefault.Enable, "enable benchmarking sequencer RPC (manual block creation; requires benchmarking-sequencer build tag)")
+	f.Bool(prefix+".enable", BenchmarkingSequencerConfigDefault.Enable, "enable benchmarking sequencer RPC (manual block creation; requires experimental build tag)")
 }
 
 func (c *BenchmarkingSequencerConfig) Validate() error {

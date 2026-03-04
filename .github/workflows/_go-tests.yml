@@ -46,7 +46,7 @@ on:
       run-pebble-b:
         required: false
         type: boolean
-      run-benchmarking-sequencer:
+      run-experimental:
         required: false
         type: boolean
 
@@ -299,13 +299,13 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 90m --test_database_engine pebble
           --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
 
-      # --------------------- BENCHMARKING SEQUENCER MODE ---------------------
+      # --------------------- EXPERIMENTAL MODE ---------------------
 
-      - name: run benchmarking sequencer tests
-        if: inputs.run-benchmarking-sequencer
+      - name: run experimental tests
+        if: inputs.run-experimental
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags benchmarking-sequencer --run '^TestBenchmarkingSequencer' --timeout 60m --cover
+          --tags experimental --run '^TestBenchmarkingSequencer' --timeout 60m --cover
 
       # --------------------- PROCESS JUNIT LOGS ---------------------
 
