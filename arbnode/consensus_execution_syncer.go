@@ -83,7 +83,7 @@ func NewConsensusExecutionSyncer(
 
 func (c *ConsensusExecutionSyncer) Start(ctx_in context.Context) {
 	c.StopWaiter.Start(ctx_in, c)
-	if c.msgCountFetcher.SupportsPushingFinalityData() {
+	if c.msgCountFetcher != nil && c.msgCountFetcher.SupportsPushingFinalityData() {
 		c.CallIteratively(c.pushFinalityDataFromConsensusToExecution)
 	}
 	c.CallIteratively(c.pushConsensusSyncDataToExecution)
