@@ -321,6 +321,71 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
+func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	// Even though the transaction will touch a filtered address,
+	// the sequencer will process the delayed msg, since this config is set to true.
+	builder.execConfig.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter = true
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Sender")
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	senderAddr := builder.L2Info.GetAddress("Sender")
+
+	// Get initial info
+	filteredBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	senderNonceBefore, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+
+	// Set up address filter to block FilteredUser
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Prepare and send delayed tx TO filtered address
+	transferAmount := big.NewInt(1e12)
+	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
+	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+
+	// Advance L1 again to ensure all delayed messages are processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	_, err = builder.L2.EnsureTxSucceeded(delayedTx)
+	require.NoError(t, err)
+
+	// Verify filtered address balance changed
+	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(filteredBalanceBefore, transferAmount), finalBalance, "filtered address should receive funds")
+
+	// Verify the receipt exists and has a successful status
+	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "bypassed tx should have successful receipt status")
+
+	// Verify sender's nonce was incremented
+	senderNonceAfter, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, senderNonceBefore+1, senderNonceAfter, "sender nonce should be incremented")
+
+	// Verify sender's balance decreased (gas was consumed)
+	senderBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
+}
+
 // TestDelayedMessageFilterBlocksSubsequent verifies that messages behind filtered one are blocked.
 func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
