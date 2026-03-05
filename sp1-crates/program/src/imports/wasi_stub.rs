@@ -20,7 +20,7 @@ pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
         platform::print_string(
             1,
             format!(
-                "Validation succeeds with hash {}",
+                "Validation succeeds with hash 0x{}",
                 hex::encode(data.input().large_globals[0])
             )
             .as_bytes(),
