@@ -38,6 +38,7 @@ pub mod meter;
 pub mod prelude;
 pub mod start;
 
+/// cbindgen:ignore
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 
 pub trait ModuleMod {

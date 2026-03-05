@@ -55,6 +55,7 @@ use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableTy
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+/// cbindgen:ignore
 #[cfg(feature = "counters")]
 static GET_MODULES_MERKLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -167,6 +168,7 @@ impl Function {
         func
     }
 
+    /// cbindgen:ignore
     const CHUNK_SIZE: usize = 64;
 
     fn set_code_merkle(&mut self) {
@@ -353,6 +355,7 @@ lazy_static! {
 }
 
 impl Module {
+    /// cbindgen:ignore
     const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
 
     fn from_binary(
@@ -1221,6 +1224,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
+    /// cbindgen:ignore
     pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
 
     pub fn from_paths(

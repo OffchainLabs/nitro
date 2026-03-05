@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use arbutil::Bytes32;
 
+/// cbindgen:ignore
 const VALUE_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -261,6 +262,7 @@ const VALUE_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 const FUNCTION_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -520,6 +522,7 @@ const FUNCTION_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 const INSTRUCTION_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -779,6 +782,7 @@ const INSTRUCTION_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 /// These have been pre-calculated to match the current implementation of Memory::hash_leaf.
 const MEMORY_HASHES: &[Bytes32; 64] = &[
     Bytes32([
@@ -1039,6 +1043,7 @@ const MEMORY_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 const TABLE_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1298,6 +1303,7 @@ const TABLE_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 const TABLE_ELEMENT_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1557,6 +1563,7 @@ const TABLE_ELEMENT_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 const MODULE_HASHES: &[Bytes32; 64] = &[
     Bytes32([
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1816,8 +1823,10 @@ const MODULE_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 pub const EMPTY_HASH: &Bytes32 = &Bytes32([0; 32]);
 
+/// cbindgen:ignore
 pub const ZERO_HASHES: &[&[Bytes32; 64]; 7] = &[
     VALUE_HASHES,
     FUNCTION_HASHES,

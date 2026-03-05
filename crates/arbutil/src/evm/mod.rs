@@ -9,69 +9,93 @@ pub mod req;
 pub mod storage;
 pub mod user;
 
+/// cbindgen:ignore
 // params.SstoreSentryGasEIP2200
 pub const SSTORE_SENTRY_GAS: Gas = Gas(2300);
 
+/// cbindgen:ignore
 // params.ColdAccountAccessCostEIP2929
 pub const COLD_ACCOUNT_GAS: Gas = Gas(2600);
 
+/// cbindgen:ignore
 // params.ColdSloadCostEIP2929
 pub const COLD_SLOAD_GAS: Gas = Gas(2100);
 
+/// cbindgen:ignore
 // params.WarmStorageReadCostEIP2929
 pub const WARM_SLOAD_GAS: Gas = Gas(100);
 
+/// cbindgen:ignore
 // params.WarmStorageReadCostEIP2929 (see enable1153 in jump_table.go)
 pub const TLOAD_GAS: Gas = WARM_SLOAD_GAS;
+/// cbindgen:ignore
 pub const TSTORE_GAS: Gas = WARM_SLOAD_GAS;
 
+/// cbindgen:ignore
 // params.LogGas and params.LogDataGas
 pub const LOG_TOPIC_GAS: Gas = Gas(375);
+/// cbindgen:ignore
 pub const LOG_DATA_GAS: Gas = Gas(8);
 
+/// cbindgen:ignore
 // params.CopyGas
 pub const COPY_WORD_GAS: Gas = Gas(3);
 
+/// cbindgen:ignore
 // params.Keccak256Gas
 pub const KECCAK_256_GAS: Gas = Gas(30);
+/// cbindgen:ignore
 pub const KECCAK_WORD_GAS: Gas = Gas(6);
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see gas.go)
 pub const GAS_QUICK_STEP: Gas = Gas(2);
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const ADDRESS_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see eips.go)
 pub const CHAINID_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const COINBASE_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const GASLIMIT_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const NUMBER_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const TIMESTAMP_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const GASLEFT_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const CALLER_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const CALLVALUE_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const GASPRICE_GAS: Gas = GAS_QUICK_STEP;
 
+/// cbindgen:ignore
 // vm.GasQuickStep (see jump_table.go)
 pub const ORIGIN_GAS: Gas = GAS_QUICK_STEP;
 

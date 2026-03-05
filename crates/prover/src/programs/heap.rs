@@ -23,6 +23,7 @@ pub struct HeapBound {
 }
 
 impl HeapBound {
+    /// cbindgen:ignore
     const PAY_FUNC: &'static str = "pay_for_memory_grow";
 
     pub fn new(bounds: CompileMemoryParams) -> Self {

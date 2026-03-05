@@ -31,7 +31,9 @@ use wasmparser::{BlockType, Operator};
 
 use super::config::OpCosts;
 
+/// cbindgen:ignore
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
+/// cbindgen:ignore
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";
 
 pub trait OpcodePricer: Fn(&Operator, &SigMap) -> u64 + Send + Sync + Clone {}
