@@ -41,6 +41,7 @@ func OpenClassicOutboxFromStack(stack *node.Node) (*ClassicOutboxRetriever, erro
 		return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 	}
 	if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
+		classicMsgDB.Close()
 		return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
 	}
 	return NewClassicOutboxRetriever(classicMsgDB), nil
