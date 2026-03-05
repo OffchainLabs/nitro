@@ -833,7 +833,6 @@ func createInitialMELState(
 		ParentChainBlockNumber:             startBlock.NumberU64(),
 		ParentChainBlockHash:               startBlock.Hash(),
 		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
-		MsgRoot:                            common.Hash{},
 		DelayedMessagesSeen:                1,
 		DelayedMessagesRead:                1, // Assumes we have read the init message.
 		MsgCount:                           1,

@@ -26,5 +26,5 @@ func (m *MessageReader) Read(
 	if msgIndex >= state.MsgCount {
 		return nil, fmt.Errorf("index %d out of range, total messages: %d", msgIndex, state.MsgCount)
 	}
-	return PeekFromAcc[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.MsgAccumulatorRoot, state.MsgCount-msgIndex)
+	return PeekFromAccumulator[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.MsgAccumulatorRoot, state.MsgCount-msgIndex)
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func PeekFromAcc[T any](
+func PeekFromAccumulator[T any](
 	ctx context.Context,
 	preimageResolver PreimageResolver,
 	outBox common.Hash,

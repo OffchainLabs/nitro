@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/mel-replay"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 )
 
 func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
@@ -33,21 +33,14 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 			DelayedMessagesRead: i,
 		})
 	}
+	// Set up preimage recording before accumulating
+	preimages := make(daprovider.PreimagesMap)
 	state := &mel.State{}
-	for i := range uint64(5) {
+	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
+	for i := range numMsgs {
 		require.NoError(t, state.AccumulateMessage(messages[i]))
 		state.MsgCount++
 	}
-	require.NoError(t, state.GenerateMessageMerklePartialsAndRoot())
-	// Simulate extracting of Messages in native mode to record preimages
-	preimages := make(daprovider.PreimagesMap)
-	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
-	newState := state.Clone()
-	for i := uint64(5); i < numMsgs; i++ {
-		require.NoError(t, newState.AccumulateMessage(messages[i]))
-		newState.MsgCount++
-	}
-	require.NoError(t, newState.GenerateMessageMerklePartialsAndRoot())
 
 	// Test reading in wasm mode
 	msgReader := melreplay.NewMessageReader(
@@ -56,8 +49,8 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 			preimages,
 		),
 	)
-	for i := uint64(5); i < numMsgs; i++ {
-		msg, err := msgReader.Read(ctx, newState, i)
+	for i := range numMsgs {
+		msg, err := msgReader.Read(ctx, state, i)
 		require.NoError(t, err)
 		require.Equal(t, msg.Hash(), messages[i].Hash())
 	}
