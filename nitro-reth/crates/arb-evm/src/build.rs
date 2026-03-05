@@ -32,7 +32,6 @@ use revm::context::result::ExecutionResult;
 use revm::context::TxEnv;
 use revm::database::State;
 use revm::inspector::Inspector;
-use revm_database::{DatabaseCommit, DatabaseCommitExt};
 
 use crate::context::ArbBlockExecutionCtx;
 use crate::executor::DefaultArbOsHooks;
@@ -138,6 +137,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
             zombie_accounts: std::collections::HashSet::new(),
+            finalise_deleted: std::collections::HashSet::new(),
         }
     }
 }
@@ -201,6 +201,7 @@ where
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
             zombie_accounts: std::collections::HashSet::new(),
+            finalise_deleted: std::collections::HashSet::new(),
         }
     }
 }
@@ -275,6 +276,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
     zombie_accounts: std::collections::HashSet<Address>,
+    /// Accounts removed by per-tx Finalise (EIP-161). Tracked so the producer
+    /// can mark them for trie deletion if they existed pre-block.
+    finalise_deleted: std::collections::HashSet<Address>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -297,6 +301,12 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// a zero-value transfer on pre-Stylus ArbOS.
     pub fn zombie_accounts(&self) -> std::collections::HashSet<Address> {
         self.zombie_accounts.clone()
+    }
+
+    /// Returns accounts deleted by per-tx Finalise (EIP-161).
+    /// These may need trie deletion if they existed pre-block.
+    pub fn finalise_deleted(&self) -> &std::collections::HashSet<Address> {
+        &self.finalise_deleted
     }
 
     /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
@@ -522,6 +532,19 @@ where
         }
 
         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+
+        tracing::debug!(
+            target: "arb::executor",
+            %ticket_id,
+            %sender,
+            fee_refund = %info.fee_refund_addr,
+            deposit = %info.deposit_value,
+            retry_value = %info.retry_value,
+            submission_fee = %fees.submission_fee,
+            escrow = %fees.escrow,
+            can_pay = fees.can_pay_for_gas,
+            "SubmitRetryable fee breakdown"
+        );
 
         // 3. Transfer submission fee to network fee account.
         if !fees.submission_fee.is_zero() {
@@ -1180,15 +1203,27 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
-                            // Go always calls TransferBalance(escrow, sender, value).
-                            // When value=0 and ArbOS < Stylus, this triggers
-                            // CreateZombieIfDeleted(escrow): if the escrow was
-                            // emptied earlier in the block, preserve it as a zombie
-                            // so EIP-161 doesn't prune it from the state trie.
+                            // Go always calls TransferBalance(escrow, sender, value),
+                            // even when value=0. SubBalance calls getOrNewStateObject
+                            // which creates the escrow account in the stateDB (making
+                            // it dirty). With value=0 and pre-Stylus ArbOS, the escrow
+                            // becomes a zombie: an empty account preserved in the trie.
+                            // We must load/create it in cache so it appears in the bundle.
                             if value.is_zero()
                                 && self.arb_ctx.arbos_version
                                     < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
                             {
+                                let _ = db.load_cache_account(escrow);
+                                if let Some(cached) = db.cache.accounts.get_mut(&escrow) {
+                                    if cached.account.is_none() {
+                                        cached.account = Some(revm_database::PlainAccount {
+                                            info: revm_state::AccountInfo::default(),
+                                            storage: Default::default(),
+                                        });
+                                        cached.status =
+                                            revm_database::AccountStatus::InMemoryChange;
+                                    }
+                                }
                                 self.zombie_accounts.insert(escrow);
                             }
 
@@ -1335,6 +1370,8 @@ where
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
                 poster_gas = hooks.tx_proc.poster_gas;
+
+
             }
 
             units
@@ -1820,6 +1857,12 @@ where
                 });
 
                 if let Some(ref result) = result {
+                    tracing::debug!(
+                        target: "arb::executor",
+                        ticket_id = %retry_ctx.ticket_id,
+                        should_delete = result.should_delete_retryable,
+                        "Retry EndTxHook result"
+                    );
                     if result.should_delete_retryable {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         if let Ok(arb_state) =
@@ -1999,6 +2042,38 @@ where
             arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
         }
 
+        // Per-tx Finalise: delete empty accounts from cache.
+        // Matches Go's statedb.Finalise(true) called after each transaction
+        // in applyTransaction (state_processor.go:168). Empty accounts
+        // (balance=0, nonce=0, no code) are removed from the in-memory state
+        // so subsequent transactions see them as non-existent, causing a fresh
+        // load from the state provider. Zombie accounts are preserved.
+        {
+            let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            let to_remove: Vec<Address> = db
+                .cache
+                .accounts
+                .iter()
+                .filter_map(|(addr, cached)| {
+                    if let Some(ref acct) = cached.account {
+                        let is_empty = acct.info.nonce == 0
+                            && acct.info.balance.is_zero()
+                            && acct.info.code_hash == keccak_empty;
+                        if is_empty && !self.zombie_accounts.contains(addr) {
+                            return Some(*addr);
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            for addr in &to_remove {
+                db.cache.accounts.remove(addr);
+            }
+            self.finalise_deleted.extend(to_remove);
+        }
+
         Ok(gas_used)
     }
 
@@ -2060,35 +2135,56 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 }
 
 /// Mint balance to an address in the EVM state.
+///
+/// Directly modifies the cache without creating transitions. This matches
+/// Go's StateDB.AddBalance which modifies in-memory state without triggering
+/// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() || address == Address::ZERO {
         return;
     }
     let _ = state.load_cache_account(address);
-    let amount_u128: u128 = amount.try_into().unwrap_or(u128::MAX);
-    let _ = state.increment_balances(core::iter::once((address, amount_u128)));
+    if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
+        if let Some(ref mut acct) = cache_acct.account {
+            acct.info.balance = acct.info.balance.saturating_add(amount);
+        } else {
+            cache_acct.account = Some(revm_database::states::plain_account::PlainAccount {
+                info: revm_state::AccountInfo {
+                    balance: amount,
+                    ..Default::default()
+                },
+                storage: Default::default(),
+            });
+        }
+    }
 }
 
 /// Burn (deduct) balance from an address in the EVM state.
+///
+/// Directly modifies the cache without creating transitions. This matches
+/// Go's StateDB.SubBalance which modifies in-memory state without triggering
+/// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() {
         return;
     }
-    if let Ok(Some(mut info)) = revm::Database::basic(state, address) {
-        info.balance = info.balance.saturating_sub(amount);
-        let mut account = revm_state::Account::from(info);
-        account.mark_touch();
-        state.commit_iter(&mut core::iter::once((address, account)));
+    let _ = state.load_cache_account(address);
+    if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
+        if let Some(ref mut acct) = cache_acct.account {
+            acct.info.balance = acct.info.balance.saturating_sub(amount);
+        }
     }
 }
 
 /// Increment the nonce of an account in the EVM state.
+///
+/// Directly modifies the cache without creating transitions.
 fn increment_nonce<DB: Database>(state: &mut State<DB>, address: Address) {
-    if let Ok(Some(mut info)) = revm::Database::basic(state, address) {
-        info.nonce += 1;
-        let mut account = revm_state::Account::from(info);
-        account.mark_touch();
-        state.commit_iter(&mut core::iter::once((address, account)));
+    let _ = state.load_cache_account(address);
+    if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
+        if let Some(ref mut acct) = cache_acct.account {
+            acct.info.nonce += 1;
+        }
     }
 }
 
