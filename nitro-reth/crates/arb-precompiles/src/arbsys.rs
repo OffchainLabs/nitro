@@ -163,7 +163,7 @@ fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        args_cost + result_cost,
+        STORAGE_READ_COST + args_cost + result_cost,
         block_num.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -196,7 +196,7 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
-    Ok(PrecompileOutput::new(args_cost + result_cost, hash.0.to_vec().into()))
+    Ok(PrecompileOutput::new(STORAGE_READ_COST + args_cost + result_cost, hash.0.to_vec().into()))
 }
 
 fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -204,7 +204,7 @@ fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        args_cost + result_cost,
+        STORAGE_READ_COST + args_cost + result_cost,
         U256::from(chain_id).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -239,7 +239,7 @@ fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        args_cost + result_cost,
+        STORAGE_READ_COST + args_cost + result_cost,
         val.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -297,7 +297,7 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let result_cost = COPY_GAS * words_for_bytes(32);
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(result_addr.as_slice());
-    Ok(PrecompileOutput::new(args_cost + result_cost, out.to_vec().into()))
+    Ok(PrecompileOutput::new(STORAGE_READ_COST + args_cost + result_cost, out.to_vec().into()))
 }
 
 fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -320,7 +320,7 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        args_cost + result_cost,
+        STORAGE_READ_COST + args_cost + result_cost,
         U256::ZERO.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -392,6 +392,8 @@ fn do_send_tx_to_l1(
     let mut gas_used = 0u64;
     // Argument copy cost.
     gas_used += COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
+    // OpenArbosState overhead: Go's makeContext reads version (800 gas) for all non-pure methods.
+    gas_used += STORAGE_READ_COST;
 
     let internals = input.internals_mut();
 
@@ -402,7 +404,7 @@ fn do_send_tx_to_l1(
 
     // ArbOS v41+: prevent sending value when native token owners exist.
     if !value.is_zero() {
-        gas_used += STORAGE_READ_COST;
+        // Version read gas already covered by OpenArbosState overhead above.
         let raw_version = internals
             .sload(ARBOS_STATE_ADDRESS, root_slot(0))
             .map_err(|_| PrecompileError::other("sload failed"))?
@@ -453,6 +455,9 @@ fn do_send_tx_to_l1(
         old_size,
         &mut gas_used,
     )?;
+
+    // Go calls merkleAcc.Size() after Append, which does another storage read.
+    gas_used += STORAGE_READ_COST;
 
     // Write new size.
     let new_size_val = U256::from(new_size);
@@ -534,8 +539,7 @@ fn do_send_tx_to_l1(
         block_number: block_number.try_into().unwrap_or(0),
     });
 
-    // Read ArbOS version for return value versioning.
-    gas_used += STORAGE_READ_COST;
+    // Read ArbOS version for return value versioning (no gas — Go uses cached value).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?
@@ -719,11 +723,12 @@ fn update_merkle_accumulator(
     }
 
     // Read all partials for root computation.
+    // No gas charge here: Go's Append doesn't read partials for root.
+    // The root is computed later in the block builder (Go's Root() call).
     let num_partials = calc_num_partials(new_size);
     let mut partials = Vec::with_capacity(num_partials as usize);
     for i in 0..num_partials {
         let pslot = map_slot(merkle_key.as_slice(), 2 + i);
-        *gas_used += STORAGE_READ_COST;
         let val = internals
             .sload(ARBOS_STATE_ADDRESS, pslot)
             .map_err(|_| PrecompileError::other("sload failed"))?
