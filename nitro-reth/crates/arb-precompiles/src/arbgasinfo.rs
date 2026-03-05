@@ -292,6 +292,7 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
 }
 
 fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data_len = input.data.len();
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -314,10 +315,10 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    Ok(PrecompileOutput::new(
-        (4 * SLOAD_GAS + COPY_GAS).min(gas_limit),
-        out.into(),
-    ))
+    // Go reads baseFee from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
+    let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
+    let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
+    Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
 fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -334,12 +335,13 @@ fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileRe
     out.extend_from_slice(&gas_limit_val.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + 3 * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
 
 fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
+    let data_len = input.data.len();
     let gas_limit = input.gas;
     load_arbos(input)?;
 
@@ -360,10 +362,10 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
-    Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
-        out.into(),
-    ))
+    // Go reads baseFee from evm.Context (free), only 1 body SLOAD (PricePerUnit).
+    let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
+    let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
+    Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
 
 // ── Constraint getters (ArbOS v50+) ─────────────────────────────────
@@ -404,8 +406,9 @@ fn handle_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precompile
         sloads += 3;
     }
 
+    let result_words = (out.len() as u64 + 31) / 32;
     Ok(PrecompileOutput::new(
-        (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -496,8 +499,9 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
         }
     }
 
+    let result_words = (out.len() as u64 + 31) / 32;
     Ok(PrecompileOutput::new(
-        (sloads * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -520,8 +524,9 @@ fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResul
         out.extend_from_slice(&fee.to_be_bytes::<32>());
     }
 
+    let result_words = (out.len() as u64 + 31) / 32;
     Ok(PrecompileOutput::new(
-        ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
