@@ -53,7 +53,7 @@ func BuildClassicMerkleTree(db ethdb.KeyValueWriter, leaves [][]byte) (common.Ha
 // keyed by keccak256("msgBatch" || batchNum.Bytes()).
 // Exported for use in tests across packages.
 func WriteClassicBatchHeader(db ethdb.KeyValueWriter, batchNum *big.Int, root common.Hash, merkleSize uint64) error {
-	key := crypto.Keccak256(append([]byte("msgBatch"), batchNum.Bytes()...))
+	key := msgBatchKey(batchNum)
 	header := make([]byte, 40)
 	binary.BigEndian.PutUint64(header[0:8], merkleSize)
 	copy(header[8:40], root.Bytes())
