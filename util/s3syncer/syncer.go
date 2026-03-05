@@ -33,28 +33,40 @@ const bytesInMB = 1024 * 1024
 
 // NewSyncer creates a new S3 syncer with the given callbacks.
 func NewSyncer(
-	ctx context.Context,
 	config *Config,
 	dataHandler DataHandler,
-) (*Syncer, error) {
-	s := &Syncer{
+) *Syncer {
+	return &Syncer{
 		config:     config,
 		handleData: dataHandler,
 	}
+}
 
-	client, err := s3client.NewS3FullClientFromConfig(ctx, &config.Config)
+func (s *Syncer) Initialize(ctx context.Context) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.client != nil {
+		return nil
+	}
+
+	client, err := s3client.NewS3FullClientFromConfig(ctx, &s.config.Config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create S3 client: %w", err)
+		return fmt.Errorf("failed to create S3 client: %w", err)
 	}
 	s.client = client
-
-	return s, nil
+	return nil
 }
 
 // CheckAndSync checks if the S3 object has changed (via ETag) and downloads it if so.
 func (s *Syncer) CheckAndSync(ctx context.Context) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
+	if s.client == nil {
+		return fmt.Errorf("S3 client not initialized")
+	}
+
 	headOutput, err := s.client.Client().HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(s.config.ObjectKey),
@@ -84,6 +96,13 @@ func (s *Syncer) CheckAndSync(ctx context.Context) error {
 // DownloadAndLoad downloads the S3 object and processes it with the data handler.
 // This is used for initial load where we need to fetch metadata first.
 func (s *Syncer) DownloadAndLoad(ctx context.Context) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.client == nil {
+		return fmt.Errorf("S3 client not initialized")
+	}
+
 	headOutput, err := s.client.Client().HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(s.config.ObjectKey),
