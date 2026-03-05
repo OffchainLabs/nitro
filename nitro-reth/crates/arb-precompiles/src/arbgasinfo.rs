@@ -117,7 +117,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             load_arbos(&mut input)?;
             let fee = sload_field(&mut input, current_tx_poster_fee_slot())?;
             Ok(PrecompileOutput::new(
-                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),
             ))
         }
