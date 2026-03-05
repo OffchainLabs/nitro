@@ -3,11 +3,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: arbreth
+    restart: "no"
     ports:
       - "8545:8545"
       - "8551:8551"
     volumes:
-      - ./arbreth-data:/data
+      - ${DATA_DIR:-arbreth-data}:/data
+    environment:
+      - RUST_LOG=${RUST_LOG:-warn}
     command:
       - node
       - --chain=/genesis/arbitrum-sepolia.json
@@ -19,24 +23,34 @@ services:
       - --authrpc.addr=0.0.0.0
       - --authrpc.port=8551
       - --authrpc.jwtsecret=/data/jwt.hex
-      - -d
+      - --disable-discovery
+      - --log.stdout.filter=${RUST_LOG:-warn}
+      - --db.exclusive=true
+      - --db.growth-step=4GB
+      - --db.log-level=error
+    networks:
+      - arb-network
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8551'"]
+      test:
+        - CMD-SHELL
+        - timeout 5 bash -c '</dev/tcp/localhost/8551' || exit 1
       interval: 10s
       timeout: 5s
+      retries: 10
       start_period: 30s
-      retries: 3
-    networks:
-      - arb
 
   nitro:
-    image: offchainlabs/nitro-node:v3.10.0-rc.2-746bda2
+    image: ${NITRO_IMAGE:-offchainlabs/nitro-node:v3.10.0-rc.2-746bda2}
+    container_name: nitro
+    user: root
+    entrypoint: /usr/local/bin/nitro
     depends_on:
       arbreth:
         condition: service_healthy
+    restart: "no"
     volumes:
-      - ./nitro-data:/tmp/nitro-data
-      - ./arbreth-data:/arbreth-data:ro
+      - ${NITRO_DATA_DIR:-nitro-data}:/tmp/nitro-data
+      - ${DATA_DIR:-arbreth-data}:/arbreth-data:ro
     command:
       - --init.empty=true
       - --init.validate-genesis-assertion=false
@@ -45,13 +59,18 @@ services:
       - --parent-chain.blob-client.beacon-url=${PARENT_CHAIN_BEACON_URL}
       - --chain.id=${CHAIN_ID:-421614}
       - --execution.forwarding-target=null
-      - --log-level=${LOG_LEVEL:-INFO}
+      - --log-level=${LOG_LEVEL:-WARN}
       - --node.execution-rpc-client.url=http://arbreth:8551
       - --node.execution-rpc-client.jwtsecret=/arbreth-data/jwt.hex
       - --node.sequencer=false
+      - --node.feed.input.url=${FEED_URL:-wss://sepolia-rollup.arbitrum.io/feed}
     networks:
-      - arb
+      - arb-network
+
+volumes:
+  arbreth-data:
+  nitro-data:
 
 networks:
-  arb:
-    driver: bridge
+  arb-network:
+    name: arb-network
