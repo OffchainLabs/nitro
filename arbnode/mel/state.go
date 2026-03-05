@@ -32,6 +32,7 @@ type State struct {
 	BatchCount                         uint64
 	MsgCount                           uint64
 	MsgRoot                            common.Hash
+	MsgAccumulatorRoot                 common.Hash
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
 	DelayedMessagesSeenRoot            common.Hash

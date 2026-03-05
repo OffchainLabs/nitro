@@ -4,6 +4,7 @@ package melreplay
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/bits"
 
@@ -12,6 +13,42 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 )
+
+func PeekFromAcc[T any](
+	ctx context.Context,
+	preimageResolver PreimageResolver,
+	outBox common.Hash,
+	lookbacks uint64,
+) (*T, error) {
+	var msgHash common.Hash
+	curr := outBox
+	lookbacksForLogging := lookbacks
+	for lookbacks > 0 {
+		result, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, curr)
+		if err != nil {
+			return nil, err
+		}
+		if len(result) != 2*common.HashLength {
+			return nil, fmt.Errorf("invalid preimage result length: %d, wanted %d", len(result), 2*common.HashLength)
+		}
+		// Split result into left and right halves.
+		// TODO: Make a helper function.
+		mid := len(result) / 2
+		left := result[:mid]
+		msgHash = common.BytesToHash(result[mid:])
+		curr = common.BytesToHash(left)
+		lookbacks--
+	}
+	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
+	if err != nil {
+		return nil, err
+	}
+	object := new(T)
+	if err = rlp.Decode(bytes.NewBuffer(objectBytes), &object); err != nil {
+		return nil, fmt.Errorf("failed to decode merkle object at lookback position %d: %w", lookbacksForLogging, err)
+	}
+	return object, nil
+}
 
 func fetchObjectFromMerkleTree[T any](merkleRoot common.Hash, merkleDepth int, msgIndex uint64, preimageResolver PreimageResolver) (*T, error) {
 	originalMsgIndex := msgIndex

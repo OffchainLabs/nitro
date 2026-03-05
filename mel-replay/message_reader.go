@@ -5,7 +5,6 @@ package melreplay
 import (
 	"context"
 	"fmt"
-	"math/bits"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -27,7 +26,5 @@ func (m *MessageReader) Read(
 	if msgIndex >= state.MsgCount {
 		return nil, fmt.Errorf("index %d out of range, total messages: %d", msgIndex, state.MsgCount)
 	}
-	treeSize := NextPowerOfTwo(state.MsgCount)
-	merkleDepth := bits.TrailingZeros64(treeSize)
-	return fetchObjectFromMerkleTree[arbostypes.MessageWithMetadata](state.MsgRoot, merkleDepth, msgIndex, m.preimageResolver)
+	return PeekFromAcc[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.MsgAccumulatorRoot, state.MsgCount-msgIndex)
 }
