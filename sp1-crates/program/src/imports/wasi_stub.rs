@@ -9,9 +9,9 @@ use wasmer::FunctionEnvMut;
 
 pub type Errno = u16;
 
-pub const ERRNO_SUCCESS: Errno = 0;
-pub const ERRNO_BADF: Errno = 8;
-pub const ERRNO_INVAL: Errno = 28;
+pub const ERRNO_SUCCESS: Errno = caller_env::wasip1_stub::ERRNO_SUCCESS.0;
+pub const ERRNO_BADF: Errno = caller_env::wasip1_stub::ERRNO_BADF.0;
+pub const ERRNO_INVAL: Errno = caller_env::wasip1_stub::ERRNO_INVAL.0;
 
 pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
     let (data, _store) = ctx.data_and_store_mut();
