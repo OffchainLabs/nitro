@@ -54,37 +54,44 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let result = match selector {
         GET_PREFERRED_AGGREGATOR => {
-            // Deprecated: always returns (BatchPosterAddress, true).
+            // Deprecated view method: always returns (BatchPosterAddress, true).
+            // Go charges OpenArbosState (800) + argsCost (3) + resultCost (6) = 809.
             let mut out = Vec::with_capacity(96);
-            // ABI offset for the tuple
             out.extend_from_slice(&U256::from(0x40u64).to_be_bytes::<32>());
-            // isDefault = true
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
-            // address (left-padded)
             let mut addr_word = [0u8; 32];
             addr_word[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             out.extend_from_slice(&addr_word);
-            Ok(PrecompileOutput::new(COPY_GAS.min(gas_limit), out.into()))
+            Ok(PrecompileOutput::new(
+                (SLOAD_GAS + 9).min(gas_limit),
+                out.into(),
+            ))
         }
         GET_DEFAULT_AGGREGATOR => {
-            // Deprecated: always returns BatchPosterAddress.
+            // Deprecated view method: always returns BatchPosterAddress.
+            // Go charges OpenArbosState (800) + resultCost (3) = 803.
             let mut out = [0u8; 32];
             out[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             Ok(PrecompileOutput::new(
-                COPY_GAS.min(gas_limit),
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 out.to_vec().into(),
             ))
         }
         GET_TX_BASE_FEE => {
-            // Deprecated: always returns 0.
+            // Deprecated view method: always returns 0.
+            // Go charges OpenArbosState (800) + argsCost (3) + resultCost (3) = 806.
             Ok(PrecompileOutput::new(
-                COPY_GAS.min(gas_limit),
+                (SLOAD_GAS + 6).min(gas_limit),
                 U256::ZERO.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         SET_TX_BASE_FEE => {
-            // Deprecated: no-op.
-            Ok(PrecompileOutput::new(COPY_GAS.min(gas_limit), vec![].into()))
+            // Deprecated write method: no-op.
+            // Go charges OpenArbosState (800) + argsCost (6) = 806.
+            Ok(PrecompileOutput::new(
+                (SLOAD_GAS + 6).min(gas_limit),
+                vec![].into(),
+            ))
         }
         GET_FEE_COLLECTOR => handle_get_fee_collector(&mut input),
         SET_FEE_COLLECTOR => handle_set_fee_collector(&mut input),
