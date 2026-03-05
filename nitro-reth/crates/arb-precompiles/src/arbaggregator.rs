@@ -31,6 +31,7 @@ const SET_TX_BASE_FEE: [u8; 4] = [0x5b, 0xe6, 0x88, 0x8b];
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 
 // Batch poster table storage layout constants.
@@ -221,7 +222,12 @@ fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let new_val = U256::from_be_slice(new_collector.as_slice());
     sstore_field(input, pay_to_slot, new_val)?;
 
-    let gas_used = 3 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    // Go: OAS(1) + OpenPoster IsMember(1) + PayTo.Get(1) + SetPayTo(1 SSTORE) + argsCost(6).
+    // Owner check adds IsMember(1 SLOAD) only when caller is neither poster nor collector.
+    let mut gas_used = 3 * SLOAD_GAS + SSTORE_GAS + 2 * COPY_GAS;
+    if caller != poster && caller != old_collector {
+        gas_used += SLOAD_GAS;
+    }
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
 }
 
@@ -320,6 +326,10 @@ fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     sstore_field(input, pay_to_slot, addr_as_u256)?;
 
-    let gas_used = 4 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    // Go: IsMember(caller)(1) + ContainsPoster IsMember(1) + AddPoster[IsMember(1) +
+    // fundsDue.SetChecked(0)(5000) + payTo.Set(20000) + Add(IsMember(1) + size.Get(1) +
+    // byAddress.Set(20000) + backingStorage.Set(20000) + size.Increment Get(1)+Set(20000))]
+    // + argsCost(3).
+    let gas_used = 6 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
 }
