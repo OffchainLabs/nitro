@@ -150,7 +150,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
             if let Some(r) = crate::check_method_version(60, 0) { return r; }
-            let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
+            // Go: OAS(800) + Params() burn(100) + resultCost(3).
+            let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
         _ => Err(PrecompileError::other(
@@ -200,8 +201,9 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     out.extend_from_slice(&version.to_be_bytes::<32>());
     out.extend_from_slice(&timestamp.to_be_bytes::<32>());
 
+    // Go: OAS(1) + version(1) + timestamp(1) = 3 sloads + resultCost = 2 words × 3 = 6.
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -228,8 +230,9 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let result = if is_owner { U256::from(1u64) } else { U256::ZERO };
 
+    // Go: OAS(1) + IsMember(1) = 2 sloads + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -256,8 +259,9 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }
 
+    // Go: resultCost = (2 + N) words for dynamic array encoding.
     Ok(PrecompileOutput::new(
-        ((2 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((2 + max_members) * SLOAD_GAS + (2 + max_members) * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -285,8 +289,9 @@ fn handle_is_set_member(
         U256::ZERO
     };
 
+    // Go: OAS(1) + IsMember(1) = 2 sloads + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         is_member.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -314,8 +319,9 @@ fn handle_get_all_set_members(
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }
 
+    // Go: resultCost = (2 + N) words for dynamic array encoding.
     Ok(PrecompileOutput::new(
-        ((2 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((2 + max_members) * SLOAD_GAS + (2 + max_members) * COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
