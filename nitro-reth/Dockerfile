@@ -1,7 +1,24 @@
-# Pre-built binary Dockerfile
-# Build the binary on the host first:
-#   CARGO_TARGET_DIR=/data/target cargo build --release -p arb-reth
-#   cp /data/target/release/arb-reth ./arb-reth
+# Stage 1: Builder
+FROM rust:1.93-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    clang \
+    libclang-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy workspace manifests first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+COPY bin/ bin/
+
+# Build release binary
+RUN cargo build --release -p arb-reth
+
+# Stage 2: Runtime
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
@@ -10,8 +27,8 @@ RUN apt-get update && apt-get install -y \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pre-built binary
-COPY arb-reth /usr/local/bin/arb-reth
+# Copy binary from builder
+COPY --from=builder /build/target/release/arb-reth /usr/local/bin/arb-reth
 
 # Copy genesis files and entrypoint
 COPY genesis/ /genesis/
