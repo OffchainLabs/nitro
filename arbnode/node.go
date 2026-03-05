@@ -692,8 +692,9 @@ func getInboxTrackerAndReader(
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
 	exec execution.ExecutionSequencer,
+	maxL2MessageSize uint64,
 ) (*InboxTracker, *InboxReader, error) {
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest, maxL2MessageSize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -955,6 +956,7 @@ func getBatchPoster(
 	parentChainID *big.Int,
 	dapReaders *daprovider.ReaderRegistry,
 	stakerAddr common.Address,
+	maxL2MessageSize uint64,
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
@@ -970,18 +972,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
-			L1Reader:      l1Reader,
-			Inbox:         inboxTracker,
-			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
-			SyncMonitor:   syncMonitor,
-			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:    deployInfo,
-			TransactOpts:  txOptsBatchPoster,
-			DAPWriter:     dapWriter,
-			ParentChainID: parentChainID,
-			DAPReaders:    dapReaders,
+			DataPosterDB:     rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:         l1Reader,
+			Inbox:            inboxTracker,
+			Streamer:         txStreamer,
+			VersionGetter:    arbOSVersionGetter,
+			SyncMonitor:      syncMonitor,
+			Config:           func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:       deployInfo,
+			TransactOpts:     txOptsBatchPoster,
+			DAPWriter:        dapWriter,
+			ParentChainID:    parentChainID,
+			DAPReaders:       dapReaders,
+			MaxL2MessageSize: maxL2MessageSize,
 		})
 		if err != nil {
 			return nil, err
@@ -1158,7 +1161,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, arbDb, txStreamer, dapReaders, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer, l2Config.MaxL2MessageSize())
 	if err != nil {
 		return nil, err
 	}
@@ -1178,7 +1181,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, txOptsBatchPoster, dapWriter, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, arbDb, syncMonitor, deployInfo, parentChainID, dapReaders, stakerAddr, l2Config.MaxL2MessageSize())
 	if err != nil {
 		return nil, err
 	}

@@ -39,7 +39,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	txes, err := ParseL2Transactions(newMsg, chainId, params.MaxDebugArbosVersionSupported)
+	txes, err := ParseL2Transactions(newMsg, chainId, params.DefaultMaxL2MessageSize, params.MaxDebugArbosVersionSupported)
 	if err != nil {
 		t.Error(err)
 	}

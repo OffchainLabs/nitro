@@ -20,14 +20,14 @@ import (
 )
 
 // note: lastArbosVersion is arbos version in previous block, not current!
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, lastArbosVersion uint64) (types.Transactions, error) {
-	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, maxL2MessageSize uint64, lastArbosVersion uint64) (types.Transactions, error) {
+	if uint64(len(msg.L2msg)) > maxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
 	}
 	switch msg.Header.Kind {
 	case arbostypes.L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, maxL2MessageSize, 0)
 	case arbostypes.L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encountered initialize message (should've been handled explicitly at genesis)")
 	case arbostypes.L1MessageType_EndOfBlock:
@@ -55,7 +55,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, la
 		})
 		return types.Transactions{deposit, tx}, nil
 	case arbostypes.L1MessageType_SubmitRetryable:
-		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
+		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId, maxL2MessageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func parseTimeOrPanic(format string, value string) time.Time {
 
 var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Mon, 08 Aug 2022 16:00:00 GMT").Unix())
 
-func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, maxL2MessageSize uint64, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		segments := make(types.Transactions, 0)
 		index := big.NewInt(0)
 		for {
-			nextMsg, err := util.BytestringFromReader(rd, arbostypes.MaxL2MessageSize)
+			nextMsg, err := util.BytestringFromReader(rd, maxL2MessageSize)
 			if err != nil {
 				// an error here means there are no further messages in the batch
 				// nolint:nilerr
@@ -149,7 +149,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 				subRequestId := crypto.Keccak256Hash(requestId[:], arbmath.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, maxL2MessageSize, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -294,7 +294,7 @@ func parseEthDepositMessage(rd io.Reader, header *arbostypes.L1IncomingMessageHe
 	return types.NewTx(tx), nil
 }
 
-func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
+func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMessageHeader, chainId *big.Int, maxL2MessageSize uint64) (*types.Transaction, error) {
 	retryTo, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
@@ -344,7 +344,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 		return nil, errors.New("data length field too large")
 	}
 	dataLength := dataLengthBig.Uint64()
-	if dataLength > arbostypes.MaxL2MessageSize {
+	if dataLength > maxL2MessageSize {
 		return nil, errors.New("retryable data too large")
 	}
 	retryData := make([]byte, dataLength)

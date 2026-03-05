@@ -112,6 +112,8 @@ type ExecutionEngine struct {
 
 	exposeMultiGas bool
 
+	maxL2MessageSize int
+
 	runningMaintenance atomic.Bool
 }
 
@@ -425,12 +427,13 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			continue
 		}
 		lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
+		chainConfig := s.bc.Config()
+		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, chainConfig.MaxL2MessageSize(), lastArbosVersion)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
+		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil, chainConfig.MaxL2MessageSize())
 		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
@@ -1127,4 +1130,8 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	return &execution.MaintenanceStatus{
 		IsRunning: s.runningMaintenance.Load(),
 	}
+}
+
+func (s *ExecutionEngine) MaxL2MessageSize() uint64 {
+	return s.bc.Config().MaxL2MessageSize()
 }
