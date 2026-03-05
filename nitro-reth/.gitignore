@@ -36,3 +36,4 @@ nitro-data/
 
 # Claude
 .claude/
+.env.alchemy

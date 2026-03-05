@@ -467,6 +467,7 @@ where
         // Zombie accounts are empty accounts preserved by pre-Stylus ArbOS
         // (CreateZombieIfDeleted) and must NOT be deleted during EIP-161 cleanup.
         let zombie_accounts = executor.zombie_accounts().clone();
+        let finalise_deleted = executor.finalise_deleted().clone();
 
         // Finalize execution: finish() consumes the executor and returns
         // the EVM and BlockExecutionResult containing receipts.
@@ -484,6 +485,31 @@ where
         // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
+        // Mark accounts deleted by per-tx Finalise for trie deletion.
+        // These accounts were removed from cache mid-block so
+        // augment_bundle_from_cache won't see them. If they existed pre-block
+        // (in the trie), they must appear in the bundle with info=None so
+        // HashedPostState deletes them from the trie.
+        for addr in &finalise_deleted {
+            if bundle.state.contains_key(addr) {
+                // Already in bundle (e.g. from transitions) — will be handled
+                // by delete_empty_accounts below.
+                continue;
+            }
+            // Check if account existed pre-block in the trie.
+            if let Ok(Some(_)) = state_provider.basic_account(addr) {
+                bundle.state.insert(
+                    *addr,
+                    revm_database::BundleAccount {
+                        info: None, // signals trie deletion
+                        original_info: None,
+                        storage: Default::default(),
+                        status: revm_database::AccountStatus::Changed,
+                    },
+                );
+            }
+        }
+
         // Filter bundle to only include actually changed storage slots.
         // revm's bundle may include storage slots that were loaded (read) but
         // not modified. Including unchanged slots in the HashedPostState would
@@ -497,6 +523,8 @@ where
         // except for zombie accounts which are preserved.
         delete_empty_accounts(&mut bundle, &zombie_accounts);
 
+        // Removed block-specific debug logging
+
         // Build HashedPostState from the filtered bundle state.
         // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
         // Use state_root_with_updates() to get both the root AND trie updates needed
@@ -505,6 +533,8 @@ where
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
                 bundle.state(),
             );
+        // Remove debug logging for specific blocks
+
         let (state_root, trie_updates) = state_provider
             .state_root_with_updates(hashed_state.clone())
             .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
