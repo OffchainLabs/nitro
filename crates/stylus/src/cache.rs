@@ -132,10 +132,8 @@ impl InitCache {
     // current implementation only has one tag that stores to the long_term
     // future implementations might have more, but 0 is a reserved tag
     // that will never modify long_term state
-    /// cbindgen:ignore
     const ARBOS_TAG: u32 = 1;
 
-    /// cbindgen:ignore
     const DOES_NOT_FIT_MSG: &'static str = "Failed to insert into LRU cache, item too large";
 
     fn new(size_bytes: usize) -> Self {

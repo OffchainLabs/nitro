@@ -6,9 +6,6 @@ parse_deps = true
 include = ["arbutil", "prover", "brotli"]
 extra_bindings = ["arbutil", "prover", "brotli"]
 
-[defines]
-"feature = native" = "STYLUS_NATIVE"
-
 [enum]
 prefix_with_name = true
 
