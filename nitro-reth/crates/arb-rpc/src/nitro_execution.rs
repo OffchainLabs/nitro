@@ -10,7 +10,7 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use serde::{Deserialize, Serialize};
 
 /// Deserializer that accepts U256 as hex string ("0x..."), decimal string ("12345"),
-/// or bare JSON number (12345). Go's `*big.Int` marshals to a bare JSON number.
+/// or bare JSON number (12345). The canonical `*big.Int` marshals to a bare JSON number.
 #[allow(dead_code)]
 mod u256_dec_or_hex {
     use alloy_primitives::U256;
@@ -96,11 +96,11 @@ mod opt_u256_dec_or_hex {
 }
 
 // ---------------------------------------------------------------------------
-// RPC data types (JSON-serializable, matching Go's JSON tags)
+// RPC data types (JSON-serializable, matching the canonical JSON tags)
 // ---------------------------------------------------------------------------
 
 /// L1 incoming message header.
-/// Go fields have explicit JSON tags (camelCase).
+/// Fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcL1IncomingMessageHeader {
     pub kind: u8,
@@ -120,7 +120,7 @@ pub struct RpcL1IncomingMessageHeader {
 }
 
 /// Batch data statistics for L1 cost estimation.
-/// Go fields have explicit JSON tags (lowercase).
+/// Fields have explicit JSON tags (lowercase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcBatchDataStats {
     pub length: u64,
@@ -128,7 +128,7 @@ pub struct RpcBatchDataStats {
 }
 
 /// L1 incoming message containing header and L2 payload.
-/// Go fields have explicit JSON tags (camelCase).
+/// Fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcL1IncomingMessage {
     pub header: RpcL1IncomingMessageHeader,
@@ -143,8 +143,8 @@ pub struct RpcL1IncomingMessage {
     pub batch_data_tokens: Option<RpcBatchDataStats>,
 }
 
-/// Message with metadata, sent by Nitro consensus to the execution client.
-/// Go fields have explicit JSON tags (camelCase).
+/// Message with metadata, sent by the consensus layer to the execution client.
+/// Fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcMessageWithMetadata {
     pub message: RpcL1IncomingMessage,
@@ -153,7 +153,7 @@ pub struct RpcMessageWithMetadata {
 }
 
 /// Extended message info including block hash and metadata.
-/// Go struct has NO JSON tags, uses PascalCase.
+/// Uses PascalCase JSON serialization (no explicit JSON tags).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcMessageWithMetadataAndBlockInfo {
@@ -166,7 +166,7 @@ pub struct RpcMessageWithMetadataAndBlockInfo {
 }
 
 /// Result of block production: block hash and send root.
-/// Go struct has NO JSON tags, uses PascalCase.
+/// Uses PascalCase JSON serialization (no explicit JSON tags).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcMessageResult {
@@ -175,7 +175,7 @@ pub struct RpcMessageResult {
 }
 
 /// Finality data pushed from consensus.
-/// Go struct has NO JSON tags, uses PascalCase.
+/// Uses PascalCase JSON serialization (no explicit JSON tags).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcFinalityData {
@@ -186,7 +186,7 @@ pub struct RpcFinalityData {
 }
 
 /// Consensus sync data pushed from consensus.
-/// Go struct has NO JSON tags, uses PascalCase.
+/// Uses PascalCase JSON serialization (no explicit JSON tags).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcConsensusSyncData {
@@ -199,7 +199,7 @@ pub struct RpcConsensusSyncData {
 }
 
 /// Maintenance status.
-/// Go struct has NO JSON tags, uses PascalCase.
+/// Uses PascalCase JSON serialization (no explicit JSON tags).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RpcMaintenanceStatus {

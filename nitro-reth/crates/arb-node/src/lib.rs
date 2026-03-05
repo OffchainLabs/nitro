@@ -262,7 +262,7 @@ where
     ));
 
     // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
-    // Nitro consensus connects to the auth RPC port with JWT authentication.
+    // The consensus layer connects to the auth RPC port with JWT authentication.
     let nitro_exec =
         NitroExecutionHandler::new(ctx.provider().clone(), block_producer, genesis_block_num);
     let nitro_rpc = nitro_exec.into_rpc();

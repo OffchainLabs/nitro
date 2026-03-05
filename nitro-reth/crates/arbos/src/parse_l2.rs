@@ -160,7 +160,7 @@ fn parse_l2_message(
         }
         L2_MESSAGE_KIND_SIGNED_TX => {
             // Decode and validate the tx type: reject Arbitrum internal types and blob txs.
-            // Go Nitro does NOT check chain ID here — legacy txs with v=27/28 (no EIP-155
+            // Chain ID is NOT checked here — legacy txs with v=27/28 (no EIP-155
             // chain ID) are valid (e.g. deterministic deploy txs).
             match ArbTransactionSigned::decode_2718(&mut &payload[..]) {
                 Ok(tx) => {
@@ -364,7 +364,7 @@ fn parse_submit_retryable_message(
 ) -> Result<Vec<ParsedTransaction>, io::Error> {
     let mut reader = Cursor::new(data);
 
-    // Field order matches Go's parseSubmitRetryableMessage exactly.
+    // Field order matches parseSubmitRetryableMessage exactly.
     let retry_to = address_from_256_from_reader(&mut reader)?;
     let callvalue = uint256_from_reader(&mut reader)?;
     let deposit = uint256_from_reader(&mut reader)?;

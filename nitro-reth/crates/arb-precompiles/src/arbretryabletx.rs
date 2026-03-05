@@ -214,7 +214,7 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
 
-    // Go: OAS(1) + OpenRetryable timeout(1) + CalculateTimeout timeout+windows(2) + argsCost(3) + resultCost(3).
+    // OAS(1) + OpenRetryable timeout(1) + CalculateTimeout timeout+windows(2) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (4 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         U256::from(effective_timeout).to_be_bytes::<32>().to_vec().into(),
@@ -271,7 +271,7 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
     let beneficiary = sload_field(input, beneficiary_slot)?;
 
-    // Go: OAS(1) + OpenRetryable timeout(1) + beneficiary(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + OpenRetryable timeout(1) + beneficiary(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         beneficiary.to_be_bytes::<32>().to_vec().into(),
@@ -426,7 +426,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Open the retryable (verifies exists and not expired).
     let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
 
-    // Read calldata size for updateCost computation (Go's RetryableSizeBytes).
+    // Read calldata size for updateCost computation (RetryableSizeBytes).
     let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
     let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
     let calldata_size = sload_field(input, calldata_size_slot)?;
@@ -462,7 +462,7 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
 
-    // Go gas: 8 SLOADs + 3 SSTOREs + argsCost(3) + updateCost + event(1381)
+    // 8 SLOADs + 3 SSTOREs + argsCost(3) + updateCost + event(1381)
     // + RetryableReapPrice(58000) + resultCost(3).
     // updateCost = WordsForBytes(nbytes) * SstoreSetGas/100, where
     // nbytes = 6*32 + 32 + 32*WordsForBytes(calldataSize).
@@ -515,7 +515,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // Clear all storage fields for this retryable ticket (Go: DeleteRetryable).
+    // Clear all storage fields for this retryable ticket (DeleteRetryable).
     let offsets = [
         NUM_TRIES_OFFSET,
         FROM_OFFSET,
@@ -530,7 +530,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         sstore_field(input, slot, U256::ZERO)?;
     }
 
-    // Clear calldata bytes (Go: retStorage.OpenSubStorage(calldataKey).ClearBytes()).
+    // Clear calldata bytes (ClearBytes on calldata sub-storage).
     let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
     let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
     let calldata_size = sload_field(input, calldata_size_slot)?;
@@ -544,7 +544,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         sstore_field(input, calldata_size_slot, U256::ZERO)?;
     }
 
-    // Go gas: 6 SLOADs + 7 × ClearByUint64(5000) + ClearBytes(variable)
+    // 6 SLOADs + 7 × ClearByUint64(5000) + ClearBytes(variable)
     // + Canceled event (LOG2: 375+2*375=1125) + argsCost(3).
     // DeleteRetryable SLOADs: timeout(1) + beneficiary(1) + ClearBytes size(1) = 3
     // Total SLOADs: OAS(1) + OpenRetryable(1) + beneficiary(1) + DeleteRetryable(3) = 6

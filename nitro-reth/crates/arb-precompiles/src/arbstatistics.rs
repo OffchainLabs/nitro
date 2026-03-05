@@ -37,7 +37,7 @@ fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
     let gas_limit = input.gas;
 
     // Returns (blockNumber, 0, 0, 0, 0, 0).
-    // The five Classic-era stats are also zero in Nitro (never populated post-migration).
+    // The five Classic-era stats are always zero (never populated post-migration).
     // Use the L2 block number (block_env.number holds L1 in Arbitrum).
     let block_number = U256::from(crate::arbsys::get_current_l2_block());
     let mut out = Vec::with_capacity(192);
@@ -46,7 +46,7 @@ fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
         out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
     }
 
-    // Go: OAS(800) + 0 body + resultCost = 6 words × 3 = 18.
+    // OAS(800) + 0 body + resultCost = 6 words × 3 = 18.
     let gas_cost = (SLOAD_GAS + 6 * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }

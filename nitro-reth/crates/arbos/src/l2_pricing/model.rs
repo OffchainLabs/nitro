@@ -147,21 +147,20 @@ impl<D: Database> L2PricingState<D> {
         let backlog = self.gas_backlog()?;
         let min_base_fee = self.min_base_fee_wei()?;
 
-        // Go uses plain `tolerance * speedLimit` (wrapping on overflow).
-        // We match the wrapping behavior for consensus parity.
+        // Plain `tolerance * speedLimit` (wrapping on overflow).
         let tolerance_limit = tolerance.wrapping_mul(speed_limit);
         let base_fee = if backlog > tolerance_limit {
-            // Divisor: SaturatingUMul(inertia, speedLimit). If zero, Go panics.
+            // Divisor: SaturatingUMul(inertia, speedLimit).
             // Guard against division by zero (speed_limit/inertia are validated nonzero by ArbOwner).
             let divisor = saturating_cast_to_i64(inertia.saturating_mul(speed_limit));
             if divisor == 0 {
                 return self.set_base_fee_wei(min_base_fee);
             }
-            // Go: SaturatingCast[int64](backlog - tolerance*speedLimit)
+            // SaturatingCast[int64](backlog - tolerance*speedLimit)
             let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
-            // Go: NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
+            // NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
             let exponent_bips = natural_to_bips(excess) / divisor;
-            // Go: BigMulByBips(minBaseFee, ApproxExpBasisPoints(exponentBips, 4))
+            // BigMulByBips(minBaseFee, ApproxExpBasisPoints(exponentBips, 4))
             self.calc_base_fee_from_exponent(exponent_bips.max(0) as u64)?
         } else {
             min_base_fee
@@ -245,7 +244,7 @@ impl<D: Database> L2PricingState<D> {
     /// Aggregates weighted backlog contributions from each constraint into
     /// a per-resource-kind exponent array.
     ///
-    /// Uses signed saturation arithmetic matching Go's Bips (int64) computation:
+    /// Uses signed saturation arithmetic with Bips (int64) computation:
     /// dividend = NaturalToBips(SaturatingCast[int64](SaturatingUMul(backlog, weight)))
     /// divisor  = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
     /// exp      = dividend / divisor  (signed int64 division)
@@ -361,7 +360,7 @@ impl<D: Database> L2PricingState<D> {
 
     /// Calculate the cost for a backlog update operation.
     ///
-    /// Version-gated cost accounting matching the Go implementation:
+    /// Version-gated cost accounting:
     /// - v60+: static cost (StorageReadCost + StorageWriteCost)
     /// - v51+: overhead for single-gas constraint traversal
     /// - v50+: base overhead for GasModelToUse() read
@@ -434,7 +433,7 @@ impl<D: Database> L2PricingState<D> {
             // Equal weights for all resource kinds.
             let weights = [1u64; NUM_RESOURCE_KIND];
 
-            // Cap adjustment_window to u32::MAX (matching Go's uint32 type).
+            // Cap adjustment_window to u32::MAX.
             let adjustment_window: u32 = if window > u32::MAX as u64 {
                 u32::MAX
             } else {
@@ -470,7 +469,7 @@ impl<D: Database> L2PricingState<D> {
 
 /// Approximate e^(x/10000) * 10000 using Horner's method (degree 4).
 ///
-/// Matches Go's `ApproxExpBasisPoints(value, 4)` exactly.
+/// Matches `ApproxExpBasisPoints(value, 4)` exactly.
 fn approx_exp_basis_points(bips: u64) -> u64 {
     const ACCURACY: u64 = 4;
     const B: u64 = 10_000; // OneInBips
@@ -491,7 +490,6 @@ fn approx_exp_basis_points(bips: u64) -> u64 {
 }
 
 /// Saturating cast from u64 to i64, capping at i64::MAX.
-/// Matches Go's `SaturatingCast[int64](value uint64)`.
 fn saturating_cast_to_i64(value: u64) -> i64 {
     if value > i64::MAX as u64 {
         i64::MAX
@@ -501,7 +499,6 @@ fn saturating_cast_to_i64(value: u64) -> i64 {
 }
 
 /// Convert a natural number to basis points (multiply by 10000), saturating.
-/// Matches Go's `NaturalToBips(natural int64) Bips`.
 fn natural_to_bips(natural: i64) -> i64 {
     natural.saturating_mul(10000)
 }

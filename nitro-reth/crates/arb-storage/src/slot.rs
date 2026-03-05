@@ -1,6 +1,6 @@
 use alloy_primitives::{U256, keccak256};
 
-/// Computes a storage slot using the same keccak256-based mapping as Go's mapAddress.
+/// Computes a storage slot using the keccak256-based mapAddress algorithm.
 ///
 /// The algorithm: hash(storage_key || key_bytes[0..31]) || key_bytes[31]
 /// This preserves the last byte and hashes only the first 31 bytes.
@@ -21,7 +21,7 @@ pub fn storage_key_map(storage_key: &[u8], offset: u64) -> U256 {
     U256::from_be_bytes(mapped)
 }
 
-/// Computes a storage slot for an arbitrary B256 key using Go's mapAddress algorithm.
+/// Computes a storage slot for an arbitrary B256 key using the mapAddress algorithm.
 pub fn storage_key_map_b256(storage_key: &[u8], key: &[u8; 32]) -> U256 {
     const BOUNDARY: usize = 31;
 

@@ -97,8 +97,7 @@ pub trait HostIo {
 
 /// Dispatch a host I/O request to the appropriate HostIo method.
 ///
-/// This is the Rust equivalent of Go's `newApiClosures` return function,
-/// which takes a `RequestType` and input bytes and returns
+/// Takes a `RequestType` and input bytes and returns
 /// `(result, extra_data, gas_cost)`.
 pub fn dispatch_request<H: HostIo>(
     host: &mut H,

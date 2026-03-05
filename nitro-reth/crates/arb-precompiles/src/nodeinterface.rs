@@ -61,7 +61,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
         BLOCK_L1_NUM => handle_block_l1_num(&mut input),
         // Methods requiring chain-level access (blockchain history, batch data, logs).
-        // In Go these are handled at the RPC layer via InterceptRPCMessage, not as
+        // These are handled at the RPC layer via InterceptRPCMessage, not as
         // EVM precompiles. Revert here since the required backend is not available.
         L2_BLOCK_RANGE_FOR_L1
         | ESTIMATE_RETRYABLE_TICKET
@@ -93,7 +93,7 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
     let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     // Compute L1 gas cost for a simple transaction.
-    // In Go: PosterDataCost computes the L1 fee from the message data, then divides by basefee.
+    // PosterDataCost computes the L1 fee from the message data, then divides by basefee.
     // Here we estimate using the calldata from the input parameters.
     let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee);
 

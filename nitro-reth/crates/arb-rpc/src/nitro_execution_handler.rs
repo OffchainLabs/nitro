@@ -39,7 +39,7 @@ impl Default for NitroExecutionState {
 
 /// Handler for the `nitroexecution` RPC namespace.
 ///
-/// Receives L1 incoming messages from Nitro consensus and produces blocks.
+/// Receives L1 incoming messages from the consensus layer and produces blocks.
 /// Delegates actual block production to the `BlockProducer` implementation.
 pub struct NitroExecutionHandler<Provider, BP> {
     provider: Provider,
@@ -112,7 +112,7 @@ fn internal_error(msg: impl Into<String>) -> jsonrpsee::types::ErrorObjectOwned 
 
 /// Decode the l2_msg field from the RPC message.
 ///
-/// Go's encoding/json always base64-encodes []byte fields. The base64 output
+/// JSON encoding always base64-encodes byte fields. The base64 output
 /// can start with "0x" as valid base64 characters, so always decode as base64.
 fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
     match l2_msg {

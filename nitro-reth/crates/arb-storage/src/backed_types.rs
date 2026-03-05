@@ -137,7 +137,7 @@ unsafe impl<D: Sync> Sync for StorageBackedAddress<D> {}
 
 /// Storage-backed signed 64-bit integer.
 ///
-/// Stores by bit-reinterpreting i64 as u64, matching Go's casting behavior.
+/// Stores by bit-reinterpreting i64 as u64.
 pub struct StorageBackedInt64<D> {
     state: *mut revm::database::State<D>,
     slot: U256,
@@ -234,7 +234,7 @@ fn nil_address_representation() -> U256 {
 
 /// Storage-backed optional address.
 ///
-/// Uses sentinel value (1 << 255) to represent None, matching Go's NilAddressRepresentation.
+/// Uses sentinel value (1 << 255) to represent None (NilAddressRepresentation).
 pub struct StorageBackedAddressOrNil<D> {
     state: *mut revm::database::State<D>,
     slot: U256,

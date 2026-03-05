@@ -387,7 +387,7 @@ where
         .per_batch_gas_cost()
         .unwrap_or(0);
 
-    // Go: gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
+    // gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
     // Then SaturatingUCast[uint64](gasSpent) — clamps negative result to 0.
     let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas)
         .unwrap_or(i64::MAX);

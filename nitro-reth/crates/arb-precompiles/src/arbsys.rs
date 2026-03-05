@@ -39,13 +39,13 @@ const L1_ALIAS_OFFSET: Address = Address::new([
 
 // MerkleAccumulator: size at offset 0, partials at offset (2 + level).
 
-// Gas costs matching Go's precompile framework (params package).
+// Gas costs from the precompile framework (params package).
 const COPY_GAS: u64 = 3; // per 32-byte word
 const LOG_GAS: u64 = 375;
 const LOG_TOPIC_GAS: u64 = 375;
 const LOG_DATA_GAS: u64 = 8; // per byte
 
-// Storage gas costs matching Go's arbos/storage/storage.go.
+// Storage gas costs from ArbOS storage accounting.
 const STORAGE_READ_COST: u64 = 800; // params.SloadGasEIP2200
 const STORAGE_WRITE_COST: u64 = 20_000; // params.SstoreSetGasEIP2200
 const STORAGE_WRITE_ZERO_COST: u64 = 5_000; // params.SstoreResetGasEIP2200
@@ -62,7 +62,7 @@ fn words_for_bytes(n: u64) -> u64 {
     (n + 31) / 32
 }
 
-/// Keccak gas matching Go's Storage.Keccak() burner charge: 30 + 6*words.
+/// Keccak gas from the storage burner: 30 + 6*words.
 fn keccak_gas(byte_count: u64) -> u64 {
     30 + 6 * words_for_bytes(byte_count)
 }
@@ -232,7 +232,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at root offset 0. Add 55 because Nitro starts at version 56.
+    // ArbOS version is at root offset 0. Add 55 because the storage value is 0-based (v56 = stored 1).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
@@ -247,7 +247,7 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_is_top_level_call(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Go returns `evm.Depth() <= 2`.
+    // Returns `depth <= 2`.
     // Depth 1 = direct precompile call from tx, depth 2 = one intermediate contract.
     let depth = crate::get_evm_depth();
     let is_top = depth <= 2;
@@ -275,7 +275,7 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .data;
     let arbos_version: u64 = raw_version.try_into().unwrap_or(0);
 
-    // Go: topLevel = isTopLevel(depth < 2 || origin == Contracts[depth-2].Caller())
+    // topLevel = isTopLevel(depth < 2 || origin == Contracts[depth-2].Caller())
     // ArbOS < 6: topLevel = depth == 2
     // aliased = topLevel && DoesTxTypeAlias(TopTxType)
     let depth = crate::get_evm_depth();
@@ -296,7 +296,7 @@ fn handle_was_aliased(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Go returns Contracts[depth-2].Caller() (potentially unaliased).
+    // Returns Contracts[depth-2].Caller() (potentially unaliased).
     // At depth 2 (common case): Contracts[0].Caller() == tx_origin.
     // For deeper calls we'd need the call stack, which isn't available
     // through PrecompileInput. tx_origin is correct at depth <= 2.
@@ -332,7 +332,7 @@ fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 }
 
 fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    // Returns 0 — Nitro has no concept of storage gas.
+    // Returns 0 — ArbOS has no concept of storage gas.
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
@@ -405,11 +405,11 @@ fn do_send_tx_to_l1(
     let l2_block_number = U256::from(get_current_l2_block());
     let timestamp = input.internals().block_timestamp();
 
-    // Gas tracking: match Go's precompile framework burn pattern.
+    // Gas tracking: match the precompile framework burn pattern.
     let mut gas_used = 0u64;
     // Argument copy cost.
     gas_used += COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
-    // OpenArbosState overhead: Go's makeContext reads version (800 gas) for all non-pure methods.
+    // OpenArbosState overhead: makeContext reads version (800 gas) for all non-pure methods.
     gas_used += STORAGE_READ_COST;
 
     let internals = input.internals_mut();
@@ -453,7 +453,7 @@ fn do_send_tx_to_l1(
         .data;
     let old_size: u64 = current_size.try_into().unwrap_or(0);
 
-    // Compute the send hash (Go uses arbosState.KeccakHash which charges gas via burner).
+    // Compute the send hash (arbosState.KeccakHash charges gas via burner).
     // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) + calldata
     let send_hash_input_len = 20 + 20 + 32 * 4 + calldata.len() as u64;
     gas_used += keccak_gas(send_hash_input_len);
@@ -476,7 +476,7 @@ fn do_send_tx_to_l1(
         &mut gas_used,
     )?;
 
-    // Go calls merkleAcc.Size() after Append, which does another storage read.
+    // merkleAcc.Size() after Append does another storage read.
     gas_used += STORAGE_READ_COST;
 
     // Write new size.
@@ -559,7 +559,7 @@ fn do_send_tx_to_l1(
         block_number: l2_block_number.try_into().unwrap_or(0),
     });
 
-    // Read ArbOS version for return value versioning (no gas — Go uses cached value).
+    // Read ArbOS version for return value versioning (no gas — uses cached value).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?
@@ -652,7 +652,7 @@ fn compute_send_hash(
     value: U256,
     data: &[u8],
 ) -> B256 {
-    // Go uses raw 20-byte addresses (no left-padding to 32 bytes).
+    // Uses raw 20-byte addresses (no left-padding to 32 bytes).
     let mut preimage = Vec::with_capacity(200 + data.len());
     preimage.extend_from_slice(sender.as_slice()); // 20 bytes
     preimage.extend_from_slice(dest.as_slice()); // 20 bytes
@@ -671,7 +671,7 @@ struct MerkleTreeNodeEvent {
     hash: U256,
 }
 
-/// Append a leaf to the merkle accumulator, matching Go's MerkleAccumulator.Append.
+/// Append a leaf to the merkle accumulator (MerkleAccumulator.Append).
 ///
 /// Returns (new_size, events, partials_for_root_computation).
 fn update_merkle_accumulator(
@@ -684,7 +684,7 @@ fn update_merkle_accumulator(
     let new_size = old_size + 1;
     let mut events = Vec::new();
 
-    // Hash the leaf before insertion (Go: soFar = crypto.Keccak256(itemHash.Bytes())).
+    // Hash the leaf before insertion: soFar = keccak256(itemHash).
     let mut so_far = keccak256(item_hash.as_slice()).to_vec();
 
     let num_partials_old = calc_num_partials(old_size);
@@ -721,14 +721,14 @@ fn update_merkle_accumulator(
         }
 
         // Combine: soFar = keccak256(thisLevel || soFar)
-        // Go uses acc.Keccak() which charges gas via the burner: 30 + 6*2 = 42 for 64 bytes.
+        // Keccak charged via the burner: 30 + 6*2 = 42 for 64 bytes.
         *gas_used += keccak_gas(64);
         let mut preimage = [0u8; 64];
         preimage[..32].copy_from_slice(&this_level.to_be_bytes::<32>());
         preimage[32..].copy_from_slice(&so_far);
         so_far = keccak256(preimage).to_vec();
 
-        // Clear the partial at this level (Go sets it to zero hash).
+        // Clear the partial at this level.
         *gas_used += STORAGE_WRITE_ZERO_COST;
         internals
             .sstore(ARBOS_STATE_ADDRESS, slot, U256::ZERO)
@@ -745,8 +745,8 @@ fn update_merkle_accumulator(
     }
 
     // Read all partials for root computation.
-    // No gas charge here: Go's Append doesn't read partials for root.
-    // The root is computed later in the block builder (Go's Root() call).
+    // No gas charge here: Append doesn't read partials for root.
+    // The root is computed later in the block builder.
     let num_partials = calc_num_partials(new_size);
     let mut partials = Vec::with_capacity(num_partials as usize);
     for i in 0..num_partials {
@@ -761,7 +761,7 @@ fn update_merkle_accumulator(
     Ok((new_size, events, partials))
 }
 
-/// Calculate number of partials for a given size (Go: Log2ceil).
+/// Calculate number of partials for a given size (Log2ceil).
 fn calc_num_partials(size: u64) -> u64 {
     if size == 0 {
         return 0;
@@ -769,10 +769,9 @@ fn calc_num_partials(size: u64) -> u64 {
     64 - size.leading_zeros() as u64
 }
 
-/// Compute the merkle root from partials, matching Go's MerkleAccumulator.Root().
+/// Compute the merkle root from partials (MerkleAccumulator.Root()).
 ///
-/// The Go algorithm pads with zero hashes when capacity gaps exist between
-/// populated partial levels.
+/// Pads with zero hashes when capacity gaps exist between populated partial levels.
 fn compute_merkle_root(partials: &[B256], size: u64) -> B256 {
     if partials.is_empty() || size == 0 {
         return B256::ZERO;

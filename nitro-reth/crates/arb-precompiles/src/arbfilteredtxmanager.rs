@@ -22,7 +22,7 @@ const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
 
-/// Sentinel value stored for filtered tx hashes (matches Go `presentHash`).
+/// Sentinel value stored for filtered tx hashes.
 const PRESENT_VALUE: U256 = U256::from_limbs([1, 0, 0, 0]);
 
 pub fn create_arbfilteredtxmanager_precompile() -> DynPrecompile {

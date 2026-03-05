@@ -4,7 +4,7 @@ use revm::Database;
 use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{Storage, StorageBackedBigUint};
 
-// Go uses iota * NumResourceKind: next=0, current=NUM_RESOURCE_KIND.
+// Storage layout: next=0, current=NUM_RESOURCE_KIND.
 const NEXT_BLOCK_FEES_OFFSET: u64 = 0;
 const CURRENT_BLOCK_FEES_OFFSET: u64 = NUM_RESOURCE_KIND as u64;
 

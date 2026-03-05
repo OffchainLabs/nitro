@@ -321,7 +321,7 @@ fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
     cfg.disable_eip7623 = true;
     // EIP-3607 rejects txs from senders with deployed code. Arbitrum L1-to-L2
     // tx types (ContractTx, RetryTx) may have L1 contract alias senders with
-    // code on L2. Go's skipTransactionChecks() skips this for those types.
+    // code on L2. skipTransactionChecks() skips this for those types.
     cfg.disable_eip3607 = true;
     // Stylus programs start with 0xEF; allow deployment once Stylus is live.
     if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {

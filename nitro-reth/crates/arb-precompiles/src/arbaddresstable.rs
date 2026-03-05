@@ -124,7 +124,7 @@ fn handle_address_exists(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         U256::ZERO
     };
 
-    // Go: OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         exists.to_be_bytes::<32>().to_vec().into(),
@@ -157,7 +157,7 @@ fn handle_lookup(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     // Stored value is the 1-based index, so subtract 1.
     let index = value.wrapping_sub(U256::from(1u64));
-    // Go: OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         index.to_be_bytes::<32>().to_vec().into(),
@@ -189,7 +189,7 @@ fn handle_lookup_index(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // Go: OAS(1) + numItems(1) + backing(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + numItems(1) + backing(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
@@ -224,7 +224,7 @@ fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     if existing != U256::ZERO {
         // Already registered — return 0-based index.
         let index = existing.wrapping_sub(U256::from(1u64));
-        // Go: OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
+        // OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3).
         return Ok(PrecompileOutput::new(
             (2 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
             index.to_be_bytes::<32>().to_vec().into(),
@@ -251,7 +251,7 @@ fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Return 0-based index.
     let index = new_num_items - 1;
 
-    // Go: OAS(1) + byAddress.Get(1) + numItems.Get(1) + 3 sstores + argsCost(3) + resultCost(3).
+    // OAS(1) + byAddress.Get(1) + numItems.Get(1) + 3 sstores + argsCost(3) + resultCost(3).
     let gas_used = 3 * SLOAD_GAS + 3 * SSTORE_GAS + 2 * COPY_GAS;
 
     Ok(PrecompileOutput::new(
@@ -296,7 +296,7 @@ fn handle_compress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let pad = (32 - rlp_bytes.len() % 32) % 32;
     output.extend(core::iter::repeat(0u8).take(pad));
 
-    // Go: OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3 words for bytes encoding).
+    // OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3 words for bytes encoding).
     let result_words = (output.len() as u64 + 31) / 32;
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS + result_words * COPY_GAS).min(gas_limit),
@@ -376,7 +376,7 @@ fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     output.extend_from_slice(&alloy_primitives::B256::left_padding_from(addr.as_slice()).0);
     output.extend_from_slice(&U256::from(final_bytes_read as u64).to_be_bytes::<32>());
 
-    // Go: variable body sloads + argsCost(dynamic) + resultCost = 2 words × 3 = 6.
+    // Variable body sloads + argsCost(dynamic) + resultCost = 2 words × 3 = 6.
     // Body: OAS(1) + 0 (raw addr) or OAS(1) + numItems(1) + backing(1) (index).
     let body_sloads: u64 = if decoded.len() == 20 { 1 } else { 3 };
     let arg_words = ((input.data.len() as u64).saturating_sub(4) + 31) / 32;

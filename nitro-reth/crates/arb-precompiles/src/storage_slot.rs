@@ -35,7 +35,7 @@ pub const FILTERED_TX_STATE_ADDRESS: alloy_primitives::Address = alloy_primitive
     0x00, 0x00, 0x00, 0x00, 0x01,
 ]);
 
-/// Root-level ArbOS state field offsets (matches Go iota in arbosstate.go).
+/// Root-level ArbOS state field offsets.
 pub const VERSION_OFFSET: u64 = 0;
 pub const UPGRADE_VERSION_OFFSET: u64 = 1;
 pub const UPGRADE_TIMESTAMP_OFFSET: u64 = 2;
@@ -51,7 +51,7 @@ pub const FILTERED_FUNDS_RECIPIENT_OFFSET: u64 = 10;
 /// Compute the EVM storage slot for an ArbOS field at a given offset
 /// within a storage scope defined by `storage_key`.
 ///
-/// Matches Go's `mapAddress`: `keccak256(storage_key || key[0..31]) || key[31]`.
+/// Computes `keccak256(storage_key || key[0..31]) || key[31]`.
 pub fn map_slot(storage_key: &[u8], offset: u64) -> U256 {
     const BOUNDARY: usize = 31;
 
@@ -86,7 +86,7 @@ pub fn map_slot_b256(storage_key: &[u8], key: &B256) -> U256 {
 
 /// Derive a subspace storage key from a parent key and child key bytes.
 ///
-/// Matches Go's `OpenSubStorage`: `keccak256(parent_key || sub_key)`.
+/// Computes `keccak256(parent_key || sub_key)`.
 pub fn derive_subspace_key(parent_key: &[u8], sub_key: &[u8]) -> B256 {
     let mut combined = Vec::with_capacity(parent_key.len() + sub_key.len());
     combined.extend_from_slice(parent_key);
@@ -152,7 +152,7 @@ pub fn l2_pricing_subspace() -> B256 {
     derive_subspace_key(ROOT_STORAGE_KEY, L2_PRICING_SUBSPACE)
 }
 
-/// Subspace keys within L2 pricing (matching Go l2pricing constants).
+/// Subspace keys within L2 pricing.
 const GAS_CONSTRAINTS_SUBKEY: &[u8] = &[0];
 const MULTI_GAS_CONSTRAINTS_SUBKEY: &[u8] = &[1];
 const MULTI_GAS_BASE_FEES_SUBKEY: &[u8] = &[2];

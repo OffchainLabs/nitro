@@ -162,7 +162,7 @@ impl MultiGas {
         self.total
     }
 
-    /// Alias matching Go's SingleGas().
+    /// Returns the total gas as a single u64 value.
     pub fn single_gas(&self) -> u64 {
         self.total
     }

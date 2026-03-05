@@ -315,7 +315,7 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_congestion.to_be_bytes::<32>());
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
-    // Go reads baseFee from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
+    // baseFee is read from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
     let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
     let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
@@ -362,7 +362,7 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&gas_for_l1_calldata.to_be_bytes::<32>());
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
-    // Go reads baseFee from evm.Context (free), only 1 body SLOAD (PricePerUnit).
+    // baseFee is read from evm.Context (free), only 1 body SLOAD (PricePerUnit).
     let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
     let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))

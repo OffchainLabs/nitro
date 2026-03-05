@@ -412,7 +412,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
         _ => Err(PrecompileError::other("unknown ArbOwner selector")),
     };
-    // Go's OwnerPrecompile wrapper makes all successful calls free (gas_used = 0).
+    // OwnerPrecompile wrapper: all successful calls are free (gas_used = 0).
     let result = result.map(|output| PrecompileOutput::new(0, output.bytes));
     crate::gas_check(gas_limit, result)
 }

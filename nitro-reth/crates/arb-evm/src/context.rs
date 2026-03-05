@@ -131,7 +131,7 @@ pub struct ArbitrumExtraData {
     pub arb_tx_filter: bool,
     /// Zombie accounts: addresses that were self-destructed then touched by
     /// a zero-value transfer on pre-Stylus ArbOS (< v30). These must be
-    /// preserved as empty accounts during finalization to match Nitro behavior.
+    /// preserved as empty accounts during finalization to match canonical behavior.
     pub zombie_accounts: HashSet<Address>,
 }
 

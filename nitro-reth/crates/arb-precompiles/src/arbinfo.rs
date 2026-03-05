@@ -51,7 +51,7 @@ fn handle_get_balance(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
     let balance = acct.data.info.balance;
-    // Go: OpenArbosState (800) + argsCost (3) + BalanceGasEIP1884 (700) + resultCost (3).
+    // OpenArbosState (800) + argsCost (3) + BalanceGasEIP1884 (700) + resultCost (3).
     let gas_cost = (SLOAD_GAS + 3 + 700 + COPY_GAS).min(gas_limit);
 
     Ok(PrecompileOutput::new(
@@ -88,7 +88,7 @@ fn handle_get_code(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&code);
     out.extend(std::iter::repeat_n(0u8, pad));
 
-    // Go: OpenArbosState (800) + argsCost (3) + ColdSloadCostEIP2929 (2100) +
+    // OpenArbosState (800) + argsCost (3) + ColdSloadCostEIP2929 (2100) +
     // CopyGas * WordsForBytes(code_len) + resultCost for ABI-encoded bytes.
     let code_words = (code.len() as u64 + 31) / 32;
     let result_words = (out.len() as u64 + 31) / 32;

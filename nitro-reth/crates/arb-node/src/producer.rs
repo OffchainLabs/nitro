@@ -313,8 +313,7 @@ where
                     ..
                 } => {
                     // Delayed message kind=13 contains a batch posting report.
-                    // Encode as V1 or V2 based on parent ArbOS version, matching
-                    // Go's createBatchPostingReportTransaction.
+                    // Encode as V1 or V2 based on parent ArbOS version.
                     let report_data = if parent_arbos_version
                         >= arb_chainspec::arbos_version::ARBOS_VERSION_50
                     {
@@ -518,8 +517,8 @@ where
         // produce an incorrect state root.
         filter_unchanged_storage(&mut bundle);
 
-        // EIP-161: Delete empty accounts from the bundle (matching Go Nitro's
-        // IntermediateRoot(true) → Finalise(true) behavior).
+        // EIP-161: Delete empty accounts from the bundle (matching
+        // IntermediateRoot(true) / Finalise(true) behavior).
         // With without_state_clear(), revm preserves all accounts. We must
         // manually mark empty accounts for trie deletion by setting info=None,
         // except for zombie accounts which are preserved.
@@ -715,7 +714,7 @@ where
             chain_id,
         )
         .unwrap_or_else(|e| {
-            // Go Nitro: if ParseL2Transactions returns an error, treat as empty.
+            // If ParseL2Transactions returns an error, treat as empty.
             warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
             vec![]
         });
@@ -788,9 +787,9 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
 /// never modified. Including these in the HashedPostState would produce an
 /// incorrect state root because `from_bundle_state()` treats every entry
 /// as a changed value.
-/// EIP-161 empty account deletion matching Go Nitro's Finalise(true).
+/// EIP-161 empty account deletion matching Finalise(true).
 ///
-/// In Go Nitro, `IntermediateRoot(true)` calls `Finalise(true)` which deletes
+/// `IntermediateRoot(true)` calls `Finalise(true)` which deletes
 /// empty accounts (nonce=0, balance=0, code_hash=KECCAK_EMPTY) from the state
 /// trie. Zombie accounts (re-created by zero-value transfers on pre-Stylus
 /// ArbOS) are preserved.

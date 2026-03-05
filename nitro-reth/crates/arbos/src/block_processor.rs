@@ -163,8 +163,8 @@ pub fn create_new_header(
 
 /// Compute the Arbitrum header info to finalize a block.
 ///
-/// In Go this is `FinalizeBlock` which sets header fields from ArbOS state.
-/// In reth, we derive the info and let the block assembler apply it.
+/// This corresponds to `FinalizeBlock` which sets header fields from ArbOS state.
+/// We derive the info and let the block assembler apply it.
 pub fn finalize_block_header_info(
     send_root: B256,
     send_count: u64,

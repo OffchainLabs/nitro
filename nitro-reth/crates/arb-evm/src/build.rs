@@ -213,8 +213,8 @@ struct PendingArbTx {
     evm_gas_used: u64,
     /// Multi-dimensional gas charged during gas charging (L1 calldata component).
     charged_multi_gas: MultiGas,
-    /// True when the tx's effective gas price is non-zero. Go skips backlog
-    /// updates when gas price is zero (test/estimation scenarios).
+    /// True when the tx's effective gas price is non-zero. Backlog updates
+    /// are skipped when gas price is zero (test/estimation scenarios).
     gas_price_positive: bool,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
@@ -300,8 +300,8 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
 
     /// Deduct TX_GAS from block gas budget for a failed/invalid transaction.
     /// Call this when a user transaction fails execution so the block budget
-    /// and user-tx counter stay in sync (matching Go's behavior of charging
-    /// TX_GAS for invalid txs and incrementing userTxsProcessed).
+    /// and user-tx counter stay in sync (TX_GAS is charged for invalid txs
+    /// and userTxsProcessed is incremented).
     pub fn deduct_failed_tx_gas(&mut self, is_user_tx: bool) {
         const TX_GAS: u64 = 21_000;
         self.block_gas_left = self.block_gas_left.saturating_sub(TX_GAS);
@@ -404,7 +404,7 @@ where
 {
     /// Handle SubmitRetryableTx: no EVM execution, all state changes done directly.
     ///
-    /// Returns a synthetic execution result (endTxNow=true in Go terms).
+    /// Returns a synthetic execution result (endTxNow=true).
     fn execute_submit_retryable(
         &mut self,
         ticket_id: alloy_primitives::B256,
@@ -643,7 +643,7 @@ where
             );
             if !is_filtered {
                 // Schedule auto-redeem: use make_tx to construct from stored
-                // retryable fields (matching Go's MakeTx pattern), then
+                // retryable fields (via MakeTx), then
                 // increment num_tries.
                 let state_ptr2: *mut State<DB> = db as *mut State<DB>;
                 match ArbosState::open(state_ptr2, SystemBurner::new(None, false)) {
@@ -770,7 +770,7 @@ where
         });
 
         // Construct synthetic execution result. Filtered retryables always
-        // return a failure receipt (Go sets filteredErr). Non-filtered txs
+        // return a failure receipt (filteredErr). Non-filtered txs
         // succeed even when can't pay for gas (retryable was created).
         let ticket_bytes = alloy_primitives::Bytes::copy_from_slice(ticket_id.as_slice());
 
@@ -1147,9 +1147,9 @@ where
                 retry_context: None,
             });
 
-            // Filtered deposits: Go returns ErrFilteredTx (non-nil error) which
-            // produces a failed receipt (status=0). The state changes (mint +
-            // redirected transfer) are still committed.
+            // Filtered deposits produce a failed receipt (status=0) via
+            // ErrFilteredTx. The state changes (mint + redirected transfer)
+            // are still committed.
             let result = if is_filtered {
                 ExecutionResult::Revert {
                     gas_used: 0,
@@ -1209,7 +1209,7 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
-                            // Go always calls TransferBalance(escrow, sender, value),
+                            // TransferBalance(escrow, sender, value) is always called,
                             // even when value=0. SubBalance calls getOrNewStateObject
                             // which creates the escrow account in the stateDB (making
                             // it dirty). With value=0 and pre-Stylus ArbOS, the escrow
@@ -1387,8 +1387,8 @@ where
 
         // Compute hold gas: clamp gas available for EVM execution to the
         // per-block (< v50) or per-tx (>= v50) gas limit. Applies to ALL
-        // non-endTxNow txs (including retry txs with poster_gas=0), matching
-        // Go's GasChargingHook which runs for every tx that enters the EVM.
+        // non-endTxNow txs (including retry txs with poster_gas=0), as the
+        // GasChargingHook runs for every tx that enters the EVM.
         if let Some(hooks) = self.arb_hooks.as_mut() {
             if !hooks.is_eth_call {
                 let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx());
@@ -1411,9 +1411,9 @@ where
         }
 
         // ArbOS < 50: reject user txs whose compute gas exceeds block gas left,
-        // but always allow the first user tx through (matching Go's userTxsProcessed > 0).
+        // but always allow the first user tx through (userTxsProcessed > 0).
         // ArbOS >= 50 uses per-tx gas limit clamping (compute_hold_gas) instead.
-        // Go clamps computeGas to at least TxGas before this check.
+        // computeGas is clamped to at least TxGas before this check.
         if is_user_tx
             && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50
             && self.user_txs_processed > 0
@@ -1426,7 +1426,7 @@ where
         }
 
         // Add calldata units to L1 pricing state BEFORE EVM execution
-        // (matching Go's GasChargingHook timing).
+        // (before EVM execution, during gas charging).
         if calldata_units > 0 {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let state_ptr: *mut State<DB> = db as *mut State<DB>;
@@ -1543,7 +1543,7 @@ where
         // --- Execute via inner EVM executor ---
 
         // Save the original gas price before tip drop for upfront balance check.
-        // Go Nitro checks balance using GasFeeCap (full gas price), not the
+        // The balance check uses GasFeeCap (full gas price), not the
         // effective gas price after tip drop.
         let upfront_gas_price: u128 = revm::context_interface::Transaction::gas_price(&tx_env);
 
@@ -1619,8 +1619,8 @@ where
             }
 
             // Balance check: sender must cover gas * upfront_gas_price + value.
-            // Uses the original gas price (before tip drop) matching Go Nitro's
-            // state_transition.go which uses GasFeeCap for the balance check.
+            // Uses the original gas price (before tip drop) since the canonical
+            // state transition uses GasFeeCap for the balance check.
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
             let tx_value = revm::context_interface::Transaction::value(&tx_env);
             let total_cost = gas_cost.saturating_add(tx_value);
@@ -1631,11 +1631,11 @@ where
             }
         }
 
-        // Fix nonce for retry and contract txs: Go's skipNonceChecks() skips
-        // the preCheck nonce validation but Go still increments the nonce in
-        // TransitionDb (line 690) for non-CREATE calls. Override the tx_env
-        // nonce to match the sender's current state nonce so revm increments
-        // from the right value.
+        // Fix nonce for retry and contract txs: skipNonceChecks() skips
+        // the preCheck nonce validation but the nonce is still incremented in
+        // TransitionDb for non-CREATE calls. Override the tx_env nonce to
+        // match the sender's current state nonce so revm increments from the
+        // right value.
         if is_retry_tx || is_contract_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let sender_nonce = db.load_cache_account(sender)
@@ -1657,8 +1657,8 @@ where
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
         // reported gas_used doesn't include it. Adding it back produces correct
-        // receipt gas_used. compute_hold_gas is NOT added: Go returns it via
-        // calcHeldGasRefund() before computing final gasUsed, and Go's
+        // receipt gas_used. compute_hold_gas is NOT added: it is returned via
+        // calcHeldGasRefund() before computing final gasUsed, and
         // NonRefundableGas() excludes it from the refund denominator.
         if poster_gas > 0 {
             adjust_result_gas_used(&mut output.result.result, poster_gas);
@@ -1666,7 +1666,7 @@ where
 
         // Scan execution logs for RedeemScheduled events (manual redeem path).
         // The ArbRetryableTx.Redeem precompile emits this event; we discover it
-        // here and schedule the retry tx, matching Go's ScheduledTxes() mechanism.
+        // here and schedule the retry tx via the ScheduledTxes() mechanism.
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
             let redeem_topic = arb_precompiles::redeem_scheduled_topic();
             let precompile_addr = arb_precompiles::ARBRETRYABLETX_ADDRESS;
@@ -1754,7 +1754,7 @@ where
         let success = matches!(&output.result.result, ExecutionResult::Success { .. });
 
         // Scan receipt logs for L2→L1 withdrawal events and burn value from ArbSys.
-        // In Go, value transferred to the ArbSys address during a withdrawEth call
+        // Value transferred to the ArbSys address during a withdrawEth call
         // is burned (subtracted from ArbSys balance) after the tx commits.
         let mut withdrawal_value = U256::ZERO;
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
@@ -1809,7 +1809,7 @@ where
             // Charge the sender for gas costs that reth's internal buyGas
             // didn't cover. For normal EVM txs, this equals poster_gas
             // (deducted from gas_limit before reth sees it; compute_hold_gas
-            // is also deducted but not charged — Go returns it via
+            // is also deducted but not charged — it is returned via
             // calcHeldGasRefund before final gasUsed). For early-return paths
             // (pre-recorded revert, filtered tx), evm_gas_used is 0 and the
             // sender must pay the full gas_used.
@@ -1916,7 +1916,7 @@ where
                     }
 
                     // Grow gas backlog unconditionally for retryable txs.
-                    // Unlike normal txs, Go does NOT guard on gas price > 0 here.
+                    // Unlike normal txs, backlog growth is unconditional here.
                     {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         if let Ok(arb_state) =
@@ -1989,7 +1989,7 @@ where
                     if let Ok(arb_state) =
                         ArbosState::open(state_ptr, SystemBurner::new(None, false))
                     {
-                        // Go skips backlog update when gas price is zero.
+                        // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
                             let _ = arb_state.l2_pricing_state.grow_backlog(
                                 dist.compute_gas_for_backlog,
@@ -2049,7 +2049,7 @@ where
         }
 
         // Clear per-tx scratch slots so they don't affect the state root.
-        // In Go Nitro these are in-memory fields on TxProcessor, not in storage.
+        // Canonically these are in-memory fields on TxProcessor, not in storage.
         // We write them to storage so precompiles can read them via sload, but
         // must clear them after each tx to avoid polluting the state trie.
         {
@@ -2063,8 +2063,8 @@ where
         }
 
         // Per-tx Finalise: delete empty accounts from cache.
-        // Matches Go's statedb.Finalise(true) called after each transaction
-        // in applyTransaction (state_processor.go:168). Empty accounts
+        // Matches statedb.Finalise(true) called after each transaction
+        // in applyTransaction. Empty accounts
         // (balance=0, nonce=0, no code) are removed from the in-memory state
         // so subsequent transactions see them as non-existent, causing a fresh
         // load from the state provider. Zombie accounts are preserved.
@@ -2157,7 +2157,7 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 /// Mint balance to an address in the EVM state.
 ///
 /// Directly modifies the cache without creating transitions. This matches
-/// Go's StateDB.AddBalance which modifies in-memory state without triggering
+/// StateDB.AddBalance which modifies in-memory state without triggering
 /// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() || address == Address::ZERO {
@@ -2182,7 +2182,7 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 /// Burn (deduct) balance from an address in the EVM state.
 ///
 /// Directly modifies the cache without creating transitions. This matches
-/// Go's StateDB.SubBalance which modifies in-memory state without triggering
+/// StateDB.SubBalance which modifies in-memory state without triggering
 /// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     if amount.is_zero() {
@@ -2219,7 +2219,7 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
 /// Transfer balance between two addresses in the EVM state.
 ///
 /// If the sender has insufficient funds, the transfer is skipped entirely
-/// (no partial burn/mint). This matches Go's `util.TransferBalance` which
+/// (no partial burn/mint). This matches `util.TransferBalance` which
 /// is atomic — neither side is modified on insufficient funds.
 fn transfer_balance<DB: Database>(
     state: &mut State<DB>,

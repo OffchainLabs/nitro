@@ -62,7 +62,7 @@ pub struct EndTxContext {
 /// Hooks for ArbOS-specific transaction processing.
 ///
 /// These hooks integrate ArbOS state management into reth's block execution.
-/// In Go Nitro, this corresponds to `TxProcessor`'s `StartTxHook`,
+/// These correspond to the canonical `TxProcessor`'s `StartTxHook`,
 /// `GasChargingHook`, and `EndTxHook`.
 pub trait ArbOsHooks {
     type Error: core::fmt::Debug;

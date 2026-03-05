@@ -26,7 +26,7 @@ const PRICING_INERTIA_OFFSET: u64 = 5;
 const BACKLOG_TOLERANCE_OFFSET: u64 = 6;
 const PER_TX_GAS_LIMIT_OFFSET: u64 = 7;
 
-// Subspace keys (matching Go: gasConstraintsKey=[]byte{0}, etc.).
+// Subspace keys for L2 pricing partitions.
 const GAS_CONSTRAINTS_KEY: &[u8] = &[0];
 const MULTI_GAS_CONSTRAINTS_KEY: &[u8] = &[1];
 const MULTI_GAS_BASE_FEES_KEY: &[u8] = &[2];
@@ -271,6 +271,6 @@ impl<D: Database> L2PricingState<D> {
     }
 
     pub fn restrict(&self, _err: ()) {
-        // Delegates to burner in the Go code, here we just ignore
+        // No-op restriction
     }
 }

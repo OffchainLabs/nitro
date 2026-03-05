@@ -56,7 +56,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let result = match selector {
         GET_PREFERRED_AGGREGATOR => {
             // Deprecated view method: always returns (BatchPosterAddress, true).
-            // Go charges OpenArbosState (800) + argsCost (3) + resultCost (6) = 809.
+            // OpenArbosState (800) + argsCost (3) + resultCost (6) = 809.
             let mut out = Vec::with_capacity(96);
             out.extend_from_slice(&U256::from(0x40u64).to_be_bytes::<32>());
             out.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
@@ -70,7 +70,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         GET_DEFAULT_AGGREGATOR => {
             // Deprecated view method: always returns BatchPosterAddress.
-            // Go charges OpenArbosState (800) + resultCost (3) = 803.
+            // OpenArbosState (800) + resultCost (3) = 803.
             let mut out = [0u8; 32];
             out[12..32].copy_from_slice(BATCH_POSTER_ADDRESS.as_slice());
             Ok(PrecompileOutput::new(
@@ -80,7 +80,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         GET_TX_BASE_FEE => {
             // Deprecated view method: always returns 0.
-            // Go charges OpenArbosState (800) + argsCost (3) + resultCost (3) = 806.
+            // OpenArbosState (800) + argsCost (3) + resultCost (3) = 806.
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + 6).min(gas_limit),
                 U256::ZERO.to_be_bytes::<32>().to_vec().into(),
@@ -88,7 +88,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         SET_TX_BASE_FEE => {
             // Deprecated write method: no-op.
-            // Go charges OpenArbosState (800) + argsCost (6) = 806.
+            // OpenArbosState (800) + argsCost (6) = 806.
             Ok(PrecompileOutput::new(
                 (SLOAD_GAS + 6).min(gas_limit),
                 vec![].into(),
@@ -179,7 +179,7 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let pay_to = sload_field(input, pay_to_slot)?;
 
-    // Go: OAS(1) + OpenPoster IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
+    // OAS(1) + OpenPoster IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
         (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         pay_to.to_be_bytes::<32>().to_vec().into(),
@@ -222,7 +222,7 @@ fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let new_val = U256::from_be_slice(new_collector.as_slice());
     sstore_field(input, pay_to_slot, new_val)?;
 
-    // Go: OAS(1) + OpenPoster IsMember(1) + PayTo.Get(1) + SetPayTo(1 SSTORE) + argsCost(6).
+    // OAS(1) + OpenPoster IsMember(1) + PayTo.Get(1) + SetPayTo(1 SSTORE) + argsCost(6).
     // Owner check adds IsMember(1 SLOAD) only when caller is neither poster nor collector.
     let mut gas_used = 3 * SLOAD_GAS + SSTORE_GAS + 2 * COPY_GAS;
     if caller != poster && caller != old_collector {
@@ -263,7 +263,7 @@ fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }
 
-    // Go: resultCost = (2 + N) words for dynamic array encoding.
+    // resultCost = (2 + N) words for dynamic array encoding.
     let gas_used = (2 + count) * SLOAD_GAS + (2 + count) * COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
 }
@@ -326,7 +326,7 @@ fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     sstore_field(input, pay_to_slot, addr_as_u256)?;
 
-    // Go: IsMember(caller)(1) + ContainsPoster IsMember(1) + AddPoster[IsMember(1) +
+    // IsMember(caller)(1) + ContainsPoster IsMember(1) + AddPoster[IsMember(1) +
     // fundsDue.SetChecked(0)(5000) + payTo.Set(20000) + Add(IsMember(1) + size.Get(1) +
     // byAddress.Set(20000) + backingStorage.Set(20000) + size.Increment Get(1)+Set(20000))]
     // + argsCost(3).

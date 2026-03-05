@@ -253,7 +253,7 @@ fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
     }
 }
 
-/// Compute upfront gas cost for a Stylus call, matching Go's `Programs.CallProgram`.
+/// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
 fn stylus_call_gas_cost(
     params: &StylusParams,
     program: &Program,
@@ -276,8 +276,8 @@ fn stylus_call_gas_cost(
 
 /// Execute a Stylus WASM program by creating a NativeInstance and running it.
 ///
-/// Matches Go's `Programs.CallProgram`: validates the program, computes upfront
-/// gas costs (memory pages + init/cached gas), deducts them, then runs the WASM.
+/// Validates the program, computes upfront gas costs (memory pages + init/cached
+/// gas), deducts them, then runs the WASM.
 fn execute_stylus_program<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
     context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
     inputs: &CallInputs,
@@ -513,7 +513,7 @@ where
 
 /// Wraps [`PrecompilesMap`] to set the thread-local EVM call depth before
 /// each precompile invocation. The depth is read from revm's journal, which
-/// mirrors Go's `evm.Depth()` counter used by `ArbSys.isTopLevelCall`.
+/// mirrors the `evm.Depth()` counter used by `ArbSys.isTopLevelCall`.
 #[derive(Clone, Debug)]
 pub struct ArbPrecompilesMap(pub PrecompilesMap);
 

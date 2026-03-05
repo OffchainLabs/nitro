@@ -545,7 +545,7 @@ impl<D: Database> L1PricingState<D> {
     }
 }
 
-/// Euclidean division matching Go's big.Int.Div (remainder is always non-negative).
+/// Euclidean division (remainder is always non-negative).
 ///
 /// For a negative dividend with a positive divisor, this rounds toward negative
 /// infinity rather than toward zero: -7 / 2 = -4 (not -3), -3 / 10 = -1 (not 0).

@@ -41,11 +41,8 @@ const COPY_GAS: u64 = 3;
 /// Initial page ramp constant (not stored in packed params).
 const INITIAL_PAGE_RAMP: u64 = 620674314;
 
-/// Min init gas units (matching Go's MinInitGasUnits).
 const MIN_INIT_GAS_UNITS: u64 = 128;
-/// Min cached gas units (matching Go's MinCachedGasUnits).
 const MIN_CACHED_GAS_UNITS: u64 = 32;
-/// Cost scalar percent (matching Go's CostScalarPercent).
 const COST_SCALAR_PERCENT: u64 = 2;
 
 pub fn create_arbwasm_precompile() -> DynPrecompile {
@@ -313,7 +310,7 @@ struct ProgramInfo {
     age_seconds: u64,
 }
 
-/// Arbitrum start time (matches Go's ArbitrumStartTime).
+/// Arbitrum start time.
 const ARBITRUM_START_TIME: u64 = 1622243344;
 
 fn parse_program(data: &[u8; 32], params_word: &[u8; 32]) -> ProgramInfo {
