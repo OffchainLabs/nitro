@@ -2,11 +2,30 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use caller_env::wavmio::WavmIo;
-use caller_env::GuestPtr;
+use caller_env::{ExecEnv, GuestPtr};
+use rand::RngCore;
 use wasmer::FunctionEnvMut;
 
 use crate::memory::Sp1MemAccess;
 use crate::replay::CustomEnvData;
+
+impl ExecEnv for CustomEnvData {
+    fn advance_time(&mut self, ns: u64) {
+        self.time += ns;
+    }
+
+    fn get_time(&self) -> u64 {
+        self.time
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        self.pcg.next_u32()
+    }
+
+    fn print_string(&mut self, bytes: &[u8]) {
+        crate::platform::print_string(1, bytes);
+    }
+}
 
 impl WavmIo for CustomEnvData {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
