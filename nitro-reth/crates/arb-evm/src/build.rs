@@ -1650,6 +1650,10 @@ where
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
 
+        // Temporary debug: log gas breakdown for user txs with significant gas
+        if is_user_tx && evm_gas_used > 100_000 {
+        }
+
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
         // reported gas_used doesn't include it. Adding it back produces correct
