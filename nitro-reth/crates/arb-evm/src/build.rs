@@ -1749,7 +1749,10 @@ where
         let gas_used_total = output.result.result.gas_used();
         let success = matches!(&output.result.result, ExecutionResult::Success { .. });
 
-        // Scan receipt logs for L2→L1 withdrawal events (balance delta tracking).
+        // Scan receipt logs for L2→L1 withdrawal events and burn value from ArbSys.
+        // In Go, value transferred to the ArbSys address during a withdrawEth call
+        // is burned (subtracted from ArbSys balance) after the tx commits.
+        let mut withdrawal_value = U256::ZERO;
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
             let arbsys_addr = arb_precompiles::ARBSYS_ADDRESS;
             let l2_to_l1_tx_topic = keccak256(
@@ -1764,6 +1767,7 @@ where
                     // callvalue is at offset 4*32 = 128 bytes.
                     if log.data.data.len() >= 160 {
                         let callvalue = U256::from_be_slice(&log.data.data[128..160]);
+                        withdrawal_value = withdrawal_value.saturating_add(callvalue);
                         let val_i128: i128 = callvalue.try_into().unwrap_or(i128::MAX);
                         self.expected_balance_delta =
                             self.expected_balance_delta.saturating_sub(val_i128);
@@ -1774,6 +1778,12 @@ where
 
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
+
+        // Burn ETH from ArbSys address for L2→L1 withdrawals.
+        if !withdrawal_value.is_zero() {
+            let db: &mut State<DB> = self.inner.evm_mut().db_mut();
+            burn_balance(db, arb_precompiles::ARBSYS_ADDRESS, withdrawal_value);
+        }
 
         // Track poster gas and multi-gas for this receipt (parallel to receipts vector).
         let poster_gas_for_receipt = pending.as_ref().map_or(0, |p| p.poster_gas);
