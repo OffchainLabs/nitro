@@ -143,10 +143,11 @@ where
         &self,
         block: &'a SealedBlock<alloy_consensus::Block<arb_primitives::ArbTransactionSigned>>,
     ) -> Result<EthBlockExecutionCtx<'a>, Self::Error> {
-        // Encode delayed_messages_read (from header nonce) as bytes 32-39 of extra_data.
-        // The assembler decodes this to set the block header nonce correctly.
+        // Encode delayed_messages_read (from header nonce) as bytes 32-39 of extra_data,
+        // and L2 block number as bytes 40-47.
         let mut extra = block.header().extra_data.to_vec();
         extra.extend_from_slice(&block.header().nonce.0);
+        extra.extend_from_slice(&block.header().number.to_be_bytes());
         Ok(EthBlockExecutionCtx {
             tx_count_hint: Some(block.transaction_count()),
             parent_hash: block.header().parent_hash,

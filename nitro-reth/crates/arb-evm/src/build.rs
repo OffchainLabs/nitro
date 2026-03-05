@@ -111,18 +111,13 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
         EvmF: EvmFactory,
     {
         let extra_bytes = ctx.extra_data.as_ref();
-        let delayed_messages_read = if extra_bytes.len() >= 40 {
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(&extra_bytes[32..40]);
-            u64::from_be_bytes(buf)
-        } else {
-            0
-        };
+        let (delayed_messages_read, l2_block_number) = decode_extra_fields(extra_bytes);
         let arb_ctx = ArbBlockExecutionCtx {
             parent_hash: ctx.parent_hash,
             parent_beacon_block_root: ctx.parent_beacon_block_root,
             extra_data: extra_bytes[..core::cmp::min(extra_bytes.len(), 32)].to_vec(),
             delayed_messages_read,
+            l2_block_number,
             chain_id,
             ..Default::default()
         };
@@ -174,20 +169,14 @@ where
         DB: Database + 'a,
         I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
     {
-        // Decode delayed_messages_read from bytes 32-39 of extra_data if present.
         let extra_bytes = ctx.extra_data.as_ref();
-        let delayed_messages_read = if extra_bytes.len() >= 40 {
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(&extra_bytes[32..40]);
-            u64::from_be_bytes(buf)
-        } else {
-            0
-        };
+        let (delayed_messages_read, l2_block_number) = decode_extra_fields(extra_bytes);
         let arb_ctx = ArbBlockExecutionCtx {
             parent_hash: ctx.parent_hash,
             parent_beacon_block_root: ctx.parent_beacon_block_root,
             extra_data: extra_bytes[..core::cmp::min(extra_bytes.len(), 32)].to_vec(),
             delayed_messages_read,
+            l2_block_number,
             ..Default::default()
         };
         ArbBlockExecutor {
@@ -855,6 +844,18 @@ where
                         crate::config::l1_block_number_from_mix_hash(&prevrandao);
                 }
             }
+        }
+
+        // Ensure L2 block number is set for precompile access.
+        // block_env.number holds L1 block number; L2 comes from the sealed header
+        // (set via arb_context_for_block or with_arb_ctx). If still 0, we're in a
+        // path where it wasn't explicitly set — this shouldn't happen in production.
+        if self.arb_ctx.l2_block_number > 0 {
+            arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
+            arb_precompiles::set_cached_l1_block_number(
+                self.arb_ctx.l2_block_number,
+                self.arb_ctx.l1_block_number,
+            );
         }
 
         // Load ArbOS state parameters from the EVM database.
@@ -2363,6 +2364,26 @@ fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
     }
 
     gas
+}
+
+/// Decode delayed_messages_read (bytes 32-39) and L2 block number (bytes 40-47)
+/// from the extra_data field passed through EthBlockExecutionCtx.
+fn decode_extra_fields(extra_bytes: &[u8]) -> (u64, u64) {
+    let delayed = if extra_bytes.len() >= 40 {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&extra_bytes[32..40]);
+        u64::from_be_bytes(buf)
+    } else {
+        0
+    };
+    let l2_block = if extra_bytes.len() >= 48 {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&extra_bytes[40..48]);
+        u64::from_be_bytes(buf)
+    } else {
+        0
+    };
+    (delayed, l2_block)
 }
 
 /// EIP-2935: Store the parent block hash in the history storage contract.

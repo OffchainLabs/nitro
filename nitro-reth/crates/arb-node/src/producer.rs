@@ -274,6 +274,8 @@ where
             .evm_config
             .block_executor_factory()
             .create_arb_executor(evm, exec_ctx, chain_id);
+        executor.arb_ctx.l2_block_number = l2_block_number;
+        executor.arb_ctx.l1_block_number = l1_block_number;
 
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
