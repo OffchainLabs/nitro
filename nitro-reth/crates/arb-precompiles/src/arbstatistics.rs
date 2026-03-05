@@ -46,6 +46,7 @@ fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
         out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
     }
 
-    let gas_cost = (SLOAD_GAS + COPY_GAS).min(gas_limit);
+    // Go: OAS(800) + 0 body + resultCost = 6 words × 3 = 18.
+    let gas_cost = (SLOAD_GAS + 6 * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
