@@ -40,9 +40,9 @@ pub use arbretryabletx::{
 };
 pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
 pub use arbsys::{
-    create_arbsys_precompile, get_cached_l1_block_number, get_tx_is_aliased,
-    set_cached_l1_block_number, set_tx_is_aliased, store_arbsys_state, take_arbsys_state,
-    ArbSysMerkleState, ARBSYS_ADDRESS,
+    create_arbsys_precompile, get_cached_l1_block_number, get_current_l2_block, get_tx_is_aliased,
+    set_cached_l1_block_number, set_current_l2_block, set_tx_is_aliased, store_arbsys_state,
+    take_arbsys_state, ArbSysMerkleState, ARBSYS_ADDRESS,
 };
 pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
 pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};

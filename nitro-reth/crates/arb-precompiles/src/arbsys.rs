@@ -69,7 +69,7 @@ fn keccak_gas(byte_count: u64) -> u64 {
 
 // Event topics.
 fn l2_to_l1_tx_topic() -> B256 {
-    keccak256(b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,bytes)")
+    keccak256(b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)")
 }
 
 fn send_merkle_update_topic() -> B256 {
@@ -95,6 +95,7 @@ thread_local! {
 }
 
 static L1_BLOCK_CACHE: Mutex<Option<HashMap<u64, u64>>> = Mutex::new(None);
+static CURRENT_L2_BLOCK: Mutex<u64> = Mutex::new(0);
 
 /// Store ArbSys state changes for post-execution application.
 pub fn store_arbsys_state(state: ArbSysMerkleState) {
@@ -132,6 +133,18 @@ pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
     cache.as_ref().and_then(|m| m.get(&l2_block).copied())
 }
 
+/// Set the current L2 block number for precompile use.
+/// In Arbitrum, block_env.number holds the L1 block number (for the NUMBER opcode),
+/// so precompiles that need the L2 block number read it from here.
+pub fn set_current_l2_block(l2_block: u64) {
+    *CURRENT_L2_BLOCK.lock().unwrap() = l2_block;
+}
+
+/// Get the current L2 block number.
+pub fn get_current_l2_block() -> u64 {
+    *CURRENT_L2_BLOCK.lock().unwrap()
+}
+
 pub fn create_arbsys_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbsys"), handler)
 }
@@ -164,7 +177,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 // ── view functions ───────────────────────────────────────────────────
 
 fn handle_arb_block_number(input: &mut PrecompileInput<'_>) -> PrecompileResult {
-    let block_num = input.internals().block_number();
+    let block_num = U256::from(get_current_l2_block());
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
@@ -182,11 +195,7 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let requested: u64 = U256::from_be_slice(&data[4..36])
         .try_into()
         .unwrap_or(u64::MAX);
-    let current: u64 = input
-        .internals()
-        .block_number()
-        .try_into()
-        .unwrap_or(u64::MAX);
+    let current = get_current_l2_block();
 
     // Must be strictly less than current and within 256 blocks.
     if requested >= current || requested + 256 < current {
@@ -388,10 +397,11 @@ fn do_send_tx_to_l1(
 ) -> PrecompileResult {
     let caller = input.caller;
     let value = input.value;
-    let block_number = input.internals().block_number();
+    // block_env.number holds L1 block number in Arbitrum (for the NUMBER opcode).
+    // The L2 block number is stored separately.
+    let l1_block_number = input.internals().block_number();
+    let l2_block_number = U256::from(get_current_l2_block());
     let timestamp = input.internals().block_timestamp();
-    let l2_block_u64: u64 = block_number.try_into().unwrap_or(0);
-    let l1_block_num = get_cached_l1_block_number(l2_block_u64).unwrap_or(0);
 
     // Gas tracking: match Go's precompile framework burn pattern.
     let mut gas_used = 0u64;
@@ -448,8 +458,8 @@ fn do_send_tx_to_l1(
     let send_hash = compute_send_hash(
         caller,
         destination,
-        block_number,
-        U256::from(l1_block_num),
+        l2_block_number,
+        l1_block_number,
         timestamp,
         value,
         calldata,
@@ -508,10 +518,10 @@ fn do_send_tx_to_l1(
     let mut caller_padded = [0u8; 32];
     caller_padded[12..32].copy_from_slice(caller.as_slice());
     event_data.extend_from_slice(&caller_padded);
-    // uint256 arbBlockNum
-    event_data.extend_from_slice(&block_number.to_be_bytes::<32>());
-    // uint256 ethBlockNum
-    event_data.extend_from_slice(&U256::from(l1_block_num).to_be_bytes::<32>());
+    // uint256 arbBlockNum (L2 block number)
+    event_data.extend_from_slice(&l2_block_number.to_be_bytes::<32>());
+    // uint256 ethBlockNum (L1 block number)
+    event_data.extend_from_slice(&l1_block_number.to_be_bytes::<32>());
     // uint256 timestamp
     event_data.extend_from_slice(&timestamp.to_be_bytes::<32>());
     // uint256 callvalue
@@ -544,7 +554,7 @@ fn do_send_tx_to_l1(
         send_hash,
         leaf_num,
         value_to_burn: value,
-        block_number: block_number.try_into().unwrap_or(0),
+        block_number: l2_block_number.try_into().unwrap_or(0),
     });
 
     // Read ArbOS version for return value versioning (no gas — Go uses cached value).

@@ -342,6 +342,11 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         // Set thread-locals for precompile access.
         arb_precompiles::set_arbos_version(arbos_version);
         arb_precompiles::set_block_timestamp(self.arb_ctx.block_timestamp);
+        arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
+        arb_precompiles::set_cached_l1_block_number(
+            self.arb_ctx.l2_block_number,
+            self.arb_ctx.l1_block_number,
+        );
 
         if let Ok(addr) = arb_state.network_fee_account() {
             self.arb_ctx.network_fee_account = addr;
@@ -1747,7 +1752,7 @@ where
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
             let arbsys_addr = arb_precompiles::ARBSYS_ADDRESS;
             let l2_to_l1_tx_topic = keccak256(
-                b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,bytes)",
+                b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)",
             );
             for log in logs {
                 if log.address == arbsys_addr

@@ -36,7 +36,8 @@ fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
 
     // Returns (blockNumber, 0, 0, 0, 0, 0).
     // The five Classic-era stats are also zero in Nitro (never populated post-migration).
-    let block_number = input.internals().block_number();
+    // Use the L2 block number (block_env.number holds L1 in Arbitrum).
+    let block_number = U256::from(crate::arbsys::get_current_l2_block());
     let mut out = Vec::with_capacity(192);
     out.extend_from_slice(&block_number.to_be_bytes::<32>());
     for _ in 0..5 {

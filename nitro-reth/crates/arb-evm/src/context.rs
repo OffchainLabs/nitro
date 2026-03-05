@@ -17,6 +17,9 @@ pub struct ArbBlockExecutionCtx {
     pub delayed_messages_read: u64,
     /// L1 block number (from header mix_hash bytes 8-15).
     pub l1_block_number: u64,
+    /// L2 block number (header number). Distinct from block_env.number which
+    /// holds L1 block number for the NUMBER opcode.
+    pub l2_block_number: u64,
     /// Chain ID.
     pub chain_id: u64,
     /// Block timestamp.
