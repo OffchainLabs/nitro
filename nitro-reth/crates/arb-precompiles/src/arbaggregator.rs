@@ -178,8 +178,9 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     let pay_to = sload_field(input, pay_to_slot)?;
 
+    // Go: OAS(1) + OpenPoster IsMember(1) + payTo.Get(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         pay_to.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -256,7 +257,8 @@ fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }
 
-    let gas_used = (2 + count) * SLOAD_GAS + COPY_GAS;
+    // Go: resultCost = (2 + N) words for dynamic array encoding.
+    let gas_used = (2 + count) * SLOAD_GAS + (2 + count) * COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
 }
 
