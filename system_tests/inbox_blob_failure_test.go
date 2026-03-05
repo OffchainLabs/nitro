@@ -102,7 +102,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Record sequencer state before starting follower
-	seqDelayed, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCount(0)
+	seqDelayed, err := builder.L2.ConsensusNode.MessageExtractor.GetDelayedCountAtParentChainBlock(0)
 	Require(t, err)
 	seqBatch, err := builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
 	Require(t, err)
@@ -124,7 +124,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Check if follower is out of sync
-	follDelayed, err := testClientB.ConsensusNode.MessageExtractor.GetDelayedCount(0)
+	follDelayed, err := testClientB.ConsensusNode.MessageExtractor.GetDelayedCountAtParentChainBlock(0)
 	Require(t, err)
 	follBatch, err := testClientB.ConsensusNode.MessageExtractor.GetBatchCount()
 	Require(t, err)

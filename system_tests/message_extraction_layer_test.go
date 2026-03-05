@@ -76,11 +76,13 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
+		nil, // TODO: SequencerInbox interface needed.
+		l1Reader,
 		reorgEventChan,
 	)
 	Require(t, err)
+	extractor.SetMessageConsumer(mockMsgConsumer)
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Create various L2 transactions and wait for them to be included in a batch

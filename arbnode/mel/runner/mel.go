@@ -319,7 +319,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
-func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
+func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
 		return 0, err
@@ -380,7 +380,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	_ common.Hash,
 	requestedPosition uint64,
 ) (*arbostypes.L1IncomingMessage, common.Hash, error) {
-	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
+	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(finalizedPosition)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, common.Hash{}, nil
