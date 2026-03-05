@@ -41,6 +41,7 @@ const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
+const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 const TX_GAS: u64 = 21_000;
 const LOG_GAS: u64 = 375;
@@ -425,6 +426,12 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Open the retryable (verifies exists and not expired).
     let ticket_key = open_retryable(input, ticket_id, current_timestamp)?;
 
+    // Read calldata size for updateCost computation (Go's RetryableSizeBytes).
+    let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
+    let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
+    let calldata_size = sload_field(input, calldata_size_slot)?;
+    let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
+
     // Read timeout and timeout_windows_left to compute effective timeout.
     let timeout_slot = map_slot(ticket_key.as_slice(), TIMEOUT_OFFSET);
     let timeout = sload_field(input, timeout_slot)?;
@@ -455,9 +462,16 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
 
-    // Gas: OpenArbosState(1) + open_retryable(1 sload) + 2 sloads (timeout, windows)
-    // + queue_put(1 sload + 2 sstores) + 1 sstore (windows) + RetryableReapPrice
-    let gas_used = 5 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS + RETRYABLE_REAP_PRICE;
+    // Go gas: 8 SLOADs + 3 SSTOREs + argsCost(3) + updateCost + event(1381)
+    // + RetryableReapPrice(58000) + resultCost(3).
+    // updateCost = WordsForBytes(nbytes) * SstoreSetGas/100, where
+    // nbytes = 6*32 + 32 + 32*WordsForBytes(calldataSize).
+    let calldata_words = (calldata_size_u64 + 31) / 32;
+    let nbytes = 6 * 32 + 32 + 32 * calldata_words;
+    let update_cost = ((nbytes + 31) / 32) * (SSTORE_GAS / 100);
+    let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
+    let gas_used = 8 * SLOAD_GAS + 3 * SSTORE_GAS + 2 * COPY_GAS
+        + update_cost + event_cost + RETRYABLE_REAP_PRICE;
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -501,7 +515,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // Clear all storage fields for this retryable ticket.
+    // Clear all storage fields for this retryable ticket (Go: DeleteRetryable).
     let offsets = [
         NUM_TRIES_OFFSET,
         FROM_OFFSET,
@@ -516,8 +530,32 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         sstore_field(input, slot, U256::ZERO)?;
     }
 
-    // Gas: OpenArbosState(1) + open_retryable(1 sload) + 1 sload (beneficiary) + 7 sstores (clear fields)
-    let gas_used = 3 * SLOAD_GAS + 7 * SSTORE_GAS + COPY_GAS;
+    // Clear calldata bytes (Go: retStorage.OpenSubStorage(calldataKey).ClearBytes()).
+    let calldata_sub = derive_subspace_key(ticket_key.as_slice(), &[1]);
+    let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
+    let calldata_size = sload_field(input, calldata_size_slot)?;
+    let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
+    let calldata_words = (calldata_size_u64 + 31) / 32;
+    if calldata_size_u64 > 0 {
+        for i in 0..calldata_words {
+            let word_slot = map_slot(calldata_sub.as_slice(), 1 + i);
+            sstore_field(input, word_slot, U256::ZERO)?;
+        }
+        sstore_field(input, calldata_size_slot, U256::ZERO)?;
+    }
+
+    // Go gas: 6 SLOADs + 7 × ClearByUint64(5000) + ClearBytes(variable)
+    // + Canceled event (LOG2: 375+2*375=1125) + argsCost(3).
+    // DeleteRetryable SLOADs: timeout(1) + beneficiary(1) + ClearBytes size(1) = 3
+    // Total SLOADs: OAS(1) + OpenRetryable(1) + beneficiary(1) + DeleteRetryable(3) = 6
+    let clear_bytes_cost = if calldata_size_u64 > 0 {
+        (calldata_words + 1) * SSTORE_ZERO_GAS
+    } else {
+        0
+    };
+    let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
+    let gas_used = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost
+        + event_cost + COPY_GAS;
 
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
