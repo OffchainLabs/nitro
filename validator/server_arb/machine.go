@@ -442,6 +442,22 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	return nil
 }
 
+func (m *ArbitratorMachine) SetEndParentChainBlockHash(blockHash common.Hash) error {
+	defer runtime.KeepAlive(m)
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	hashBytes := [32]u8{}
+	for index, byte := range blockHash.Bytes() {
+		hashBytes[index] = u8(byte)
+	}
+	C.arbitrator_set_end_parent_chain_block_hash(
+		m.ptr,
+		&C.struct_Bytes32{hashBytes},
+	)
+	return nil
+}
+
 func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {

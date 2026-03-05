@@ -15,16 +15,18 @@ import (
 )
 
 type GoGlobalState struct {
-	BlockHash  common.Hash
-	SendRoot   common.Hash
-	Batch      uint64
-	PosInBatch uint64
+	BlockHash    common.Hash
+	SendRoot     common.Hash
+	MELStateHash common.Hash
+	MELMsgHash   common.Hash
+	Batch        uint64
+	PosInBatch   uint64
 }
 
 func (g GoGlobalState) String() string {
 	return fmt.Sprintf(
-		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d",
-		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch,
+		"BlockHash: %s, SendRoot: %s, Batch: %d, PosInBatch: %d, MELStateHash: %s, MELMsgHash: %s",
+		g.BlockHash.Hex(), g.SendRoot.Hex(), g.Batch, g.PosInBatch, g.MELStateHash.Hex(), g.MELMsgHash.Hex(),
 	)
 }
 
