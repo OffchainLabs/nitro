@@ -912,8 +912,9 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 		if !validationStatus.DoneEntry.Success {
 			if validationStatus.DoneEntry.Timeout {
-				// Timeout is transient — log a warning and retry without crashing.
-				log.Warn("validation timed out, scheduling retry", "pos", pos, "start", validationStatus.DoneEntry.Start)
+				// Timeout is transient — retry without crashing.
+				// Detailed warning already logged in sendValidations.
+				log.Trace("advanceValidations: retrying timed-out validation", "pos", pos)
 			} else {
 				v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
 			}

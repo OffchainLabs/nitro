@@ -155,4 +155,9 @@ func TestBlockValidatorTimeoutRetry(t *testing.T) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(block.Uint64()), timeout) {
 		Fatal(t, "did not validate the block - timeout errors should have been retried")
 	}
+
+	// Verify the proxy actually injected timeout errors (remainingTimeouts should be negative).
+	if remaining := proxy.remainingTimeouts.Load(); remaining >= 0 {
+		Fatal(t, "proxy did not inject all expected timeouts, remaining:", remaining)
+	}
 }

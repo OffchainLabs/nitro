@@ -45,7 +45,11 @@ func IsTimeoutError(err error) bool {
 		return true
 	}
 
-	// String-based detection
+	// String-based detection for errors serialized through Redis or RPC,
+	// which lose Go type information. This may produce false positives for
+	// unrelated errors whose messages contain these substrings, but the
+	// consequence is only delayed failure detection (extra retries up to the
+	// configured limit), not silent suppression.
 
 	errMsg := err.Error()
 	if strings.Contains(errMsg, pubsub.TimeoutErrorMessage) ||
