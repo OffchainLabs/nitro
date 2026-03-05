@@ -102,7 +102,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 .map_err(|_| PrecompileError::other("sload failed"))?
                 .data;
             Ok(PrecompileOutput::new(
-                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
             ))
         }
