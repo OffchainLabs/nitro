@@ -213,8 +213,9 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
 
+    // Go: OAS(1) + OpenRetryable timeout(1) + CalculateTimeout timeout+windows(2) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (4 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         U256::from(effective_timeout).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -269,8 +270,9 @@ fn handle_get_beneficiary(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let beneficiary_slot = map_slot(ticket_key.as_slice(), BENEFICIARY_OFFSET);
     let beneficiary = sload_field(input, beneficiary_slot)?;
 
+    // Go: OAS(1) + OpenRetryable timeout(1) + beneficiary(1) + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
         beneficiary.to_be_bytes::<32>().to_vec().into(),
     ))
 }
