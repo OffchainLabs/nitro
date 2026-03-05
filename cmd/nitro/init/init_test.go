@@ -378,7 +378,7 @@ func TestEmptyDatabaseDir(t *testing.T) {
 		},
 		{
 			name:  "succeed with expected files",
-			files: []string{"LOCK", "classic-msg", "l2chaindata"},
+			files: []string{"LOCK", "classic-msg", "l2chaindata", "wasm"},
 		},
 		{
 			name:    "fail with unexpected files",
