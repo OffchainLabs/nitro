@@ -18,6 +18,7 @@ pub fn create_arbstatistics_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -25,10 +26,11 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         GET_STATS => handle_get_stats(&input),
         _ => Err(PrecompileError::other("unknown ArbStatistics selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {

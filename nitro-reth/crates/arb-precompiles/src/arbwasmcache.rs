@@ -46,7 +46,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         // CacheCodehash: available only on ArbOS 30, replaced by CacheProgram at 31.
         CACHE_CODEHASH => {
             if let Some(result) = crate::check_method_version(
@@ -77,7 +77,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             Err(PrecompileError::other("caller is not a cache manager"))
         }
         _ => Err(PrecompileError::other("unknown ArbWasmCache selector")),
-    }
+    };
+    crate::gas_check(input.gas, result)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

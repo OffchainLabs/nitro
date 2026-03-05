@@ -20,6 +20,7 @@ pub fn create_arbinfo_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -27,11 +28,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         GET_BALANCE => handle_get_balance(&mut input),
         GET_CODE => handle_get_code(&mut input),
         _ => Err(PrecompileError::other("unknown ArbInfo selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 fn handle_get_balance(input: &mut PrecompileInput<'_>) -> PrecompileResult {

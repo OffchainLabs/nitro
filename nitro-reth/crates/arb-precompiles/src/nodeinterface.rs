@@ -47,6 +47,7 @@ pub fn create_nodeinterface_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -54,7 +55,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         GAS_ESTIMATE_COMPONENTS => handle_gas_estimate_components(&mut input),
         GAS_ESTIMATE_L1_COMPONENT => handle_gas_estimate_l1_component(&mut input),
         NITRO_GENESIS_BLOCK => handle_nitro_genesis_block(&mut input),
@@ -71,7 +72,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             Err(PrecompileError::other("method only available via RPC"))
         }
         _ => Err(PrecompileError::other("unknown selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 /// gasEstimateComponents(address,bool,bytes) → (uint64, uint64, uint256, uint256)

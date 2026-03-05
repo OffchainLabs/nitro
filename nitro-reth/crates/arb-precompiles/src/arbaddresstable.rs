@@ -31,6 +31,7 @@ pub fn create_arbaddresstable_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -38,7 +39,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         SIZE => handle_size(&mut input),
         ADDRESS_EXISTS => handle_address_exists(&mut input),
         LOOKUP => handle_lookup(&mut input),
@@ -49,7 +50,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         _ => Err(PrecompileError::other(
             "unknown ArbAddressTable selector",
         )),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

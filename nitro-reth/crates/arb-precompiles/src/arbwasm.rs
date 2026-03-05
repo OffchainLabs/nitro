@@ -67,7 +67,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         STYLUS_VERSION => {
             let params = load_params_word(&mut input)?;
             let version = u16::from_be_bytes([params[0], params[1]]);
@@ -236,7 +236,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             Err(PrecompileError::other("Stylus keepalive not yet supported"))
         }
         _ => Err(PrecompileError::other("unknown ArbWasm selector")),
-    }
+    };
+    crate::gas_check(input.gas, result)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

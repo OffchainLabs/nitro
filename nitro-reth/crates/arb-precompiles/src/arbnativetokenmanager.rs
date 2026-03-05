@@ -42,11 +42,12 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         MINT_NATIVE_TOKEN => handle_mint(&mut input),
         BURN_NATIVE_TOKEN => handle_burn(&mut input),
         _ => Err(PrecompileError::other("unknown selector")),
-    }
+    };
+    crate::gas_check(input.gas, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

@@ -95,6 +95,7 @@ pub fn create_arbgasinfo_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -102,7 +103,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         GET_L1_BASEFEE_ESTIMATE | GET_L1_GAS_PRICE_ESTIMATE => {
             read_l1_field(&mut input, L1_PRICE_PER_UNIT)
         }
@@ -196,7 +197,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             handle_multi_gas_base_fee(&mut input)
         }
         _ => Err(PrecompileError::other("unknown selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

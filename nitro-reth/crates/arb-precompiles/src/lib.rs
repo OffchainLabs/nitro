@@ -109,6 +109,15 @@ fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     }
 }
 
+/// Ensure precompile gas_used does not exceed the gas limit.
+/// Returns `OutOfGas` if it does, preventing an assertion panic in alloy-evm.
+fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
+    match result {
+        Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
+        other => other,
+    }
+}
+
 /// Check method-level version gate. If the current ArbOS version is below
 /// `min_version` or above `max_version` (when non-zero), the method reverts.
 fn check_method_version(min_version: u64, max_version: u64) -> Option<PrecompileResult> {

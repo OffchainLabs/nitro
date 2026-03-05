@@ -44,12 +44,13 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         ADD_FILTERED_TX => handle_add_filtered_tx(&mut input),
         DELETE_FILTERED_TX => handle_delete_filtered_tx(&mut input),
         IS_TX_FILTERED => handle_is_tx_filtered(&mut input),
         _ => Err(PrecompileError::other("unknown selector")),
-    }
+    };
+    crate::gas_check(input.gas, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

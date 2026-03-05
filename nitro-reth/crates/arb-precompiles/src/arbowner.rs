@@ -134,6 +134,7 @@ pub fn create_arbowner_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -144,7 +145,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         // ── Getters ──────────────────────────────────────────────
         GET_NETWORK_FEE_ACCOUNT => read_root_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         // GetInfraFeeAccount: ArbOS >= 5
@@ -410,7 +411,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
 
         _ => Err(PrecompileError::other("unknown ArbOwner selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── Owner verification ───────────────────────────────────────────────

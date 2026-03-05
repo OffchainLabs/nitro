@@ -44,15 +44,15 @@ pub fn create_arbaggregator_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
     }
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
-    let gas_limit = input.gas;
 
-    match selector {
+    let result = match selector {
         GET_PREFERRED_AGGREGATOR => {
             // Deprecated: always returns (BatchPosterAddress, true).
             let mut out = Vec::with_capacity(96);
@@ -93,7 +93,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         _ => Err(PrecompileError::other(
             "unknown ArbAggregator selector",
         )),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

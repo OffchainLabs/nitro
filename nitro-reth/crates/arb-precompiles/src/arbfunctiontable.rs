@@ -19,8 +19,8 @@ pub fn create_arbfunctiontable_precompile() -> DynPrecompile {
 }
 
 fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
-    let gas = input.gas;
 
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -28,15 +28,15 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         UPLOAD => {
             // No-op, returns empty.
-            let gas_cost = COPY_GAS.min(gas);
+            let gas_cost = COPY_GAS.min(gas_limit);
             Ok(PrecompileOutput::new(gas_cost, vec![].into()))
         }
         SIZE => {
             // Returns 0.
-            let gas_cost = COPY_GAS.min(gas);
+            let gas_cost = COPY_GAS.min(gas_limit);
             Ok(PrecompileOutput::new(
                 gas_cost,
                 U256::ZERO.to_be_bytes::<32>().to_vec().into(),
@@ -46,5 +46,6 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
         _ => Err(PrecompileError::other(
             "unknown ArbFunctionTable selector",
         )),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }

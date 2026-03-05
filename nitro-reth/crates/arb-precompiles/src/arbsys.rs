@@ -150,6 +150,7 @@ pub fn create_arbsys_precompile() -> DynPrecompile {
 }
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
+    let gas_limit = input.gas;
     let data = input.data;
     if data.len() < 4 {
         return Err(PrecompileError::other("input too short"));
@@ -157,7 +158,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
 
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
 
-    match selector {
+    let result = match selector {
         ARB_BLOCK_NUMBER => handle_arb_block_number(&mut input),
         ARB_BLOCK_HASH => handle_arb_block_hash(&mut input),
         ARB_CHAIN_ID => handle_arb_chain_id(&mut input),
@@ -171,7 +172,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SEND_TX_TO_L1 => handle_send_tx_to_l1(&mut input),
         SEND_MERKLE_TREE_STATE => handle_send_merkle_tree_state(&mut input),
         _ => Err(PrecompileError::other("unknown ArbSys selector")),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── view functions ───────────────────────────────────────────────────

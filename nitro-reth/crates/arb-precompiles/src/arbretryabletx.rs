@@ -82,7 +82,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     let selector: [u8; 4] = [data[0], data[1], data[2], data[3]];
     let gas_limit = input.gas;
 
-    match selector {
+    let result = match selector {
         GET_LIFETIME => {
             let lifetime = U256::from(RETRYABLE_LIFETIME_SECONDS);
             Ok(PrecompileOutput::new(
@@ -118,7 +118,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         _ => Err(PrecompileError::other(
             "unknown ArbRetryableTx selector",
         )),
-    }
+    };
+    crate::gas_check(gas_limit, result)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
