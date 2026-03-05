@@ -465,6 +465,21 @@ impl Encodable2718 for ArbReceipt {
 
 impl Decodable2718 for ArbReceipt {
     fn typed_decode(ty: u8, buf: &mut &[u8]) -> alloy_eips::eip2718::Eip2718Result<Self> {
+        // Standard EVM types use their raw type byte in 2718 encoding but map to
+        // specific ArbReceiptKind variants. ArbTxType only covers Arbitrum-specific
+        // types (0x64+), so handle standard EVM types here first.
+        match ty {
+            0x01 => {
+                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip2930(r));
+            }
+            0x02 => {
+                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip1559(r));
+            }
+            0x04 => {
+                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip7702(r));
+            }
+            _ => {}
+        }
         let tx_type = ArbTxType::from_u8(ty)
             .map_err(|_| alloy_eips::eip2718::Eip2718Error::UnexpectedType(ty))?;
         Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(buf, tx_type)?)
@@ -472,6 +487,31 @@ impl Decodable2718 for ArbReceipt {
 
     fn fallback_decode(buf: &mut &[u8]) -> alloy_eips::eip2718::Eip2718Result<Self> {
         Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(buf, ArbTxType::ArbitrumLegacyTx)?)
+    }
+}
+
+impl ArbReceipt {
+    /// Decode a standard EVM receipt (EIP-2930, EIP-1559, EIP-7702) from RLP.
+    fn decode_standard_receipt(
+        buf: &mut &[u8],
+        wrap: impl FnOnce(AlloyReceipt) -> ArbReceiptKind,
+    ) -> alloy_eips::eip2718::Eip2718Result<Self> {
+        let header = alloy_rlp::Header::decode(buf)?;
+        if !header.list {
+            return Err(alloy_rlp::Error::UnexpectedString.into());
+        }
+        let remaining = buf.len();
+        let status: Eip658Value = alloy_rlp::Decodable::decode(buf)?;
+        let cumulative_gas_used: u64 = alloy_rlp::Decodable::decode(buf)?;
+        let logs: Vec<Log> = alloy_rlp::Decodable::decode(buf)?;
+        if buf.len() + header.payload_length != remaining {
+            return Err(alloy_rlp::Error::UnexpectedLength.into());
+        }
+        Ok(ArbReceipt::new(wrap(AlloyReceipt {
+            status,
+            cumulative_gas_used,
+            logs,
+        })))
     }
 }
 
