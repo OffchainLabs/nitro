@@ -1,0 +1,197 @@
+# Dockerfile for building the Rust-based validator server.
+#
+# Build stages are derived from the main Dockerfile. Only the stages needed
+# for the validator binary + machine files are included (no Go node binaries).
+#
+# Build:
+#   docker build -f Dockerfile.validator --target nitro-validator -t nitro-validator .
+#
+# Run (mount test blocks, machines are baked in):
+#   docker run --rm --network=host nitro-validator --mode native
+#
+# Or override machines with a volume mount:
+#   docker run --rm --network=host \
+#     -v $(pwd)/target/machines:/machines:ro \
+#     nitro-validator --mode native --root-path /machines
+
+# ── brotli WASM build (emscripten) ──────────────────────────────────────────
+FROM debian:bookworm-slim AS brotli-wasm-builder
+WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
+
+FROM scratch AS brotli-wasm-export
+COPY --from=brotli-wasm-builder /workspace/install/ /
+
+# ── brotli native library ───────────────────────────────────────────────────
+FROM debian:bookworm-slim AS brotli-library-builder
+WORKDIR /workspace
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && \
+    apt-get install -y cmake make gcc git && \
+    ./scripts/build-brotli.sh -l -t /workspace/install/
+
+FROM scratch AS brotli-library-export
+COPY --from=brotli-library-builder /workspace/install/ /
+
+# ── Solidity contracts ──────────────────────────────────────────────────────
+FROM node:24.4.1-bookworm-slim AS contracts-builder
+RUN apt-get update && \
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
+WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
+COPY contracts/package.json contracts/yarn.lock contracts/
+RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
+COPY contracts-local contracts-local/
+COPY contracts contracts/
+COPY safe-smart-account safe-smart-account/
+RUN cd safe-smart-account && npm install
+COPY Makefile .
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+
+# ── WASM base ───────────────────────────────────────────────────────────────
+FROM debian:bookworm-20231218 AS wasm-base
+WORKDIR /workspace
+RUN apt-get update && apt-get install -y curl build-essential=12.9
+
+# ── WASM libraries (Rust → wasm32) ─────────────────────────────────────────
+FROM wasm-base AS wasm-libs-builder
+	# clang / lld used by soft-float wasm
+RUN apt-get update && \
+    apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
+    # pinned rust 1.88.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+COPY ./Makefile ./
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY brotli brotli
+COPY scripts/build-brotli.sh scripts/
+COPY scripts/remove_reference_types.sh scripts/
+COPY --from=brotli-wasm-export / target/
+RUN apt-get update && apt-get install -y cmake
+RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
+
+FROM scratch AS wasm-libs-export
+COPY --from=wasm-libs-builder /workspace/ /
+
+# ── WASM binary (Go replay → wasm) ─────────────────────────────────────────
+FROM wasm-base AS wasm-bin-builder
+RUN apt update && apt install -y wabt
+# pinned go version
+RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+COPY ./Makefile ./go.mod ./go.sum ./
+COPY ./arbcompress ./arbcompress
+COPY ./arbos ./arbos
+COPY ./arbstate ./arbstate
+COPY ./arbutil ./arbutil
+COPY ./gethhook ./gethhook
+COPY ./blsSignatures ./blsSignatures
+COPY ./cmd/chaininfo ./cmd/chaininfo
+COPY ./cmd/replay ./cmd/replay
+COPY ./daprovider ./daprovider
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
+COPY ./precompiles ./precompiles
+COPY ./statetransfer ./statetransfer
+COPY ./util ./util
+COPY ./wavmio ./wavmio
+COPY ./zeroheavy ./zeroheavy
+COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
+COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
+COPY ./contracts-local/lib/ ./contracts-local/lib/
+COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
+COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
+COPY ./safe-smart-account ./safe-smart-account
+COPY ./solgen/gen.go ./solgen/
+COPY ./go-ethereum ./go-ethereum
+COPY scripts/remove_reference_types.sh scripts/
+COPY --from=brotli-wasm-export / target/
+COPY --from=contracts-builder workspace/contracts-local/out/precompiles/ contracts-local/out/precompiles/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/.make/ .make/
+RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
+
+# ── Rust prover + JIT ───────────────────────────────────────────────────────
+FROM rust:1.88.0-slim-bookworm AS prover-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY ./Makefile ./
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN touch -a -m crates/prover/src/lib.rs
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+
+FROM scratch AS prover-export
+COPY --from=prover-builder /workspace/target/ /
+
+# ── Machine files (replay-env) ──────────────────────────────────────────────
+FROM debian:bookworm-slim AS module-root-calc
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt make
+COPY --from=prover-export / target/
+COPY --from=wasm-bin-builder /workspace/target/ target/
+COPY --from=wasm-bin-builder /workspace/.make/ .make/
+COPY --from=wasm-libs-builder /workspace/target/ target/
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
+COPY --from=wasm-libs-builder /workspace/.make/ .make/
+COPY ./Makefile ./
+COPY ./solgen ./solgen
+COPY ./contracts ./contracts
+COPY ./contracts-legacy ./contracts-legacy
+COPY ./contracts-local ./contracts-local
+COPY ./safe-smart-account ./safe-smart-account
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
+
+# ── Validator binary ────────────────────────────────────────────────────────
+FROM prover-builder AS validator-builder
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
+
+# ── Runtime image ───────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS nitro-validator
+WORKDIR /home/user
+
+COPY --from=validator-builder /workspace/target/bin/validator /usr/local/bin/validator
+COPY --from=module-root-calc /workspace/target/machines/latest/ /machines/latest/
+COPY --from=prover-export  /bin/jit /workspace/target/bin/jit
+
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+EXPOSE 4141
+
+ENTRYPOINT ["validator", "--root-path", "/machines"]
+CMD ["--mode", "native"]
