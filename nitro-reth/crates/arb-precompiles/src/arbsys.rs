@@ -62,6 +62,11 @@ fn words_for_bytes(n: u64) -> u64 {
     (n + 31) / 32
 }
 
+/// Keccak gas matching Go's Storage.Keccak() burner charge: 30 + 6*words.
+fn keccak_gas(byte_count: u64) -> u64 {
+    30 + 6 * words_for_bytes(byte_count)
+}
+
 // Event topics.
 fn l2_to_l1_tx_topic() -> B256 {
     keccak256(b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,bytes)")
@@ -436,7 +441,10 @@ fn do_send_tx_to_l1(
         .data;
     let old_size: u64 = current_size.try_into().unwrap_or(0);
 
-    // Compute the send hash.
+    // Compute the send hash (Go uses arbosState.KeccakHash which charges gas via burner).
+    // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) + calldata
+    let send_hash_input_len = 20 + 20 + 32 * 4 + calldata.len() as u64;
+    gas_used += keccak_gas(send_hash_input_len);
     let send_hash = compute_send_hash(
         caller,
         destination,
@@ -701,6 +709,8 @@ fn update_merkle_accumulator(
         }
 
         // Combine: soFar = keccak256(thisLevel || soFar)
+        // Go uses acc.Keccak() which charges gas via the burner: 30 + 6*2 = 42 for 64 bytes.
+        *gas_used += keccak_gas(64);
         let mut preimage = [0u8; 64];
         preimage[..32].copy_from_slice(&this_level.to_be_bytes::<32>());
         preimage[32..].copy_from_slice(&so_far);
