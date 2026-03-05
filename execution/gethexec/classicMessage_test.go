@@ -86,7 +86,7 @@ func TestClassicOutboxRetrieverGetMsg(t *testing.T) {
 	retriever := NewClassicOutboxRetriever(db)
 
 	for i, expected := range leaves {
-		msg, err := retriever.GetMsg(big.NewInt(0), uint64(i))
+		msg, err := retriever.GetMsg(big.NewInt(0), uint64(i)) //#nosec G115
 		if err != nil {
 			t.Fatalf("GetMsg(batch=0, index=%d) error: %v", i, err)
 		}
@@ -140,7 +140,7 @@ func TestClassicOutboxRetrieverNonPowerOfTwoLeaves(t *testing.T) {
 
 	retriever := NewClassicOutboxRetriever(db)
 	for i, expected := range leaves {
-		msg, err := retriever.GetMsg(big.NewInt(0), uint64(i))
+		msg, err := retriever.GetMsg(big.NewInt(0), uint64(i)) //#nosec G115
 		if err != nil {
 			t.Fatalf("GetMsg(index=%d) error: %v", i, err)
 		}
