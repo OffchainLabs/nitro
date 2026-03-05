@@ -92,7 +92,7 @@ fn handle_size(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let size = sload_field(input, size_slot)?;
 
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         size.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -245,8 +245,8 @@ fn handle_register(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Return 0-based index.
     let index = new_num_items - 1;
 
-    // Gas: 2 sloads (byAddress lookup + numItems) + 3 sstores (numItems, reverse, byAddress)
-    let gas_used = 2 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
+    // Gas: OpenArbosState(1) + 2 sloads (byAddress lookup + numItems) + 3 sstores
+    let gas_used = 3 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS;
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),

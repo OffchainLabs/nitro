@@ -81,7 +81,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // RectifyChainOwner: ArbOS >= 11
         RECTIFY_CHAIN_OWNER => {
             if let Some(r) = crate::check_method_version(11, 0) { return r; }
-            let gas_cost = COPY_GAS.min(input.gas);
+            let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
         // IsNativeTokenOwner: ArbOS >= 41
@@ -128,7 +128,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let features_slot = map_slot(features_key.as_slice(), 0);
             let features = sload_field(&mut input, features_slot)?;
             let enabled = features & U256::from(1);
-            let gas_cost = (SLOAD_GAS + COPY_GAS).min(gas_limit);
+            let gas_cost = (2 * SLOAD_GAS + COPY_GAS).min(gas_limit);
             Ok(PrecompileOutput::new(
                 gas_cost,
                 enabled.to_be_bytes::<32>().to_vec().into(),
@@ -142,14 +142,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
             let value = sload_field(&mut input, field_slot)?;
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
                 value.to_be_bytes::<32>().to_vec().into(),
             ))
         }
         // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
             if let Some(r) = crate::check_method_version(60, 0) { return r; }
-            let gas_cost = COPY_GAS.min(input.gas);
+            let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
         _ => Err(PrecompileError::other(
@@ -182,7 +182,7 @@ fn read_state_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileR
 
     let value = sload_field(input, root_slot(offset))?;
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -199,7 +199,7 @@ fn handle_scheduled_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult
     out.extend_from_slice(&timestamp.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -255,7 +255,7 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     }
 
     Ok(PrecompileOutput::new(
-        ((1 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((2 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -313,7 +313,7 @@ fn handle_get_all_set_members(
     }
 
     Ok(PrecompileOutput::new(
-        ((1 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((2 + max_members) * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }

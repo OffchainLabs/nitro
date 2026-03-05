@@ -116,7 +116,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             load_arbos(&mut input)?;
             let fee = sload_field(&mut input, current_tx_poster_fee_slot())?;
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
                 fee.to_be_bytes::<32>().to_vec().into(),
             ))
         }
@@ -223,7 +223,7 @@ fn read_l1_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResu
     let field_slot = subspace_slot(L1_PRICING_SUBSPACE, offset);
     let value = sload_field(input, field_slot)?;
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -234,7 +234,7 @@ fn read_l2_field(input: &mut PrecompileInput<'_>, offset: u64) -> PrecompileResu
     let field_slot = subspace_slot(L2_PRICING_SUBSPACE, offset);
     let value = sload_field(input, field_slot)?;
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         value.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -282,7 +282,7 @@ fn handle_l1_pricing_surplus(input: &mut PrecompileInput<'_>) -> PrecompileResul
         U256::ZERO.wrapping_sub(deficit)
     };
 
-    let gas_cost = (3 * SLOAD_GAS + COPY_GAS).min(gas_limit);
+    let gas_cost = (4 * SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(
         gas_cost,
         surplus.to_be_bytes::<32>().to_vec().into(),
@@ -313,7 +313,7 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
-        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (4 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -332,7 +332,7 @@ fn handle_gas_accounting_params(input: &mut PrecompileInput<'_>) -> PrecompileRe
     out.extend_from_slice(&gas_limit_val.to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -359,7 +359,7 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }
@@ -384,7 +384,7 @@ fn handle_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precompile
     let vec_key = gas_constraints_vec_key();
     let count = sload_field(input, vector_length_slot(&vec_key))?
         .saturating_to::<u64>();
-    let mut sloads: u64 = 1;
+    let mut sloads: u64 = 2; // 1 for OpenArbosState + 1 for vec length
 
     // ABI: offset to dynamic array, then length, then N×3 uint64 values.
     let mut out = Vec::with_capacity(64 + count as usize * 96);
@@ -420,7 +420,7 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
     let vec_key = multi_gas_constraints_vec_key();
     let count = sload_field(input, vector_length_slot(&vec_key))?
         .saturating_to::<u64>();
-    let mut sloads: u64 = 1;
+    let mut sloads: u64 = 2; // 1 for OpenArbosState + 1 for vec length
 
     // Collect per-constraint data before encoding, since we need to know sizes for offsets.
     struct ConstraintData {
@@ -519,7 +519,7 @@ fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResul
     }
 
     Ok(PrecompileOutput::new(
-        (NUM_RESOURCE_KIND * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + COPY_GAS).min(gas_limit),
         out.into(),
     ))
 }

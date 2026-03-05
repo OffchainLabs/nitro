@@ -11,6 +11,7 @@ pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
 const GET_STATS: [u8; 4] = [0xe1, 0x1b, 0x84, 0xd8]; // getStats()
 
 const COPY_GAS: u64 = 3;
+const SLOAD_GAS: u64 = 800;
 
 pub fn create_arbstatistics_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbstatistics"), handler)
@@ -42,6 +43,6 @@ fn handle_get_stats(input: &PrecompileInput<'_>) -> PrecompileResult {
         out.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
     }
 
-    let gas_cost = COPY_GAS.min(gas_limit);
+    let gas_cost = (SLOAD_GAS + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }

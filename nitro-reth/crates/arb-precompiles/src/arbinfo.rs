@@ -13,6 +13,7 @@ const GET_BALANCE: [u8; 4] = [0xf8, 0xb2, 0xcb, 0x4f]; // getBalance(address)
 const GET_CODE: [u8; 4] = [0x7e, 0x10, 0x5c, 0xe2]; // getCode(address)
 
 const COPY_GAS: u64 = 3;
+const SLOAD_GAS: u64 = 800;
 
 pub fn create_arbinfo_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbinfo"), handler)
@@ -48,7 +49,7 @@ fn handle_get_balance(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
     let balance = acct.data.info.balance;
-    let gas_cost = (100 + COPY_GAS).min(gas_limit);
+    let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(gas_limit);
 
     Ok(PrecompileOutput::new(
         gas_cost,
@@ -84,6 +85,6 @@ fn handle_get_code(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&code);
     out.extend(std::iter::repeat_n(0u8, pad));
 
-    let gas_cost = (200 + COPY_GAS).min(gas_limit);
+    let gas_cost = (SLOAD_GAS + 200 + COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }

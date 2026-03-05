@@ -171,7 +171,7 @@ fn handle_get_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let pay_to = sload_field(input, pay_to_slot)?;
 
     Ok(PrecompileOutput::new(
-        (SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         pay_to.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -212,7 +212,7 @@ fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     let new_val = U256::from_be_slice(new_collector.as_slice());
     sstore_field(input, pay_to_slot, new_val)?;
 
-    let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
+    let gas_used = 3 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
 }
 
@@ -248,7 +248,7 @@ fn handle_get_batch_posters(input: &mut PrecompileInput<'_>) -> PrecompileResult
         out.extend_from_slice(&addr_val.to_be_bytes::<32>());
     }
 
-    let gas_used = (1 + count) * SLOAD_GAS + COPY_GAS;
+    let gas_used = (2 + count) * SLOAD_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), out.into()))
 }
 
@@ -310,6 +310,6 @@ fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let pay_to_slot = map_slot(info_key.as_slice(), PAY_TO_OFFSET);
     sstore_field(input, pay_to_slot, addr_as_u256)?;
 
-    let gas_used = 3 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
+    let gas_used = 4 * SLOAD_GAS + 4 * SSTORE_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
 }

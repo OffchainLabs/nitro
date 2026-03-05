@@ -86,7 +86,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_LIFETIME => {
             let lifetime = U256::from(RETRYABLE_LIFETIME_SECONDS);
             Ok(PrecompileOutput::new(
-                COPY_GAS.min(gas_limit),
+                (SLOAD_GAS + COPY_GAS).min(gas_limit),
                 lifetime.to_be_bytes::<32>().to_vec().into(),
             ))
         }
@@ -102,7 +102,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
                 .map_err(|_| PrecompileError::other("sload failed"))?
                 .data;
             Ok(PrecompileOutput::new(
-                (SLOAD_GAS + COPY_GAS).min(gas_limit),
+                (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
                 redeemer.to_be_bytes::<32>().to_vec().into(),
             ))
         }
@@ -213,7 +213,7 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
 
     Ok(PrecompileOutput::new(
-        (2 * SLOAD_GAS + COPY_GAS).min(gas_limit),
+        (3 * SLOAD_GAS + COPY_GAS).min(gas_limit),
         U256::from(effective_timeout).to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -351,8 +351,8 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(&hash_input);
 
-    // Gas consumed so far: 2 sloads (timeout + numTries) + 1 sstore (numTries).
-    let gas_used_so_far = 2 * SLOAD_GAS + SSTORE_GAS;
+    // Gas consumed so far: OpenArbosState(1) + currentRetryable(1) + timeout(1) + numTries(1) sloads + 1 sstore.
+    let gas_used_so_far = 4 * SLOAD_GAS + SSTORE_GAS;
 
     // Calculate gas to donate to the retry tx.
     // Reserve gas for: event emission + copy (return result) + backlog update.
@@ -452,9 +452,9 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let new_timeout = effective_timeout + RETRYABLE_LIFETIME_SECONDS;
 
-    // Gas: open_retryable(1 sload) + 2 sloads (timeout, windows) + queue_put(1 sload + 2 sstores)
-    // + 1 sstore (windows) + RetryableReapPrice (prepays for future reaping of the queue entry)
-    let gas_used = 4 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS + RETRYABLE_REAP_PRICE;
+    // Gas: OpenArbosState(1) + open_retryable(1 sload) + 2 sloads (timeout, windows)
+    // + queue_put(1 sload + 2 sstores) + 1 sstore (windows) + RetryableReapPrice
+    let gas_used = 5 * SLOAD_GAS + 3 * SSTORE_GAS + COPY_GAS + RETRYABLE_REAP_PRICE;
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -513,8 +513,8 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         sstore_field(input, slot, U256::ZERO)?;
     }
 
-    // Gas: open_retryable(1 sload) + 1 sload (beneficiary) + 7 sstores (clear fields)
-    let gas_used = 2 * SLOAD_GAS + 7 * SSTORE_GAS + COPY_GAS;
+    // Gas: OpenArbosState(1) + open_retryable(1 sload) + 1 sload (beneficiary) + 7 sstores (clear fields)
+    let gas_used = 3 * SLOAD_GAS + 7 * SSTORE_GAS + COPY_GAS;
 
     Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
 }
