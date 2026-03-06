@@ -65,14 +65,14 @@ func (p printTxAsJson) String() string {
 	return string(json)
 }
 
-// txLoopState holds all mutable state that accumulates during the tx
+// blockBuildState holds all mutable state that accumulates during the tx
 // processing loop in ProduceBlockAdvanced. Grouping it here ensures that
 // the group-checkpoint and rollback logic stays in sync with the state it
 // manages. If you add a field, check whether saveGroupCheckpoint and
 // rollbackToGroupCheckpoint need updating.
 //
 // lint:require-exhaustive-initialization
-type txLoopState struct {
+type blockBuildState struct {
 	statedb              *state.StateDB
 	arbState             *arbosState.ArbosState
 	blockGasLeft         uint64
@@ -102,7 +102,7 @@ type groupCheckpoint struct {
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
@@ -122,8 +122,8 @@ func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTx
 
 // rollbackToGroupCheckpoint restores loop state to the saved checkpoint,
 // undoing the user tx and all its redeems. header is needed to restore
-// GasUsed, which lives outside txLoopState.
-func (s *txLoopState) rollbackToGroupCheckpoint(header *types.Header) error {
+// GasUsed, which lives outside blockBuildState.
+func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
 	cp.backup.RevertToSnapshot(cp.snap)
 	s.statedb = cp.backup
@@ -144,7 +144,7 @@ func (s *txLoopState) rollbackToGroupCheckpoint(header *types.Header) error {
 	return nil
 }
 
-func (s *txLoopState) clearGroupCheckpoint() {
+func (s *blockBuildState) clearGroupCheckpoint() {
 	s.activeGroupCP = nil
 }
 
@@ -345,7 +345,7 @@ func ProduceBlockAdvanced(
 
 	firstTx := types.NewTx(startTx)
 
-	loopState := &txLoopState{
+	buildState := &blockBuildState{
 		statedb:              statedb,
 		arbState:             arbState,
 		blockGasLeft:         blockGasLeft,
@@ -367,30 +367,30 @@ func ProduceBlockAdvanced(
 		if firstTx != nil {
 			tx = firstTx
 			firstTx = nil
-		} else if len(loopState.redeems) > 0 {
-			tx = loopState.redeems[0]
-			loopState.redeems = loopState.redeems[1:]
+		} else if len(buildState.redeems) > 0 {
+			tx = buildState.redeems[0]
+			buildState.redeems = buildState.redeems[1:]
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
 				return nil, nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := loopState.arbState.RetryableState().OpenRetryable(retry.TicketId, time)
+			retryable, _ := buildState.arbState.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
 			}
 		} else {
 			// Previous group (if any) completed successfully
-			if loopState.userTxWasSuccessful {
+			if buildState.userTxWasSuccessful {
 				sequencingHooks.TxSucceeded()
-				loopState.userTxWasSuccessful = false
+				buildState.userTxWasSuccessful = false
 			}
-			loopState.clearGroupCheckpoint()
+			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", loopState.userTxsProcessed, err)
+				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", buildState.userTxsProcessed, err)
 			}
 			if tx == nil {
 				break
@@ -401,7 +401,7 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		startRefund := loopState.statedb.GetRefund()
+		startRefund := buildState.statedb.GetRefund()
 		if startRefund != 0 {
 			return nil, nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
 		}
@@ -409,11 +409,11 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		arbosVersion := loopState.arbState.ArbOSVersion()
+		arbosVersion := buildState.arbState.ArbOSVersion()
 		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
-			if loopState.blockGasLeft < params.TxGas && isUserTx {
+			if buildState.blockGasLeft < params.TxGas && isUserTx {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
@@ -424,24 +424,24 @@ func ProduceBlockAdvanced(
 
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
 			if isUserTx {
-				if err = sequencingHooks.PreTxFilter(chainConfig, header, loopState.statedb, loopState.arbState, tx, options, sender, l1Info); err != nil {
+				if err = sequencingHooks.PreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info); err != nil {
 					return nil, nil, err
 				}
 			}
 
 			// Additional pre-transaction validity check
 			// Writes to statedb object should be avoided to prevent invalid state from permeating as statedb snapshot is not taken
-			if err = extraPreTxFilter(chainConfig, header, loopState.statedb, loopState.arbState, tx, options, sender, l1Info); err != nil {
+			if err = extraPreTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				brotliCompressionLevel, err := loopState.arbState.BrotliCompressionLevel()
+				brotliCompressionLevel, err := buildState.arbState.BrotliCompressionLevel()
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
 				}
-				posterCost, _ := loopState.arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
+				posterCost, _ := buildState.arbState.L1PricingState().GetPosterInfo(tx, poster, brotliCompressionLevel)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -468,30 +468,30 @@ func ProduceBlockAdvanced(
 
 			// arbos<50: reject tx if they have available computeGas over block-gas-limit
 			// in arbos>=50, per-block-gas is limited to L2PricingState().PerBlockGasLimit() + L2PricingState().PerTxGasLimit()
-			if arbosVersion < params.ArbosVersion_50 && computeGas > loopState.blockGasLeft && isUserTx && loopState.userTxsProcessed > 0 {
+			if arbosVersion < params.ArbosVersion_50 && computeGas > buildState.blockGasLeft && isUserTx && buildState.userTxsProcessed > 0 {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			snap := loopState.statedb.Snapshot()
-			loopState.statedb.SetTxContext(tx.Hash(), len(loopState.receipts)) // the number of successful state transitions
+			snap := buildState.statedb.Snapshot()
+			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
-			evm := vm.NewEVM(blockContext, loopState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
+			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				&gasPool,
-				loopState.statedb,
+				buildState.statedb,
 				header,
 				tx,
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if err := sequencingHooks.PostTxFilter(header, loopState.statedb, loopState.arbState, tx, sender, dataGas, result); err != nil {
+					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result); err != nil {
 						return err
 					}
-					if isUserTx && len(result.ScheduledTxes) > 0 && loopState.statedb.HasActiveAddressFilter() {
-						if err := loopState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+					if isUserTx && len(result.ScheduledTxes) > 0 && buildState.statedb.HasActiveAddressFilter() {
+						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
 							return err
 						}
 					}
@@ -500,15 +500,15 @@ func ProduceBlockAdvanced(
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				loopState.statedb.RevertToSnapshot(snap)
-				loopState.statedb.ClearTxFilter()
+				buildState.statedb.RevertToSnapshot(snap)
+				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
 
 			// Additional post-transaction validity check
-			if err = extraPostTxFilter(chainConfig, header, loopState.statedb, loopState.arbState, tx, options, sender, l1Info, result); err != nil {
-				loopState.statedb.RevertToSnapshot(snap)
-				loopState.statedb.ClearTxFilter()
+			if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
+				buildState.statedb.RevertToSnapshot(snap)
+				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
 
@@ -519,9 +519,9 @@ func ProduceBlockAdvanced(
 			// If a redeem was rejected by the address filter and we have an
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
-			if !isUserTx && loopState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
-				userTxHash := loopState.activeGroupCP.userTxHash
-				if err := loopState.rollbackToGroupCheckpoint(header); err != nil {
+			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+				userTxHash := buildState.activeGroupCP.userTxHash
+				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
 					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{OriginatingTxHash: userTxHash})
@@ -539,9 +539,9 @@ func ProduceBlockAdvanced(
 			}
 			if !(isUserTx && sequencingHooks.CanDiscardTx()) {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
-				loopState.blockGasLeft = arbmath.SaturatingUSub(loopState.blockGasLeft, params.TxGas)
+				buildState.blockGasLeft = arbmath.SaturatingUSub(buildState.blockGasLeft, params.TxGas)
 				if isUserTx {
-					loopState.userTxsProcessed++
+					buildState.userTxsProcessed++
 				}
 			}
 			continue
@@ -549,13 +549,13 @@ func ProduceBlockAdvanced(
 
 		if tx.Type() == types.ArbitrumInternalTxType {
 			// ArbOS might have upgraded to a new version, so we need to refresh our state
-			loopState.arbState, err = arbosState.OpenSystemArbosState(loopState.statedb, nil, true)
+			buildState.arbState, err = arbosState.OpenSystemArbosState(buildState.statedb, nil, true)
 			if err != nil {
 				return nil, nil, nil, err
 			}
 			// Update the ArbOS version in the header (if it changed)
 			extraInfo := types.DeserializeHeaderExtraInformation(header)
-			extraInfo.ArbOSFormatVersion = loopState.arbState.ArbOSVersion()
+			extraInfo.ArbOSFormatVersion = buildState.arbState.ArbOSVersion()
 			extraInfo.UpdateHeaderWithInfo(header)
 		}
 
@@ -585,10 +585,10 @@ func ProduceBlockAdvanced(
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
 			// L1->L2 deposits add eth to the system
-			loopState.expectedBalanceDelta.Add(loopState.expectedBalanceDelta, txInner.Value)
+			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.Value)
 		case *types.ArbitrumSubmitRetryableTx:
 			// Retryable submission can include a deposit which adds eth to the system
-			loopState.expectedBalanceDelta.Add(loopState.expectedBalanceDelta, txInner.DepositValue)
+			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.DepositValue)
 		}
 
 		computeUsed := txGasUsed - dataGas
@@ -604,7 +604,7 @@ func ProduceBlockAdvanced(
 		}
 
 		// append any scheduled redeems
-		loopState.redeems = append(loopState.redeems, result.ScheduledTxes...)
+		buildState.redeems = append(buildState.redeems, result.ScheduledTxes...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress {
@@ -618,80 +618,80 @@ func ProduceBlockAdvanced(
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 					} else {
-						loopState.expectedBalanceDelta.Sub(loopState.expectedBalanceDelta, event.Callvalue)
+						buildState.expectedBalanceDelta.Sub(buildState.expectedBalanceDelta, event.Callvalue)
 					}
 				case L2ToL1TxEventID:
 					event, err := util.ParseL2ToL1TxLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Tx log", "err", err)
 					} else {
-						loopState.expectedBalanceDelta.Sub(loopState.expectedBalanceDelta, event.Callvalue)
+						buildState.expectedBalanceDelta.Sub(buildState.expectedBalanceDelta, event.Callvalue)
 					}
 				}
 			}
 		}
 
-		loopState.blockGasLeft = arbmath.SaturatingUSub(loopState.blockGasLeft, computeUsed)
+		buildState.blockGasLeft = arbmath.SaturatingUSub(buildState.blockGasLeft, computeUsed)
 
-		loopState.complete = append(loopState.complete, tx)
-		loopState.receipts = append(loopState.receipts, receipt)
+		buildState.complete = append(buildState.complete, tx)
+		buildState.receipts = append(buildState.receipts, receipt)
 
 		if isUserTx {
-			if loopState.activeGroupCP != nil {
-				loopState.userTxWasSuccessful = true
+			if buildState.activeGroupCP != nil {
+				buildState.userTxWasSuccessful = true
 			} else {
 				sequencingHooks.TxSucceeded()
 			}
-			loopState.userTxsProcessed++
+			buildState.userTxsProcessed++
 		}
 	}
 
 	// Flush any deferred success from the last tx group
-	if loopState.userTxWasSuccessful {
+	if buildState.userTxWasSuccessful {
 		sequencingHooks.TxSucceeded()
-		loopState.userTxWasSuccessful = false
+		buildState.userTxWasSuccessful = false
 	}
 
-	if loopState.statedb.IsTxFiltered() {
+	if buildState.statedb.IsTxFiltered() {
 		return nil, nil, nil, state.ErrArbTxFilter
 	}
 
-	if err = sequencingHooks.BlockFilter(header, loopState.statedb, loopState.complete, loopState.receipts); err != nil {
+	if err = sequencingHooks.BlockFilter(header, buildState.statedb, buildState.complete, buildState.receipts); err != nil {
 		return nil, nil, nil, err
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, loopState.complete, loopState.statedb, chainConfig)
+	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
-	tmpBlock := types.NewBlock(header, &types.Body{Transactions: loopState.complete}, loopState.receipts, trie.NewStackTrie(nil))
+	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
-	for _, receipt := range loopState.receipts {
+	for _, receipt := range buildState.receipts {
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
 			txLog.BlockHash = blockHash
 		}
 	}
 
-	block := types.NewBlock(header, &types.Body{Transactions: loopState.complete}, loopState.receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
 
-	if len(block.Transactions()) != len(loopState.receipts) {
-		return nil, nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(loopState.receipts))
+	if len(block.Transactions()) != len(buildState.receipts) {
+		return nil, nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(buildState.receipts))
 	}
 
-	balanceDelta := loopState.statedb.GetUnexpectedBalanceDelta()
-	if !arbmath.BigEquals(balanceDelta, loopState.expectedBalanceDelta) {
+	balanceDelta := buildState.statedb.GetUnexpectedBalanceDelta()
+	if !arbmath.BigEquals(balanceDelta, buildState.expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
-		if balanceDelta.Cmp(loopState.expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, loopState.expectedBalanceDelta)
+		if balanceDelta.Cmp(buildState.expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
+			return nil, nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, buildState.expectedBalanceDelta)
 		}
 		// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
-		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", loopState.expectedBalanceDelta)
+		log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", buildState.expectedBalanceDelta)
 	}
 
-	return block, loopState.statedb, loopState.receipts, nil
+	return block, buildState.statedb, buildState.receipts, nil
 }
 
 // Also sets header.Root
