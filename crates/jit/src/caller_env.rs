@@ -167,7 +167,10 @@ impl WavmIo for WasmEnv {
     }
 
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
-        let pt: PreimageType = preimage_type.try_into().ok()?;
+        let Ok(pt) = preimage_type.try_into() else {
+            eprintln!("Go trying to get a preimage with unknown type {preimage_type}");
+            return None;
+        };
         self.preimages
             .get(&pt)
             .and_then(|m| m.get(&Bytes32(*hash)))
