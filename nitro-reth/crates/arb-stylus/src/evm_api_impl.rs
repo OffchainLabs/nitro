@@ -1,14 +1,21 @@
 use alloy_primitives::{Address, Log, B256, U256};
+use arbos::programs::memory::MemoryModel;
 use revm::Database;
 
 use crate::evm_api::{CreateResponse, EvmApi, UserOutcomeKind};
 use crate::ink::Gas;
+use crate::pages;
 
 /// EIP-2929 gas costs for storage operations.
 const COLD_SLOAD_COST: u64 = 2100;
 const WARM_STORAGE_READ_COST: u64 = 100;
 const COLD_ACCOUNT_ACCESS_COST: u64 = 2600;
 const WARM_ACCOUNT_ACCESS_COST: u64 = 100;
+
+/// Extra gas charged when loading account code in Stylus.
+/// Matches Go: `cfg.MaxCodeSize() / params.DefaultMaxCodeSize * params.ExtcodeSizeGasEIP150`
+/// = 24576 / 24576 * 700 = 700.
+const WASM_EXT_CODE_COST: u64 = 700;
 
 // ── Type-erased journal access ──────────────────────────────────────
 
@@ -33,6 +40,9 @@ pub trait JournalAccess {
     fn account_balance(&mut self, addr: Address) -> eyre::Result<(U256, bool)>;
     fn account_code(&mut self, addr: Address) -> eyre::Result<(Vec<u8>, bool)>;
     fn account_codehash(&mut self, addr: Address) -> eyre::Result<(B256, bool)>;
+    fn address_in_access_list(&self, addr: Address) -> bool;
+    fn add_address_to_access_list(&mut self, addr: Address);
+    fn is_account_empty(&mut self, addr: Address) -> eyre::Result<bool>;
 }
 
 impl<DB: Database> JournalAccess for revm::Journal<DB> {
@@ -99,9 +109,59 @@ impl<DB: Database> JournalAccess for revm::Journal<DB> {
             .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
         Ok((result.data.info.code_hash, result.is_cold))
     }
+
+    fn address_in_access_list(&self, addr: Address) -> bool {
+        // An address is "warm" if it's in the loaded state or warm_addresses
+        self.inner.state.contains_key(&addr)
+            || self.inner.warm_addresses.is_warm(&addr)
+    }
+
+    fn add_address_to_access_list(&mut self, _addr: Address) {
+        // In revm, account warmth is tracked by load_account (puts in state map).
+        // The caller's subsequent load_account call handles the transition.
+    }
+
+    fn is_account_empty(&mut self, addr: Address) -> eyre::Result<bool> {
+        let result = self
+            .inner
+            .load_account(&mut self.database, addr)
+            .map_err(|e| eyre::eyre!("load_account failed: {e:?}"))?;
+        let acc = result.data;
+        Ok(acc.info.balance.is_zero()
+            && acc.info.nonce == 0
+            && acc.info.code_hash == revm::primitives::KECCAK_EMPTY)
+    }
 }
 
 // ── StylusEvmApi ────────────────────────────────────────────────────
+
+/// Result from a sub-call (CALL, DELEGATECALL, STATICCALL).
+pub struct SubCallResult {
+    pub output: Vec<u8>,
+    pub gas_cost: u64,
+    pub success: bool,
+}
+
+/// Result from a CREATE/CREATE2 operation.
+pub struct SubCreateResult {
+    pub address: Option<Address>,
+    pub output: Vec<u8>,
+    pub gas_cost: u64,
+}
+
+/// Type-erased function pointer for executing sub-calls from Stylus.
+///
+/// Parameters: (ctx_ptr, call_type, contract, caller, input, gas, value)
+/// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
+pub type DoCallFn =
+    fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCallResult;
+
+/// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
+///
+/// Parameters: (ctx_ptr, caller, code, gas, endowment, salt)
+/// salt=None for CREATE, Some for CREATE2.
+pub type DoCreateFn =
+    fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
 
 /// Concrete [`EvmApi`] bridging WASM host function calls to revm's journaled state.
 ///
@@ -119,12 +179,23 @@ pub struct StylusEvmApi {
     journal: *mut dyn JournalAccess,
     /// The contract address being executed.
     address: Address,
+    /// The caller (msg.sender) of the current contract.
+    caller: Address,
+    /// Value of the current call (needed for DELEGATECALL forwarding).
+    call_value: U256,
     /// Cached storage writes (key, value pairs), flushed on demand.
     storage_cache: Vec<(B256, B256)>,
     /// Return data from the last sub-call.
     return_data: Vec<u8>,
     /// Whether the current execution context is read-only (STATICCALL).
     read_only: bool,
+    /// MemoryModel params for add_pages gas computation.
+    free_pages: u16,
+    page_gas: u16,
+    /// Type-erased context pointer and callbacks for sub-calls.
+    ctx_ptr: *mut (),
+    do_call: Option<DoCallFn>,
+    do_create: Option<DoCreateFn>,
 }
 
 // Safety: Wasmer executes synchronously on the calling thread. No cross-thread access occurs.
@@ -137,17 +208,32 @@ impl StylusEvmApi {
     ///
     /// The `journal` pointer must remain valid for the lifetime of this struct.
     /// The caller must ensure exclusive mutable access through this pointer.
+    /// If `ctx_ptr` is provided, it must also remain valid.
     pub unsafe fn new<DB: Database>(
         journal: *mut revm::Journal<DB>,
         address: Address,
+        caller: Address,
+        call_value: U256,
         read_only: bool,
+        free_pages: u16,
+        page_gas: u16,
+        ctx_ptr: *mut (),
+        do_call: Option<DoCallFn>,
+        do_create: Option<DoCreateFn>,
     ) -> Self {
         Self {
             journal: journal as *mut dyn JournalAccess,
             address,
+            caller,
+            call_value,
             storage_cache: Vec::new(),
             return_data: Vec::new(),
             read_only,
+            free_pages,
+            page_gas,
+            ctx_ptr,
+            do_call,
+            do_create,
         }
     }
 
@@ -242,77 +328,292 @@ impl EvmApi for StylusEvmApi {
 
     fn contract_call(
         &mut self,
-        _contract: Address,
-        _calldata: &[u8],
-        _gas_left: Gas,
-        _gas_req: Gas,
-        _value: U256,
+        contract: Address,
+        calldata: &[u8],
+        gas_left: Gas,
+        gas_req: Gas,
+        value: U256,
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
-        self.return_data = b"Stylus sub-calls not yet wired".to_vec();
-        Ok((
-            self.return_data.len() as u32,
-            Gas(0),
-            UserOutcomeKind::Revert,
-        ))
+        if self.read_only && !value.is_zero() {
+            self.return_data = Vec::new();
+            return Ok((0, Gas(0), UserOutcomeKind::Revert));
+        }
+
+        let do_call = match self.do_call {
+            Some(f) => f,
+            None => {
+                self.return_data = b"sub-calls not available".to_vec();
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+            }
+        };
+
+        // WasmCallCost equivalent: warm/cold access + value transfer + new account
+        let (base_cost, oog) =
+            wasm_call_cost(self.journal(), contract, &value, gas_left.0);
+        if oog {
+            self.return_data = Vec::new();
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+        }
+
+        // 63/64ths rule
+        let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
+        let gas = start_gas.min(gas_req.0);
+
+        // Stipend for value transfers
+        let gas = if !value.is_zero() {
+            gas.saturating_add(2300) // CallStipend
+        } else {
+            gas
+        };
+
+        let result = (do_call)(
+            self.ctx_ptr,
+            0, // CALL
+            contract,
+            self.address, // caller = current contract
+            calldata,
+            gas,
+            value,
+        );
+
+        self.return_data = result.output;
+        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
+        let cost = base_cost.saturating_add(result.gas_cost);
+
+        let outcome = if result.success {
+            UserOutcomeKind::Success
+        } else {
+            UserOutcomeKind::Revert
+        };
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn delegate_call(
         &mut self,
-        _contract: Address,
-        _calldata: &[u8],
-        _gas_left: Gas,
-        _gas_req: Gas,
+        contract: Address,
+        calldata: &[u8],
+        gas_left: Gas,
+        gas_req: Gas,
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
-        self.return_data = b"Stylus sub-calls not yet wired".to_vec();
-        Ok((
-            self.return_data.len() as u32,
-            Gas(0),
-            UserOutcomeKind::Revert,
-        ))
+        let do_call = match self.do_call {
+            Some(f) => f,
+            None => {
+                self.return_data = b"sub-calls not available".to_vec();
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+            }
+        };
+
+        // For DELEGATECALL, no value transfer cost
+        let (base_cost, oog) =
+            wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
+        if oog {
+            self.return_data = Vec::new();
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+        }
+
+        let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
+        let gas = start_gas.min(gas_req.0);
+
+        let result = (do_call)(
+            self.ctx_ptr,
+            1, // DELEGATECALL
+            contract,
+            self.caller, // original caller
+            calldata,
+            gas,
+            self.call_value, // forward current call value
+        );
+
+        self.return_data = result.output;
+        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
+        let cost = base_cost.saturating_add(result.gas_cost);
+
+        let outcome = if result.success {
+            UserOutcomeKind::Success
+        } else {
+            UserOutcomeKind::Revert
+        };
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn static_call(
         &mut self,
-        _contract: Address,
-        _calldata: &[u8],
-        _gas_left: Gas,
-        _gas_req: Gas,
+        contract: Address,
+        calldata: &[u8],
+        gas_left: Gas,
+        gas_req: Gas,
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
-        self.return_data = b"Stylus sub-calls not yet wired".to_vec();
-        Ok((
-            self.return_data.len() as u32,
-            Gas(0),
-            UserOutcomeKind::Revert,
-        ))
+        let do_call = match self.do_call {
+            Some(f) => f,
+            None => {
+                self.return_data = b"sub-calls not available".to_vec();
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+            }
+        };
+
+        let (base_cost, oog) =
+            wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
+        if oog {
+            self.return_data = Vec::new();
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+        }
+
+        let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
+        let gas = start_gas.min(gas_req.0);
+
+        let result = (do_call)(
+            self.ctx_ptr,
+            2, // STATICCALL
+            contract,
+            self.address,
+            calldata,
+            gas,
+            U256::ZERO,
+        );
+
+        self.return_data = result.output;
+        // cost = baseCost + (gas_given - gas_returned) = baseCost + gas_used
+        let cost = base_cost.saturating_add(result.gas_cost);
+
+        let outcome = if result.success {
+            UserOutcomeKind::Success
+        } else {
+            UserOutcomeKind::Revert
+        };
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn create1(
         &mut self,
-        _code: Vec<u8>,
-        _endowment: U256,
-        _gas: Gas,
+        code: Vec<u8>,
+        endowment: U256,
+        gas: Gas,
     ) -> eyre::Result<(CreateResponse, u32, Gas)> {
-        self.return_data = b"Stylus creates not yet wired".to_vec();
-        Ok((
-            CreateResponse::Fail("not yet wired".into()),
-            self.return_data.len() as u32,
-            Gas(0),
-        ))
+        if self.read_only {
+            self.return_data = Vec::new();
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+        }
+
+        let do_create = match self.do_create {
+            Some(f) => f,
+            None => {
+                self.return_data = b"creates not available".to_vec();
+                return Ok((
+                    CreateResponse::Fail("not available".into()),
+                    self.return_data.len() as u32,
+                    Gas(0),
+                ));
+            }
+        };
+
+        let start_gas = gas.0;
+
+        // CREATE base cost = 32000
+        let base_cost: u64 = 32000;
+        if gas.0 < base_cost {
+            self.return_data = Vec::new();
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+        }
+        let remaining = gas.0 - base_cost;
+
+        // 63/64ths rule
+        let one_64th = remaining / 64;
+        let call_gas = remaining - one_64th;
+
+        let result = (do_create)(
+            self.ctx_ptr,
+            self.address,
+            &code,
+            call_gas,
+            endowment,
+            None, // CREATE
+        );
+
+        self.return_data = result.output.clone();
+        let cost = start_gas.saturating_sub(
+            result.gas_cost.saturating_add(one_64th),
+        );
+
+        let response = match result.address {
+            Some(addr) => CreateResponse::Success(addr),
+            None => {
+                // On non-revert failure, clear return data
+                if self.return_data.is_empty() {
+                    CreateResponse::Fail("create failed".into())
+                } else {
+                    CreateResponse::Fail("reverted".into())
+                }
+            }
+        };
+
+        Ok((response, self.return_data.len() as u32, Gas(cost)))
     }
 
     fn create2(
         &mut self,
-        _code: Vec<u8>,
-        _endowment: U256,
-        _salt: B256,
-        _gas: Gas,
+        code: Vec<u8>,
+        endowment: U256,
+        salt: B256,
+        gas: Gas,
     ) -> eyre::Result<(CreateResponse, u32, Gas)> {
-        self.return_data = b"Stylus creates not yet wired".to_vec();
-        Ok((
-            CreateResponse::Fail("not yet wired".into()),
-            self.return_data.len() as u32,
-            Gas(0),
-        ))
+        if self.read_only {
+            self.return_data = Vec::new();
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+        }
+
+        let do_create = match self.do_create {
+            Some(f) => f,
+            None => {
+                self.return_data = b"creates not available".to_vec();
+                return Ok((
+                    CreateResponse::Fail("not available".into()),
+                    self.return_data.len() as u32,
+                    Gas(0),
+                ));
+            }
+        };
+
+        let start_gas = gas.0;
+
+        // CREATE2 base cost = 32000 + keccak cost
+        let keccak_words = (code.len() as u64 + 31) / 32;
+        let keccak_cost = keccak_words.saturating_mul(6); // Keccak256WordGas
+        let base_cost = 32000u64.saturating_add(keccak_cost);
+        if gas.0 < base_cost {
+            self.return_data = Vec::new();
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+        }
+        let remaining = gas.0 - base_cost;
+
+        let one_64th = remaining / 64;
+        let call_gas = remaining - one_64th;
+
+        let result = (do_create)(
+            self.ctx_ptr,
+            self.address,
+            &code,
+            call_gas,
+            endowment,
+            Some(salt),
+        );
+
+        self.return_data = result.output.clone();
+        let cost = start_gas.saturating_sub(
+            result.gas_cost.saturating_add(one_64th),
+        );
+
+        let response = match result.address {
+            Some(addr) => CreateResponse::Success(addr),
+            None => {
+                if self.return_data.is_empty() {
+                    CreateResponse::Fail("create failed".into())
+                } else {
+                    CreateResponse::Fail("reverted".into())
+                }
+            }
+        };
+
+        Ok((response, self.return_data.len() as u32, Gas(cost)))
     }
 
     fn get_return_data(&self) -> Vec<u8> {
@@ -348,6 +649,7 @@ impl EvmApi for StylusEvmApi {
 
     fn account_balance(&mut self, address: Address) -> eyre::Result<(U256, Gas)> {
         let (balance, is_cold) = self.journal().account_balance(address)?;
+        // WasmAccountTouchCost(withCode=false): cold/warm access cost
         let gas_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
@@ -360,19 +662,26 @@ impl EvmApi for StylusEvmApi {
         &mut self,
         _arbos_version: u64,
         address: Address,
-        _gas_left: Gas,
+        gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
         let (code, is_cold) = self.journal().account_code(address)?;
-        let gas_cost = if is_cold {
+        // WasmAccountTouchCost(withCode=true): extCodeCost + cold/warm access cost
+        let access_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
             WARM_ACCOUNT_ACCESS_COST
         };
+        let gas_cost = WASM_EXT_CODE_COST + access_cost;
+        // If insufficient gas, return empty code but still charge
+        if gas_left.0 < gas_cost {
+            return Ok((Vec::new(), Gas(gas_cost)));
+        }
         Ok((code, Gas(gas_cost)))
     }
 
     fn account_codehash(&mut self, address: Address) -> eyre::Result<(B256, Gas)> {
         let (hash, is_cold) = self.journal().account_codehash(address)?;
+        // WasmAccountTouchCost(withCode=false)
         let gas_cost = if is_cold {
             COLD_ACCOUNT_ACCESS_COST
         } else {
@@ -381,8 +690,12 @@ impl EvmApi for StylusEvmApi {
         Ok((hash, Gas(gas_cost)))
     }
 
-    fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {
-        Ok(Gas(0))
+    fn add_pages(&mut self, new_pages: u16) -> eyre::Result<Gas> {
+        // add_stylus_pages returns previous (open, ever) before updating
+        let (prev_open, prev_ever) = pages::add_stylus_pages(new_pages);
+        let model = MemoryModel::new(self.free_pages, self.page_gas);
+        let cost = model.gas_cost(new_pages, prev_open, prev_ever);
+        Ok(Gas(cost))
     }
 
     fn capture_hostio(
@@ -395,6 +708,56 @@ impl EvmApi for StylusEvmApi {
     ) {
         // Debug tracing — no-op in production.
     }
+}
+
+/// Compute the base gas cost for a CALL from Stylus.
+///
+/// Matches Go's `WasmCallCost`: EIP-2929 warm/cold access + value transfer +
+/// new account creation cost. Returns `(cost, out_of_gas)`.
+fn wasm_call_cost(
+    journal: &mut dyn JournalAccess,
+    contract: Address,
+    value: &U256,
+    budget: u64,
+) -> (u64, bool) {
+    let mut total: u64 = 0;
+
+    // Static cost: warm storage read (computation)
+    total += WARM_ACCOUNT_ACCESS_COST; // 100
+    if total > budget {
+        return (total, true);
+    }
+
+    // Cold access cost
+    let warm = journal.address_in_access_list(contract);
+    if !warm {
+        journal.add_address_to_access_list(contract);
+        let cold_cost = COLD_ACCOUNT_ACCESS_COST - WARM_ACCOUNT_ACCESS_COST; // 2500
+        total = total.saturating_add(cold_cost);
+        if total > budget {
+            return (total, true);
+        }
+    }
+
+    let transfers_value = !value.is_zero();
+    if transfers_value {
+        // Check if target is empty (for new account cost)
+        if let Ok(empty) = journal.is_account_empty(contract) {
+            if empty {
+                total = total.saturating_add(25000); // CallNewAccountGas
+                if total > budget {
+                    return (total, true);
+                }
+            }
+        }
+        // Value transfer cost
+        total = total.saturating_add(9000); // CallValueTransferGas
+        if total > budget {
+            return (total, true);
+        }
+    }
+
+    (total, false)
 }
 
 /// Compute SSTORE gas cost following EIP-2929 + EIP-3529 (post-London).

@@ -116,72 +116,14 @@ fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
 }
 
 // ── Stylus page tracking & reentrancy ───────────────────────────────
+//
+// Page tracking and reentrancy state lives in arb_stylus::pages so that
+// both arb-evm (dispatch) and arb-stylus (EvmApi add_pages) can access it.
 
-use std::cell::Cell;
-use std::cell::RefCell;
-use std::collections::HashMap;
-
-thread_local! {
-    /// Currently open WASM memory pages across all active Stylus calls.
-    static STYLUS_PAGES_OPEN: Cell<u16> = const { Cell::new(0) };
-    /// High-water mark of pages ever open during this transaction.
-    static STYLUS_PAGES_EVER: Cell<u16> = const { Cell::new(0) };
-    /// Per-address count of open Stylus execution contexts (for reentrancy).
-    static STYLUS_PROGRAM_COUNTS: RefCell<HashMap<Address, u32>> = RefCell::new(HashMap::new());
-}
-
-/// Reset Stylus page counters at transaction start.
-pub fn reset_stylus_pages() {
-    STYLUS_PAGES_OPEN.with(|v| v.set(0));
-    STYLUS_PAGES_EVER.with(|v| v.set(0));
-    STYLUS_PROGRAM_COUNTS.with(|v| v.borrow_mut().clear());
-}
-
-/// Get current (open, ever) page counts.
-pub fn get_stylus_pages() -> (u16, u16) {
-    let open = STYLUS_PAGES_OPEN.with(|v| v.get());
-    let ever = STYLUS_PAGES_EVER.with(|v| v.get());
-    (open, ever)
-}
-
-/// Add pages for a new Stylus call. Returns previous (open, ever).
-fn add_stylus_pages(footprint: u16) -> (u16, u16) {
-    let open = STYLUS_PAGES_OPEN.with(|v| v.get());
-    let ever = STYLUS_PAGES_EVER.with(|v| v.get());
-    let new_open = open.saturating_add(footprint);
-    STYLUS_PAGES_OPEN.with(|v| v.set(new_open));
-    STYLUS_PAGES_EVER.with(|v| v.set(ever.max(new_open)));
-    (open, ever)
-}
-
-/// Restore page count after Stylus call returns.
-fn set_stylus_pages_open(open: u16) {
-    STYLUS_PAGES_OPEN.with(|v| v.set(open));
-}
-
-/// Push a Stylus program address onto the reentrancy tracker.
-/// Returns true if this is a reentrant call (address was already active).
-fn push_stylus_program(addr: Address) -> bool {
-    STYLUS_PROGRAM_COUNTS.with(|v| {
-        let mut map = v.borrow_mut();
-        let count = map.entry(addr).or_insert(0);
-        *count += 1;
-        *count > 1
-    })
-}
-
-/// Pop a Stylus program address from the reentrancy tracker.
-fn pop_stylus_program(addr: Address) {
-    STYLUS_PROGRAM_COUNTS.with(|v| {
-        let mut map = v.borrow_mut();
-        if let Some(count) = map.get_mut(&addr) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                map.remove(&addr);
-            }
-        }
-    });
-}
+pub use arb_stylus::pages::{
+    add_stylus_pages, get_stylus_pages, pop_stylus_program, push_stylus_program,
+    reset_stylus_pages, set_stylus_pages_open,
+};
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
@@ -270,6 +212,359 @@ fn stylus_call_gas_cost(
         cost = cost.saturating_add(program.init_gas(params));
     }
     cost
+}
+
+// ── Stylus sub-call trampolines ─────────────────────────────────────
+
+use arb_stylus::evm_api_impl::{SubCallResult, SubCreateResult};
+
+/// Monomorphized trampoline for Stylus sub-calls (CALL/DELEGATECALL/STATICCALL).
+///
+/// This function is created as a concrete `fn(...)` pointer by monomorphizing
+/// generic type parameters at the call site in `execute_stylus_program`.
+/// The `ctx` pointer is cast back to the concrete Context type.
+fn stylus_call_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+    ctx: *mut (),
+    call_type: u8,
+    contract: Address,
+    caller: Address,
+    input: &[u8],
+    gas: u64,
+    value: U256,
+) -> SubCallResult
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    let context = unsafe {
+        &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
+    };
+
+    let is_static = call_type == 2;
+    let is_delegate = call_type == 1;
+
+    // Create a journal checkpoint for the sub-call
+    let checkpoint = context.journaled_state.inner.checkpoint();
+
+    // For CALL with value, transfer ETH
+    if !is_delegate && !value.is_zero() {
+        let transfer_result = context
+            .journaled_state
+            .inner
+            .transfer(
+                &mut context.journaled_state.database,
+                caller,
+                contract,
+                value,
+            );
+        if transfer_result.is_err() {
+            context
+                .journaled_state
+                .inner
+                .checkpoint_revert(checkpoint);
+            return SubCallResult {
+                output: Vec::new(),
+                gas_cost: 0,
+                success: false,
+            };
+        }
+    }
+
+    // Determine the code address (same as contract for CALL/STATICCALL, target for DELEGATE)
+    let code_address = contract;
+
+    // Load the target's bytecode
+    let bytecode = match context
+        .journaled_state
+        .inner
+        .load_code(&mut context.journaled_state.database, code_address)
+    {
+        Ok(acc) => acc
+            .data
+            .info
+            .code
+            .as_ref()
+            .map(|c| c.original_bytes())
+            .unwrap_or_default(),
+        Err(_) => {
+            context
+                .journaled_state
+                .inner
+                .checkpoint_revert(checkpoint);
+            return SubCallResult {
+                output: Vec::new(),
+                gas_cost: 0,
+                success: false,
+            };
+        }
+    };
+
+    // Empty code — just a value transfer, already done above
+    if bytecode.is_empty() {
+        context
+            .journaled_state
+            .inner
+            .checkpoint_commit();
+        return SubCallResult {
+            output: Vec::new(),
+            gas_cost: 0,
+            success: true,
+        };
+    }
+
+    // Determine target address (for DELEGATECALL, execution happens at caller's address)
+    let target_address = if is_delegate { caller } else { contract };
+
+    // Build CallInputs for dispatch
+    let call_scheme = match call_type {
+        0 => CallScheme::Call,
+        1 => CallScheme::DelegateCall,
+        2 => CallScheme::StaticCall,
+        _ => CallScheme::Call,
+    };
+
+    let call_value = if is_delegate {
+        revm::interpreter::CallValue::Apparent(value)
+    } else {
+        revm::interpreter::CallValue::Transfer(value)
+    };
+
+    let sub_inputs = CallInputs {
+        input: CallInput::Bytes(input.to_vec().into()),
+        gas_limit: gas,
+        target_address,
+        bytecode_address: code_address,
+        caller,
+        value: call_value,
+        scheme: call_scheme,
+        is_static,
+        return_memory_offset: 0..0,
+        known_bytecode: None,
+    };
+
+    // Dispatch through ArbPrecompilesMap (handles precompiles + Stylus)
+    {
+        arb_precompiles::set_evm_depth(context.journaled_state.inner.depth);
+        let mut precompiles = alloy_evm::precompiles::PrecompilesMap::new(Default::default());
+        <alloy_evm::precompiles::PrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::set_spec(&mut precompiles, context.cfg.spec());
+        register_arb_precompiles(&mut precompiles);
+        let mut arb_map = ArbPrecompilesMap(precompiles);
+        let dispatch_result = <ArbPrecompilesMap as PrecompileProvider<
+            revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+        >>::run(&mut arb_map, context, &sub_inputs);
+
+        match dispatch_result {
+            Ok(Some(result)) => {
+                let success = result.result.is_ok();
+                let output = result.output.to_vec();
+                let gas_used = gas.saturating_sub(result.gas.remaining());
+                if success {
+                    context.journaled_state.inner.checkpoint_commit();
+                } else {
+                    context.journaled_state.inner.checkpoint_revert(checkpoint);
+                }
+                return SubCallResult {
+                    output,
+                    gas_cost: gas_used,
+                    success,
+                };
+            }
+            Ok(None) => {
+                // Not a precompile or Stylus — fall through to EVM
+            }
+            Err(_) => {
+                context.journaled_state.inner.checkpoint_revert(checkpoint);
+                return SubCallResult {
+                    output: Vec::new(),
+                    gas_cost: 0,
+                    success: false,
+                };
+            }
+        }
+    }
+
+    // EVM bytecode execution — ArbPrecompilesMap didn't handle it
+    let result = run_evm_bytecode(context, &sub_inputs, &bytecode, gas);
+    let success = result.result.is_ok();
+    let output = result.output.to_vec();
+    let gas_used = gas.saturating_sub(result.gas.remaining());
+    if success {
+        context.journaled_state.inner.checkpoint_commit();
+    } else {
+        context.journaled_state.inner.checkpoint_revert(checkpoint);
+    }
+    SubCallResult {
+        output,
+        gas_cost: gas_used,
+        success,
+    }
+}
+
+/// Monomorphized trampoline for Stylus CREATE/CREATE2 operations.
+fn stylus_create_trampoline<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+    ctx: *mut (),
+    caller: Address,
+    code: &[u8],
+    gas: u64,
+    endowment: U256,
+    salt: Option<B256>,
+) -> SubCreateResult
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    let context = unsafe {
+        &mut *(ctx as *mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>)
+    };
+
+    let checkpoint = context.journaled_state.inner.checkpoint();
+
+    // Compute CREATE/CREATE2 address
+    let caller_nonce = {
+        let acc = context
+            .journaled_state
+            .inner
+            .load_account(&mut context.journaled_state.database, caller);
+        acc.map(|a| a.data.info.nonce).unwrap_or(0)
+    };
+
+    let created_address = if let Some(salt) = salt {
+        // CREATE2: keccak256(0xff ++ sender ++ salt ++ keccak256(code))
+        let code_hash = alloy_primitives::keccak256(code);
+        let mut buf = Vec::with_capacity(1 + 20 + 32 + 32);
+        buf.push(0xff);
+        buf.extend_from_slice(caller.as_slice());
+        buf.extend_from_slice(salt.as_slice());
+        buf.extend_from_slice(code_hash.as_slice());
+        Address::from_slice(&alloy_primitives::keccak256(&buf)[12..])
+    } else {
+        // CREATE: RLP([sender, nonce])
+        use alloy_rlp::Encodable;
+        let mut rlp_buf = Vec::with_capacity(64);
+        alloy_rlp::Header {
+            list: true,
+            payload_length: caller.length() + caller_nonce.length(),
+        }
+        .encode(&mut rlp_buf);
+        caller.encode(&mut rlp_buf);
+        caller_nonce.encode(&mut rlp_buf);
+        Address::from_slice(&alloy_primitives::keccak256(&rlp_buf)[12..])
+    };
+
+    // Increment caller nonce
+    let _ = context
+        .journaled_state
+        .inner
+        .load_account(&mut context.journaled_state.database, caller);
+    if let Some(acc) = context.journaled_state.inner.state.get_mut(&caller) {
+        acc.info.nonce += 1;
+        context.journaled_state.inner.nonce_bump_journal_entry(caller);
+    }
+
+    // Transfer endowment
+    if !endowment.is_zero() {
+        if context
+            .journaled_state
+            .inner
+            .transfer(
+                &mut context.journaled_state.database,
+                caller,
+                created_address,
+                endowment,
+            )
+            .is_err()
+        {
+            context
+                .journaled_state
+                .inner
+                .checkpoint_revert(checkpoint);
+            return SubCreateResult {
+                address: None,
+                output: Vec::new(),
+                gas_cost: gas,
+            };
+        }
+    }
+
+    // Run init code as EVM
+    let init_inputs = CallInputs {
+        input: CallInput::Bytes(code.to_vec().into()),
+        gas_limit: gas,
+        target_address: created_address,
+        bytecode_address: created_address,
+        caller,
+        value: revm::interpreter::CallValue::Transfer(endowment),
+        scheme: CallScheme::Call,
+        is_static: false,
+        return_memory_offset: 0..0,
+        known_bytecode: None,
+    };
+
+    let result = run_evm_bytecode(context, &init_inputs, code, gas);
+    let success = result.result.is_ok();
+    let gas_used = gas.saturating_sub(result.gas.remaining());
+
+    if success {
+        // Store the returned bytecode as the contract's code
+        let deployed_code = result.output.to_vec();
+        let code_hash = alloy_primitives::keccak256(&deployed_code);
+        let bytecode = revm::bytecode::Bytecode::new_raw(deployed_code.into());
+        // Ensure the account is loaded into state
+        let _ = context
+            .journaled_state
+            .inner
+            .load_account(&mut context.journaled_state.database, created_address);
+        context
+            .journaled_state
+            .inner
+            .set_code_with_hash(created_address, bytecode, code_hash);
+        context.journaled_state.inner.checkpoint_commit();
+        SubCreateResult {
+            address: Some(created_address),
+            output: Vec::new(), // success doesn't return data
+            gas_cost: gas_used,
+        }
+    } else {
+        let output = result.output.to_vec();
+        context
+            .journaled_state
+            .inner
+            .checkpoint_revert(checkpoint);
+        SubCreateResult {
+            address: None,
+            output, // revert returns data
+            gas_cost: gas_used,
+        }
+    }
+}
+
+/// Run EVM bytecode from a Stylus sub-call.
+///
+/// Stylus programs can call arbitrary EVM contracts. This requires running
+/// the full interpreter loop. For now, this returns Revert — precompile and
+/// Stylus-to-Stylus calls are handled above via ArbPrecompilesMap dispatch.
+fn run_evm_bytecode<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+    _context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+    _inputs: &CallInputs,
+    _bytecode: &[u8],
+    _gas_limit: u64,
+) -> InterpreterResult
+where
+    BlockEnv: revm::context::Block,
+    TxEnv: revm::context::Transaction,
+    CfgEnv: revm::context::Cfg,
+    DB: Database,
+{
+    tracing::debug!(target: "stylus", "EVM sub-call from Stylus — not yet implemented");
+    // TODO: Implement full EVM interpreter loop for Stylus→EVM sub-calls.
+    // Precompile and Stylus→Stylus calls work via ArbPrecompilesMap dispatch above.
+    InterpreterResult::new(InstructionResult::Revert, Bytes::new(), EvmGas::new(0))
 }
 
 // ── Stylus WASM dispatch ────────────────────────────────────────────
@@ -368,7 +663,23 @@ where
     // Create the type-erased StylusEvmApi bridge.
     let journal_ptr = &mut context.journaled_state as *mut revm::Journal<DB>;
     let is_static = inputs.is_static || matches!(inputs.scheme, CallScheme::StaticCall);
-    let evm_api = unsafe { StylusEvmApi::new(journal_ptr, target_addr, is_static) };
+    let ctx_ptr = context as *mut _ as *mut ();
+    let caller = inputs.caller;
+    let call_value = inputs.value.get();
+    let evm_api = unsafe {
+        StylusEvmApi::new(
+            journal_ptr,
+            target_addr,
+            caller,
+            call_value,
+            is_static,
+            params.free_pages,
+            params.page_gas,
+            ctx_ptr,
+            Some(stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
+            Some(stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>),
+        )
+    };
 
     // Try the module cache first; compile from WASM on miss and populate cache.
     let long_term_tag = if program.cached { 1u32 } else { 0u32 };

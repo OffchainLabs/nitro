@@ -9,6 +9,7 @@ pub mod host;
 pub mod ink;
 pub mod meter;
 pub mod native;
+pub mod pages;
 pub mod run;
 
 pub use cache::InitCache;
