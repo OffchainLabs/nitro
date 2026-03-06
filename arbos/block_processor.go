@@ -84,6 +84,7 @@ type txLoopState struct {
 
 type groupCheckpoint struct {
 	backup               *state.StateDB
+	snap                 int
 	headerGasUsed        uint64
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
@@ -97,11 +98,13 @@ type groupCheckpoint struct {
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) {
-	backup := s.statedb.Copy()
-	backup.RevertToSnapshot(snap)
+func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTxHash common.Hash) error {
+	if len(s.redeems) != 0 {
+		return errors.New("saveGroupCheckpoint called with pending redeems")
+	}
 	s.activeGroupCP = &groupCheckpoint{
-		backup:               backup,
+		backup:               s.statedb.Copy(),
+		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
@@ -110,6 +113,7 @@ func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTx
 		receiptsLen:          len(s.receipts),
 		userTxHash:           userTxHash,
 	}
+	return nil
 }
 
 // rollbackToGroupCheckpoint restores loop state to the saved checkpoint,
@@ -117,6 +121,7 @@ func (s *txLoopState) saveGroupCheckpoint(header *types.Header, snap int, userTx
 // GasUsed, which lives outside txLoopState.
 func (s *txLoopState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
+	cp.backup.RevertToSnapshot(cp.snap)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
@@ -471,7 +476,9 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && loopState.statedb.HasActiveAddressFilter() {
-						loopState.saveGroupCheckpoint(header, snap, tx.Hash())
+						if err := loopState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
+							return err
+						}
 					}
 					return nil
 				},
