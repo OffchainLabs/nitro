@@ -59,6 +59,12 @@ func (v *ValidationSpawnerRetryWrapper) LaunchWithNAllowedAttempts(entry *valida
 			if nonTimeoutAttempts >= allowedAttempts {
 				return validator.GoGlobalState{}, err
 			}
+			log.Warn("validation attempt failed, retrying",
+				"err", err,
+				"moduleRoot", moduleRoot,
+				"attempt", nonTimeoutAttempts,
+				"allowedAttempts", allowedAttempts,
+			)
 		}
 	})
 	return server_common.NewValRun(promise, moduleRoot)
