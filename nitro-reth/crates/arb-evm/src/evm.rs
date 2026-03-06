@@ -17,7 +17,7 @@ use revm::handler::instructions::EthInstructions;
 use revm::handler::{EthFrame, PrecompileProvider};
 use revm::inspector::NoOpInspector;
 use revm::interpreter::interpreter::EthInterpreter;
-use revm::interpreter::interpreter_types::{InputsTr, RuntimeFlag, StackTr};
+use revm::interpreter::interpreter_types::{InputsTr, ReturnData, RuntimeFlag, StackTr};
 use revm::interpreter::{
     CallInput, CallInputs, CallScheme, Gas as EvmGas, Host, InstructionContext, InstructionResult,
     InterpreterResult, InterpreterTypes,
@@ -546,14 +546,14 @@ where
 
 /// Run EVM bytecode from a Stylus sub-call.
 ///
-/// Stylus programs can call arbitrary EVM contracts. This requires running
-/// the full interpreter loop. For now, this returns Revert — precompile and
-/// Stylus-to-Stylus calls are handled above via ArbPrecompilesMap dispatch.
+/// Creates an interpreter and runs in a loop, dispatching nested CALL/CREATE
+/// actions through the Stylus call trampoline (which in turn uses
+/// ArbPrecompilesMap for precompile/Stylus dispatch).
 fn run_evm_bytecode<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
-    _context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
-    _inputs: &CallInputs,
-    _bytecode: &[u8],
-    _gas_limit: u64,
+    context: &mut revm::Context<BlockEnv, TxEnv, CfgEnv, DB, revm::Journal<DB>, Chain>,
+    inputs: &CallInputs,
+    bytecode: &[u8],
+    gas_limit: u64,
 ) -> InterpreterResult
 where
     BlockEnv: revm::context::Block,
@@ -561,10 +561,165 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
-    tracing::debug!(target: "stylus", "EVM sub-call from Stylus — not yet implemented");
-    // TODO: Implement full EVM interpreter loop for Stylus→EVM sub-calls.
-    // Precompile and Stylus→Stylus calls work via ArbPrecompilesMap dispatch above.
-    InterpreterResult::new(InstructionResult::Revert, Bytes::new(), EvmGas::new(0))
+    use revm::bytecode::Bytecode;
+    use revm::interpreter::{
+        interpreter::{ExtBytecode, InputsImpl},
+        FrameInput, InterpreterAction, SharedMemory,
+    };
+
+    let code = Bytecode::new_raw(bytecode.to_vec().into());
+    let ext_bytecode = ExtBytecode::new(code);
+
+    let call_value = inputs.value.get();
+    let interp_input = InputsImpl {
+        target_address: inputs.target_address,
+        bytecode_address: Some(inputs.bytecode_address),
+        caller_address: inputs.caller,
+        input: inputs.input.clone(),
+        call_value,
+    };
+
+    let spec = context.cfg.spec();
+
+    let mut interpreter = revm::interpreter::Interpreter::new(
+        SharedMemory::new(),
+        ext_bytecode,
+        interp_input,
+        inputs.is_static,
+        spec.clone().into(),
+        gas_limit,
+    );
+
+    // Build instruction table with our custom opcodes (BLOBBASEFEE, SELFDESTRUCT)
+    type Ctx<B, T, C, D, Ch> = revm::Context<B, T, C, D, revm::Journal<D>, Ch>;
+    let mut instructions = EthInstructions::<
+        EthInterpreter,
+        Ctx<BlockEnv, TxEnv, CfgEnv, DB, Chain>,
+    >::new_mainnet_with_spec(spec.into());
+    instructions.insert_instruction(
+        BLOBBASEFEE_OPCODE,
+        revm::interpreter::Instruction::new(arb_blob_basefee, 2),
+    );
+    instructions.insert_instruction(
+        SELFDESTRUCT_OPCODE,
+        revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+    );
+
+    // Run the interpreter in a loop, handling nested calls/creates
+    loop {
+        let action = interpreter.run_plain(&instructions.instruction_table, context);
+
+        match action {
+            InterpreterAction::Return(result) => {
+                return result;
+            }
+            InterpreterAction::NewFrame(FrameInput::Call(sub_call)) => {
+                // Dispatch nested call through our trampoline
+                let sub_result = stylus_call_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+                    context as *mut _ as *mut (),
+                    match sub_call.scheme {
+                        CallScheme::Call | CallScheme::CallCode => 0,
+                        CallScheme::DelegateCall => 1,
+                        CallScheme::StaticCall => 2,
+                    },
+                    sub_call.target_address,
+                    sub_call.caller,
+                    match &sub_call.input {
+                        CallInput::Bytes(b) => b,
+                        CallInput::SharedBuffer(_) => &[],
+                    },
+                    sub_call.gas_limit,
+                    sub_call.value.get(),
+                );
+
+                // Inject result back into interpreter (matching EthFrame::return_result)
+                let gas_remaining = sub_call.gas_limit.saturating_sub(sub_result.gas_cost);
+                let ins_result = if sub_result.success {
+                    InstructionResult::Return
+                } else {
+                    InstructionResult::Revert
+                };
+
+                let output: Bytes = sub_result.output.into();
+                let returned_len = output.len();
+                let mem_start = sub_call.return_memory_offset.start;
+                let mem_length = sub_call.return_memory_offset.len();
+                let target_len = mem_length.min(returned_len);
+
+                interpreter.return_data.set_buffer(output);
+
+                let item = if ins_result.is_ok() {
+                    U256::from(1)
+                } else {
+                    U256::ZERO
+                };
+                let _ = interpreter.stack.push(item);
+
+                if ins_result.is_ok_or_revert() {
+                    interpreter.gas.erase_cost(gas_remaining);
+                    if target_len > 0 {
+                        interpreter.memory.set(
+                            mem_start,
+                            &interpreter.return_data.buffer()[..target_len],
+                        );
+                    }
+                }
+
+                if ins_result.is_ok() {
+                    // No refund tracking for sub-calls in this simple loop
+                }
+            }
+            InterpreterAction::NewFrame(FrameInput::Create(sub_create)) => {
+                // Dispatch create through our trampoline
+                let salt = match sub_create.scheme() {
+                    revm::interpreter::CreateScheme::Create2 { salt } => Some(B256::from(salt.to_be_bytes())),
+                    _ => None,
+                };
+
+                let sub_result = stylus_create_trampoline::<BlockEnv, TxEnv, CfgEnv, DB, Chain>(
+                    context as *mut _ as *mut (),
+                    sub_create.caller(),
+                    sub_create.init_code(),
+                    sub_create.gas_limit(),
+                    sub_create.value(),
+                    salt,
+                );
+
+                let gas_remaining = sub_create.gas_limit().saturating_sub(sub_result.gas_cost);
+                let created_addr = sub_result.address;
+
+                let ins_result = if created_addr.is_some() {
+                    InstructionResult::Return
+                } else if !sub_result.output.is_empty() {
+                    InstructionResult::Revert
+                } else {
+                    InstructionResult::CreateInitCodeStartingEF00
+                };
+
+                let output: Bytes = sub_result.output.into();
+                interpreter.return_data.set_buffer(output);
+
+                // Push created address or zero
+                let item = match created_addr {
+                    Some(addr) => addr.into_word().into(),
+                    None => U256::ZERO,
+                };
+                let _ = interpreter.stack.push(item);
+
+                if ins_result.is_ok_or_revert() {
+                    interpreter.gas.erase_cost(gas_remaining);
+                }
+            }
+            InterpreterAction::NewFrame(FrameInput::Empty) => {
+                // Should not happen
+                return InterpreterResult::new(
+                    InstructionResult::Revert,
+                    Bytes::new(),
+                    EvmGas::new(0),
+                );
+            }
+        }
+    }
 }
 
 // ── Stylus WASM dispatch ────────────────────────────────────────────
