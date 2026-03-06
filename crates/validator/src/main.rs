@@ -15,7 +15,6 @@ use crate::server::run_server;
 mod config;
 mod engine;
 mod logging;
-mod router;
 mod server;
 mod spawner_endpoints;
 fn main() -> Result<()> {

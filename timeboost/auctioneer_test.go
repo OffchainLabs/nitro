@@ -17,9 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -43,46 +40,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	numBidValidators := 3
 	bidValidators := make([]*BidValidator, numBidValidators)
 	for i := 0; i < numBidValidators; i++ {
-		randHttp := getRandomPort(t)
-		stackConf := node.Config{
-			DataDir:             "", // ephemeral.
-			HTTPPort:            randHttp,
-			HTTPModules:         []string{AuctioneerNamespace},
-			HTTPHost:            "localhost",
-			HTTPVirtualHosts:    []string{"localhost"},
-			HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-			WSPort:              getRandomPort(t),
-			WSModules:           []string{AuctioneerNamespace},
-			WSHost:              "localhost",
-			GraphQLVirtualHosts: []string{"localhost"},
-			P2P: p2p.Config{
-				ListenAddr:  "",
-				NoDial:      true,
-				NoDiscovery: true,
-			},
-		}
-		stack, err := node.New(&stackConf)
-		require.NoError(t, err)
-		cfg := &BidValidatorConfig{
-			RpcEndpoint:            testSetup.endpoint,
-			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
-			RedisURL:               redisURL,
-			ProducerConfig:         pubsub.TestProducerConfig,
-			MaxBidsPerSender:       5,
-		}
-		fetcher := func() *BidValidatorConfig {
-			return cfg
-		}
-		bidValidator, err := NewBidValidator(
-			ctx,
-			stack,
-			fetcher,
-		)
-		require.NoError(t, err)
-		require.NoError(t, bidValidator.Initialize(ctx))
-		require.NoError(t, stack.Start())
-		bidValidator.Start(ctx)
-		bidValidators[i] = bidValidator
+		bidValidators[i], _ = setupBidValidator(t, ctx, redisURL, testSetup)
 	}
 	t.Log("Started multiple bid validators")
 
@@ -173,46 +131,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 	jwtSecret := common.BytesToHash([]byte("jwt"))
 	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0600))
 
-	// Set up a bid validator
-	randHttp := getRandomPort(t)
-	stackConf := node.Config{
-		DataDir:             "", // ephemeral.
-		HTTPPort:            randHttp,
-		HTTPModules:         []string{AuctioneerNamespace},
-		HTTPHost:            "localhost",
-		HTTPVirtualHosts:    []string{"localhost"},
-		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-		WSPort:              getRandomPort(t),
-		WSModules:           []string{AuctioneerNamespace},
-		WSHost:              "localhost",
-		GraphQLVirtualHosts: []string{"localhost"},
-		P2P: p2p.Config{
-			ListenAddr:  "",
-			NoDial:      true,
-			NoDiscovery: true,
-		},
-	}
-	stack, err := node.New(&stackConf)
-	require.NoError(t, err)
-	validatorCfg := &BidValidatorConfig{
-		RpcEndpoint:            testSetup.endpoint,
-		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
-		RedisURL:               redisURL,
-		ProducerConfig:         pubsub.TestProducerConfig,
-		MaxBidsPerSender:       10,
-	}
-	validatorFetcher := func() *BidValidatorConfig {
-		return validatorCfg
-	}
-	bidValidator, err := NewBidValidator(
-		ctx,
-		stack,
-		validatorFetcher,
-	)
-	require.NoError(t, err)
-	require.NoError(t, bidValidator.Initialize(ctx))
-	require.NoError(t, stack.Start())
-	bidValidator.Start(ctx)
+	bidValidator, _ := setupBidValidator(t, ctx, redisURL, testSetup)
 	t.Log("Started bid validator")
 
 	// Create first auctioneer instance
@@ -433,46 +352,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	jwtSecret := common.BytesToHash([]byte("jwt"))
 	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0600))
 
-	// Set up a bid validator
-	randHttp := getRandomPort(t)
-	stackConf := node.Config{
-		DataDir:             "", // ephemeral.
-		HTTPPort:            randHttp,
-		HTTPModules:         []string{AuctioneerNamespace},
-		HTTPHost:            "localhost",
-		HTTPVirtualHosts:    []string{"localhost"},
-		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-		WSPort:              getRandomPort(t),
-		WSModules:           []string{AuctioneerNamespace},
-		WSHost:              "localhost",
-		GraphQLVirtualHosts: []string{"localhost"},
-		P2P: p2p.Config{
-			ListenAddr:  "",
-			NoDial:      true,
-			NoDiscovery: true,
-		},
-	}
-	stack, err := node.New(&stackConf)
-	require.NoError(t, err)
-	validatorCfg := &BidValidatorConfig{
-		RpcEndpoint:            testSetup.endpoint,
-		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
-		RedisURL:               redisURL,
-		ProducerConfig:         pubsub.TestProducerConfig,
-		MaxBidsPerSender:       10,
-	}
-	validatorFetcher := func() *BidValidatorConfig {
-		return validatorCfg
-	}
-	bidValidator, err := NewBidValidator(
-		ctx,
-		stack,
-		validatorFetcher,
-	)
-	require.NoError(t, err)
-	require.NoError(t, bidValidator.Initialize(ctx))
-	require.NoError(t, stack.Start())
-	bidValidator.Start(ctx)
+	bidValidator, _ := setupBidValidator(t, ctx, redisURL, testSetup)
 	t.Log("Started bid validator")
 
 	// Use shorter timeouts for faster failover
@@ -652,4 +532,83 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	require.Equal(t, big.NewInt(8), charlieBids.Amount, "Should have Charlie's final bid (updated by later message)")
 
 	t.Log("Test complete - secondary successfully reprocessed unacked messages after failover")
+}
+
+func TestAuctioneerServerConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name                   string
+		auctionContractAddress string
+		bidFloorAgentAddress   string
+		s3Storage              S3StorageServiceConfig
+		wantErr                string
+	}{
+		{
+			name:    "both addresses empty is valid",
+			wantErr: "",
+		},
+		{
+			name:                 "bid floor agent zero address rejected",
+			bidFloorAgentAddress: "0x0000000000000000000000000000000000000000",
+			wantErr:              "cannot be the zero address",
+		},
+		{
+			name:                   "valid auction contract address only",
+			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
+		},
+		{
+			name:                 "valid bid floor agent address only",
+			bidFloorAgentAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
+		},
+		{
+			name:                   "both valid addresses",
+			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
+			bidFloorAgentAddress:   "0xabcdef1234567890abcdef1234567890abcdef12",
+		},
+		{
+			name:                   "invalid auction contract address",
+			auctionContractAddress: "not-a-hex-address",
+			wantErr:                "invalid auctioneer-server.auction-contract-address",
+		},
+		{
+			name:                 "invalid bid floor agent address",
+			bidFloorAgentAddress: "not-a-hex-address",
+			wantErr:              "invalid auctioneer-server.bid-floor-agent-address",
+		},
+		{
+			name:                   "valid auction contract but invalid bid floor agent",
+			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
+			bidFloorAgentAddress:   "xyz",
+			wantErr:                "invalid auctioneer-server.bid-floor-agent-address",
+		},
+		{
+			name:                   "invalid auction contract checked first",
+			auctionContractAddress: "bad",
+			bidFloorAgentAddress:   "also-bad",
+			wantErr:                "invalid auctioneer-server.auction-contract-address",
+		},
+		{
+			name: "s3 storage validation is delegated",
+			s3Storage: S3StorageServiceConfig{
+				Enable:       true,
+				MaxBatchSize: -1,
+			},
+			wantErr: "invalid max-batch-size",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &AuctioneerServerConfig{
+				AuctionContractAddress: tt.auctionContractAddress,
+				BidFloorAgentAddress:   tt.bidFloorAgentAddress,
+				S3Storage:              tt.s3Storage,
+			}
+			err := cfg.Validate()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
 }
