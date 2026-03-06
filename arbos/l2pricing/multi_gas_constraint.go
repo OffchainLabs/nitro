@@ -165,6 +165,7 @@ func (c *MultiGasConstraint) MaxWeight() (uint64, error) {
 	return c.maxWeight.Get()
 }
 
+// GetResourceWeights returns the weight for each resource kind, indexed by ResourceKind.
 func (c *MultiGasConstraint) GetResourceWeights() ([multigas.NumResourceKind]uint64, error) {
 	var result [multigas.NumResourceKind]uint64
 	for i := range uint8(multigas.NumResourceKind) {
