@@ -70,9 +70,10 @@ func TestRustServerValidation(t *testing.T) {
 
 	rvAddr := startRustValidatorServer(t, ctx)
 
-	pos := deployStylusContractAndCall(t, ctx, builder, auth)
-	expectedState := computeExpectedState(t, ctx, builder, pos)
-	actualState := validateBlockViaRustServer(t, ctx, builder, rvAddr, pos)
+	msgIdx := deployStylusContractAndCall(t, ctx, builder, auth)
+	waitForMessageIndex(t, ctx, builder, msgIdx)
+	expectedState := computeExpectedState(t, ctx, builder, msgIdx)
+	actualState := validateBlockViaRustServer(t, ctx, builder, rvAddr, msgIdx)
 
 	if expectedState != actualState {
 		Fatal(t, "GoGlobalState mismatch",
@@ -147,6 +148,16 @@ func deployStylusContractAndCall(t *testing.T, ctx context.Context, builder *Nod
 	Require(t, err)
 
 	return arbutil.MessageIndex(receipt.BlockNumber.Uint64())
+}
+
+func waitForMessageIndex(t *testing.T, ctx context.Context, builder *NodeBuilder, pos arbutil.MessageIndex) {
+	t.Helper()
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+	doUntil(t, 250*time.Millisecond, 20, func() bool {
+		_, found, err := builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(pos)
+		Require(t, err)
+		return found
+	})
 }
 
 // computeExpectedState derives the expected GoGlobalState for a message
