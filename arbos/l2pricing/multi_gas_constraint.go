@@ -4,6 +4,9 @@
 package l2pricing
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -75,18 +78,18 @@ func (c *MultiGasConstraint) Clear() error {
 
 // SetResourceWeights assigns per-resource weight multipliers for this constraint.
 func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error {
-	var maxWeight uint64
-	for kind, weight := range weights {
+	for _, kind := range slices.Sorted(maps.Keys(weights)) {
 		if _, err := multigas.CheckResourceKind(kind); err != nil {
 			return err
 		}
-		if weight > maxWeight {
-			maxWeight = weight
-		}
 	}
+	var maxWeight uint64
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		weight := weights[uint8(i)]
+		if weight > maxWeight {
+			maxWeight = weight
+		}
 		if err := c.weightedResources[i].Set(weight); err != nil {
 			return err
 		}

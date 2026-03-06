@@ -358,6 +358,7 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 		var resources []WeightedResource
 		for kind, weight := range weights {
 			if weight != 0 {
+				// #nosec G115 safe: kind < NumResourceKind
 				resources = append(resources, WeightedResource{
 					Resource: uint8(kind),
 					Weight:   weight,
