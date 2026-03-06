@@ -76,6 +76,10 @@ pub trait MeteredMachine {
         self.buy_ink(crate::pricing::read_price(bytes))
     }
 
+    fn pay_for_write(&mut self, bytes: u32) -> Result<(), Escape> {
+        self.buy_ink(crate::pricing::write_price(bytes))
+    }
+
     fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), Escape> {
         self.buy_ink(crate::pricing::keccak_price(bytes))
     }

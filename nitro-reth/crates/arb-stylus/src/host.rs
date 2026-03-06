@@ -19,6 +19,7 @@ pub fn read_args<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::READ_ARGS_BASE_INK)?;
     let args = info.env.args.clone();
+    info.pay_for_write(args.len() as u32)?;
     info.write_slice(ptr, &args)?;
     Ok(())
 }
@@ -308,6 +309,8 @@ pub fn read_return_data<E: EvmApi>(
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::READ_RETURN_DATA_BASE_INK)?;
     let data = info.env.evm_api.get_return_data();
+    let max = (data.len() as u32).saturating_sub(offset);
+    info.pay_for_write(size.min(max))?;
     let offset = offset as usize;
     let size = size as usize;
     let available = data.len().saturating_sub(offset);
@@ -389,6 +392,7 @@ pub fn account_code<E: EvmApi>(
         .account_code(arbos_version, address, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
+    info.pay_for_write(code.len() as u32)?;
     let offset = offset as usize;
     let size = size as usize;
     let available = code.len().saturating_sub(offset);
