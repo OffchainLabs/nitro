@@ -1,42 +1,5 @@
 {
-  "config": {
-    "chainId": 3503995874084926,
-    "homesteadBlock": 0,
-    "eip150Block": 0,
-    "eip155Block": 0,
-    "eip158Block": 0,
-    "byzantiumBlock": 0,
-    "constantinopleBlock": 0,
-    "petersburgBlock": 0,
-    "istanbulBlock": 0,
-    "muirGlacierBlock": 0,
-    "berlinBlock": 0,
-    "londonBlock": 0,
-    "arrowGlacierBlock": 0,
-    "grayGlacierBlock": 0,
-    "mergeNetsplitBlock": 0,
-    "shanghaiTime": 0,
-    "cancunTime": 60,
-    "pragueTime": 120,
-    "terminalTotalDifficulty": 131072,
-    "depositContractAddress": "0x0000000000000000000000000000000000000000",
-    "ethash": {},
-    "arbitrum": {
-      "InitialArbOSVersion": 6
-    },
-    "blobSchedule": {
-      "cancun": {
-        "target": 3,
-        "max": 6,
-        "baseFeeUpdateFraction": 3338477
-      },
-      "prague": {
-        "target": 6,
-        "max": 9,
-        "baseFeeUpdateFraction": 5007716
-      }
-    }
-  },
+  "serializedChainConfig": "{\"chainId\": 3503995874084926,\"homesteadBlock\": 0,\"eip150Block\": 0,\"eip155Block\": 0,\"eip158Block\": 0,\"byzantiumBlock\": 0,\"constantinopleBlock\": 0,\"petersburgBlock\": 0,\"istanbulBlock\": 0,\"muirGlacierBlock\": 0,\"berlinBlock\": 0,\"londonBlock\": 0,\"arrowGlacierBlock\": 0,\"grayGlacierBlock\": 0,\"mergeNetsplitBlock\": 0,\"shanghaiTime\": 0,\"cancunTime\": 60,\"pragueTime\": 120,\"terminalTotalDifficulty\": 131072,\"depositContractAddress\": \"0x0000000000000000000000000000000000000000\",\"ethash\": {},\"arbitrum\": {\"InitialArbOSVersion\": 6},\"blobSchedule\": {\"cancun\": { \"target\": 3, \"max\": 6, \"baseFeeUpdateFraction\": 3338477 },\"prague\": { \"target\": 6, \"max\": 9, \"baseFeeUpdateFraction\": 5007716 }}}",
   "nonce": "0x0",
   "timestamp": "0x0",
   "extraData": "0x68697665636861696e",

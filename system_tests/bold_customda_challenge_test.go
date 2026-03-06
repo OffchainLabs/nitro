@@ -36,12 +36,12 @@ import (
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/daprovider/data_streaming"
 	"github.com/offchainlabs/nitro/daprovider/referenceda"
-	"github.com/offchainlabs/nitro/daprovider/server"
+	dapserver "github.com/offchainlabs/nitro/daprovider/server"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -192,9 +192,9 @@ func createNodeBWithSharedContracts(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2executionDB, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	l2executionDB, err := l2stack.OpenDatabaseWithOptions("chaindb", node.DatabaseOptions{})
 	Require(t, err)
-	l2consensusDB, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	l2consensusDB, err := l2stack.OpenDatabaseWithOptions("arbdb", node.DatabaseOptions{NoFreezer: true})
 	Require(t, err)
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
@@ -209,7 +209,7 @@ func createNodeBWithSharedContracts(
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0)
@@ -223,7 +223,7 @@ func createNodeBWithSharedContracts(
 	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
 	Require(t, err)
 
-	l2client := ClientForStack(t, l2stack)
+	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
 

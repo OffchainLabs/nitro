@@ -51,6 +51,7 @@ var (
 	validatorMsgCountValidatedGauge          = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 	validatorMsgCountLastValidationSentGauge = metrics.NewRegisteredGauge("arb/validator/msg_count_last_validation_sent", nil)
 	validatorMemoryLimitExceededGuage        = metrics.NewRegisteredGauge("arb/validator/memory/limit_exceeded", nil)
+	validatorTimeoutValidationsCounter       = metrics.NewRegisteredCounter("arb/validator/validations/timeout", nil)
 )
 
 // WorkerThrottler tracks concurrent validation executions for a spawner
@@ -161,6 +162,7 @@ type BlockValidatorConfig struct {
 	MemoryFreeLimit                   string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList       string                        `koanf:"validation-server-configs-list"`
 	ValidationSpawningAllowedAttempts uint64                        `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
+	ValidationSpawningAllowedTimeouts uint64                        `koanf:"validation-spawning-allowed-timeouts" reload:"hot"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -244,6 +246,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Uint64(prefix+".validation-spawning-allowed-timeouts", DefaultBlockValidatorConfig.ValidationSpawningAllowedTimeouts, "number of timeout errors allowed per validation attempt before treating it as a fatal error (separate from allowed-attempts)")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -275,6 +278,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RecordingIterLimit:                20,
 	ValidationSentLimit:               1024,
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -295,6 +299,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	BlockInputsFilePath:               "./target/validation_inputs",
 	MemoryFreeLimit:                   "default",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -329,6 +334,7 @@ type validationStatus struct {
 
 type validationDoneEntry struct {
 	Success         bool
+	Timeout         bool // true if the failure was due to a timeout (should not be fatal)
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
@@ -905,8 +911,13 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
-			return &pos, nil // if not fatal - retry
+			if validationStatus.DoneEntry.Timeout {
+				// Timeout is transient — log a warning and retry without crashing.
+				log.Warn("validation timed out, scheduling retry", "pos", pos, "start", validationStatus.DoneEntry.Start)
+			} else {
+				v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			}
+			return &pos, nil // retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
@@ -1005,7 +1016,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
+			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
@@ -1029,6 +1040,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 			}()
 			markSuccess := len(runs) > 0
+			isTimeout := false
 
 			// validationStatus might be removed from under us
 			// trigger validation progress when done
@@ -1040,12 +1052,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				if err != nil {
 					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
-					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					if validator.IsTimeoutError(err) {
+						isTimeout = true
+						validatorTimeoutValidationsCounter.Inc(1)
+						log.Warn("validation timed out, will retry", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					} else {
+						log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					}
 					break
 				}
 				validatorValidValidationsCounter.Inc(1)
 			}
 			validationStatus.DoneEntry.Success = markSuccess
+			validationStatus.DoneEntry.Timeout = isTimeout
 			validatorProfileRunningHist.Update(validationStatus.profileStep())
 			replaced := validationStatus.replaceStatus(SendingValidation, ValidationDone)
 			if !replaced {
@@ -1133,6 +1152,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	// don't do anything if we already validated past that
 	if !v.validGSIsNew(globalState) {
+		log.Info("block_validator: assume-valid not newer")
 		return nil
 	}
 
@@ -1143,6 +1163,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
 	}
 
+	log.Info("block_validator: assume-valid", "blockhash", globalState.BlockHash, "batch", globalState.Batch, "posInBatch", globalState.PosInBatch)
 	return nil
 }
 
@@ -1334,7 +1355,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		v.currentWasmModuleRoot = v.GetLatestWasmModuleRoot()
 	case "current":
 		if (v.currentWasmModuleRoot == common.Hash{}) {
-			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
+			return errors.New("wasmModuleRoot set to 'current' but not set from chain, enable staker in at least watchtower mode")
 		}
 	default:
 		v.currentWasmModuleRoot = common.HexToHash(currentModuleRoot)

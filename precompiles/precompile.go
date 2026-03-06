@@ -663,12 +663,15 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["IsTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwner.methodsByName["GetAllTransactionFilterers"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwner.methodsByName["SetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_TransactionFiltering
+	ArbOwner.methodsByName["SetFilteredFundsRecipient"].arbosVersion = params.ArbosVersion_TransactionFiltering
+	ArbOwner.methodsByName["GetFilteredFundsRecipient"].arbosVersion = params.ArbosVersion_TransactionFiltering
 
 	ArbOwnerPublic.methodsByName["GetNativeTokenManagementFrom"].arbosVersion = params.ArbosVersion_50
 
 	ArbOwnerPublic.methodsByName["GetTransactionFilteringFrom"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwnerPublic.methodsByName["IsTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwnerPublic.methodsByName["GetAllTransactionFilterers"].arbosVersion = params.ArbosVersion_TransactionFiltering
+	ArbOwnerPublic.methodsByName["GetFilteredFundsRecipient"].arbosVersion = params.ArbosVersion_TransactionFiltering
 
 	ArbNativeTokenManager := insert(MakePrecompile(precompilesgen.ArbNativeTokenManagerMetaData, &ArbNativeTokenManager{Address: types.ArbNativeTokenManagerAddress}))
 	ArbNativeTokenManager.arbosVersion = params.ArbosVersion_41

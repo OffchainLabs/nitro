@@ -35,6 +35,21 @@ type ArbOwner struct {
 
 	TransactionFiltererRemoved        func(ctx, mech, common.Address) error
 	TransactionFiltererRemovedGasCost func(common.Address) (uint64, error)
+
+	FilteredFundsRecipientSet        func(ctx, mech, common.Address) error
+	FilteredFundsRecipientSetGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerAdded        func(ctx, mech, common.Address) error
+	ChainOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	ChainOwnerRemoved        func(ctx, mech, common.Address) error
+	ChainOwnerRemovedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerAdded        func(ctx, mech, common.Address) error
+	NativeTokenOwnerAddedGasCost func(common.Address) (uint64, error)
+
+	NativeTokenOwnerRemoved        func(ctx, mech, common.Address) error
+	NativeTokenOwnerRemovedGasCost func(common.Address) (uint64, error)
 }
 
 const maxGetAllMembers = 65536
@@ -48,7 +63,13 @@ var (
 
 // AddChainOwner adds account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
-	return c.State.ChainOwners().Add(newOwner)
+	if err := c.State.ChainOwners().Add(newOwner); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.ChainOwnerAdded(c, evm, newOwner)
+	}
+	return nil
 }
 
 // RemoveChainOwner removes account from the list of chain owners
@@ -57,7 +78,13 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	if !member {
 		return errors.New("tried to remove non-owner")
 	}
-	return c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion())
+	if err := c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.ChainOwnerRemoved(c, evm, addr)
+	}
+	return nil
 }
 
 // IsChainOwner checks if the account is a chain owner
@@ -120,7 +147,13 @@ func (con ArbOwner) AddNativeTokenOwner(c ctx, evm mech, newOwner addr) error {
 	if enabledTime == 0 || enabledTime > evm.Context.Time {
 		return errors.New("native token feature is not enabled yet")
 	}
-	return c.State.NativeTokenOwners().Add(newOwner)
+	if err := c.State.NativeTokenOwners().Add(newOwner); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.NativeTokenOwnerAdded(c, evm, newOwner)
+	}
+	return nil
 }
 
 // RemoveNativeTokenOwner removes account from the list of native token owners
@@ -129,7 +162,13 @@ func (con ArbOwner) RemoveNativeTokenOwner(c ctx, evm mech, addr addr) error {
 	if !member {
 		return errors.New("tried to remove non native token owner")
 	}
-	return c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion())
+	if err := c.State.NativeTokenOwners().Remove(addr, c.State.ArbOSVersion()); err != nil {
+		return err
+	}
+	if c.State.ArbOSVersion() >= params.ArbosVersion_60 {
+		return con.NativeTokenOwnerRemoved(c, evm, addr)
+	}
+	return nil
 }
 
 // IsNativeTokenOwner checks if the account is a native token owner
@@ -182,6 +221,21 @@ func (con ArbOwner) IsTransactionFilterer(c ctx, evm mech, filterer addr) (bool,
 // GetAllTransactionFilterers retrieves the list of transaction filterers
 func (con ArbOwner) GetAllTransactionFilterers(c ctx, evm mech) ([]common.Address, error) {
 	return c.State.TransactionFilterers().AllMembers(maxGetAllMembers)
+}
+
+// SetFilteredFundsRecipient sets the address that receives funds redirected from filtered transactions.
+// Set to address(0) to use the networkFeeAccount as fallback.
+func (con ArbOwner) SetFilteredFundsRecipient(c ctx, evm mech, newRecipient addr) error {
+	if err := c.State.SetFilteredFundsRecipient(newRecipient); err != nil {
+		return err
+	}
+	return con.FilteredFundsRecipientSet(c, evm, newRecipient)
+}
+
+// GetFilteredFundsRecipient gets the address that receives funds redirected from filtered transactions.
+// Returns address(0) if not explicitly set (networkFeeAccount is used as fallback at runtime).
+func (con ArbOwner) GetFilteredFundsRecipient(c ctx, evm mech) (addr, error) {
+	return c.State.FilteredFundsRecipient()
 }
 
 // SetL1BaseFeeEstimateInertia sets how slowly ArbOS updates its estimate of the L1 basefee

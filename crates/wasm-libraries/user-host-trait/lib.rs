@@ -21,6 +21,7 @@ use prover::{
     value::Value,
 };
 use ruint2::Uint;
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::time::Instant;
 
@@ -73,8 +74,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type MemoryErr;
     type A: EvmApi<DR>;
 
-    fn args(&self) -> &[u8];
-    fn outs(&mut self) -> &mut Vec<u8>;
+    fn args(&self) -> Cow<[u8]>;
+    fn outs(&self) -> Cow<[u8]>;
+    fn set_outs(&mut self, outs: Vec<u8>);
 
     fn evm_api(&mut self) -> &mut Self::A;
     fn evm_data(&self) -> &EvmData;
@@ -139,8 +141,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn read_args(&mut self, ptr: GuestPtr) -> Result<(), Self::Err> {
         self.buy_ink(hostio::READ_ARGS_BASE_INK)?;
         self.pay_for_write(self.args().len() as u32)?;
-        self.write_slice(ptr, self.args())?;
-        trace!("read_args", self, &[], self.args())
+        self.write_slice(ptr, &self.args())?;
+        trace!("read_args", self, &[], &*self.args())
     }
 
     /// Writes the final return data. If not called before the program exists, the return data will
@@ -150,7 +152,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_ink(hostio::WRITE_RESULT_BASE_INK)?;
         self.pay_for_read(len)?;
         self.pay_for_read(len)?; // read from geth
-        *self.outs() = self.read_slice(ptr, len)?;
+        self.set_outs(self.read_slice(ptr, len)?);
         trace!("write_result", self, &*self.outs(), &[])
     }
 

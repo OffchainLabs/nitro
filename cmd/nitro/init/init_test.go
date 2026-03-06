@@ -67,7 +67,8 @@ func TestInitializeAndDownloadInit(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stack, err := node.New(stackConfig)
@@ -116,7 +117,8 @@ func TestDownloadInitWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -154,7 +156,8 @@ func TestDownloadInitWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -190,7 +193,8 @@ func TestDownloadInitInPartsWithoutChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -238,7 +242,8 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr := startFileServer(t, ctx, serverDir)
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
 
 	// Download file
 	initConfig := conf.InitConfigDefault
@@ -318,7 +323,9 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			// Start HTTP server
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			addr := "http://" + startFileServer(t, ctx, serverDir)
+			addr, server := startFileServer(t, serverDir)
+			defer gracefulShutdown(t, ctx, server)
+			addr = "http://" + addr
 
 			// Set latest snapshot URL
 			initConfig := conf.InitConfigDefault
@@ -340,7 +347,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	}
 }
 
-func startFileServer(t *testing.T, ctx context.Context, dir string) string {
+func startFileServer(t *testing.T, dir string) (string, *http.Server) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	Require(t, err, "failed to listen")
@@ -356,12 +363,7 @@ func startFileServer(t *testing.T, ctx context.Context, dir string) string {
 			t.Error("failed to shutdown server")
 		}
 	}()
-	go func() {
-		<-ctx.Done()
-		err := server.Shutdown(ctx)
-		Require(t, err, "failed to shutdown server")
-	}()
-	return addr
+	return addr, server
 }
 
 func TestEmptyDatabaseDir(t *testing.T) {
@@ -880,6 +882,83 @@ func TestInitConfigMustNotBeEmptyWhenGenesisJsonIsPresent(t *testing.T) {
 	}
 }
 
+func TestGetGenesisFileNameFromDirectoryWithCorrectFile(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	genesisFileName := fmt.Sprintf("%d.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(chainId)),
+	})
+	Require(t, err)
+	genesis := core.Genesis{
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	result, err := GetGenesisFileNameFromDirectory(tempDir, chainId)
+	Require(t, err)
+	if result != genesisFilePath {
+		t.Fatalf("expected %s, got %s", genesisFilePath, result)
+	}
+}
+
+func TestGetGenesisFileNameFromDirectoryWithWrongFileName(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	genesisFileName := fmt.Sprintf("%d_wrong.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(chainId)),
+	})
+	Require(t, err)
+	genesis := core.Genesis{
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetGenesisFileNameFromDirectoryWithWrongChainId(t *testing.T) {
+	tempDir := t.TempDir()
+	chainId := uint64(42161)
+	wrongChainId := uint64(42162)
+	genesisFileName := fmt.Sprintf("%d.json", chainId)
+	genesisFilePath := tempDir + "/" + genesisFileName
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID: big.NewInt(int64(wrongChainId)),
+	})
+	Require(t, err)
+	genesis := core.Genesis{
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
+	}
+	genesisBytes, err := genesis.MarshalJSON()
+	Require(t, err)
+	err = os.WriteFile(genesisFilePath, genesisBytes, 0600)
+	Require(t, err)
+	_, err = GetGenesisFileNameFromDirectory(tempDir, chainId)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
 func TestSimpleCheckDBDir(t *testing.T) {
 	t.Parallel()
 
@@ -1199,7 +1278,8 @@ func TestGetInitWithGenesis(t *testing.T) {
 	var gen core.Genesis
 	err = json.Unmarshal(genesisJson, &gen)
 	Require(t, err)
-	expectedChainConfig := gen.Config
+	expectedChainConfig, err := gen.GetConfig()
+	Require(t, err)
 
 	require.Equal(t, expectedChainConfig, chainConfig)
 
@@ -1271,4 +1351,10 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
+}
+
+func gracefulShutdown(t *testing.T, ctx context.Context, server *http.Server) {
+	if err := server.Shutdown(ctx); err != nil {
+		t.Logf("HTTP server shutdown error: %v", err)
+	}
 }

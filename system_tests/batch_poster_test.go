@@ -779,11 +779,11 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	Require(t, err)
 
 	// wait for this tx to be posted in a batch, and check which batch
-	var batchNum *big.Int
+	var batchNum uint64
 	for {
-		batch, err := builder.L2.ConsensusNode.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64())).Await(ctx)
-		if err == nil && batch.Found {
-			batchNum = new(big.Int).SetUint64(batch.BatchNum)
+		var found bool
+		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		if err == nil && found {
 			break
 		}
 		t.Logf("waiting for tx to be posted in a batch")
@@ -795,7 +795,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	Require(t, err)
 	var batchTxHash common.Hash
 	for {
-		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{batchNum}, nil, nil)
+		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
 		if err == nil && it.Next() {
 			batchTxHash = it.Event.Raw.TxHash
 			break
@@ -826,7 +826,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
 		Require(t, err)
 		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
-		if block.Nonce() == batchNum.Uint64()+1 {
+		if block.Nonce() == batchNum+1 {
 			foundBlock = block.Header().Number.Uint64()
 			break
 		}
@@ -910,6 +910,7 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		WithPreBoldDeployment().
 		TakeOwnership()
 
 	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
@@ -948,14 +949,18 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	// Spin L1 to get batch poster report
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	// Wait for the delayed message's timestamp to become old enough to trigger MaxEmptyBatchDelay.
-	// The batch posting report comes back as a delayed message with an L1 block timestamp.
-	// L1 block timestamps can be up to ~12 seconds ahead of wall clock time (Ethereum PoS block interval).
-	// We need to wait for:
-	// 1. MaxEmptyBatchDelay (1 second) - the configured threshold that triggers batch posting
-	// 2. ~12-13 seconds - to ensure the L1 block timestamp is in the past relative to time.Now()
-	// 3. Extra buffer - for the delayed sequencer to process and make the report available
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 15*time.Second)
+	// The batch posting report's timestamp comes from the L1 block that included it.
+	// In the simulated beacon, block timestamps can race far ahead of wall clock
+	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
+	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
+	// before the batch poster will consider the report old enough to trigger posting.
+	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	l1AheadBy := time.Until(time.Unix(int64(latestHeader.Time), 0)) //#nosec G115
+	if l1AheadBy > 0 {
+		time.Sleep(l1AheadBy)
+	}
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay)
 
 	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)

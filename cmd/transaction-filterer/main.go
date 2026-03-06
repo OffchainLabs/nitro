@@ -204,7 +204,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	stack, _, err := api.NewStack(&stackConf, txOpts, sequencerClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1
