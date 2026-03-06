@@ -16,6 +16,7 @@ use core::sync::atomic::{compiler_fence, Ordering};
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
@@ -43,8 +44,16 @@ impl From<MemoryBoundsError> for eyre::ErrReport {
 /// Normal Rust rules would suggest using a [`Vec`] of cells would be better. The issue is that,
 /// should an error guard recover, this WASM will reset to an earlier state but with the current
 /// memory. This means that stack unwinding won't happen, rendering these primitives unhelpful.
+///
+/// We use `SyncUnsafe<T>` instead of `static mut` to avoid the `static_mut_refs` lint while
+/// keeping interior mutability via `UnsafeCell`. This is safe in practice because WASM execution
+/// is single-threaded, so no concurrent access to `PROGRAMS` can occur.
+struct SyncUnsafe<T>(UnsafeCell<T>);
+// Safety: WASM is single-threaded, so sharing across threads cannot happen.
+unsafe impl<T> Sync for SyncUnsafe<T> {}
+
 #[allow(clippy::vec_box)]
-static mut PROGRAMS: Vec<Box<Program>> = vec![];
+static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec![]));
 
 static mut LAST_REQUEST_ID: u32 = 0x10000;
 
@@ -176,19 +185,19 @@ impl Program {
             config,
             early_exit: None,
         };
-        unsafe { PROGRAMS.push(Box::new(program)) }
+        unsafe { (*PROGRAMS.0.get()).push(Box::new(program)) }
     }
 
     /// Removes the current program
     pub fn pop() {
         unsafe {
-            PROGRAMS.pop().expect("no program");
+            (*PROGRAMS.0.get()).pop().expect("no program");
         }
     }
 
     /// Provides a reference to the current program.
     pub fn current() -> &'static mut Self {
-        unsafe { PROGRAMS.last_mut().expect("no program") }
+        unsafe { (*PROGRAMS.0.get()).last_mut().expect("no program") }
     }
 
     /// Reads the program's memory size in pages.
@@ -226,11 +235,11 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = EvmApiRequestor<VecReader, UserHostRequester>;
 
-    fn args(&self) -> Cow<[u8]> {
+    fn args(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(&self.args)
     }
 
-    fn outs(&self) -> Cow<[u8]> {
+    fn outs(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(&self.outs)
     }
 

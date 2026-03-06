@@ -192,7 +192,7 @@ pub fn resolve_preimage_impl(
         }
     }
 
-    if offset % 32 != 0 {
+    if !offset.is_multiple_of(32) {
         error!("bad offset {offset} in {name}")
     };
 
