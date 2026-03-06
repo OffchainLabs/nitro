@@ -38,7 +38,7 @@ pub mod arbos_version {
     pub const ARBOS_VERSION_50: u64 = 50;
     pub const ARBOS_VERSION_DIA: u64 = ARBOS_VERSION_50;
     /// Maximum ArbOS version supported by this node.
-    pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = ARBOS_VERSION_50;
+    pub const MAX_ARBOS_VERSION_SUPPORTED: u64 = ARBOS_VERSION_60;
     /// ArbOS version 51 — multi-constraint fix.
     pub const ARBOS_VERSION_MULTI_CONSTRAINT_FIX: u64 = 51;
     /// ArbOS version 60 — multi-gas constraints + Stylus contract limit + transaction filtering.
