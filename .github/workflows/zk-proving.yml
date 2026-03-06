@@ -1,0 +1,91 @@
+name: Run SP1 runner on `replay.wasm`
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - zk-prove-any/sp1-runner
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zk-proving:
+    name: Run SP1 runner on `replay.wasm`
+    runs-on: arbitrator-ci
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Install protobuf-compiler
+        run: sudo apt install -y protobuf-compiler
+
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 21
+
+      - name: Install SP1 toolchain
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
+          $HOME/.sp1/bin/sp1up -v v6.0.0-beta.1
+
+      - name: Print versions
+        run: |
+          rustc +succinct --version
+          rustc +succinct --print target-list | grep succinct
+
+      - name: Build binaries and record block
+        run: ./sp1-crates/build.sh
+
+      - name: Run validation
+        run: |
+          # Exit if any command in a pipe fails
+          set -e -o pipefail
+          
+          echo "--- Running SP1 Validation ---"
+          # Extracting only the hex string using grep -o
+          SP1_HASH=$(./target/sp1/sp1-runner \
+            --program target/sp1/dumped_replay_wasm.elf \
+            --stylus-compiler-program target/sp1/stylus-compiler-program \
+            --block-file target/sp1/block_inputs_7.json 2>&1 \
+            | grep "Validation succeeds with hash" \
+            | awk '{print $NF}')
+          
+          if [ -z "$SP1_HASH" ]; then
+              echo "Error: Failed to capture hash."
+              exit 1
+          fi
+          
+          echo "--- Running JIT Validation ---"
+          JIT_HASH=$(./target/bin/jit \
+            --debug --cranelift \
+            --binary target/machines/latest/replay.wasm \
+            json --inputs=target/sp1/block_inputs_7.json 2>&1 \
+            | grep "Completed in .* with hash" \
+            | awk '{print $NF}' \
+            | sed 's/\.$//')
+          
+          if [ -z "$JIT_HASH" ]; then
+              echo "Error: Failed to capture JIT hash."
+              exit 1
+          fi
+          
+          echo "SP1 Hash: $SP1_HASH"
+          echo "JIT Hash: $JIT_HASH"
+          
+          if [ "$SP1_HASH" != "$JIT_HASH" ]; then
+              echo "::error::Hash mismatch detected!"
+              echo "Expected: $SP1_HASH"
+              echo "Actual:   $JIT_HASH"
+              exit 1
+          fi
