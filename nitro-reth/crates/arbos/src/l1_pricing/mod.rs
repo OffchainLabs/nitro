@@ -198,6 +198,11 @@ impl<D: Database> L1PricingState<D> {
         self.units_since_update.set(current.saturating_add(units))
     }
 
+    pub fn subtract_from_units_since_update(&self, units: u64) -> Result<(), ()> {
+        let current = self.units_since_update.get().unwrap_or(0);
+        self.units_since_update.set(current.saturating_sub(units))
+    }
+
     pub fn price_per_unit(&self) -> Result<U256, ()> {
         self.price_per_unit.get()
     }

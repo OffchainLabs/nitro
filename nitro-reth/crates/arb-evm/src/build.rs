@@ -1645,6 +1645,30 @@ where
             );
         }
 
+        // Helper: roll back pre-execution state writes when a tx is rejected.
+        // Clears scratch slots and undoes calldata units addition.
+        let rollback_pre_exec_state = |this: &mut Self, units: u64| {
+            use arb_precompiles::storage_slot::{
+                current_redeemer_slot, current_retryable_slot,
+                current_tx_poster_fee_slot,
+            };
+            let db: &mut State<DB> = this.inner.evm_mut().db_mut();
+            arb_storage::write_arbos_storage(db, current_tx_poster_fee_slot(), U256::ZERO);
+            arb_storage::write_arbos_storage(db, current_retryable_slot(), U256::ZERO);
+            arb_storage::write_arbos_storage(db, current_redeemer_slot(), U256::ZERO);
+            if units > 0 {
+                let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                if let Ok(arb_state) = ArbosState::open(
+                    state_ptr,
+                    SystemBurner::new(None, false),
+                ) {
+                    let _ = arb_state
+                        .l1_pricing_state
+                        .subtract_from_units_since_update(units);
+                }
+            }
+        };
+
         // Manual balance and nonce validation for user txs. Revm's checks are
         // disabled globally in arb_cfg_env (internal/deposit/retryable txs need
         // to bypass them). User txs from the delayed inbox may have insufficient
@@ -1658,6 +1682,7 @@ where
             // Nonce check: tx nonce must match sender's current nonce.
             let tx_nonce = revm::context_interface::Transaction::nonce(&tx_env);
             if tx_nonce != sender_nonce {
+                rollback_pre_exec_state(self, calldata_units);
                 return Err(BlockExecutionError::msg(format!(
                     "nonce mismatch: address {sender} tx nonce {tx_nonce} != state nonce {sender_nonce}"
                 )));
@@ -1670,6 +1695,7 @@ where
             let tx_value = revm::context_interface::Transaction::value(&tx_env);
             let total_cost = gas_cost.saturating_add(tx_value);
             if sender_balance < total_cost {
+                rollback_pre_exec_state(self, calldata_units);
                 return Err(BlockExecutionError::msg(format!(
                     "insufficient funds: address {sender} have {sender_balance} want {total_cost}"
                 )));
@@ -1689,15 +1715,17 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
-        let mut output = self.inner.execute_transaction_without_commit((tx_env, recovered))?;
+        let mut output = match self.inner.execute_transaction_without_commit((tx_env, recovered)) {
+            Ok(o) => o,
+            Err(e) => {
+                rollback_pre_exec_state(self, calldata_units);
+                return Err(e);
+            }
+        };
 
         // Capture gas_used as reported by reth's EVM (before our adjustments).
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
-
-        // Temporary debug: log gas breakdown for user txs with significant gas
-        if is_user_tx && evm_gas_used > 100_000 {
-        }
 
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
