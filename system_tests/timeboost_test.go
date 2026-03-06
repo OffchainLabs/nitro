@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -2007,15 +2005,4 @@ func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
 	}
 	sig[64] += 27
 	return sig, nil
-}
-
-func getRandomPort(t testing.TB) int {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }
