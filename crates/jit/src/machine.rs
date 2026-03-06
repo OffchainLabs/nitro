@@ -22,8 +22,8 @@ use std::{
 use thiserror::Error;
 use validation::BatchInfo;
 use wasmer::{
-    imports, sys::CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
-    Module, RuntimeError, Store,
+    imports, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError,
+    Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
