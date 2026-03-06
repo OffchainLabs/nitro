@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/client"
 )
 
@@ -123,4 +126,21 @@ func projectRoot(t *testing.T) string {
 		Fatal(t, "could not determine project root")
 	}
 	return filepath.Dir(filepath.Dir(filename))
+}
+
+// deployStylusContractAndCall deploys a Stylus "storage" contract, activates it,
+// and performs a storage write call. Returns the message index of the call's block.
+func deployStylusContractAndCall(t *testing.T, ctx context.Context, builder *NodeBuilder, auth bind.TransactOpts) arbutil.MessageIndex {
+	t.Helper()
+	l2client := builder.L2.Client
+	l2info := builder.L2Info
+
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(testhelpers.RandomHash(), testhelpers.RandomHash()))
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	return arbutil.MessageIndex(receipt.BlockNumber.Uint64())
 }
