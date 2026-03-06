@@ -17,8 +17,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
 )
 
@@ -143,4 +145,15 @@ func deployStylusContractAndCall(t *testing.T, ctx context.Context, builder *Nod
 	Require(t, err)
 
 	return arbutil.MessageIndex(receipt.BlockNumber.Uint64())
+}
+
+// computeExpectedState derives the expected GoGlobalState for a message
+// position from the local execution engine and batch tracker.
+func computeExpectedState(t *testing.T, ctx context.Context, builder *NodeBuilder, pos arbutil.MessageIndex) validator.GoGlobalState {
+	t.Helper()
+	result, err := builder.L2.ExecNode.ResultAtMessageIndex(pos).Await(ctx)
+	Require(t, err)
+	_, endPos, err := builder.L2.ConsensusNode.StatelessBlockValidator.GlobalStatePositionsAtCount(pos + 1)
+	Require(t, err)
+	return staker.BuildGlobalState(*result, endPos)
 }
