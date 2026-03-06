@@ -70,6 +70,8 @@ func (p printTxAsJson) String() string {
 // the group-checkpoint and rollback logic stays in sync with the state it
 // manages. If you add a field, check whether saveGroupCheckpoint and
 // rollbackToGroupCheckpoint need updating.
+//
+// lint:require-exhaustive-initialization
 type txLoopState struct {
 	statedb              *state.StateDB
 	arbState             *arbosState.ArbosState
@@ -82,6 +84,7 @@ type txLoopState struct {
 	activeGroupCP        *groupCheckpoint
 }
 
+// lint:require-exhaustive-initialization
 type groupCheckpoint struct {
 	backup               *state.StateDB
 	snap                 int
@@ -345,6 +348,11 @@ func ProduceBlockAdvanced(
 		arbState:             arbState,
 		blockGasLeft:         blockGasLeft,
 		expectedBalanceDelta: new(big.Int),
+		userTxsProcessed:     0,
+		complete:             nil,
+		receipts:             nil,
+		redeems:              nil,
+		activeGroupCP:        nil,
 	}
 
 	for {
