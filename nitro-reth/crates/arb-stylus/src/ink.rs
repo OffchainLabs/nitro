@@ -53,6 +53,18 @@ macro_rules! impl_math {
                 Self(self.0.saturating_sub(rhs.0))
             }
 
+            pub const fn add(self, rhs: Self) -> Self {
+                Self(self.0 + rhs.0)
+            }
+
+            pub const fn sub(self, rhs: Self) -> Self {
+                Self(self.0 - rhs.0)
+            }
+
+            pub const fn mul(self, rhs: u64) -> Self {
+                Self(self.0 * rhs)
+            }
+
             pub fn to_be_bytes(self) -> [u8; 8] {
                 self.0.to_be_bytes()
             }

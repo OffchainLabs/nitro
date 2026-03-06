@@ -508,8 +508,6 @@ impl EvmApi for StylusEvmApi {
             }
         };
 
-        let start_gas = gas.0;
-
         // CREATE base cost = 32000
         let base_cost: u64 = 32000;
         if gas.0 < base_cost {

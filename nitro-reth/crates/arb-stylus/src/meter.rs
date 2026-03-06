@@ -63,6 +63,22 @@ pub trait MeteredMachine {
         self.set_meter(MachineMeter::Ready(current - ink));
         Ok(())
     }
+
+    fn require_ink(&mut self, ink: Ink) -> Result<(), Escape> {
+        let current = self.ink_ready()?;
+        if current < ink {
+            return Escape::out_of_ink();
+        }
+        Ok(())
+    }
+
+    fn pay_for_read(&mut self, bytes: u32) -> Result<(), Escape> {
+        self.buy_ink(crate::pricing::read_price(bytes))
+    }
+
+    fn pay_for_keccak(&mut self, bytes: u32) -> Result<(), Escape> {
+        self.buy_ink(crate::pricing::keccak_price(bytes))
+    }
 }
 
 /// Trait for machines that can convert between gas and ink.
@@ -72,6 +88,18 @@ pub trait GasMeteredMachine: MeteredMachine {
     fn buy_gas(&mut self, gas: u64) -> Result<(), Escape> {
         let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
         self.buy_ink(ink)
+    }
+
+    fn require_gas(&mut self, gas: u64) -> Result<(), Escape> {
+        let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
+        self.require_ink(ink)
+    }
+
+    fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), Escape> {
+        use crate::pricing::evm_gas;
+        let cost = (1 + topics as u64) * evm_gas::LOG_TOPIC_GAS;
+        let cost = cost.saturating_add(data_len as u64 * evm_gas::LOG_DATA_GAS);
+        self.buy_gas(cost)
     }
 }
 
