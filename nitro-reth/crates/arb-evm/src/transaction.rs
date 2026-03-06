@@ -209,6 +209,10 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
         env.value = tx.value();
     }
 
+    if let Some(al) = tx.access_list() {
+        env.access_list = al.clone();
+    }
+
     env
 }
 

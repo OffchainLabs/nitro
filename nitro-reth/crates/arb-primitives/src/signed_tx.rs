@@ -597,12 +597,14 @@ impl ConsensusTx for ArbTransactionSigned {
     fn max_fee_per_gas(&self) -> u128 {
         match &self.transaction {
             ArbTypedTransaction::Legacy(tx) => tx.gas_price.into(),
+            ArbTypedTransaction::Eip2930(tx) => tx.gas_price.into(),
             ArbTypedTransaction::Unsigned(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::Contract(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::Retry(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::SubmitRetryable(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::Eip1559(tx) => tx.max_fee_per_gas as u128,
             ArbTypedTransaction::Eip4844(tx) => tx.max_fee_per_gas as u128,
+            ArbTypedTransaction::Eip7702(tx) => tx.max_fee_per_gas as u128,
             _ => 0,
         }
     }
@@ -727,7 +729,13 @@ impl ConsensusTx for ArbTransactionSigned {
     }
 
     fn access_list(&self) -> Option<&alloy_eips::eip2930::AccessList> {
-        None
+        match &self.transaction {
+            ArbTypedTransaction::Eip2930(tx) => Some(&tx.access_list),
+            ArbTypedTransaction::Eip1559(tx) => Some(&tx.access_list),
+            ArbTypedTransaction::Eip4844(tx) => Some(&tx.access_list),
+            ArbTypedTransaction::Eip7702(tx) => Some(&tx.access_list),
+            _ => None,
+        }
     }
 
     fn blob_versioned_hashes(&self) -> Option<&[B256]> {
