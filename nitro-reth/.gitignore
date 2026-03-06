@@ -23,9 +23,12 @@ Thumbs.db
 .env
 !.env.example
 
-# Test scripts
+# Test scripts and testing infrastructure
 scripts/
+testing/
 test_*.sh
+docker-compose*.yml
+!docker-compose.yml
 
 # Docker data volumes
 arbreth-data/

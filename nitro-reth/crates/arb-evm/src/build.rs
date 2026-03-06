@@ -133,6 +133,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             expected_balance_delta: 0,
             zombie_accounts: std::collections::HashSet::new(),
             finalise_deleted: std::collections::HashSet::new(),
+            touched_accounts: std::collections::HashSet::new(),
         }
     }
 }
@@ -191,6 +192,7 @@ where
             expected_balance_delta: 0,
             zombie_accounts: std::collections::HashSet::new(),
             finalise_deleted: std::collections::HashSet::new(),
+            touched_accounts: std::collections::HashSet::new(),
         }
     }
 }
@@ -268,6 +270,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Accounts removed by per-tx Finalise (EIP-161). Tracked so the producer
     /// can mark them for trie deletion if they existed pre-block.
     finalise_deleted: std::collections::HashSet<Address>,
+    /// Accounts modified in the current tx (bypass ops + EVM state).
+    /// Per-tx Finalise only processes these, matching Go's journal.dirties.
+    touched_accounts: std::collections::HashSet<Address>,
 }
 
 impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
@@ -444,6 +449,7 @@ where
 
         // Mint deposit value to sender.
         mint_balance(db, sender, info.deposit_value);
+        self.touched_accounts.insert(sender);
 
         // Track retryable deposit for balance delta verification.
         let dep_i128: i128 = info.deposit_value.try_into().unwrap_or(i128::MAX);
@@ -543,11 +549,15 @@ where
         // 3. Transfer submission fee to network fee account.
         if !fees.submission_fee.is_zero() {
             transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.submission_fee);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(self.arb_ctx.network_fee_account);
         }
 
         // 4. Refund excess submission fee.
         if !fees.submission_fee_refund.is_zero() {
             transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(info.fee_refund_addr);
         }
 
         // 5. Move call value into escrow. If sender has insufficient funds
@@ -555,14 +565,18 @@ where
         //    refund the submission fee and end the transaction.
         if !info.retry_value.is_zero() {
             if !try_transfer_balance(db, sender, fees.escrow, info.retry_value) {
+                self.touched_accounts.insert(sender);
+                self.touched_accounts.insert(fees.escrow);
                 // Refund submission fee from network account back to sender.
                 transfer_balance(
                     db, self.arb_ctx.network_fee_account, sender, fees.submission_fee,
                 );
+                self.touched_accounts.insert(self.arb_ctx.network_fee_account);
                 // Refund withheld portion of submission fee to fee refund address.
                 transfer_balance(
                     db, sender, info.fee_refund_addr, fees.withheld_submission_fee,
                 );
+                self.touched_accounts.insert(info.fee_refund_addr);
 
                 self.pending_tx = Some(PendingArbTx {
                     sender,
@@ -589,6 +603,8 @@ where
                     tx_type,
                 });
             }
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(fees.escrow);
         }
 
         // 6. Create retryable ticket.
@@ -625,14 +641,20 @@ where
             // Pay infra fee.
             if !fees.infra_cost.is_zero() {
                 transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
+                self.touched_accounts.insert(sender);
+                self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
             }
             // Pay network fee.
             if !fees.network_cost.is_zero() {
                 transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.network_cost);
+                self.touched_accounts.insert(sender);
+                self.touched_accounts.insert(self.arb_ctx.network_fee_account);
             }
             // Gas price refund.
             if !fees.gas_price_refund.is_zero() {
                 transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
+                self.touched_accounts.insert(sender);
+                self.touched_accounts.insert(info.fee_refund_addr);
             }
 
             // For filtered retryables, skip auto-redeem scheduling.
@@ -745,6 +767,8 @@ where
         } else if !fees.gas_cost_refund.is_zero() {
             // Can't pay for gas: refund gas cost from deposit.
             transfer_balance(db, sender, info.fee_refund_addr, fees.gas_cost_refund);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(info.fee_refund_addr);
         }
 
         // Store pending state for commit_transaction.
@@ -1005,9 +1029,15 @@ where
                         );
                     }
 
+                    let touched_ptr = &mut self.touched_accounts
+                        as *mut std::collections::HashSet<Address>;
                     let mut do_transfer = |from: Address, to: Address, amount: U256| {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
-                        unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                        unsafe {
+                            transfer_balance(&mut *state_ptr, from, to, amount);
+                            (*touched_ptr).insert(from);
+                            (*touched_ptr).insert(to);
+                        }
                         Ok(())
                     };
                     let mut do_balance = |addr: Address| -> U256 {
@@ -1129,6 +1159,8 @@ where
             // Mint deposit value to sender, then transfer to recipient.
             mint_balance(db, sender, value);
             transfer_balance(db, sender, to, value);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(to);
 
             // Track deposit for balance delta verification.
             let value_i128: i128 = value.try_into().unwrap_or(i128::MAX);
@@ -1231,6 +1263,7 @@ where
                                     }
                                 }
                                 self.zombie_accounts.insert(escrow);
+                                self.touched_accounts.insert(escrow);
                             }
 
                             if !value.is_zero()
@@ -1262,6 +1295,10 @@ where
                                     tx_type,
                                 });
                             }
+
+                            // Track escrow transfer addresses.
+                            self.touched_accounts.insert(escrow);
+                            self.touched_accounts.insert(sender);
 
                             // Mint prepaid gas to sender.
                             let prepaid = self.arb_ctx.basefee
@@ -1474,6 +1511,7 @@ where
                     RevertedTxAction::PreRecordedRevert { gas_to_consume } => {
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                         increment_nonce(db, sender);
+                        self.touched_accounts.insert(sender);
                         let gas_used = poster_gas + gas_to_consume;
                         let charged_multi_gas = MultiGas::l1_calldata_gas(poster_gas)
                             .saturating_add(MultiGas::computation_gas(gas_to_consume));
@@ -1503,6 +1541,7 @@ where
                     RevertedTxAction::FilteredTx => {
                         let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                         increment_nonce(db, sender);
+                        self.touched_accounts.insert(sender);
                         // Consume all remaining gas.
                         let gas_remaining = tx_gas_limit
                             .saturating_sub(poster_gas)
@@ -1780,6 +1819,11 @@ where
             }
         }
 
+        // Capture EVM-modified addresses for dirty tracking before commit consumes output.
+        for addr in output.result.state.keys() {
+            self.touched_accounts.insert(*addr);
+        }
+
         // Inner executor builds receipt with the adjusted gas_used and commits state.
         let gas_used = self.inner.commit_transaction(output)?;
 
@@ -1787,6 +1831,7 @@ where
         if !withdrawal_value.is_zero() {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             burn_balance(db, arb_precompiles::ARBSYS_ADDRESS, withdrawal_value);
+            self.touched_accounts.insert(arb_precompiles::ARBSYS_ADDRESS);
         }
 
         // Track poster gas and multi-gas for this receipt (parallel to receipts vector).
@@ -1820,6 +1865,7 @@ where
                     .saturating_mul(U256::from(sender_extra_gas));
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 burn_balance(db, pending.sender, extra_cost);
+                self.touched_accounts.insert(pending.sender);
             }
 
             if let Some(retry_ctx) = pending.retry_context {
@@ -1828,6 +1874,8 @@ where
 
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
+                let touched_ptr = &mut self.touched_accounts
+                    as *mut std::collections::HashSet<Address>;
 
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
                 let multi_dimensional_cost = if self.arb_ctx.arbos_version
@@ -1865,12 +1913,17 @@ where
                             block_base_fee: self.arb_ctx.basefee,
                         },
                         |addr, amount| {
-                            // SAFETY: closures execute sequentially within end_tx_retryable.
-                            unsafe { burn_balance(&mut *state_ptr, addr, amount) };
+                            unsafe {
+                                burn_balance(&mut *state_ptr, addr, amount);
+                                (*touched_ptr).insert(addr);
+                            }
                         },
                         |from, to, amount| {
-                            // SAFETY: closures execute sequentially within end_tx_retryable.
-                            unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                            unsafe {
+                                transfer_balance(&mut *state_ptr, from, to, amount);
+                                (*touched_ptr).insert(from);
+                                (*touched_ptr).insert(to);
+                            }
                             Ok(())
                         },
                     )
@@ -1891,12 +1944,14 @@ where
                             let _ = arb_state.retryable_state.delete_retryable(
                                 retry_ctx.ticket_id,
                                 |from, to, amount| {
-                                    // SAFETY: called sequentially within delete_retryable.
-                                    unsafe { transfer_balance(&mut *state_ptr, from, to, amount) };
+                                    unsafe {
+                                        transfer_balance(&mut *state_ptr, from, to, amount);
+                                        (*touched_ptr).insert(from);
+                                        (*touched_ptr).insert(to);
+                                    }
                                     Ok(())
                                 },
                                 |addr| {
-                                    // SAFETY: called sequentially within delete_retryable.
                                     unsafe { get_balance(&mut *state_ptr, addr) }
                                 },
                             );
@@ -1912,6 +1967,8 @@ where
                                 result.escrow_address,
                                 retry_ctx.call_value,
                             );
+                            (*touched_ptr).insert(pending.sender);
+                            (*touched_ptr).insert(result.escrow_address);
                         }
                     }
 
@@ -1950,6 +2007,9 @@ where
                 if let Some(ref dist) = fee_dist {
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
+                    self.touched_accounts.insert(dist.network_fee_account);
+                    self.touched_accounts.insert(dist.infra_fee_account);
+                    self.touched_accounts.insert(dist.poster_fee_destination);
 
                     // Multi-dimensional gas refund: if the multi-gas cost is less
                     // than the single-gas cost, refund the difference to the sender.
@@ -1974,6 +2034,8 @@ where
                                         pending.sender,
                                         refund_amount,
                                     );
+                                    self.touched_accounts.insert(dist.network_fee_account);
+                                    self.touched_accounts.insert(pending.sender);
                                 }
                             }
                         }
@@ -2063,28 +2125,22 @@ where
         }
 
         // Per-tx Finalise: delete empty accounts from cache.
-        // Matches statedb.Finalise(true) called after each transaction
-        // in applyTransaction. Empty accounts
-        // (balance=0, nonce=0, no code) are removed from the in-memory state
-        // so subsequent transactions see them as non-existent, causing a fresh
-        // load from the state provider. Zombie accounts are preserved.
+        // Only iterates touched accounts (matching Go's journal.dirties).
+        // Accounts merely loaded (e.g. balance check) are not considered.
         {
             let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-            let to_remove: Vec<Address> = db
-                .cache
-                .accounts
-                .iter()
-                .filter_map(|(addr, cached)| {
-                    if let Some(ref acct) = cached.account {
-                        let is_empty = acct.info.nonce == 0
-                            && acct.info.balance.is_zero()
-                            && acct.info.code_hash == keccak_empty;
-                        if is_empty && !self.zombie_accounts.contains(addr) {
-                            return Some(*addr);
+            let to_remove: Vec<Address> = self.touched_accounts.drain()
+                .filter(|addr| {
+                    if let Some(cached) = db.cache.accounts.get(addr) {
+                        if let Some(ref acct) = cached.account {
+                            let is_empty = acct.info.nonce == 0
+                                && acct.info.balance.is_zero()
+                                && acct.info.code_hash == keccak_empty;
+                            return is_empty && !self.zombie_accounts.contains(addr);
                         }
                     }
-                    None
+                    false
                 })
                 .collect();
 
