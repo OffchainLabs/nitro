@@ -1243,6 +1243,7 @@ name = "arb-stylus"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "arb-chainspec",
  "arb-primitives",
  "arbos",
  "eyre",

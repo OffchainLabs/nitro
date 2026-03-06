@@ -9,7 +9,7 @@ use reth_evm::execute::{BlockAssembler, BlockAssemblerInput};
 use reth_primitives_traits::{Receipt, SignedTransaction, logs_bloom};
 use revm::context::Block as RevmBlock;
 
-use arbos::header::{ArbHeaderInfo, derive_arb_header_info};
+use arbos::header::{ArbHeaderInfo, derive_arb_header_info, read_l2_base_fee};
 
 /// Arbitrum block assembler.
 ///
@@ -71,7 +71,7 @@ where
 
         // Derive send root, send count, l1 block number, and arbos version
         // from the post-execution state.
-        let arb_info = derive_header_info_from_state(state_provider, bundle_state);
+        let (arb_info, state_base_fee) = derive_header_info_from_state(state_provider, bundle_state);
 
         let mix_hash = arb_info
             .as_ref()
@@ -109,7 +109,7 @@ where
             timestamp,
             mix_hash,
             nonce: B64::from(delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: Some(evm_env.block_env.basefee()),
+            base_fee_per_gas: Some(state_base_fee.unwrap_or(evm_env.block_env.basefee() as u64)),
             number: l2_block_number,
             gas_limit: evm_env.block_env.gas_limit(),
             difficulty: U256::from(1),
@@ -132,14 +132,15 @@ where
     }
 }
 
-/// Derive ArbHeaderInfo by reading ArbOS state from the post-execution state.
+/// Derive ArbHeaderInfo and baseFee by reading ArbOS state from the post-execution state.
 ///
 /// Combines bundle_state (pending changes) with state_provider (committed state)
-/// to read the Merkle accumulator's send root/count and L1 block number.
+/// to read the Merkle accumulator's send root/count, L1 block number, and L2 baseFee.
+/// Returns (header_info, base_fee_per_gas).
 fn derive_header_info_from_state(
     state_provider: &dyn reth_storage_api::StateProvider,
     bundle_state: &revm_database::BundleState,
-) -> Option<ArbHeaderInfo> {
+) -> (Option<ArbHeaderInfo>, Option<u64>) {
     let read_slot = |addr: alloy_primitives::Address, slot: B256| -> Option<U256> {
         // Check bundle state first (post-execution changes).
         if let Some(account) = bundle_state.state.get(&addr) {
@@ -152,5 +153,7 @@ fn derive_header_info_from_state(
         state_provider.storage(addr, slot.into()).ok().flatten()
     };
 
-    derive_arb_header_info(&read_slot)
+    let arb_info = derive_arb_header_info(&read_slot);
+    let base_fee = read_l2_base_fee(&read_slot);
+    (arb_info, base_fee)
 }

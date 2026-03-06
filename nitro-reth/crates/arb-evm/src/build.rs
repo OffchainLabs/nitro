@@ -357,6 +357,10 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei() {
             self.arb_ctx.min_base_fee = min_fee;
         }
+        // Read the updated baseFee after StartBlock runs update_pricing_model().
+        if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei() {
+            self.arb_ctx.basefee = base_fee;
+        }
 
         let per_block_gas_limit = arb_state
             .l2_pricing_state
