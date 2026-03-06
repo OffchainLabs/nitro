@@ -1,0 +1,248 @@
+# Dockerfile for running block recording system tests inside Docker.
+#
+# Build stages are derived from the main Dockerfile. The final stage includes
+# the Go toolchain, full workspace, compiled binaries, and machine files
+# needed to run system tests that record block inputs.
+#
+# Build:
+#   docker build -f Dockerfile.test-runner --target test-runner -t nitro-test-runner .
+#
+# Run (results in /workspace/system_tests/target/):
+#   docker run --name test-run nitro-test-runner
+#   docker cp test-run:/workspace/system_tests/target/. ./system_tests/target/
+#   docker rm test-run
+
+# ── brotli WASM build (emscripten) ──────────────────────────────────────────
+FROM debian:bookworm-slim AS brotli-wasm-builder
+WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
+
+FROM scratch AS brotli-wasm-export
+COPY --from=brotli-wasm-builder /workspace/install/ /
+
+# ── brotli native library ───────────────────────────────────────────────────
+FROM debian:bookworm-slim AS brotli-library-builder
+WORKDIR /workspace
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && \
+    apt-get install -y cmake make gcc git && \
+    ./scripts/build-brotli.sh -l -t /workspace/install/
+
+FROM scratch AS brotli-library-export
+COPY --from=brotli-library-builder /workspace/install/ /
+
+# ── Solidity contracts ──────────────────────────────────────────────────────
+FROM node:24.4.1-bookworm-slim AS contracts-builder
+RUN apt-get update && \
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
+WORKDIR /workspace
+COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
+RUN cd contracts-legacy && yarn install
+COPY contracts/package.json contracts/yarn.lock contracts/
+RUN cd contracts && yarn install
+COPY contracts-legacy contracts-legacy/
+COPY contracts-local contracts-local/
+COPY contracts contracts/
+COPY safe-smart-account safe-smart-account/
+RUN cd safe-smart-account && npm install
+COPY Makefile .
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+
+# ── WASM base ───────────────────────────────────────────────────────────────
+FROM debian:bookworm-20231218 AS wasm-base
+WORKDIR /workspace
+RUN apt-get update && apt-get install -y curl build-essential=12.9
+
+# ── WASM libraries (Rust → wasm32) ─────────────────────────────────────────
+FROM wasm-base AS wasm-libs-builder
+	# clang / lld used by soft-float wasm
+RUN apt-get update && \
+    apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
+    # pinned rust 1.88.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.88.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+COPY ./Makefile ./
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY brotli brotli
+COPY scripts/build-brotli.sh scripts/
+COPY scripts/remove_reference_types.sh scripts/
+COPY --from=brotli-wasm-export / target/
+RUN apt-get update && apt-get install -y cmake
+RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
+# Build stylus test WASMs (keccak, math, storage, multicall, etc.) needed by system tests
+RUN . ~/.cargo/env && \
+    for test_dir in crates/stylus/tests/*/; do \
+      test_name=$(basename "$test_dir"); \
+      if [ -f "$test_dir/Cargo.toml" ]; then \
+        cargo build --manifest-path "$test_dir/Cargo.toml" --release \
+          --config crates/stylus/tests/.cargo/config.toml; \
+        wasm="$test_dir/target/wasm32-unknown-unknown/release/$test_name.wasm"; \
+        if [ -f "$wasm" ]; then \
+          ./scripts/remove_reference_types.sh "$wasm"; \
+        fi; \
+      fi; \
+    done
+
+FROM scratch AS wasm-libs-export
+COPY --from=wasm-libs-builder /workspace/ /
+
+# ── WASM binary (Go replay → wasm) ─────────────────────────────────────────
+FROM wasm-base AS wasm-bin-builder
+RUN apt update && apt install -y wabt
+# pinned go version
+RUN curl -L https://golang.org/dl/go1.25.1.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+COPY ./Makefile ./go.mod ./go.sum ./
+COPY ./arbcompress ./arbcompress
+COPY ./arbos ./arbos
+COPY ./arbstate ./arbstate
+COPY ./arbutil ./arbutil
+COPY ./gethhook ./gethhook
+COPY ./blsSignatures ./blsSignatures
+COPY ./cmd/chaininfo ./cmd/chaininfo
+COPY ./cmd/replay ./cmd/replay
+COPY ./daprovider ./daprovider
+COPY ./daprovider/anytrust/util ./daprovider/anytrust/util
+COPY ./daprovider/anytrust/tree ./daprovider/anytrust/tree
+COPY ./precompiles ./precompiles
+COPY ./statetransfer ./statetransfer
+COPY ./util ./util
+COPY ./wavmio ./wavmio
+COPY ./zeroheavy ./zeroheavy
+COPY ./contracts-legacy/package.json ./contracts-legacy/yarn.lock ./contracts-legacy/
+COPY ./contracts-legacy/src/precompiles/ ./contracts-legacy/src/precompiles/
+COPY ./contracts-local/src/precompiles/ ./contracts-local/src/precompiles/
+COPY ./contracts-local/lib/ ./contracts-local/lib/
+COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
+COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
+COPY ./safe-smart-account ./safe-smart-account
+COPY ./solgen/gen.go ./solgen/
+COPY ./go-ethereum ./go-ethereum
+COPY scripts/remove_reference_types.sh scripts/
+COPY --from=brotli-wasm-export / target/
+COPY --from=contracts-builder workspace/contracts-local/out/precompiles/ contracts-local/out/precompiles/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/
+COPY --from=contracts-builder workspace/contracts-legacy/build/contracts/src/precompiles/ contracts-legacy/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/.make/ .make/
+RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
+
+# ── Rust prover header ─────────────────────────────────────────────────────
+FROM rust:1.88.0-slim-bookworm AS prover-header-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make clang wabt && \
+    cargo install --force cbindgen --version 0.24.3
+COPY Cargo.* ./
+COPY ./Makefile ./
+COPY crates/ crates/
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && apt-get install -y cmake
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+
+FROM scratch AS prover-header-export
+COPY --from=prover-header-builder /workspace/target/ /
+
+# ── Rust prover + JIT ──────────────────────────────────────────────────────
+FROM rust:1.88.0-slim-bookworm AS prover-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
+COPY Cargo.* ./
+COPY crates/ crates/
+COPY ./Makefile ./
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN touch -a -m crates/prover/src/lib.rs
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+
+FROM scratch AS prover-export
+COPY --from=prover-builder /workspace/target/ /
+
+# ── Machine files (replay-env) ─────────────────────────────────────────────
+FROM debian:bookworm-slim AS module-root-calc
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt make
+COPY --from=prover-export / target/
+COPY --from=wasm-bin-builder /workspace/target/ target/
+COPY --from=wasm-bin-builder /workspace/.make/ .make/
+COPY --from=wasm-libs-builder /workspace/target/ target/
+COPY --from=wasm-libs-builder /workspace/crates/prover/ crates/prover/
+COPY --from=wasm-libs-builder /workspace/crates/tools/wasmer/ crates/tools/wasmer/
+COPY --from=wasm-libs-builder /workspace/crates/wasm-libraries/ crates/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/crates/arbutil crates/arbutil
+COPY --from=wasm-libs-builder /workspace/crates/brotli crates/brotli
+COPY --from=wasm-libs-builder /workspace/crates/caller-env crates/caller-env
+COPY --from=wasm-libs-builder /workspace/.make/ .make/
+COPY ./Makefile ./
+COPY ./solgen ./solgen
+COPY ./contracts ./contracts
+COPY ./contracts-legacy ./contracts-legacy
+COPY ./contracts-local ./contracts-local
+COPY ./safe-smart-account ./safe-smart-account
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
+
+# ── Go node builder ────────────────────────────────────────────────────────
+FROM golang:1.25-bookworm AS node-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt
+COPY go.mod go.sum ./
+COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
+RUN go mod download
+COPY . ./
+COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
+COPY --from=contracts-builder workspace/contracts-local/out/ contracts-local/out/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
+COPY --from=contracts-builder workspace/.make/ .make/
+COPY --from=prover-header-export / target/
+COPY --from=brotli-library-export / target/
+COPY --from=prover-export / target/
+RUN mkdir -p target/bin
+COPY .nitro-tag.txt /nitro-tag.txt
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
+
+# ── Test runner ────────────────────────────────────────────────────────────
+FROM node-builder AS test-runner
+WORKDIR /workspace
+
+# Machine files needed by L2 nodes spawned during tests
+COPY --from=module-root-calc /workspace/target/machines/latest/ target/machines/latest/
+
+# Stylus test WASMs (math.wasm, keccak.wasm, etc.) needed by WASM system tests
+COPY --from=wasm-libs-builder /workspace/crates/stylus/tests/ crates/stylus/tests/
+
+# Ensure compiled binaries (nitro, relay, jit, etc.) are in PATH
+ENV PATH="/workspace/target/bin:${PATH}"
+
+COPY run_block_recording_tests.sh .
+RUN chmod +x run_block_recording_tests.sh
+
+ENTRYPOINT ["./run_block_recording_tests.sh"]

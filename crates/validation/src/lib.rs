@@ -100,7 +100,7 @@ pub struct ValidationInput {
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
     pub debug_chain: bool,
     #[serde(rename = "max-user-wasmSize")]
-    pub max_user_wasm_size: u64,
+    pub max_user_wasm_size: Option<u64>,
 }
 
 impl ValidationInput {
