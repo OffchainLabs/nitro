@@ -69,15 +69,10 @@ pub fn read_inbox_message(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, String> {
-    let message = match io.get_sequencer_message(msg_num) {
-        Some(message) => message,
-        None => return Err(format!("missing sequencer inbox message {msg_num}")),
-    };
-    let offset = offset as usize;
-    let len = min(32, message.len().saturating_sub(offset));
-    let read = message.get(offset..(offset + len)).unwrap_or_default();
-    mem.write_slice(out_ptr, read);
-    Ok(read.len() as u32)
+    let message = io
+        .get_sequencer_message(msg_num)
+        .ok_or(format!("missing sequencer inbox message {msg_num}"))?;
+    read_message(mem, message, offset, out_ptr)
 }
 
 /// Reads up to 32 bytes of a delayed inbox message at the given offset.
@@ -88,10 +83,18 @@ pub fn read_delayed_inbox_message(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, String> {
-    let message = match io.get_delayed_message(msg_num) {
-        Some(message) => message,
-        None => return Err(format!("missing delayed inbox message {msg_num}")),
-    };
+    let message = io
+        .get_delayed_message(msg_num)
+        .ok_or(format!("missing delayed inbox message {msg_num}"))?;
+    read_message(mem, message, offset, out_ptr)
+}
+
+fn read_message(
+    mem: &mut impl MemAccess,
+    message: &[u8],
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, String> {
     let offset = offset as usize;
     let len = min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
