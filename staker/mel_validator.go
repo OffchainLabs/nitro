@@ -431,8 +431,6 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	if err != nil {
 		return nil, nil, err
 	}
-	// In case this is the first state, set delayedMessageBacklog to read InitMsg
-	currentState.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	// We have already validated message extraction of messages till count toValidateMsgExtractionCount, so can return early
 	// and wait for block validator to progress the toValidateMsgExtractionCount
 	if currentState.MsgCount > validateMsgExtractionTill {

@@ -85,8 +85,7 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 		},
 	}
 	state := &mel.State{}
-	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
-	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg)) // Initialize delayedMessageBacklog
+	require.NoError(t, state.AccumulateDelayedMessage(delayedMsg))
 	state.DelayedMessagesSeen++
 
 	require.NoError(t, melDB.SaveDelayedMessages(state, []*mel.DelayedInboxMessage{delayedMsg}))
@@ -132,10 +131,8 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 		})
 	}
 
-	// Initializes delayedMessageBacklog
-	genesis.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	require.NoError(t, err)
-	state := genesis.Clone() // Should clone empty initialized delayedMessageBacklog
+	state := genesis.Clone()
 	state.ParentChainBlockNumber++
 
 	// See 3 delayed messages and accumulate them
@@ -159,7 +156,7 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	delayedBytes, err := rlp.EncodeToBytes(*corruptDelayed)
 	require.NoError(t, err)
 	require.NoError(t, consensusDB.Put(key, delayedBytes))
-	// ReadDelayedMessage should fail with not part of accumulator error
+	// ReadDelayedMessage should fail with hash mismatch error
 	_, err = melDB.ReadDelayedMessage(state, corruptIndex)
-	require.True(t, strings.Contains(err.Error(), "delayed message not part of the mel state accumulator"))
+	require.True(t, strings.Contains(err.Error(), "delayed message hash mismatch"))
 }

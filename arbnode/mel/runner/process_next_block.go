@@ -38,9 +38,6 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
 	preState := processAction.melState
-	if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
-		return m.config.RetryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
-	}
 	// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
 	if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
 		return m.config.RetryInterval, nil

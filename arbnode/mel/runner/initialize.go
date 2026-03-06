@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
@@ -20,16 +19,6 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	if err != nil {
 		return m.config.RetryInterval, err
 	}
-	// Initialize delayedMessageBacklog and add it to the melState
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(m.config.DelayedMessageBacklogCapacity, m.GetFinalizedDelayedMessagesRead)
-	if err != nil {
-		return m.config.RetryInterval, err
-	}
-	if err = InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, m.melDB, melState, m.GetFinalizedDelayedMessagesRead); err != nil {
-		return m.config.RetryInterval, err
-	}
-	delayedMessageBacklog.CommitDirties()
-	melState.SetDelayedMessageBacklog(delayedMessageBacklog)
 	// Start mel state is now ready. Check if the state's parent chain block hash exists in the parent chain
 	startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
 	if err != nil {

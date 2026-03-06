@@ -1,6 +1,6 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package melreplay
+package main
 
 import (
 	"context"
@@ -8,17 +8,18 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	melreplay "github.com/offchainlabs/nitro/mel-replay"
 )
 
-type MessageReader struct {
-	preimageResolver PreimageResolver
+type messageReader struct {
+	preimageResolver melreplay.PreimageResolver
 }
 
-func NewMessageReader(preimageResolver PreimageResolver) *MessageReader {
-	return &MessageReader{preimageResolver}
+func newMessageReader(preimageResolver melreplay.PreimageResolver) *messageReader {
+	return &messageReader{preimageResolver}
 }
 
-func (m *MessageReader) Read(
+func (m *messageReader) Read(
 	ctx context.Context,
 	state *mel.State,
 	msgIndex uint64,
@@ -26,5 +27,5 @@ func (m *MessageReader) Read(
 	if msgIndex >= state.MsgCount {
 		return nil, fmt.Errorf("index %d out of range, total messages: %d", msgIndex, state.MsgCount)
 	}
-	return PeekFromAccumulator[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.LocalMsgAccumulator, state.MsgCount-msgIndex)
+	return melreplay.PeekFromAccumulator[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.LocalMsgAccumulator, state.MsgCount-msgIndex)
 }
