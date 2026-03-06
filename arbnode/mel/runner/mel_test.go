@@ -104,7 +104,7 @@ func TestMessageExtractor(t *testing.T) {
 			ParentChainBlockNumber: 1,
 			ParentChainBlockHash:   emptyblk0.Hash(),
 		}
-		require.NoError(t, melDB.SaveState(ctx, melState))
+		require.NoError(t, melDB.SaveState(melState))
 
 		parentChainReader.returnErr = errors.New("oops")
 		_, err := extractor.Act(ctx)
