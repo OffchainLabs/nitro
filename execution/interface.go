@@ -4,7 +4,9 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -45,6 +47,48 @@ type ConsensusSyncData struct {
 var ErrRetrySequencer = errors.New("please retry transaction")
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
+// ErrFilteredDelayedMessage is returned when a delayed message contains transactions
+// that touch filtered addresses. The sequencer should halt and wait for the tx hashes
+// to be added to the onchain filter before retrying.
+//
+// Implements rpc.Error and rpc.DataError so that ErrorCode and structured data
+// (tx hashes, delayed message index) survive JSON-RPC serialization.
+type ErrFilteredDelayedMessage struct {
+	TxHashes      []common.Hash `json:"txHashes"`
+	DelayedMsgIdx uint64        `json:"delayedMsgIdx"`
+}
+
+const ErrCodeFilteredDelayedMessage = -32050
+
+func (e *ErrFilteredDelayedMessage) Error() string {
+	return fmt.Sprintf("delayed message %d: %d tx(es) touch filtered addresses: %v",
+		e.DelayedMsgIdx, len(e.TxHashes), e.TxHashes)
+}
+
+func (e *ErrFilteredDelayedMessage) ErrorCode() int {
+	return ErrCodeFilteredDelayedMessage
+}
+
+func (e *ErrFilteredDelayedMessage) ErrorData() interface{} {
+	return e
+}
+
+// ErrFilteredDelayedMessageFromRPCData reconstructs an ErrFilteredDelayedMessage
+// from the untyped data returned by rpc.DataError.ErrorData(). The RPC layer
+// deserializes JSON into map[string]interface{}, so we re-encode to JSON and
+// decode into the typed struct to get proper common.Hash unmarshaling.
+func ErrFilteredDelayedMessageFromRPCData(data interface{}) (*ErrFilteredDelayedMessage, error) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	var result ErrFilteredDelayedMessage
+	if err = json.Unmarshal(b, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // always needed
 type ExecutionClient interface {
 	ArbOSVersionGetter
@@ -78,14 +122,14 @@ type ExecutionRecorder interface {
 // needed for sequencer
 type ExecutionSequencer interface {
 	ExecutionClient
-	Pause()
-	Activate()
-	ForwardTo(url string) error
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
-	NextDelayedMessageNumber() (uint64, error)
-	Synced(ctx context.Context) bool
-	FullSyncProgressMap(ctx context.Context) map[string]interface{}
-	IsTxHashInOnchainFilter(txHash common.Hash) (bool, error)
+	Pause() containers.PromiseInterface[struct{}]
+	Activate() containers.PromiseInterface[struct{}]
+	ForwardTo(url string) containers.PromiseInterface[struct{}]
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}]
+	NextDelayedMessageNumber() containers.PromiseInterface[uint64]
+	Synced() containers.PromiseInterface[bool]
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
+	IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool]
 }
 
 // needed for batch poster

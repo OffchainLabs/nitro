@@ -37,18 +37,27 @@ type execClientWrapper struct {
 	t               *testing.T
 }
 
-func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
-
-func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
+func (w *execClientWrapper) Pause() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
-	return w.ExecutionEngine.NextDelayedMessageNumber()
+func (w *execClientWrapper) Activate() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum))
+}
+
+func (w *execClientWrapper) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecutionEngine.NextDelayedMessageNumber())
 }
 
 func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
@@ -71,13 +80,17 @@ func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[str
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced(ctx context.Context) bool {
+func (w *execClientWrapper) Synced() containers.PromiseInterface[bool] {
 	w.t.Error("not supported")
-	return false
+	return containers.NewReadyPromise(false, nil)
 }
-func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+func (w *execClientWrapper) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
 	w.t.Error("not supported")
-	return nil
+	return containers.NewReadyPromise(make(map[string]interface{}), nil)
+}
+func (w *execClientWrapper) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise(false, nil)
 }
 func (w *execClientWrapper) SetFinalityData(
 	safeFinalityData *arbutil.FinalityData,

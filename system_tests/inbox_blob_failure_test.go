@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // failingBlobReader wraps a real BlobReader and can be configured to fail.
@@ -291,6 +292,9 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 	}
 	if b.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
+	}
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(params.execConfig, params.nodeConfig, params.stackConfig)
 	}
 
 	var cleanup func()

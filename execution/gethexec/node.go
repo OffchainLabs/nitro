@@ -432,7 +432,7 @@ func CreateExecutionNode(
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,
 			Version:       "1.0",
-			Service:       executionrpcserver.NewServer(execNode, execNode),
+			Service:       executionrpcserver.NewServer(execNode),
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
@@ -545,14 +545,14 @@ func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
 }
-func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
-	return n.ExecEngine.NextDelayedMessageNumber()
+func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(n.ExecEngine.NextDelayedMessageNumber())
 }
-func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
+func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum))
 }
-func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
-	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
+func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.ExecEngine.IsTxHashInOnchainFilter(txHash))
 }
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
@@ -577,24 +577,25 @@ func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) contai
 	})
 }
 
-func (n *ExecutionNode) Pause() {
+func (n *ExecutionNode) Pause() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
 		n.Sequencer.Pause()
 	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) Activate() {
+func (n *ExecutionNode) Activate() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
 		n.Sequencer.Activate()
 	}
+	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) ForwardTo(url string) error {
+func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
-		return n.Sequencer.ForwardTo(url)
-	} else {
-		return errors.New("forwardTo not supported - sequencer not active")
+		return containers.NewReadyPromise(struct{}{}, n.Sequencer.ForwardTo(url))
 	}
+	return containers.NewReadyPromise(struct{}{}, errors.New("forwardTo not supported - sequencer not active"))
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) {
@@ -626,12 +627,12 @@ func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (n *ExecutionNode) Synced(ctx context.Context) bool {
-	return n.SyncMonitor.Synced(ctx)
+func (n *ExecutionNode) Synced() containers.PromiseInterface[bool] {
+	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
-func (n *ExecutionNode) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	return n.SyncMonitor.FullSyncProgressMap(ctx)
+func (n *ExecutionNode) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
+	return containers.NewReadyPromise(n.SyncMonitor.FullSyncProgressMap(), nil)
 }
 
 func (n *ExecutionNode) SetFinalityData(

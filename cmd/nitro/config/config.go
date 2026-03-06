@@ -150,9 +150,6 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 	if c.Node.ExecutionRPCClient.URL == "self" || c.Node.ExecutionRPCClient.URL == "self-auth" {
-		if c.Node.Sequencer || c.Node.BatchPoster.Enable {
-			return errors.New("sequencing and batch-posting are currently not supported when connecting to an execution client over RPC")
-		}
 		if !c.Node.RPCServer.Enable {
 			return errors.New("consensus and execution are configured to communicate over rpc but consensus node has not enabled rpc server")
 		}
@@ -164,10 +161,6 @@ func (c *NodeConfig) Validate() error {
 		}
 		if c.WS.Addr == "" {
 			return errors.New("consensus and execution are configured to communicate over rpc but websocket is not enabled")
-		}
-	} else if c.Node.ExecutionRPCClient.URL != "" {
-		if c.Node.Sequencer || c.Node.BatchPoster.Enable {
-			return errors.New("sequencing and batch-posting are currently not supported when connecting to an execution client over RPC")
 		}
 	} else if c.Execution.ConsensusRPCClient.URL != "" {
 		return errors.New("consensus is connecting directly to execution but execution is connecting to consensus over an rpc- invalid case")

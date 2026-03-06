@@ -1342,24 +1342,11 @@ func CreateConsensusNode(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	var executionClient execution.ExecutionClient
-	var executionRecorder execution.ExecutionRecorder
-	var executionSequencer execution.ExecutionSequencer
-	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
-		executionClient = rpcClient
-		executionRecorder = rpcClient
-		arbOSVersionGetter = rpcClient
-		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
-	} else {
-		executionClient = fullExecutionClient
-		executionRecorder = fullExecutionClient
-		executionSequencer = fullExecutionClient
-		arbOSVersionGetter = fullExecutionClient
+		fullExecutionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, fullExecutionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1422,7 +1409,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else if n.ExecutionSequencer != nil {
-		n.ExecutionSequencer.Activate()
+		if _, err := n.ExecutionSequencer.Activate().Await(ctx); err != nil {
+			return fmt.Errorf("error activating execution sequencer: %w", err)
+		}
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)
