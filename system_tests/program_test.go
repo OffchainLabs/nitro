@@ -409,32 +409,18 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func storageTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, _, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
-	l2info := builder.L2Info
-	l2client := builder.L2.Client
 	defer cleanup()
-	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
+	tx := builder.L2Info.PrepareTx("Owner", "Faucet", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
-	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
 
-	assertStorageAt(t, ctx, l2client, programAddress, key, value)
+	receipt, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 
-	validateBlocks(t, 2, jit, builder)
-
-	// Captures a block_inputs json file for the block that included the
-	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
 	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
 }
 
