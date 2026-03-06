@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 // TestRustValidationServerAPI verifies that the Go ValidationClient can connect
@@ -156,4 +158,32 @@ func computeExpectedState(t *testing.T, ctx context.Context, builder *NodeBuilde
 	_, endPos, err := builder.L2.ConsensusNode.StatelessBlockValidator.GlobalStatePositionsAtCount(pos + 1)
 	Require(t, err)
 	return staker.BuildGlobalState(*result, endPos)
+}
+
+// validateBlockViaRustServer gets the ValidationInput for a block, sends it to
+// the Rust validation server, and returns the GoGlobalState produced by the server.
+func validateBlockViaRustServer(
+	t *testing.T,
+	ctx context.Context,
+	builder *NodeBuilder,
+	rustAddr string,
+	pos arbutil.MessageIndex,
+) validator.GoGlobalState {
+	t.Helper()
+	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
+
+	inputJSON, err := sbv.ValidationInputsAt(ctx, pos, rawdb.LocalTarget())
+	Require(t, err)
+	valInput, err := server_api.ValidationInputFromJson(&inputJSON)
+	Require(t, err)
+
+	moduleRoot := sbv.GetLatestWasmModuleRoot()
+
+	valClient := connectValidationClient(t, ctx, rustAddr)
+	defer valClient.Stop()
+
+	run := valClient.Launch(valInput, moduleRoot)
+	gs, err := run.Await(ctx)
+	Require(t, err)
+	return gs
 }
