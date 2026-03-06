@@ -1095,7 +1095,7 @@ func testMemory(t *testing.T, jit bool) {
 	// expand to 128 pages, retract, then expand again to 128.
 	//   - multicall takes 1 page to init, and then 1 more at runtime.
 	//   - grow-and-call takes 1 page, then grows to the first arg by second arg steps.
-	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
+	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{127, 50})
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
 	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)

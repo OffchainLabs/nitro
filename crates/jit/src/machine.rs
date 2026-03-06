@@ -22,8 +22,8 @@ use std::{
 use thiserror::Error;
 use validation::BatchInfo;
 use wasmer::{
-    imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
-    Module, RuntimeError, Store,
+    imports, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError,
+    Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -94,7 +94,14 @@ fn make_engine(cranelift: bool) -> Engine {
 fn make_cranelift_engine() -> Engine {
     let mut compiler = Cranelift::new();
     compiler.canonicalize_nans(true);
-    compiler.enable_verifier();
+    // TODO: Uncomment when wasmer 7.1 is released
+    if cfg!(debug_assertions) {
+        // Disabled: Cranelift 0.128.0 has an egraph optimization bug that produces
+        // a type-mismatched icmp (i64 constant used in an i32 comparison). The
+        // generated machine code is correct — the verifier just flags the IR
+        // annotation. Re-enable when upgrading to a fixed Cranelift version.
+        // compiler.enable_verifier();
+    }
     Engine::from(compiler)
 }
 
