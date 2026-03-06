@@ -162,16 +162,14 @@ func (c *MultiGasConstraint) MaxWeight() (uint64, error) {
 	return c.maxWeight.Get()
 }
 
-func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]uint64, error) {
-	result := make(map[multigas.ResourceKind]uint64)
+func (c *MultiGasConstraint) GetResourceWeights() ([multigas.NumResourceKind]uint64, error) {
+	var result [multigas.NumResourceKind]uint64
 	for i := range uint8(multigas.NumResourceKind) {
 		weight, err := c.weightedResources[i].Get()
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		if weight != 0 {
-			result[multigas.ResourceKind(i)] = weight
-		}
+		result[i] = weight
 	}
 	return result, nil
 }
