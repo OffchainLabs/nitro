@@ -51,6 +51,28 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	}
 }
 
+// Unfilter removes the given transaction hash from the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
+func (t *TransactionFiltererAPI) Unfilter(ctx context.Context, txHashToUnfilter common.Hash) (common.Hash, error) {
+	t.apiMutex.Lock()
+	defer t.apiMutex.Unlock()
+
+	txOpts := *t.txOpts
+	txOpts.Context = ctx
+
+	log.Info("Received call to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex())
+	if t.arbFilteredTransactionsManager == nil {
+		return common.Hash{}, errors.New("sequencer client not set yet")
+	}
+	tx, err := t.arbFilteredTransactionsManager.DeleteFilteredTransaction(&txOpts, txHashToUnfilter)
+	if err != nil {
+		log.Warn("Failed to unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "err", err)
+		return common.Hash{}, err
+	} else {
+		log.Info("Submitted unfilter transaction", "txHashToUnfilter", txHashToUnfilter.Hex(), "txHash", tx.Hash().Hex())
+		return tx.Hash(), nil
+	}
+}
+
 // Only used for testing.
 // Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.
