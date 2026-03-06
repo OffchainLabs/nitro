@@ -21,6 +21,7 @@ pub mod wasmer_traits;
 pub mod brotli;
 
 pub mod arbcrypto;
+pub mod wavmio;
 
 mod guest_ptr;
 pub mod wasip1_stub;
