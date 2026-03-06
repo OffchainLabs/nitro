@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -27,15 +28,10 @@ func PeekFromAccumulator[T any](
 		if err != nil {
 			return nil, err
 		}
-		if len(result) != 2*common.HashLength {
-			return nil, fmt.Errorf("invalid preimage result length: %d, wanted %d", len(result), 2*common.HashLength)
+		curr, msgHash, err = mel.SplitPreimage(result)
+		if err != nil {
+			return nil, fmt.Errorf("accumulator preimage at lookback %d: %w", lookbacks, err)
 		}
-		// Split result into left and right halves.
-		// TODO: Make a helper function.
-		mid := len(result) / 2
-		left := result[:mid]
-		msgHash = common.BytesToHash(result[mid:])
-		curr = common.BytesToHash(left)
 		lookbacks--
 	}
 	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)

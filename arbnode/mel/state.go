@@ -16,6 +16,15 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// SplitPreimage validates that a preimage is exactly 2*common.HashLength bytes
+// and splits it into left (previous accumulator) and right (message hash) halves.
+func SplitPreimage(preimage []byte) (left, right common.Hash, err error) {
+	if len(preimage) != 2*common.HashLength {
+		return common.Hash{}, common.Hash{}, fmt.Errorf("invalid preimage length: %d, wanted %d", len(preimage), 2*common.HashLength)
+	}
+	return common.BytesToHash(preimage[:common.HashLength]), common.BytesToHash(preimage[common.HashLength:]), nil
+}
+
 // State defines the main struct describing the results of processing a single parent
 // chain block at the message extraction layer. It is a versioned consensus type that can
 // be deterministically constructed from any start state and parent chain blocks from
@@ -166,11 +175,10 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		if err != nil {
 			return fmt.Errorf("error resolving inbox preimage during pour at position %d: %w", i, err)
 		}
-		if len(result) != 2*common.HashLength {
-			return fmt.Errorf("invalid inbox preimage length: %d, wanted %d", len(result), 2*common.HashLength)
+		prevAcc, msgHash, err := SplitPreimage(result)
+		if err != nil {
+			return fmt.Errorf("inbox preimage at position %d: %w", i, err)
 		}
-		prevAcc := common.BytesToHash(result[:common.HashLength])
-		msgHash := common.BytesToHash(result[common.HashLength:])
 		msgHashes[i-1] = msgHash
 		curr = prevAcc
 	}
@@ -205,11 +213,10 @@ func (s *State) PopDelayedOutbox() (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("error resolving outbox preimage: %w", err)
 	}
-	if len(result) != 2*common.HashLength {
-		return common.Hash{}, fmt.Errorf("invalid outbox preimage length: %d, wanted %d", len(result), 2*common.HashLength)
+	prevOutbox, msgHash, err := SplitPreimage(result)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("outbox preimage: %w", err)
 	}
-	prevOutbox := common.BytesToHash(result[:common.HashLength])
-	msgHash := common.BytesToHash(result[common.HashLength:])
 	s.DelayedMessageOutboxAcc = prevOutbox
 	return msgHash, nil
 }

@@ -44,11 +44,10 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 	if err != nil {
 		return nil, fmt.Errorf("error resolving outbox preimage for delayed message at index %d: %w", msgIndex, err)
 	}
-	if len(result) != 2*common.HashLength {
-		return nil, fmt.Errorf("invalid outbox preimage length: %d, wanted %d", len(result), 2*common.HashLength)
+	prevOutbox, msgHash, err := mel.SplitPreimage(result)
+	if err != nil {
+		return nil, fmt.Errorf("outbox preimage at index %d: %w", msgIndex, err)
 	}
-	prevOutbox := common.BytesToHash(result[:common.HashLength])
-	msgHash := common.BytesToHash(result[common.HashLength:])
 	state.DelayedMessageOutboxAcc = prevOutbox
 	// Resolve message content from msgHash
 	msgBytes, err := d.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
@@ -76,11 +75,10 @@ func (d *delayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
 		if err != nil {
 			return fmt.Errorf("error resolving inbox preimage during pour at position %d: %w", i, err)
 		}
-		if len(result) != 2*common.HashLength {
-			return fmt.Errorf("invalid inbox preimage length: %d, wanted %d", len(result), 2*common.HashLength)
+		prevAcc, msgHash, err := mel.SplitPreimage(result)
+		if err != nil {
+			return fmt.Errorf("inbox preimage at position %d: %w", i, err)
 		}
-		prevAcc := common.BytesToHash(result[:common.HashLength])
-		msgHash := common.BytesToHash(result[common.HashLength:])
 		msgHashes[i-1] = msgHash
 		curr = prevAcc
 	}
