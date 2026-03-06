@@ -204,9 +204,14 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, _, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
+		return 1
+	}
+	err = api.Start(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error starting API: %v\n", err)
 		return 1
 	}
 
@@ -220,6 +225,7 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 	<-sigint
+	api.StopAndWait()
 
 	return 0
 }
