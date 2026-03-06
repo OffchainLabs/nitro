@@ -2155,10 +2155,7 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 }
 
 /// Mint balance to an address in the EVM state.
-///
-/// Directly modifies the cache without creating transitions. This matches
-/// StateDB.AddBalance which modifies in-memory state without triggering
-/// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
+/// Modifies cache directly; net effect captured by augment_bundle_from_cache.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
@@ -2176,11 +2173,8 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
     }
 }
 
-/// Burn (deduct) balance from an address in the EVM state.
-///
-/// Directly modifies the cache without creating transitions. This matches
-/// StateDB.SubBalance which modifies in-memory state without triggering
-/// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
+/// Burn balance from an address in the EVM state.
+/// Modifies cache directly; net effect captured by augment_bundle_from_cache.
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
@@ -2210,11 +2204,7 @@ fn get_balance<DB: Database>(state: &mut State<DB>, address: Address) -> U256 {
     }
 }
 
-/// Transfer balance between two addresses in the EVM state.
-///
-/// If the sender has insufficient funds, the transfer is skipped entirely
-/// (no partial burn/mint). This matches `util.TransferBalance` which
-/// is atomic — neither side is modified on insufficient funds.
+/// Transfer balance between two addresses. Atomic: skipped on insufficient funds.
 fn transfer_balance<DB: Database>(
     state: &mut State<DB>,
     from: Address,
@@ -2222,10 +2212,7 @@ fn transfer_balance<DB: Database>(
     amount: U256,
 ) {
     if amount.is_zero() {
-        // Zero-amount: still load both accounts into cache so per-tx
-        // EIP-161 cleanup can detect and delete empty accounts.
-        // Go's SubBalance(0) loads `from`, AddBalance(0) loads `to`
-        // and touches it if empty.
+        // Load both accounts so per-tx finalise can detect empty accounts.
         let _ = state.load_cache_account(from);
         let _ = state.load_cache_account(to);
         return;
@@ -2248,10 +2235,6 @@ fn transfer_balance<DB: Database>(
 
 #[allow(dead_code)]
 /// Transfer balance with zombie account creation for pre-Stylus ArbOS.
-///
-/// On ArbOS < 30, a zero-value transfer touching a self-destructed account
-/// creates a "zombie" (empty account preserved through finalization).
-/// Non-zero transfers are atomic: skipped if sender has insufficient funds.
 fn transfer_balance_with_zombie<DB: Database>(
     state: &mut State<DB>,
     from: Address,
@@ -2261,7 +2244,6 @@ fn transfer_balance_with_zombie<DB: Database>(
     extra_data: &mut crate::context::ArbitrumExtraData,
 ) {
     if amount.is_zero() {
-        // Load both accounts for EIP-161 cleanup.
         let _ = state.load_cache_account(from);
         let _ = state.load_cache_account(to);
         // On pre-Stylus, create zombie if the account was self-destructed.

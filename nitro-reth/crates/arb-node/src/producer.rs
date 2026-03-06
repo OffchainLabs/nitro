@@ -486,25 +486,15 @@ where
         // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
-        // Mark accounts deleted by per-tx Finalise for trie deletion.
-        // These accounts were removed from cache mid-block so
-        // augment_bundle_from_cache won't see them. If they existed pre-block
-        // (in the trie), they must appear in the bundle with info=None so
-        // HashedPostState deletes them from the trie.
-        //
-        // Skip accounts that were already empty pre-block: they were merely
-        // loaded (read) during execution, not modified. Go's Finalise only
-        // deletes *dirty* empty accounts; loading without modifying does not
-        // dirty an account.
+        // Mark per-tx finalise deletions in the bundle (not visible to
+        // augment_bundle_from_cache). Skip accounts that were already empty
+        // pre-block — they were only loaded, not modified.
         let keccak_empty_hash =
             alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
         for addr in &finalise_deleted {
             if bundle.state.contains_key(addr) {
-                // Already in bundle (e.g. from transitions) — will be handled
-                // by delete_empty_accounts below.
                 continue;
             }
-            // Check if account existed pre-block in the trie.
             if let Ok(Some(acct)) = state_provider.basic_account(addr) {
                 let was_originally_empty = acct.balance.is_zero()
                     && acct.nonce == 0
@@ -512,8 +502,6 @@ where
                         .bytecode_hash
                         .map_or(true, |h| h == keccak_empty_hash);
                 if was_originally_empty {
-                    // Account was empty before and is still empty — was just
-                    // loaded, not modified. Don't delete from trie.
                     continue;
                 }
                 bundle.state.insert(
@@ -534,24 +522,14 @@ where
         // produce an incorrect state root.
         filter_unchanged_storage(&mut bundle);
 
-        // EIP-161: Delete empty accounts from the bundle (matching
-        // IntermediateRoot(true) / Finalise(true) behavior).
-        // With without_state_clear(), revm preserves all accounts. We must
-        // manually mark empty accounts for trie deletion by setting info=None,
-        // except for zombie accounts which are preserved.
+        // Delete empty accounts from the bundle (EIP-161).
+        // Zombie accounts are preserved.
         delete_empty_accounts(&mut bundle, &zombie_accounts);
 
-        // Removed block-specific debug logging
-
-        // Build HashedPostState from the filtered bundle state.
-        // This uses the standard reth pipeline: bundle → hashed overlay → trie root.
-        // Use state_root_with_updates() to get both the root AND trie updates needed
-        // for persistence (write_hashed_state + write_trie_updates).
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
                 bundle.state(),
             );
-        // Remove debug logging for specific blocks
 
         let (state_root, trie_updates) = state_provider
             .state_root_with_updates(hashed_state.clone())
@@ -798,22 +776,7 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
     B256::from(bytes)
 }
 
-/// Filter bundle state to retain only storage slots that actually changed.
-///
-/// revm's bundle may include storage slots that were loaded by SLOAD but
-/// never modified. Including these in the HashedPostState would produce an
-/// incorrect state root because `from_bundle_state()` treats every entry
-/// as a changed value.
-/// EIP-161 empty account deletion matching Finalise(true).
-///
-/// `IntermediateRoot(true)` calls `Finalise(true)` which deletes
-/// empty accounts (nonce=0, balance=0, code_hash=KECCAK_EMPTY) from the state
-/// trie. Zombie accounts (re-created by zero-value transfers on pre-Stylus
-/// ArbOS) are preserved.
-///
-/// Since we use `without_state_clear()`, revm preserves all accounts in the
-/// bundle. This function marks empty non-zombie accounts for trie deletion
-/// by setting their info to `None`.
+/// EIP-161: mark empty non-zombie accounts for trie deletion.
 fn delete_empty_accounts(
     bundle: &mut BundleState,
     zombie_accounts: &std::collections::HashSet<Address>,
@@ -836,6 +799,7 @@ fn delete_empty_accounts(
     }
 }
 
+/// Remove unchanged storage slots from the bundle.
 fn filter_unchanged_storage(bundle: &mut BundleState) {
     for (_addr, account) in bundle.state.iter_mut() {
         account
@@ -862,16 +826,8 @@ fn derive_header_info_from_state(
     derive_arb_header_info(&read_slot)
 }
 
-/// Augment the bundle state from direct cache modifications.
-///
-/// Arbitrum's bypass tx types (deposit, internal, submit-retryable) and
-/// post-commit hooks modify the `State<DB>` cache directly without going
-/// through revm's commit mechanism. Those changes don't create transitions
-/// and are missing from the bundle state.
-///
-/// This function diffs the cache against the state provider and adds any
-/// missing or updated entries to the bundle so that both state root
-/// computation and persistence see the complete state.
+/// Augment the bundle with cache modifications not captured by transitions.
+/// Diffs cache against state provider and adds missing/changed entries.
 fn augment_bundle_from_cache(
     bundle: &mut BundleState,
     cache: &revm_database::CacheState,
