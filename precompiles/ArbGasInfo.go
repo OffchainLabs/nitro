@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -357,11 +358,13 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 		}
 
 		resources := make([]WeightedResource, 0, len(resourceMap))
-		for kind, weight := range resourceMap {
-			resources = append(resources, WeightedResource{
-				Resource: uint8(kind),
-				Weight:   weight,
-			})
+		for kind := range multigas.NumResourceKind {
+			if weight, ok := resourceMap[kind]; ok {
+				resources = append(resources, WeightedResource{
+					Resource: uint8(kind),
+					Weight:   weight,
+				})
+			}
 		}
 
 		result = append(result, MultiGasConstraint{
