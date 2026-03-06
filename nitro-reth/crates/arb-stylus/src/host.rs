@@ -54,11 +54,16 @@ pub fn storage_load_bytes32<E: EvmApi>(
 ) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::STORAGE_LOAD_BASE_INK)?;
+    // Require gas for cache-miss case
+    let evm_api_gas = info.pricing().ink_to_gas(crate::pricing::EVM_API_INK);
+    info.require_gas(
+        evm_gas::COLD_SLOAD_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS + evm_api_gas.0,
+    )?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
     let (value, gas_cost) = info
         .env
         .evm_api
-        .get_bytes32(key, Gas(0))
+        .get_bytes32(key, evm_api_gas)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
     info.write_slice(dest_ptr, value.as_slice())?;
