@@ -1085,12 +1085,9 @@ func (s *FullSequencingHooks) TxSucceeded() {
 
 func (s *FullSequencingHooks) TxFailed(err error) {
 	if len(s.txErrors) >= s.sequencedQueueItemsCount {
-		// Entry already exists (TxSucceeded was called for the user tx, then a
-		// cascading redeem failed). Overwrite the nil with the error.
-		s.txErrors[len(s.txErrors)-1] = err
-	} else {
-		s.txErrors = append(s.txErrors, err)
+		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
 	}
+	s.txErrors = append(s.txErrors, err)
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.

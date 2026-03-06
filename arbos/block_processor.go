@@ -82,6 +82,7 @@ type txLoopState struct {
 	receipts             types.Receipts
 	redeems              types.Transactions
 	activeGroupCP        *groupCheckpoint
+	userTxWasSuccessful  bool
 }
 
 // lint:require-exhaustive-initialization
@@ -133,6 +134,7 @@ func (s *txLoopState) rollbackToGroupCheckpoint(header *types.Header) error {
 	s.redeems = s.redeems[:0]
 	s.complete = s.complete[:cp.completeLen]
 	s.receipts = s.receipts[:cp.receiptsLen]
+	s.userTxWasSuccessful = false
 	var err error
 	s.arbState, err = arbosState.OpenSystemArbosState(s.statedb, nil, true)
 	if err != nil {
@@ -353,6 +355,7 @@ func ProduceBlockAdvanced(
 		receipts:             nil,
 		redeems:              nil,
 		activeGroupCP:        nil,
+		userTxWasSuccessful:  false,
 	}
 
 	for {
@@ -379,6 +382,10 @@ func ProduceBlockAdvanced(
 			}
 		} else {
 			// Previous group (if any) completed successfully
+			if loopState.userTxWasSuccessful {
+				sequencingHooks.TxSucceeded()
+				loopState.userTxWasSuccessful = false
+			}
 			loopState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
 			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
@@ -630,9 +637,19 @@ func ProduceBlockAdvanced(
 		loopState.receipts = append(loopState.receipts, receipt)
 
 		if isUserTx {
-			sequencingHooks.TxSucceeded()
+			if loopState.activeGroupCP != nil {
+				loopState.userTxWasSuccessful = true
+			} else {
+				sequencingHooks.TxSucceeded()
+			}
 			loopState.userTxsProcessed++
 		}
+	}
+
+	// Flush any deferred success from the last tx group
+	if loopState.userTxWasSuccessful {
+		sequencingHooks.TxSucceeded()
+		loopState.userTxWasSuccessful = false
 	}
 
 	if loopState.statedb.IsTxFiltered() {
