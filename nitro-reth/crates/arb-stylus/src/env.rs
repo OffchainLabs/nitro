@@ -29,6 +29,8 @@ pub struct WasmEnv<E: EvmApi> {
     pub evm_api: E,
     /// EVM context data (block info, sender, etc.).
     pub evm_data: EvmData,
+    /// Cached length of the last call's return data.
+    pub evm_return_data_len: u32,
     /// Compile-time configuration.
     pub compile: CompileConfig,
     /// Runtime configuration (set when running).
@@ -52,6 +54,7 @@ impl<E: EvmApi> WasmEnv<E> {
             outs: vec![],
             memory: None,
             meter: None,
+            evm_return_data_len: 0,
             _phantom: PhantomData,
         }
     }

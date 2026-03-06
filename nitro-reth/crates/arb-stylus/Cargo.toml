@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 # Internal
 arbos = { workspace = true }
+arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
 
 # Alloy

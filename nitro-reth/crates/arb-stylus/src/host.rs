@@ -1,6 +1,8 @@
 use alloy_primitives::{Address, B256, U256};
 use wasmer::FunctionEnvMut;
 
+use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
+
 use crate::env::WasmEnv;
 use crate::error::{Escape, MaybeEscape};
 use crate::evm_api::{EvmApi, UserOutcomeKind};
@@ -55,8 +57,13 @@ pub fn storage_load_bytes32<E: EvmApi>(
 ) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::STORAGE_LOAD_BASE_INK)?;
-    // Require gas for cache-miss case
-    let evm_api_gas = info.pricing().ink_to_gas(crate::pricing::EVM_API_INK);
+    let arbos_version = info.env.evm_data.arbos_version;
+    // Preserve wrong behavior for old arbos versions
+    let evm_api_gas = if arbos_version < ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        Gas(crate::pricing::EVM_API_INK.0)
+    } else {
+        info.pricing().ink_to_gas(crate::pricing::EVM_API_INK)
+    };
     info.require_gas(
         evm_gas::COLD_SLOAD_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS + evm_api_gas.0,
     )?;
@@ -103,9 +110,11 @@ pub fn storage_flush_cache<E: EvmApi>(
     let (gas_cost, status) = info
         .env
         .evm_api
-        .flush_storage_cache(clear != 0, gas_left)
+        .flush_storage_cache(clear != 0, Gas(gas_left.0 + 1))
         .map_err(|e| Escape::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        info.buy_gas(gas_cost.0)?;
+    }
     if status != UserOutcomeKind::Success {
         return Escape::logical("storage flush failed");
     }
@@ -171,12 +180,14 @@ pub fn call_contract<E: EvmApi>(
     let calldata = info.read_slice(calldata_ptr, calldata_len)?;
     let value = U256::from_be_bytes(info.read_fixed::<32>(value_ptr)?);
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
+    let gas_req = Gas(gas.min(gas_left.0));
     let (ret_len, gas_cost, status) = info
         .env
         .evm_api
-        .contract_call(contract, &calldata, gas_left, Gas(gas), value)
+        .contract_call(contract, &calldata, gas_left, gas_req, value)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
+    info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     Ok(status as u8)
 }
@@ -197,12 +208,14 @@ pub fn delegate_call_contract<E: EvmApi>(
     let contract = Address::from_slice(&info.read_fixed::<20>(contract_ptr)?);
     let calldata = info.read_slice(calldata_ptr, calldata_len)?;
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
+    let gas_req = Gas(gas.min(gas_left.0));
     let (ret_len, gas_cost, status) = info
         .env
         .evm_api
-        .delegate_call(contract, &calldata, gas_left, Gas(gas))
+        .delegate_call(contract, &calldata, gas_left, gas_req)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
+    info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     Ok(status as u8)
 }
@@ -223,12 +236,14 @@ pub fn static_call_contract<E: EvmApi>(
     let contract = Address::from_slice(&info.read_fixed::<20>(contract_ptr)?);
     let calldata = info.read_slice(calldata_ptr, calldata_len)?;
     let gas_left = info.ink_ready().map(|ink| info.pricing().ink_to_gas(ink))?;
+    let gas_req = Gas(gas.min(gas_left.0));
     let (ret_len, gas_cost, status) = info
         .env
         .evm_api
-        .static_call(contract, &calldata, gas_left, Gas(gas))
+        .static_call(contract, &calldata, gas_left, gas_req)
         .map_err(|e| Escape::Internal(e.to_string()))?;
     info.buy_gas(gas_cost.0)?;
+    info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     Ok(status as u8)
 }
@@ -254,14 +269,16 @@ pub fn create1<E: EvmApi>(
         .evm_api
         .create1(code, endowment, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
-    info.write_u32(ret_len_ptr, ret_len)?;
-    match response {
-        crate::evm_api::CreateResponse::Success(addr) => {
-            info.write_slice(contract_ptr, addr.as_slice())?;
+    let address = match response {
+        crate::evm_api::CreateResponse::Success(addr) => addr,
+        crate::evm_api::CreateResponse::Fail(reason) => {
+            return Err(Escape::Internal(reason));
         }
-        crate::evm_api::CreateResponse::Fail(_) => {}
-    }
+    };
+    info.buy_gas(gas_cost.0)?;
+    info.env.evm_return_data_len = ret_len;
+    info.write_u32(ret_len_ptr, ret_len)?;
+    info.write_slice(contract_ptr, address.as_slice())?;
     Ok(())
 }
 
@@ -288,14 +305,16 @@ pub fn create2<E: EvmApi>(
         .evm_api
         .create2(code, endowment, salt, gas_left)
         .map_err(|e| Escape::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
-    info.write_u32(ret_len_ptr, ret_len)?;
-    match response {
-        crate::evm_api::CreateResponse::Success(addr) => {
-            info.write_slice(contract_ptr, addr.as_slice())?;
+    let address = match response {
+        crate::evm_api::CreateResponse::Success(addr) => addr,
+        crate::evm_api::CreateResponse::Fail(reason) => {
+            return Err(Escape::Internal(reason));
         }
-        crate::evm_api::CreateResponse::Fail(_) => {}
-    }
+    };
+    info.buy_gas(gas_cost.0)?;
+    info.env.evm_return_data_len = ret_len;
+    info.write_u32(ret_len_ptr, ret_len)?;
+    info.write_slice(contract_ptr, address.as_slice())?;
     Ok(())
 }
 
@@ -308,9 +327,12 @@ pub fn read_return_data<E: EvmApi>(
 ) -> Result<u32, Escape> {
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::READ_RETURN_DATA_BASE_INK)?;
-    let data = info.env.evm_api.get_return_data();
-    let max = (data.len() as u32).saturating_sub(offset);
+    let max = info.env.evm_return_data_len.saturating_sub(offset);
     info.pay_for_write(size.min(max))?;
+    if max == 0 {
+        return Ok(0);
+    }
+    let data = info.env.evm_api.get_return_data();
     let offset = offset as usize;
     let size = size as usize;
     let available = data.len().saturating_sub(offset);
@@ -327,7 +349,7 @@ pub fn return_data_size<E: EvmApi>(
 ) -> Result<u32, Escape> {
     let mut info = hostio!(&mut env);
     info.buy_ink(hio::RETURN_DATA_SIZE_BASE_INK)?;
-    Ok(info.env.evm_api.get_return_data().len() as u32)
+    Ok(info.env.evm_return_data_len)
 }
 
 /// Emit a log.
@@ -686,7 +708,10 @@ pub fn pay_for_memory_grow<E: EvmApi>(
     pages: u16,
 ) -> MaybeEscape {
     let mut info = hostio!(&mut env);
-    info.buy_ink(hio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
+    if pages == 0 {
+        info.buy_ink(hio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
+        return Ok(());
+    }
     let gas_cost = info
         .env
         .evm_api
