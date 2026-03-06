@@ -188,16 +188,15 @@ func extractMessagesImpl(
 				}
 			}
 			gotHash := crypto.Keccak256Hash(serialized)
-			if gotHash != batchPostReportBatchHash {
-				continue
+			if gotHash == batchPostReportBatchHash {
+				// Fill in the batch gas stats into the batch posting report.
+				batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
+				legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
+				batchPostReport.Message.LegacyBatchGasCost = &legacyCost
+				// Process next report
+				batchPostReportIndex++
+				batchPostReportBatchHash = common.Hash{}
 			}
-			// Fill in the batch gas stats into the batch posting report.
-			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
-			legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
-			batchPostReport.Message.LegacyBatchGasCost = &legacyCost
-			// Process next report
-			batchPostReportIndex++
-			batchPostReportBatchHash = common.Hash{}
 		}
 		serializedBatches = append(serializedBatches, serialized)
 	}
