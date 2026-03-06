@@ -31,11 +31,10 @@ type State struct {
 	ParentChainPreviousBlockHash       common.Hash
 	BatchCount                         uint64
 	MsgCount                           uint64
-	MsgRoot                            common.Hash
+	LocalMsgAccumulator                 common.Hash
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
 	DelayedMessagesSeenRoot            common.Hash
-	MessageMerklePartials              []common.Hash `rlp:"optional"`
 	DelayedMessageMerklePartials       []common.Hash `rlp:"optional"`
 
 	delayedMessageBacklog *DelayedMessageBacklog // delayedMessageBacklog is initialized once in the Start fsm step of mel runner and is persisted across all future states
@@ -45,11 +44,7 @@ type State struct {
 	// from parent chain. It resets after the current melstate is finished generating
 	// and is reinitialized using appropriate DelayedMessageMerklePartials of the state
 	seenDelayedMsgsAcc *merkleAccumulator.MerkleAccumulator
-	// msgsAcc is MerkleAccumulator that accumulates all the L2 messages extracted. It
-	// resets after the current melstate is finished generating and is reinitialized using
-	// appropriate MessageMerklePartials of the state
-	msgsAcc          *merkleAccumulator.MerkleAccumulator
-	msgPreimagesDest daprovider.PreimagesMap
+	msgPreimagesDest   daprovider.PreimagesMap
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -76,20 +71,12 @@ func (s *State) Clone() *State {
 	delayedMessageTarget := common.Address{}
 	parentChainHash := common.Hash{}
 	parentChainPrevHash := common.Hash{}
-	msgAccRoot := common.Hash{}
 	delayedMsgSeenRoot := common.Hash{}
 	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
 	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
 	copy(parentChainHash[:], s.ParentChainBlockHash[:])
 	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(msgAccRoot[:], s.MsgRoot[:])
 	copy(delayedMsgSeenRoot[:], s.DelayedMessagesSeenRoot[:])
-	var messageMerklePartials []common.Hash
-	for _, msgPartial := range s.MessageMerklePartials {
-		clone := common.Hash{}
-		copy(clone[:], msgPartial[:])
-		messageMerklePartials = append(messageMerklePartials, clone)
-	}
 	var delayedMessageMerklePartials []common.Hash
 	for _, delayedPartial := range s.DelayedMessageMerklePartials {
 		clone := common.Hash{}
@@ -108,45 +95,33 @@ func (s *State) Clone() *State {
 		DelayedMessagePostingTargetAddress: delayedMessageTarget,
 		ParentChainBlockHash:               parentChainHash,
 		ParentChainPreviousBlockHash:       parentChainPrevHash,
-		MsgRoot:                            msgAccRoot,
 		DelayedMessagesSeenRoot:            delayedMsgSeenRoot,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagesSeen:                s.DelayedMessagesSeen,
-		MessageMerklePartials:              messageMerklePartials,
 		DelayedMessageMerklePartials:       delayedMessageMerklePartials,
 		delayedMessageBacklog:              delayedMessageBacklog,
 		readCountFromBacklog:               s.readCountFromBacklog,
-		// we pass along msgPreimagesDest to continue recordng of msg preimages
+		// we pass along msgPreimagesDest to continue recording of msg preimages
 		msgPreimagesDest: s.msgPreimagesDest,
 	}
 }
 
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
-	if s.msgsAcc == nil {
-		// This is very low cost hence better to reconstruct msgsAcc from fresh partals instead of risking using a dirty acc
-		acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(ToPtrSlice(s.MessageMerklePartials))
-		if err != nil {
-			return err
-		}
-		s.msgsAcc = acc
-		if s.msgPreimagesDest != nil {
-			s.msgsAcc.RecordPreimagesTo(s.msgPreimagesDest[arbutil.Keccak256PreimageType])
-			_, err := s.msgsAcc.Root()
-			if err != nil {
-				return err
-			}
-		}
-	}
 	msgBytes, err := rlp.EncodeToBytes(msg)
 	if err != nil {
 		return err
 	}
-	// In recording mode this would also record the message preimages needed for MEL validation
-	if _, err := s.msgsAcc.Append(msg.Hash(), msgBytes...); err != nil {
-		return err
+	msgHash := crypto.Keccak256Hash(msgBytes)
+	preimage := append(s.LocalMsgAccumulator.Bytes(), msgHash.Bytes()...)
+	newAcc := crypto.Keccak256Hash(preimage)
+	if s.msgPreimagesDest != nil {
+		keccakMap := s.msgPreimagesDest[arbutil.Keccak256PreimageType]
+		keccakMap[newAcc] = preimage  // acc chain link
+		keccakMap[msgHash] = msgBytes // message content
 	}
+	s.LocalMsgAccumulator = newAcc
 	return nil
 }
 
@@ -179,12 +154,6 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		}
 	}
 	return nil
-}
-
-func (s *State) GenerateMessageMerklePartialsAndRoot() error {
-	var err error
-	s.MessageMerklePartials, s.MsgRoot, err = getPartialsAndRoot(s.msgsAcc)
-	return err
 }
 
 func (s *State) GenerateDelayedMessagesSeenMerklePartialsAndRoot() error {
@@ -237,8 +206,8 @@ func (s *State) ReorgTo(newState *State) error {
 }
 
 // RecordMsgPreimagesTo initializes the state's msgPreimagesDest to record preimages
-// related to the extracted messages needed for MEL validation into the given preimages map,
-// this will be used to initialize msgsAcc when accumulating messages
+// related to the extracted messages needed for MEL validation into the given preimages map.
+// When set, AccumulateMessage will record accumulator chain and message content preimages.
 func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
 	if preimagesMap == nil {
 		return errors.New("msg preimages recording destination cannot be nil")
