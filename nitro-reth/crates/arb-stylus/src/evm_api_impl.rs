@@ -338,14 +338,14 @@ impl EvmApi for StylusEvmApi {
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         if self.read_only && !value.is_zero() {
             self.return_data = Vec::new();
-            return Ok((0, Gas(0), UserOutcomeKind::Revert));
+            return Ok((0, Gas(0), UserOutcomeKind::Failure));
         }
 
         let do_call = match self.do_call {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
             }
         };
 
@@ -354,7 +354,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &value, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         // 63/64ths rule
@@ -385,7 +385,7 @@ impl EvmApi for StylusEvmApi {
         let outcome = if result.success {
             UserOutcomeKind::Success
         } else {
-            UserOutcomeKind::Revert
+            UserOutcomeKind::Failure
         };
         Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
@@ -401,7 +401,7 @@ impl EvmApi for StylusEvmApi {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
             }
         };
 
@@ -410,7 +410,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -433,7 +433,7 @@ impl EvmApi for StylusEvmApi {
         let outcome = if result.success {
             UserOutcomeKind::Success
         } else {
-            UserOutcomeKind::Revert
+            UserOutcomeKind::Failure
         };
         Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
@@ -449,7 +449,7 @@ impl EvmApi for StylusEvmApi {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Revert));
+                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
             }
         };
 
@@ -457,7 +457,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::OutOfInk));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -480,7 +480,7 @@ impl EvmApi for StylusEvmApi {
         let outcome = if result.success {
             UserOutcomeKind::Success
         } else {
-            UserOutcomeKind::Revert
+            UserOutcomeKind::Failure
         };
         Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
