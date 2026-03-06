@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	"github.com/offchainlabs/nitro/experimental/debugblock"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -137,6 +138,7 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
+	Dangerous                   DangerousConfig        `koanf:"dangerous"`
 
 	forwardingTarget string
 }
@@ -168,6 +170,9 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
+	if err := c.Dangerous.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -191,6 +196,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 type LiveTracingConfig struct {
@@ -206,6 +212,25 @@ var DefaultLiveTracingConfig = LiveTracingConfig{
 func LiveTracingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".tracer-name", DefaultLiveTracingConfig.TracerName, "(experimental) Name of tracer which should record internal VM operations (costly)")
 	f.String(prefix+".json-config", DefaultLiveTracingConfig.JSONConfig, "(experimental) Tracer configuration in JSON format")
+}
+
+type DangerousConfig struct {
+	DebugBlock debugblock.Config `koanf:"debug-block"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	DebugBlock: debugblock.ConfigDefault,
+}
+
+func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	debugblock.ConfigAddOptions(prefix+".debug-block", f)
+}
+
+func (c *DangerousConfig) Validate() error {
+	if err := c.DebugBlock.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var ConfigDefault = Config{
@@ -227,6 +252,7 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+	Dangerous:                   DefaultDangerousConfig,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -437,7 +463,6 @@ func CreateExecutionNode(
 			Authenticated: config.RPCServer.Authenticated,
 		})
 	}
-
 	stack.RegisterAPIs(apis)
 
 	return execNode, nil
