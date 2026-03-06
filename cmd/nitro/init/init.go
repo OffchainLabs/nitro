@@ -4,6 +4,7 @@
 package nitroinit
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -609,7 +610,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 	return executionDB, l2BlockChain, nil
 }
 
-func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, error) {
+func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses, consensusParsedInitMessage *arbostypes.ParsedInitMessage) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, error) {
 	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
 	if err != nil {
 		return nil, nil, nil, err
@@ -628,19 +629,35 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return nil, nil, nil, err
 		}
 
-		var genesisArbOSInit *params.ArbOSInit
+		var genesis *core.Genesis
 
-		initDataReader, chainConfig, genesisArbOSInit, err = GetInit(config, executionDB)
+		initDataReader, chainConfig, genesis, err = GetInit(config, executionDB)
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
 
-		parsedInitMessage, err := GetConsensusParsedInitMsg(ctx, config.Node.ParentChainReader.Enable, chainId, l1Client, &rollupAddrs, chainConfig)
+		executionParsedInitMsg, err := GetExecutionParsedInitMsg(genesis, &config.Init.GenesisOverride, chainConfig)
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
 
-		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, genesisArbOSInit, executionDB, cacheConfig, tracer)
+		parsedInitMessage := executionParsedInitMsg
+		if consensusParsedInitMessage != nil {
+			if err := validateChainConfigCompatibility(consensusParsedInitMessage, chainConfig); err != nil {
+				return executionDB, nil, nil, err
+			}
+			if err := validateParsedInitMessagesMatch(executionParsedInitMsg, consensusParsedInitMessage); err != nil {
+				log.Warn("Execution and consensus parsed init messages do not match", "err", err)
+			}
+			parsedInitMessage = consensusParsedInitMessage
+		}
+
+		var arbosInit *params.ArbOSInit
+		if genesis != nil {
+			arbosInit = genesis.ArbOSInit
+		}
+
+		l2BlockChain, err = getNewBlockchain(parsedInitMessage, config, initDataReader, chainConfig, arbosInit, executionDB, cacheConfig, tracer)
 		if err != nil {
 			return executionDB, nil, nil, err
 		}
@@ -685,12 +702,12 @@ func pruneExecutionDB(ctx context.Context, executionDB ethdb.Database, stack *no
 	return pruning.PruneExecutionDB(ctx, executionDB, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired(), false)
 }
 
-func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransfer.InitDataReader, *params.ChainConfig, *core.Genesis, error) {
 	var (
-		initDataReader   statetransfer.InitDataReader
-		chainConfig      *params.ChainConfig
-		genesisArbOSInit *params.ArbOSInit
-		err              error
+		initDataReader statetransfer.InitDataReader
+		chainConfig    *params.ChainConfig
+		genesis        *core.Genesis
+		err            error
 	)
 
 	if config.Init.ImportFile != "" {
@@ -742,12 +759,11 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		var gen core.Genesis
-		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+		if err := json.Unmarshal(genesisJson, &genesis); err != nil {
 			return nil, nil, nil, err
 		}
 		var accounts []statetransfer.AccountInitializationInfo
-		for address, account := range gen.Alloc {
+		for address, account := range genesis.Alloc {
 			accounts = append(accounts, statetransfer.AccountInitializationInfo{
 				Addr:       address,
 				EthBalance: account.Balance,
@@ -761,11 +777,10 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 			Accounts: accounts,
 		})
-		chainConfig, err = gen.GetConfig()
+		chainConfig, err = genesis.GetConfig()
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		genesisArbOSInit = gen.ArbOSInit
 	} else {
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
@@ -788,7 +803,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 	}
 
-	return initDataReader, chainConfig, genesisArbOSInit, nil
+	return initDataReader, chainConfig, genesis, nil
 }
 
 func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
@@ -1033,56 +1048,139 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 	return nil, nil, nil, nil, nil
 }
 
-func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetParsedInitMsgFromParentChain(ctx context.Context, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses) (*arbostypes.ParsedInitMessage, error) {
 	var parsedInitMessage *arbostypes.ParsedInitMessage
-	if parentChainReaderEnabled {
-		delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
-		if err != nil {
-			return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+	delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
+	}
+	deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
+	delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
+	}
+	var initMessage *arbostypes.L1IncomingMessage
+	for _, msg := range delayedMessages {
+		if msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
+			initMessage = msg.Message
+			break
 		}
-		deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
-		delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
-		}
-		var initMessage *arbostypes.L1IncomingMessage
-		for _, msg := range delayedMessages {
-			if msg.Message.Header.Kind == arbostypes.L1MessageType_Initialize {
-				initMessage = msg.Message
-				break
-			}
-		}
-		if initMessage == nil {
-			return nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
-		}
-		parsedInitMessage, err = initMessage.ParseInitMessage()
-		if err != nil {
-			return nil, err
-		}
-		if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
-			return nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
-		}
-		if parsedInitMessage.ChainConfig != nil {
-			if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
-				return nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
-			}
-		}
-		log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
-	} else {
-		serializedChainConfig, err := json.Marshal(chainConfig)
+	}
+	if initMessage == nil {
+		return nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
+	}
+	parsedInitMessage, err = initMessage.ParseInitMessage()
+	if err != nil {
+		return nil, err
+	}
+	if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
+		return nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
+	}
+	log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
+	return parsedInitMessage, nil
+}
+
+func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.GenesisOverride, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+	if genesis != nil {
+		parsedInitMessage, err := GetParsedInitMsgFromGenesis(genesis)
 		if err != nil {
 			return nil, err
 		}
-		parsedInitMessage = &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedChainConfig,
+		if genesisOverride.IsSet() {
+			overrideMsg, err := GetParsedInitMsgFromGenesisOverride(genesisOverride)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing genesis override: %w", err)
+			}
+			if err := validateParsedInitMessagesMatch(parsedInitMessage, overrideMsg); err != nil {
+				return nil, fmt.Errorf("genesis and genesis override mismatch: %w", err)
+			}
 		}
-		log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
+		return parsedInitMessage, nil
+	}
+	if genesisOverride.IsSet() {
+		return GetParsedInitMsgFromGenesisOverride(genesisOverride)
+	}
+	return GetParsedInitMsgFromChainConfig(chainConfig)
+}
+
+func validateChainConfigCompatibility(parsedInitMessage *arbostypes.ParsedInitMessage, chainConfig *params.ChainConfig) error {
+	if parsedInitMessage.ChainConfig != nil {
+		if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
+			return fmt.Errorf("incompatible chain config read from init message: %w", err)
+		}
+	}
+	return nil
+}
+
+func GetParsedInitMsgFromGenesis(genesis *core.Genesis) (*arbostypes.ParsedInitMessage, error) {
+	chainConfig, err := genesis.GetConfig()
+	if err != nil {
+		return nil, err
 	}
 
+	initialL1BaseFee := arbostypes.DefaultInitialL1BaseFee
+	if genesis.ArbOSInit != nil && genesis.ArbOSInit.InitialL1BaseFee != nil {
+		initialL1BaseFee = genesis.ArbOSInit.InitialL1BaseFee
+	}
+
+	parsedInitMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      initialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: []byte(genesis.SerializedChainConfig),
+	}
 	return parsedInitMessage, nil
+}
+
+func GetParsedInitMsgFromGenesisOverride(genesisOverride *conf.GenesisOverride) (*arbostypes.ParsedInitMessage, error) {
+	var chainConfig params.ChainConfig
+	if err := json.Unmarshal([]byte(genesisOverride.SerializedChainConfig), &chainConfig); err != nil {
+		return nil, fmt.Errorf("failed to deserialize chain config from genesis override: %w", err)
+	}
+
+	initialL1BaseFee := arbostypes.DefaultInitialL1BaseFee
+	fee, err := genesisOverride.ParseInitialL1BaseFee()
+	if err != nil {
+		return nil, err
+	}
+	if fee != nil {
+		initialL1BaseFee = fee
+	}
+
+	return &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      initialL1BaseFee,
+		ChainConfig:           &chainConfig,
+		SerializedChainConfig: []byte(genesisOverride.SerializedChainConfig),
+	}, nil
+}
+
+func GetParsedInitMsgFromChainConfig(chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	parsedInitMessage := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+	return parsedInitMessage, nil
+}
+
+func validateParsedInitMessagesMatch(a, b *arbostypes.ParsedInitMessage) error {
+	if a.ChainId.Cmp(b.ChainId) != 0 {
+		return fmt.Errorf("chain ID mismatch: %v vs %v", a.ChainId, b.ChainId)
+	}
+	if a.InitialL1BaseFee.Cmp(b.InitialL1BaseFee) != 0 {
+		return fmt.Errorf("initial L1 base fee mismatch: %v vs %v", a.InitialL1BaseFee, b.InitialL1BaseFee)
+	}
+	if !bytes.Equal(a.SerializedChainConfig, b.SerializedChainConfig) {
+		return fmt.Errorf("serialized chain config mismatch: %s vs %s", string(a.SerializedChainConfig), string(b.SerializedChainConfig))
+	}
+	return nil
 }
 
 func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisHash common.Hash, sendRoot common.Hash) (*protocol.AssertionCreatedInfo, [32]byte, bool, error) {
