@@ -50,6 +50,32 @@ func TestRustValidationServerAPI(t *testing.T) {
 	}
 }
 
+// TestRustServerValidation proves end-to-end block validation through
+// the Rust validation server. It deploys and calls a Stylus contract,
+// computes the expected GoGlobalState locally, sends the block to the
+// Rust server, and asserts the results match.
+//
+// Prerequisites: make build-validation-server && make build-replay-env
+func TestRustServerValidation(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, false)
+	defer cleanup()
+	ctx := builder.ctx
+
+	rvAddr := startRustValidatorServer(t, ctx)
+
+	pos := deployStylusContractAndCall(t, ctx, builder, auth)
+	expectedState := computeExpectedState(t, ctx, builder, pos)
+	actualState := validateBlockViaRustServer(t, ctx, builder, rvAddr, pos)
+
+	if expectedState != actualState {
+		Fatal(t, "GoGlobalState mismatch",
+			"\n  expected:", expectedState,
+			"\n  actual:  ", actualState)
+	}
+	t.Logf("Validation succeeded: BlockHash=%s Batch=%d PosInBatch=%d",
+		actualState.BlockHash.Hex(), actualState.Batch, actualState.PosInBatch)
+}
+
 func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 	t.Helper()
 	root := projectRoot(t)
