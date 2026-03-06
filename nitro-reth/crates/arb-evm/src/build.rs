@@ -2170,7 +2170,15 @@ where
                 "expected balance delta from deposits/withdrawals"
             );
         }
-        let (evm, mut result) = self.inner.finish()?;
+        // Skip inner.finish() to avoid Ethereum block rewards.
+        // Arbitrum has no block rewards (no PoW/PoS mining).
+        // Directly extract the EVM and receipts instead.
+        let mut result = BlockExecutionResult {
+            receipts: self.inner.receipts,
+            requests: Default::default(),
+            gas_used: self.inner.gas_used,
+            blob_gas_used: self.inner.blob_gas_used,
+        };
         // Set Arbitrum-specific fields on each receipt from tracking vectors.
         for (i, receipt) in result.receipts.iter_mut().enumerate() {
             if let Some(&l1_gas) = self.gas_used_for_l1.get(i) {
@@ -2180,7 +2188,7 @@ where
                 arb_primitives::SetArbReceiptFields::set_multi_gas_used(receipt, multi_gas);
             }
         }
-        Ok((evm, result))
+        Ok((self.inner.evm, result))
     }
 
     fn set_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>) {
