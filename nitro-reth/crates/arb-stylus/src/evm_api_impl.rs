@@ -116,9 +116,11 @@ impl<DB: Database> JournalAccess for revm::Journal<DB> {
             || self.inner.warm_addresses.is_warm(&addr)
     }
 
-    fn add_address_to_access_list(&mut self, _addr: Address) {
-        // In revm, account warmth is tracked by load_account (puts in state map).
-        // The caller's subsequent load_account call handles the transition.
+    fn add_address_to_access_list(&mut self, addr: Address) {
+        // Load the account to mark it warm in the state map.
+        let _ = self
+            .inner
+            .load_account(&mut self.database, addr);
     }
 
     fn is_account_empty(&mut self, addr: Address) -> eyre::Result<bool> {
@@ -530,9 +532,8 @@ impl EvmApi for StylusEvmApi {
         );
 
         self.return_data = result.output.clone();
-        let cost = start_gas.saturating_sub(
-            result.gas_cost.saturating_add(one_64th),
-        );
+        // cost = baseCost + gas_used (Go: startGas - returnGas - one_64th)
+        let cost = base_cost.saturating_add(result.gas_cost);
 
         let response = match result.address {
             Some(addr) => CreateResponse::Success(addr),
@@ -573,8 +574,6 @@ impl EvmApi for StylusEvmApi {
             }
         };
 
-        let start_gas = gas.0;
-
         // CREATE2 base cost = 32000 + keccak cost
         let keccak_words = (code.len() as u64 + 31) / 32;
         let keccak_cost = keccak_words.saturating_mul(6); // Keccak256WordGas
@@ -598,9 +597,8 @@ impl EvmApi for StylusEvmApi {
         );
 
         self.return_data = result.output.clone();
-        let cost = start_gas.saturating_sub(
-            result.gas_cost.saturating_add(one_64th),
-        );
+        // cost = baseCost + gas_used (Go: startGas - returnGas - one_64th)
+        let cost = base_cost.saturating_add(result.gas_cost);
 
         let response = match result.address {
             Some(addr) => CreateResponse::Success(addr),
