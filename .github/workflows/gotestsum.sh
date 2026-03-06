@@ -160,7 +160,7 @@ if [ "$test_database_engine" != "" ]; then
 fi
 
 if [ "$log" == true ]; then
-    cmd="$cmd > >(stdbuf -oL tee -a full.log | grep -vE \"DEBUG|TRACE|INFO|seal\")"
+    cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
 else
     cmd="$cmd | grep -vE \"DEBUG|TRACE|INFO|seal\""
 fi
