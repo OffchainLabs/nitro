@@ -357,10 +357,6 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei() {
             self.arb_ctx.min_base_fee = min_fee;
         }
-        // Read the updated baseFee after StartBlock runs update_pricing_model().
-        if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei() {
-            self.arb_ctx.basefee = base_fee;
-        }
 
         let per_block_gas_limit = arb_state
             .l2_pricing_state
@@ -897,6 +893,12 @@ where
         {
             // Rotate multi-gas fees: copy next-block fees to current-block.
             let _ = arb_state.l2_pricing_state.commit_multi_gas_fees();
+
+            // Read baseFee from L2PricingState BEFORE StartBlock runs.
+            // This value was written by the previous block's StartBlock.
+            if let Ok(base_fee) = arb_state.l2_pricing_state.base_fee_wei() {
+                self.arb_ctx.basefee = base_fee;
+            }
 
             // Read state parameters for the execution context and hooks.
             self.load_state_params(&arb_state);

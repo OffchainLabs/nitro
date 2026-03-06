@@ -71,7 +71,7 @@ where
 
         // Derive send root, send count, l1 block number, and arbos version
         // from the post-execution state.
-        let (arb_info, state_base_fee) = derive_header_info_from_state(state_provider, bundle_state);
+        let arb_info = derive_header_info_from_state(state_provider, bundle_state);
 
         let mix_hash = arb_info
             .as_ref()
@@ -109,7 +109,8 @@ where
             timestamp,
             mix_hash,
             nonce: B64::from(delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: Some(state_base_fee.unwrap_or(evm_env.block_env.basefee() as u64)),
+            base_fee_per_gas: Some(read_base_fee_from_committed_state(state_provider)
+                .unwrap_or(evm_env.block_env.basefee())),
             number: l2_block_number,
             gas_limit: evm_env.block_env.gas_limit(),
             difficulty: U256::from(1),
@@ -132,15 +133,28 @@ where
     }
 }
 
-/// Derive ArbHeaderInfo and baseFee by reading ArbOS state from the post-execution state.
+/// Read the L2 baseFee from committed state (pre-execution).
+///
+/// This reads from state_provider only (not bundle_state), giving the baseFee
+/// written by the previous block's StartBlock — the correct value for the
+/// current block's header.
+fn read_base_fee_from_committed_state(
+    state_provider: &dyn reth_storage_api::StateProvider,
+) -> Option<u64> {
+    let read_slot = |addr: alloy_primitives::Address, slot: B256| -> Option<U256> {
+        state_provider.storage(addr, slot.into()).ok().flatten()
+    };
+    read_l2_base_fee(&read_slot)
+}
+
+/// Derive ArbHeaderInfo by reading ArbOS state from the post-execution state.
 ///
 /// Combines bundle_state (pending changes) with state_provider (committed state)
-/// to read the Merkle accumulator's send root/count, L1 block number, and L2 baseFee.
-/// Returns (header_info, base_fee_per_gas).
+/// to read the Merkle accumulator's send root/count and L1 block number.
 fn derive_header_info_from_state(
     state_provider: &dyn reth_storage_api::StateProvider,
     bundle_state: &revm_database::BundleState,
-) -> (Option<ArbHeaderInfo>, Option<u64>) {
+) -> Option<ArbHeaderInfo> {
     let read_slot = |addr: alloy_primitives::Address, slot: B256| -> Option<U256> {
         // Check bundle state first (post-execution changes).
         if let Some(account) = bundle_state.state.get(&addr) {
@@ -153,7 +167,5 @@ fn derive_header_info_from_state(
         state_provider.storage(addr, slot.into()).ok().flatten()
     };
 
-    let arb_info = derive_arb_header_info(&read_slot);
-    let base_fee = read_l2_base_fee(&read_slot);
-    (arb_info, base_fee)
+    derive_arb_header_info(&read_slot)
 }
