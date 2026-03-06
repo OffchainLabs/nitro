@@ -2160,9 +2160,6 @@ fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
 /// StateDB.AddBalance which modifies in-memory state without triggering
 /// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
-    if amount.is_zero() || address == Address::ZERO {
-        return;
-    }
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
@@ -2185,9 +2182,6 @@ fn mint_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U
 /// StateDB.SubBalance which modifies in-memory state without triggering
 /// EIP-161 cleanup. The net effect is captured by augment_bundle_from_cache.
 fn burn_balance<DB: Database>(state: &mut State<DB>, address: Address, amount: U256) {
-    if amount.is_zero() {
-        return;
-    }
     let _ = state.load_cache_account(address);
     if let Some(cache_acct) = state.cache.accounts.get_mut(&address) {
         if let Some(ref mut acct) = cache_acct.account {
@@ -2227,7 +2221,16 @@ fn transfer_balance<DB: Database>(
     to: Address,
     amount: U256,
 ) {
-    if from == to || amount.is_zero() {
+    if amount.is_zero() {
+        // Zero-amount: still load both accounts into cache so per-tx
+        // EIP-161 cleanup can detect and delete empty accounts.
+        // Go's SubBalance(0) loads `from`, AddBalance(0) loads `to`
+        // and touches it if empty.
+        let _ = state.load_cache_account(from);
+        let _ = state.load_cache_account(to);
+        return;
+    }
+    if from == to {
         return;
     }
     let balance = get_balance(state, from);
@@ -2257,10 +2260,10 @@ fn transfer_balance_with_zombie<DB: Database>(
     arbos_version: u64,
     extra_data: &mut crate::context::ArbitrumExtraData,
 ) {
-    if from == to {
-        return;
-    }
     if amount.is_zero() {
+        // Load both accounts for EIP-161 cleanup.
+        let _ = state.load_cache_account(from);
+        let _ = state.load_cache_account(to);
         // On pre-Stylus, create zombie if the account was self-destructed.
         if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
             let account_exists = get_balance(state, from) > U256::ZERO
@@ -2270,6 +2273,9 @@ fn transfer_balance_with_zombie<DB: Database>(
                 mint_balance(state, from, U256::ZERO);
             }
         }
+        return;
+    }
+    if from == to {
         return;
     }
     let balance = get_balance(state, from);
@@ -2293,7 +2299,12 @@ fn try_transfer_balance<DB: Database>(
     to: Address,
     amount: U256,
 ) -> bool {
-    if amount.is_zero() || from == to {
+    if amount.is_zero() {
+        let _ = state.load_cache_account(from);
+        let _ = state.load_cache_account(to);
+        return true;
+    }
+    if from == to {
         return true;
     }
     if get_balance(state, from) < amount {

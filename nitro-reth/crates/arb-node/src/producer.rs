@@ -491,6 +491,13 @@ where
         // augment_bundle_from_cache won't see them. If they existed pre-block
         // (in the trie), they must appear in the bundle with info=None so
         // HashedPostState deletes them from the trie.
+        //
+        // Skip accounts that were already empty pre-block: they were merely
+        // loaded (read) during execution, not modified. Go's Finalise only
+        // deletes *dirty* empty accounts; loading without modifying does not
+        // dirty an account.
+        let keccak_empty_hash =
+            alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
         for addr in &finalise_deleted {
             if bundle.state.contains_key(addr) {
                 // Already in bundle (e.g. from transitions) — will be handled
@@ -498,7 +505,17 @@ where
                 continue;
             }
             // Check if account existed pre-block in the trie.
-            if let Ok(Some(_)) = state_provider.basic_account(addr) {
+            if let Ok(Some(acct)) = state_provider.basic_account(addr) {
+                let was_originally_empty = acct.balance.is_zero()
+                    && acct.nonce == 0
+                    && acct
+                        .bytecode_hash
+                        .map_or(true, |h| h == keccak_empty_hash);
+                if was_originally_empty {
+                    // Account was empty before and is still empty — was just
+                    // loaded, not modified. Don't delete from trie.
+                    continue;
+                }
                 bundle.state.insert(
                     *addr,
                     revm_database::BundleAccount {

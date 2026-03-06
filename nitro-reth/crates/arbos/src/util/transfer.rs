@@ -13,9 +13,6 @@ pub fn transfer_balance<F>(
 where
     F: FnMut(Option<&Address>, Option<&Address>, U256) -> Result<(), ()>,
 {
-    if amount.is_zero() && from.is_some() && to.is_some() {
-        return Ok(());
-    }
     state_fn(from, to, amount)
 }
 
