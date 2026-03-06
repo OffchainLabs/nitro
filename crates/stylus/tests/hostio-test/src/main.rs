@@ -179,6 +179,7 @@ impl HostioTest {
         Ok(self.vm().msg_sender())
     }
 
+    #[payable]
     fn msg_value(&self) -> Result<U256> {
         Ok(self.vm().msg_value())
     }
@@ -196,11 +197,9 @@ impl HostioTest {
     }
 
     fn tx_ink_price(&self) -> Result<U256> {
-        Ok(self
-            .vm()
-            .ink_to_gas(self.vm().tx_ink_price().into())
-            .try_into()
-            .unwrap())
+        let ink_price = self.vm().tx_ink_price();
+        let gas = u64::from(ink_price) / u64::from(ink_price);
+        Ok(gas.try_into().unwrap())
     }
 
     fn tx_origin(&self) -> Result<Address> {
