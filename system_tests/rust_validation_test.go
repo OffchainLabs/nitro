@@ -77,9 +77,7 @@ func TestRustServerValidation(t *testing.T) {
 	actualState := validateBlockViaRustServer(t, ctx, builder, rvAddr, msgIdx)
 
 	if expectedState != actualState {
-		Fatal(t, "GoGlobalState mismatch",
-			"\n  expected:", expectedState,
-			"\n  actual:  ", actualState)
+		Fatal(t, "GoGlobalState mismatch - expected: ", expectedState, ", actual: ", actualState)
 	}
 	t.Logf("Validation succeeded: BlockHash=%s Batch=%d PosInBatch=%d",
 		actualState.BlockHash.Hex(), actualState.Batch, actualState.PosInBatch)
