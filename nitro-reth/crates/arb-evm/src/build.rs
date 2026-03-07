@@ -1247,6 +1247,32 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
+                            // Go's TransferBalance(escrow, sender, value) always runs.
+                            // When value=0 on pre-Stylus ArbOS, the escrow is a zombie:
+                            // TX 1 (submission) creates escrow via AddBalance(escrow, 0),
+                            // Finalise deletes it (adds to stateObjectsDestruct).
+                            // TX 2 (auto-redeem) calls CreateZombieIfDeleted(escrow) which
+                            // finds it in stateObjectsDestruct → creates zombie (preserved
+                            // by Finalise's isZombie check).
+                            if value.is_zero()
+                                && self.arb_ctx.arbos_version
+                                    < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                            {
+                                let _ = db.load_cache_account(escrow);
+                                if let Some(cached) = db.cache.accounts.get_mut(&escrow) {
+                                    if cached.account.is_none() {
+                                        cached.account = Some(revm_database::PlainAccount {
+                                            info: revm_state::AccountInfo::default(),
+                                            storage: Default::default(),
+                                        });
+                                        cached.status =
+                                            revm_database::AccountStatus::InMemoryChange;
+                                    }
+                                }
+                                self.zombie_accounts.insert(escrow);
+                                self.touched_accounts.insert(escrow);
+                            }
+
                             if !value.is_zero()
                                 && !try_transfer_balance(db, escrow, sender, value)
                             {
