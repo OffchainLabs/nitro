@@ -1247,31 +1247,6 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
-                            // TransferBalance(escrow, sender, value) is always called,
-                            // even when value=0. SubBalance calls getOrNewStateObject
-                            // which creates the escrow account in the stateDB (making
-                            // it dirty). With value=0 and pre-Stylus ArbOS, the escrow
-                            // becomes a zombie: an empty account preserved in the trie.
-                            // We must load/create it in cache so it appears in the bundle.
-                            if value.is_zero()
-                                && self.arb_ctx.arbos_version
-                                    < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
-                            {
-                                let _ = db.load_cache_account(escrow);
-                                if let Some(cached) = db.cache.accounts.get_mut(&escrow) {
-                                    if cached.account.is_none() {
-                                        cached.account = Some(revm_database::PlainAccount {
-                                            info: revm_state::AccountInfo::default(),
-                                            storage: Default::default(),
-                                        });
-                                        cached.status =
-                                            revm_database::AccountStatus::InMemoryChange;
-                                    }
-                                }
-                                self.zombie_accounts.insert(escrow);
-                                self.touched_accounts.insert(escrow);
-                            }
-
                             if !value.is_zero()
                                 && !try_transfer_balance(db, escrow, sender, value)
                             {
