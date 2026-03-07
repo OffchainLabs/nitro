@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,9 +35,11 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/live"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
@@ -58,6 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
@@ -163,6 +167,15 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
+	// By default both execution and consensus are run as part of same process
+	executionNodeEnabled := true
+	consensusNodeEnabled := true
+
+	if nodeConfig.Execution.RPCServer.Enable || nodeConfig.Node.RPCServer.Enable {
+		executionNodeEnabled = nodeConfig.Execution.RPCServer.Enable && nodeConfig.Execution.ConsensusRPCClient.URL != ""
+		consensusNodeEnabled = nodeConfig.Node.RPCServer.Enable && nodeConfig.Node.ExecutionRPCClient.URL != ""
+	}
+
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
@@ -192,10 +205,14 @@ func mainImpl() int {
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
-	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
-		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
-		return 1
+
+	if consensusNodeEnabled {
+		if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+			log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+			return 1
+		}
 	}
+
 	if nodeConfig.Execution.Sequencer.Enable && !nodeConfig.Execution.Sequencer.Timeboost.Enable && nodeConfig.Node.TransactionStreamer.TrackBlockMetadataFrom != 0 {
 		log.Warn("Sequencer node's track-block-metadata-from is set but timeboost is not enabled")
 	}
@@ -203,56 +220,60 @@ func mainImpl() int {
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
-	// If sequencer and signing is enabled or batchposter is enabled without
-	// external signing sequencer will need a key.
-	sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
-		(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
-	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
-		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
-	defaultL1WalletConfig := conf.DefaultL1WalletConfig
-	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	if consensusNodeEnabled {
+		// If sequencer and signing is enabled or batchposter is enabled without
+		// external signing sequencer will need a key.
+		sequencerNeedsKey := (nodeConfig.Node.Sequencer && nodeConfig.Node.Feed.Output.Signed) ||
+			(nodeConfig.Node.BatchPoster.Enable && (nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "" || nodeConfig.Node.DA.AnyTrust.Enable))
+		validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
+			(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
-	nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
-	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultL1WalletConfig := conf.DefaultL1WalletConfig
+		defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
-	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
-	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		nodeConfig.Node.Staker.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultValidatorL1WalletConfig := legacystaker.DefaultValidatorL1WalletConfig
+		defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			pflag.Usage()
-			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
-		}
-		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-			return 0
-		}
-	}
-	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-		if err != nil {
-			pflag.Usage()
-			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
-		}
-		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-			return 0
-		}
-	}
+		nodeConfig.Node.BatchPoster.ParentChainWallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+		defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
+		defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	if nodeConfig.Node.Staker.Enable {
-		if !nodeConfig.Node.ParentChainReader.Enable {
-			pflag.Usage()
-			log.Crit("validator must have the parent chain reader enabled")
+		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				pflag.Usage()
+				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
+			}
+			if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+				return 0
+			}
 		}
-		strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
-		if err != nil {
-			log.Crit("couldn't parse staker strategy", "err", err)
+
+		if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				pflag.Usage()
+				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
+			}
+			if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+				return 0
+			}
 		}
-		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
-			nodeConfig.Node.BlockValidator.Enable = true
+
+		if nodeConfig.Node.Staker.Enable {
+			if !nodeConfig.Node.ParentChainReader.Enable {
+				pflag.Usage()
+				log.Crit("validator must have the parent chain reader enabled")
+			}
+			strategy, err := legacystaker.ParseStrategy(nodeConfig.Node.Staker.Strategy)
+			if err != nil {
+				log.Crit("couldn't parse staker strategy", "err", err)
+			}
+			if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+				nodeConfig.Node.BlockValidator.Enable = true
+			}
 		}
 	}
 
@@ -297,16 +318,18 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
+		// TODO: should rollupAddrs be created for consensus or execution node? It's used in both
 		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
+
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
 		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
 		if err != nil {
 			log.Crit("failed to get L1 headerreader", "err", err)
 		}
-		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
+		if consensusNodeEnabled && !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
 			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
 				pflag.Usage()
 				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
@@ -319,7 +342,7 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
+	if consensusNodeEnabled && nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			pflag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
@@ -361,7 +384,7 @@ func mainImpl() int {
 	}
 
 	var sameProcessValidationNodeEnabled bool
-	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
+	if consensusNodeEnabled && executionNodeEnabled && nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
 		sameProcessValidationNodeEnabled = true
 		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	}
@@ -404,7 +427,7 @@ func mainImpl() int {
 	}()
 
 	// Check that node is compatible with on-chain WASM module root on startup and before any ArbOS upgrades take effect to prevent divergences
-	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
+	if consensusNodeEnabled && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
 		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
 			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
@@ -422,27 +445,33 @@ func mainImpl() int {
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
 	}
 
-	if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
-		log.Error("error populating stylus target cache", "err", err)
-		return 1
-	}
+	var executionDB ethdb.Database
+	var initDataReader statetransfer.InitDataReader
+	var l2BlockChain *core.BlockChain
 
-	executionDB, initDataReader, l2BlockChain, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
-	if l2BlockChain != nil {
-		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
-	}
-	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
-	if err != nil {
-		pflag.Usage()
-		log.Error("error initializing database", "err", err)
-		return 1
-	}
+	if executionNodeEnabled {
+		if err := gethexec.PopulateStylusTargetCache(&nodeConfig.Execution.StylusTarget); err != nil {
+			log.Error("error populating stylus target cache", "err", err)
+			return 1
+		}
 
-	if initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
-		if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
-			log.Error("error trying to validate genesis assertion", "err", err)
-			if !nodeConfig.Init.Force {
-				return 1
+		executionDB, initDataReader, l2BlockChain, err = nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+		if l2BlockChain != nil {
+			deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
+		}
+		deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
+		if err != nil {
+			pflag.Usage()
+			log.Error("error initializing database", "err", err)
+			return 1
+		}
+
+		if initDataReader != nil && nodeConfig.Init.ValidateGenesisAssertion {
+			if err = nitroinit.GetAndValidateGenesisAssertion(ctx, l2BlockChain, initDataReader, &rollupAddrs, l1Client); err != nil {
+				log.Error("error trying to validate genesis assertion", "err", err)
+				if !nodeConfig.Init.Force {
+					return 1
+				}
 			}
 		}
 	}
@@ -455,7 +484,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
+	if executionNodeEnabled && nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
 		if !nodeConfig.Init.ThenQuit {
 			log.Error("blocks-reexecutor cannot be enabled without --init.then-quit")
 			return 1
@@ -484,12 +513,8 @@ func mainImpl() int {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
 	}
-	if err := nitroinit.ValidateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
-		log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
-		return 1
-	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
+	if executionNodeEnabled && l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
 		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
@@ -521,7 +546,8 @@ func mainImpl() int {
 
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
-	if nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
+
+	if executionNodeEnabled && nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
 		execNode, err = gethexec.CreateExecutionNode(
 			ctx,
 			stack,
@@ -537,51 +563,67 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	consensusNode, err = arbnode.CreateConsensusNode(
-		ctx,
-		stack,
-		execNode,
-		consensusDB,
-		&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-		l2BlockChain.Config(),
-		l1Client,
-		&rollupAddrs,
-		l1TransactionOptsValidator,
-		l1TransactionOptsBatchPoster,
-		dataSigner,
-		fatalErrChan,
-		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
-		blobReader,
-		wasmModuleRoot,
-	)
-	if err != nil {
-		log.Error("failed to create consensus node", "err", err)
-		return 1
-	}
 
-	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
-	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
 	seqInboxMaxDataSize := 117964
-	if nodeConfig.Node.ParentChainReader.Enable {
-		seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+
+	if consensusNodeEnabled {
+		// TODO: where will chainConfig come from in the case (consensusNodeEnabled && !executionNodeEnabled) ?
+		var chainConfig *params.ChainConfig
+		if !executionNodeEnabled && l2BlockChain == nil {
+			genesisBlockNr := uint64(0)
+			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, genesisBlockNr, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
+			if err != nil {
+				log.Error("failed to get chainConfig for consensus node", "err", err)
+				return 1
+			}
+		} else {
+			chainConfig = l2BlockChain.Config()
+		}
+		consensusNode, err = arbnode.CreateConsensusNode(
+			ctx,
+			stack,
+			execNode,
+			consensusDB,
+			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
+			chainConfig,
+			l1Client,
+			&rollupAddrs,
+			l1TransactionOptsValidator,
+			l1TransactionOptsBatchPoster,
+			dataSigner,
+			fatalErrChan,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+			blobReader,
+			wasmModuleRoot,
+		)
 		if err != nil {
-			log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+			log.Error("failed to create consensus node", "err", err)
 			return 1
 		}
-		res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
-		if err == nil {
-			seqInboxMaxDataSize = int(res.Int64())
-		} else if !headerreader.IsExecutionReverted(err) {
-			log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
-			return 1
+
+		// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
+		// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.
+		if nodeConfig.Node.ParentChainReader.Enable {
+			seqInbox, err := bridgegen.NewSequencerInbox(rollupAddrs.SequencerInbox, l1Client)
+			if err != nil {
+				log.Error("failed to create sequencer inbox for validating sequencer's MaxTxDataSize and batchposter's MaxSize", "err", err)
+				return 1
+			}
+			res, err := seqInbox.MaxDataSize(&bind.CallOpts{Context: ctx})
+			if err == nil {
+				seqInboxMaxDataSize = int(res.Int64())
+			} else if !headerreader.IsExecutionReverted(err) {
+				log.Error("error fetching MaxDataSize from sequencer inbox", "err", err)
+				return 1
+			}
 		}
-	}
-	// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
-	// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
-	if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
-		if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
-			log.Error("batchPoster's MaxCalldataBatchSize is too large")
-			return 1
+		// If batchPoster is enabled, validate MaxCalldataBatchSize to be at least 10kB below the sequencer inbox's maxDataSize if AnyTrust DA is not enabled.
+		// The 10kB gap is because its possible for the batch poster to exceed its MaxCalldataBatchSize limit and produce batches of slightly larger size.
+		if nodeConfig.Node.BatchPoster.Enable && !nodeConfig.Node.DA.AnyTrust.Enable {
+			if nodeConfig.Node.BatchPoster.MaxCalldataBatchSize > seqInboxMaxDataSize-10000 {
+				log.Error("batchPoster's MaxCalldataBatchSize is too large")
+				return 1
+			}
 		}
 	}
 
@@ -598,31 +640,33 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig.SetOnReloadHook(func(oldCfg *config.NodeConfig, newCfg *config.NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir)); err != nil {
-			return fmt.Errorf("failed to re-init logging: %w", err)
-		}
-		return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
-	})
+	if consensusNodeEnabled {
+		liveNodeConfig.SetOnReloadHook(func(oldCfg *config.NodeConfig, newCfg *config.NodeConfig) error {
+			if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+				return fmt.Errorf("failed to re-init logging: %w", err)
+			}
+			return consensusNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
+		})
 
-	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
-		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
-		// we should create our own fake init message.
-		count, err := consensusNode.TxStreamer.GetMessageCount()
-		if err != nil {
-			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
-			count = 0
-		}
-		if count == 0 {
-			err = consensusNode.TxStreamer.AddFakeInitMessage()
+		if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
+			// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
+			// we should create our own fake init message.
+			count, err := consensusNode.TxStreamer.GetMessageCount()
 			if err != nil {
-				panic(err)
+				log.Warn("Getmessagecount failed. Assuming new database", "err", err)
+				count = 0
+			}
+			if count == 0 {
+				err = consensusNode.TxStreamer.AddFakeInitMessage()
+				if err != nil {
+					panic(err)
+				}
 			}
 		}
 	}
 
 	// Before starting the node, wait until the transaction that deployed rollup is finalized
-	if nodeConfig.EnsureRollupDeployment &&
+	if consensusNodeEnabled && nodeConfig.EnsureRollupDeployment &&
 		nodeConfig.Node.ParentChainReader.Enable &&
 		rollupAddrs.DeployedAt > 0 {
 		currentFinalized, err := l1Reader.LatestFinalizedBlockNr(ctx)
@@ -664,11 +708,13 @@ func mainImpl() int {
 		}
 	}
 
-	gqlConf := nodeConfig.GraphQL
-	if execNode != nil && gqlConf.Enable {
-		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
-			log.Error("failed to register the GraphQL service", "err", err)
-			return 1
+	if executionNodeEnabled {
+		gqlConf := nodeConfig.GraphQL
+		if execNode != nil && gqlConf.Enable {
+			if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+				log.Error("failed to register the GraphQL service", "err", err)
+				return 1
+			}
 		}
 	}
 
@@ -681,7 +727,15 @@ func mainImpl() int {
 			defer valNode.Stop()
 		}
 	}
-	if err == nil {
+	if (executionNodeEnabled || consensusNodeEnabled) && err == nil {
+		if executionNodeEnabled && execNode == nil {
+			log.Error("execution node is enabled but execNode is nil")
+			return 1
+		}
+		if consensusNodeEnabled && consensusNode == nil {
+			log.Error("consensus node is enabled but consensusNode is nil")
+			return 1
+		}
 		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
 			log.Error("Error initializing and starting execution and consensus", "err", err)
@@ -703,7 +757,7 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	if err == nil && nodeConfig.Init.IsReorgRequested() {
+	if consensusNodeEnabled && err == nil && nodeConfig.Init.IsReorgRequested() {
 		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
@@ -712,7 +766,7 @@ func mainImpl() int {
 		}
 	}
 
-	if execNode != nil {
+	if executionNodeEnabled && execNode != nil {
 		err = execNode.InitializeTimeboost(ctx, chainInfo.ChainConfig)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error initializing timeboost: %w", err)

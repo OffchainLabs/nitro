@@ -143,6 +143,10 @@ func (c *NodeConfig) Validate() error {
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
+
+	if c.Execution.RPCServer.Enable && c.Node.RPCServer.Enable {
+		return errors.New("when on rpc mode a node can either be consensus or execution, not both")
+	}
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}
@@ -169,8 +173,10 @@ func (c *NodeConfig) Validate() error {
 		if c.Node.Sequencer || c.Node.BatchPoster.Enable {
 			return errors.New("sequencing and batch-posting are currently not supported when connecting to an execution client over RPC")
 		}
-	} else if c.Execution.ConsensusRPCClient.URL != "" {
-		return errors.New("consensus is connecting directly to execution but execution is connecting to consensus over an rpc- invalid case")
+	} else if c.Execution.RPCServer.Enable && c.Execution.ConsensusRPCClient.URL == "" {
+		return errors.New("communication over rpc is enabled on execution but consensus RPC client is not set")
+	} else if c.Node.RPCServer.Enable && c.Node.ExecutionRPCClient.URL == "" {
+		return errors.New("communication over rpc is enabled on consensus but execution RPC client is not set")
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
