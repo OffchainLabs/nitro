@@ -10,6 +10,8 @@ use crate::{
 pub const HOSTIO_INK: Ink = Ink(8400);
 
 /// For hostios that include pointers.
+///
+/// cbindgen:ignore
 pub const PTR_INK: Ink = Ink(13440).sub(HOSTIO_INK);
 
 /// For hostios that involve an API cost.
@@ -25,6 +27,8 @@ pub const MUL_MOD_INK: Ink = Ink(24100);
 pub const ADD_MOD_INK: Ink = Ink(21000);
 
 /// Defines the price of each Hostio.
+///
+/// cbindgen:ignore
 pub mod hostio {
     pub use super::*;
 

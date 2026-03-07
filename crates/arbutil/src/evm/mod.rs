@@ -22,7 +22,9 @@ pub const COLD_SLOAD_GAS: Gas = Gas(2100);
 pub const WARM_SLOAD_GAS: Gas = Gas(100);
 
 // params.WarmStorageReadCostEIP2929 (see enable1153 in jump_table.go)
+/// cbindgen:ignore
 pub const TLOAD_GAS: Gas = WARM_SLOAD_GAS;
+/// cbindgen:ignore
 pub const TSTORE_GAS: Gas = WARM_SLOAD_GAS;
 
 // params.LogGas and params.LogDataGas
@@ -40,39 +42,51 @@ pub const KECCAK_WORD_GAS: Gas = Gas(6);
 pub const GAS_QUICK_STEP: Gas = Gas(2);
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const ADDRESS_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see eips.go)
+/// cbindgen:ignore
 pub const BASEFEE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see eips.go)
+/// cbindgen:ignore
 pub const CHAINID_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const COINBASE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const GASLIMIT_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const NUMBER_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const TIMESTAMP_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const GASLEFT_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const CALLER_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const CALLVALUE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const GASPRICE_GAS: Gas = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see jump_table.go)
+/// cbindgen:ignore
 pub const ORIGIN_GAS: Gas = GAS_QUICK_STEP;
 
 pub const ARBOS_VERSION_STYLUS_CHARGING_FIXES: u64 = 32;

@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{BlockType, Operator};
 
+/// cbindgen:ignore
 pub const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
 
 #[derive(Debug)]

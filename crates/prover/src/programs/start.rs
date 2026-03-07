@@ -31,6 +31,7 @@ pub struct StartMover {
 }
 
 impl StartMover {
+    /// cbindgen:ignore
     pub const NAME: &'static str = "stylus_start";
 
     pub fn new(debug: bool) -> Self {

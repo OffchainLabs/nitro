@@ -17,6 +17,7 @@ use wasmer_types::{
 };
 use wasmparser::{BlockType, Operator, ValType};
 
+/// cbindgen:ignore
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.

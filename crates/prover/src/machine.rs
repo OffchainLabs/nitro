@@ -1221,6 +1221,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
+    /// cbindgen:ignore
     pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
 
     pub fn from_paths(

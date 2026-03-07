@@ -1816,8 +1816,10 @@ const MODULE_HASHES: &[Bytes32; 64] = &[
     ]),
 ];
 
+/// cbindgen:ignore
 pub const EMPTY_HASH: &Bytes32 = &Bytes32([0; 32]);
 
+/// cbindgen:ignore
 pub const ZERO_HASHES: &[&[Bytes32; 64]; 7] = &[
     VALUE_HASHES,
     FUNCTION_HASHES,
