@@ -710,13 +710,9 @@ fn refund_with_pool<F>(
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
 {
     let to_refund_addr = take_funds(max_refund, amount);
-    if to_refund_addr > U256::ZERO {
-        let _ = transfer_fn(refund_from, refund_to, to_refund_addr);
-    }
+    let _ = transfer_fn(refund_from, refund_to, to_refund_addr);
     let remainder = amount.saturating_sub(to_refund_addr);
-    if remainder > U256::ZERO {
-        let _ = transfer_fn(refund_from, from, remainder);
-    }
+    let _ = transfer_fn(refund_from, from, remainder);
 }
 
 /// Compute the gas payment split between infra and network fee accounts.

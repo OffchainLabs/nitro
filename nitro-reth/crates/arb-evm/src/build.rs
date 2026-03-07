@@ -554,58 +554,54 @@ where
         }
 
         // 4. Refund excess submission fee.
-        if !fees.submission_fee_refund.is_zero() {
-            transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
-            self.touched_accounts.insert(sender);
-            self.touched_accounts.insert(info.fee_refund_addr);
-        }
+        transfer_balance(db, sender, info.fee_refund_addr, fees.submission_fee_refund);
+        self.touched_accounts.insert(sender);
+        self.touched_accounts.insert(info.fee_refund_addr);
 
         // 5. Move call value into escrow. If sender has insufficient funds
         //    (e.g. deposit didn't cover retry_value after fee deductions),
         //    refund the submission fee and end the transaction.
-        if !info.retry_value.is_zero() {
-            if !try_transfer_balance(db, sender, fees.escrow, info.retry_value) {
-                self.touched_accounts.insert(sender);
-                self.touched_accounts.insert(fees.escrow);
-                // Refund submission fee from network account back to sender.
-                transfer_balance(
-                    db, self.arb_ctx.network_fee_account, sender, fees.submission_fee,
-                );
-                self.touched_accounts.insert(self.arb_ctx.network_fee_account);
-                // Refund withheld portion of submission fee to fee refund address.
-                transfer_balance(
-                    db, sender, info.fee_refund_addr, fees.withheld_submission_fee,
-                );
-                self.touched_accounts.insert(info.fee_refund_addr);
-
-                self.pending_tx = Some(PendingArbTx {
-                    sender,
-                    tx_gas_limit: user_gas,
-                    arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
-                    has_poster_costs: false,
-                    poster_gas: 0,
-                    evm_gas_used: 0,
-    
-                    charged_multi_gas: MultiGas::default(),
-                    gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
-                    retry_context: None,
-                });
-
-                return Ok(EthTxResult {
-                    result: revm::context::result::ResultAndState {
-                        result: ExecutionResult::Revert {
-                            gas_used: 0,
-                            output: alloy_primitives::Bytes::new(),
-                        },
-                        state: Default::default(),
-                    },
-                    blob_gas_used: 0,
-                    tx_type,
-                });
-            }
+        if !try_transfer_balance(db, sender, fees.escrow, info.retry_value) {
             self.touched_accounts.insert(sender);
             self.touched_accounts.insert(fees.escrow);
+            // Refund submission fee from network account back to sender.
+            transfer_balance(
+                db, self.arb_ctx.network_fee_account, sender, fees.submission_fee,
+            );
+            self.touched_accounts.insert(self.arb_ctx.network_fee_account);
+            // Refund withheld portion of submission fee to fee refund address.
+            transfer_balance(
+                db, sender, info.fee_refund_addr, fees.withheld_submission_fee,
+            );
+            self.touched_accounts.insert(info.fee_refund_addr);
+
+            self.pending_tx = Some(PendingArbTx {
+                sender,
+                tx_gas_limit: user_gas,
+                arb_tx_type: Some(ArbTxType::ArbitrumSubmitRetryableTx),
+                has_poster_costs: false,
+                poster_gas: 0,
+                evm_gas_used: 0,
+
+                charged_multi_gas: MultiGas::default(),
+                gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
+                retry_context: None,
+            });
+
+            return Ok(EthTxResult {
+                result: revm::context::result::ResultAndState {
+                    result: ExecutionResult::Revert {
+                        gas_used: 0,
+                        output: alloy_primitives::Bytes::new(),
+                    },
+                    state: Default::default(),
+                },
+                blob_gas_used: 0,
+                tx_type,
+            });
         }
+        self.touched_accounts.insert(sender);
+        self.touched_accounts.insert(fees.escrow);
 
         // 6. Create retryable ticket.
         let state_ptr: *mut State<DB> = db as *mut State<DB>;
@@ -639,11 +635,9 @@ where
         // 7. Handle gas fees if user can pay.
         if fees.can_pay_for_gas {
             // Pay infra fee.
-            if !fees.infra_cost.is_zero() {
-                transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
-                self.touched_accounts.insert(sender);
-                self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
-            }
+            transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
             // Pay network fee.
             if !fees.network_cost.is_zero() {
                 transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.network_cost);
@@ -651,11 +645,9 @@ where
                 self.touched_accounts.insert(self.arb_ctx.network_fee_account);
             }
             // Gas price refund.
-            if !fees.gas_price_refund.is_zero() {
-                transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
-                self.touched_accounts.insert(sender);
-                self.touched_accounts.insert(info.fee_refund_addr);
-            }
+            transfer_balance(db, sender, info.fee_refund_addr, fees.gas_price_refund);
+            self.touched_accounts.insert(sender);
+            self.touched_accounts.insert(info.fee_refund_addr);
 
             // For filtered retryables, skip auto-redeem scheduling.
             tracing::debug!(
@@ -1037,9 +1029,22 @@ where
 
                     let touched_ptr = &mut self.touched_accounts
                         as *mut std::collections::HashSet<Address>;
+                    let zombie_ptr = &mut self.zombie_accounts
+                        as *mut std::collections::HashSet<Address>;
+                    let finalise_ptr = &self.finalise_deleted
+                        as *const std::collections::HashSet<Address>;
+                    let arbos_ver = self.arb_ctx.arbos_version;
                     let mut do_transfer = |from: Address, to: Address, amount: U256| {
                         // SAFETY: state_ptr is valid for the lifetime of this block.
                         unsafe {
+                            if amount.is_zero()
+                                && arbos_ver < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                            {
+                                create_zombie_if_deleted(
+                                    &mut *state_ptr, from, &*finalise_ptr,
+                                    &mut *zombie_ptr, &mut *touched_ptr,
+                                );
+                            }
                             transfer_balance(&mut *state_ptr, from, to, amount);
                             (*touched_ptr).insert(from);
                             (*touched_ptr).insert(to);
@@ -1247,35 +1252,20 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
-                            // Go's TransferBalance(escrow, sender, value) always runs.
-                            // When value=0 on pre-Stylus ArbOS, the escrow is a zombie:
-                            // TX 1 (submission) creates escrow via AddBalance(escrow, 0),
-                            // Finalise deletes it (adds to stateObjectsDestruct).
-                            // TX 2 (auto-redeem) calls CreateZombieIfDeleted(escrow) which
-                            // finds it in stateObjectsDestruct → creates zombie (preserved
-                            // by Finalise's isZombie check).
+                            // On pre-Stylus ArbOS, Go's TransferBalance calls
+                            // CreateZombieIfDeleted(from) before the transfer.
                             if value.is_zero()
                                 && self.arb_ctx.arbos_version
                                     < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
                             {
-                                let _ = db.load_cache_account(escrow);
-                                if let Some(cached) = db.cache.accounts.get_mut(&escrow) {
-                                    if cached.account.is_none() {
-                                        cached.account = Some(revm_database::PlainAccount {
-                                            info: revm_state::AccountInfo::default(),
-                                            storage: Default::default(),
-                                        });
-                                        cached.status =
-                                            revm_database::AccountStatus::InMemoryChange;
-                                    }
-                                }
-                                self.zombie_accounts.insert(escrow);
-                                self.touched_accounts.insert(escrow);
+                                create_zombie_if_deleted(
+                                    db, escrow, &self.finalise_deleted,
+                                    &mut self.zombie_accounts,
+                                    &mut self.touched_accounts,
+                                );
                             }
 
-                            if !value.is_zero()
-                                && !try_transfer_balance(db, escrow, sender, value)
-                            {
+                            if !try_transfer_balance(db, escrow, sender, value) {
                                 // Escrow has insufficient funds — abort the retry tx.
                                 let tx_type = recovered.tx().tx_type();
                                 self.pending_tx = Some(PendingArbTx {
@@ -1911,6 +1901,11 @@ where
                 let state_ptr: *mut State<DB> = db as *mut State<DB>;
                 let touched_ptr = &mut self.touched_accounts
                     as *mut std::collections::HashSet<Address>;
+                let zombie_ptr = &mut self.zombie_accounts
+                    as *mut std::collections::HashSet<Address>;
+                let finalise_ptr = &self.finalise_deleted
+                    as *const std::collections::HashSet<Address>;
+                let arbos_ver = self.arb_ctx.arbos_version;
 
                 // Compute multi-dimensional cost for refund (ArbOS v60+).
                 let multi_dimensional_cost = if self.arb_ctx.arbos_version
@@ -1955,6 +1950,14 @@ where
                         },
                         |from, to, amount| {
                             unsafe {
+                                if amount.is_zero()
+                                    && arbos_ver < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                                {
+                                    create_zombie_if_deleted(
+                                        &mut *state_ptr, from, &*finalise_ptr,
+                                        &mut *zombie_ptr, &mut *touched_ptr,
+                                    );
+                                }
                                 transfer_balance(&mut *state_ptr, from, to, amount);
                                 (*touched_ptr).insert(from);
                                 (*touched_ptr).insert(to);
@@ -1980,6 +1983,14 @@ where
                                 retry_ctx.ticket_id,
                                 |from, to, amount| {
                                     unsafe {
+                                        if amount.is_zero()
+                                            && arbos_ver < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                                        {
+                                            create_zombie_if_deleted(
+                                                &mut *state_ptr, from, &*finalise_ptr,
+                                                &mut *zombie_ptr, &mut *touched_ptr,
+                                            );
+                                        }
                                         transfer_balance(&mut *state_ptr, from, to, amount);
                                         (*touched_ptr).insert(from);
                                         (*touched_ptr).insert(to);
@@ -1991,11 +2002,17 @@ where
                                 },
                             );
                         }
-                    } else if result.should_return_value_to_escrow
-                        && !retry_ctx.call_value.is_zero()
-                    {
+                    } else if result.should_return_value_to_escrow {
                         // Failed retry: return call value to escrow.
                         unsafe {
+                            if retry_ctx.call_value.is_zero()
+                                && arbos_ver < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
+                            {
+                                create_zombie_if_deleted(
+                                    &mut *state_ptr, pending.sender, &*finalise_ptr,
+                                    &mut *zombie_ptr, &mut *touched_ptr,
+                                );
+                            }
                             transfer_balance(
                                 &mut *state_ptr,
                                 pending.sender,
@@ -2311,9 +2328,8 @@ fn transfer_balance<DB: Database>(
     amount: U256,
 ) {
     if amount.is_zero() {
-        // Load both accounts so per-tx finalise can detect empty accounts.
-        let _ = state.load_cache_account(from);
-        let _ = state.load_cache_account(to);
+        ensure_account_exists(state, from);
+        ensure_account_exists(state, to);
         return;
     }
     if from == to {
@@ -2332,44 +2348,45 @@ fn transfer_balance<DB: Database>(
     mint_balance(state, to, amount);
 }
 
-#[allow(dead_code)]
-/// Transfer balance with zombie account creation for pre-Stylus ArbOS.
-fn transfer_balance_with_zombie<DB: Database>(
-    state: &mut State<DB>,
-    from: Address,
-    to: Address,
-    amount: U256,
-    arbos_version: u64,
-    extra_data: &mut crate::context::ArbitrumExtraData,
-) {
-    if amount.is_zero() {
-        let _ = state.load_cache_account(from);
-        let _ = state.load_cache_account(to);
-        // On pre-Stylus, create zombie if the account was self-destructed.
-        if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
-            let account_exists = get_balance(state, from) > U256::ZERO
-                || state.cache.accounts.contains_key(&from);
-            if !account_exists {
-                extra_data.create_zombie(from);
-                mint_balance(state, from, U256::ZERO);
-            }
+/// Ensure an account exists in the state cache, creating an empty one if needed.
+/// Matches Go's `getOrNewStateObject` — guarantees the account is dirty in cache.
+fn ensure_account_exists<DB: Database>(state: &mut State<DB>, addr: Address) {
+    let _ = state.load_cache_account(addr);
+    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+        if cached.account.is_none() {
+            cached.account = Some(revm_database::states::plain_account::PlainAccount {
+                info: revm_state::AccountInfo::default(),
+                storage: Default::default(),
+            });
+            cached.status = revm_database::AccountStatus::InMemoryChange;
         }
-        return;
     }
-    if from == to {
-        return;
+}
+
+/// Re-create an empty account that was deleted by per-tx Finalise.
+/// Matches Go's `CreateZombieIfDeleted`: if `addr` was removed by Finalise
+/// (present in `finalise_deleted`) and no longer in cache, create a zombie.
+fn create_zombie_if_deleted<DB: Database>(
+    state: &mut State<DB>,
+    addr: Address,
+    finalise_deleted: &std::collections::HashSet<Address>,
+    zombie_accounts: &mut std::collections::HashSet<Address>,
+    touched_accounts: &mut std::collections::HashSet<Address>,
+) {
+    let _ = state.load_cache_account(addr);
+    let account_missing = state.cache.accounts.get(&addr)
+        .map_or(true, |c| c.account.is_none());
+    if account_missing && finalise_deleted.contains(&addr) {
+        if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+            cached.account = Some(revm_database::states::plain_account::PlainAccount {
+                info: revm_state::AccountInfo::default(),
+                storage: Default::default(),
+            });
+            cached.status = revm_database::AccountStatus::InMemoryChange;
+        }
+        zombie_accounts.insert(addr);
+        touched_accounts.insert(addr);
     }
-    let balance = get_balance(state, from);
-    if balance < amount {
-        tracing::warn!(
-            target: "arb::executor",
-            %from, %to, %amount, %balance,
-            "transfer_balance_with_zombie: insufficient funds, skipping"
-        );
-        return;
-    }
-    burn_balance(state, from, amount);
-    mint_balance(state, to, amount);
 }
 
 /// Transfer balance with balance check. Returns false if sender has
@@ -2381,8 +2398,8 @@ fn try_transfer_balance<DB: Database>(
     amount: U256,
 ) -> bool {
     if amount.is_zero() {
-        let _ = state.load_cache_account(from);
-        let _ = state.load_cache_account(to);
+        ensure_account_exists(state, from);
+        ensure_account_exists(state, to);
         return true;
     }
     if from == to {
