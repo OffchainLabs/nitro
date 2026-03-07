@@ -174,6 +174,23 @@ where
         };
         let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
 
+        // Open state at parent block via block hash (matches reth fork pattern).
+        let state_provider = self
+            .provider
+            .state_by_block_hash(parent_header.hash())
+            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
+
+        // Read the L2 baseFee from the parent's committed state.
+        // This is the value written by the parent block's StartBlock — the correct
+        // baseFee for this block's header and EVM execution.
+        let l2_base_fee = {
+            let read_slot = |addr: Address, slot: B256| -> Option<U256> {
+                state_provider.storage(addr, slot.into()).ok().flatten()
+            };
+            arbos::header::read_l2_base_fee(&read_slot)
+                .or(parent_header.base_fee_per_gas())
+        };
+
         // Build a provisional header for the EVM config.
         let provisional_header = Header {
             parent_hash: parent_header.hash(),
@@ -187,7 +204,7 @@ where
             timestamp,
             mix_hash: provisional_mix_hash,
             nonce: B64::from(input.delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: parent_header.base_fee_per_gas(),
+            base_fee_per_gas: l2_base_fee,
             number: l2_block_number,
             gas_limit: parent_header.gas_limit(),
             difficulty: U256::from(1),
@@ -203,12 +220,6 @@ where
             .evm_config
             .evm_env(&provisional_header)
             .map_err(|_| BlockProducerError::Execution("evm_env construction failed".into()))?;
-
-        // Open state at parent block via block hash (matches reth fork pattern).
-        let state_provider = self
-            .provider
-            .state_by_block_hash(parent_header.hash())
-            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
         // without_state_clear() disables EIP-161 empty account pruning.
         // Arbitrum needs this for zombie accounts (e.g. retryable escrow
@@ -598,7 +609,7 @@ where
             timestamp,
             mix_hash: final_mix_hash,
             nonce: B64::from(input.delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: parent_header.base_fee_per_gas(),
+            base_fee_per_gas: l2_base_fee,
             number: l2_block_number,
             gas_limit: parent_header.gas_limit(),
             difficulty: U256::from(1),

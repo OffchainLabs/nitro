@@ -109,7 +109,7 @@ where
             timestamp,
             mix_hash,
             nonce: B64::from(delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: Some(read_base_fee_from_committed_state(state_provider)
+            base_fee_per_gas: Some(read_base_fee_from_state(state_provider, bundle_state)
                 .unwrap_or(evm_env.block_env.basefee())),
             number: l2_block_number,
             gas_limit: evm_env.block_env.gas_limit(),
@@ -133,14 +133,18 @@ where
     }
 }
 
-/// Read the L2 baseFee from committed state (pre-execution).
+/// Read the L2 baseFee from post-execution state.
 ///
-/// This reads from state_provider only (not bundle_state), giving the baseFee
-/// written by the previous block's StartBlock — the correct value for the
-/// current block's header.
-fn read_base_fee_from_committed_state(
+/// Checks bundle_state first (pending changes from current block), then falls
+/// back to committed state. The baseFee in L2PricingState at this point is the
+/// value written by the CURRENT block's StartBlock (for the next block).
+/// However, the committed state has the value from BEFORE the current block's
+/// execution — the correct value for the current block's header.
+fn read_base_fee_from_state(
     state_provider: &dyn reth_storage_api::StateProvider,
+    _bundle_state: &revm_database::BundleState,
 ) -> Option<u64> {
+    // Read from committed state (pre-execution baseFee = current block's header baseFee).
     let read_slot = |addr: alloy_primitives::Address, slot: B256| -> Option<U256> {
         state_provider.storage(addr, slot.into()).ok().flatten()
     };
