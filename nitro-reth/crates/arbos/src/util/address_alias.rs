@@ -45,8 +45,8 @@ fn address_add(a: Address, b: Address) -> Address {
 
 /// Whether a transaction type uses address aliasing.
 pub fn does_tx_type_alias(tx_type: u8) -> bool {
-    // ArbitrumUnsignedTx = 0x68, ArbitrumContractTx = 0x69, ArbitrumRetryTx = 0x6a
-    matches!(tx_type, 0x68 | 0x69 | 0x6a)
+    // ArbitrumUnsignedTx = 0x65, ArbitrumContractTx = 0x66, ArbitrumRetryTx = 0x68
+    matches!(tx_type, 0x65 | 0x66 | 0x68)
 }
 
 /// Whether a transaction type incurs L1 poster costs.
@@ -58,10 +58,10 @@ pub fn tx_type_has_poster_costs(tx_type: u8) -> bool {
     !matches!(
         tx_type,
         0x64  // ArbitrumDepositTx
-        | 0x68 // ArbitrumUnsignedTx
-        | 0x69 // ArbitrumContractTx
-        | 0x6a // ArbitrumRetryTx
-        | 0x6c // ArbitrumSubmitRetryableTx
-        | 0x6f // ArbitrumInternalTx
+        | 0x65 // ArbitrumUnsignedTx
+        | 0x66 // ArbitrumContractTx
+        | 0x68 // ArbitrumRetryTx
+        | 0x69 // ArbitrumSubmitRetryableTx
+        | 0x6a // ArbitrumInternalTx
     )
 }
