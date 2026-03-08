@@ -7,6 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -15,14 +17,14 @@ func TestDeleteBatchMetadata(t *testing.T) {
 
 	tracker := &InboxTracker{
 		db:        rawdb.NewMemoryDatabase(),
-		batchMeta: containers.NewLruCache[uint64, BatchMetadata](100),
+		batchMeta: containers.NewLruCache[uint64, mel.BatchMetadata](100),
 	}
 
 	for i := uint64(0); i < 30; i += 1 {
-		err := tracker.db.Put(dbKey(sequencerBatchMetaPrefix, i), testBytes)
+		err := tracker.db.Put(dbKey(schema.SequencerBatchMetaPrefix, i), testBytes)
 		Require(t, err)
 		if i%5 != 0 {
-			tracker.batchMeta.Add(i, BatchMetadata{})
+			tracker.batchMeta.Add(i, mel.BatchMetadata{})
 		}
 	}
 
@@ -35,7 +37,7 @@ func TestDeleteBatchMetadata(t *testing.T) {
 	Require(t, err)
 
 	for i := uint64(0); i < 15; i += 1 {
-		has, err := tracker.db.Has(dbKey(sequencerBatchMetaPrefix, i))
+		has, err := tracker.db.Has(dbKey(schema.SequencerBatchMetaPrefix, i))
 		Require(t, err)
 		if !has {
 			Fail(t, "value removed from db: ", i)
@@ -48,7 +50,7 @@ func TestDeleteBatchMetadata(t *testing.T) {
 	}
 
 	for i := uint64(15); i < 30; i += 1 {
-		has, err := tracker.db.Has(dbKey(sequencerBatchMetaPrefix, i))
+		has, err := tracker.db.Has(dbKey(schema.SequencerBatchMetaPrefix, i))
 		Require(t, err)
 		if has {
 			Fail(t, "value not removed from db: ", i)
