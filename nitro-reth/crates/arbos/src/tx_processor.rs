@@ -782,13 +782,15 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
         };
     }
 
-    let submission_fee_refund = params.max_submission_fee.saturating_sub(submission_fee);
-
     // Track available refund from L1 deposit.
     let mut available_refund = params.deposit_value;
     take_funds(&mut available_refund, params.retry_value);
     let withheld_submission_fee = take_funds(&mut available_refund, submission_fee);
-    take_funds(&mut available_refund, submission_fee_refund);
+    // Refund excess submission fee, capped by available refund pool.
+    let submission_fee_refund = take_funds(
+        &mut available_refund,
+        params.max_submission_fee.saturating_sub(submission_fee),
+    );
 
     // Check if user can pay for gas.
     let max_gas_cost = params.gas_fee_cap.saturating_mul(U256::from(params.gas));
@@ -829,10 +831,14 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
         U256::ZERO
     };
 
+    // The actual gas price refund is capped by the available pool.
+    // Go reassigns gasPriceRefund = takeFunds(availableRefund, gasPriceRefund).
+    let mut gas_price_refund_actual = U256::ZERO;
+
     if can_pay_for_gas {
         // Track gas cost and gas price refund through available_refund.
         let withheld_gas_funds = take_funds(&mut available_refund, gas_cost);
-        let _gas_price_taken = take_funds(&mut available_refund, gas_price_refund);
+        gas_price_refund_actual = take_funds(&mut available_refund, gas_price_refund);
         // Add back withheld amounts for the auto-redeem's max refund.
         available_refund = available_refund
             .saturating_add(withheld_gas_funds)
@@ -848,7 +854,7 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
         gas_cost,
         infra_cost,
         network_cost,
-        gas_price_refund,
+        gas_price_refund: gas_price_refund_actual,
         gas_cost_refund,
         available_refund,
         withheld_submission_fee,

@@ -634,10 +634,12 @@ where
 
         // 7. Handle gas fees if user can pay.
         if fees.can_pay_for_gas {
-            // Pay infra fee.
-            transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
-            self.touched_accounts.insert(sender);
-            self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
+            // Pay infra fee (skip when infra_fee_account is zero, matching Go).
+            if self.arb_ctx.infra_fee_account != Address::ZERO {
+                transfer_balance(db, sender, self.arb_ctx.infra_fee_account, fees.infra_cost);
+                self.touched_accounts.insert(sender);
+                self.touched_accounts.insert(self.arb_ctx.infra_fee_account);
+            }
             // Pay network fee.
             if !fees.network_cost.is_zero() {
                 transfer_balance(db, sender, self.arb_ctx.network_fee_account, fees.network_cost);
@@ -1046,6 +1048,10 @@ where
                                 );
                             }
                             transfer_balance(&mut *state_ptr, from, to, amount);
+                            if !amount.is_zero() {
+                                (*zombie_ptr).remove(&from);
+                            }
+                            (*zombie_ptr).remove(&to);
                             (*touched_ptr).insert(from);
                             (*touched_ptr).insert(to);
                         }
@@ -1252,8 +1258,8 @@ where
                             let escrow = retryables::retryable_escrow_address(info.ticket_id);
                             let value = recovered.tx().value();
 
-                            // On pre-Stylus ArbOS, Go's TransferBalance calls
-                            // CreateZombieIfDeleted(from) before the transfer.
+                            // Go's TransferBalance calls CreateZombieIfDeleted(from)
+                            // when amount == 0 on pre-Stylus ArbOS.
                             if value.is_zero()
                                 && self.arb_ctx.arbos_version
                                     < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS
@@ -1294,6 +1300,10 @@ where
                             }
 
                             // Track escrow transfer addresses.
+                            if !value.is_zero() {
+                                self.zombie_accounts.remove(&escrow);
+                            }
+                            self.zombie_accounts.remove(&sender);
                             self.touched_accounts.insert(escrow);
                             self.touched_accounts.insert(sender);
 
@@ -1959,6 +1969,13 @@ where
                                     );
                                 }
                                 transfer_balance(&mut *state_ptr, from, to, amount);
+                                // Go's SubBalance(from, nonzero) creates a non-zombie
+                                // balanceChange entry, breaking zombie protection.
+                                if !amount.is_zero() {
+                                    (*zombie_ptr).remove(&from);
+                                }
+                                // Go's AddBalance(to, _) dirts `to`, breaking zombie.
+                                (*zombie_ptr).remove(&to);
                                 (*touched_ptr).insert(from);
                                 (*touched_ptr).insert(to);
                             }
@@ -1992,6 +2009,10 @@ where
                                             );
                                         }
                                         transfer_balance(&mut *state_ptr, from, to, amount);
+                                        if !amount.is_zero() {
+                                            (*zombie_ptr).remove(&from);
+                                        }
+                                        (*zombie_ptr).remove(&to);
                                         (*touched_ptr).insert(from);
                                         (*touched_ptr).insert(to);
                                     }
@@ -2019,6 +2040,12 @@ where
                                 result.escrow_address,
                                 retry_ctx.call_value,
                             );
+                            // Go's SubBalance(sender, nonzero) breaks zombie on sender.
+                            if !retry_ctx.call_value.is_zero() {
+                                (*zombie_ptr).remove(&pending.sender);
+                            }
+                            // Go's AddBalance(escrow, _) breaks zombie on escrow.
+                            (*zombie_ptr).remove(&result.escrow_address);
                             (*touched_ptr).insert(pending.sender);
                             (*touched_ptr).insert(result.escrow_address);
                         }
@@ -2184,12 +2211,16 @@ where
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let to_remove: Vec<Address> = self.touched_accounts.drain()
                 .filter(|addr| {
+                    // Zombie accounts must be preserved even if empty.
+                    if self.zombie_accounts.contains(addr) {
+                        return false;
+                    }
                     if let Some(cached) = db.cache.accounts.get(addr) {
                         if let Some(ref acct) = cached.account {
                             let is_empty = acct.info.nonce == 0
                                 && acct.info.balance.is_zero()
                                 && acct.info.code_hash == keccak_empty;
-                            return is_empty && !self.zombie_accounts.contains(addr);
+                            return is_empty;
                         }
                     }
                     false
@@ -2332,9 +2363,9 @@ fn transfer_balance<DB: Database>(
         ensure_account_exists(state, to);
         return;
     }
-    if from == to {
-        return;
-    }
+    // No from == to early return — Go always does SubBalance + AddBalance
+    // independently even when from == to. This ensures the account gets
+    // dirtied in the state trie consistently.
     let balance = get_balance(state, from);
     if balance < amount {
         tracing::warn!(
@@ -2363,9 +2394,12 @@ fn ensure_account_exists<DB: Database>(state: &mut State<DB>, addr: Address) {
     }
 }
 
+
 /// Re-create an empty account that was deleted by per-tx Finalise.
 /// Matches Go's `CreateZombieIfDeleted`: if `addr` was removed by Finalise
 /// (present in `finalise_deleted`) and no longer in cache, create a zombie.
+/// Go calls this for `from` in TransferBalance when amount == 0 and
+/// ArbOS version < Stylus.
 fn create_zombie_if_deleted<DB: Database>(
     state: &mut State<DB>,
     addr: Address,
