@@ -160,17 +160,6 @@ pub fn write_storage_at<D: Database>(
     // Skip no-op writes
     let prev_value = current_value.unwrap_or(original_value);
 
-    // Debug: track all writes to the gasBacklog slot
-    let gas_backlog_slot = U256::from_be_slice(&alloy_primitives::hex!(
-        "e54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204"
-    ));
-    if account == ARBOS_STATE_ADDRESS && slot == gas_backlog_slot {
-        eprintln!(
-            "[BACKLOG_WRITE] write_storage_at gasBacklog: value={}, prev_value={}, original_value={}, from_cache={}, noop={}",
-            value, prev_value, original_value, current_value.is_some(), value == prev_value
-        );
-    }
-
     if value == prev_value {
         // Log no-op writes for the gasBacklog slot (last byte 0x04 in L2 pricing subspace)
         if account == ARBOS_STATE_ADDRESS {

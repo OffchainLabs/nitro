@@ -2095,9 +2095,6 @@ where
                 // Normal tx: fee distribution.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
 
-                eprintln!("[BACKLOG_DEBUG] NormalTx path entered: gas_used={}, poster_gas={}, gas_left={}, gas_price_positive={}, arb_hooks_some={}",
-                    gas_used_total, pending.poster_gas, gas_left, pending.gas_price_positive, self.arb_hooks.is_some());
-
                 let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
                     hooks.compute_end_tx_fees(&EndTxContext {
                         sender: pending.sender,
@@ -2113,8 +2110,6 @@ where
                 });
 
                 if let Some(ref dist) = fee_dist {
-                    eprintln!("[BACKLOG_DEBUG] fee_dist present: compute_gas_for_backlog={}, poster_fee={:?}",
-                        dist.compute_gas_for_backlog, dist.poster_fee_amount);
                     tracing::warn!(
                         target: "arb::backlog",
                         compute_gas_for_backlog = dist.compute_gas_for_backlog,
@@ -2170,15 +2165,11 @@ where
                         // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
                             let backlog_before = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            eprintln!("[BACKLOG_DEBUG] About to grow_backlog: gas_for_backlog={}, backlog_before={}",
-                                dist.compute_gas_for_backlog, backlog_before);
                             let grow_result = arb_state.l2_pricing_state.grow_backlog(
                                 dist.compute_gas_for_backlog,
                                 used_multi_gas,
                             );
                             let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            eprintln!("[BACKLOG_DEBUG] After grow_backlog: backlog_after={}, grow_ok={}",
-                                backlog_after, grow_result.is_ok());
                             tracing::warn!(
                                 target: "arb::backlog",
                                 gas_for_backlog = dist.compute_gas_for_backlog,

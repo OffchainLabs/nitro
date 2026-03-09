@@ -85,8 +85,6 @@ impl<D: Database> L2PricingState<D> {
     fn update_legacy_backlog_op(&self, op: BacklogOperation, gas: u64) -> Result<(), ()> {
         let backlog = self.gas_backlog()?;
         let new_backlog = apply_gas_delta_op(op, backlog, gas);
-        eprintln!("[BACKLOG_DEBUG] update_legacy_backlog_op: op={:?}, gas={}, backlog={} -> new_backlog={}",
-            op, gas, backlog, new_backlog);
         tracing::warn!(
             target: "arb::backlog",
             ?op,
@@ -95,9 +93,7 @@ impl<D: Database> L2PricingState<D> {
             new_backlog,
             "update_legacy_backlog_op"
         );
-        let result = self.set_gas_backlog(new_backlog);
-        eprintln!("[BACKLOG_DEBUG] set_gas_backlog result: {:?}", result);
-        result
+        self.set_gas_backlog(new_backlog)
     }
 
     fn update_single_gas_constraints_backlogs_op(
