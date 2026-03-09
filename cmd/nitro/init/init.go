@@ -1119,14 +1119,13 @@ func GetParsedInitMsgFromGenesis(genesis *core.Genesis) (*arbostypes.ParsedInitM
 		return nil, err
 	}
 
-	initialL1BaseFee := arbostypes.DefaultInitialL1BaseFee
-	if genesis.ArbOSInit != nil && genesis.ArbOSInit.InitialL1BaseFee != nil {
-		initialL1BaseFee = genesis.ArbOSInit.InitialL1BaseFee
+	if genesis.ArbOSInit == nil || genesis.ArbOSInit.InitialL1BaseFee == nil {
+		return nil, fmt.Errorf("genesis is missing arbOSInit.initialL1BaseFee")
 	}
 
 	parsedInitMessage := &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      initialL1BaseFee,
+		InitialL1BaseFee:      genesis.ArbOSInit.InitialL1BaseFee,
 		ChainConfig:           chainConfig,
 		SerializedChainConfig: []byte(genesis.SerializedChainConfig),
 	}

@@ -1454,13 +1454,13 @@ func TestGetParsedInitMsgFromGenesis(t *testing.T) {
 		require.Equal(t, customFee, msg.InitialL1BaseFee)
 	})
 
-	t.Run("without ArbOSInit uses default", func(t *testing.T) {
+	t.Run("without ArbOSInit returns error", func(t *testing.T) {
 		genesis := &core.Genesis{
 			SerializedChainConfig: serializedConfig,
 		}
-		msg, err := GetParsedInitMsgFromGenesis(genesis)
-		require.NoError(t, err)
-		require.Equal(t, arbostypes.DefaultInitialL1BaseFee, msg.InitialL1BaseFee)
+		_, err := GetParsedInitMsgFromGenesis(genesis)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "genesis is missing arbOSInit.initialL1BaseFee")
 	})
 }
 
