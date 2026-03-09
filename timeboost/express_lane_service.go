@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -32,7 +31,7 @@ type expressLaneRoundInfo struct {
 type ExpressLaneService struct {
 	stopwaiter.StopWaiter
 	transactionPublisher TransactionPublisher
-	seqConfig            SequencerConfigFetcher
+	seqConfig            ExpressLaneServiceConfigFetcher
 	roundTimingInfo      RoundTimingInfo
 	redisCoordinator     *RedisCoordinator
 
@@ -44,7 +43,7 @@ type ExpressLaneService struct {
 
 func NewExpressLaneService(
 	transactionPublisher TransactionPublisher,
-	seqConfig SequencerConfigFetcher,
+	seqConfig ExpressLaneServiceConfigFetcher,
 	roundTimingInfo *RoundTimingInfo,
 	expressLaneTracker *ExpressLaneTracker,
 ) (*ExpressLaneService, error) {
@@ -246,6 +245,10 @@ func (es *ExpressLaneService) CurrentRoundHasController() bool {
 		return false
 	}
 	return controller != (common.Address{})
+}
+
+func (es *ExpressLaneService) GetRoundTimingInfo() *RoundTimingInfo {
+	return &es.roundTimingInfo
 }
 
 func (es *ExpressLaneService) AuctionContractAddr() common.Address {

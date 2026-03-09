@@ -39,7 +39,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -195,7 +194,7 @@ func (p *ExpressLaneProxy) SendRawTransaction(ctx context.Context, input hexutil
 		Round:                  (hexutil.Uint64)(roundNumber),
 		AuctionContractAddress: p.auctionContractAddr,
 		Transaction:            input,
-		SequenceNumber:         (hexutil.Uint64)(gethexec.DontCareSequence),
+		SequenceNumber:         (hexutil.Uint64)(timeboost.DontCareSequence),
 		Signature:              []byte{}, // It is set below
 	}
 	goWrapper, err := timeboost.JsonSubmissionToGo(&wrapper)

@@ -636,7 +636,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if sender != auctioneerAddr {
 		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
 	}
-	if !s.expressLaneService.roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
+	if !s.expressLaneService.GetRoundTimingInfo().IsWithinAuctionCloseWindow(arrivalTime) {
 		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
 	}
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
@@ -1572,9 +1572,18 @@ func (s *Sequencer) InitializeExpressLaneService(
 	roundTimingInfo *timeboost.RoundTimingInfo,
 	expressLaneTracker *timeboost.ExpressLaneTracker,
 ) error {
+	configFetcher := func() *timeboost.ExpressLaneServiceConfig {
+		c := s.config()
+		return &timeboost.ExpressLaneServiceConfig{
+			QueueTimeout:                 c.QueueTimeout,
+			MaxFutureSequenceDistance:    c.Timeboost.MaxFutureSequenceDistance,
+			RedisUrl:                     c.Timeboost.RedisUrl,
+			RedisUpdateEventsChannelSize: c.Timeboost.RedisUpdateEventsChannelSize,
+		}
+	}
 	els, err := timeboost.NewExpressLaneService(
 		s,
-		s.config,
+		configFetcher,
 		roundTimingInfo,
 		expressLaneTracker,
 	)

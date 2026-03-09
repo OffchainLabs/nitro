@@ -35,6 +35,17 @@ var DefaultConfig = Config{
 	QueueTimeoutInBlocks:         5,
 }
 
+// ExpressLaneServiceConfig contains the configuration fields needed by ExpressLaneService.
+type ExpressLaneServiceConfig struct {
+	QueueTimeout                 time.Duration
+	MaxFutureSequenceDistance    uint64
+	RedisUrl                     string
+	RedisUpdateEventsChannelSize uint64
+}
+
+// ExpressLaneServiceConfigFetcher returns the current ExpressLaneServiceConfig.
+type ExpressLaneServiceConfigFetcher func() *ExpressLaneServiceConfig
+
 func AddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable timeboost based on express lane auctions")
 	f.String(prefix+".auction-contract-address", DefaultConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
