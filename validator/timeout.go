@@ -15,7 +15,9 @@ import (
 )
 
 const (
-	ioTimeoutMessage = "i/o timeout" // net package timeout
+	ioTimeoutMessage  = "i/o timeout"       // net package timeout
+	rpcTimeoutCode    = -32002              // go-ethereum rpc errcodeTimeout on pinned submodule branch
+	rpcTimeoutMessage = "request timed out" // go-ethereum rpc errMsgTimeout on pinned submodule branch
 )
 
 // IsTimeoutError returns true if the error represents a timeout condition from
@@ -36,7 +38,7 @@ func IsTimeoutError(err error) bool {
 	}
 
 	var rpcErr rpc.Error
-	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == rpc.ErrcodeTimeout {
+	if errors.As(err, &rpcErr) && rpcErr.ErrorCode() == rpcTimeoutCode {
 		return true
 	}
 
@@ -49,7 +51,7 @@ func IsTimeoutError(err error) bool {
 
 	errMsg := err.Error()
 	if strings.Contains(errMsg, pubsub.TimeoutErrorMessage) ||
-		strings.Contains(errMsg, rpc.ErrMsgTimeout) ||
+		strings.Contains(errMsg, rpcTimeoutMessage) ||
 		strings.Contains(errMsg, context.DeadlineExceeded.Error()) ||
 		strings.Contains(errMsg, ioTimeoutMessage) {
 		return true

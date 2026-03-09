@@ -39,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
+	cmd_util "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -1278,7 +1279,7 @@ func TestGetInitWithGenesis(t *testing.T) {
 	var gen core.Genesis
 	err = json.Unmarshal(genesisJson, &gen)
 	Require(t, err)
-	expectedChainConfig, err := gen.GetConfig()
+	expectedChainConfig, _, err := cmd_util.ReadChainConfig(&gen)
 	Require(t, err)
 
 	require.Equal(t, expectedChainConfig, chainConfig)
