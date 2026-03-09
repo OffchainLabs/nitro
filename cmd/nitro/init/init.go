@@ -1077,7 +1077,7 @@ func GetParsedInitMsgFromParentChain(ctx context.Context, chainId *big.Int, l1Cl
 	if parsedInitMessage.ChainId.Cmp(chainId) != 0 {
 		return nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, parsedInitMessage.ChainId)
 	}
-	log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig))
+	log.Info("Read serialized chain config from init message", "json", string(parsedInitMessage.SerializedChainConfig), "initialL1BaseFee", parsedInitMessage.InitialL1BaseFee)
 	return parsedInitMessage, nil
 }
 
