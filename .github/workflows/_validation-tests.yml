@@ -37,10 +37,10 @@ jobs:
       - name: Run jit prover on block input json
         id: jit
         run: |
-          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
-            json --inputs '${{ env.INPUT_FILE }}')
-          
-          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K(0x)?[a-f0-9]+')
+          target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs '${{ env.INPUT_FILE }}' | tee /tmp/jit_output.txt
+
+          JIT_HASH=$(grep -oP 'hash \K(0x)?[a-f0-9]+' /tmp/jit_output.txt)
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
       - name: Run Rust validation server (Native & Continuous)

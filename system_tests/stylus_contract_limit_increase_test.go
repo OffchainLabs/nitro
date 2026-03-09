@@ -273,7 +273,7 @@ func TestDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
-		b.chainConfig.ArbitrumChainParams.MaxCodeSize = 4500
+		b.chainConfig.ArbitrumChainParams.MaxCodeSize = 2500
 	})
 	defer cleanup()
 
