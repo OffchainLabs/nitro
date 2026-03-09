@@ -1705,7 +1705,7 @@ func setupExpressLaneAuction(
 	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),

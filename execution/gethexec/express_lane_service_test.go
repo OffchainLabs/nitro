@@ -54,7 +54,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	validSubmission := buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv, 0)
 	tests := []struct {
 		name        string
-		t           *ExpressLaneTracker
+		t           *timeboost.ExpressLaneTracker
 		sub         *timeboost.ExpressLaneSubmission
 		expectedErr error
 		controller  common.Address
@@ -1008,8 +1008,8 @@ func cloneSubmission(original *timeboost.ExpressLaneSubmission) *timeboost.Expre
 	}
 }
 
-func defaultTestTracker() *ExpressLaneTracker {
-	return &ExpressLaneTracker{
+func defaultTestTracker() *timeboost.ExpressLaneTracker {
+	return &timeboost.ExpressLaneTracker{
 		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
 	}
 }
@@ -1017,8 +1017,8 @@ func defaultTestTracker() *ExpressLaneTracker {
 func defaultTestTrackerWithConfig(
 	auctionAddr common.Address,
 	roundTimingInfo timeboost.RoundTimingInfo,
-) *ExpressLaneTracker {
-	return &ExpressLaneTracker{
+) *timeboost.ExpressLaneTracker {
+	return &timeboost.ExpressLaneTracker{
 		auctionContractAddr: auctionAddr,
 		roundTimingInfo:     roundTimingInfo,
 		chainConfig: &params.ChainConfig{
@@ -1028,8 +1028,8 @@ func defaultTestTrackerWithConfig(
 	}
 }
 
-func defaultTestTrackerWithChainID(chainID int64) *ExpressLaneTracker {
-	return &ExpressLaneTracker{
+func defaultTestTrackerWithChainID(chainID int64) *timeboost.ExpressLaneTracker {
+	return &timeboost.ExpressLaneTracker{
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(chainID),
 		},

@@ -680,7 +680,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 		}
 
-		expressLaneTracker, err := NewExpressLaneTracker(
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),

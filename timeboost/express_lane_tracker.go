@@ -1,12 +1,13 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package gethexec
+package timeboost
 
 import (
 	"context"
 	"time"
 
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -18,9 +19,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	auctionResolutionLatency = metrics.NewRegisteredGauge("arb/sequencer/timeboost/auctionresolution", nil)
 )
 
 type RoundListener interface {
@@ -35,7 +39,7 @@ type HeaderProvider interface {
 type ExpressLaneTracker struct {
 	stopwaiter.StopWaiter
 
-	roundTimingInfo timeboost.RoundTimingInfo
+	roundTimingInfo RoundTimingInfo
 	pollInterval    time.Duration
 	chainConfig     *params.ChainConfig
 	maxTxSize       uint64 // maximum transaction size the sequencer will accept
@@ -51,7 +55,7 @@ type ExpressLaneTracker struct {
 }
 
 func NewExpressLaneTracker(
-	roundTimingInfo timeboost.RoundTimingInfo,
+	roundTimingInfo RoundTimingInfo,
 	pollInterval time.Duration,
 	headerProvider HeaderProvider,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
@@ -90,7 +94,7 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 	controller, ok := t.roundControl.Load(round)
 	if !ok {
 		return common.Address{}, errors.Wrapf(
-			timeboost.ErrNoOnchainController,
+			ErrNoOnchainController,
 			"no on-chain controller for round %d (current round %d, RoundController)",
 			round,
 			t.roundTimingInfo.RoundNumber(),
@@ -100,19 +104,19 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 }
 
 // validateExpressLaneTx checks for the correctness of all fields of msg
-func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
+func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
 	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
-		return timeboost.ErrMalformedData
+		return ErrMalformedData
 	}
 	txSize := msg.Transaction.Size()
 	if txSize > t.maxTxSize {
-		return errors.Wrapf(timeboost.ErrOversizedData, "express lane tx size %d exceeds maximum allowed size %d", txSize, t.maxTxSize)
+		return errors.Wrapf(ErrOversizedData, "express lane tx size %d exceeds maximum allowed size %d", txSize, t.maxTxSize)
 	}
 	if msg.ChainId.Cmp(t.chainConfig.ChainID) != 0 {
-		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, t.chainConfig.ChainID)
+		return errors.Wrapf(ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, t.chainConfig.ChainID)
 	}
 	if msg.AuctionContractAddress != t.auctionContractAddr {
-		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %#x does not match sequencer auction contract address %#x", msg.AuctionContractAddress, t.auctionContractAddr)
+		return errors.Wrapf(ErrWrongAuctionContract, "msg auction contract address %#x does not match sequencer auction contract address %#x", msg.AuctionContractAddress, t.auctionContractAddr)
 	}
 
 	currentRound := t.roundTimingInfo.RoundNumber()
@@ -123,14 +127,14 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 		if msg.Round == currentRound+1 && timeTilNextRound <= t.earlySubmissionGrace {
 			time.Sleep(timeTilNextRound)
 		} else {
-			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
+			return errors.Wrapf(ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
 		}
 	}
 
 	controller, ok := t.roundControl.Load(msg.Round)
 	if !ok {
 		return errors.Wrapf(
-			timeboost.ErrNoOnchainController,
+			ErrNoOnchainController,
 			"no on-chain controller for round %d (current round %d, ValidateExpressLaneTx)",
 			msg.Round,
 			t.roundTimingInfo.RoundNumber(),
@@ -142,7 +146,7 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSub
 		return err
 	}
 	if sender != controller {
-		return timeboost.ErrNotExpressLaneController
+		return ErrNotExpressLaneController
 	}
 	return nil
 }

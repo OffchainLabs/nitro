@@ -201,7 +201,6 @@ func (c *SequencerConfig) Validate() error {
 	return nil
 }
 
-
 type SequencerConfigFetcher func() *SequencerConfig
 
 var DefaultSequencerConfig = SequencerConfig{
@@ -561,7 +560,6 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 		queueItem.returnResult(failure.nonceErr)
 	}
 }
-
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	_, forwarder := s.GetPauseAndForwarder()
@@ -1572,7 +1570,7 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 func (s *Sequencer) InitializeExpressLaneService(
 	auctioneerAddr common.Address,
 	roundTimingInfo *timeboost.RoundTimingInfo,
-	expressLaneTracker *ExpressLaneTracker,
+	expressLaneTracker *timeboost.ExpressLaneTracker,
 ) error {
 	els, err := newExpressLaneService(
 		s,

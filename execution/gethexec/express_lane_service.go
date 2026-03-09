@@ -16,16 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-)
-
-var (
-	auctionResolutionLatency = metrics.NewRegisteredGauge("arb/sequencer/timeboost/auctionresolution", nil)
 )
 
 type expressLaneRoundInfo struct {
@@ -45,7 +40,7 @@ type expressLaneService struct {
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 
-	tracker *ExpressLaneTracker
+	tracker *timeboost.ExpressLaneTracker
 }
 
 func newExpressLaneService(
@@ -53,7 +48,7 @@ func newExpressLaneService(
 	seqConfig SequencerConfigFetcher,
 	roundTimingInfo *timeboost.RoundTimingInfo,
 	bc *core.BlockChain,
-	expressLaneTracker *ExpressLaneTracker,
+	expressLaneTracker *timeboost.ExpressLaneTracker,
 ) (*expressLaneService, error) {
 	var err error
 	var redisCoordinator *timeboost.RedisCoordinator

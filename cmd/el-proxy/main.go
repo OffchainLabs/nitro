@@ -59,7 +59,7 @@ type ExpressLaneProxy struct {
 	config              *ExpressLaneProxyConfig
 	roundTimingInfo     timeboost.RoundTimingInfo
 	auctionContractAddr common.Address
-	expressLaneTracker  *gethexec.ExpressLaneTracker
+	expressLaneTracker  *timeboost.ExpressLaneTracker
 	dataSignerFunc      signature.DataSignerFunc
 }
 
@@ -96,7 +96,7 @@ func NewExpressLaneProxy(
 		return nil, err
 	}
 
-	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 		*roundTimingInfo,
 		time.Millisecond*250,
 		&HeaderProviderAdapter{arbClient},
