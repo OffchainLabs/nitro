@@ -94,7 +94,7 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string                     `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string                     `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool                       `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    timeboost.TimeboostConfig  `koanf:"timeboost"`
+	Timeboost                    timeboost.Config           `koanf:"timeboost"`
 	Dangerous                    DangerousConfig            `koanf:"dangerous"`
 	TransactionFiltering         TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 	expectedSurplusSoftThreshold int
@@ -140,7 +140,6 @@ type DangerousConfig struct {
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
-
 func (c *SequencerConfig) Validate() error {
 	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
@@ -179,7 +178,7 @@ func (c *SequencerConfig) Validate() error {
 			return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.Timeboost.AuctionContractAddress)
 		}
 		if c.Enable {
-			if c.Timeboost.RedisUrl == timeboost.DefaultTimeboostConfig.RedisUrl {
+			if c.Timeboost.RedisUrl == timeboost.DefaultConfig.RedisUrl {
 				return errors.New("timeboost is enabled but no redis-url was set")
 			}
 			if c.Timeboost.MaxFutureSequenceDistance == 0 {
@@ -235,7 +234,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	Timeboost:                    timeboost.DefaultTimeboostConfig,
+	Timeboost:                    timeboost.DefaultConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	TransactionFiltering:         DefaultTransactionFilteringConfig,
 }
@@ -252,7 +251,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
-	timeboost.TimeboostAddOptions(prefix+".timeboost", f)
+	timeboost.AddOptions(prefix+".timeboost", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type TimeboostConfig struct {
+type Config struct {
 	Enable                       bool          `koanf:"enable"`
 	AuctionContractAddress       string        `koanf:"auction-contract-address"`
 	AuctioneerAddress            string        `koanf:"auctioneer-address"`
@@ -22,7 +22,7 @@ type TimeboostConfig struct {
 	QueueTimeoutInBlocks         uint64        `koanf:"queue-timeout-in-blocks"`
 }
 
-var DefaultTimeboostConfig = TimeboostConfig{
+var DefaultConfig = Config{
 	Enable:                       false,
 	AuctionContractAddress:       "",
 	AuctioneerAddress:            "",
@@ -35,15 +35,15 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	QueueTimeoutInBlocks:         5,
 }
 
-func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
-	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
-	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
-	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
-	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
-	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
-	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
-	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
-	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
-	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
+func AddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable timeboost based on express lane auctions")
+	f.String(prefix+".auction-contract-address", DefaultConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
+	f.String(prefix+".auctioneer-address", DefaultConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
+	f.Duration(prefix+".express-lane-advantage", DefaultConfig.ExpressLaneAdvantage, "specify the express lane advantage")
+	f.String(prefix+".sequencer-http-endpoint", DefaultConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
+	f.Duration(prefix+".early-submission-grace", DefaultConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
+	f.Uint64(prefix+".max-future-sequence-distance", DefaultConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
+	f.String(prefix+".redis-url", DefaultConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
+	f.Uint64(prefix+".redis-update-events-channel-size", DefaultConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
+	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
