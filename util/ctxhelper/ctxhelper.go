@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// WithTimeout is like context.WithTimeout except a timeout of 0 means unlimited instead of instantly expired.
-func WithTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+// WithTimeoutOrCancel is like context.WithTimeout except a timeout of 0 means unlimited (cancel-only) instead of instantly expired.
+func WithTimeoutOrCancel(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout == time.Duration(0) {
 		return context.WithCancel(ctx)
 	}

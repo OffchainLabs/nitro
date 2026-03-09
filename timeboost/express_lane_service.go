@@ -102,7 +102,7 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 
 		// Process immediately without affecting sequence ordering
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), es.seqConfig().QueueTimeout)
-		queueCtx, _ := ctxhelper.WithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeoutOrCancel(es.GetContext(), timeout)
 		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
 	}
 
@@ -179,7 +179,7 @@ func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubm
 		// Txs (current or buffered) cannot use this function's context as it would lead to context canceled error later on, once the tx is queued and this function returns, hence we
 		// use es.GetContext(). Txs sequenced this round shouldn't be processed by sequencer into next round, to enforce this, queueCtx has a timeout = min(TimeTilNextRound, queueTimeout)
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
-		queueCtx, _ := ctxhelper.WithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeoutOrCancel(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
 			logLevel := log.Error
 			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
