@@ -31,7 +31,7 @@ type State struct {
 	ParentChainPreviousBlockHash       common.Hash
 	BatchCount                         uint64
 	MsgCount                           uint64
-	LocalMsgAccumulator                 common.Hash
+	LocalMsgAccumulator                common.Hash
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
 	DelayedMessagesSeenRoot            common.Hash
