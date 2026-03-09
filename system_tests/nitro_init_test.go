@@ -53,7 +53,7 @@ func TestGetParsedInitMsgWithoutConsensus(t *testing.T) {
 	Require(t, err)
 
 	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
-		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
+		t.Fatalf("diff found in initMessage %v and expectedInitMessage: %v", initMessage, expectedInitMessage)
 	}
 
 	// 2. Directly from chain config
@@ -61,7 +61,7 @@ func TestGetParsedInitMsgWithoutConsensus(t *testing.T) {
 	Require(t, err)
 
 	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
-		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
+		t.Fatalf("diff found in initMessage %v and expectedInitMessage: %v", initMessage, expectedInitMessage)
 	}
 }
 

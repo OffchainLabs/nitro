@@ -49,7 +49,7 @@ func (c *GenesisOverrideConfig) ParseInitialL1BaseFee() (*big.Int, error) {
 
 func (c *GenesisOverrideConfig) IsSet() bool {
 	// Only SerializedChainConfig is required; InitialL1BaseFee falls back to the default if not provided.
-	return c.SerializedChainConfig != ""
+	return c != nil && c.SerializedChainConfig != ""
 }
 
 type InitConfig struct {

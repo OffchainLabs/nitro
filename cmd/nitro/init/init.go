@@ -1108,7 +1108,7 @@ func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.Gene
 }
 
 func validateChainConfigCompatibility(parsedInitMessage *arbostypes.ParsedInitMessage, chainConfig *params.ChainConfig) error {
-	if parsedInitMessage != nil && parsedInitMessage.ChainConfig != nil {
+	if parsedInitMessage != nil && parsedInitMessage.ChainConfig != nil && chainConfig != nil {
 		if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 			return fmt.Errorf("incompatible chain config read from init message: %w", err)
 		}
