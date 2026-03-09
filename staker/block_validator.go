@@ -1034,6 +1034,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 			}()
 			markSuccess := len(runs) > 0
+			if !markSuccess {
+				validationStatus.DoneEntry.Err = errors.New("no validation runs were launched")
+			}
 
 			// validationStatus might be removed from under us
 			// trigger validation progress when done
