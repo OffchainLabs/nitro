@@ -63,21 +63,21 @@ func TestPeekFromAccumulatorSingleItem(t *testing.T) {
 func TestPeekFromAccumulatorMultipleItems(t *testing.T) {
 	ctx := context.Background()
 	preimages := makePreimagesMap()
-	n := 10
+	n := uint64(10)
 	items := make([]testItem, n)
-	for i := range n {
-		items[i] = testItem{Value: uint64(i * 100)}
+	for i := range uint64(n) {
+		items[i] = testItem{Value: i * 100}
 	}
 	acc := buildAccumulator(t, items, preimages)
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
 
 	// Read every item by lookback position.
 	// lookback=1 is the last pushed item (index n-1), lookback=n is the first (index 0).
-	for i := range n {
-		lookback := uint64(n - i)
+	for i := range uint64(n) {
+		lookback := n - i
 		result, err := melreplay.PeekFromAccumulator[testItem](ctx, resolver, acc, lookback)
 		require.NoError(t, err)
-		require.Equal(t, uint64(i*100), result.Value, "mismatch at lookback %d (item index %d)", lookback, i)
+		require.Equal(t, i*100, result.Value, "mismatch at lookback %d (item index %d)", lookback, i)
 	}
 }
 
