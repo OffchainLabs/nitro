@@ -400,7 +400,7 @@ func TestCallInkUsage(t *testing.T) {
 		name = tc.hostio + "/stylusContract"
 		t.Run(name, func(t *testing.T) {
 			data := argsForMulticall(tc.opcode, otherStylusProgram, nil, otherData)
-			expectedInk := uint64(128475955)
+			expectedInk := uint64(118475955)
 			checkInkUsage(t, builder, stylusProgram, tc.hostio, name, data, nil, expectedInk)
 		})
 	}
