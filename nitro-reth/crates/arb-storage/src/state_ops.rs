@@ -159,7 +159,30 @@ pub fn write_storage_at<D: Database>(
 
     // Skip no-op writes
     let prev_value = current_value.unwrap_or(original_value);
+
+    // Debug: track all writes to the gasBacklog slot
+    let gas_backlog_slot = U256::from_be_slice(&alloy_primitives::hex!(
+        "e54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204"
+    ));
+    if account == ARBOS_STATE_ADDRESS && slot == gas_backlog_slot {
+        eprintln!(
+            "[BACKLOG_WRITE] write_storage_at gasBacklog: value={}, prev_value={}, original_value={}, from_cache={}, noop={}",
+            value, prev_value, original_value, current_value.is_some(), value == prev_value
+        );
+    }
+
     if value == prev_value {
+        // Log no-op writes for the gasBacklog slot (last byte 0x04 in L2 pricing subspace)
+        if account == ARBOS_STATE_ADDRESS {
+            tracing::debug!(
+                target: "arb::storage",
+                ?slot,
+                ?value,
+                ?prev_value,
+                from_cache = current_value.is_some(),
+                "write_storage_at no-op (value==prev)"
+            );
+        }
         return;
     }
 
@@ -189,6 +212,16 @@ pub fn write_storage_at<D: Database>(
     };
 
     // Create and apply transition
+    if account == ARBOS_STATE_ADDRESS {
+        tracing::debug!(
+            target: "arb::storage",
+            ?slot,
+            ?value,
+            ?prev_value,
+            ?original_value,
+            "write_storage_at applying transition"
+        );
+    }
     let mut storage_changes: revm_database::StorageWithOriginalValues = HashMap::default();
     storage_changes.insert(slot, StorageSlot::new_changed(original_value, value));
 
@@ -311,4 +344,220 @@ pub fn set_account_code<D: Database>(
         storage_was_destroyed: false,
     };
     state.apply_transition(vec![(addr, transition)]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revm_database::states::bundle_state::BundleRetention;
+    use revm_database::StateBuilder;
+
+    /// In-memory database that returns empty for everything.
+    #[derive(Default)]
+    struct EmptyDb;
+
+    impl Database for EmptyDb {
+        type Error = std::convert::Infallible;
+        fn basic(
+            &mut self,
+            _address: Address,
+        ) -> Result<Option<revm_state::AccountInfo>, Self::Error> {
+            Ok(None)
+        }
+        fn code_by_hash(
+            &mut self,
+            _code_hash: alloy_primitives::B256,
+        ) -> Result<revm_state::Bytecode, Self::Error> {
+            Ok(revm_state::Bytecode::default())
+        }
+        fn storage(
+            &mut self,
+            _address: Address,
+            _index: U256,
+        ) -> Result<U256, Self::Error> {
+            Ok(U256::ZERO)
+        }
+        fn block_hash(
+            &mut self,
+            _number: u64,
+        ) -> Result<alloy_primitives::B256, Self::Error> {
+            Ok(alloy_primitives::B256::ZERO)
+        }
+    }
+
+    fn make_state() -> revm::database::State<EmptyDb> {
+        StateBuilder::new()
+            .with_database(EmptyDb)
+            .with_bundle_update()
+            .build()
+    }
+
+    #[test]
+    fn test_write_storage_at_creates_transition() {
+        let mut state = make_state();
+        let slot = U256::from(42);
+        let value = U256::from(12345);
+
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value);
+
+        // Verify value is in cache.
+        let cached = state
+            .cache
+            .accounts
+            .get(&ARBOS_STATE_ADDRESS)
+            .unwrap();
+        let stored = cached
+            .account
+            .as_ref()
+            .unwrap()
+            .storage
+            .get(&slot)
+            .copied()
+            .unwrap();
+        assert_eq!(stored, value, "Value should be in cache");
+
+        // Merge transitions into bundle.
+        state.merge_transitions(BundleRetention::Reverts);
+        let bundle = state.take_bundle();
+
+        // Verify value is in bundle.
+        let bundle_acct = bundle.state.get(&ARBOS_STATE_ADDRESS)
+            .expect("ArbOS account should be in bundle after merge");
+        let bundle_slot = bundle_acct.storage.get(&slot)
+            .expect("Slot should be in bundle storage");
+        assert_eq!(bundle_slot.present_value, value, "Bundle present_value should match");
+    }
+
+    #[test]
+    fn test_write_zero_value_is_noop_for_new_slot() {
+        let mut state = make_state();
+        let slot = U256::from(42);
+
+        // Writing 0 to a slot that doesn't exist (DB returns 0) should be a no-op.
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, U256::ZERO);
+
+        // After merge, the slot should NOT be in the bundle.
+        state.merge_transitions(BundleRetention::Reverts);
+        let bundle = state.take_bundle();
+
+        // Account might or might not be in bundle, but the slot should not.
+        if let Some(acct) = bundle.state.get(&ARBOS_STATE_ADDRESS) {
+            assert!(
+                acct.storage.get(&slot).is_none(),
+                "Slot written with zero should not appear in bundle"
+            );
+        }
+    }
+
+    #[test]
+    fn test_write_survives_multiple_transitions() {
+        let mut state = make_state();
+        let slot_a = U256::from(10);
+        let slot_b = U256::from(20);
+
+        // First transition: write slot A (simulates baseFee write during StartBlock).
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_a, U256::from(100));
+
+        // Second transition: write slot B (simulates gasBacklog write during user tx).
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot_b, U256::from(200));
+
+        // Merge and check both survive.
+        state.merge_transitions(BundleRetention::Reverts);
+        let bundle = state.take_bundle();
+
+        let acct = bundle.state.get(&ARBOS_STATE_ADDRESS)
+            .expect("ArbOS account should be in bundle");
+        assert_eq!(
+            acct.storage.get(&slot_a).unwrap().present_value,
+            U256::from(100),
+            "Slot A should survive merge"
+        );
+        assert_eq!(
+            acct.storage.get(&slot_b).unwrap().present_value,
+            U256::from(200),
+            "Slot B should survive merge"
+        );
+    }
+
+    #[test]
+    fn test_read_after_write_returns_written_value() {
+        let mut state = make_state();
+        let slot = U256::from(42);
+        let value = U256::from(99999);
+
+        write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value);
+
+        // Read should return the written value from cache.
+        let read_val = read_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot);
+        assert_eq!(read_val, value, "Read should return written value");
+    }
+
+    /// Simulates the real block execution flow:
+    /// 1. StartBlock internal tx writes slot A (baseFee) via write_storage_at
+    /// 2. EVM commit for internal tx (empty state)
+    /// 3. EVM commit for user tx (modifies different accounts)
+    /// 4. Post-commit hook writes slot B (gasBacklog) via write_storage_at
+    /// 5. Merge transitions
+    /// Both slots should survive in the bundle.
+    #[test]
+    fn test_write_survives_evm_commit_flow() {
+        let mut state = make_state();
+        let slot_basefee = U256::from(10);
+        let slot_backlog = U256::from(20);
+
+        // Step 1: StartBlock writes baseFee.
+        write_storage_at(
+            &mut state,
+            ARBOS_STATE_ADDRESS,
+            slot_basefee,
+            U256::from(100_000_000),
+        );
+
+        // Step 2: EVM commit for internal tx (empty state).
+        use revm_database::DatabaseCommit;
+        let empty_state: alloy_primitives::map::HashMap<Address, revm_state::Account> =
+            Default::default();
+        state.commit(empty_state);
+
+        // Step 3: EVM commit for user tx (modifies a different account).
+        let sender = address!("1111111111111111111111111111111111111111");
+        let mut user_changes: alloy_primitives::map::HashMap<Address, revm_state::Account> =
+            Default::default();
+        // Load sender into cache first so commit doesn't panic.
+        let _ = state.load_cache_account(sender);
+        let mut sender_acct = revm_state::Account::default();
+        sender_acct.info.balance = U256::from(1_000_000);
+        sender_acct.info.nonce = 1;
+        sender_acct.mark_touch();
+        user_changes.insert(sender, sender_acct);
+        state.commit(user_changes);
+
+        // Step 4: Post-commit hook writes gasBacklog.
+        write_storage_at(
+            &mut state,
+            ARBOS_STATE_ADDRESS,
+            slot_backlog,
+            U256::from(540_000),
+        );
+
+        // Step 5: Merge transitions.
+        state.merge_transitions(BundleRetention::Reverts);
+        let bundle = state.take_bundle();
+
+        // Both slots should be in the bundle.
+        let acct = bundle
+            .state
+            .get(&ARBOS_STATE_ADDRESS)
+            .expect("ArbOS account should be in bundle");
+        assert_eq!(
+            acct.storage.get(&slot_basefee).unwrap().present_value,
+            U256::from(100_000_000),
+            "baseFee slot should survive"
+        );
+        assert_eq!(
+            acct.storage.get(&slot_backlog).unwrap().present_value,
+            U256::from(540_000),
+            "gasBacklog slot should survive"
+        );
+    }
 }

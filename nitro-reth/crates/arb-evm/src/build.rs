@@ -1903,6 +1903,17 @@ where
                 self.touched_accounts.insert(pending.sender);
             }
 
+            tracing::warn!(
+                target: "arb::backlog",
+                has_poster_costs = pending.has_poster_costs,
+                retry_context = pending.retry_context.is_some(),
+                gas_price_positive = pending.gas_price_positive,
+                gas_used = gas_used_total,
+                poster_gas = pending.poster_gas,
+                arb_tx_type = ?pending.arb_tx_type,
+                "commit_transaction branching"
+            );
+
             if let Some(retry_ctx) = pending.retry_context {
                 // RetryTx end-of-tx: handle gas refunds, retryable cleanup.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
@@ -2058,9 +2069,24 @@ where
                         if let Ok(arb_state) =
                             ArbosState::open(state_ptr, SystemBurner::new(None, false))
                         {
-                            let _ = arb_state.l2_pricing_state.grow_backlog(
+                            let backlog_before = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
+                            let grow_result = arb_state.l2_pricing_state.grow_backlog(
                                 result.compute_gas_for_backlog,
                                 pending.charged_multi_gas,
+                            );
+                            let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
+                            tracing::warn!(
+                                target: "arb::backlog",
+                                gas_for_backlog = result.compute_gas_for_backlog,
+                                backlog_before,
+                                backlog_after,
+                                grow_ok = grow_result.is_ok(),
+                                "RetryTx GrowBacklog"
+                            );
+                        } else {
+                            tracing::error!(
+                                target: "arb::backlog",
+                                "RetryTx GrowBacklog: ArbosState::open FAILED"
                             );
                         }
                     }
@@ -2068,6 +2094,9 @@ where
             } else if pending.has_poster_costs {
                 // Normal tx: fee distribution.
                 let gas_left = pending.tx_gas_limit.saturating_sub(gas_used_total);
+
+                eprintln!("[BACKLOG_DEBUG] NormalTx path entered: gas_used={}, poster_gas={}, gas_left={}, gas_price_positive={}, arb_hooks_some={}",
+                    gas_used_total, pending.poster_gas, gas_left, pending.gas_price_positive, self.arb_hooks.is_some());
 
                 let fee_dist = self.arb_hooks.as_ref().map(|hooks| {
                     hooks.compute_end_tx_fees(&EndTxContext {
@@ -2084,6 +2113,14 @@ where
                 });
 
                 if let Some(ref dist) = fee_dist {
+                    eprintln!("[BACKLOG_DEBUG] fee_dist present: compute_gas_for_backlog={}, poster_fee={:?}",
+                        dist.compute_gas_for_backlog, dist.poster_fee_amount);
+                    tracing::warn!(
+                        target: "arb::backlog",
+                        compute_gas_for_backlog = dist.compute_gas_for_backlog,
+                        poster_fee = ?dist.poster_fee_amount,
+                        "NormalTx fee distribution"
+                    );
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
                     self.touched_accounts.insert(dist.network_fee_account);
@@ -2132,9 +2169,28 @@ where
                     {
                         // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
-                            let _ = arb_state.l2_pricing_state.grow_backlog(
+                            let backlog_before = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
+                            eprintln!("[BACKLOG_DEBUG] About to grow_backlog: gas_for_backlog={}, backlog_before={}",
+                                dist.compute_gas_for_backlog, backlog_before);
+                            let grow_result = arb_state.l2_pricing_state.grow_backlog(
                                 dist.compute_gas_for_backlog,
                                 used_multi_gas,
+                            );
+                            let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
+                            eprintln!("[BACKLOG_DEBUG] After grow_backlog: backlog_after={}, grow_ok={}",
+                                backlog_after, grow_result.is_ok());
+                            tracing::warn!(
+                                target: "arb::backlog",
+                                gas_for_backlog = dist.compute_gas_for_backlog,
+                                backlog_before,
+                                backlog_after,
+                                grow_ok = grow_result.is_ok(),
+                                "NormalTx GrowBacklog"
+                            );
+                        } else {
+                            tracing::error!(
+                                target: "arb::backlog",
+                                "NormalTx: gas_price_positive is FALSE, skipping grow_backlog"
                             );
                         }
                         if !dist.l1_fees_to_add.is_zero() {
@@ -2142,6 +2198,11 @@ where
                                 .l1_pricing_state
                                 .add_to_l1_fees_available(dist.l1_fees_to_add);
                         }
+                    } else {
+                        tracing::error!(
+                            target: "arb::backlog",
+                            "NormalTx: ArbosState::open FAILED for grow_backlog"
+                        );
                     }
                 }
             }
@@ -2434,9 +2495,6 @@ fn try_transfer_balance<DB: Database>(
     if amount.is_zero() {
         ensure_account_exists(state, from);
         ensure_account_exists(state, to);
-        return true;
-    }
-    if from == to {
         return true;
     }
     if get_balance(state, from) < amount {

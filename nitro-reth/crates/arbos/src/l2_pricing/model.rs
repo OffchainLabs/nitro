@@ -84,7 +84,20 @@ impl<D: Database> L2PricingState<D> {
 
     fn update_legacy_backlog_op(&self, op: BacklogOperation, gas: u64) -> Result<(), ()> {
         let backlog = self.gas_backlog()?;
-        self.set_gas_backlog(apply_gas_delta_op(op, backlog, gas))
+        let new_backlog = apply_gas_delta_op(op, backlog, gas);
+        eprintln!("[BACKLOG_DEBUG] update_legacy_backlog_op: op={:?}, gas={}, backlog={} -> new_backlog={}",
+            op, gas, backlog, new_backlog);
+        tracing::warn!(
+            target: "arb::backlog",
+            ?op,
+            gas,
+            backlog,
+            new_backlog,
+            "update_legacy_backlog_op"
+        );
+        let result = self.set_gas_backlog(new_backlog);
+        eprintln!("[BACKLOG_DEBUG] set_gas_backlog result: {:?}", result);
+        result
     }
 
     fn update_single_gas_constraints_backlogs_op(
@@ -517,5 +530,144 @@ fn apply_gas_delta_op(op: BacklogOperation, backlog: u64, delta: u64) -> u64 {
     match op {
         BacklogOperation::Grow => backlog.saturating_add(delta),
         BacklogOperation::Shrink => backlog.saturating_sub(delta),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Address, B256, U256, address, keccak256};
+    use arb_primitives::multigas::MultiGas;
+    use arb_storage::Storage;
+    use revm::Database;
+    use revm::database::StateBuilder;
+
+    const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+
+    #[derive(Default)]
+    struct EmptyDb;
+
+    impl Database for EmptyDb {
+        type Error = std::convert::Infallible;
+        fn basic(
+            &mut self,
+            _address: Address,
+        ) -> Result<Option<revm::state::AccountInfo>, Self::Error> {
+            Ok(None)
+        }
+        fn code_by_hash(
+            &mut self,
+            _code_hash: B256,
+        ) -> Result<revm::state::Bytecode, Self::Error> {
+            Ok(revm::state::Bytecode::default())
+        }
+        fn storage(
+            &mut self,
+            _address: Address,
+            _index: U256,
+        ) -> Result<U256, Self::Error> {
+            Ok(U256::ZERO)
+        }
+        fn block_hash(
+            &mut self,
+            _number: u64,
+        ) -> Result<B256, Self::Error> {
+            Ok(B256::ZERO)
+        }
+    }
+
+    /// Create ArbOS account in the cache if it doesn't exist.
+    fn ensure_cache_account(state: &mut revm::database::State<EmptyDb>, addr: Address) {
+        use revm::database::states::account_status::AccountStatus;
+        use revm::database::PlainAccount;
+
+        let _ = state.load_cache_account(addr);
+        if let Some(cached) = state.cache.accounts.get_mut(&addr) {
+            if cached.account.is_none() {
+                cached.account = Some(PlainAccount {
+                    info: revm::state::AccountInfo {
+                        balance: U256::ZERO,
+                        nonce: 0,
+                        code_hash: keccak256([]),
+                        code: None,
+                        account_id: None,
+                    },
+                    storage: Default::default(),
+                });
+                cached.status = AccountStatus::InMemoryChange;
+            }
+        }
+    }
+
+    #[test]
+    fn test_grow_backlog_through_l2_pricing_state() {
+        let mut state = StateBuilder::new()
+            .with_database(EmptyDb)
+            .with_bundle_update()
+            .build();
+
+        // Ensure ArbOS account exists with nonce=1
+        ensure_cache_account(&mut state, ARBOS_STATE_ADDRESS);
+        arb_storage::set_account_nonce(&mut state, ARBOS_STATE_ADDRESS, 1);
+
+        let state_ptr: *mut revm::database::State<EmptyDb> = &mut state;
+
+        // Create L2 pricing storage (subspace [1] off root)
+        let backing = Storage::new(state_ptr, B256::ZERO);
+        let l2_sto = backing.open_sub_storage(&[1]);
+
+        // Initialize L2 pricing state
+        super::super::initialize_l2_pricing_state(&l2_sto);
+
+        // Verify gasBacklog starts at 0
+        let l2_pricing = super::super::open_l2_pricing_state(
+            backing.open_sub_storage(&[1]),
+            10, // ArbOS v10
+        );
+        let initial_backlog = l2_pricing.gas_backlog().unwrap();
+        assert_eq!(initial_backlog, 0, "Initial gasBacklog should be 0");
+
+        // Grow backlog by 100000 gas
+        let result = l2_pricing.grow_backlog(100_000, MultiGas::default());
+        assert!(result.is_ok(), "grow_backlog should succeed");
+
+        // Verify gasBacklog is now 100000
+        let after_grow = l2_pricing.gas_backlog().unwrap();
+        assert_eq!(after_grow, 100_000, "gasBacklog should be 100000 after grow");
+
+        // Grow again by 50000
+        let result = l2_pricing.grow_backlog(50_000, MultiGas::default());
+        assert!(result.is_ok(), "second grow_backlog should succeed");
+
+        let after_second_grow = l2_pricing.gas_backlog().unwrap();
+        assert_eq!(after_second_grow, 150_000, "gasBacklog should be 150000 after second grow");
+
+        // Shrink by 30000
+        let result = l2_pricing.shrink_backlog(30_000, MultiGas::default());
+        assert!(result.is_ok(), "shrink_backlog should succeed");
+
+        let after_shrink = l2_pricing.gas_backlog().unwrap();
+        assert_eq!(after_shrink, 120_000, "gasBacklog should be 120000 after shrink");
+
+        // Verify bundle contains the gasBacklog change
+        use revm::database::states::bundle_state::BundleRetention;
+        state.merge_transitions(BundleRetention::Reverts);
+        let bundle = state.take_bundle();
+
+        let acct = bundle.state.get(&ARBOS_STATE_ADDRESS)
+            .expect("ArbOS account should be in bundle");
+
+        // The gasBacklog slot should be in the bundle storage
+        // Compute the expected slot
+        let l2_base = keccak256(&[1u8]); // open_sub_storage([1]) from root
+        let gas_backlog_offset: u64 = 4;
+        let slot = arb_storage::storage_key_map(l2_base.as_slice(), gas_backlog_offset);
+
+        let bundle_slot = acct.storage.get(&slot)
+            .expect("gasBacklog slot should be in bundle");
+        assert_eq!(
+            bundle_slot.present_value,
+            U256::from(120_000u64),
+            "Bundle should contain final gasBacklog value"
+        );
     }
 }

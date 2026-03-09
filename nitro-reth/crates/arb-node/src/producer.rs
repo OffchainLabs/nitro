@@ -497,13 +497,26 @@ where
         // post-commit hooks) that didn't go through revm's commit.
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
-        // Mark per-tx finalise deletions in the bundle (not visible to
-        // augment_bundle_from_cache). Skip accounts that were already empty
-        // pre-block — they were only loaded, not modified.
+        // Mark per-tx finalise deletions in the bundle.
+        // Accounts removed by per-tx EIP-161 cleanup are no longer in the
+        // cache, so augment_bundle_from_cache cannot see them. We must
+        // explicitly set info=None in the bundle to signal trie deletion.
+        //
+        // Skip accounts that were later re-created as zombies — those are
+        // valid empty accounts that must persist in the trie.
         let keccak_empty_hash =
             alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
         for addr in &finalise_deleted {
-            if bundle.state.contains_key(addr) {
+            // Zombie accounts were re-created after Finalise deleted them.
+            // They're back in cache and handled by augment_bundle_from_cache.
+            if zombie_accounts.contains(addr) {
+                continue;
+            }
+            if let Some(bundle_acct) = bundle.state.get_mut(addr) {
+                // Account already in bundle from EVM transitions — mark it
+                // deleted. The transition recorded the account's creation/
+                // modification, but per-tx Finalise deleted it afterwards.
+                bundle_acct.info = None;
                 continue;
             }
             if let Ok(Some(acct)) = state_provider.basic_account(addr) {
@@ -554,6 +567,56 @@ where
             ?state_root,
             "HashedPostState from bundle"
         );
+
+        // Dump detailed bundle state for divergence debugging.
+        if l2_block_number <= 3 && l2_block_number >= 1 {
+            eprintln!("=== DIVERGENCE DEBUG block={} ===", l2_block_number);
+            eprintln!("  state_root={:?}", state_root);
+            eprintln!("  bundle_accounts={}", bundle.state.len());
+            eprintln!("  zombies={:?}", zombie_accounts);
+            eprintln!("  finalise_deleted={:?}", finalise_deleted);
+            // Sort accounts by address for deterministic output.
+            let mut sorted_addrs: Vec<_> = bundle.state.keys().collect();
+            sorted_addrs.sort();
+            for addr in sorted_addrs {
+                let acct = &bundle.state[addr];
+                let info_str = match &acct.info {
+                    Some(info) => format!(
+                        "nonce={} bal={} code_hash={}",
+                        info.nonce, info.balance, info.code_hash,
+                    ),
+                    None => "DELETED".to_string(),
+                };
+                let is_zombie = zombie_accounts.contains(addr);
+                eprintln!(
+                    "  ACCT {:?}: {} storage={} zombie={} status={:?} orig_info={:?}",
+                    addr, info_str, acct.storage.len(), is_zombie,
+                    acct.status,
+                    acct.original_info.as_ref().map(|i| format!(
+                        "nonce={} bal={}", i.nonce, i.balance
+                    )),
+                );
+                // Dump all storage slots for this account.
+                if !acct.storage.is_empty() {
+                    let mut sorted_slots: Vec<_> = acct.storage.iter().collect();
+                    sorted_slots.sort_by_key(|(k, _)| *k);
+                    for (slot, val) in sorted_slots {
+                        eprintln!(
+                            "    SLOT {:?}: prev={} present={}",
+                            slot, val.previous_or_original_value, val.present_value,
+                        );
+                    }
+                }
+            }
+            // Also dump the HashedPostState for comparison.
+            eprintln!("  HASHED accounts={} storages={}",
+                hashed_state.accounts.len(), hashed_state.storages.len());
+            for (haddr, hacct) in &hashed_state.accounts {
+                eprintln!("    HACCT {:?}: {:?}", haddr,
+                    hacct.as_ref().map(|a| format!("nonce={} bal={}", a.nonce, a.balance)));
+            }
+            eprintln!("=== END DIVERGENCE DEBUG block={} ===", l2_block_number);
+        }
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
