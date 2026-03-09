@@ -13,8 +13,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	errors2 "github.com/pkg/errors"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -129,7 +127,7 @@ pending:
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		const maxRetries = 5
-		if errors2.Is(err, bind.ErrNoCode) && retries < maxRetries {
+		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
 			wait := time.Millisecond * 250 * (1 << retries)
 			log.Info("ExpressLaneAuction contract not ready, will retry after wait", "err", err, "wait", wait, "maxRetries", maxRetries)
 			retries++
