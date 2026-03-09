@@ -15,10 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -33,10 +31,6 @@ var (
 	auctionResolutionLatency = metrics.NewRegisteredGauge("arb/sequencer/timeboost/auctionresolution", nil)
 )
 
-type transactionPublisher interface {
-	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions) error
-}
-
 type expressLaneRoundInfo struct {
 	sequence uint64
 
@@ -46,7 +40,7 @@ type expressLaneRoundInfo struct {
 
 type expressLaneService struct {
 	stopwaiter.StopWaiter
-	transactionPublisher transactionPublisher
+	transactionPublisher timeboost.TransactionPublisher
 	seqConfig            SequencerConfigFetcher
 	roundTimingInfo      timeboost.RoundTimingInfo
 	redisCoordinator     *timeboost.RedisCoordinator
@@ -94,7 +88,7 @@ pending:
 }
 
 func newExpressLaneService(
-	transactionPublisher transactionPublisher,
+	transactionPublisher timeboost.TransactionPublisher,
 	seqConfig SequencerConfigFetcher,
 	roundTimingInfo *timeboost.RoundTimingInfo,
 	bc *core.BlockChain,
