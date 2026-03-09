@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -149,7 +150,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 
 		// Process immediately without affecting sequence ordering
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), es.seqConfig().QueueTimeout)
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeout(es.GetContext(), timeout)
 		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
 	}
 
@@ -226,7 +227,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		// Txs (current or buffered) cannot use this function's context as it would lead to context canceled error later on, once the tx is queued and this function returns, hence we
 		// use es.GetContext(). Txs sequenced this round shouldn't be processed by sequencer into next round, to enforce this, queueCtx has a timeout = min(TimeTilNextRound, queueTimeout)
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeout(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
 			logLevel := log.Error
 			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
