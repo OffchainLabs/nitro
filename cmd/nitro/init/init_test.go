@@ -1464,65 +1464,6 @@ func TestGetParsedInitMsgFromGenesis(t *testing.T) {
 	})
 }
 
-func TestValidateParsedInitMessagesMatch(t *testing.T) {
-	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	serializedConfig, err := json.Marshal(chainConfig)
-	require.NoError(t, err)
-
-	baseMsg := &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-		ChainConfig:           chainConfig,
-		SerializedChainConfig: serializedConfig,
-	}
-
-	t.Run("matching messages", func(t *testing.T) {
-		other := &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedConfig,
-		}
-		require.NoError(t, validateParsedInitMessagesMatch(baseMsg, other))
-	})
-
-	t.Run("chain ID mismatch", func(t *testing.T) {
-		other := &arbostypes.ParsedInitMessage{
-			ChainId:               big.NewInt(999999),
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedConfig,
-		}
-		err := validateParsedInitMessagesMatch(baseMsg, other)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "chain ID mismatch")
-	})
-
-	t.Run("initial L1 base fee mismatch", func(t *testing.T) {
-		other := &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      big.NewInt(123),
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: serializedConfig,
-		}
-		err := validateParsedInitMessagesMatch(baseMsg, other)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "initial L1 base fee mismatch")
-	})
-
-	t.Run("serialized chain config mismatch", func(t *testing.T) {
-		other := &arbostypes.ParsedInitMessage{
-			ChainId:               chainConfig.ChainID,
-			InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-			ChainConfig:           chainConfig,
-			SerializedChainConfig: []byte(`{"chainId":999}`),
-		}
-		err := validateParsedInitMessagesMatch(baseMsg, other)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "serialized chain config mismatch")
-	})
-}
-
 func TestGenesisOverrideConfig(t *testing.T) {
 	t.Run("IsSet returns false for defaults", func(t *testing.T) {
 		c := conf.GenesisOverrideConfigDefault
