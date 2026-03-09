@@ -636,6 +636,10 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 			return executionDB, nil, nil, err
 		}
 
+		if err := validateChainConfigCompatibility(consensusParsedInitMessage, chainConfig); err != nil {
+			return executionDB, nil, nil, err
+		}
+
 		executionParsedInitMsg, err := GetExecutionParsedInitMsg(genesis, &config.Init.GenesisOverride, chainConfig)
 		if err != nil {
 			return executionDB, nil, nil, err
@@ -643,9 +647,6 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 
 		parsedInitMessage := executionParsedInitMsg
 		if consensusParsedInitMessage != nil {
-			if err := validateChainConfigCompatibility(consensusParsedInitMessage, chainConfig); err != nil {
-				return executionDB, nil, nil, err
-			}
 			if !reflect.DeepEqual(executionParsedInitMsg, consensusParsedInitMessage) {
 				log.Warn("Execution and consensus parsed init messages do not match")
 			}
@@ -1104,7 +1105,7 @@ func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.Gene
 }
 
 func validateChainConfigCompatibility(parsedInitMessage *arbostypes.ParsedInitMessage, chainConfig *params.ChainConfig) error {
-	if parsedInitMessage.ChainConfig != nil {
+	if parsedInitMessage != nil && parsedInitMessage.ChainConfig != nil {
 		if err := parsedInitMessage.ChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 			return fmt.Errorf("incompatible chain config read from init message: %w", err)
 		}
