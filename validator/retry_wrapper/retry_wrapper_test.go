@@ -136,7 +136,7 @@ func TestRetryWrapper(t *testing.T) {
 			wantLaunchCount: 1,
 		},
 		{
-			name:            "timeout and non-timeout counters are independent",
+			name:            "non-timeout errors do not exhaust timeout counter",
 			allowedAttempts: 1,
 			allowedTimeouts: 1,
 			results: []launchResult{
@@ -145,6 +145,18 @@ func TestRetryWrapper(t *testing.T) {
 				{err: timeoutErr}, // timeoutAttempts=2, exceeds allowedTimeouts=1
 			},
 			wantErr:         timeoutErr,
+			wantLaunchCount: 3,
+		},
+		{
+			name:            "timeout errors do not exhaust non-timeout counter",
+			allowedAttempts: 1,
+			allowedTimeouts: 1,
+			results: []launchResult{
+				{err: genericErr}, // nonTimeoutAttempts=1, within limit
+				{err: timeoutErr}, // timeoutAttempts=1, within limit
+				{err: genericErr}, // nonTimeoutAttempts=2, exceeds allowedAttempts=1
+			},
+			wantErr:         genericErr,
 			wantLaunchCount: 3,
 		},
 	}
