@@ -1702,7 +1702,7 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
 	expressLaneTracker, err := gethexec.NewExpressLaneTracker(

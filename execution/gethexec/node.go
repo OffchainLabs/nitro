@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -658,7 +659,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -666,7 +667,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}

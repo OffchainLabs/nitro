@@ -13,18 +13,14 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -50,42 +46,6 @@ type expressLaneService struct {
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 
 	tracker *ExpressLaneTracker
-}
-
-func NewExpressLaneAuctionFromInternalAPI(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
-) (*express_lane_auctiongen.ExpressLaneAuction, error) {
-	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem), nil, apiBackend}
-
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
-	if err != nil {
-		return nil, err
-	}
-
-	return auctionContract, nil
-}
-
-func GetRoundTimingInfo(
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
-) (*timeboost.RoundTimingInfo, error) {
-	retries := 0
-
-pending:
-	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
-	if err != nil {
-		const maxRetries = 5
-		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
-			wait := time.Millisecond * 250 * (1 << retries)
-			log.Info("ExpressLaneAuction contract not ready, will retry after wait", "err", err, "wait", wait, "maxRetries", maxRetries)
-			retries++
-			time.Sleep(wait)
-			goto pending
-		}
-		return nil, err
-	}
-	return timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
 }
 
 func newExpressLaneService(

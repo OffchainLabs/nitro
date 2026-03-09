@@ -91,7 +91,7 @@ func NewExpressLaneProxy(
 		return nil, err
 	}
 
-	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	if err != nil {
 		return nil, err
 	}
