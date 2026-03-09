@@ -1500,7 +1500,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = timeboost.TimeboostConfig{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1527,7 +1527,7 @@ func setupExpressLaneAuction(
 		extraNodebuilder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 		extraNodebuilder.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 		extraNodebuilder.execConfig.Sequencer.Enable = true
-		extraNodebuilder.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		extraNodebuilder.execConfig.Sequencer.Timeboost = timeboost.TimeboostConfig{
 			Enable:                       true,
 			ExpressLaneAdvantage:         time.Second * 5,
 			RedisUrl:                     expressLaneRedisURL,

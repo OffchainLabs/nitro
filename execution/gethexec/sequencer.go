@@ -94,7 +94,7 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string                     `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string                     `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool                       `koanf:"enable-profiling" reload:"hot"`
-	Timeboost                    TimeboostConfig            `koanf:"timeboost"`
+	Timeboost                    timeboost.TimeboostConfig  `koanf:"timeboost"`
 	Dangerous                    DangerousConfig            `koanf:"dangerous"`
 	TransactionFiltering         TransactionFilteringConfig `koanf:"transaction-filtering" reload:"hot"`
 	expectedSurplusSoftThreshold int
@@ -140,31 +140,6 @@ type DangerousConfig struct {
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
-type TimeboostConfig struct {
-	Enable                       bool          `koanf:"enable"`
-	AuctionContractAddress       string        `koanf:"auction-contract-address"`
-	AuctioneerAddress            string        `koanf:"auctioneer-address"`
-	ExpressLaneAdvantage         time.Duration `koanf:"express-lane-advantage"`
-	SequencerHTTPEndpoint        string        `koanf:"sequencer-http-endpoint"`
-	EarlySubmissionGrace         time.Duration `koanf:"early-submission-grace"`
-	MaxFutureSequenceDistance    uint64        `koanf:"max-future-sequence-distance"`
-	RedisUrl                     string        `koanf:"redis-url"`
-	RedisUpdateEventsChannelSize uint64        `koanf:"redis-update-events-channel-size"`
-	QueueTimeoutInBlocks         uint64        `koanf:"queue-timeout-in-blocks"`
-}
-
-var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:                       false,
-	AuctionContractAddress:       "",
-	AuctioneerAddress:            "",
-	ExpressLaneAdvantage:         time.Millisecond * 200,
-	SequencerHTTPEndpoint:        "http://localhost:8547",
-	EarlySubmissionGrace:         time.Second * 2,
-	MaxFutureSequenceDistance:    1000,
-	RedisUrl:                     "unset",
-	RedisUpdateEventsChannelSize: 500,
-	QueueTimeoutInBlocks:         5,
-}
 
 func (c *SequencerConfig) Validate() error {
 	for _, address := range c.SenderWhitelist {
@@ -204,7 +179,7 @@ func (c *SequencerConfig) Validate() error {
 			return fmt.Errorf("invalid timeboost.auction-contract-address \"%v\"", c.Timeboost.AuctionContractAddress)
 		}
 		if c.Enable {
-			if c.Timeboost.RedisUrl == DefaultTimeboostConfig.RedisUrl {
+			if c.Timeboost.RedisUrl == timeboost.DefaultTimeboostConfig.RedisUrl {
 				return errors.New("timeboost is enabled but no redis-url was set")
 			}
 			if c.Timeboost.MaxFutureSequenceDistance == 0 {
@@ -260,7 +235,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	Timeboost:                    DefaultTimeboostConfig,
+	Timeboost:                    timeboost.DefaultTimeboostConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	TransactionFiltering:         DefaultTransactionFilteringConfig,
 }
@@ -277,7 +252,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
-	TimeboostAddOptions(prefix+".timeboost", f)
+	timeboost.TimeboostAddOptions(prefix+".timeboost", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
@@ -291,19 +266,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
-}
-
-func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
-	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
-	f.String(prefix+".auctioneer-address", DefaultTimeboostConfig.AuctioneerAddress, "Address of the Timeboost Autonomous Auctioneer")
-	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
-	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
-	f.Duration(prefix+".early-submission-grace", DefaultTimeboostConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
-	f.Uint64(prefix+".max-future-sequence-distance", DefaultTimeboostConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
-	f.String(prefix+".redis-url", DefaultTimeboostConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
-	f.Uint64(prefix+".redis-update-events-channel-size", DefaultTimeboostConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
-	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultTimeboostConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
