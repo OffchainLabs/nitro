@@ -1,7 +1,7 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package gethexec
+package timeboost
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -27,33 +26,33 @@ type expressLaneRoundInfo struct {
 	sequence uint64
 
 	// The per-round sequence number reordering queue
-	msgBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
+	msgBySequenceNumber map[uint64]*ExpressLaneSubmission
 }
 
 type expressLaneService struct {
 	stopwaiter.StopWaiter
-	transactionPublisher timeboost.TransactionPublisher
+	transactionPublisher TransactionPublisher
 	seqConfig            SequencerConfigFetcher
-	roundTimingInfo      timeboost.RoundTimingInfo
-	redisCoordinator     *timeboost.RedisCoordinator
+	roundTimingInfo      RoundTimingInfo
+	redisCoordinator     *RedisCoordinator
 
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
 
-	tracker *timeboost.ExpressLaneTracker
+	tracker *ExpressLaneTracker
 }
 
 func newExpressLaneService(
-	transactionPublisher timeboost.TransactionPublisher,
+	transactionPublisher TransactionPublisher,
 	seqConfig SequencerConfigFetcher,
-	roundTimingInfo *timeboost.RoundTimingInfo,
+	roundTimingInfo *RoundTimingInfo,
 	bc *core.BlockChain,
-	expressLaneTracker *timeboost.ExpressLaneTracker,
+	expressLaneTracker *ExpressLaneTracker,
 ) (*expressLaneService, error) {
 	var err error
-	var redisCoordinator *timeboost.RedisCoordinator
-	if seqConfig().Timeboost.RedisUrl != "" {
-		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Timeboost.RedisUrl, roundTimingInfo, seqConfig().Timeboost.RedisUpdateEventsChannelSize)
+	var redisCoordinator *RedisCoordinator
+	if seqConfig().RedisUrl != "" {
+		redisCoordinator, err = NewRedisCoordinator(seqConfig().RedisUrl, roundTimingInfo, seqConfig().RedisUpdateEventsChannelSize)
 		if err != nil {
 			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
 		}
@@ -93,14 +92,14 @@ const DontCareSequence = math.MaxUint64
 
 // sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
 // adds the message to the sequencer transaction queue
-func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.ExpressLaneSubmission) error {
+func (es *expressLaneService) sequenceExpressLaneSubmission(msg *ExpressLaneSubmission) error {
 	if msg.SequenceNumber == DontCareSequence {
 		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
 		// meant for restoring messages in the reordering queue if the sequencer fails over,
 		// but for messages with DontCareSequence we skip the reordernig queue.
 
 		if es.roundTimingInfo.RoundNumber() != msg.Round {
-			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
+			return errors.Wrapf(ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
 		}
 
 		// Process immediately without affecting sequence ordering
@@ -122,14 +121,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		return err
 	}
 	if sender != controller {
-		return timeboost.ErrNotExpressLaneController
+		return ErrNotExpressLaneController
 	}
 
 	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
 	if !es.roundInfo.Contains(msg.Round) {
 		es.roundInfo.Add(msg.Round, &expressLaneRoundInfo{
 			0,
-			make(map[uint64]*timeboost.ExpressLaneSubmission),
+			make(map[uint64]*ExpressLaneSubmission),
 		})
 	}
 	roundInfo, _ := es.roundInfo.Get(msg.Round)
@@ -141,7 +140,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		if exists && bytes.Equal(prev.Signature, msg.Signature) {
 			return nil
 		}
-		return timeboost.ErrSequenceNumberTooLow
+		return ErrSequenceNumberTooLow
 	}
 
 	// Check if a duplicate submission exists already, and reject if so.
@@ -149,14 +148,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		if bytes.Equal(prev.Signature, msg.Signature) {
 			return nil
 		}
-		return timeboost.ErrDuplicateSequenceNumber
+		return ErrDuplicateSequenceNumber
 	}
 
 	seqConfig := es.seqConfig()
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
-		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance {
-			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance)
+		if msg.SequenceNumber > roundInfo.sequence+seqConfig.MaxFutureSequenceDistance {
+			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.MaxFutureSequenceDistance)
 		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
@@ -224,7 +223,7 @@ func (es *expressLaneService) syncFromRedis() {
 	roundInfo, exists := es.roundInfo.Get(currentRound)
 	if !exists {
 		// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
-		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)}
+		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)}
 	}
 	if redisSeqCount > roundInfo.sequence {
 		roundInfo.sequence = redisSeqCount
@@ -233,7 +232,7 @@ func (es *expressLaneService) syncFromRedis() {
 	sequenceCount := roundInfo.sequence
 	es.roundInfoMutex.Unlock()
 
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Timeboost.MaxFutureSequenceDistance)
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().MaxFutureSequenceDistance)
 	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
 		if err := es.sequenceExpressLaneSubmission(msg); err != nil {
@@ -254,6 +253,6 @@ func (es *expressLaneService) AuctionContractAddr() common.Address {
 	return es.tracker.AuctionContractAddr()
 }
 
-func (es *expressLaneService) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
+func (es *expressLaneService) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
 	return es.tracker.ValidateExpressLaneTx(msg)
 }
