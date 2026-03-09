@@ -548,12 +548,11 @@ func TestPayForMemoryGrowInkUsage(t *testing.T) {
 	testname := "pay_for_memory_grow_100"
 	data := encodeHostioFromSignature(t, signature, []uint64{100})
 	expectedInk := uint64(9320660000)
-	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
+	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, HOSTIO_INK, expectedInk)
 
 	testname = "pay_for_memory_grow_0"
 	data = encodeHostioFromSignature(t, signature, []uint64{0})
-	expectedInk = HOSTIO_INK
-	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, expectedInk)
+	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, HOSTIO_INK, HOSTIO_INK)
 }
 
 func checkInkUsage(
@@ -583,7 +582,7 @@ func checkInkUsage(
 	}
 
 	if len(stylusInkUsage[hostio]) != len(expectedInkValues) {
-		Fatal(t, "unexpected number of ink usage", "hostio", hostio, "stylusInkUsage", stylusInkUsage, "testName", testName)
+		Fatal(t, "unexpected number of ink usage", "stylusInkUsage[hostio]", stylusInkUsage[hostio], "stylusInkUsage", stylusInkUsage, "testName", testName, "expectedInkValues", expectedInkValues)
 	}
 
 	for i, expectedInk := range expectedInkValues {

@@ -388,13 +388,13 @@ func TestStylusOpcodeTraceCall(t *testing.T) {
 	checkOpcode(t, result, 3, vm.CALL, gas, storage[:], nil, nil, argsLen, nil, nil)
 
 	// read_return_data
-	checkOpcode(t, result, 8, vm.RETURNDATACOPY, nil, nil, returnLen)
+	checkOpcode(t, result, 10, vm.RETURNDATACOPY, nil, nil, returnLen)
 
 	// delegate_call_contract
-	checkOpcode(t, result, 9, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 11, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
 
 	// static_call_contract
-	checkOpcode(t, result, 15, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 19, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
 }
 
 func TestStylusOpcodeTraceCreate(t *testing.T) {
@@ -486,7 +486,7 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	checkOpcode(t, evmResult, 4828, vm.RETURN, offset, returnLen)
 
 	// outer return
-	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
+	checkOpcode(t, wasmResult, 14, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
 }
 

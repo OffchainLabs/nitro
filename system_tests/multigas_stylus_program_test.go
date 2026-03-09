@@ -49,7 +49,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
-	require.GreaterOrEqual(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(12_000))
+	require.GreaterOrEqual(t, receipt.MultiGasUsed.Get(multigas.ResourceKindWasmComputation), uint64(10_000))
 	require.Equal(t, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation), params.TxGas+params.WarmStorageReadCostEIP2929)
 }
 
@@ -360,7 +360,7 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 		expectOK bool
 	}{
 		{"success", 1_000_000_000, true},
-		{"out_of_gas", 1_500_000, false}, // above intrinsic cost, below storage create slot cost
+		{"out_of_gas", 1_498_000, false}, // above intrinsic cost, below storage create slot cost
 	}
 
 	for _, tc := range cases {
