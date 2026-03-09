@@ -1576,7 +1576,6 @@ func (s *Sequencer) InitializeExpressLaneService(
 		s,
 		s.config,
 		roundTimingInfo,
-		s.execEngine.bc,
 		expressLaneTracker,
 	)
 	if err != nil {

@@ -46,7 +46,6 @@ func NewExpressLaneService(
 	transactionPublisher TransactionPublisher,
 	seqConfig SequencerConfigFetcher,
 	roundTimingInfo *RoundTimingInfo,
-	bc *core.BlockChain,
 	expressLaneTracker *ExpressLaneTracker,
 ) (*ExpressLaneService, error) {
 	var err error
