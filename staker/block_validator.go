@@ -333,6 +333,7 @@ type validationStatus struct {
 
 type validationDoneEntry struct {
 	Success         bool
+	Err             error
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
@@ -909,7 +910,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
 			return &pos, nil // if not fatal - retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
@@ -1044,6 +1045,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				if err != nil {
 					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
+					validationStatus.DoneEntry.Err = err
 					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
 					break
 				}
