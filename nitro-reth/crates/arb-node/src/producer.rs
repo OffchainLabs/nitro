@@ -512,11 +512,45 @@ where
             if zombie_accounts.contains(addr) {
                 continue;
             }
-            if let Some(bundle_acct) = bundle.state.get_mut(addr) {
-                // Account already in bundle from EVM transitions — mark it
-                // deleted. The transition recorded the account's creation/
-                // modification, but per-tx Finalise deleted it afterwards.
-                bundle_acct.info = None;
+            if bundle.state.contains_key(addr) {
+                // Account is in bundle from EVM transitions. Check whether
+                // it existed in the trie before this block.
+                let existed_before = state_provider.basic_account(addr)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if existed_before {
+                    // Account was in the trie. Only mark as deleted if it's
+                    // still empty — it may have been re-created with non-zero
+                    // state (e.g., nonce=1) by a later tx in this block.
+                    let still_empty = bundle.state.get(addr)
+                        .and_then(|a| a.info.as_ref())
+                        .map_or(true, |info| {
+                            info.nonce == 0
+                                && info.balance.is_zero()
+                                && info.code_hash == keccak_empty_hash
+                        });
+                    if still_empty {
+                        if let Some(bundle_acct) = bundle.state.get_mut(addr) {
+                            bundle_acct.info = None;
+                        }
+                    }
+                } else {
+                    // Account was created within this block. It may have been
+                    // emptied and then re-created (e.g., sender emptied after
+                    // SubmitRetryable, then nonce incremented during RetryTx).
+                    // Only remove if the account is still empty.
+                    let still_empty = bundle.state.get(addr)
+                        .and_then(|a| a.info.as_ref())
+                        .map_or(true, |info| {
+                            info.nonce == 0
+                                && info.balance.is_zero()
+                                && info.code_hash == keccak_empty_hash
+                        });
+                    if still_empty {
+                        bundle.state.remove(addr);
+                    }
+                }
                 continue;
             }
             if let Ok(Some(acct)) = state_provider.basic_account(addr) {
@@ -548,7 +582,7 @@ where
 
         // Delete empty accounts from the bundle (EIP-161).
         // Zombie accounts are preserved.
-        delete_empty_accounts(&mut bundle, &zombie_accounts);
+        delete_empty_accounts(&mut bundle, &zombie_accounts, &*state_provider);
 
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
@@ -567,56 +601,6 @@ where
             ?state_root,
             "HashedPostState from bundle"
         );
-
-        // Dump detailed bundle state for divergence debugging.
-        if l2_block_number <= 3 && l2_block_number >= 1 {
-            eprintln!("=== DIVERGENCE DEBUG block={} ===", l2_block_number);
-            eprintln!("  state_root={:?}", state_root);
-            eprintln!("  bundle_accounts={}", bundle.state.len());
-            eprintln!("  zombies={:?}", zombie_accounts);
-            eprintln!("  finalise_deleted={:?}", finalise_deleted);
-            // Sort accounts by address for deterministic output.
-            let mut sorted_addrs: Vec<_> = bundle.state.keys().collect();
-            sorted_addrs.sort();
-            for addr in sorted_addrs {
-                let acct = &bundle.state[addr];
-                let info_str = match &acct.info {
-                    Some(info) => format!(
-                        "nonce={} bal={} code_hash={}",
-                        info.nonce, info.balance, info.code_hash,
-                    ),
-                    None => "DELETED".to_string(),
-                };
-                let is_zombie = zombie_accounts.contains(addr);
-                eprintln!(
-                    "  ACCT {:?}: {} storage={} zombie={} status={:?} orig_info={:?}",
-                    addr, info_str, acct.storage.len(), is_zombie,
-                    acct.status,
-                    acct.original_info.as_ref().map(|i| format!(
-                        "nonce={} bal={}", i.nonce, i.balance
-                    )),
-                );
-                // Dump all storage slots for this account.
-                if !acct.storage.is_empty() {
-                    let mut sorted_slots: Vec<_> = acct.storage.iter().collect();
-                    sorted_slots.sort_by_key(|(k, _)| *k);
-                    for (slot, val) in sorted_slots {
-                        eprintln!(
-                            "    SLOT {:?}: prev={} present={}",
-                            slot, val.previous_or_original_value, val.present_value,
-                        );
-                    }
-                }
-            }
-            // Also dump the HashedPostState for comparison.
-            eprintln!("  HASHED accounts={} storages={}",
-                hashed_state.accounts.len(), hashed_state.storages.len());
-            for (haddr, hacct) in &hashed_state.accounts {
-                eprintln!("    HACCT {:?}: {:?}", haddr,
-                    hacct.as_ref().map(|a| format!("nonce={} bal={}", a.nonce, a.balance)));
-            }
-            eprintln!("=== END DIVERGENCE DEBUG block={} ===", l2_block_number);
-        }
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);
@@ -851,25 +835,42 @@ fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -
 }
 
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
+///
+/// Accounts that existed in the trie before this block are marked as deleted
+/// (info=None). Accounts that were created and emptied within this block are
+/// removed from the bundle entirely (no trie operation needed).
 fn delete_empty_accounts(
     bundle: &mut BundleState,
     zombie_accounts: &std::collections::HashSet<Address>,
+    state_provider: &dyn StateProvider,
 ) {
     let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+    let mut to_remove = Vec::new();
     for (addr, account) in bundle.state.iter_mut() {
         if let Some(ref info) = account.info {
             let is_empty = info.nonce == 0
                 && info.balance.is_zero()
                 && info.code_hash == keccak_empty;
             if is_empty && !zombie_accounts.contains(addr) {
-                debug!(
-                    target: "block_producer",
-                    addr = ?addr,
-                    "EIP-161: deleting empty account from state"
-                );
-                account.info = None;
+                let existed_before = state_provider.basic_account(addr)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if existed_before {
+                    debug!(
+                        target: "block_producer",
+                        addr = ?addr,
+                        "EIP-161: deleting empty account from state"
+                    );
+                    account.info = None;
+                } else {
+                    to_remove.push(*addr);
+                }
             }
         }
+    }
+    for addr in to_remove {
+        bundle.state.remove(&addr);
     }
 }
 
