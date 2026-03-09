@@ -25,6 +25,15 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
+const defaultTestMaxTxDataSize = 95000
+
+var defaultTestServiceConfig = ExpressLaneServiceConfig{
+	QueueTimeout:                 time.Second * 5,
+	MaxFutureSequenceDistance:    1000,
+	RedisUrl:                     "",
+	RedisUpdateEventsChannelSize: 500,
+}
+
 var testPriv, testPriv2 *ecdsa.PrivateKey
 
 func init() {
@@ -83,7 +92,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 			name: "oversized data",
 			sub: func() *ExpressLaneSubmission {
 				submission := cloneSubmission(validSubmission)
-				submission.Transaction = types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), make([]byte, DefaultSequencerConfig.MaxTxDataSize))
+				submission.Transaction = types.NewTransaction(0, common.Address{}, big.NewInt(0), 0, big.NewInt(0), make([]byte, defaultTestMaxTxDataSize))
 				return submission
 			}(),
 			t:           defaultTestTracker(),
@@ -275,7 +284,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 	}
 	var err error
@@ -322,7 +331,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 	}
 	var err error
@@ -383,7 +392,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &ExpressLaneServiceConfig{} },
 		tracker:         tr,
 	}
 	var err error
@@ -426,7 +435,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els1 := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 	}
 	var err error
@@ -467,7 +476,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els2 := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr2,
 	}
 	els2.redisCoordinator, err = NewRedisCoordinator(redisUrl, &timingInfo, 50)
@@ -583,7 +592,7 @@ func Test_expressLaneService_dontCareSequence(t *testing.T) {
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 		transactionPublisher: testTransactionPublisher{
 			publishFunc: mockPublish,
@@ -621,7 +630,7 @@ func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 		transactionPublisher: testTransactionPublisher{
 			publishFunc: mockPublish,
@@ -692,7 +701,7 @@ func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 		transactionPublisher: testTransactionPublisher{
 			publishFunc: mockPublish,
@@ -763,7 +772,7 @@ func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 		transactionPublisher: testTransactionPublisher{
 			publishFunc: mockPublish,
@@ -838,7 +847,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
-		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
+		seqConfig:       func() *ExpressLaneServiceConfig { return &defaultTestServiceConfig },
 		tracker:         tr,
 		transactionPublisher: testTransactionPublisher{
 			publishFunc: mockPublish,
@@ -1009,7 +1018,7 @@ func cloneSubmission(original *ExpressLaneSubmission) *ExpressLaneSubmission {
 
 func defaultTestTracker() *ExpressLaneTracker {
 	return &ExpressLaneTracker{
-		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+		maxTxSize: uint64(defaultTestMaxTxDataSize), // #nosec G115
 	}
 }
 
@@ -1023,7 +1032,7 @@ func defaultTestTrackerWithConfig(
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
 		},
-		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+		maxTxSize: uint64(defaultTestMaxTxDataSize), // #nosec G115
 	}
 }
 
@@ -1032,6 +1041,6 @@ func defaultTestTrackerWithChainID(chainID int64) *ExpressLaneTracker {
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(chainID),
 		},
-		maxTxSize: uint64(DefaultSequencerConfig.MaxTxDataSize), // #nosec G115
+		maxTxSize: uint64(defaultTestMaxTxDataSize), // #nosec G115
 	}
 }
