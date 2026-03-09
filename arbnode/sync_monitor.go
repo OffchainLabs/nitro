@@ -11,17 +11,26 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+type MessageSyncProgressFetcher interface {
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error)
+	GetL1Reader() *headerreader.HeaderReader
+}
+
 type SyncMonitor struct {
 	stopwaiter.StopWaiter
-	config      func() *SyncMonitorConfig
-	inboxReader *InboxReader
-	txStreamer  *TransactionStreamer
-	coordinator *SeqCoordinator
-	initialized bool
+	config              func() *SyncMonitorConfig
+	txStreamer          *TransactionStreamer
+	coordinator         *SeqCoordinator
+	initialized         bool
+	syncProgressFetcher MessageSyncProgressFetcher
 
 	syncTargetLock sync.Mutex
 	nextSyncTarget arbutil.MessageIndex
@@ -50,8 +59,8 @@ func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
-	s.inboxReader = inboxReader
+func (s *SyncMonitor) Initialize(syncProgressFetcher MessageSyncProgressFetcher, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
+	s.syncProgressFetcher = syncProgressFetcher
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
 	s.initialized = true
@@ -80,10 +89,7 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 }
 
 func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	if s.inboxReader != nil && s.inboxReader.l1Reader != nil {
-		return s.inboxReader.GetFinalizedMsgCount(ctx)
-	}
-	return 0, nil
+	return s.syncProgressFetcher.GetFinalizedMsgCount(ctx)
 }
 
 func (s *SyncMonitor) GetMaxMessageCount() (arbutil.MessageIndex, error) {
@@ -101,18 +107,12 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 		msgCount = pending
 	}
 
-	if s.inboxReader != nil {
-		batchProcessed := s.inboxReader.GetLastReadBatchCount()
-
-		if batchProcessed > 0 {
-			batchMsgCount, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
-			if err != nil {
-				return msgCount, err
-			}
-			if batchMsgCount > msgCount {
-				msgCount = batchMsgCount
-			}
+	if s.syncProgressFetcher != nil {
+		fetched, err := s.syncProgressFetcher.GetMsgCount(s.GetContext())
+		if err != nil {
+			return msgCount, err
 		}
+		msgCount = max(msgCount, fetched)
 	}
 
 	if s.coordinator != nil {
@@ -160,23 +160,20 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 
 	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
-	if s.inboxReader != nil {
-		batchSeen := s.inboxReader.GetLastSeenBatchCount()
-		res["batchSeen"] = batchSeen
-
-		batchProcessed := s.inboxReader.GetLastReadBatchCount()
-		res["batchProcessed"] = batchProcessed
-
-		if batchProcessed > 0 {
-			processedBatchMsgs, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
-			if err != nil {
-				res["batchMetadataError"] = err.Error()
-			} else {
-				res["messageOfProcessedBatch"] = processedBatchMsgs
+	if s.syncProgressFetcher != nil {
+		progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
+		if err != nil {
+			log.Error("Error getting sync progress", "err", err)
+			res["batchMetadataError"] = err.Error()
+		} else {
+			res["batchSeen"] = progress.BatchSeen
+			res["batchProcessed"] = progress.BatchProcessed
+			if progress.BatchProcessed > 0 {
+				res["messageOfProcessedBatch"] = progress.MsgCount
 			}
 		}
 
-		l1reader := s.inboxReader.l1Reader
+		l1reader := s.syncProgressFetcher.GetL1Reader()
 		if l1reader != nil {
 			header, err := l1reader.LastHeaderWithError()
 			if err != nil {
@@ -235,14 +232,16 @@ func (s *SyncMonitor) Synced() bool {
 		return false
 	}
 
-	if s.inboxReader != nil {
-		batchSeen := s.inboxReader.GetLastSeenBatchCount()
-		if batchSeen == 0 {
+	if s.syncProgressFetcher != nil {
+		progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
+		if err != nil {
+			log.Error("Error getting sync progress", "err", err)
 			return false
 		}
-		batchProcessed := s.inboxReader.GetLastReadBatchCount()
-
-		if batchProcessed < batchSeen {
+		if progress.BatchSeen == 0 {
+			return false
+		}
+		if progress.BatchProcessed < progress.BatchSeen {
 			return false
 		}
 	}
