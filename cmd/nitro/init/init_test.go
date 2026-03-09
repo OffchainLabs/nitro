@@ -1464,6 +1464,62 @@ func TestGetParsedInitMsgFromGenesis(t *testing.T) {
 	})
 }
 
+func TestGetExecutionParsedInitMsg(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	serializedConfig := testChainConfigJSON(t)
+	customFee := big.NewInt(100_000_000_000)
+
+	genesis := &core.Genesis{
+		SerializedChainConfig: serializedConfig,
+		ArbOSInit: &params.ArbOSInit{
+			InitialL1BaseFee: customFee,
+		},
+	}
+
+	matchingOverride := &conf.GenesisOverrideConfig{
+		SerializedChainConfig: serializedConfig,
+		InitialL1BaseFee:      "100000000000",
+	}
+
+	t.Run("genesis only", func(t *testing.T) {
+		msg, err := GetExecutionParsedInitMsg(genesis, nil, chainConfig)
+		require.NoError(t, err)
+		require.Equal(t, chainConfig.ChainID, msg.ChainId)
+		require.Equal(t, customFee, msg.InitialL1BaseFee)
+	})
+
+	t.Run("genesis with matching override", func(t *testing.T) {
+		msg, err := GetExecutionParsedInitMsg(genesis, matchingOverride, chainConfig)
+		require.NoError(t, err)
+		require.Equal(t, chainConfig.ChainID, msg.ChainId)
+		require.Equal(t, customFee, msg.InitialL1BaseFee)
+	})
+
+	t.Run("genesis with mismatching override returns error", func(t *testing.T) {
+		mismatchOverride := &conf.GenesisOverrideConfig{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      "999",
+		}
+		_, err := GetExecutionParsedInitMsg(genesis, mismatchOverride, chainConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "genesis and genesis override parsed init messages do not match")
+	})
+
+	t.Run("override only", func(t *testing.T) {
+		msg, err := GetExecutionParsedInitMsg(nil, matchingOverride, chainConfig)
+		require.NoError(t, err)
+		require.Equal(t, chainConfig.ChainID, msg.ChainId)
+		require.Equal(t, customFee, msg.InitialL1BaseFee)
+	})
+
+	t.Run("chain config fallback", func(t *testing.T) {
+		msg, err := GetExecutionParsedInitMsg(nil, nil, chainConfig)
+		require.NoError(t, err)
+		require.Equal(t, chainConfig.ChainID, msg.ChainId)
+		require.Equal(t, arbostypes.DefaultInitialL1BaseFee, msg.InitialL1BaseFee)
+	})
+}
+
 func TestGenesisOverrideConfig(t *testing.T) {
 	t.Run("IsSet returns false for defaults", func(t *testing.T) {
 		c := conf.GenesisOverrideConfigDefault
