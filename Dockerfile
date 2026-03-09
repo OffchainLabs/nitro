@@ -278,6 +278,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
+    echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf && \
     nitro --version
 
 USER user

@@ -12,24 +12,17 @@ use crate::engine::execution::{validate_continuous, validate_native};
 use crate::engine::ModuleRoot;
 use crate::ServerState;
 use axum::extract::State;
-use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::sync::Arc;
-use validation::{GoGlobalState, ValidationInput};
-
-/// JSON-RPC 2.0 request envelope.
-#[derive(Deserialize)]
-pub struct JsonRpcRequest {
-    pub id: serde_json::Value,
-    pub params: Vec<serde_json::Value>,
-}
+use validation::ValidationInput;
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]
 pub struct JsonRpcResponse<T: Serialize> {
     pub jsonrpc: &'static str,
-    pub id: serde_json::Value,
+    pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,7 +36,7 @@ pub struct JsonRpcError {
 }
 
 impl<T: Serialize> JsonRpcResponse<T> {
-    fn success(id: serde_json::Value, result: T) -> Self {
+    fn success(id: Value, result: T) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -52,7 +45,7 @@ impl<T: Serialize> JsonRpcResponse<T> {
         }
     }
 
-    fn error(id: serde_json::Value, message: String) -> Self {
+    fn error(id: Value, message: String) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -71,32 +64,60 @@ pub struct ValidationRequest {
     pub module_root: Option<ModuleRoot>,
 }
 
-pub async fn validate(
-    State(state): State<Arc<ServerState>>,
-    Json(rpc_request): Json<JsonRpcRequest>,
-) -> Json<JsonRpcResponse<GoGlobalState>> {
-    let id = rpc_request.id;
+/// JSON-RPC 2.0 dispatch request with `method` field.
+#[derive(Deserialize)]
+pub struct JsonRpcRequest {
+    pub id: Value,
+    pub method: String,
+    #[serde(default)]
+    pub params: Vec<Value>,
+}
 
-    let validation_input: ValidationInput = match rpc_request.params.first() {
-        Some(value) => match serde_json::from_value(value.clone()) {
-            Ok(input) => input,
-            Err(e) => {
-                return Json(JsonRpcResponse::error(
-                    id,
-                    format!("Failed to parse validation input: {e}"),
-                ))
-            }
-        },
-        None => {
-            return Json(JsonRpcResponse::error(
-                id,
-                "Missing validation input in params".to_string(),
-            ))
-        }
+/// Standard JSON-RPC 2.0 dispatch endpoint (`POST /`).
+///
+/// go-ethereum's `rpc.Client` sends all requests to the base URL with the
+/// `method` field in the JSON body. This handler dispatches to the appropriate
+/// logic based on the method name.
+pub async fn jsonrpc_dispatch(
+    State(state): State<Arc<ServerState>>,
+    Json(req): Json<JsonRpcRequest>,
+) -> Json<JsonRpcResponse<Value>> {
+    let id = req.id.clone();
+
+    let result = match req.method.as_str() {
+        "validation_name" => Ok(json!("Rust JIT validator")),
+        "validation_stylusArchs" => Ok(json!([validation::local_target()])),
+        "validation_wasmModuleRoots" => Ok(json!(module_roots(state))),
+        "validation_capacity" => Ok(json!(state.available_workers)),
+        "validation_validate" => validate(&state, &req.params).await,
+        method => Err(format!("Method not found: {method}")),
     };
 
-    let module_root: Option<ModuleRoot> = rpc_request
-        .params
+    match result {
+        Ok(value) => Json(JsonRpcResponse::success(id, value)),
+        Err(msg) => Json(JsonRpcResponse::error(id, msg)),
+    }
+}
+
+fn module_roots(state: Arc<ServerState>) -> Vec<String> {
+    state
+        .locator
+        .module_roots()
+        .iter()
+        .map(|root_meta| root_meta.module_root.to_string())
+        .collect()
+}
+
+async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, String> {
+    let validation_input: ValidationInput = params
+        .first()
+        .ok_or_else(|| "Missing params".to_string())
+        .and_then(|v| {
+            serde_json::from_value(v.clone())
+                .map_err(|e| format!("Failed to parse validation input: {e}"))
+        })?;
+
+    let module_root: Option<ModuleRoot> = params
         .get(1)
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
@@ -106,35 +127,14 @@ pub async fn validate(
         module_root,
     };
 
-    let result = match &state.execution {
+    let Json(gs) = match &state.execution {
         ExecutionMode::Native { module_cache } => {
             validate_native(&state.locator, module_cache, request).await
         }
         ExecutionMode::Continuous { jit_manager } => {
             validate_continuous(&state.locator, jit_manager, request).await
         }
-    };
+    }?;
 
-    match result {
-        Ok(Json(global_state)) => Json(JsonRpcResponse::success(id, global_state)),
-        Err(e) => Json(JsonRpcResponse::error(id, e)),
-    }
-}
-
-pub async fn capacity(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    format!("{:?}", state.available_workers)
-}
-
-pub async fn name() -> impl IntoResponse {
-    "Rust JIT validator"
-}
-
-pub async fn wasm_module_roots(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    let module_roots: Vec<String> = state
-        .locator
-        .module_roots()
-        .iter()
-        .map(|root_meta| format!("0x{}", root_meta.module_root))
-        .collect();
-    format!("[{}]", module_roots.join(", "))
+    serde_json::to_value(gs).map_err(|e| format!("Serialization error: {e}"))
 }

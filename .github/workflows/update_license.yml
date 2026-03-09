@@ -46,6 +46,7 @@ jobs:
           branch: automation/update-licenses
           commit-message: "Update license headers for ${{ github.event.schedule || 'manual trigger' }}"
           title: "License header update"
+          token: ${{ secrets.CHANGELOG_PUSH_TOKEN }}
           body: |
             Automated license header update.
             

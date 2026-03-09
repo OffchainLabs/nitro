@@ -181,6 +181,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 .PHONY: test-go-deps
 test-go-deps: \
 	build-replay-env \
+	build-validation-server \
 	$(stylus_test_wasms) \
 	$(arbitrator_stylus_lib) \
 	$(arbitrator_generated_header) \

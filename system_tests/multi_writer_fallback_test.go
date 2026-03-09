@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -526,7 +527,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	phase2AnyTrustFound := false
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -572,7 +573,7 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 
 	phase3CustomDAFound := false
 	for _, batch := range phase3Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -602,14 +603,14 @@ func TestMultiWriterFallback_CustomDAToAnyTrustExplicit(t *testing.T) {
 func getCustomDAPayloadSize(
 	t *testing.T,
 	ctx context.Context,
-	batch *arbnode.SequencerInboxBatch,
+	batch *mel.SequencerInboxBatch,
 	l1Client *ethclient.Client,
 	validatorAddr common.Address,
 ) int {
 	t.Helper()
 
 	// Get the serialized batch (contains the certificate)
-	serializedBatch, err := batch.Serialize(ctx, l1Client)
+	serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, l1Client)
 	Require(t, err)
 
 	if len(serializedBatch) <= 40 {
@@ -759,7 +760,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 
 	var phase1CustomDABatches int
 	for _, batch := range phase1Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -832,7 +833,7 @@ func TestMultiWriterFallback_CustomDAToCalldataWithBatchResizing(t *testing.T) {
 
 	var phase2CalldataBatches int
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -959,7 +960,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	phase1AnyTrustBatches := 0
 	for _, batch := range phase1Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -1004,7 +1005,7 @@ func TestMultiWriterFallback_AnyTrustToCalldataOnBackendFailure(t *testing.T) {
 
 	phase2CalldataBatches := 0
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -1146,7 +1147,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	phase1CustomDABatches := 0
 	var phase1MaxPayloadSize int
 	for _, batch := range phase1Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
@@ -1229,7 +1230,7 @@ func TestBatchResizingWithoutFallback_MessageTooLarge(t *testing.T) {
 	phase2OversizedBatches := 0
 	var phase2MaxPayloadSize int
 	for _, batch := range phase2Batches {
-		serializedBatch, err := batch.Serialize(ctx, builder.L1.Client)
+		serializedBatch, err := arbnode.SerializeSequencerInboxBatch(ctx, batch, builder.L1.Client)
 		Require(t, err)
 
 		if len(serializedBatch) <= 40 {
