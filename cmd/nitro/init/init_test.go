@@ -1295,8 +1295,8 @@ func TestGetInitWithGenesis(t *testing.T) {
 
 	require.Equal(t, expectedChainConfig, chainConfig)
 
-	if arbOsInit != nil {
-		t.Fatalf("arbOsInit expected to be nil")
+	if arbOsInit == nil {
+		t.Fatalf("arbOsInit expected to be non-nil")
 	}
 
 	if initDataReader == nil {
