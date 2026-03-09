@@ -9,16 +9,13 @@ cd $TOP
 
 # Download RISC-V C toolchain if needed
 PARENT_DIR=""
-if [ ! -d "target/build-sp1/riscv" ]; then
-    TOOLCHAIN_URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.02.13/riscv64-elf-ubuntu-24.04-gcc.tar.xz"
-
-    echo "Downloading riscv-toolchain from $TOOLCHAIN_URL, note we are only downloading for x86-64 Linux for now, if you are using macOS you might need to install the toolchain manually for now."
-
-    mkdir -p target/build-sp1
-    curl -L "$TOOLCHAIN_URL" | tar -xJ -C target/build-sp1
+if [ ! -d "$HOME/.sp1/riscv" ]; then
+    # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
+    curl -L https://sp1up.succinct.xyz | bash
+    $HOME/.sp1/bin/sp1up -c
 
     echo "Testing riscv64-unknown-elf-gcc..."
-    ./target/build-sp1/riscv/bin/riscv64-unknown-elf-gcc --version
+    $HOME/.sp1/riscv/bin/riscv64-unknown-elf-gcc --version
 fi
 
 # Build brotli for SP1
@@ -29,10 +26,10 @@ cd target/build-sp1/brotli
 cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
   -DCMAKE_SYSTEM_NAME=Generic \
-  -DCMAKE_C_COMPILER=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-gcc \
+  -DCMAKE_C_COMPILER=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-gcc \
   -DCMAKE_C_FLAGS="-march=rv64im -mabi=lp64 -DBROTLI_BUILD_PORTABLE -mcmodel=medany -ffunction-sections -fdata-sections -fPIC" \
-  -DCMAKE_AR=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-ar \
-  -DCMAKE_RANLIB=$TOP/target/build-sp1/riscv/bin/riscv64-unknown-elf-ranlib \
+  -DCMAKE_AR=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ar \
+  -DCMAKE_RANLIB=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ranlib \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=$TOP/target/lib-sp1 \
   -DBROTLI_DISABLE_TESTS=ON \
