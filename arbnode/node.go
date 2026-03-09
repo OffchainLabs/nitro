@@ -115,6 +115,9 @@ func (c *Config) Validate() error {
 	if err := c.MessageExtraction.Validate(); err != nil {
 		return err
 	}
+	if c.MessageExtraction.Enable && c.BatchPoster.Enable {
+		return errors.New("batch poster is not yet supported with message extraction enabled")
+	}
 	if err := c.InboxReader.Validate(); err != nil {
 		return err
 	}
@@ -1054,7 +1057,6 @@ func getBatchPoster(
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	batchMetaFetcher BatchMetadataFetcher,
-	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1114,11 +1116,11 @@ func getDelayedSequencer(
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, errors.New("delayed sequencer either an inbox reader or message extractor, but neither was provided")
-	}
 	if exec == nil {
 		return nil, nil
+	}
+	if inboxReader == nil && msgExtractor == nil {
+		return nil, errors.New("delayed sequencer requires either an inbox reader or message extractor, but neither was provided")
 	}
 
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
@@ -1305,7 +1307,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}

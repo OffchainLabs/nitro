@@ -228,9 +228,10 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	for pos < dbDelayedCount {
 		msg, acc, err := d.delayedCountFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
-			// Message isn't finalized yet; wait for it to be
-			// TODO: Old impl uses parentChainBlockNumber instead of pos. Figure out if safe.
-			d.waitingForFinalizedBlock = &pos
+			// Message isn't finalized yet; wait for it to be.
+			// Note: waitingForFinalizedBlock is not set here because the interface
+			// doesn't expose the parent chain block number. Without that early-exit
+			// optimization, we simply retry on the next iteration.
 			break
 		} else if err != nil {
 			return err

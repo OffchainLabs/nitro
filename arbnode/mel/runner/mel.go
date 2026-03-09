@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -367,8 +368,8 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 ) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil, common.Hash{}, nil
+		if rawdb.IsDbErrNotFound(err) {
+			return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 		}
 		return nil, common.Hash{}, err
 	}
