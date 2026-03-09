@@ -648,7 +648,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		parsedInitMessage := executionParsedInitMsg
 		if consensusParsedInitMessage != nil {
 			if !reflect.DeepEqual(executionParsedInitMsg, consensusParsedInitMessage) {
-				log.Warn("Execution and consensus parsed init messages do not match")
+				log.Warn("Execution and consensus parsed init messages do not match, verify that --init.genesis-json-file and --init.genesis-override match the on-chain init message")
 			}
 			parsedInitMessage = consensusParsedInitMessage
 		}
