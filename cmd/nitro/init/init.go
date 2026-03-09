@@ -784,6 +784,10 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		}
 	}
 
+	if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
+		config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
+	}
+
 	if initDataReader != nil && config.Init.DevInit && config.Init.DevMaxCodeSize != 0 {
 		chainConfig.ArbitrumChainParams.MaxCodeSize = config.Init.DevMaxCodeSize
 	}
@@ -978,10 +982,6 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 		return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 	}
 
-	if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
-		config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
-	}
-
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
 		return nil, nil, err
@@ -1011,6 +1011,9 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 				readOnlyDb.Close()
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
 					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
+				}
+				if config.Execution.Dangerous.DebugBlock.OverwriteChainConfig {
+					config.Execution.Dangerous.DebugBlock.Apply(chainConfig)
 				}
 
 				executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
