@@ -467,6 +467,8 @@ where
 
         let params = SubmitRetryableParams {
             ticket_id,
+            from: sender,
+            fee_refund_addr: info.fee_refund_addr,
             deposit_value: info.deposit_value,
             retry_value: info.retry_value,
             gas_fee_cap: info.gas_fee_cap,

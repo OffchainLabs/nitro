@@ -552,6 +552,8 @@ pub enum RevertedTxAction {
 #[derive(Debug, Clone)]
 pub struct SubmitRetryableParams {
     pub ticket_id: B256,
+    pub from: Address,
+    pub fee_refund_addr: Address,
     pub deposit_value: U256,
     pub retry_value: U256,
     pub gas_fee_cap: U256,
@@ -797,10 +799,14 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
     let fee_cap_too_low = params.gas_fee_cap < params.effective_base_fee;
 
     // Balance after all deductions so far.
-    let balance_after_deductions = params.balance_after_mint
+    // Go reads statedb.GetBalance(tx.From) after executing the transfers, so
+    // self-transfers (fee_refund_addr == from) don't reduce the balance.
+    let mut balance_after_deductions = params.balance_after_mint
         .saturating_sub(submission_fee)
-        .saturating_sub(submission_fee_refund)
         .saturating_sub(params.retry_value);
+    if params.fee_refund_addr != params.from {
+        balance_after_deductions = balance_after_deductions.saturating_sub(submission_fee_refund);
+    }
 
     let can_pay_for_gas = !fee_cap_too_low
         && params.gas >= TX_GAS
