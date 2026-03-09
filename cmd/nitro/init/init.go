@@ -1080,7 +1080,7 @@ func GetParsedInitMsgFromParentChain(ctx context.Context, chainId *big.Int, l1Cl
 	return parsedInitMessage, nil
 }
 
-func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.GenesisOverride, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
+func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.GenesisOverrideConfig, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
 	if genesis != nil {
 		parsedInitMessage, err := GetParsedInitMsgFromGenesis(genesis)
 		if err != nil {
@@ -1132,7 +1132,7 @@ func GetParsedInitMsgFromGenesis(genesis *core.Genesis) (*arbostypes.ParsedInitM
 	return parsedInitMessage, nil
 }
 
-func GetParsedInitMsgFromGenesisOverride(genesisOverride *conf.GenesisOverride) (*arbostypes.ParsedInitMessage, error) {
+func GetParsedInitMsgFromGenesisOverride(genesisOverride *conf.GenesisOverrideConfig) (*arbostypes.ParsedInitMessage, error) {
 	var chainConfig params.ChainConfig
 	if err := json.Unmarshal([]byte(genesisOverride.SerializedChainConfig), &chainConfig); err != nil {
 		return nil, fmt.Errorf("failed to deserialize chain config from genesis override: %w", err)
