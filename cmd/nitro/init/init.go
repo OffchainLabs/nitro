@@ -1096,11 +1096,14 @@ func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.Gene
 				return nil, fmt.Errorf("genesis and genesis override parsed init messages do not match")
 			}
 		}
+		log.Info("Retrieved parsed init message from genesis.json")
 		return parsedInitMessage, nil
 	}
 	if genesisOverride.IsSet() {
+		log.Info("Retrieved parsed init message from --init.genesis-override CLI flags")
 		return GetParsedInitMsgFromGenesisOverride(genesisOverride)
 	}
+	log.Info("Retrieved parsed init message from chain config")
 	return GetParsedInitMsgFromChainConfig(chainConfig)
 }
 
