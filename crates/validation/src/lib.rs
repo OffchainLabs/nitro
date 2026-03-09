@@ -99,7 +99,7 @@ pub struct ValidationInput {
     #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
     pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
     pub debug_chain: bool,
-    #[serde(rename = "max-user-wasmSize")]
+    #[serde(rename = "max-user-wasmSize", default)]
     pub max_user_wasm_size: u64,
 }
 
