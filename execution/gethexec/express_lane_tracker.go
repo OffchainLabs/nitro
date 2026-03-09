@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -60,7 +61,7 @@ func NewExpressLaneTracker(
 	earlySubmissionGrace time.Duration,
 	isActiveFunc func() bool,
 ) (*ExpressLaneTracker, error) {
-	if err := ValidateMaxTxDataSize(maxTxSize); err != nil {
+	if err := arbostypes.ValidateMaxTxDataSize(maxTxSize); err != nil {
 		return nil, err
 	}
 	return &ExpressLaneTracker{
