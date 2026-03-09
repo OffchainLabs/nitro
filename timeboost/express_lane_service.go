@@ -29,7 +29,7 @@ type expressLaneRoundInfo struct {
 	msgBySequenceNumber map[uint64]*ExpressLaneSubmission
 }
 
-type expressLaneService struct {
+type ExpressLaneService struct {
 	stopwaiter.StopWaiter
 	transactionPublisher TransactionPublisher
 	seqConfig            SequencerConfigFetcher
@@ -42,23 +42,23 @@ type expressLaneService struct {
 	tracker *ExpressLaneTracker
 }
 
-func newExpressLaneService(
+func NewExpressLaneService(
 	transactionPublisher TransactionPublisher,
 	seqConfig SequencerConfigFetcher,
 	roundTimingInfo *RoundTimingInfo,
 	bc *core.BlockChain,
 	expressLaneTracker *ExpressLaneTracker,
-) (*expressLaneService, error) {
+) (*ExpressLaneService, error) {
 	var err error
 	var redisCoordinator *RedisCoordinator
 	if seqConfig().RedisUrl != "" {
 		redisCoordinator, err = NewRedisCoordinator(seqConfig().RedisUrl, roundTimingInfo, seqConfig().RedisUpdateEventsChannelSize)
 		if err != nil {
-			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
+			return nil, fmt.Errorf("error initializing ExpressLaneService redis: %w", err)
 		}
 	}
 
-	return &expressLaneService{
+	return &ExpressLaneService{
 		transactionPublisher: transactionPublisher,
 		seqConfig:            seqConfig,
 		roundTimingInfo:      *roundTimingInfo,
@@ -68,7 +68,7 @@ func newExpressLaneService(
 	}, nil
 }
 
-func (es *expressLaneService) Start(ctxIn context.Context) {
+func (es *ExpressLaneService) Start(ctxIn context.Context) {
 	es.StopWaiter.Start(ctxIn, es)
 
 	if es.redisCoordinator != nil {
@@ -76,7 +76,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	}
 }
 
-func (es *expressLaneService) StopAndWait() {
+func (es *ExpressLaneService) StopAndWait() {
 	es.StopWaiter.StopAndWait()
 	if es.redisCoordinator != nil {
 		es.redisCoordinator.StopAndWait()
@@ -90,9 +90,9 @@ func (es *expressLaneService) StopAndWait() {
 // normal sequence ordering requirements and be processed immediately
 const DontCareSequence = math.MaxUint64
 
-// sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
+// SequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
 // adds the message to the sequencer transaction queue
-func (es *expressLaneService) sequenceExpressLaneSubmission(msg *ExpressLaneSubmission) error {
+func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubmission) error {
 	if msg.SequenceNumber == DontCareSequence {
 		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
 		// meant for restoring messages in the reordering queue if the sequencer fails over,
@@ -208,7 +208,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *ExpressLaneSubm
 	return retErr
 }
 
-func (es *expressLaneService) syncFromRedis() {
+func (es *ExpressLaneService) SyncFromRedis() {
 	if es.redisCoordinator == nil {
 		return
 	}
@@ -235,13 +235,13 @@ func (es *expressLaneService) syncFromRedis() {
 	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().MaxFutureSequenceDistance)
 	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
-		if err := es.sequenceExpressLaneSubmission(msg); err != nil {
+		if err := es.SequenceExpressLaneSubmission(msg); err != nil {
 			log.Error("Untracked expressLaneSubmission returned an error while sequencing", "round", msg.Round, "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
 		}
 	}
 }
 
-func (es *expressLaneService) currentRoundHasController() bool {
+func (es *ExpressLaneService) CurrentRoundHasController() bool {
 	controller, err := es.tracker.RoundController(es.roundTimingInfo.RoundNumber())
 	if err != nil {
 		return false
@@ -249,10 +249,10 @@ func (es *expressLaneService) currentRoundHasController() bool {
 	return controller != (common.Address{})
 }
 
-func (es *expressLaneService) AuctionContractAddr() common.Address {
+func (es *ExpressLaneService) AuctionContractAddr() common.Address {
 	return es.tracker.AuctionContractAddr()
 }
 
-func (es *expressLaneService) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
+func (es *ExpressLaneService) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
 	return es.tracker.ValidateExpressLaneTx(msg)
 }

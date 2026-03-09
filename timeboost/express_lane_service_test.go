@@ -217,11 +217,11 @@ func Test_expressLaneService_validateExpressLaneTx_gracePeriod(t *testing.T) {
 }
 
 type stubPublisher struct {
-	els              *expressLaneService
+	els              *ExpressLaneService
 	publishedTxOrder []uint64
 }
 
-func makeStubPublisher(els *expressLaneService) *stubPublisher {
+func makeStubPublisher(els *ExpressLaneService) *stubPublisher {
 	return &stubPublisher{
 		els:              els,
 		publishedTxOrder: make([]uint64, 0),
@@ -251,7 +251,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	defer cancel()
 	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		tracker:   tr,
 	}
@@ -261,7 +261,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	els.transactionPublisher = stubPublisher
 
 	msg := buildValidSubmissionWithSeqAndTx(t, 0, 0, emptyTx)
-	err := els.sequenceExpressLaneSubmission(msg)
+	err := els.SequenceExpressLaneSubmission(msg)
 	require.ErrorIs(t, err, ErrSequenceNumberTooLow)
 }
 
@@ -272,7 +272,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
 	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -293,11 +293,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	wg.Add(2) // We expect only one of the two txs below to return with an error here
 	var err1, err2 error
 	go func(w *sync.WaitGroup) {
-		err1 = els.sequenceExpressLaneSubmission(msg1)
+		err1 = els.SequenceExpressLaneSubmission(msg1)
 		wg.Done()
 	}(&wg)
 	go func(w *sync.WaitGroup) {
-		err2 = els.sequenceExpressLaneSubmission(msg2)
+		err2 = els.SequenceExpressLaneSubmission(msg2)
 		wg.Done()
 	}(&wg)
 	wg.Wait()
@@ -319,7 +319,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
 	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -347,7 +347,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	wg.Add(5)
 	for _, msg := range messages {
 		go func(w *sync.WaitGroup) {
-			err := els.sequenceExpressLaneSubmission(msg)
+			err := els.SequenceExpressLaneSubmission(msg)
 			require.NoError(t, err)
 			w.Done()
 		}(&wg)
@@ -363,7 +363,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.roundInfoMutex.Unlock()
 
 	// 4 & 5 should be able to get in after 3 so we add a delta of 2
-	err = els.sequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
+	err = els.SequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 3, emptyTx))
 	require.NoError(t, err)
 	require.Equal(t, 5, len(stubPublisher.publishedTxOrder))
 	els.roundInfoMutex.Lock()
@@ -380,7 +380,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
 	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &SequencerConfig{} },
@@ -403,10 +403,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	}
 	for _, msg := range messages {
 		if msg.Transaction.Hash() != emptyTx.Hash() {
-			err := els.sequenceExpressLaneSubmission(msg)
+			err := els.SequenceExpressLaneSubmission(msg)
 			require.ErrorContains(t, err, "oops, bad tx")
 		} else {
-			err := els.sequenceExpressLaneSubmission(msg)
+			err := els.SequenceExpressLaneSubmission(msg)
 			require.NoError(t, err)
 		}
 	}
@@ -423,7 +423,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	timingInfo := defaultTestRoundTimingInfo(time.Now())
 	tr := defaultTestTracker()
 	tr.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els1 := &expressLaneService{
+	els1 := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -451,7 +451,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	wg.Add(4)
 	for _, msg := range messages {
 		go func(w *sync.WaitGroup) {
-			_ = els1.sequenceExpressLaneSubmission(msg)
+			_ = els1.SequenceExpressLaneSubmission(msg)
 			w.Done()
 		}(&wg)
 	}
@@ -464,7 +464,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 
 	tr2 := defaultTestTracker()
 	tr2.roundControl.Store(0, crypto.PubkeyToAddress(testPriv.PublicKey))
-	els2 := &expressLaneService{
+	els2 := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -479,7 +479,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	els2.transactionPublisher = stubPublisher2
 
 	// As els2 becomes an active sequencer, syncFromRedis would be called when Activate() function of sequencer is invoked
-	els2.syncFromRedis()
+	els2.SyncFromRedis()
 
 	els2.roundInfoMutex.Lock()
 	roundInfo, exists := els2.roundInfo.Get(0)
@@ -494,7 +494,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	}
 	els2.roundInfoMutex.Unlock()
 
-	err = els2.sequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 2, emptyTx)) // Send an unblocking tx
+	err = els2.SequenceExpressLaneSubmission(buildValidSubmissionWithSeqAndTx(t, 0, 2, emptyTx)) // Send an unblocking tx
 	require.NoError(t, err)
 
 	time.Sleep(time.Second) // wait for future seq num txs to be processed
@@ -580,7 +580,7 @@ func Test_expressLaneService_dontCareSequence(t *testing.T) {
 		return nil
 	}
 
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -596,7 +596,7 @@ func Test_expressLaneService_dontCareSequence(t *testing.T) {
 	tx := types.NewTransaction(0, common.MaxAddress, big.NewInt(0), 0, big.NewInt(0), []byte("dontcare"))
 	dontCareMsg := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, tx)
 
-	err := els.sequenceExpressLaneSubmission(dontCareMsg)
+	err := els.SequenceExpressLaneSubmission(dontCareMsg)
 	require.NoError(t, err)
 
 	require.True(t, mp.processedDontCare)
@@ -618,7 +618,7 @@ func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
 		return nil
 	}
 
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -646,16 +646,16 @@ func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
 	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
 
 	// Submit the messages
-	err := els.sequenceExpressLaneSubmission(dontCareMsg1)
+	err := els.SequenceExpressLaneSubmission(dontCareMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg2)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg1)
+	err = els.SequenceExpressLaneSubmission(normalMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	err = els.SequenceExpressLaneSubmission(normalMsg2)
 	require.NoError(t, err)
 
 	// All 4 transactions should be published
@@ -689,7 +689,7 @@ func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
 		return nil
 	}
 
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -717,16 +717,16 @@ func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
 	dontCareMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, DontCareSequence, dontCareTx2)
 
 	// Submit the messages
-	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	err := els.SequenceExpressLaneSubmission(normalMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	err = els.SequenceExpressLaneSubmission(normalMsg2)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg2)
 	require.NoError(t, err)
 
 	// All 4 transactions should be published
@@ -760,7 +760,7 @@ func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
 		return nil
 	}
 
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -787,19 +787,19 @@ func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
 	normalMsg3 := buildValidSubmissionWithSeqAndTx(t, 0, 2, normalTx3)
 
 	// Submit the messages in an intermixed order
-	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	err := els.SequenceExpressLaneSubmission(normalMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	err = els.SequenceExpressLaneSubmission(normalMsg2)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(dontCareMsg2)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg2)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg3)
+	err = els.SequenceExpressLaneSubmission(normalMsg3)
 	require.NoError(t, err)
 
 	// All 5 transactions should be published
@@ -835,7 +835,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 		return nil
 	}
 
-	els := &expressLaneService{
+	els := &ExpressLaneService{
 		roundInfo:       containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		roundTimingInfo: timingInfo,
 		seqConfig:       func() *SequencerConfig { return &DefaultSequencerConfig },
@@ -862,13 +862,13 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	normalMsg2 := buildValidSubmissionWithSeqAndTx(t, 0, 1, normalTx2)
 
 	// Submit the transactions with a gap in sequence numbers
-	err := els.sequenceExpressLaneSubmission(normalMsg1)
+	err := els.SequenceExpressLaneSubmission(normalMsg1)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg3)
+	err = els.SequenceExpressLaneSubmission(normalMsg3)
 	require.NoError(t, err)
 
-	err = els.sequenceExpressLaneSubmission(normalMsg4)
+	err = els.SequenceExpressLaneSubmission(normalMsg4)
 	require.NoError(t, err)
 
 	// At this point, only normalTx1 should be published because of the gap at sequence number 1
@@ -876,7 +876,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	require.Equal(t, normalTx1.Hash(), publishedTxs[0].Hash())
 
 	// Submit a dontcare transaction - it should be processed immediately
-	err = els.sequenceExpressLaneSubmission(dontCareMsg1)
+	err = els.SequenceExpressLaneSubmission(dontCareMsg1)
 	require.NoError(t, err)
 
 	// Now dontCareTx1 should also be published, but normalTx3 and normalTx4 should still be queued
@@ -884,7 +884,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 	require.Equal(t, dontCareTx1.Hash(), publishedTxs[1].Hash())
 
 	// Now fill the gap with normalMsg2
-	err = els.sequenceExpressLaneSubmission(normalMsg2)
+	err = els.SequenceExpressLaneSubmission(normalMsg2)
 	require.NoError(t, err)
 
 	// Now all transactions should be published

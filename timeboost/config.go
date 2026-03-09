@@ -43,7 +43,7 @@ func AddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".sequencer-http-endpoint", DefaultConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 	f.Duration(prefix+".early-submission-grace", DefaultConfig.EarlySubmissionGrace, "period of time before the next round where submissions for the next round will be queued")
 	f.Uint64(prefix+".max-future-sequence-distance", DefaultConfig.MaxFutureSequenceDistance, "maximum allowed difference (in terms of sequence numbers) between a future express lane tx and the current sequence count of a round")
-	f.String(prefix+".redis-url", DefaultConfig.RedisUrl, "the Redis URL for expressLaneService to coordinate via")
+	f.String(prefix+".redis-url", DefaultConfig.RedisUrl, "the Redis URL for ExpressLaneService to coordinate via")
 	f.Uint64(prefix+".redis-update-events-channel-size", DefaultConfig.RedisUpdateEventsChannelSize, "size of update events' buffered channels in timeboost redis coordinator")
 	f.Uint64(prefix+".queue-timeout-in-blocks", DefaultConfig.QueueTimeoutInBlocks, "maximum amount of time (measured in blocks) that Express Lane transactions can wait in the sequencer's queue")
 }

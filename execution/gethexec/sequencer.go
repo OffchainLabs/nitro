@@ -447,7 +447,7 @@ type Sequencer struct {
 	senderWhitelist    map[common.Address]struct{}
 	nonceCache         *nonceCache
 	nonceFailures      *nonceFailureCache
-	expressLaneService *expressLaneService
+	expressLaneService *timeboost.ExpressLaneService
 	onForwarderSet     chan struct{}
 	parentChain        *parent.ParentChain
 
@@ -681,7 +681,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
 
-	return s.expressLaneService.sequenceExpressLaneSubmission(msg)
+	return s.expressLaneService.SequenceExpressLaneSubmission(msg)
 }
 
 func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -722,7 +722,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	}
 
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
-		if !isExpressLaneController && s.expressLaneService.currentRoundHasController() {
+		if !isExpressLaneController && s.expressLaneService.CurrentRoundHasController() {
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
 	}
@@ -879,9 +879,9 @@ func (s *Sequencer) Activate() {
 	if s.expressLaneService != nil {
 		s.LaunchThread(func(context.Context) {
 			// We launch redis sync (which is best effort) in parallel to avoid blocking sequencer activation
-			s.expressLaneService.syncFromRedis()
+			s.expressLaneService.SyncFromRedis()
 			time.Sleep(time.Second)
-			s.expressLaneService.syncFromRedis()
+			s.expressLaneService.SyncFromRedis()
 		})
 	}
 }
@@ -1572,7 +1572,7 @@ func (s *Sequencer) InitializeExpressLaneService(
 	roundTimingInfo *timeboost.RoundTimingInfo,
 	expressLaneTracker *timeboost.ExpressLaneTracker,
 ) error {
-	els, err := newExpressLaneService(
+	els, err := timeboost.NewExpressLaneService(
 		s,
 		s.config,
 		roundTimingInfo,
