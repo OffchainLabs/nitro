@@ -2291,12 +2291,12 @@ func TestSequentialRetryableGroupReverts(t *testing.T) {
 // revert and filtered re-processing, the dummy counter should be unchanged,
 // proving that the tentative auto-redeem's storage writes were rolled back.
 //
-// Note: the dummy++ assertion specifically verifies per-redeem snapshot
-// rollback (RevertToSnapshot). The skipFinalise flag's correctness is
-// implicitly tested by verifyCascadingRedeemFiltered succeeding: if
-// skipFinalise were broken, the tentative retryable creation would leak
-// into pending storage via Finalise(), and the filtered re-processing's
-// CreateRetryable would produce incorrect state.
+// Note: the dummy++ assertion specifically verifies that the statedb clone
+// and RevertToSnapshot rollback correctly undo per-redeem state changes.
+// The correctness of the full rollback is implicitly tested by
+// verifyCascadingRedeemFiltered succeeding: if the clone were broken, the
+// tentative retryable creation would leak into the rolled-back state, and
+// the filtered re-processing's CreateRetryable would produce incorrect state.
 func TestRetryableGroupRevertSkipFinaliseSafety(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
