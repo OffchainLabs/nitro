@@ -280,8 +280,8 @@ func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
 	log.Info("Started challenge manager", "stakerAddress", m.chain.StakerAddress().Hex())
 
-	// Start the assertion manager.
-	m.LaunchThread(m.assertionManager.Start)
+	// Start the assertion manager on its own StopWaiter.
+	m.assertionManager.Start(m.GetContext())
 
 	// Watcher tower and resolve modes don't monitor challenges.
 	if m.mode == types.WatchTowerMode || m.mode == types.ResolveMode {
