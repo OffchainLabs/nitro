@@ -39,6 +39,87 @@ fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx.interpreter.halt(InstructionResult::OpcodeNotFound);
 }
 
+/// SHA3/KECCAK256 tracer: logs the preimage for large inputs when GASBACKLOG_TRACE is enabled.
+/// Reimplements the standard SHA3 opcode with diagnostic logging.
+fn arb_sha3_tracer<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    use revm::interpreter::interpreter_types::MemoryTr;
+    use core::sync::atomic::Ordering;
+
+    let trace = arb_storage::GASBACKLOG_TRACE.load(Ordering::Relaxed);
+
+    // Pop offset and length from stack
+    let Some(offset) = ctx.interpreter.stack.pop() else {
+        ctx.interpreter.halt(InstructionResult::StackUnderflow);
+        return;
+    };
+    let Some(len_u256) = ctx.interpreter.stack.pop() else {
+        ctx.interpreter.halt(InstructionResult::StackUnderflow);
+        return;
+    };
+
+    let len: usize = match len_u256.try_into() {
+        Ok(v) => v,
+        Err(_) => {
+            ctx.interpreter.halt(InstructionResult::InvalidOperandOOG);
+            return;
+        }
+    };
+
+    // Charge gas: 30 + 6 * ceil(len / 32)
+    let words = (len + 31) / 32;
+    let gas_cost = 30u64 + 6u64 * (words as u64);
+    if !ctx.interpreter.gas.record_cost(gas_cost) {
+        ctx.interpreter.halt(InstructionResult::OutOfGas);
+        return;
+    }
+
+    let hash = if len == 0 {
+        alloy_primitives::keccak256([])
+    } else {
+        let from: usize = match offset.try_into() {
+            Ok(v) => v,
+            Err(_) => {
+                ctx.interpreter.halt(InstructionResult::InvalidOperandOOG);
+                return;
+            }
+        };
+
+        // Memory expansion
+        if !ctx.interpreter.memory.resize(from + len) {
+            ctx.interpreter.halt(InstructionResult::MemoryOOG);
+            return;
+        }
+
+        let slice = ctx.interpreter.memory.slice_len(from, len);
+        let slice_ref: &[u8] = slice.as_ref();
+
+        if trace && len > 256 {
+            eprintln!("[SHA3] len={} offset={}", len, from);
+            for i in (0..slice_ref.len()).step_by(32) {
+                let end = (i + 32).min(slice_ref.len());
+                eprintln!("[SHA3]   0x{:04x}: {}",
+                    from + i,
+                    slice_ref[i..end].iter().map(|b| format!("{:02x}", b)).collect::<String>());
+            }
+        }
+
+        let h = alloy_primitives::keccak256(slice_ref);
+
+        if trace && len > 256 {
+            eprintln!("[SHA3] → {:?}", h);
+        }
+
+        h
+    };
+
+    // Push result
+    if !ctx.interpreter.stack.push(hash.into()) {
+        ctx.interpreter.halt(InstructionResult::StackOverflow);
+    }
+}
+
 /// Arbitrum SELFDESTRUCT: reverts if the acting account is a Stylus program,
 /// otherwise delegates to the standard EIP-6780 selfdestruct logic.
 fn arb_selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
@@ -1172,6 +1253,12 @@ fn build_arb_evm<DB: Database, I>(
     instruction.insert_instruction(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+    );
+    // SHA3 tracer: when GASBACKLOG_TRACE is enabled, log keccak preimages
+    // for large inputs (>256 bytes) to diagnose the block 616862 divergence.
+    instruction.insert_instruction(
+        0x20, // SHA3 / KECCAK256
+        revm::interpreter::Instruction::new(arb_sha3_tracer, 30),
     );
 
     register_arb_precompiles(&mut precompiles);
