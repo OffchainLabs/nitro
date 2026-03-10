@@ -5,7 +5,11 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::{host::InternalFunc, value::FunctionType, Machine};
+#[cfg(not(feature = "sp1"))]
+use crate::{host::InternalFunc, Machine};
+#[cfg(feature = "sp1")]
+use crate::value::InternalFunc;
+use crate::value::FunctionType;
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -501,6 +505,9 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
+
+                #[cfg(feature = "sp1")]
+                _ => todo!("New operator not covered yet by nitro!")
             };
         }
 
@@ -529,6 +536,7 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
+#[cfg(not(feature = "sp1"))]
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();
