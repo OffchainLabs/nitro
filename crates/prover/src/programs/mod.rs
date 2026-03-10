@@ -1,10 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#[cfg(not(feature = "sp1"))]
+use crate::machine::Module;
+use crate::value::MemoryType;
 use crate::{
     binary::{ExportKind, WasmBinary},
-    machine::Module,
-    memory::MemoryType,
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
@@ -18,13 +19,16 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
+#[cfg(all(feature = "native", feature = "sp1"))]
+use wasmer::sys::{FunctionMiddleware, MiddlewareError, MiddlewareReaderState, ModuleMiddleware};
+#[cfg(all(feature = "native", not(feature = "sp1")))]
+use wasmer::{FunctionMiddleware, MiddlewareError, MiddlewareReaderState, ModuleMiddleware};
+
 #[cfg(feature = "native")]
 use {
     super::value,
     std::marker::PhantomData,
-    wasmer::{
-        ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
-    },
+    wasmer::{ExportIndex, GlobalType, Mutability},
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
 
@@ -127,7 +131,7 @@ where
     fn generate_function_middleware<'a>(
         &self,
         local_function_index: LocalFunctionIndex,
-    ) -> Box<dyn wasmer::FunctionMiddleware<'a> + 'a> {
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let worker = self.0.instrument(local_function_index).unwrap();
         Box::new(FuncMiddlewareWrapper(worker, PhantomData))
     }
@@ -154,7 +158,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut wasmer::MiddlewareReaderState<'a>,
+        out: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));
@@ -414,6 +418,7 @@ impl StylusData {
     }
 }
 
+#[cfg(not(feature = "sp1"))]
 impl Module {
     pub fn activate(
         wasm: &[u8],
