@@ -291,8 +291,8 @@ func (m *Manager) Start(ctx context.Context) {
 	// Start watching for parent chain block events in the background.
 	m.LaunchThread(m.listenForBlockEvents)
 
-	// Start watching for ongoing chain events in the background.
-	m.LaunchThread(m.watcher.Start)
+	// Start watching for ongoing chain events on its own StopWaiter.
+	m.watcher.Start(m.GetContext())
 
 	if m.api != nil {
 		m.LaunchThread(func(ctx context.Context) {
