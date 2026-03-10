@@ -301,12 +301,14 @@ func (m *Manager) Start(ctx context.Context) {
 }
 
 func (m *Manager) StopAndWait() {
-	m.StopWaiter.StopAndWait()
-	m.assertionManager.StopAndWait()
-	m.watcher.StopAndWait()
+	// Stop children first so they can shut down gracefully before
+	// the parent context is cancelled.
 	if m.api != nil {
 		m.api.StopAndWait()
 	}
+	m.watcher.StopAndWait()
+	m.assertionManager.StopAndWait()
+	m.StopWaiter.StopAndWait()
 }
 
 func (m *Manager) listenForBlockEvents(ctx context.Context) {
