@@ -90,6 +90,7 @@ func makeFragmentedRootForTest(t *testing.T) (*state.StateDB, []byte, []byte, co
 	rootCode := make([]byte, 0, 8+common.AddressLength)
 	rootCode = append(rootCode, state.NewStylusRootPrefix(byte(arbcompress.EmptyDictionary))...)
 	var decompressedLen [4]byte
+	// #nosec G115
 	binary.BigEndian.PutUint32(decompressedLen[:], uint32(len(wasm)))
 	rootCode = append(rootCode, decompressedLen[:]...)
 	rootCode = append(rootCode, fragmentAddr.Bytes()...)
@@ -130,6 +131,7 @@ func TestGetWasmFromRootStylusBurnsActualFragmentReadCostAfterPreflight(t *testi
 	charger, err := newFragmentReadCharger(burner, gethParams.DefaultMaxCodeSize)
 	require.NoError(t, err)
 
+	// #nosec G115
 	wasm, err := getWasmFromRootStylus(statedb, rootCode, uint32(len(expectedWasm)), 1, charger)
 	require.NoError(t, err)
 	require.Equal(t, expectedWasm, wasm)
