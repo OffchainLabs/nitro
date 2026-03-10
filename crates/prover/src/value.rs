@@ -87,6 +87,8 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
         wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
         wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
+        #[cfg(feature = "sp1")]
+        _ => todo!(),
     }
 }
 
@@ -492,6 +494,102 @@ impl Display for ArbValueType {
             RefNull => write!(f, "null"),
             FuncRef => write!(f, "func"),
             InternalRef => write!(f, "internal"),
+        }
+    }
+}
+
+// When compiled via #[path] from sp1-crates, certain types that normally live in
+// other crate modules (crate::memory, crate::host) must be available from crate::value,
+// since sp1-crates/prover only exposes a subset of modules.
+
+// In the normal crates/prover context, InternalFunc lives in crate::host.
+#[cfg(feature = "sp1")]
+pub use self::sp1_internal_func::InternalFunc;
+
+#[cfg(feature = "sp1")]
+mod sp1_internal_func {
+    use super::{ArbValueType, FunctionType};
+    use num_derive::FromPrimitive;
+
+    #[derive(Clone, Copy, Debug, FromPrimitive)]
+    #[repr(u64)]
+    pub enum InternalFunc {
+        WavmCallerLoad8,
+        WavmCallerLoad32,
+        WavmCallerStore8,
+        WavmCallerStore32,
+        MemoryFill,
+        MemoryCopy,
+        UserInkLeft,
+        UserInkStatus,
+        UserSetInk,
+        UserStackLeft,
+        UserSetStack,
+        UserMemorySize,
+        CallMain,
+    }
+
+    impl InternalFunc {
+        pub fn ty(&self) -> FunctionType {
+            use ArbValueType::*;
+            use InternalFunc::*;
+            macro_rules! func {
+                ([$($args:expr),*], [$($outs:expr),*]) => {
+                    FunctionType::new(vec![$($args),*], vec![$($outs),*])
+                };
+            }
+            #[rustfmt::skip]
+            let ty = match self {
+                WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
+                WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
+                MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
+                UserInkLeft    => func!([], [I64]),      // λ() → ink_left
+                UserInkStatus  => func!([], [I32]),      // λ() → ink_status
+                UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
+                UserStackLeft  => func!([], [I32]),      // λ() → stack_left
+                UserSetStack   => func!([I32], []),      // λ(stack_left)
+                UserMemorySize => func!([], [I32]),      // λ() → memory_size
+                CallMain       => func!([I32], [I32]),   // λ(args_len) → status
+            };
+            ty
+        }
+    }
+}
+
+// In the normal crates/prover context, MemoryType lives in crate::memory.
+#[cfg(feature = "sp1")]
+pub use self::sp1_memory_type::MemoryType;
+
+#[cfg(feature = "sp1")]
+mod sp1_memory_type {
+    use eyre::ErrReport;
+    use wasmer_types::Pages;
+
+    pub struct MemoryType {
+        pub min: Pages,
+        pub max: Option<Pages>,
+    }
+
+    impl MemoryType {
+        pub fn new(min: Pages, max: Option<Pages>) -> Self {
+            Self { min, max }
+        }
+    }
+
+    impl From<&wasmer_types::MemoryType> for MemoryType {
+        fn from(value: &wasmer_types::MemoryType) -> Self {
+            Self::new(value.minimum, value.maximum)
+        }
+    }
+
+    impl TryFrom<&wasmparser::MemoryType> for MemoryType {
+        type Error = ErrReport;
+
+        fn try_from(value: &wasmparser::MemoryType) -> std::result::Result<Self, Self::Error> {
+            Ok(Self {
+                min: Pages(value.initial.try_into()?),
+                max: value.maximum.map(|x| x.try_into()).transpose()?.map(Pages),
+            })
         }
     }
 }
