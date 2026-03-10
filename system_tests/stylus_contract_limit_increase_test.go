@@ -568,9 +568,17 @@ func runDeployAfterLimitTest(t *testing.T, setLimit limitSetter) {
 
 // Shared Limit Setters
 func setWasmLimitTo10k(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) {
+	setWasmLimit(t, ctx, auth, client, 10000)
+}
+
+func setWasmLimitTo7k(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) {
+	setWasmLimit(t, ctx, auth, client, 7000)
+}
+
+func setWasmLimit(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client, size uint32) {
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, client)
 	Require(t, err)
-	tx, err := arbOwner.SetWasmMaxSize(auth, 10000)
+	tx, err := arbOwner.SetWasmMaxSize(auth, size)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -599,7 +607,7 @@ func TestCacheProgramWithDecreasedMaxWasmSizeRecoverWasm(t *testing.T) {
 	runCacheProgramTest(t, setWasmLimitTo10k)
 }
 func TestDeployingContractBeforeAndAfterDecreaseMaxWasmSize(t *testing.T) {
-	runDeployAfterLimitTest(t, setWasmLimitTo10k)
+	runDeployAfterLimitTest(t, setWasmLimitTo7k)
 }
 
 // Tests: Decrease Max Fragment Count

@@ -324,7 +324,6 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     features.set(WasmFeatures::FUNCTION_REFERENCES, false);
     features.set(WasmFeatures::MEMORY_CONTROL, false);
     features.set(WasmFeatures::GC, false);
-    features.set(WasmFeatures::COMPONENT_MODEL, false);
     features.set(WasmFeatures::CM_NESTED_NAMES, false);
     features.set(WasmFeatures::GC_TYPES, true);
     Validator::new_with_features(features)

@@ -342,15 +342,21 @@ impl Memory {
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
         if let Some(merkle) = &mut self.merkle {
-            merkle
-                .resize(new_size / Self::LEAF_SIZE)
-                .unwrap_or_else(|_| {
-                    panic!(
-                        "Couldn't resize merkle tree from {} to {}",
-                        merkle.len(),
-                        new_size
-                    )
-                });
+            // Use the same power-of-two rounding as merkelize() so the leaf
+            // count stays consistent with what a fresh tree would have.
+            let new_leaves =
+                round_up_to_power_of_two(div_round_up(new_size, Self::LEAF_SIZE));
+            if new_leaves != merkle.len() {
+                merkle
+                    .resize(new_leaves)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Couldn't resize merkle tree from {} to {}",
+                            merkle.len(),
+                            new_leaves
+                        )
+                    });
+            }
         }
     }
 }
