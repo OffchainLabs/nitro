@@ -3,7 +3,6 @@
 package util
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -53,9 +52,9 @@ func ReadChainConfig(gen *core.Genesis) (*params.ChainConfig, []byte, error) {
 		return nil, nil, errors.New("serialized chain config was not set (`serializedChainConfig`)")
 	}
 	// 2. Deserialize the chain config
-	var chainConfig params.ChainConfig
-	if err := json.Unmarshal([]byte(gen.SerializedChainConfig), &chainConfig); err != nil {
+	chainConfig, err := gen.GetConfig()
+	if err != nil {
 		return nil, nil, err
 	}
-	return &chainConfig, []byte(gen.SerializedChainConfig), nil
+	return chainConfig, []byte(gen.SerializedChainConfig), nil
 }

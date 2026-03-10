@@ -761,7 +761,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
 			Accounts: accounts,
 		})
-		chainConfig, _, err = cmd_util.ReadChainConfig(&gen)
+		chainConfig, err = gen.GetConfig()
 		if err != nil {
 			return nil, nil, nil, err
 		}
