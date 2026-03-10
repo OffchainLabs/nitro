@@ -23,22 +23,12 @@ pub struct Input {
 // SP1 has additional alignment requirements, we have to decompress the data
 // into aligned bytes
 pub fn decompress_aligned(user_wasm: &UserWasm) -> ModuleAsm {
-    // brotli-decompress the data first, since the `validation.decompress_user_wasm` feature is not
-    // enabled - C-binded brotli used in `validation` is not supported in SP1.
-    let data = {
-        let mut decompressor =
-            brotli::Decompressor::new(std::io::Cursor::new(user_wasm.as_vec()), 4096);
-        let mut result = vec![];
-        decompressor
-            .read_to_end(&mut result)
-            .expect("decompressing");
-        result
-    };
     // This is less ideal but until one of the following happens, we
     // will have to stick with it:
     // * Allocator allocates aligned memory
     // * Bytes add alignment options
     // * Wasmer's Module does not simply accept `IntoBytes` trait.
+    let data = user_wasm.as_vec();
     let mut buffer = BytesMut::zeroed(data.len() + 7);
     let p = buffer.as_ptr() as usize;
     let aligned_p = (p + 7) / 8 * 8;
