@@ -397,6 +397,27 @@ mod test {
     }
 
     #[test]
+    pub fn resize_after_merkelize_does_not_shrink_merkle() {
+        let page_size = Memory::PAGE_SIZE as usize;
+        // 12 pages: 24,576 leaves, rounds up to 32,768 in merkelize()
+        let mut memory = Memory::new(12 * page_size, 16);
+        memory.cache_merkle_tree();
+        let merkle_len_before = memory.merkle.as_ref().unwrap().len();
+        assert_eq!(merkle_len_before, 32_768);
+
+        // Grow by 1 page to 13 pages: 26,624 leaves (un-rounded)
+        // Memory::resize passes 26,624 to merkle.resize(), which is < 32,768
+        memory.resize(13 * page_size);
+        let merkle_len_after = memory.merkle.as_ref().unwrap().len();
+        assert!(
+            merkle_len_after >= merkle_len_before,
+            "Merkle tree shrank from {} to {} during resize",
+            merkle_len_before,
+            merkle_len_after,
+        );
+    }
+
+    #[test]
     pub fn test_round_up_power_of_two() {
         assert_eq!(round_up_to_power_of_two(0), 1);
         assert_eq!(round_up_to_power_of_two(1), 1);
