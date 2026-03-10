@@ -67,7 +67,8 @@ func TestRustValidationServerAPI(t *testing.T) {
 func TestRustServerValidation(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, false)
 	defer cleanup()
-	ctx := builder.ctx
+	ctx, cancel := context.WithTimeout(builder.ctx, 120*time.Second)
+	defer cancel()
 
 	rvAddr := startRustValidatorServer(t, ctx)
 
