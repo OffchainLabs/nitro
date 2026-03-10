@@ -89,14 +89,14 @@ where
         let arbos_version = arbos_version_from_mix_hash(&mix_hash);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
-        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
-        let l1_block_number = l1_block_number_from_mix_hash(&mix_hash);
-
+        // Nitro's EVM uses header.Number (L2 block number) for BlockContext.BlockNumber.
+        // The L1 block number is stored in ArbOS state and encoded in the mix_hash,
+        // but the NUMBER opcode returns the L2 block number (matching ArbSys.arbBlockNumber).
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
         let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
-            number: U256::from(l1_block_number),
+            number: U256::from(header.number()),
             beneficiary: header.beneficiary(),
             timestamp: U256::from(header.timestamp()),
             difficulty: header.difficulty(),
@@ -120,12 +120,12 @@ where
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);
 
         let cfg_env = arb_cfg_env(chain_id, spec, arbos_version);
-        // Arbitrum overrides NUMBER to return the L1 block number, not L2.
-        let l1_block_number = l1_block_number_from_mix_hash(&attributes.prev_randao);
+        // Nitro's EVM uses the L2 block number for BlockContext.BlockNumber (NUMBER opcode).
+        let l2_block_number = parent.number().saturating_add(1);
         // Arbitrum sets PREVRANDAO to BigToHash(difficulty), which is 0x...0001.
         let prevrandao = B256::from(U256::from(1));
         let block_env = BlockEnv {
-            number: U256::from(l1_block_number),
+            number: U256::from(l2_block_number),
             beneficiary: attributes.suggested_fee_recipient,
             timestamp: U256::from(attributes.timestamp),
             difficulty: U256::from(1),
