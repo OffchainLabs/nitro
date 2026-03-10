@@ -10,7 +10,7 @@ use alloy_consensus::{Block, BlockBody, BlockHeader, Header, TxReceipt, proofs, 
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::block::{BlockExecutor, BlockExecutorFactory};
 use alloy_evm::EvmFactory;
-use alloy_primitives::{Address, Bytes, B64, B256, U256};
+use alloy_primitives::{Address, Bytes, B64, B256, U256, address};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use parking_lot::Mutex;
 use reth_chainspec::ChainSpec;
@@ -287,6 +287,13 @@ where
             .create_arb_executor(evm, exec_ctx, chain_id);
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
+
+        // --- Diagnostic: enable gasBacklog tracing for target block window ---
+        let diag_window = (616858..=616866).contains(&l2_block_number);
+        arb_storage::GASBACKLOG_TRACE.store(diag_window, std::sync::atomic::Ordering::Relaxed);
+        if diag_window {
+            eprintln!("[DIAG] ===== block {} =====", l2_block_number);
+        }
 
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
@@ -574,24 +581,247 @@ where
             }
         }
 
+        // --- Diagnostic: check gasBacklog at each pipeline stage ---
+        if diag_window {
+            let arbos_addr = alloy_primitives::address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            let bl_slot = arb_storage::GASBACKLOG_SLOT;
+
+            // Stage 1: after merge+take+augment+finalise_deleted, BEFORE filter
+            let stage1 = bundle.state.get(&arbos_addr)
+                .and_then(|a| a.storage.get(&bl_slot))
+                .map(|s| (s.present_value, s.previous_or_original_value));
+            eprintln!("[DIAG] block={} STAGE1(pre-filter) backlog={:?}", l2_block_number, stage1);
+
+            // Also check: how many ArbOS storage slots are in the bundle?
+            let arbos_slot_count = bundle.state.get(&arbos_addr)
+                .map(|a| a.storage.len()).unwrap_or(0);
+            eprintln!("[DIAG] block={} ArbOS bundle slots={}", l2_block_number, arbos_slot_count);
+
+            // Check cache value
+            let cache_val = db.cache.accounts.get(&arbos_addr)
+                .and_then(|ca| ca.account.as_ref())
+                .and_then(|a| a.storage.get(&bl_slot).copied());
+            eprintln!("[DIAG] block={} cache backlog={:?}", l2_block_number, cache_val);
+
+            // Check DB value (should be pre-block)
+            let db_val = state_provider.storage(arbos_addr, alloy_primitives::B256::from(bl_slot)).ok().flatten().unwrap_or(U256::ZERO);
+            eprintln!("[DIAG] block={} db(pre-block) backlog={}", l2_block_number, db_val);
+        }
+
         // Filter bundle to only include actually changed storage slots.
         // revm's bundle may include storage slots that were loaded (read) but
         // not modified. Including unchanged slots in the HashedPostState would
         // produce an incorrect state root.
         filter_unchanged_storage(&mut bundle);
 
+        if diag_window {
+            let arbos_addr = alloy_primitives::address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            let bl_slot = arb_storage::GASBACKLOG_SLOT;
+            let stage2 = bundle.state.get(&arbos_addr)
+                .and_then(|a| a.storage.get(&bl_slot))
+                .map(|s| s.present_value);
+            eprintln!("[DIAG] block={} STAGE2(post-filter) backlog={:?}", l2_block_number, stage2);
+        }
+
         // Delete empty accounts from the bundle (EIP-161).
         // Zombie accounts are preserved.
         delete_empty_accounts(&mut bundle, &zombie_accounts, &*state_provider);
+
+        if diag_window {
+            let arbos_addr = alloy_primitives::address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            let bl_slot = arb_storage::GASBACKLOG_SLOT;
+            let stage3 = bundle.state.get(&arbos_addr)
+                .and_then(|a| a.storage.get(&bl_slot))
+                .map(|s| s.present_value);
+            let arbos_in_bundle = bundle.state.contains_key(&arbos_addr);
+            eprintln!("[DIAG] block={} STAGE3(post-delete) backlog={:?} arbos_in_bundle={}", l2_block_number, stage3, arbos_in_bundle);
+        }
 
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
                 bundle.state(),
             );
 
+        if diag_window {
+            let arbos_addr = alloy_primitives::address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            let arbos_hash = alloy_primitives::keccak256(arbos_addr);
+            let has_arbos_in_hps = hashed_state.storages.contains_key(&arbos_hash);
+            let arbos_hps_slots = hashed_state.storages.get(&arbos_hash)
+                .map(|s| s.storage.len()).unwrap_or(0);
+            eprintln!("[DIAG] block={} HashedPostState has_arbos={} arbos_slots={}", l2_block_number, has_arbos_in_hps, arbos_hps_slots);
+        }
+
         let (state_root, trie_updates) = state_provider
             .state_root_with_updates(hashed_state.clone())
             .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+
+        if diag_window {
+            let ref_root_616862 = alloy_primitives::b256!("0bc0865ee2ad0e15c96ecde70990664a76f2a593300e29e08ed6b0d2073766b4");
+            eprintln!("[DIAG] block={} computed_root={:?} expected_616862={:?} match={}",
+                l2_block_number, state_root,
+                if l2_block_number == 616862 { format!("{:?}", ref_root_616862) } else { "n/a".to_string() },
+                l2_block_number == 616862 && state_root == ref_root_616862
+            );
+        }
+
+        // At block 616862: comprehensive state comparison against reference
+        if l2_block_number == 616862 {
+            use reth_storage_api::StateRootProvider;
+            let ref_root = alloy_primitives::b256!("0bc0865ee2ad0e15c96ecde70990664a76f2a593300e29e08ed6b0d2073766b4");
+            let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+            let arbos_addr = alloy_primitives::address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+
+            // --- 1. Dump all accounts in our bundle ---
+            let mut addrs: Vec<_> = bundle.state.keys().cloned().collect();
+            addrs.sort();
+            eprintln!("[B616862] BUNDLE: {} accounts", addrs.len());
+            eprintln!("[B616862] zombie_accounts: {:?}", zombie_accounts);
+            eprintln!("[B616862] finalise_deleted: {:?}", finalise_deleted);
+            for addr in &addrs {
+                let acct = bundle.state.get(addr).unwrap();
+                let info_str = match &acct.info {
+                    Some(i) => format!("n={} b={} code={}",
+                        i.nonce, i.balance,
+                        if i.code_hash == keccak_empty { "empty".to_string() } else { format!("{:?}", i.code_hash) }),
+                    None => "DELETED".to_string(),
+                };
+                eprintln!("[B616862]   {:?} status={:?} {} storage={}",
+                    addr, acct.status, info_str, acct.storage.len());
+                // Print ALL storage for ALL accounts (not just ArbOS)
+                for (k, v) in &acct.storage {
+                    eprintln!("[B616862]     slot {} = {} (orig={})", k, v.present_value, v.previous_or_original_value);
+                }
+            }
+
+            // --- 2. Check expected accounts that SHOULD have changed (from reference) ---
+            // Accounts that changed between 616861→616862 on Arbitrum Sepolia:
+            let expected_changes: Vec<(Address, u64, &str)> = vec![
+                // (address, expected_nonce_at_616862, description)
+                (address!("fd86e9a33fd52e4085fb94d24b759448a621cd36"), 1, "Sender/Poster"),
+                (address!("4453d0eaf066a61c9b81ddc18bb5a2bf2fc52224"), 2, "RetryTarget"),
+                (address!("35aa95ac4747d928e2cd42fe4461f6d9d1826346"), 1, "Contract3(bal changed)"),
+                (address!("d50e4a971bc8ed55af6aebc0a2178456069e87b5"), 1, "FeeRefund(bal+nonce changed)"),
+            ];
+            eprintln!("[B616862] --- Expected changed accounts ---");
+            for (addr, expected_nonce, desc) in &expected_changes {
+                let in_bundle = bundle.state.get(addr);
+                match in_bundle {
+                    Some(acct) => {
+                        let n = acct.info.as_ref().map(|i| i.nonce).unwrap_or(u64::MAX);
+                        let b = acct.info.as_ref().map(|i| i.balance).unwrap_or(U256::MAX);
+                        let nonce_ok = n == *expected_nonce;
+                        eprintln!("[B616862] {} {:?}: IN BUNDLE n={} b={} nonce_match={}",
+                            desc, addr, n, b, nonce_ok);
+                    }
+                    None => {
+                        eprintln!("[B616862] {} {:?}: MISSING FROM BUNDLE!", desc, addr);
+                    }
+                }
+            }
+
+            // --- 3. Check escrow account (should NOT exist in trie at 616862) ---
+            let escrow = address!("fb3504a7e996cb0a8dcdc95d58b9dafaa51249b4");
+            let escrow_in_bundle = bundle.state.get(&escrow);
+            let escrow_in_db = state_provider.basic_account(&escrow).ok().flatten();
+            eprintln!("[B616862] Escrow {:?}: in_bundle={:?} in_db={:?}",
+                escrow,
+                escrow_in_bundle.map(|a| format!("info={:?} status={:?} storage={}",
+                    a.info.as_ref().map(|i| format!("n={} b={}", i.nonce, i.balance)),
+                    a.status, a.storage.len())),
+                escrow_in_db.map(|a| format!("n={} b={}", a.nonce, a.balance)));
+
+            // --- 4. Binary search: try removing each account ---
+            eprintln!("[B616862] Binary search (remove each account)...");
+            for addr in &addrs {
+                let mut test = bundle.clone();
+                test.state.remove(addr);
+                let hps = HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(test.state());
+                if let Ok((root, _)) = state_provider.state_root_with_updates(hps) {
+                    if root == ref_root {
+                        eprintln!("[B616862] >>> REMOVING {:?} FIXES ROOT <<<", addr);
+                    }
+                }
+            }
+
+            // --- 5. Binary search: try removing each ArbOS storage slot ---
+            if let Some(arbos_acct) = bundle.state.get(&arbos_addr) {
+                for (slot_key, slot_val) in &arbos_acct.storage {
+                    let mut test = bundle.clone();
+                    if let Some(a) = test.state.get_mut(&arbos_addr) {
+                        a.storage.remove(slot_key);
+                    }
+                    let hps = HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(test.state());
+                    if let Ok((root, _)) = state_provider.state_root_with_updates(hps) {
+                        if root == ref_root {
+                            eprintln!("[B616862] >>> REMOVING ArbOS slot {} FIXES ROOT <<<", slot_key);
+                        }
+                    }
+                }
+            }
+
+            // --- 6. Try adding missing accounts (accounts that changed on ref but aren't in bundle) ---
+            eprintln!("[B616862] Testing missing accounts...");
+            for (addr, expected_nonce, desc) in &expected_changes {
+                if !bundle.state.contains_key(addr) {
+                    // Account is missing - try adding it with expected state
+                    let db_info = state_provider.basic_account(addr).ok().flatten();
+                    eprintln!("[B616862] {} {:?} missing, db_info={:?}", desc, addr, db_info);
+                    // Try adding with the expected nonce
+                    let mut test = bundle.clone();
+                    test.state.insert(*addr, revm_database::BundleAccount {
+                        info: Some(revm::state::AccountInfo {
+                            nonce: *expected_nonce,
+                            balance: U256::ZERO,
+                            code_hash: keccak_empty,
+                            code: None,
+                            account_id: None,
+                        }),
+                        original_info: None,
+                        storage: Default::default(),
+                        status: revm_database::AccountStatus::Changed,
+                    });
+                    let hps = HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(test.state());
+                    if let Ok((root, _)) = state_provider.state_root_with_updates(hps) {
+                        if root == ref_root {
+                            eprintln!("[B616862] >>> ADDING {:?} WITH n={} FIXES ROOT <<<", addr, expected_nonce);
+                        }
+                    }
+                }
+            }
+
+            // --- 7. For each account, try setting its nonce to the reference value ---
+            eprintln!("[B616862] Testing nonce corrections...");
+            for (addr, expected_nonce, desc) in &expected_changes {
+                if let Some(acct) = bundle.state.get(addr) {
+                    if let Some(ref info) = acct.info {
+                        if info.nonce != *expected_nonce {
+                            let mut test = bundle.clone();
+                            if let Some(a) = test.state.get_mut(addr) {
+                                if let Some(ref mut i) = a.info {
+                                    i.nonce = *expected_nonce;
+                                }
+                            }
+                            let hps = HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(test.state());
+                            if let Ok((root, _)) = state_provider.state_root_with_updates(hps) {
+                                if root == ref_root {
+                                    eprintln!("[B616862] >>> FIXING {} nonce to {} FIXES ROOT <<<", desc, expected_nonce);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- 8. If nothing above fixed it, try empty bundle (no changes at all) ---
+            {
+                let empty_hps = HashedPostState::default();
+                if let Ok((root, _)) = state_provider.state_root_with_updates(empty_hps) {
+                    eprintln!("[B616862] Empty bundle (no changes) root: {:?} match={}", root, root == ref_root);
+                }
+            }
+
+            eprintln!("[B616862] === Diagnostics complete ===");
+        }
 
         debug!(
             target: "block_producer",

@@ -1726,6 +1726,41 @@ where
             }
         };
 
+        // Diagnostic: at block 616862, dump RAW EVM output for RetryTx
+        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed)
+            && is_retry_tx
+        {
+            let contract = alloy_primitives::address!("35aa95ac4747d928e2cd42fe4461f6d9d1826346");
+            let wrong_slot = alloy_primitives::uint!(0xf652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377f75ee_U256);
+            let ref_value = alloy_primitives::uint!(0xb7fca51a6c2ed40703e3724e88407f02c51761d245734714631d912aa0ad814b_U256);
+
+            if let Some(acct) = output.result.state.get(&contract) {
+                eprintln!("[EVM-RAW] RetryTx output for 0x35aa95ac: nonce={} balance={} status={:?}",
+                    acct.info.nonce, acct.info.balance, acct.status);
+                for (slot, val) in &acct.storage {
+                    let pv = val.present_value;
+                    let marker = if *slot == wrong_slot {
+                        let ok = pv == ref_value;
+                        format!(" ← TARGET slot match_ref={}", ok)
+                    } else { String::new() };
+                    eprintln!("[EVM-RAW]   slot {} = {} (orig={}){}", slot, pv, val.original_value(), marker);
+                }
+            } else {
+                eprintln!("[EVM-RAW] RetryTx: 0x35aa95ac NOT in EVM output state!");
+            }
+
+            // Also dump all accounts in the EVM output for comparison
+            eprintln!("[EVM-RAW] RetryTx output: {} accounts modified", output.result.state.len());
+            let mut addrs: Vec<_> = output.result.state.keys().collect();
+            addrs.sort();
+            for addr in addrs {
+                let a = &output.result.state[addr];
+                let storage_count = a.storage.len();
+                eprintln!("[EVM-RAW]   {:?} n={} b={} status={:?} storage={}",
+                    addr, a.info.nonce, a.info.balance, a.status, storage_count);
+            }
+        }
+
         // Capture gas_used as reported by reth's EVM (before our adjustments).
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
@@ -1905,16 +1940,13 @@ where
                 self.touched_accounts.insert(pending.sender);
             }
 
-            tracing::warn!(
-                target: "arb::backlog",
-                has_poster_costs = pending.has_poster_costs,
-                retry_context = pending.retry_context.is_some(),
-                gas_price_positive = pending.gas_price_positive,
-                gas_used = gas_used_total,
-                poster_gas = pending.poster_gas,
-                arb_tx_type = ?pending.arb_tx_type,
-                "commit_transaction branching"
-            );
+            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[BACKLOG] commit_tx: poster_costs={} retry={} gas_used={} poster_gas={} type={:?}",
+                    pending.has_poster_costs, pending.retry_context.is_some(),
+                    gas_used_total, pending.poster_gas, pending.arb_tx_type
+                );
+            }
 
             if let Some(retry_ctx) = pending.retry_context {
                 // RetryTx end-of-tx: handle gas refunds, retryable cleanup.
@@ -2077,19 +2109,14 @@ where
                                 pending.charged_multi_gas,
                             );
                             let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            tracing::warn!(
-                                target: "arb::backlog",
-                                gas_for_backlog = result.compute_gas_for_backlog,
-                                backlog_before,
-                                backlog_after,
-                                grow_ok = grow_result.is_ok(),
-                                "RetryTx GrowBacklog"
-                            );
-                        } else {
-                            tracing::error!(
-                                target: "arb::backlog",
-                                "RetryTx GrowBacklog: ArbosState::open FAILED"
-                            );
+                            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                                eprintln!(
+                                    "[BACKLOG] RetryTx grow: gas={} before={} after={} ok={}",
+                                    result.compute_gas_for_backlog, backlog_before, backlog_after, grow_result.is_ok()
+                                );
+                            }
+                        } else if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                            eprintln!("[BACKLOG] RetryTx grow: ArbosState::open FAILED");
                         }
                     }
                 }
@@ -2112,12 +2139,6 @@ where
                 });
 
                 if let Some(ref dist) = fee_dist {
-                    tracing::warn!(
-                        target: "arb::backlog",
-                        compute_gas_for_backlog = dist.compute_gas_for_backlog,
-                        poster_fee = ?dist.poster_fee_amount,
-                        "NormalTx fee distribution"
-                    );
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
                     self.touched_accounts.insert(dist.network_fee_account);
@@ -2172,19 +2193,14 @@ where
                                 used_multi_gas,
                             );
                             let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            tracing::warn!(
-                                target: "arb::backlog",
-                                gas_for_backlog = dist.compute_gas_for_backlog,
-                                backlog_before,
-                                backlog_after,
-                                grow_ok = grow_result.is_ok(),
-                                "NormalTx GrowBacklog"
-                            );
-                        } else {
-                            tracing::error!(
-                                target: "arb::backlog",
-                                "NormalTx: gas_price_positive is FALSE, skipping grow_backlog"
-                            );
+                            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                                eprintln!(
+                                    "[BACKLOG] NormalTx grow: gas={} before={} after={} ok={}",
+                                    dist.compute_gas_for_backlog, backlog_before, backlog_after, grow_result.is_ok()
+                                );
+                            }
+                        } else if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                            eprintln!("[BACKLOG] NormalTx: gas_price=0, skipping grow");
                         }
                         if !dist.l1_fees_to_add.is_zero() {
                             let _ = arb_state
@@ -2260,6 +2276,12 @@ where
         // Per-tx Finalise: delete empty accounts from cache.
         // Only iterates touched accounts (matching Go's journal.dirties).
         // Accounts merely loaded (e.g. balance check) are not considered.
+        //
+        // Go's Finalise protects zombie accounts: an account is zombie-protected
+        // if ALL its journal dirty entries are createZombieChange entries.
+        // Our zombie_accounts set approximates this — if a zombie is subsequently
+        // dirtied by a non-zero transfer, it's removed from zombie_accounts
+        // (matching Go's dirtyCount > zombieEntries check).
         {
             let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
