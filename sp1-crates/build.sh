@@ -8,14 +8,13 @@ export TOP=$SCRIPT_DIR/..
 cd "$TOP"
 
 # Download RISC-V C toolchain if needed
-PARENT_DIR=""
 if [ ! -d "$HOME/.sp1/riscv" ]; then
     # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
     curl -L https://sp1up.succinct.xyz | bash
-    $HOME/.sp1/bin/sp1up -c
+    "$HOME"/.sp1/bin/sp1up -c
 
     echo "Testing riscv64-unknown-elf-gcc..."
-    $HOME/.sp1/riscv/bin/riscv64-unknown-elf-gcc --version
+    "$HOME"/.sp1/riscv/bin/riscv64-unknown-elf-gcc --version
 fi
 
 # Build brotli for SP1
@@ -26,17 +25,17 @@ cd target/build-sp1/brotli
 cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
   -DCMAKE_SYSTEM_NAME=Generic \
-  -DCMAKE_C_COMPILER=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-gcc \
+  -DCMAKE_C_COMPILER="$HOME"/.sp1/riscv/bin/riscv64-unknown-elf-gcc \
   -DCMAKE_C_FLAGS="-march=rv64im -mabi=lp64 -DBROTLI_BUILD_PORTABLE -mcmodel=medany -ffunction-sections -fdata-sections -fPIC" \
-  -DCMAKE_AR=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ar \
-  -DCMAKE_RANLIB=$HOME/.sp1/riscv/bin/riscv64-unknown-elf-ranlib \
+  -DCMAKE_AR="$HOME"/.sp1/riscv/bin/riscv64-unknown-elf-ar \
+  -DCMAKE_RANLIB="$HOME"/.sp1/riscv/bin/riscv64-unknown-elf-ranlib \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=$TOP/target/lib-sp1 \
+  -DCMAKE_INSTALL_PREFIX="$TOP"/target/lib-sp1 \
   -DBROTLI_DISABLE_TESTS=ON \
-  $TOP/brotli
+  "$TOP"/brotli
 make
 make install
-cd $TOP
+cd "$TOP"
 
 # Build nitro dependencies
 make build-replay-env test-go-deps
