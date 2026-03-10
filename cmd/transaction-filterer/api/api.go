@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 	"testing"
 
@@ -49,6 +50,12 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 		return tx.Hash(), nil
 	}
+}
+
+func (t *TransactionFiltererAPI) IsReady() bool {
+	t.apiMutex.Lock()
+	defer t.apiMutex.Unlock()
+	return t.arbFilteredTransactionsManager != nil
 }
 
 // Only used for testing.
@@ -125,6 +132,17 @@ func NewStack(
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
+
+	stack.RegisterHandler("liveness", "/liveness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	stack.RegisterHandler("readiness", "/readiness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if api.IsReady() {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
 
 	return stack, api, nil
 }
