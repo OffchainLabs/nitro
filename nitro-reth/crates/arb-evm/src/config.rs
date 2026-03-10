@@ -334,6 +334,10 @@ fn arb_cfg_env(chain_id: u64, spec: SpecId, arbos_version: u64) -> CfgEnv {
     // validation, not increment — the nonce is still incremented after execution.
     cfg.disable_balance_check = true;
     cfg.disable_nonce_check = true;
+    // Disable base fee validation for Arbitrum tx types (RetryTx, etc.)
+    // whose gas_fee_cap may not follow standard EIP-1559 rules.
+    // Also needed for debug_traceTransaction to replay these tx types.
+    cfg.disable_base_fee = true;
     cfg
 }
 
