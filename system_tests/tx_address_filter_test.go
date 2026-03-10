@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -16,6 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/util/s3client"
+	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
 func isFilteredError(err error) bool {
@@ -517,4 +520,61 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+}
+
+func TestSyncBlockedUntilFilteringReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execNode := builder.L2.ExecNode
+
+	// Without address filter service should be true
+	if !execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true when no address filter service is configured")
+	}
+
+	// Create a filter service with enabled config, but without loaded rules (hash store is empty)
+	filterCfg := &addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	Require(t, err)
+
+	execNode.Sequencer.SetAddressFilterServiceForTesting(filterService)
+
+	if execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be false before filter rules are loaded")
+	}
+	if execNode.Synced(ctx) {
+		t.Fatal("Synced should return false when filtering is not ready")
+	}
+
+	// Add some rules to the filter service to simulate it being loaded
+	salt := []byte("test-salt")
+	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	hashes := []common.Hash{sha256.Sum256(append(salt, addr.Bytes()...))}
+	filterService.GetHashStore().Store(salt, hashes, "test-etag")
+
+	if !execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true after filter rules are loaded")
+	}
+	syncMonitorResult := execNode.SyncMonitor.Synced(ctx)
+	if execNode.Synced(ctx) != syncMonitorResult {
+		t.Fatalf("Synced should match SyncMonitor.Synced when filtering is ready, got %v, want %v",
+			execNode.Synced(ctx), syncMonitorResult)
+	}
 }

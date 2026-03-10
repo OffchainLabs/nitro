@@ -583,6 +583,17 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	return s, nil
 }
 
+func (s *Sequencer) FilteringReady() bool {
+	if s.addressFilterService == nil {
+		return true
+	}
+	return !s.addressFilterService.GetLoadedAt().IsZero()
+}
+
+func (s *Sequencer) SetAddressFilterServiceForTesting(service *addressfilter.FilterService) {
+	s.addressFilterService = service
+}
+
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 	if failure.revived {
 		return
