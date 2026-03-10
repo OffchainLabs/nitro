@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     heapify, Bytes20, Bytes32,
 };
-use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use prover::{machine::Module, programs::config::StylusConfig};
 
 // these hostio methods allow the replay machine to modify itself
@@ -57,12 +57,12 @@ pub unsafe extern "C" fn programs__activate_v2(
     err_buf: GuestPtr,
     err_buf_len: usize,
 ) -> usize {
-    let wasm = STATIC_MEM.read_slice(wasm_ptr, wasm_size);
+    let wasm = StaticMem.read_slice(wasm_ptr, wasm_size);
     let codehash = &read_bytes32(codehash);
     let debug = debug != 0;
 
-    let page_limit = STATIC_MEM.read_u16(pages_ptr);
-    let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
+    let page_limit = StaticMem.read_u16(pages_ptr);
+    let gas_left = &mut StaticMem.read_u64(gas_ptr);
     match Module::activate(
         &wasm,
         codehash,
@@ -73,35 +73,35 @@ pub unsafe extern "C" fn programs__activate_v2(
         gas_left,
     ) {
         Ok((module, data)) => {
-            STATIC_MEM.write_u64(gas_ptr, *gas_left);
-            STATIC_MEM.write_u16(pages_ptr, data.footprint);
-            STATIC_MEM.write_u32(asm_estimate_ptr, data.asm_estimate);
-            STATIC_MEM.write_u16(init_cost_ptr, data.init_cost);
-            STATIC_MEM.write_u16(cached_init_cost_ptr, data.cached_init_cost);
-            STATIC_MEM.write_slice(module_hash_ptr, module.hash().as_slice());
+            StaticMem.write_u64(gas_ptr, *gas_left);
+            StaticMem.write_u16(pages_ptr, data.footprint);
+            StaticMem.write_u32(asm_estimate_ptr, data.asm_estimate);
+            StaticMem.write_u16(init_cost_ptr, data.init_cost);
+            StaticMem.write_u16(cached_init_cost_ptr, data.cached_init_cost);
+            StaticMem.write_slice(module_hash_ptr, module.hash().as_slice());
             0
         }
         Err(error) => {
             let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
             err_bytes.truncate(err_buf_len);
-            STATIC_MEM.write_slice(err_buf, &err_bytes);
-            STATIC_MEM.write_u64(gas_ptr, 0);
-            STATIC_MEM.write_u16(pages_ptr, 0);
-            STATIC_MEM.write_u32(asm_estimate_ptr, 0);
-            STATIC_MEM.write_u16(init_cost_ptr, 0);
-            STATIC_MEM.write_u16(cached_init_cost_ptr, 0);
-            STATIC_MEM.write_slice(module_hash_ptr, Bytes32::default().as_slice());
+            StaticMem.write_slice(err_buf, &err_bytes);
+            StaticMem.write_u64(gas_ptr, 0);
+            StaticMem.write_u16(pages_ptr, 0);
+            StaticMem.write_u32(asm_estimate_ptr, 0);
+            StaticMem.write_u16(init_cost_ptr, 0);
+            StaticMem.write_u16(cached_init_cost_ptr, 0);
+            StaticMem.write_slice(module_hash_ptr, Bytes32::default().as_slice());
             err_bytes.len()
         }
     }
 }
 
 unsafe fn read_bytes32(ptr: GuestPtr) -> Bytes32 {
-    STATIC_MEM.read_fixed(ptr).into()
+    StaticMem.read_fixed(ptr).into()
 }
 
 unsafe fn read_bytes20(ptr: GuestPtr) -> Bytes20 {
-    STATIC_MEM.read_fixed(ptr).into()
+    StaticMem.read_fixed(ptr).into()
 }
 
 /// Links and creates user program
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn programs__new_program(
     gas: u64,
 ) -> u32 {
     let module_hash = read_bytes32(module_hash_ptr);
-    let calldata = STATIC_MEM.read_slice(calldata_ptr, calldata_size);
+    let calldata = StaticMem.read_slice(calldata_ptr, calldata_size);
     let config: StylusConfig = *Box::from_raw(config_box as _);
     let evm_data: EvmData = *Box::from_raw(evm_data_box as _);
 
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
     let (req_type, len) = Program::current().request_handler().get_request_meta(id);
     if len_ptr != GuestPtr(0) {
-        STATIC_MEM.write_u32(len_ptr, len as u32);
+        StaticMem.write_u32(len_ptr, len as u32);
     }
     req_type
 }
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
     let (_, data) = Program::current().request_handler().take_request(id);
-    STATIC_MEM.write_slice(data_ptr, &data);
+    StaticMem.write_slice(data_ptr, &data);
 }
 
 /// sets response for the next request made
@@ -199,8 +199,8 @@ pub unsafe extern "C" fn programs__set_response(
     let program = Program::current();
     program.request_handler().set_response(
         id,
-        STATIC_MEM.read_slice(result_ptr, result_len),
-        STATIC_MEM.read_slice(raw_data_ptr, raw_data_len),
+        StaticMem.read_slice(result_ptr, result_len),
+        StaticMem.read_slice(raw_data_ptr, raw_data_len),
         Gas(gas),
     );
 }

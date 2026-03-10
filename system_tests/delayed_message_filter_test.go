@@ -15,13 +15,22 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	arbosutil "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/txfilter"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // sendDelayedTx sends a transaction via L1 delayed inbox.
@@ -60,11 +69,12 @@ func sendDelayedBatch(t *testing.T, ctx context.Context, builder *NodeBuilder, t
 	Require(t, err)
 }
 
-// advanceAndWaitForDelayed advances L1 blocks and waits for delayed message processing.
-func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder) {
+// advanceL1ForDelayed advances L1 blocks so the delayed sequencer picks up pending messages.
+// Callers should use their own wait mechanism (WaitForTx, waitForDelayedSequencerHaltOnHashes, etc.)
+// rather than relying on a sleep.
+func advanceL1ForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-	<-time.After(time.Second * 2)
 }
 
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
@@ -115,6 +125,27 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 		<-time.After(100 * time.Millisecond)
 	}
 	t.Fatal("timeout waiting for delayed sequencer to resume")
+}
+
+func createTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, filtererName string) (*node.Node, *api.TransactionFiltererAPI) {
+	t.Helper()
+
+	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
+
+	// creates transaction-filterer API server
+	transactionFiltererStackConf := api.DefaultStackConfig
+	// use arbitrary available ports
+	transactionFiltererStackConf.HTTPPort = 0
+	transactionFiltererStackConf.WSPort = 0
+	transactionFiltererStackConf.AuthPort = 0
+	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
+	require.NoError(t, err)
+	err = transactionFiltererStack.Start()
+	require.NoError(t, err)
+
+	builder.execConfig.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+
+	return transactionFiltererStack, transactionFiltererAPI
 }
 
 // addTxHashToOnChainFilter adds a tx hash to the onchain filter via the precompile.
@@ -177,7 +208,8 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
+
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare and send delayed tx TO filtered address
@@ -185,7 +217,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
@@ -202,13 +234,18 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -228,7 +265,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare and send delayed tx TO filtered address
@@ -236,7 +273,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
@@ -253,14 +290,15 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure delayed message is processed
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify filtered address balance did NOT change (tx executed as no-op)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -283,14 +321,77 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
+func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	// Even though the transaction will touch a filtered address,
+	// the sequencer will process the delayed msg, since this config is set to true.
+	builder.execConfig.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter = true
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Sender")
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	senderAddr := builder.L2Info.GetAddress("Sender")
+
+	// Get initial info
+	filteredBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	senderNonceBefore, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+
+	// Set up address filter to block FilteredUser
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Prepare and send delayed tx TO filtered address
+	transferAmount := big.NewInt(1e12)
+	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, transferAmount, nil)
+	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+
+	// Advance L1 again to ensure all delayed messages are processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	_, err = builder.L2.EnsureTxSucceeded(delayedTx)
+	require.NoError(t, err)
+
+	// Verify filtered address balance changed
+	finalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(filteredBalanceBefore, transferAmount), finalBalance, "filtered address should receive funds")
+
+	// Verify the receipt exists and has a successful status
+	receipt, err := builder.L2.Client.TransactionReceipt(ctx, txHash)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "bypassed tx should have successful receipt status")
+
+	// Verify sender's nonce was incremented
+	senderNonceAfter, err := builder.L2.Client.NonceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, senderNonceBefore+1, senderNonceAfter, "sender nonce should be incremented")
+
+	// Verify sender's balance decreased (gas was consumed)
+	senderBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
+	require.NoError(t, err)
+	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
+}
+
 // TestDelayedMessageFilterBlocksSubsequent verifies that messages behind filtered one are blocked.
 func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -298,6 +399,13 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	builder.L2Info.GenerateAccount("NormalUser2")
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -326,7 +434,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Send 3 delayed messages:
@@ -343,7 +451,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	sendDelayedTx(t, ctx, builder, delayedTx3)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on first tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash1}, 10*time.Second)
@@ -361,14 +469,15 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, normal2Initial, normal2Mid, "normal user 2 balance should not change while blocked")
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash1, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure all delayed messages are processed
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify filtered tx executed as no-op (balance unchanged)
 	filteredFinal, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -401,8 +510,6 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -410,6 +517,13 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -435,7 +549,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Create batch of 3 transactions within a single delayed message:
@@ -453,7 +567,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	sendDelayedBatch(t, ctx, builder, txBatch)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on tx2 (the filtered one, which is NOT the first in the batch)
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 10*time.Second)
@@ -472,13 +586,14 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.Equal(t, user2Initial, user2Mid, "user2 balance should not change while batch is blocked")
 
 	// Add tx2 hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, tx2.Hash(), "Filterer")
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure all delayed messages are processed
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify final balances:
 	// tx1: User1 should receive transferAmount
@@ -529,7 +644,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser (NOT NormalUser)
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr})
+	filter := newHashedChecker([]common.Address{filteredAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare and send delayed tx TO normal (non-filtered) address
@@ -537,7 +652,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Give some time for processing
 	<-time.After(time.Second)
@@ -593,12 +708,17 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -618,7 +738,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare delayed tx that calls caller.callTarget(targetAddr)
@@ -631,13 +751,14 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -657,12 +778,17 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -682,7 +808,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{targetAddr})
+	filter := newHashedChecker([]common.Address{targetAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare delayed tx that calls caller.staticcallTargetInTx(targetAddr)
@@ -695,13 +821,14 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -718,12 +845,17 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -747,7 +879,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed CREATE address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{createAddr})
+	filter := newHashedChecker([]common.Address{createAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare delayed tx that calls caller.createContract()
@@ -760,13 +892,14 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -783,12 +916,17 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -810,7 +948,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up filter to block the computed CREATE2 address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{create2Addr})
+	filter := newHashedChecker([]common.Address{create2Addr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare delayed tx that calls caller.create2Contract(salt)
@@ -823,13 +961,14 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -846,13 +985,18 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
-	cleanup := builder.Build(t)
-	defer cleanup()
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 	builder.L2Info.GenerateAccount("FilteredBeneficiary")
+
+	transactionFiltererStack, transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	defer transactionFiltererStack.Close()
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
 
@@ -871,7 +1015,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the beneficiary address
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredBeneficiary})
+	filter := newHashedChecker([]common.Address{filteredBeneficiary})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Prepare delayed tx that calls contract.selfDestructTo(filteredBeneficiary)
@@ -884,13 +1028,14 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Add tx hash to onchain filter
-	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
+	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -934,7 +1079,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block both FilteredUser1 and FilteredUser2
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{filteredAddr1, filteredAddr2})
+	filter := newHashedChecker([]common.Address{filteredAddr1, filteredAddr2})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Create batch of 2 transactions within a single delayed message:
@@ -950,7 +1095,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 	sendDelayedBatch(t, ctx, builder, txBatch)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on both tx1 and tx2
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx1.Hash(), tx2.Hash()}, 10*time.Second)
@@ -968,7 +1113,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure delayed message is processed
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify both receipts exist and have failed status (executed as no-ops)
 	receipt1, err := builder.L2.Client.TransactionReceipt(ctx, tx1.Hash())
@@ -1008,7 +1153,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block both User1 and User2
-	filter := txfilter.NewStaticAsyncChecker([]common.Address{user1Addr, user2Addr})
+	filter := newHashedChecker([]common.Address{user1Addr, user2Addr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
 	// Create batch of 2 transactions within a single delayed message:
@@ -1024,27 +1169,27 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	sendDelayedBatch(t, ctx, builder, txBatch)
 
 	// Advance L1 to trigger delayed message processing
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify sequencer is halted on both tx1 and tx2
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx1.Hash(), tx2.Hash()}, 10*time.Second)
 
 	// Change the address filter to only filter User2 (remove User1 from filter)
-	newFilter := txfilter.NewStaticAsyncChecker([]common.Address{user2Addr})
+	newFilter := newHashedChecker([]common.Address{user2Addr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(newFilter)
 
 	// Wait for full retry to occur and verify TxHashes updated to only tx2
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 5*time.Second)
 
 	// Change the address filter to filter neither (remove User2 from filter)
-	noFilter := txfilter.NewStaticAsyncChecker([]common.Address{})
+	noFilter := newHashedChecker([]common.Address{})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(noFilter)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
 
 	// Advance L1 again to ensure delayed message is processed
-	advanceAndWaitForDelayed(t, ctx, builder)
+	advanceL1ForDelayed(t, ctx, builder)
 
 	// Verify tx1 succeeded (User1 received funds - no longer filtered)
 	user1Final, err := builder.L2.Client.BalanceAt(ctx, user1Addr, nil)
@@ -1066,4 +1211,736 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	receipt2, err := builder.L2.Client.TransactionReceipt(ctx, tx2.Hash())
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusSuccessful, receipt2.Status, "tx2 should have success status")
+}
+
+// retryableFilterTestParams holds common params for retryable filter tests.
+type retryableFilterTestParams struct {
+	builder            *NodeBuilder
+	ctx                context.Context
+	delayedInbox       *bridgegen.Inbox
+	lookupL2Tx         func(*types.Receipt) *types.Transaction
+	filtererName       string
+	fundsRecipientAddr common.Address
+}
+
+// setupRetryableFilterTest sets up a node for retryable filtering tests.
+// It creates a Filterer account with the transaction-filterer role.
+// When setFundsRecipient is true, it also sets the filteredFundsRecipient.
+func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipient bool, eventFilterRules []eventfilter.EventRule) (*retryableFilterTestParams, func()) {
+	t.Helper()
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	if eventFilterRules != nil {
+		builder.WithEventFilterRules(eventFilterRules)
+	}
+	cleanup := builder.Build(t)
+
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+
+	delayedBridge, err := arbnode.NewDelayedBridge(builder.L1.Client, builder.L1Info.GetAddress("Bridge"), 0)
+	require.NoError(t, err)
+
+	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, messages, "no delayed messages found")
+		var submissionTxs []*types.Transaction
+		for _, message := range messages {
+			if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
+				continue
+			}
+			txs, err := arbos.ParseL2Transactions(message.Message, chaininfo.ArbitrumDevTestChainConfig().ChainID, params.MaxDebugArbosVersionSupported)
+			require.NoError(t, err)
+			for _, tx := range txs {
+				if tx.Type() == types.ArbitrumSubmitRetryableTxType {
+					submissionTxs = append(submissionTxs, tx)
+				}
+			}
+		}
+		require.Len(t, submissionTxs, 1, "expected exactly 1 retryable submission tx")
+		return submissionTxs[0]
+	}
+
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2Info.GenerateAccount("FundsRecipient")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	fundsRecipientAddr := builder.L2Info.GetAddress("FundsRecipient")
+	if setFundsRecipient {
+		tx, err = arbOwner.SetFilteredFundsRecipient(&ownerTxOpts, fundsRecipientAddr)
+		require.NoError(t, err)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
+		require.NoError(t, err)
+	}
+
+	return &retryableFilterTestParams{
+		builder:            builder,
+		ctx:                ctx,
+		delayedInbox:       delayedInbox,
+		lookupL2Tx:         lookupL2Tx,
+		filtererName:       "Filterer",
+		fundsRecipientAddr: fundsRecipientAddr,
+	}, cleanup
+}
+
+// submitRetryableViaL1 submits a retryable ticket via the L1 delayed inbox.
+// Returns the L1 receipt and the L2 submission tx hash (ticketId).
+func submitRetryableViaL1(
+	t *testing.T,
+	p *retryableFilterTestParams,
+	l1Sender string,
+	destAddr common.Address,
+	callValue *big.Int,
+	beneficiary common.Address,
+	feeRefundAddr common.Address,
+	data []byte,
+) (*types.Receipt, common.Hash) {
+	t.Helper()
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	gasLimit := big.NewInt(100000)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	l1opts := p.builder.L1Info.GetDefaultTransactOpts(l1Sender, p.ctx)
+	l1opts.Value = deposit
+	l1tx, err := p.delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		destAddr,
+		callValue,
+		maxSubmissionCost,
+		feeRefundAddr,
+		beneficiary,
+		gasLimit,
+		maxFeePerGas,
+		data,
+	)
+	require.NoError(t, err)
+
+	l1Receipt, err := p.builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, l1Receipt.Status)
+
+	l2Tx := p.lookupL2Tx(l1Receipt)
+	return l1Receipt, l2Tx.Hash()
+}
+
+func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	// Set up address filter to block FilteredUser
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Record initial balance of filtered address
+	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+
+	// Submit retryable with filtered beneficiary and feeRefundAddr
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, filteredAddr, filteredAddr, nil)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Sequencer should halt because PostTxFilter touches beneficiary/feeRefundAddr
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	// Verify filtered address balance did not change while halted
+	filteredMidBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitialBalance, filteredMidBalance, "balance should not change while halted")
+
+	// Add tx hash to onchain filter to authorize processing
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure delayed message is processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for the L2 receipt
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "filtered retryable should have failed receipt status")
+
+	// Verify retryable was created with redirected beneficiary
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary, "retryable beneficiary should be redirected to FundsRecipient")
+
+	// Verify filtered address balance did not increase
+	filteredFinalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitialBalance, filteredFinalBalance, "filtered address should not receive any funds")
+
+	// Verify redirect address received fee refunds
+	redirectBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
+	require.NoError(t, err)
+	require.True(t, redirectBalance.Sign() > 0, "redirect address should have received fee refunds")
+
+	// Verify sequencer is not re-halted
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted after processing filtered retryable")
+}
+
+func TestFilteredRetryableRedirectFallbackToNetworkFee(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, false, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	// Get the networkFeeAccount for comparison
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	require.NoError(t, err)
+	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(&bind.CallOpts{})
+	require.NoError(t, err)
+
+	// Verify filteredFundsRecipient is zero
+	configuredRecipient, err := arbOwnerPublic.GetFilteredFundsRecipient(&bind.CallOpts{})
+	require.NoError(t, err)
+	require.Equal(t, common.Address{}, configuredRecipient, "filteredFundsRecipient should be zero")
+
+	// Set up address filter
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+
+	// Snapshot networkFeeAccount balance before retryable processing
+	nfaBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+
+	// Submit retryable with filtered beneficiary
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, filteredAddr, filteredAddr, nil)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Sequencer should halt on filtered beneficiary/feeRefundAddr
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	// Add tx hash to onchain filter to authorize processing
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure delayed message is processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for receipt
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	// Verify beneficiary fell back to networkFeeAccount
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, networkFeeAccount, beneficiary, "retryable beneficiary should fallback to networkFeeAccount")
+
+	// Verify filtered address untouched
+	filteredFinalBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitialBalance, filteredFinalBalance, "filtered address should not receive any funds")
+
+	// Verify networkFeeAccount balance increased from fee refunds
+	nfaAfter, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+	require.True(t, nfaAfter.Cmp(nfaBefore) > 0, "network fee account should have received fee refunds")
+}
+
+func TestFilteredRetryableNoRedirectWhenNotFiltered(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalBeneficiary")
+	builder.L2Info.GenerateAccount("Destination")
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	normalBeneficiary := builder.L2Info.GetAddress("NormalBeneficiary")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	// Set up address filter to block FilteredUser only (NOT NormalBeneficiary)
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Submit retryable with non-filtered beneficiary
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, normalBeneficiary, normalBeneficiary, nil)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for the L2 receipt — this should succeed normally.
+	// A successful receipt proves no filtering happened (filtered retryables get ReceiptStatusFailed).
+	// We can't check GetBeneficiary because the auto-redeem runs immediately
+	// and deletes the retryable ticket on success.
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "non-filtered retryable should succeed")
+
+	// Verify sequencer is NOT halted
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be halted for non-filtered retryable")
+}
+
+func TestFilteredRetryableWithCallValue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	// Set up address filter
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	callValue := big.NewInt(1e6)
+
+	// Submit retryable with call value and filtered beneficiary
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, callValue, filteredAddr, filteredAddr, nil)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Sequencer should halt on filtered beneficiary/feeRefundAddr
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	// Add tx hash to onchain filter to authorize processing
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure delayed message is processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for receipt
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	// Verify retryable beneficiary is redirected
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary, "retryable beneficiary should be redirected")
+
+	// Verify escrow holds the call value
+	escrowAddr := retryables.RetryableEscrowAddress(ticketId)
+	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
+	require.NoError(t, err)
+	escrowBalance := state.GetBalance(escrowAddr)
+	require.Equal(t, callValue, escrowBalance.ToBig(), "escrow should hold the call value")
+
+	// Verify filtered address did not receive anything
+	filteredBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.True(t, filteredBalance.Sign() == 0, "filtered address should have zero balance")
+
+	// Verify redirect address received fee refunds
+	redirectBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
+	require.NoError(t, err)
+	require.True(t, redirectBalance.Sign() > 0, "redirect address should have received fee refunds")
+}
+
+func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+	builder.L2Info.GenerateAccount("NormalRecipient")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+	normalRecipientAddr := builder.L2Info.GetAddress("NormalRecipient")
+
+	// Set up address filter
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Record initial balance of normal recipient
+	normalInitialBalance, err := builder.L2.Client.BalanceAt(ctx, normalRecipientAddr, nil)
+	require.NoError(t, err)
+
+	// Submit filtered retryable via L1
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, filteredAddr, filteredAddr, nil)
+
+	// Submit a normal delayed transfer behind it
+	transferAmount := big.NewInt(1e12)
+	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalRecipient", builder.L2Info.TransferGas, transferAmount, nil)
+	delayedTxHash := sendDelayedTx(t, ctx, builder, delayedTx)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Sequencer should halt on the filtered retryable
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	// Add tx hash to onchain filter to authorize processing
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, "Filterer")
+
+	// Wait for delayed sequencer to resume
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	// Advance L1 again to ensure all delayed messages are processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Verify filtered retryable processed with redirect
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "filtered retryable should have failed receipt")
+
+	// Wait for the normal delayed transfer to also be processed. The delayed sequencer
+	// may not have sequenced it in the same iteration as the retryable if the inbox
+	// reader hadn't indexed it yet when the sequencer resumed.
+	_, err = WaitForTx(ctx, builder.L2.Client, delayedTxHash, time.Second*10)
+	require.NoError(t, err)
+
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary, "retryable beneficiary should be redirected")
+
+	// Verify the normal delayed transfer behind it also processed (no re-halt)
+	normalFinalBalance, err := builder.L2.Client.BalanceAt(ctx, normalRecipientAddr, nil)
+	require.NoError(t, err)
+	expectedBalance := new(big.Int).Add(normalInitialBalance, transferAmount)
+	require.Equal(t, expectedBalance, normalFinalBalance, "normal transfer should be processed after filtered retryable")
+
+	// Verify redirect address received fee refunds
+	redirectBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
+	require.NoError(t, err)
+	require.True(t, redirectBalance.Sign() > 0, "redirect address should have received fee refunds")
+
+	// Verify sequencer is NOT halted
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted after processing")
+}
+
+// TestDelayedMessageFilterCatchesEventFilter verifies that the delayed
+// message PostTxFilter runs the event filter. A normal delayed tx that
+// emits a Transfer event naming a filtered address causes the sequencer
+// to halt. After adding the tx hash to the onchain filter, the sequencer
+// resumes and the tx is processed.
+func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	selector, _, err := eventfilter.CanonicalSelectorFromEvent("Transfer(address,address,uint256)")
+	require.NoError(t, err)
+	rules := []eventfilter.EventRule{{
+		Event:          "Transfer(address,address,uint256)",
+		Selector:       selector,
+		TopicAddresses: []int{1, 2},
+	}}
+
+	arbOSInit := &params.ArbOSInit{
+		TransactionFilteringEnabled: true,
+	}
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithArbOSVersion(params.ArbosVersion_60).
+		WithArbOSInit(arbOSInit).
+		WithEventFilterRules(rules)
+	builder.isSequencer = true
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2Info.GenerateAccount("FilteredTarget")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	// Grant Filterer the transaction filterer role
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	senderAddr := builder.L2Info.GetAddress("Sender")
+	filteredAddr := builder.L2Info.GetAddress("FilteredTarget")
+
+	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
+
+	addrFilter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+
+	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
+	callData, err := contractABI.Pack("emitTransfer", senderAddr, filteredAddr)
+	require.NoError(t, err)
+
+	delayedTx := prepareDelayedContractCall(t, builder, "Sender", contractAddr, callData)
+	txHash := sendDelayedTx(t, ctx, builder, delayedTx)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Sequencer should halt because event filter detects the Transfer event
+	// with the filtered address in a topic
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
+
+	// Add tx hash to onchain filter to allow it through
+	addTxHashToOnChainFilter(t, ctx, builder, txHash, "Filterer")
+
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Tx should now be processed (as a filtered no-op with failed receipt)
+	receipt, err := WaitForTx(ctx, builder.L2.Client, txHash, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,
+		"filtered tx should have failed receipt status")
+}
+
+// TestFilteredArbitrumDepositTx verifies that an L1->L2 ETH deposit (ArbitrumDepositTx)
+// to a filtered address is handled correctly when the tx hash is in the onchain filter.
+// The deposit funds should be redirected to FilteredFundsRecipient (or networkFeeAccount
+// as default fallback) instead of the filtered address.
+func TestFilteredArbitrumDepositTx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Create accounts
+	builder.L2Info.GenerateAccount("Filterer")
+	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
+
+	// The Faucet on L1 will be the depositor.
+	// depositEth() sends to msg.sender for EOAs, so both From and To are the Faucet address.
+	faucetAddr := builder.L1Info.GetAddress("Faucet")
+
+	// Get the networkFeeAccount (default FilteredFundsRecipient fallback)
+	arbOwnerPub, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
+	require.NoError(t, err)
+	networkFeeAccount, err := arbOwnerPub.GetNetworkFeeAccount(nil)
+	require.NoError(t, err)
+
+	// Grant Filterer the transaction filterer role
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+	tx, err := arbOwner.AddTransactionFilterer(&ownerTxOpts, builder.L2Info.GetAddress("Filterer"))
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	require.NoError(t, err)
+
+	// Set up address filter to block the Faucet's address on L2
+	addrFilter := newHashedChecker([]common.Address{faucetAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+
+	// Record initial balances
+	faucetL2BalanceBefore, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
+	require.NoError(t, err)
+	networkFeeBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+
+	// Send ETH deposit from L1
+	depositAmount := big.NewInt(1e16)
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	txOpts.Value = depositAmount
+	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
+	require.NoError(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for delayed sequencer to halt on the filtered deposit
+	var depositTxHash common.Hash
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+		if waiting && len(hashes) > 0 {
+			depositTxHash = hashes[0]
+			break
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+	require.NotEqual(t, common.Hash{}, depositTxHash, "sequencer should halt on filtered deposit")
+
+	// Add the deposit tx hash to the onchain filter
+	addTxHashToOnChainFilter(t, ctx, builder, depositTxHash, "Filterer")
+
+	// Wait for delayed sequencer to resume.
+	// BUG: Before fix, this times out because the sequencer is permanently stuck.
+	waitForDelayedSequencerResume(t, ctx, builder, 30*time.Second)
+
+	// Advance L1 again to ensure the deposit block is processed
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Wait for the deposit tx receipt on L2
+	receipt, err := WaitForTx(ctx, builder.L2.Client, depositTxHash, 30*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status,
+		"filtered deposit should have failed receipt status")
+
+	// Verify the filtered address (Faucet) did NOT receive the deposit
+	faucetL2BalanceAfter, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, faucetL2BalanceBefore, faucetL2BalanceAfter,
+		"filtered address should NOT receive deposit funds")
+
+	// Verify the networkFeeAccount (default FilteredFundsRecipient) received the deposit
+	networkFeeBalanceAfter, err := builder.L2.Client.BalanceAt(ctx, networkFeeAccount, nil)
+	require.NoError(t, err)
+	expectedMinBalance := new(big.Int).Add(networkFeeBalanceBefore, depositAmount)
+	require.True(t, networkFeeBalanceAfter.Cmp(expectedMinBalance) >= 0,
+		"networkFeeAccount balance should increase by at least deposit amount: before=%s, after=%s, deposit=%s",
+		networkFeeBalanceBefore, networkFeeBalanceAfter, depositAmount)
+}
+
+// TestDelayedMessageFilterAliasedSender verifies that when an unsigned delayed
+// message is sent via sendUnsignedTransaction, the original (non-aliased) L1
+// sender address is checked against the address filter. Without de-aliasing,
+// the filter would only see the aliased L2 address and miss the restricted
+// original address.
+func TestDelayedMessageFilterAliasedSender(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// The L1 sender whose ORIGINAL address will be filtered
+	l1SenderAddr := builder.L1Info.GetAddress("User")
+
+	// Compute the aliased L2 address (what the sender appears as on L2 for unsigned txs)
+	aliasedSenderAddr := arbosutil.RemapL1Address(l1SenderAddr)
+
+	// Fund the aliased address on L2 so the unsigned tx can pay for gas
+	builder.L2.TransferBalanceTo(t, "Owner", aliasedSenderAddr, big.NewInt(1e18), builder.L2Info)
+
+	// Create a recipient account (not filtered)
+	builder.L2Info.GenerateAccount("Recipient")
+	recipientAddr := builder.L2Info.GetAddress("Recipient")
+
+	// Get initial balance
+	initialBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
+	require.NoError(t, err)
+
+	// Set up address filter to block the ORIGINAL L1 address (NOT the aliased one).
+	// Sanctions lists contain original addresses, not aliased derivatives.
+	filter := newHashedChecker([]common.Address{l1SenderAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+
+	// Get nonce for the aliased address on L2
+	nonce, err := builder.L2.Client.NonceAt(ctx, aliasedSenderAddr, nil)
+	require.NoError(t, err)
+
+	// Create unsigned tx (ArbitrumUnsignedTx) - matches what L2 node creates from delayed msg
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   builder.L2Info.Signer.ChainID(),
+		From:      aliasedSenderAddr,
+		Nonce:     nonce,
+		GasFeeCap: builder.L2Info.GasPrice,
+		Gas:       builder.L2Info.TransferGas,
+		To:        &recipientAddr,
+		Value:     big.NewInt(1e12),
+		Data:      nil,
+	})
+
+	// Send via L1 delayed inbox using sendUnsignedTransaction.
+	// The bridge will alias the sender in _deliverToBridge, so on L2 the
+	// sender is aliasedSenderAddr (not l1SenderAddr).
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)
+	l1tx, err := delayedInbox.SendUnsignedTransaction(
+		&l1opts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	require.NoError(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	// Advance L1 to trigger delayed message processing
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Verify sequencer is halted on this tx.
+	// The filter catches the original L1 address via de-aliasing in PostTxFilter.
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{unsignedTx.Hash()}, 10*time.Second)
+
+	// Verify recipient balance did NOT change (tx was not processed)
+	finalBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, initialBalance, finalBalance, "recipient balance should not change - sender is filtered")
 }

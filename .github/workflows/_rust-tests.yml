@@ -52,6 +52,9 @@ jobs:
       - name: Make arbitrator libraries
         run: make -j wasm-ci-build
 
+      - name: Prepare replay.wasm env
+        run: make build-replay-env
+
       - name: Clippy check
         run: cargo clippy --all -- -D warnings -A static_mut_refs
 

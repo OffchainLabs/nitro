@@ -182,6 +182,19 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if to == nil {
 			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
 		}
+		// Check if this deposit tx is in the onchain filter.
+		// Deposits return endTxNow=true so RevertedTxHook (which normally
+		// handles filtered txs) is never reached. We must check here instead.
+		txHash := underlyingTx.Hash()
+		var txnErr error
+		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
+			recipient, err := p.state.FilteredFundsRecipientOrDefault()
+			if err != nil {
+				return true, multigas.ZeroGas(), err, nil
+			}
+			to = &recipient
+			txnErr = &core.ErrFilteredTx{TxHash: txHash}
+		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
 		// We intentionally use the variant here that doesn't do tracing,
@@ -190,7 +203,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
 		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
-		return true, multigas.ZeroGas(), nil, nil
+		return true, multigas.ZeroGas(), txnErr, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
 		if p.msg.From != arbosAddress {
@@ -202,10 +215,34 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		defer (startTracer())()
 		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
+
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
 		from := tx.From
 		scenario := util.TracingDuringEVM
+
+		// Check if this transaction is in the onchain filter. If so, redirect FeeRefundAddr
+		// and Beneficiary to the filteredFundsRecipient (or networkFeeAccount as fallback).
+		// filteredErr is set as result.Err so that PostTxFilter can detect the tx was
+		// already handled by the onchain filter and skip halting.
+		var filteredErr error
+		isFiltered := false
+		if p.state.FilteredTransactions().IsFilteredFree(ticketId) {
+			recipient, err := p.state.FilteredFundsRecipientOrDefault()
+			if err != nil {
+				return true, multigas.ZeroGas(), err, nil
+			}
+			// For symmetry with other filtered tx paths, deletion from the onchain filter
+			// is handled by the external tx authority service rather than here.
+			// Note: deletion here *would* be committed despite the ErrFilteredTx in
+			// result.Err, because endTxNow=true means the outer error is nil and state
+			// is not reverted. May move to direct deletion here in future.
+			// p.state.FilteredTransactions().DeleteFree(ticketId)
+			tx.FeeRefundAddr = recipient
+			tx.Beneficiary = recipient
+			isFiltered = true
+			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
+		}
 
 		// mint funds with the deposit, then charge fees later
 		availableRefund := new(big.Int).Set(tx.DepositValue)
@@ -306,7 +343,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				// should never happen as from's balance should be at least availableRefund at this point
 				log.Error("failed to transfer gasCostRefund", "err", err)
 			}
-			return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+			return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 		}
 
 		// pay for the retryable's gas and update the pools
@@ -323,7 +360,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				infraCost = takeFunds(networkCost, infraCost)
 				if err := transfer(&tx.From, &infraFeeAccount, infraCost, tracing.BalanceIncreaseInfraFee); err != nil {
 					log.Error("failed to transfer gas cost to infrastructure fee account", "err", err)
-					return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+					return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 				}
 			}
 		}
@@ -331,7 +368,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			if err := transfer(&tx.From, &networkFeeAccount, networkCost, tracing.BalanceIncreaseNetworkFee); err != nil {
 				// should be impossible because we just checked the tx.From balance
 				log.Error("failed to transfer gas cost to network fee account", "err", err)
-				return true, multigas.ZeroGas(), nil, ticketId.Bytes()
+				return true, multigas.ZeroGas(), filteredErr, ticketId.Bytes()
 			}
 		}
 
@@ -347,6 +384,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		}
 		availableRefund.Add(availableRefund, withheldGasFunds)
 		availableRefund.Add(availableRefund, withheldSubmissionFee)
+
+		// For filtered retryables, skip auto-redeem scheduling. The retryable
+		// is created with a redirected beneficiary who can redeem manually.
+		// This prevents the auto-redeem from executing calls against
+		// potentially filtered addresses.
+		if isFiltered {
+			return true, multigas.L2CalldataGas(usergas), filteredErr, ticketId.Bytes()
+		}
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(

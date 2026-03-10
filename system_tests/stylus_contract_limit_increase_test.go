@@ -212,6 +212,39 @@ func TestFragmentedContractValidation(t *testing.T) {
 	}
 }
 
+func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.WithExtraArchs(allWasmTargets)
+		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
+	})
+	defer cleanup()
+
+	file := rustFile("storage")
+	fragmentsOne, _, _ := readFragmentedContractFile(t, file, 1)
+	fragmentsTwo, _, _ := readFragmentedContractFile(t, file, 2)
+	require.Len(t, fragmentsOne, 1)
+	require.Len(t, fragmentsTwo, 2)
+
+	minDelta := fragmentReadCostWarmOnly(uint64(len(fragmentsTwo[0]))) + fragmentReadCostWarmOnly(uint64(len(fragmentsTwo[1]))) - fragmentReadCostWarmOnly(uint64(len(fragmentsOne[0])))
+	maxDelta := fragmentReadCost(uint64(len(fragmentsTwo[0]))) + fragmentReadCost(uint64(len(fragmentsTwo[1]))) - fragmentReadCost(uint64(len(fragmentsOne[0])))
+	copyDelta := fragmentCopyCost(uint64(len(fragmentsTwo[0]))) + fragmentCopyCost(uint64(len(fragmentsTwo[1]))) - fragmentCopyCost(uint64(len(fragmentsOne[0])))
+	minDelta += copyDelta
+	maxDelta += copyDelta
+
+	_, _, receiptOne := deployAndActivateFragmentedContract(t, builder.ctx, auth, builder.L2.Client, deployConfig{
+		fragmentCount:    1,
+		expectActivation: true,
+	})
+	_, _, receiptTwo := deployAndActivateFragmentedContract(t, builder.ctx, auth, builder.L2.Client, deployConfig{
+		fragmentCount:    2,
+		expectActivation: true,
+	})
+
+	absDelta := absDiffUint64(receiptTwo.GasUsed, receiptOne.GasUsed)
+	require.GreaterOrEqual(t, absDelta, minDelta)
+	require.LessOrEqual(t, absDelta, maxDelta)
+}
+
 // Specific Edge Case Tests
 
 func TestThatWeCantActivateStylusFragmentContract(t *testing.T) {
@@ -635,6 +668,25 @@ func TestArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
 }
 
 // Utils
+
+func fragmentReadCost(codeSize uint64) uint64 {
+	return params.WarmStorageReadCostEIP2929 + params.ColdAccountAccessCostEIP2929
+}
+
+func fragmentReadCostWarmOnly(codeSize uint64) uint64 {
+	return params.WarmStorageReadCostEIP2929
+}
+
+func fragmentCopyCost(codeSize uint64) uint64 {
+	return programs.ToWordSize(codeSize) * params.CopyGas
+}
+
+func absDiffUint64(left uint64, right uint64) uint64 {
+	if left >= right {
+		return left - right
+	}
+	return right - left
+}
 
 // readFragmentedContractFile reads, compiles, compresses, and fragments a contract.
 func readFragmentedContractFile(t *testing.T, file string, fragmentCount uint16) ([][]byte, []byte, arbcompress.Dictionary) {

@@ -161,7 +161,9 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 			debugInt = 1
 		}
 
-		wasm, err := getWasmFromContractCode(statedb, code, params, true)
+		// Not an activation path here, so fragment read gas shouldn't be charged.
+		// Passing nil avoids charging gas through a storage-backed burner here.
+		wasm, err := getWasmFromContractCode(statedb, code, params, nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to get wasm for program, program address: %v, err: %v", addressForLogging.Hex(), err))
 		}

@@ -3,9 +3,8 @@
 
 use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32};
-use caller_env::{ExecEnv, GuestPtr, MemAccess};
+use caller_env::{wavmio::WavmIo, ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
-use rand_pcg::Pcg32;
 use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
@@ -134,18 +133,47 @@ impl ExecEnv for JitExecEnv<'_> {
     }
 }
 
-pub struct GoRuntimeState {
-    /// An increasing clock used when Go asks for time, measured in nanoseconds.
-    pub time: u64,
-    /// Deterministic source of random data.
-    pub rng: Pcg32,
-}
+impl WavmIo for WasmEnv {
+    fn get_u64_global(&self, idx: usize) -> Option<u64> {
+        self.small_globals.get(idx).copied()
+    }
 
-impl Default for GoRuntimeState {
-    fn default() -> Self {
-        Self {
-            time: 0,
-            rng: caller_env::create_pcg(),
-        }
+    fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
+        let Some(g) = self.small_globals.get_mut(idx) else {
+            return false;
+        };
+        *g = val;
+        true
+    }
+
+    fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
+        self.large_globals.get(idx).map(|b| &b.0)
+    }
+
+    fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
+        let Some(g) = self.large_globals.get_mut(idx) else {
+            return false;
+        };
+        *g = val.into();
+        true
+    }
+
+    fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
+        self.sequencer_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
+        self.delayed_messages.get(&num).map(|v| v.as_slice())
+    }
+
+    fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
+        let Ok(pt) = preimage_type.try_into() else {
+            eprintln!("Go trying to get a preimage with unknown type {preimage_type}");
+            return None;
+        };
+        self.preimages
+            .get(&pt)
+            .and_then(|m| m.get(&Bytes32(*hash)))
+            .map(|v| v.as_slice())
     }
 }

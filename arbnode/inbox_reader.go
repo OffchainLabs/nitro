@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -149,9 +150,6 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
-			if r.tracker.snapSyncConfig.Enabled {
-				break
-			}
 			// Validate the init message matches our L2 blockchain
 			ctx, err := r.StopWaiter.GetContextSafe()
 			if err != nil {
@@ -477,7 +475,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
 					idx := batchNum - sequencerBatches[0].SequenceNumber
 					if idx < uint64(len(sequencerBatches)) {
-						return sequencerBatches[idx].Serialize(ctx, r.l1Reader.Client())
+						return SerializeSequencerInboxBatch(ctx, sequencerBatches[idx], r.l1Reader.Client())
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
@@ -633,7 +631,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
-func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
+func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*mel.SequencerInboxBatch, delayedMessages []*mel.DelayedInboxMessage) (bool, error) {
 	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
@@ -694,7 +692,7 @@ func (r *InboxReader) GetSequencerMessageBytesForParentBlock(ctx context.Context
 	var seenBatches []uint64
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
-			data, err := batch.Serialize(ctx, r.client)
+			data, err := SerializeSequencerInboxBatch(ctx, batch, r.client)
 			return data, batch.BlockHash, err
 		}
 		seenBatches = append(seenBatches, batch.SequenceNumber)
@@ -714,6 +712,40 @@ func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 	return r.lastSeenBatchCount.Load()
 }
 
+func (r *InboxReader) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
+	batchProcessed := r.GetLastReadBatchCount()
+	if batchProcessed == 0 {
+		return 0, nil
+	}
+	return r.tracker.GetBatchMessageCount(batchProcessed - 1)
+}
+
+func (r *InboxReader) GetSyncProgress(_ context.Context) (mel.MessageSyncProgress, error) {
+	batchSeen := r.GetLastSeenBatchCount()
+	batchProcessed := r.GetLastReadBatchCount()
+	var msgCount arbutil.MessageIndex
+	if batchProcessed > 0 {
+		var err error
+		msgCount, err = r.tracker.GetBatchMessageCount(batchProcessed - 1)
+		if err != nil {
+			return mel.MessageSyncProgress{}, err
+		}
+	}
+	return mel.MessageSyncProgress{
+		BatchSeen:      batchSeen,
+		BatchProcessed: batchProcessed,
+		MsgCount:       msgCount,
+	}, nil
+}
+
+func (r *InboxReader) GetL1Reader() *headerreader.HeaderReader {
+	return r.l1Reader
+}
+
 func (r *InboxReader) GetDelayBlocks() uint64 {
 	return r.config().DelayBlocks
+}
+
+func (r *InboxReader) SupportsPushingFinalityData() bool {
+	return true
 }
