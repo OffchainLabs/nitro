@@ -7,8 +7,7 @@ use crate::{
     value::{FunctionType as ArbFunctionType, Value},
 };
 #[cfg(not(feature = "sp1"))]
-use crate::{machine::Module, memory::MemoryType};
-#[cfg(feature = "sp1")]
+use crate::machine::Module;
 use crate::value::MemoryType;
 use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};

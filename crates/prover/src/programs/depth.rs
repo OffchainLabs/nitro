@@ -6,8 +6,7 @@ use super::{
     FuncMiddleware, Middleware, ModuleMod,
 };
 #[cfg(not(feature = "sp1"))]
-use crate::{host::InternalFunc, Machine};
-#[cfg(feature = "sp1")]
+use crate::Machine;
 use crate::value::InternalFunc;
 use crate::value::FunctionType;
 
