@@ -48,13 +48,9 @@ pub struct BatchInfo {
     pub data: Vec<u8>,
 }
 
-/// `UserWasm` is a wrapper around `Vec<u8>`
+/// `UserWasm` is a wrapper around `Vec<u8>`. It contains `brotli`-decompressed wasm module.
 ///
-/// If the `decompress-user-wasm` feature is on, it contains `brotli`-decompressed wasm module.
-/// Otherwise, it contains the compressed wasm module as-is, and the caller is responsible for decompressing it before use.
-///
-/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before
-/// `from(Vec<u8>)` is called by `serde`.
+/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by `serde`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 
@@ -72,15 +68,10 @@ impl AsRef<[u8]> for UserWasm {
 }
 
 impl TryFrom<Vec<u8>> for UserWasm {
-    #[cfg(feature = "decompress-user-wasm")]
     type Error = brotli::BrotliStatus;
-    #[cfg(not(feature = "decompress-user-wasm"))]
-    type Error = ();
 
     fn try_from(data: Vec<u8>) -> Result<Self, Self::Error> {
-        #[cfg(feature = "decompress-user-wasm")]
-        let data = brotli::decompress(&data, brotli::Dictionary::Empty)?;
-        Ok(Self(data))
+        Ok(Self(brotli::decompress(&data, brotli::Dictionary::Empty)?))
     }
 }
 
