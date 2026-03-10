@@ -291,7 +291,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
-	TransactionFilteringConfigAddOptions(prefix+".transaction-filtering", f)
 }
 
 func TimeboostAddOptions(prefix string, f *pflag.FlagSet) {
