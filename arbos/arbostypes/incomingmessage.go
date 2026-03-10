@@ -68,9 +68,6 @@ type L1IncomingMessage struct {
 	// Only used for `L1MessageType_BatchPostingReport`
 	// note: the legacy field is used in json to support older clients
 	// in rlp it's used to distinguish old from new (old will load into first arg)
-	//
-	// NOTE: These fields are not included when storing a L1MessageType_BatchPostingReport
-	// type delayed message or L2 message into the preimages map for MEL validation
 	LegacyBatchGasCost *uint64         `json:"batchGasCost,omitempty" rlp:"optional"`
 	BatchDataStats     *BatchDataStats `json:"batchDataTokens,omitempty" rlp:"optional"`
 }
@@ -200,7 +197,19 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 			if msg.LegacyBatchGasCost == nil {
 				return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
 			}
+			// Pre-arbos50, LegacyBatchGasCost and BatchDataStats are interchangeable.
+			// Post-arbos50, BatchDataStats is required. However, this code doesn't
+			// know which arbos version applies to the current block.
+			//
+			// Since we already have LegacyBatchGasCost, we don't return an error here.
+			// Instead, we assume this is a pre-arbos50 block and proceed without
+			// BatchDataStats. If that assumption is wrong (i.e. this is actually
+			// post-arbos50), createBatchPostingReportTransaction will detect the
+			// missing BatchDataStats and fail there, since it does know the arbos
+			// version. In practice, any node that supports arbos50 populates both
+			// fields together, so this fallback path should not be reached.
 			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
+			return nil
 		} else {
 			gotHash := crypto.Keccak256Hash(batchData)
 			if gotHash != batchHash {

@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -137,5 +138,30 @@ func TestGetPricesInArbGas(t *testing.T) {
 	}
 	if storageArbGas.Cmp(expectedStorageArbGas) != 0 {
 		t.Fatal("expected storage arb gas to be", expectedStorageArbGas, "but got", storageArbGas)
+	}
+}
+
+func TestGetMultiGasPricingConstraintsOrder(t *testing.T) {
+	t.Parallel()
+
+	evm, state, callCtx, arbGasInfo := setupArbGasInfo(t)
+	state.L2PricingState().ArbosVersion = params.ArbosVersion_MultiGasConstraintsVersion
+
+	Require(t, state.L2PricingState().AddMultiGasConstraint(
+		20_000_000, 10, 100_000,
+		map[uint8]uint64{
+			uint8(multigas.ResourceKindStorageAccess): 3,
+			uint8(multigas.ResourceKindComputation):   1,
+		},
+	))
+
+	results, err := arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
+	Require(t, err)
+
+	resources := results[0].Resources
+	for i := 1; i < len(resources); i++ {
+		if resources[i-1].Resource >= resources[i].Resource {
+			t.Fatal("resources not sorted by resource kind")
+		}
 	}
 }

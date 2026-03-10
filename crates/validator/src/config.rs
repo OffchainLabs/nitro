@@ -7,40 +7,88 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, ValueEnum};
+use std::collections::HashMap;
+use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use tracing::info;
 
 use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
+use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
 
-#[derive(Debug)]
+/// Mode-specific execution state, built at startup.
+pub enum ExecutionMode {
+    Native {
+        module_cache: HashMap<ModuleRoot, CompiledModule>,
+    },
+    Continuous {
+        // Not wrapped in Arc<> since the caller of ServerState is already wrapped.
+        jit_manager: JitProcessManager,
+    },
+}
+
 pub struct ServerState {
-    pub mode: InputMode,
     /// Machine locator is responsible for locating replay.wasm binary and building
     /// a map of module roots to their respective location + binary
     pub locator: MachineLocator,
-    /// Jit manager is responsible for computing next GlobalState. Not wrapped
-    /// in Arc<> since the caller of ServerState is wrapped in Arc<>.
-    pub jit_manager: JitProcessManager,
     pub available_workers: usize,
+    pub execution: ExecutionMode,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         let locator = MachineLocator::new(&config.root_path)?;
 
-        let jit_manager = match config.mode {
-            InputMode::Continuous => JitProcessManager::new(&locator)?,
-            InputMode::Native => JitProcessManager::new_empty(),
+        let execution = match config.mode {
+            InputMode::Continuous => ExecutionMode::Continuous {
+                jit_manager: JitProcessManager::new(&locator)?,
+            },
+            InputMode::Native => {
+                let mut module_cache = HashMap::new();
+                for meta in locator.module_roots() {
+                    let binary = replay_binary(&meta.path);
+                    let validator_opts = jit::ValidatorOpts {
+                        binary: binary.clone(),
+                        cranelift: DEFAULT_JIT_CRANELIFT,
+                        debug: false,
+                        require_success: false,
+                    };
+                    match jit::machine::compile_module(&validator_opts) {
+                        Ok(compiled) => {
+                            info!(
+                                "Pre-compiled module for root 0x{} from {binary:?}",
+                                meta.module_root
+                            );
+                            module_cache.insert(meta.module_root, compiled);
+                        }
+                        Err(err) => {
+                            warn!(
+                                "Failed to pre-compile module for root 0x{}: {err}",
+                                meta.module_root
+                            );
+                        }
+                    }
+                }
+                ExecutionMode::Native { module_cache }
+            }
         };
+
         Ok(ServerState {
-            mode: config.mode,
             locator,
-            jit_manager,
             available_workers,
+            execution,
         })
+    }
+
+    /// Gracefully shuts down mode-specific resources.
+    pub async fn shutdown(&self) -> Result<()> {
+        match &self.execution {
+            ExecutionMode::Continuous { jit_manager } => jit_manager.complete_machines().await,
+            ExecutionMode::Native { .. } => Ok(()),
+        }
     }
 }
 
@@ -56,6 +104,7 @@ pub enum LoggingFormat {
     Text,
     Json,
 }
+use jit::CompiledModule;
 use tracing::warn;
 
 const DEFAULT_NUM_WORKERS: usize = 4;
@@ -100,11 +149,53 @@ impl ServerConfig {
     }
 }
 
+pub fn get_jit_path() -> Result<PathBuf> {
+    let current_exe = env::current_exe().context("failed to get path of current executable")?;
+
+    let is_test_env = current_exe.to_string_lossy().contains("deps");
+
+    let candidate = if is_test_env {
+        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
+            grandparent.join("target").join("bin").join("jit")
+        } else {
+            return Err(anyhow!(
+                "Custom JIT path not found for test env: {manifest_dir:?}",
+            ));
+        }
+    } else {
+        current_exe
+            .parent()
+            .ok_or_else(|| anyhow!("failed to resolve parent directory of executable"))?
+            .join("jit")
+    };
+
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+
+    // 3. Fallback: Search system PATH
+    // We treat a missing PATH var as "just continue" rather than a hard error
+    if let Ok(path_var) = env::var("PATH") {
+        for split_path in env::split_paths(&path_var) {
+            let joined = split_path.join("jit");
+            if joined.exists() {
+                return Ok(joined);
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "jit binary not found in local paths or system PATH"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
 
-    use crate::config::ServerConfig;
+    use crate::config::{get_jit_path, ServerConfig};
 
     #[test]
     fn verify_cli() {
@@ -119,5 +210,24 @@ mod tests {
         assert!(server_config.workers.is_none());
         let workers = server_config.get_workers().unwrap();
         assert!(workers > 0);
+    }
+
+    #[test]
+    fn test_get_jit_path() {
+        let jit_path = get_jit_path().unwrap();
+
+        assert!(jit_path.exists(), "JIT binary does not exist");
+        assert!(
+            jit_path.is_file(),
+            "JIT path points to a directory, expected a file"
+        );
+
+        let path_str = jit_path.to_str().expect("path contains invalid utf-8");
+
+        assert!(
+            path_str.contains("nitro/target/bin/jit"),
+            "Path {:?} did not contain expected substring 'nitro/target/bin/jit'",
+            jit_path
+        );
     }
 }

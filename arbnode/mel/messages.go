@@ -3,6 +3,8 @@
 package mel
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -13,6 +15,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+var ErrDelayedMessageNotYetFinalized = errors.New("delayed message not yet finalized")
 
 type BatchDataLocation uint8
 
@@ -59,24 +63,11 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 }
 
 func (m *DelayedInboxMessage) Hash() common.Hash {
-	encoded, err := rlp.EncodeToBytes(m.WithOnlyMELConsensusFields())
+	encoded, err := rlp.EncodeToBytes(m)
 	if err != nil {
 		panic(err)
 	}
 	return crypto.Keccak256Hash(encoded)
-}
-
-// WithOnlyMELConsensusFields returns a shallow copy of the DelayedInboxMessage with
-// only the fields relevant to MEL consensus being present
-func (m *DelayedInboxMessage) WithOnlyMELConsensusFields() *DelayedInboxMessage {
-	return &DelayedInboxMessage{
-		BlockHash: m.BlockHash,
-		Message: &arbostypes.L1IncomingMessage{
-			Header: m.Message.Header,
-			L2msg:  m.Message.L2msg,
-		},
-		ParentChainBlockNumber: m.ParentChainBlockNumber,
-	}
 }
 
 type BatchMetadata struct {
@@ -84,4 +75,10 @@ type BatchMetadata struct {
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
 	ParentChainBlock    uint64
+}
+
+type MessageSyncProgress struct {
+	BatchSeen      uint64
+	BatchProcessed uint64
+	MsgCount       arbutil.MessageIndex
 }

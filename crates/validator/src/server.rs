@@ -1,14 +1,17 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use anyhow::Result;
+use axum::routing::post;
+use axum::Router;
 use std::future::Future;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::signal;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::ServerState;
-use crate::router::create_router;
+use crate::spawner_endpoints;
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
@@ -25,7 +28,19 @@ async fn run_server_internal(
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.jit_manager.complete_machines().await
+    state.shutdown().await
+}
+
+fn create_router() -> Router<Arc<ServerState>> {
+    let router = Router::new()
+        .route("/", post(spawner_endpoints::jsonrpc_dispatch))
+        .layer(TraceLayer::new_for_http());
+
+    // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
+    #[cfg(test)]
+    let router = router.route("/test", axum::routing::get(|| async { "OK" }));
+
+    router
 }
 
 // Listens for Ctrl+C or SIGTERM
@@ -72,7 +87,7 @@ mod tests {
     };
 
     use crate::{
-        config::{ServerConfig, ServerState},
+        config::{ExecutionMode, ServerConfig, ServerState},
         engine::ModuleRoot,
         server::run_server_internal,
     };
@@ -119,7 +134,7 @@ mod tests {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 
@@ -138,15 +153,14 @@ mod tests {
         assert!(result.is_ok(), "Server should exit successfully");
 
         // 8. Verify jit_manager Cleanup
-        let machine_arc = {
-            let machines = test_config.state.jit_manager.machines.read().await;
-            machines.get(&module_root).cloned()
-        };
-        assert!(machine_arc.is_none());
+        if let ExecutionMode::Continuous { jit_manager } = &test_config.state.execution {
+            let machines = jit_manager.machines.read().await;
+            assert!(machines.get(&module_root).is_none());
+        }
 
-        // 9. Verify same request from above fails expectadly
+        // 9. Verify same request from above fails expectedly
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 
