@@ -7,6 +7,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 )
 
+//nolint:unused
 var (
 	messagePrefix                       = schema.MessagePrefix
 	blockHashInputFeedPrefix            = schema.BlockHashInputFeedPrefix
@@ -27,4 +28,5 @@ var (
 	dbSchemaVersion             = schema.DbSchemaVersion
 )
 
+//nolint:unused
 const currentDbSchemaVersion uint64 = schema.CurrentDbSchemaVersion
