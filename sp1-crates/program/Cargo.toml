@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-caller-env = { workspace = true }
+caller-env = { workspace = true, features = ["brotli"] }
 sp1-zkvm = { workspace = true }
 wasmer = { workspace = true }
 wasmer-types = { workspace = true }
@@ -13,7 +13,6 @@ wasmer-vm = { workspace = true }
 prover = { workspace = true, features = ["native"] }
 arbutil = { workspace = true }
 
-brotli = { workspace = true }
 bytes = { workspace = true }
 corosensei = { workspace = true }
 eyre = { workspace = true }

@@ -2,7 +2,6 @@
 
 use crate::state::{gp, sp1_env};
 use crate::{Escape, Ptr, replay::CustomEnvData};
-use brotli::Dictionary;
 use wasmer::FunctionEnvMut;
 
 pub fn brotli_compress(
@@ -16,7 +15,6 @@ pub fn brotli_compress(
     dictionary: u8,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    let dictionary = Dictionary::try_from(dictionary).expect("unknown dictionary");
     Ok(caller_env::brotli::brotli_compress(
         &mut mem,
         state,
@@ -26,7 +24,7 @@ pub fn brotli_compress(
         gp(out_len_ptr),
         level,
         window_size,
-        dictionary,
+        dictionary.try_into().expect("unknown dictionary"),
     )
     .into())
 }
@@ -40,7 +38,6 @@ pub fn brotli_decompress(
     dictionary: u8,
 ) -> Result<u32, Escape> {
     let (mut mem, state) = sp1_env(&mut ctx);
-    let dictionary = Dictionary::try_from(dictionary).expect("unknown dictionary");
     Ok(caller_env::brotli::brotli_decompress(
         &mut mem,
         state,
@@ -48,7 +45,7 @@ pub fn brotli_decompress(
         in_buf_len,
         gp(out_buf_ptr),
         gp(out_len_ptr),
-        dictionary,
+        dictionary.try_into().expect("unknown dictionary"),
     )
     .into())
 }
