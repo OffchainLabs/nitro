@@ -505,9 +505,9 @@ where
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider);
 
         // Mark per-tx finalise deletions in the bundle.
-        // Accounts removed by per-tx EIP-161 cleanup are no longer in the
-        // cache, so augment_bundle_from_cache cannot see them. We must
-        // explicitly set info=None in the bundle to signal trie deletion.
+        // Accounts deleted by per-tx EIP-161 cleanup are kept in the cache
+        // as Destroyed (account=None) so augment_bundle_from_cache handles
+        // them. This loop serves as a safety net and handles zombie checks.
         //
         // Skip accounts that were later re-created as zombies — those are
         // valid empty accounts that must persist in the trie.

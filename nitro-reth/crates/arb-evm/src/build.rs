@@ -2303,8 +2303,18 @@ where
                 })
                 .collect();
 
+            // Mark deleted accounts as destroyed in the cache instead of
+            // removing them. Removing from cache causes the NEXT transaction
+            // in the same block to reload stale data from the database when
+            // it accesses the address (Entry::Vacant path in
+            // load_cache_account). Keeping the entry with account=None
+            // ensures subsequent accesses see a non-existent account —
+            // matching Go's stateObject.deleted=true behaviour in Finalise.
             for addr in &to_remove {
-                db.cache.accounts.remove(addr);
+                if let Some(cached) = db.cache.accounts.get_mut(addr) {
+                    cached.account = None;
+                    cached.status = revm::database::states::AccountStatus::Destroyed;
+                }
             }
             self.finalise_deleted.extend(to_remove);
         }
