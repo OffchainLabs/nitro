@@ -266,8 +266,13 @@ func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSync
 	if m.seqBatchCounter != nil {
 		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber))
 		if err != nil {
-			if !strings.Contains(err.Error(), "header not found") {
-				log.Error("SequencerInbox GetBatchCount error", "err", err)
+			// TODO: Replace with a sentinel error check once geth exposes one for "header not found".
+			// This error originates from the RPC/header lookup path, distinct from the database-level
+			// not-found errors handled by rawdb.IsDbErrNotFound in FinalizedDelayedMessageAtPosition.
+			if strings.Contains(err.Error(), "header not found") {
+				log.Debug("SequencerInbox GetBatchCount header not found, using headState.BatchCount fallback", "parentChainBlock", headState.ParentChainBlockNumber)
+			} else {
+				log.Error("SequencerInbox GetBatchCount error, using headState.BatchCount fallback", "err", err, "parentChainBlock", headState.ParentChainBlockNumber)
 			}
 		} else {
 			batchSeen = seen
@@ -286,7 +291,11 @@ func (m *MessageExtractor) GetL1Reader() *headerreader.HeaderReader {
 
 // GetFinalizedDelayedMessagesRead uses MessageExtractor's context for calls to parentChainReader
 func (m *MessageExtractor) GetFinalizedDelayedMessagesRead() (uint64, error) {
-	state, err := m.getStateByRPCBlockNum(m.GetContext(), rpc.FinalizedBlockNumber)
+	ctx, err := m.GetContextSafe()
+	if err != nil {
+		return 0, fmt.Errorf("message extractor not running: %w", err)
+	}
+	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
 	if err != nil {
 		return 0, err
 	}
@@ -301,16 +310,26 @@ func (m *MessageExtractor) GetState(ctx context.Context, parentchainBlocknumber 
 	return m.melDB.State(ctx, parentchainBlocknumber)
 }
 
-func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
+	headState, err := m.getHeadMelStateSafe()
 	if err != nil {
 		return 0, err
 	}
 	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
+// getHeadMelStateSafe returns the head MEL state, using the StopWaiter context.
+// Returns an error if the MessageExtractor has not been started.
+func (m *MessageExtractor) getHeadMelStateSafe() (*mel.State, error) {
+	ctx, err := m.GetContextSafe()
+	if err != nil {
+		return nil, fmt.Errorf("message extractor not running: %w", err)
+	}
+	return m.melDB.GetHeadMelState(ctx)
+}
+
 func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	headState, err := m.getHeadMelStateSafe()
 	if err != nil {
 		return nil, err
 	}
@@ -320,6 +339,9 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
+// GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not GetContextSafe)
+// because it is called from FinalizedDelayedMessageAtPosition, which receives its
+// context from the DelayedSequencer — a running component that supplies a valid context.
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(ctx, parentChainBlockNum)
 	if err != nil {
@@ -329,7 +351,7 @@ func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context
 }
 
 func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
-	state, err := m.melDB.GetHeadMelState(m.GetContext())
+	state, err := m.getHeadMelStateSafe()
 	if err != nil {
 		return 0, err
 	}
@@ -337,7 +359,7 @@ func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
-	headState, err := m.melDB.GetHeadMelState(m.GetContext())
+	headState, err := m.getHeadMelStateSafe()
 	if err != nil {
 		return mel.BatchMetadata{}, err
 	}
@@ -357,9 +379,11 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 
 // FinalizedDelayedMessageAtPosition returns the delayed message at the
 // requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
-// if the message exists but is not yet finalized based on the finalized parent chain
-// block position. Other errors indicate failures fetching the finalized position
-// or the message itself.
+// if the delayed count at the finalized block position is not yet available in the
+// database, or if the requested position is at or beyond the finalized delayed count.
+// Other errors indicate failures fetching the finalized position or the message itself.
+// The lastDelayedAccumulator parameter is intentionally ignored because MEL does
+// not track delayed message accumulators.
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
@@ -369,16 +393,18 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
 	if err != nil {
 		if rawdb.IsDbErrNotFound(err) {
+			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedPosition)
 			return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 		}
+		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedPosition, "err", err)
 		return nil, common.Hash{}, err
 	}
-	if requestedPosition > finalizedPos {
+	if requestedPosition >= finalizedPos {
 		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 	}
 	msg, err := m.GetDelayedMessage(requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
 	}
 	return msg.Message, common.Hash{}, nil
 }
@@ -440,9 +466,12 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 // err will return unexpected/internal errors
 // bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount(ctx)
+	batchCount, err := m.GetBatchCount()
 	if err != nil {
 		return 0, false, err
+	}
+	if batchCount == 0 {
+		return 0, false, nil
 	}
 	low := uint64(0)
 	high := batchCount - 1
@@ -485,8 +514,8 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 	}
 }
 
-func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetBatchCount() (uint64, error) {
+	headState, err := m.getHeadMelStateSafe()
 	if err != nil {
 		return 0, err
 	}

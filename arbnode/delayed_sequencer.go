@@ -28,6 +28,8 @@ import (
 var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
 	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
+const finalizedWaitLogInterval = 5 * time.Minute
+
 // FilteredTxWaitState tracks a halt while waiting for filtered transactions
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
@@ -47,16 +49,17 @@ type DelayedMessageFetcher interface {
 
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
-	l1Reader                 *headerreader.HeaderReader
-	bridge                   *DelayedBridge
-	delayedCountFetcher      DelayedMessageFetcher
-	reader                   *InboxReader
-	exec                     execution.ExecutionSequencer
-	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock *uint64
-	waitingForFilteredTx     *FilteredTxWaitState
-	mutex                    sync.Mutex
-	config                   DelayedSequencerConfigFetcher
+	l1Reader                   *headerreader.HeaderReader
+	bridge                     *DelayedBridge
+	delayedCountFetcher        DelayedMessageFetcher
+	reader                     *InboxReader
+	exec                       execution.ExecutionSequencer
+	coordinator                *SeqCoordinator
+	waitingForFinalizedSince   time.Time // tracks when we first started waiting for a finalized message
+	waitingForFinalizedLastLog time.Time // rate-limits warn-level logging for persistent not-yet-finalized state
+	waitingForFilteredTx       *FilteredTxWaitState
+	mutex                      sync.Mutex
+	config                     DelayedSequencerConfigFetcher
 }
 
 type DelayedSequencerConfig struct {
@@ -98,18 +101,25 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, delayedCountFetcher DelayedMessageFetcher, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+	if reader != nil && delayedCountFetcher != nil {
+		return nil, errors.New("delayed sequencer must not have both an inbox reader and a delayed count fetcher")
+	}
+	if reader == nil && delayedCountFetcher == nil {
+		return nil, errors.New("delayed sequencer requires either an inbox reader or a delayed count fetcher")
+	}
 	d := &DelayedSequencer{
-		l1Reader:            l1Reader,
-		bridge:              delayedBridge,
-		reader:              reader,
-		delayedCountFetcher: delayedCountFetcher,
-		coordinator:         coordinator,
-		exec:                exec,
-		config:              config,
+		l1Reader:    l1Reader,
+		reader:      reader,
+		coordinator: coordinator,
+		exec:        exec,
+		config:      config,
 	}
 	if reader != nil {
 		d.bridge = reader.DelayedBridge()
 		d.delayedCountFetcher = reader.Tracker()
+	} else {
+		d.bridge = delayedBridge
+		d.delayedCountFetcher = delayedCountFetcher
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -204,13 +214,6 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
-		return nil
-	}
-
-	// Reset what block we're waiting for if we've caught up
-	d.waitingForFinalizedBlock = nil
-
 	dbDelayedCount, err := d.delayedCountFetcher.GetDelayedCount()
 	if err != nil {
 		return err
@@ -225,13 +228,22 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	pos := startPos
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
+	hitNotFinalized := false
 	for pos < dbDelayedCount {
 		msg, acc, err := d.delayedCountFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
+			hitNotFinalized = true
 			// Message isn't finalized yet; wait for it to be.
-			// Note: waitingForFinalizedBlock is not set here because the interface
-			// doesn't expose the parent chain block number. Without that early-exit
-			// optimization, we simply retry on the next iteration.
+			now := time.Now()
+			if d.waitingForFinalizedSince.IsZero() {
+				d.waitingForFinalizedSince = now
+				log.Info("delayed message not yet finalized, waiting", "pos", pos)
+			}
+			waitDuration := now.Sub(d.waitingForFinalizedSince)
+			if waitDuration > finalizedWaitLogInterval && now.Sub(d.waitingForFinalizedLastLog) >= finalizedWaitLogInterval {
+				log.Warn("delayed message not yet finalized for extended period, still retrying", "pos", pos, "waitDuration", waitDuration)
+				d.waitingForFinalizedLastLog = now
+			}
 			break
 		} else if err != nil {
 			return err
@@ -241,14 +253,27 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		pos++
 	}
 
+	if !hitNotFinalized {
+		if !d.waitingForFinalizedSince.IsZero() {
+			log.Info("delayed message finalization resumed", "waitDuration", time.Since(d.waitingForFinalizedSince))
+		}
+		d.waitingForFinalizedSince = time.Time{}
+		d.waitingForFinalizedLastLog = time.Time{}
+	}
+
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
+
+		// SAFETY: Accumulator check is gated on d.reader != nil because MEL does not
+		// track delayed message accumulators. See MessageExtractor.FinalizedDelayedMessageAtPosition doc.
 		if d.reader != nil {
 			if err := d.reader.Tracker().CheckAccumulatorReorg(
 				ctx, lastDelayedAcc, pos, finalizedHash, finalized,
 			); err != nil {
 				return err
 			}
+		} else {
+			log.Debug("skipping accumulator reorg check (MEL mode)", "startPos", startPos, "count", len(messages))
 		}
 		for i, msg := range messages {
 			// #nosec G115

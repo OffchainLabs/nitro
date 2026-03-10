@@ -262,3 +262,153 @@ func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.Filte
 }
 
 func (m *mockParentChainReader) Client() rpc.ClientInterface { return nil }
+
+func newTestMessageExtractor(t *testing.T) *MessageExtractor {
+	t.Helper()
+	extractor, err := NewMessageExtractor(
+		DefaultMessageExtractionConfig,
+		&mockParentChainReader{
+			blocks:  map[common.Hash]*types.Block{},
+			headers: map[common.Hash]*types.Header{},
+		},
+		chaininfo.ArbitrumDevTestChainConfig(),
+		&chaininfo.RollupAddresses{},
+		NewDatabase(rawdb.NewMemoryDatabase()),
+		daprovider.NewDAProviderRegistry(),
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	return extractor
+}
+
+func TestGetContextSafe_ReturnsErrorWhenNotStarted(t *testing.T) {
+	t.Parallel()
+
+	// Create a MessageExtractor but do NOT call Start(). Methods that use
+	// GetContextSafe should return an error instead of panicking.
+	extractor := newTestMessageExtractor(t)
+
+	t.Run("GetDelayedCount returns error", func(t *testing.T) {
+		_, err := extractor.GetDelayedCount()
+		require.ErrorContains(t, err, "not running")
+	})
+	t.Run("GetDelayedMessage returns error", func(t *testing.T) {
+		_, err := extractor.GetDelayedMessage(0)
+		require.ErrorContains(t, err, "not running")
+	})
+	t.Run("GetMsgCount returns error", func(t *testing.T) {
+		_, err := extractor.GetMsgCount(context.Background())
+		require.ErrorContains(t, err, "not running")
+	})
+	t.Run("GetBatchCount returns error", func(t *testing.T) {
+		_, err := extractor.GetBatchCount()
+		require.ErrorContains(t, err, "not running")
+	})
+	t.Run("GetBatchMetadata returns error", func(t *testing.T) {
+		_, err := extractor.GetBatchMetadata(0)
+		require.ErrorContains(t, err, "not running")
+	})
+	t.Run("GetFinalizedDelayedMessagesRead returns error", func(t *testing.T) {
+		_, err := extractor.GetFinalizedDelayedMessagesRead()
+		require.ErrorContains(t, err, "not running")
+	})
+}
+
+func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	consensusDB := rawdb.NewMemoryDatabase()
+	melDB := NewDatabase(consensusDB)
+	parentChainReader := &mockParentChainReader{
+		blocks:  map[common.Hash]*types.Block{},
+		headers: map[common.Hash]*types.Header{},
+	}
+	extractor, err := NewMessageExtractor(
+		DefaultMessageExtractionConfig,
+		parentChainReader,
+		chaininfo.ArbitrumDevTestChainConfig(),
+		&chaininfo.RollupAddresses{},
+		melDB,
+		daprovider.NewDAProviderRegistry(),
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NoError(t, extractor.SetMessageConsumer(&mockMessageConsumer{}))
+	extractor.StopWaiter.Start(ctx, extractor)
+
+	// Store delayed messages at positions 0..2 (count=3) at parent chain block 10.
+	delayedMsgs := make([]*mel.DelayedInboxMessage, 3)
+	state := &mel.State{
+		ParentChainBlockNumber: 10,
+		ParentChainBlockHash:   common.HexToHash("0xaa"),
+	}
+	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
+	for i := range delayedMsgs {
+		requestID := common.BigToHash(big.NewInt(int64(i)))
+		delayedMsgs[i] = &mel.DelayedInboxMessage{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:      arbostypes.L1MessageType_EndOfBlock,
+					RequestId: &requestID,
+					L1BaseFee: common.Big0,
+				},
+			},
+		}
+		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
+		state.DelayedMessagesSeen++
+	}
+	require.NoError(t, melDB.SaveState(ctx, state))
+	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs))
+
+	t.Run("position below finalized count returns correct message", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 1 (< 3) should succeed
+		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 1)
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+		expectedRequestID := common.BigToHash(big.NewInt(1))
+		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at requested position")
+		require.Equal(t, common.Hash{}, acc, "MEL should always return zero accumulator")
+	})
+
+	t.Run("last valid position returns correct message", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 2 (== finalizedPos-1) is the
+		// last valid position and must succeed. This is the exact boundary for the >= vs > fix.
+		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 2)
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+		expectedRequestID := common.BigToHash(big.NewInt(2))
+		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at last valid position")
+		require.Equal(t, common.Hash{}, acc, "MEL should always return zero accumulator")
+	})
+
+	t.Run("position equal to finalized count returns not yet finalized", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 3 (== 3) should return ErrDelayedMessageNotYetFinalized
+		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 3)
+		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	})
+
+	t.Run("position above finalized count returns not yet finalized", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 5 (> 3) should return ErrDelayedMessageNotYetFinalized
+		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 5)
+		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	})
+
+	t.Run("db not found returns not yet finalized", func(t *testing.T) {
+		// Block 999 has no state in the DB, so GetDelayedCountAtParentChainBlock returns db not-found
+		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 999, common.Hash{}, 0)
+		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	})
+
+	t.Run("accumulator input is ignored", func(t *testing.T) {
+		// Pass a non-zero accumulator; MEL should ignore it and still succeed
+		msg, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.MaxHash, 0)
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+	})
+}

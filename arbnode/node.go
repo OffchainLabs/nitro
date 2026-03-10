@@ -115,9 +115,6 @@ func (c *Config) Validate() error {
 	if err := c.MessageExtraction.Validate(); err != nil {
 		return err
 	}
-	if c.MessageExtraction.Enable && c.BatchPoster.Enable {
-		return errors.New("batch poster is not yet supported with message extraction enabled")
-	}
 	if err := c.InboxReader.Validate(); err != nil {
 		return err
 	}
@@ -1048,6 +1045,34 @@ func getStatelessBlockValidator(
 	return statelessBlockValidator, nil
 }
 
+// melBatchMetaFetcher adapts a MessageExtractor to the BatchMetadataFetcher
+// interface required by BatchPoster. GetDelayedAcc returns an error because MEL
+// does not track delayed message accumulators. When this adapter is the active
+// BatchMetadataFetcher and a delay proof is needed, GenDelayProof will call
+// GetDelayedAcc and propagate the error, causing the batch post to fail.
+type melBatchMetaFetcher struct {
+	extractor *melrunner.MessageExtractor
+}
+
+func newMelBatchMetaFetcher(extractor *melrunner.MessageExtractor) *melBatchMetaFetcher {
+	if extractor == nil {
+		panic("melBatchMetaFetcher requires a non-nil MessageExtractor")
+	}
+	return &melBatchMetaFetcher{extractor: extractor}
+}
+
+func (m *melBatchMetaFetcher) GetBatchCount() (uint64, error) {
+	return m.extractor.GetBatchCount()
+}
+
+func (m *melBatchMetaFetcher) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
+	return m.extractor.GetBatchMetadata(seqNum)
+}
+
+func (m *melBatchMetaFetcher) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	return common.Hash{}, errors.New("MEL does not support delayed message accumulators; batch posting with delay proofs requires an inbox tracker (enable inbox-reader)")
+}
+
 func getBatchPoster(
 	ctx context.Context,
 	config *Config,
@@ -1056,7 +1081,8 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	batchMetaFetcher BatchMetadataFetcher,
+	msgExtractor *melrunner.MessageExtractor,
+	inboxTracker *InboxTracker,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1077,6 +1103,15 @@ func getBatchPoster(
 		}
 		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
+		}
+		var batchMetaFetcher BatchMetadataFetcher
+		if inboxTracker != nil {
+			batchMetaFetcher = inboxTracker
+		} else if msgExtractor != nil {
+			batchMetaFetcher = newMelBatchMetaFetcher(msgExtractor)
+			log.Warn("batch poster using MEL adapter: delay proofs are not supported and will fail if the delay buffer is enabled on-chain")
+		} else {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -1117,14 +1152,17 @@ func getDelayedSequencer(
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
 	if exec == nil {
+		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, errors.New("delayed sequencer requires either an inbox reader or message extractor, but neither was provided")
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedCountFetcher DelayedMessageFetcher
+	if msgExtractor != nil {
+		delayedCountFetcher = msgExtractor
 	}
-
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
 	}
@@ -1307,7 +1345,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, messageExtractor, inboxTracker, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
