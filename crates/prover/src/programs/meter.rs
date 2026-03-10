@@ -4,6 +4,8 @@
 
 #[cfg(feature = "sp1")]
 use crate::operator::OperatorInfo;
+#[cfg(not(feature = "sp1"))]
+use crate::Machine;
 use crate::{
     programs::{
         config::{CompilePricingParams, PricingParams, SigMap},
@@ -12,7 +14,7 @@ use crate::{
     value::FunctionType,
 };
 #[cfg(not(feature = "sp1"))]
-use crate::Machine;
+use arbutil::operator::OperatorInfo;
 use arbutil::{
     evm::{
         self,
@@ -20,8 +22,6 @@ use arbutil::{
     },
     pricing, Bytes32,
 };
-#[cfg(not(feature = "sp1"))]
-use arbutil::operator::OperatorInfo;
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;

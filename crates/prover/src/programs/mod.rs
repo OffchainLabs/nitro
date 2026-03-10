@@ -1,14 +1,14 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#[cfg(not(feature = "sp1"))]
+use crate::machine::Module;
+use crate::value::MemoryType;
 use crate::{
     binary::{ExportKind, WasmBinary},
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-#[cfg(not(feature = "sp1"))]
-use crate::machine::Module;
-use crate::value::MemoryType;
 use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
