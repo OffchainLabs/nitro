@@ -5,7 +5,6 @@ use crate::binary::FloatType;
 use arbutil::{Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
-use num_derive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
@@ -499,77 +498,10 @@ impl Display for ArbValueType {
     }
 }
 
-/// Represents the internal hostio functions a module may have.
-#[derive(Clone, Copy, Debug, FromPrimitive)]
-#[repr(u64)]
-pub enum InternalFunc {
-    WavmCallerLoad8,
-    WavmCallerLoad32,
-    WavmCallerStore8,
-    WavmCallerStore32,
-    MemoryFill,
-    MemoryCopy,
-    UserInkLeft,
-    UserInkStatus,
-    UserSetInk,
-    UserStackLeft,
-    UserSetStack,
-    UserMemorySize,
-    CallMain,
-}
+#[path = "internal_func.rs"]
+mod internal_func;
+pub use internal_func::InternalFunc;
 
-impl InternalFunc {
-    pub fn ty(&self) -> FunctionType {
-        use ArbValueType::*;
-        use InternalFunc::*;
-        macro_rules! func {
-            ([$($args:expr),*], [$($outs:expr),*]) => {
-                FunctionType::new(vec![$($args),*], vec![$($outs),*])
-            };
-        }
-        #[rustfmt::skip]
-        let ty = match self {
-            WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
-            WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
-            MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
-            UserInkLeft    => func!([], [I64]),      // λ() → ink_left
-            UserInkStatus  => func!([], [I32]),      // λ() → ink_status
-            UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
-            UserStackLeft  => func!([], [I32]),      // λ() → stack_left
-            UserSetStack   => func!([I32], []),      // λ(stack_left)
-            UserMemorySize => func!([], [I32]),      // λ() → memory_size
-            CallMain       => func!([I32], [I32]),   // λ(args_len) → status
-        };
-        ty
-    }
-}
-
-use wasmer_types::Pages;
-
-pub struct MemoryType {
-    pub min: Pages,
-    pub max: Option<Pages>,
-}
-
-impl MemoryType {
-    pub fn new(min: Pages, max: Option<Pages>) -> Self {
-        Self { min, max }
-    }
-}
-
-impl From<&wasmer_types::MemoryType> for MemoryType {
-    fn from(value: &wasmer_types::MemoryType) -> Self {
-        Self::new(value.minimum, value.maximum)
-    }
-}
-
-impl TryFrom<&wasmparser::MemoryType> for MemoryType {
-    type Error = ErrReport;
-
-    fn try_from(value: &wasmparser::MemoryType) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            min: Pages(value.initial.try_into()?),
-            max: value.maximum.map(|x| x.try_into()).transpose()?.map(Pages),
-        })
-    }
-}
+#[path = "memory_type.rs"]
+mod memory_type;
+pub use memory_type::MemoryType;
