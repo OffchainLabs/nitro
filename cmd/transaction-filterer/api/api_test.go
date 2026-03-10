@@ -31,14 +31,17 @@ func TestFilterContextCancelledWhileQueued(t *testing.T) {
 	blocker := make(chan struct{})
 	api.queue <- func() { <-blocker }
 
+	for range filterQueueSize {
+		api.queue <- func() {}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- api.Filter(ctx, common.Hash{2})
 	}()
-
-	time.Sleep(10 * time.Millisecond)
-	cancel()
 
 	close(blocker)
 

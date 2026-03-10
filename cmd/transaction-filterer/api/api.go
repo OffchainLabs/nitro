@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -29,7 +30,7 @@ type TransactionFiltererAPI struct {
 
 	queue chan func()
 
-	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
 }
 
@@ -37,11 +38,14 @@ func NewTransactionFiltererAPI(
 	manager *precompilesgen.ArbFilteredTransactionsManager,
 	txOpts *bind.TransactOpts,
 ) *TransactionFiltererAPI {
-	return &TransactionFiltererAPI{
-		queue:                          make(chan func(), filterQueueSize),
-		arbFilteredTransactionsManager: manager,
-		txOpts:                         txOpts,
+	api := &TransactionFiltererAPI{
+		queue:  make(chan func(), filterQueueSize),
+		txOpts: txOpts,
 	}
+	if manager != nil {
+		api.arbFilteredTransactionsManager.Store(manager)
+	}
+	return api
 }
 
 func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
@@ -75,10 +79,11 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 	txOpts.Context = ctx
 
 	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
-	if t.arbFilteredTransactionsManager == nil {
+	manager := t.arbFilteredTransactionsManager.Load()
+	if manager == nil {
 		return errors.New("sequencer client not set yet")
 	}
-	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
+	tx, err := manager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
 		return err
@@ -101,7 +106,7 @@ func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClien
 	if err != nil {
 		return err
 	}
-	t.arbFilteredTransactionsManager = arbFilteredTransactionsManager
+	t.arbFilteredTransactionsManager.Store(arbFilteredTransactionsManager)
 	return nil
 }
 
