@@ -6,12 +6,14 @@
 package arbtest
 
 import (
+	"bufio"
 	"context"
-	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,9 +95,10 @@ func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 		t.Skipf("Rust validator binary not found at %s; run 'make build-validation-server'", validatorBin)
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", getRandomPort(t))
-	cmd := exec.CommandContext(ctx, validatorBin, "--address", addr)
-	cmd.Stdout = os.Stdout
+	// Pass port 0 so the OS assigns a free port, avoiding TOCTOU races.
+	cmd := exec.CommandContext(ctx, validatorBin, "--address", "127.0.0.1:0")
+	stdout, err := cmd.StdoutPipe()
+	Require(t, err)
 	cmd.Stderr = os.Stderr
 	Require(t, cmd.Start())
 	t.Cleanup(func() {
@@ -103,8 +106,30 @@ func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 		_ = cmd.Wait()
 	})
 
+	// The server prints "Listening on <addr>" to stdout once bound.
+	addr := scanListeningAddr(t, stdout)
 	waitForTCP(t, addr, 30*time.Second)
 	return addr
+}
+
+// scanListeningAddr reads lines from the validator's stdout until it finds
+// a line containing "Listening on <addr>" (emitted by the tracing info! log)
+// and returns the address.
+func scanListeningAddr(t *testing.T, r io.Reader) string {
+	t.Helper()
+	const marker = "Listening on "
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if idx := strings.Index(line, marker); idx >= 0 {
+			return strings.TrimSpace(line[idx+len(marker):])
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		Fatal(t, "error reading validator stdout: ", err)
+	}
+	Fatal(t, "validator process exited without printing listening address")
+	return ""
 }
 
 func connectValidationClient(t *testing.T, ctx context.Context, addr string) *client.ValidationClient {
