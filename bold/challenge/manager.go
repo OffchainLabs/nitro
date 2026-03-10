@@ -295,14 +295,8 @@ func (m *Manager) Start(ctx context.Context) {
 	m.watcher.Start(m.GetContext())
 
 	if m.api != nil {
-		m.LaunchThread(func(ctx context.Context) {
-			if err := m.api.Start(ctx); err != nil {
-				log.Error("Could not start API server",
-					"address", m.api.Addr(),
-					"err", err,
-				)
-			}
-		})
+		// Start the API server on its own StopWaiter.
+		m.api.Start(m.GetContext())
 	}
 }
 
