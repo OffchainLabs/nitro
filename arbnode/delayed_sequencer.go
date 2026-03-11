@@ -56,6 +56,7 @@ type DelayedSequencer struct {
 	delayedMessageFetcher      DelayedMessageFetcher
 	exec                       execution.ExecutionSequencer
 	coordinator                *SeqCoordinator
+	waitingForFinalizedBlock     *uint64   // short-circuit: skip work until finalized parent chain block advances past this value
 	waitingForFinalizedSince   time.Time // tracks when we first started waiting for a finalized message
 	waitingForFinalizedLastLog time.Time // rate-limits warn-level logging for persistent not-yet-finalized state
 	waitingForFilteredTx       *FilteredTxWaitState
@@ -203,6 +204,10 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
+	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock >= finalized {
+		return nil
+	}
+
 	dbDelayedCount, err := d.delayedMessageFetcher.GetDelayedCount()
 	if err != nil {
 		return err
@@ -222,6 +227,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		msg, acc, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
 			hitNotFinalized = true
+			d.waitingForFinalizedBlock = &finalized
 			// Message isn't finalized yet; wait for it to be.
 			now := time.Now()
 			if d.waitingForFinalizedSince.IsZero() {
@@ -246,6 +252,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		if !d.waitingForFinalizedSince.IsZero() {
 			log.Info("delayed message finalization resumed", "waitDuration", time.Since(d.waitingForFinalizedSince))
 		}
+		d.waitingForFinalizedBlock = nil
 		d.waitingForFinalizedSince = time.Time{}
 		d.waitingForFinalizedLastLog = time.Time{}
 	}
