@@ -1502,7 +1502,7 @@ func TestGetExecutionParsedInitMsg(t *testing.T) {
 		}
 		_, err := GetExecutionParsedInitMsg(genesis, mismatchOverride, chainConfig)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "genesis and genesis override parsed init messages do not match")
+		require.Contains(t, err.Error(), "genesis and genesis override mismatch: initial L1 base fee mismatch")
 	})
 
 	t.Run("override only", func(t *testing.T) {
