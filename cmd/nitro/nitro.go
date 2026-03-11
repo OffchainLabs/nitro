@@ -477,7 +477,7 @@ func mainImpl() int {
 
 	var consensusDB ethdb.Database
 	if consensusNodeEnabled {
-		consensusDB, err := nitroinit.OpenConsensusDB(stack, nodeConfig)
+		consensusDB, err = nitroinit.OpenConsensusDB(stack, nodeConfig)
 		if consensusDB != nil {
 			deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 		}
