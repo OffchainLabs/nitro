@@ -41,5 +41,7 @@ async fn async_main(server_config: ServerConfig, available_workers: usize) -> Re
 
     let state = Arc::new(ServerState::new(&server_config, available_workers)?);
     let listener = TcpListener::bind(server_config.address).await?;
+    let local_addr = listener.local_addr()?;
+    info!("Listening on {local_addr}");
     run_server(listener, state).await
 }
