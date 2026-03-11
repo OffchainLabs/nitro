@@ -318,7 +318,6 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.ParentChain.Connection.URL, "l1chainid", nodeConfig.ParentChain.ID)
 
-		// TODO: should rollupAddrs be created for consensus or execution node? It's used in both
 		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
@@ -567,18 +566,14 @@ func mainImpl() int {
 	seqInboxMaxDataSize := 117964
 
 	if consensusNodeEnabled {
-		// TODO: where will chainConfig come from in the case (consensusNodeEnabled && !executionNodeEnabled) ?
 		var chainConfig *params.ChainConfig
-		if !executionNodeEnabled && l2BlockChain == nil {
-			genesisBlockNr := uint64(0)
-			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, genesisBlockNr, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
-			if err != nil {
-				log.Error("failed to get chainConfig for consensus node", "err", err)
-				return 1
-			}
-		} else {
-			chainConfig = l2BlockChain.Config()
+		// TODO: First try to get chainConfig from consensusParsedInitMsg (needs https://github.com/OffchainLabs/nitro/pull/4395)
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, nodeConfig.Chain.GenesisBlockNum, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
+		if err != nil {
+			log.Error("failed to get chainConfig for consensus node", "err", err)
+			return 1
 		}
+
 		consensusNode, err = arbnode.CreateConsensusNode(
 			ctx,
 			stack,

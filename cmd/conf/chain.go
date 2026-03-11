@@ -53,24 +53,27 @@ func (c *ParentChainConfig) Validate() error {
 }
 
 type L2Config struct {
-	ID        uint64                   `koanf:"id"`
-	Name      string                   `koanf:"name"`
-	InfoFiles []string                 `koanf:"info-files"`
-	InfoJson  string                   `koanf:"info-json"`
-	DevWallet genericconf.WalletConfig `koanf:"dev-wallet"`
+	ID              uint64                   `koanf:"id"`
+	Name            string                   `koanf:"name"`
+	GenesisBlockNum uint64                   `koanf:"genesis-block-num"`
+	InfoFiles       []string                 `koanf:"info-files"`
+	InfoJson        string                   `koanf:"info-json"`
+	DevWallet       genericconf.WalletConfig `koanf:"dev-wallet"`
 }
 
 var L2ConfigDefault = L2Config{
-	ID:        0,
-	Name:      "",
-	InfoFiles: []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
-	InfoJson:  "",
-	DevWallet: genericconf.WalletConfigDefault,
+	ID:              0,
+	Name:            "",
+	GenesisBlockNum: 0,
+	InfoFiles:       []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
+	InfoJson:        "",
+	DevWallet:       genericconf.WalletConfigDefault,
 }
 
 func L2ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".id", L2ConfigDefault.ID, "L2 chain ID (determines Arbitrum network)")
 	f.String(prefix+".name", L2ConfigDefault.Name, "L2 chain name (determines Arbitrum network)")
+	f.Uint64(prefix+".genesis-block-num", L2ConfigDefault.GenesisBlockNum, "genesis block number for the L2 chain")
 	f.StringSlice(prefix+".info-files", L2ConfigDefault.InfoFiles, "L2 chain info json files")
 	f.String(prefix+".info-json", L2ConfigDefault.InfoJson, "L2 chain info in json string format")
 
