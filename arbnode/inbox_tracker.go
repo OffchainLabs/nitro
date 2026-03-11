@@ -918,16 +918,16 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 // or the message itself.
 func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
-	finalizedPosition uint64,
+	finalizedBlock uint64,
 	lastDelayedAccumulator common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, error) {
+) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
 	msg, acc, parentChainBlockNumber, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
-	if parentChainBlockNumber > finalizedPosition {
-		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
+	if parentChainBlockNumber > finalizedBlock {
+		return nil, common.Hash{}, parentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 	}
 	if lastDelayedAccumulator != (common.Hash{}) {
 		// Ensure that there hasn't been a reorg and this message follows the last
@@ -937,7 +937,7 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 			ParentChainBlockNumber: parentChainBlockNumber,
 		}
 		if fullMsg.AfterInboxAcc() != acc {
-			return nil, common.Hash{}, errors.New("delayed message accumulator mismatch while sequencing")
+			return nil, common.Hash{}, 0, errors.New("delayed message accumulator mismatch while sequencing")
 		}
 	}
 	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
@@ -947,7 +947,7 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 		return data, err
 	})
 	if err != nil {
-		return nil, common.Hash{}, err
+		return nil, common.Hash{}, 0, err
 	}
-	return msg, acc, nil
+	return msg, acc, parentChainBlockNumber, nil
 }

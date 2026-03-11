@@ -30,8 +30,6 @@ import (
 var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
 	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 
-const finalizedWaitLogInterval = 5 * time.Minute
-
 // FilteredTxWaitState tracks a halt while waiting for filtered transactions
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
@@ -45,23 +43,21 @@ type FilteredTxWaitState struct {
 type DelayedMessageFetcher interface {
 	GetDelayedCount() (uint64, error)
 	FinalizedDelayedMessageAtPosition(
-		ctx context.Context, finalizedPosition uint64, lastDelayedAccumulator common.Hash, requestedPosition uint64,
-	) (*arbostypes.L1IncomingMessage, common.Hash, error)
+		ctx context.Context, finalizedBlock uint64, lastDelayedAccumulator common.Hash, requestedPosition uint64,
+	) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error)
 }
 
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
-	l1Reader                   *headerreader.HeaderReader
-	bridge                     *DelayedBridge
-	delayedMessageFetcher      DelayedMessageFetcher
-	exec                       execution.ExecutionSequencer
-	coordinator                *SeqCoordinator
-	waitingForFinalizedBlock     *uint64   // short-circuit: skip work until finalized parent chain block advances past this value
-	waitingForFinalizedSince   time.Time // tracks when we first started waiting for a finalized message
-	waitingForFinalizedLastLog time.Time // rate-limits warn-level logging for persistent not-yet-finalized state
-	waitingForFilteredTx       *FilteredTxWaitState
-	mutex                      sync.Mutex
-	config                     DelayedSequencerConfigFetcher
+	l1Reader                 *headerreader.HeaderReader
+	bridge                   *DelayedBridge
+	delayedMessageFetcher    DelayedMessageFetcher
+	exec                     execution.ExecutionSequencer
+	coordinator              *SeqCoordinator
+	waitingForFinalizedBlock *uint64 // short-circuit: skip work until finalized parent chain block advances past this value
+	waitingForFilteredTx     *FilteredTxWaitState
+	mutex                    sync.Mutex
+	config                   DelayedSequencerConfigFetcher
 }
 
 type DelayedSequencerConfig struct {
@@ -208,6 +204,9 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		return nil
 	}
 
+	// Reset what block we're waiting for if we've caught up
+	d.waitingForFinalizedBlock = nil
+
 	dbDelayedCount, err := d.delayedMessageFetcher.GetDelayedCount()
 	if err != nil {
 		return err
@@ -222,23 +221,10 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	pos := startPos
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
-	hitNotFinalized := false
 	for pos < dbDelayedCount {
-		msg, acc, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
+		msg, acc, parentChainBlockNumber, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
-			hitNotFinalized = true
-			d.waitingForFinalizedBlock = &finalized
-			// Message isn't finalized yet; wait for it to be.
-			now := time.Now()
-			if d.waitingForFinalizedSince.IsZero() {
-				d.waitingForFinalizedSince = now
-				log.Info("delayed message not yet finalized, waiting", "pos", pos)
-			}
-			waitDuration := now.Sub(d.waitingForFinalizedSince)
-			if waitDuration > finalizedWaitLogInterval && now.Sub(d.waitingForFinalizedLastLog) >= finalizedWaitLogInterval {
-				log.Warn("delayed message not yet finalized for extended period, still retrying", "pos", pos, "waitDuration", waitDuration)
-				d.waitingForFinalizedLastLog = now
-			}
+			d.waitingForFinalizedBlock = &parentChainBlockNumber
 			break
 		} else if err != nil {
 			return err
@@ -248,15 +234,6 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		pos++
 	}
 
-	if !hitNotFinalized {
-		if !d.waitingForFinalizedSince.IsZero() {
-			log.Info("delayed message finalization resumed", "waitDuration", time.Since(d.waitingForFinalizedSince))
-		}
-		d.waitingForFinalizedBlock = nil
-		d.waitingForFinalizedSince = time.Time{}
-		d.waitingForFinalizedLastLog = time.Time{}
-	}
-
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
 		if err := d.checkAccumulatorReorg(
@@ -264,7 +241,6 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		); err != nil {
 			return err
 		}
-
 		for i, msg := range messages {
 			// #nosec G115
 			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))

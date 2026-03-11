@@ -300,7 +300,8 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 	for i := range delayedMsgs {
 		requestID := common.BigToHash(big.NewInt(int64(i)))
 		delayedMsgs[i] = &mel.DelayedInboxMessage{
-			BeforeInboxAcc: prevAcc,
+			BeforeInboxAcc:         prevAcc,
+			ParentChainBlockNumber: 10,
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:      arbostypes.L1MessageType_EndOfBlock,
@@ -318,55 +319,60 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 
 	t.Run("position below finalized count returns correct message and accumulator", func(t *testing.T) {
 		// finalizedPos at block 10 is 3, requesting position 1 (< 3) should succeed
-		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 1)
+		msg, acc, parentChainBlock, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 1)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		expectedRequestID := common.BigToHash(big.NewInt(1))
 		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at requested position")
 		require.Equal(t, delayedMsgs[1].AfterInboxAcc(), acc, "should return AfterInboxAcc of the message")
+		require.Equal(t, uint64(10), parentChainBlock, "should return parent chain block number")
 	})
 
 	t.Run("last valid position returns correct message", func(t *testing.T) {
 		// finalizedPos at block 10 is 3, requesting position 2 (== finalizedPos-1) is the
 		// last valid position and must succeed. This is the exact boundary for the >= vs > fix.
-		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 2)
+		msg, acc, parentChainBlock, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 2)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		expectedRequestID := common.BigToHash(big.NewInt(2))
 		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at last valid position")
 		require.Equal(t, delayedMsgs[2].AfterInboxAcc(), acc, "should return AfterInboxAcc of the message")
+		require.Equal(t, uint64(10), parentChainBlock, "should return parent chain block number")
 	})
 
 	t.Run("correct lastDelayedAccumulator succeeds", func(t *testing.T) {
 		// Pass the AfterInboxAcc of position 0 as lastDelayedAccumulator when requesting position 1.
 		// This should match msg[1].BeforeInboxAcc and succeed.
-		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, delayedMsgs[0].AfterInboxAcc(), 1)
+		msg, acc, parentChainBlock, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, delayedMsgs[0].AfterInboxAcc(), 1)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		require.Equal(t, delayedMsgs[1].AfterInboxAcc(), acc)
+		require.Equal(t, uint64(10), parentChainBlock, "should return parent chain block number")
 	})
 
 	t.Run("wrong lastDelayedAccumulator returns error", func(t *testing.T) {
 		bogusAcc := common.HexToHash("0xdeadbeef")
-		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, bogusAcc, 1)
+		_, _, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, bogusAcc, 1)
 		require.ErrorIs(t, err, mel.ErrDelayedAccumulatorMismatch)
 	})
 
-	t.Run("position equal to finalized count returns not yet finalized", func(t *testing.T) {
-		// finalizedPos at block 10 is 3, requesting position 3 (== 3) should return ErrDelayedMessageNotYetFinalized
-		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 3)
-		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	t.Run("position equal to finalized count returns error", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 3 (== 3) fails because
+		// GetDelayedMessage is called first and the message doesn't exist in the DB.
+		_, _, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 3)
+		require.Error(t, err)
 	})
 
-	t.Run("position above finalized count returns not yet finalized", func(t *testing.T) {
-		// finalizedPos at block 10 is 3, requesting position 5 (> 3) should return ErrDelayedMessageNotYetFinalized
-		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 5)
-		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
+	t.Run("position above finalized count returns error", func(t *testing.T) {
+		// finalizedPos at block 10 is 3, requesting position 5 (> 3) fails because
+		// GetDelayedMessage is called first and the message doesn't exist in the DB.
+		_, _, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 5)
+		require.Error(t, err)
 	})
 
 	t.Run("db not found returns not yet finalized", func(t *testing.T) {
 		// Block 999 has no state in the DB, so GetDelayedCountAtParentChainBlock returns db not-found
-		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 999, common.Hash{}, 0)
+		_, _, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 999, common.Hash{}, 0)
 		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
 	})
 }

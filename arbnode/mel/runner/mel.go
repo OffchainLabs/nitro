@@ -384,30 +384,30 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 // BeforeInboxAcc to ensure accumulator chain consistency.
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
-	finalizedPosition uint64,
+	finalizedBlock uint64,
 	lastDelayedAccumulator common.Hash,
 	requestedPosition uint64,
-) (*arbostypes.L1IncomingMessage, common.Hash, error) {
-	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
-	if err != nil {
-		if rawdb.IsDbErrNotFound(err) {
-			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedPosition)
-			return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
-		}
-		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedPosition, "err", err)
-		return nil, common.Hash{}, err
-	}
-	if requestedPosition >= finalizedDelayedCount {
-		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
-	}
+) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
 	msg, err := m.GetDelayedMessage(requestedPosition)
 	if err != nil {
-		return nil, common.Hash{}, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
+		return nil, common.Hash{}, 0, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
+	}
+	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedBlock)
+	if err != nil {
+		if rawdb.IsDbErrNotFound(err) {
+			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)
+			return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
+		}
+		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedBlock, "err", err)
+		return nil, common.Hash{}, 0, err
+	}
+	if requestedPosition >= finalizedDelayedCount {
+		return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 	}
 	if lastDelayedAccumulator != (common.Hash{}) && msg.BeforeInboxAcc != lastDelayedAccumulator {
-		return nil, common.Hash{}, fmt.Errorf("position %d (finalized block %d): BeforeInboxAcc %v != lastDelayedAccumulator %v: %w", requestedPosition, finalizedPosition, msg.BeforeInboxAcc, lastDelayedAccumulator, mel.ErrDelayedAccumulatorMismatch)
+		return nil, common.Hash{}, 0, fmt.Errorf("position %d (finalized block %d): BeforeInboxAcc %v != lastDelayedAccumulator %v: %w", requestedPosition, finalizedBlock, msg.BeforeInboxAcc, lastDelayedAccumulator, mel.ErrDelayedAccumulatorMismatch)
 	}
-	return msg.Message, msg.AfterInboxAcc(), nil
+	return msg.Message, msg.AfterInboxAcc(), msg.ParentChainBlockNumber, nil
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
