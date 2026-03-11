@@ -527,7 +527,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
-	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
+	multiGas := multigas.SpecialFeeGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
 		var max uint64
@@ -781,8 +781,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
-		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
+		// Poster gas added to multiGas in GasChargingHook as SpecialFeeGas
+		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindSpecialFee, p.posterGas)
 		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }

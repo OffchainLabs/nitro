@@ -20,8 +20,8 @@ func ParseResourceKind(s string) (multigas.ResourceKind, error) {
 		return multigas.ResourceKindStorageAccess, nil
 	case "StorageGrowth":
 		return multigas.ResourceKindStorageGrowth, nil
-	case "L1Calldata":
-		return multigas.ResourceKindL1Calldata, nil
+	case "SpecialFee":
+		return multigas.ResourceKindSpecialFee, nil
 	case "L2Calldata":
 		return multigas.ResourceKindL2Calldata, nil
 	case "WasmComputation":
@@ -93,7 +93,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -108,7 +108,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -123,7 +123,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -138,7 +138,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -153,7 +153,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -168,7 +168,7 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
+			"SpecialFee": 1,
 			"L2Calldata": 1
 		}
 	}

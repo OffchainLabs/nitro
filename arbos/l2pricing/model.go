@@ -306,6 +306,11 @@ func (ps *L2PricingState) CalcMultiGasConstraintsExponents() ([multigas.NumResou
 			}
 
 			for _, kind := range usedResources {
+				if kind == multigas.ResourceKindSpecialFee {
+					// The special fee dimension shouldn't be used to compute the base fee.
+					// This condition should never be reached but we enforce it just to be sure.
+					continue
+				}
 				weight, err := constraint.ResourceWeight(uint8(kind))
 				if err != nil {
 					return [multigas.NumResourceKind]arbmath.Bips{}, err
@@ -347,8 +352,9 @@ func (ps *L2PricingState) GetMultiGasBaseFeePerResource() ([]*big.Int, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Force L1 calldata (and the unlikely zero-basefee case) to use the max base fee.
-		if kind == multigas.ResourceKindL1Calldata || baseFee.Cmp(big.NewInt(0)) == 0 {
+		// Force special fee (and the unlikely zero-basefee case) to use the max base fee
+		// because it is not refundable.
+		if kind == multigas.ResourceKindSpecialFee || baseFee.Cmp(big.NewInt(0)) == 0 {
 			baseFee = baseFeeWei
 		}
 		fees[kind] = baseFee

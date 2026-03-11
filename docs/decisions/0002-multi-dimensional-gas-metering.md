@@ -35,8 +35,9 @@ A multi-dimensional gas metering approach is adopted, introducing distinct `Reso
 - ResourceKindHistoryGrowth. Represents writes to the append-only event log history:
     - Event logs (LOG0–LOG4)
 
-- ResourceKindL1Calldata. Represents the cost of posting transaction data to L1:
+- ResourceKindSpecialFee. Represents the cost of a special fee charged as gas:
     - L1 batch posting calldata costs
+    - Gas sent to a retryable attempt during redeem
 
 - ResourceKindL2Calldata. Represents the cost of L2 calldata processing:
     - L2 transaction calldata
