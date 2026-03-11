@@ -28,7 +28,7 @@ const filterQueueSize = 100
 type TransactionFiltererAPI struct {
 	stopwaiter.StopWaiter
 
-	queue chan func()
+	queue chan common.Hash
 
 	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
@@ -39,7 +39,7 @@ func NewTransactionFiltererAPI(
 	txOpts *bind.TransactOpts,
 ) *TransactionFiltererAPI {
 	api := &TransactionFiltererAPI{
-		queue:  make(chan func(), filterQueueSize),
+		queue:  make(chan common.Hash, filterQueueSize),
 		txOpts: txOpts,
 	}
 	if manager != nil {
@@ -50,46 +50,37 @@ func NewTransactionFiltererAPI(
 
 func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 	t.StopWaiter.Start(ctx, t)
-	return stopwaiter.CallWhenTriggeredWith(&t.StopWaiterSafe, func(_ context.Context, work func()) {
-		work()
-	}, t.queue)
+	return stopwaiter.CallWhenTriggeredWith(&t.StopWaiterSafe, t.filter, t.queue)
 }
 
 // Filter adds the given transaction hash to the filtered transactions set,
 // which is managed by the ArbFilteredTransactionsManager precompile.
 // Requests are processed sequentially by a single consumer goroutine to avoid nonce collisions.
 func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
-	result := make(chan error, 1)
 	select {
-	case t.queue <- func() {
-		if ctx.Err() != nil {
-			result <- ctx.Err()
-		} else {
-			result <- t.filter(ctx, txHashToFilter)
-		}
-	}:
-		return <-result
+	case t.queue <- txHashToFilter:
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) error {
+func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) {
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
 	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
 	manager := t.arbFilteredTransactionsManager.Load()
 	if manager == nil {
-		return errors.New("sequencer client not set yet")
+		log.Warn("Sequencer client not set yet")
+		return
 	}
 	tx, err := manager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
-		return err
+		return
 	}
 	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
-	return nil
 }
 
 // Only used for testing.

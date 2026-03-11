@@ -25,59 +25,39 @@ func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 	return api
 }
 
-func TestFilterContextCancelledWhileQueued(t *testing.T) {
-	api := startTestAPI(t)
-
-	blocker := make(chan struct{})
-	api.queue <- func() { <-blocker }
+func TestFilterContextCancelledWhenQueueFull(t *testing.T) {
+	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{})
 
 	for range filterQueueSize {
-		api.queue <- func() {}
+		api.queue <- common.Hash{}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- api.Filter(ctx, common.Hash{2})
-	}()
-
-	close(blocker)
-
-	select {
-	case err := <-errCh:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("expected context.Canceled, got: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for Filter to return")
+	err := api.Filter(ctx, common.Hash{2})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
 }
 
-func TestFilterSequentialProcessing(t *testing.T) {
+func TestFilterConsumesFromQueue(t *testing.T) {
 	api := startTestAPI(t)
 
-	var order []int
 	const n = 5
 	for i := range n {
-		api.queue <- func() {
-			order = append(order, i)
+		if err := api.Filter(context.Background(), common.BytesToHash([]byte{byte(i)})); err != nil {
+			t.Fatal(err)
 		}
 	}
 
-	done := make(chan struct{})
-	api.queue <- func() { close(done) }
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for sequential processing")
-	}
-
-	for i, v := range order {
-		if v != i {
-			t.Fatalf("expected item %d at position %d, got %d (order: %v)", i, i, v, order)
+	timeout := time.After(5 * time.Second)
+	for len(api.queue) > 0 {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for queue to drain")
+		default:
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
