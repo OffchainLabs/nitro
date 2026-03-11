@@ -19,6 +19,9 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	if err != nil {
 		return m.config.RetryInterval, err
 	}
+	if err := melState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+		return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages: %w", err)
+	}
 	// Start mel state is now ready. Check if the state's parent chain block hash exists in the parent chain
 	startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
 	if err != nil {

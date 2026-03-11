@@ -16,12 +16,15 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/db/read"
+	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbnode/mel/recording"
@@ -37,6 +40,29 @@ import (
 	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/offchainlabs/nitro/validator/retry_wrapper"
 )
+
+type delayedMsgDatabase struct {
+	db ethdb.KeyValueStore
+}
+
+func (d *delayedMsgDatabase) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
+	expectedMsgHash, err := state.PopDelayedOutbox()
+	if err != nil {
+		return nil, fmt.Errorf("error popping delayed outbox for index %d: %w", index, err)
+	}
+	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
+	if err != nil {
+		return nil, err
+	}
+	delayedBytes, err := rlp.EncodeToBytes(&delayed)
+	if err != nil {
+		return nil, err
+	}
+	if actualHash := crypto.Keccak256Hash(delayedBytes); actualHash != expectedMsgHash {
+		return nil, fmt.Errorf("delayed message hash mismatch at index %d: expected %s, got %s", index, expectedMsgHash.Hex(), actualHash.Hex())
+	}
+	return &delayed, nil
+}
 
 type MsgPreimagesAndRelevantState struct {
 	msgPreimages  daprovider.PreimagesMap
@@ -444,9 +470,13 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 	preimages := make(daprovider.PreimagesMap)
 	preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
 	preimages[arbutil.Keccak256PreimageType][initialState.Hash()] = encodedInitialState
-	delayedMsgRecordingDB, err := melrecording.NewDelayedMsgDatabase(mv.arbDb, preimages)
-	if err != nil {
+	delayedMsgDB := &delayedMsgDatabase{db: mv.arbDb}
+	// Record delayed msg preimages into the overall preimages map
+	if err := currentState.RecordDelayedMsgPreimagesTo(preimages); err != nil {
 		return nil, nil, err
+	}
+	if err := mv.messageExtractor.RebuildStateDelayedMsgPreimages(currentState); err != nil {
+		return nil, nil, fmt.Errorf("error rebuilding delayed msg preimages: %w", err)
 	}
 	recordingDAPReaders, err := melrecording.NewDAPReaderSource(ctx, mv.dapReaders, preimages)
 	if err != nil {
@@ -484,7 +514,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			return nil, nil, err
 		}
 		var l2Msgs []*arbostypes.MessageWithMetadata
-		endState, l2Msgs, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgRecordingDB, txsRecorder, recordedLogsFetcher, nil)
+		endState, l2Msgs, _, _, err = melextraction.ExtractMessages(ctx, currentState, header, recordingDAPReaders, delayedMsgDB, txsRecorder, recordedLogsFetcher, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error calling melextraction.ExtractMessages in recording mode: %w", err)
 		}

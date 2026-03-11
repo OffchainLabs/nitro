@@ -136,10 +136,11 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	state.ParentChainBlockNumber++
 
 	// See 3 delayed messages and accumulate them
-	for i := 0; i < numDelayed; i++ {
+	for i := range numDelayed {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
 		state.DelayedMessagesSeen++
 	}
+	stateToCheckForCorruption := state.Clone()
 	require.NoError(t, melDB.SaveDelayedMessages(state, delayedMsgs[:numDelayed]))
 	// We can read all of these and prove that they are correct, by checking that ReadDelayedMessage doesnt error
 	// #nosec G115
@@ -157,6 +158,6 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, consensusDB.Put(key, delayedBytes))
 	// ReadDelayedMessage should fail with hash mismatch error
-	_, err = melDB.ReadDelayedMessage(state, corruptIndex)
+	_, err = melDB.ReadDelayedMessage(stateToCheckForCorruption, corruptIndex)
 	require.True(t, strings.Contains(err.Error(), "delayed message hash mismatch"))
 }

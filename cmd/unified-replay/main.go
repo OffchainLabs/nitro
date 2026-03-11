@@ -65,7 +65,7 @@ func main() {
 	positionInMEL := melwavmio.GetPositionInMEL()
 	if melState.MsgCount > positionInMEL {
 		resolver := &wavmPreimageResolver{}
-		msgReader := newMessageReader(resolver)
+		msgReader := melreplay.NewMessageReader(resolver)
 		nextMsg, err := msgReader.Read(context.Background(), melState, positionInMEL)
 		if err != nil {
 			panic(fmt.Errorf("error reading message idx %d: %w", positionInMEL, err))
@@ -205,7 +205,7 @@ func extractMessagesUpTo(
 	currentState := startState
 
 	// Loops backwards over blocks, feeding them one by one into the extract messages function.
-	delayedMsgDatabase := newDelayedMessageDatabase(resolver)
+	delayedMsgDatabase := melreplay.NewDelayedMessageDatabase(resolver)
 	ctx := context.Background()
 	for i := len(blockHeaderHashes) - 1; i >= 0; i-- {
 		headerHash := blockHeaderHashes[i]

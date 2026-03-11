@@ -31,6 +31,11 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
 		return m.config.RetryInterval, err
 	}
+	if saveAction.postState.ParentChainBlockNumber%1000 == 0 {
+		if err := saveAction.postState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages for cleanup: %w", err)
+		}
+	}
 	return 0, m.fsm.Do(processNextBlock{
 		melState: saveAction.postState,
 	})

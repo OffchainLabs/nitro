@@ -56,16 +56,16 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	// the extractor service stop waiter will wait for this duration before trying to act again.
 	RetryInterval:    time.Millisecond * 500,
 	BlocksToPrefetch: 499, // 500 is the eth_getLogs block range limit
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 var TestMessageExtractionConfig = MessageExtractionConfig{
 	Enable:           false,
 	RetryInterval:    time.Millisecond * 10,
 	BlocksToPrefetch: 499,
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -244,6 +244,10 @@ func (m *MessageExtractor) GetState(parentchainBlocknumber uint64) (*mel.State, 
 	return m.melDB.State(parentchainBlocknumber)
 }
 
+func (m *MessageExtractor) RebuildStateDelayedMsgPreimages(state *mel.State) error {
+	return state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage)
+}
+
 func (m *MessageExtractor) GetMsgCount() (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
@@ -260,7 +264,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	if index >= headState.DelayedMessagesSeen {
 		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
 	}
-	return m.melDB.fetchDelayedMessage(index)
+	return m.melDB.FetchDelayedMessage(index)
 }
 
 func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
@@ -271,7 +275,7 @@ func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uin
 	if index >= headState.DelayedMessagesSeen {
 		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
 	}
-	delayedMsg, err := m.melDB.fetchDelayedMessage(index)
+	delayedMsg, err := m.melDB.FetchDelayedMessage(index)
 	if err != nil {
 		return nil, err
 	}

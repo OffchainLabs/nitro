@@ -1,6 +1,6 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-package main
+package melreplay
 
 import (
 	"bytes"
@@ -11,22 +11,21 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/arbutil"
-	melreplay "github.com/offchainlabs/nitro/mel-replay"
 )
 
-type delayedMessageDatabase struct {
-	preimageResolver melreplay.PreimageResolver
+type DelayedMessageDatabase struct {
+	preimageResolver PreimageResolver
 }
 
-func newDelayedMessageDatabase(preimageResolver melreplay.PreimageResolver) melextraction.DelayedMessageDatabase {
-	return &delayedMessageDatabase{preimageResolver}
+func NewDelayedMessageDatabase(preimageResolver PreimageResolver) melextraction.DelayedMessageDatabase {
+	return &DelayedMessageDatabase{preimageResolver}
 }
 
 // ReadDelayedMessage pops the next delayed message from the outbox accumulator.
 // If the outbox is empty, it pours the inbox into the outbox first using preimage resolution.
-func (d *delayedMessageDatabase) ReadDelayedMessage(
+func (d *DelayedMessageDatabase) ReadDelayedMessage(
 	state *mel.State,
 	msgIndex uint64,
 ) (*mel.DelayedInboxMessage, error) {
@@ -62,15 +61,15 @@ func (d *delayedMessageDatabase) ReadDelayedMessage(
 }
 
 // pourInboxToOutbox pours all items from the inbox into the outbox using preimage resolution.
-func (d *delayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
+func (d *DelayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
 	inboxSize := state.DelayedMessagesSeen - state.DelayedMessagesRead
 	if inboxSize == 0 {
 		return nil
 	}
-	// Pop all items from inbox (LIFO: last-seen comes out first)
-	msgHashes := make([]common.Hash, inboxSize)
+	// Pop all items from inbox (LIFO: last-seen comes out first) and Push onto outbox
+	// in original order (first-seen first → it ends up on top)
 	curr := state.DelayedMessageInboxAcc
-	for i := inboxSize; i > 0; i-- {
+	for i := range inboxSize {
 		result, err := d.preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, curr)
 		if err != nil {
 			return fmt.Errorf("error resolving inbox preimage during pour at position %d: %w", i, err)
@@ -79,14 +78,9 @@ func (d *delayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
 		if err != nil {
 			return fmt.Errorf("inbox preimage at position %d: %w", i, err)
 		}
-		msgHashes[i-1] = msgHash
-		curr = prevAcc
-	}
-	// Push items onto outbox in original order (first-seen first → it ends up on top)
-	for _, msgHash := range msgHashes {
 		preimage := append(state.DelayedMessageOutboxAcc.Bytes(), msgHash.Bytes()...)
-		newAcc := crypto.Keccak256Hash(preimage)
-		state.DelayedMessageOutboxAcc = newAcc
+		state.DelayedMessageOutboxAcc = crypto.Keccak256Hash(preimage)
+		curr = prevAcc
 	}
 	state.DelayedMessageInboxAcc = common.Hash{}
 	return nil

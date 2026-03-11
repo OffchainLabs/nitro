@@ -139,9 +139,16 @@ func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.Dela
 	if err != nil {
 		return nil, fmt.Errorf("error popping delayed outbox for index %d: %w", index, err)
 	}
-	delayed, err := d.fetchDelayedMessage(index)
-	if err != nil {
-		return nil, err
+	// The init message (index 0) is accumulated and read in the same block,
+	// so it may not be in the DB yet. Use the in-memory copy from state.
+	var delayed *mel.DelayedInboxMessage
+	if index == 0 && state.InitMsg() != nil {
+		delayed = state.InitMsg()
+	} else {
+		delayed, err = d.FetchDelayedMessage(index)
+		if err != nil {
+			return nil, err
+		}
 	}
 	delayedBytes, err := rlp.EncodeToBytes(delayed)
 	if err != nil {
@@ -154,7 +161,7 @@ func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.Dela
 	return delayed, nil
 }
 
-func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+func (d *Database) FetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
 	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
 		return nil, err

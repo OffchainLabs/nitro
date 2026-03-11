@@ -67,9 +67,14 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			melState: preState,
 		})
 	}
-	// Reorging of MEL states successfully completed, we can now rewind MEL validator
-	if m.reorgEventsNotifier != nil && processAction.prevStepWasReorg {
-		m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+	// Reorging of MEL states successfully completed, we can now rewind MEL validator and rebuild delayedMsgPreimages based on inbox and outbox accumulators
+	if processAction.prevStepWasReorg {
+		if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
+		}
+		if m.reorgEventsNotifier != nil {
+			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
