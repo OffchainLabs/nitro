@@ -40,9 +40,8 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Equal(t, uint64(10), w1)
 	require.Equal(t, uint64(20), w2)
 
-	res, err := c.ResourcesWithWeights()
+	res, err := c.GetResourceWeights()
 	require.NoError(t, err)
-	require.Len(t, res, 2)
 	require.Equal(t, uint64(10), res[multigas.ResourceKindComputation])
 	require.Equal(t, uint64(20), res[multigas.ResourceKindStorageAccess])
 
@@ -61,8 +60,8 @@ func TestMultiGasConstraint(t *testing.T) {
 	backlog, _ = c.Backlog()
 	require.Zero(t, target)
 	require.Zero(t, backlog)
-	res, _ = c.ResourcesWithWeights()
-	require.Empty(t, res)
+	res, _ = c.GetResourceWeights()
+	require.Equal(t, [multigas.NumResourceKind]uint64{}, res)
 
 	used, err = c.UsedResources()
 	require.NoError(t, err)
