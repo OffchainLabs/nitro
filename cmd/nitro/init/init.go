@@ -1141,18 +1141,17 @@ func GetParsedInitMsgFromGenesisOverride(genesisOverride *conf.GenesisOverrideCo
 		return nil, fmt.Errorf("failed to deserialize chain config from genesis override: %w", err)
 	}
 
-	initialL1BaseFee := arbostypes.DefaultInitialL1BaseFee
 	fee, err := genesisOverride.ParseInitialL1BaseFee()
 	if err != nil {
 		return nil, err
 	}
-	if fee != nil {
-		initialL1BaseFee = fee
+	if fee == nil {
+		return nil, fmt.Errorf("genesis override is missing initial-l1-base-fee")
 	}
 
 	return &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      initialL1BaseFee,
+		InitialL1BaseFee:      fee,
 		ChainConfig:           &chainConfig,
 		SerializedChainConfig: []byte(genesisOverride.SerializedChainConfig),
 	}, nil

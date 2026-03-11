@@ -1383,17 +1383,27 @@ func TestGetParsedInitMsgFromGenesisOverride(t *testing.T) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	serializedConfig := testChainConfigJSON(t)
 
-	t.Run("with default initial L1 base fee", func(t *testing.T) {
+	t.Run("with valid config", func(t *testing.T) {
 		override := &conf.GenesisOverrideConfig{
 			SerializedChainConfig: serializedConfig,
-			InitialL1BaseFee:      "",
+			InitialL1BaseFee:      "50000000000",
 		}
 		msg, err := GetParsedInitMsgFromGenesisOverride(override)
 		require.NoError(t, err)
 		require.Equal(t, chainConfig.ChainID, msg.ChainId)
-		require.Equal(t, arbostypes.DefaultInitialL1BaseFee, msg.InitialL1BaseFee)
+		require.Equal(t, big.NewInt(50_000_000_000), msg.InitialL1BaseFee)
 		require.Equal(t, serializedConfig, string(msg.SerializedChainConfig))
 		require.NotNil(t, msg.ChainConfig)
+	})
+
+	t.Run("missing initial L1 base fee returns error", func(t *testing.T) {
+		override := &conf.GenesisOverrideConfig{
+			SerializedChainConfig: serializedConfig,
+			InitialL1BaseFee:      "",
+		}
+		_, err := GetParsedInitMsgFromGenesisOverride(override)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "genesis override is missing initial-l1-base-fee")
 	})
 
 	t.Run("with custom initial L1 base fee", func(t *testing.T) {

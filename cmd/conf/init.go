@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util"
 )
 
@@ -31,7 +30,7 @@ var GenesisOverrideConfigDefault = GenesisOverrideConfig{
 
 func GenesisOverrideConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".serialized-chain-config", GenesisOverrideConfigDefault.SerializedChainConfig, "JSON-serialized chain config, can be used to provide chain config when genesis.json is not available")
-	f.String(prefix+".initial-l1-base-fee", GenesisOverrideConfigDefault.InitialL1BaseFee, fmt.Sprintf("initial L1 base fee (in wei), can be used to provide this value when genesis.json is not available (empty = not set, default is %s)", arbostypes.DefaultInitialL1BaseFee))
+	f.String(prefix+".initial-l1-base-fee", GenesisOverrideConfigDefault.InitialL1BaseFee, "initial L1 base fee (in wei), must be set together with serialized-chain-config")
 }
 
 // ParseInitialL1BaseFee parses the InitialL1BaseFee string into a *big.Int.
@@ -51,7 +50,12 @@ func (c *GenesisOverrideConfig) ParseInitialL1BaseFee() (*big.Int, error) {
 }
 
 func (c *GenesisOverrideConfig) Validate() error {
-	if c.SerializedChainConfig != "" {
+	chainConfigSet := c.SerializedChainConfig != ""
+	baseFeeSet := c.InitialL1BaseFee != ""
+	if chainConfigSet != baseFeeSet {
+		return fmt.Errorf("genesis-override.serialized-chain-config and genesis-override.initial-l1-base-fee must both be set or both be empty")
+	}
+	if chainConfigSet {
 		var chainConfig params.ChainConfig
 		if err := json.Unmarshal([]byte(c.SerializedChainConfig), &chainConfig); err != nil {
 			return fmt.Errorf("failed to unmarshal serialized-chain-config: %w", err)
@@ -64,7 +68,6 @@ func (c *GenesisOverrideConfig) Validate() error {
 }
 
 func (c *GenesisOverrideConfig) IsSet() bool {
-	// Only SerializedChainConfig is required; InitialL1BaseFee falls back to the default if not provided.
 	return c != nil && c.SerializedChainConfig != ""
 }
 
