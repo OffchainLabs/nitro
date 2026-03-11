@@ -310,26 +310,16 @@ func (m *MessageExtractor) GetState(ctx context.Context, parentchainBlocknumber 
 	return m.melDB.State(ctx, parentchainBlocknumber)
 }
 
-func (m *MessageExtractor) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
-	headState, err := m.getHeadMelStateSafe()
+func (m *MessageExtractor) GetMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {
 		return 0, err
 	}
 	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
-// getHeadMelStateSafe returns the head MEL state, using the StopWaiter context.
-// Returns an error if the MessageExtractor has not been started.
-func (m *MessageExtractor) getHeadMelStateSafe() (*mel.State, error) {
-	ctx, err := m.GetContextSafe()
-	if err != nil {
-		return nil, fmt.Errorf("message extractor not running: %w", err)
-	}
-	return m.melDB.GetHeadMelState(ctx)
-}
-
 func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
-	headState, err := m.getHeadMelStateSafe()
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +329,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
-// GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not GetContextSafe)
+// GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
 // because it is called from FinalizedDelayedMessageAtPosition, which receives its
 // context from the DelayedSequencer — a running component that supplies a valid context.
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
@@ -351,7 +341,7 @@ func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context
 }
 
 func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
-	state, err := m.getHeadMelStateSafe()
+	state, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -359,7 +349,7 @@ func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
-	headState, err := m.getHeadMelStateSafe()
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return mel.BatchMetadata{}, err
 	}
@@ -390,7 +380,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	_ common.Hash,
 	requestedPosition uint64,
 ) (*arbostypes.L1IncomingMessage, common.Hash, error) {
-	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
+	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
 	if err != nil {
 		if rawdb.IsDbErrNotFound(err) {
 			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedPosition)
@@ -399,7 +389,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedPosition, "err", err)
 		return nil, common.Hash{}, err
 	}
-	if requestedPosition >= finalizedPos {
+	if requestedPosition >= finalizedDelayedCount {
 		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 	}
 	msg, err := m.GetDelayedMessage(requestedPosition)
@@ -466,7 +456,7 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 // err will return unexpected/internal errors
 // bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount()
+	batchCount, err := m.GetBatchCount(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -514,8 +504,8 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 	}
 }
 
-func (m *MessageExtractor) GetBatchCount() (uint64, error) {
-	headState, err := m.getHeadMelStateSafe()
+func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(ctx)
 	if err != nil {
 		return 0, err
 	}

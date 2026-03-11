@@ -1048,8 +1048,9 @@ func getStatelessBlockValidator(
 // melBatchMetaFetcher adapts a MessageExtractor to the BatchMetadataFetcher
 // interface required by BatchPoster. GetDelayedAcc returns an error because MEL
 // does not track delayed message accumulators. When this adapter is the active
-// BatchMetadataFetcher and a delay proof is needed, GenDelayProof will call
-// GetDelayedAcc and propagate the error, causing the batch post to fail.
+// BatchMetadataFetcher and a delay proof is needed with DelayedMessagesRead > 1,
+// GenDelayProof will call GetDelayedAcc and propagate the error, causing the
+// batch post to fail.
 type melBatchMetaFetcher struct {
 	extractor *melrunner.MessageExtractor
 }
@@ -1062,7 +1063,7 @@ func newMelBatchMetaFetcher(extractor *melrunner.MessageExtractor) *melBatchMeta
 }
 
 func (m *melBatchMetaFetcher) GetBatchCount() (uint64, error) {
-	return m.extractor.GetBatchCount()
+	return m.extractor.GetBatchCount(context.Background())
 }
 
 func (m *melBatchMetaFetcher) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
@@ -1162,11 +1163,7 @@ func getDelayedSequencer(
 		delayedCountFetcher = msgExtractor
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
-	}
-	return delayedSequencer, nil
+	return NewDelayedSequencer(l1Reader, inboxReader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(

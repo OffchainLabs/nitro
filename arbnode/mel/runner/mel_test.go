@@ -263,59 +263,6 @@ func (m *mockParentChainReader) FilterLogs(ctx context.Context, q ethereum.Filte
 
 func (m *mockParentChainReader) Client() rpc.ClientInterface { return nil }
 
-func newTestMessageExtractor(t *testing.T) *MessageExtractor {
-	t.Helper()
-	extractor, err := NewMessageExtractor(
-		DefaultMessageExtractionConfig,
-		&mockParentChainReader{
-			blocks:  map[common.Hash]*types.Block{},
-			headers: map[common.Hash]*types.Header{},
-		},
-		chaininfo.ArbitrumDevTestChainConfig(),
-		&chaininfo.RollupAddresses{},
-		NewDatabase(rawdb.NewMemoryDatabase()),
-		daprovider.NewDAProviderRegistry(),
-		nil,
-		nil,
-		nil,
-	)
-	require.NoError(t, err)
-	return extractor
-}
-
-func TestGetContextSafe_ReturnsErrorWhenNotStarted(t *testing.T) {
-	t.Parallel()
-
-	// Create a MessageExtractor but do NOT call Start(). Methods that use
-	// GetContextSafe should return an error instead of panicking.
-	extractor := newTestMessageExtractor(t)
-
-	t.Run("GetDelayedCount returns error", func(t *testing.T) {
-		_, err := extractor.GetDelayedCount()
-		require.ErrorContains(t, err, "not running")
-	})
-	t.Run("GetDelayedMessage returns error", func(t *testing.T) {
-		_, err := extractor.GetDelayedMessage(0)
-		require.ErrorContains(t, err, "not running")
-	})
-	t.Run("GetMsgCount returns error", func(t *testing.T) {
-		_, err := extractor.GetMsgCount(context.Background())
-		require.ErrorContains(t, err, "not running")
-	})
-	t.Run("GetBatchCount returns error", func(t *testing.T) {
-		_, err := extractor.GetBatchCount()
-		require.ErrorContains(t, err, "not running")
-	})
-	t.Run("GetBatchMetadata returns error", func(t *testing.T) {
-		_, err := extractor.GetBatchMetadata(0)
-		require.ErrorContains(t, err, "not running")
-	})
-	t.Run("GetFinalizedDelayedMessagesRead returns error", func(t *testing.T) {
-		_, err := extractor.GetFinalizedDelayedMessagesRead()
-		require.ErrorContains(t, err, "not running")
-	})
-}
-
 func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())

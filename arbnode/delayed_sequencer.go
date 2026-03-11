@@ -263,7 +263,6 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-
 		// SAFETY: Accumulator check is gated on d.reader != nil because MEL does not
 		// track delayed message accumulators. See MessageExtractor.FinalizedDelayedMessageAtPosition doc.
 		if d.reader != nil {

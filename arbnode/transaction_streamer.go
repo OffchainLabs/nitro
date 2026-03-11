@@ -1193,7 +1193,7 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 	if s.msgExtractor == nil {
 		return nil
 	}
-	batchCount, err := s.msgExtractor.GetBatchCount()
+	batchCount, err := s.msgExtractor.GetBatchCount(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
 	}
