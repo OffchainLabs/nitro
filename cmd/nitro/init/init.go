@@ -4,6 +4,7 @@
 package nitroinit
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,7 +18,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -647,8 +647,8 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 
 		parsedInitMessage := executionParsedInitMsg
 		if consensusParsedInitMessage != nil {
-			if !reflect.DeepEqual(executionParsedInitMsg, consensusParsedInitMessage) {
-				log.Warn("Execution and consensus parsed init messages do not match, verify that --init.genesis-json-file and --init.genesis-override match the on-chain init message")
+			if err := validateParsedInitMessagesMatch(executionParsedInitMsg, consensusParsedInitMessage); err != nil {
+				log.Warn("Execution and consensus parsed init messages do not match", "err", err)
 			}
 			parsedInitMessage = consensusParsedInitMessage
 		}
@@ -1092,8 +1092,8 @@ func GetExecutionParsedInitMsg(genesis *core.Genesis, genesisOverride *conf.Gene
 			if err != nil {
 				return nil, fmt.Errorf("error parsing genesis override: %w", err)
 			}
-			if !reflect.DeepEqual(parsedInitMessage, overrideMsg) {
-				return nil, fmt.Errorf("genesis and genesis override parsed init messages do not match")
+			if err := validateParsedInitMessagesMatch(parsedInitMessage, overrideMsg); err != nil {
+				return nil, fmt.Errorf("genesis and genesis override mismatch: %w", err)
 			}
 		}
 		log.Info("Retrieved parsed init message from genesis.json")
@@ -1171,6 +1171,19 @@ func GetParsedInitMsgFromChainConfig(chainConfig *params.ChainConfig) (*arbostyp
 		SerializedChainConfig: serializedChainConfig,
 	}
 	return parsedInitMessage, nil
+}
+
+func validateParsedInitMessagesMatch(a, b *arbostypes.ParsedInitMessage) error {
+	if a.ChainId.Cmp(b.ChainId) != 0 {
+		return fmt.Errorf("chain ID mismatch: %v vs %v", a.ChainId, b.ChainId)
+	}
+	if a.InitialL1BaseFee.Cmp(b.InitialL1BaseFee) != 0 {
+		return fmt.Errorf("initial L1 base fee mismatch: %v vs %v", a.InitialL1BaseFee, b.InitialL1BaseFee)
+	}
+	if !bytes.Equal(a.SerializedChainConfig, b.SerializedChainConfig) {
+		return fmt.Errorf("serialized chain config mismatch: %s vs %s", string(a.SerializedChainConfig), string(b.SerializedChainConfig))
+	}
+	return nil
 }
 
 func getGenesisAssertionCreationInfo(ctx context.Context, rollupAddress common.Address, l1Client *ethclient.Client, genesisHash common.Hash, sendRoot common.Hash) (*protocol.AssertionCreatedInfo, [32]byte, bool, error) {
