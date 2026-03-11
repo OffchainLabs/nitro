@@ -174,11 +174,11 @@ COPY ./contracts-local ./contracts-local
 COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-# ── Validator binary ────────────────────────────────────────────────────────
+# ── Rust validator binary ──────────────────────────────────────────────────
 FROM prover-builder AS validator-builder
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
-# ── Runtime image ───────────────────────────────────────────────────────────
+# ── Rust validator runtime ────────────────────────────────────────────────
 FROM debian:bookworm-slim AS nitro-validator
 WORKDIR /home/user
 
@@ -195,3 +195,58 @@ EXPOSE 4141
 
 ENTRYPOINT ["validator", "--root-path", "/machines"]
 CMD ["--mode", "native"]
+
+# ── Go validator (nitro-val) ──────────────────────────────────────────────
+# Generate arbitrator.h header (needed for Go CGO build)
+FROM prover-builder AS prover-header-builder
+RUN cargo install --force cbindgen --version 0.24.3
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
+
+# Build nitro-val Go binary
+FROM golang:1.25-bookworm AS go-val-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt
+COPY go.mod go.sum ./
+COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
+RUN go mod download
+COPY . ./
+COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
+COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/contracts-legacy/build/ contracts-legacy/build/
+COPY --from=contracts-builder workspace/contracts-legacy/out/ contracts-legacy/out/
+COPY --from=contracts-builder workspace/contracts-local/out/ contracts-local/out/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
+COPY --from=contracts-builder workspace/.make/ .make/
+COPY --from=prover-header-builder /workspace/target/include/ target/include/
+COPY --from=brotli-library-export / target/
+COPY --from=prover-export / target/
+RUN mkdir -p target/bin && \
+    NITRO_BUILD_IGNORE_TIMESTAMPS=1 make target/bin/nitro-val
+
+# Go validator runtime image
+FROM debian:bookworm-slim AS nitro-go-validator
+WORKDIR /home/user
+
+COPY --from=go-val-builder /workspace/target/bin/nitro-val /usr/local/bin/nitro-val
+# jit must be in the same directory as nitro-val for auto-discovery
+COPY --from=prover-export /bin/jit /usr/local/bin/jit
+COPY --from=module-root-calc /workspace/target/machines/latest/ /machines/latest/
+
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+EXPOSE 8547
+
+ENTRYPOINT ["nitro-val", \
+    "--validation.wasm.root-path", "/machines", \
+    "--validation.api-auth=false", \
+    "--validation.api-public=true", \
+    "--http.addr", "0.0.0.0", \
+    "--http.port", "8547", \
+    "--http.api", "validation", \
+    "--file-logging.enable=false"]

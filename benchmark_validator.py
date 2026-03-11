@@ -17,9 +17,13 @@ Usage:
     # Local Go validator:
     python3 benchmark_validator.py --validator-type go [--go-val-bin target/bin/nitro-val]
 
-    # Docker (builds image if needed, uses --network=host):
+    # Docker Rust validator:
     python3 benchmark_validator.py --docker [--docker-image nitro-validator] \
         [--machines-dir target/machines] [--base-dir system_tests/target]
+
+    # Docker Go validator:
+    python3 benchmark_validator.py --docker --validator-type go \
+        [--docker-image nitro-go-validator] [--machines-dir target/machines]
 """
 
 import argparse
@@ -225,16 +229,17 @@ def docker_image_exists(image: str) -> bool:
     return result.returncode == 0
 
 
-def docker_build(image: str):
+def docker_build(image: str, validator_type: str = "rust"):
     """Build the validator Docker image from Dockerfile.validator."""
     dockerfile = "Dockerfile.validator"
     if not os.path.isfile(dockerfile):
         print(f"ERROR: {dockerfile} not found in current directory", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  Building Docker image '{image}' from {dockerfile} (target: nitro-validator)...")
+    target = "nitro-go-validator" if validator_type == "go" else "nitro-validator"
+    print(f"  Building Docker image '{image}' from {dockerfile} (target: {target})...")
     result = subprocess.run(
-        ["docker", "build", "-f", dockerfile, "--target", "nitro-validator", "-t", image, "."],
+        ["docker", "build", "-f", dockerfile, "--target", target, "-t", image, "."],
         timeout=7200,  # 2 hour max for full build
     )
     if result.returncode != 0:
@@ -243,27 +248,32 @@ def docker_build(image: str):
     print(f"  Docker image '{image}' built successfully.")
 
 
-def start_server_docker(mode: str, image: str, machines_dir: str, container_name: str):
+def start_server_docker(mode: str, image: str, machines_dir: str, container_name: str,
+                        validator_type: str = "rust"):
     """
-    Start the validator in Docker with --network=host.
+    Start the validator in Docker.
     Returns the container name (used to stop it later).
     If machines_dir is provided and exists, mount it to override the built-in machines.
     """
+    port = "8547" if validator_type == "go" else "4141"
     cmd = [
         "docker", "run", "--rm", "-d",
         "--name", container_name,
-        "-p", "4141:4141",
-        "-e", "RUST_LOG=tower_http=debug,info",
+        "-p", f"{port}:{port}",
     ]
+
+    if validator_type == "rust":
+        cmd.extend(["-e", "RUST_LOG=tower_http=debug,info"])
 
     machines_abs = os.path.abspath(machines_dir)
     if os.path.isdir(machines_abs):
         cmd.extend(["-v", f"{machines_abs}:/machines:ro"])
 
-    cmd.extend([
-        image,
-        "--mode", mode,
-    ])
+    cmd.append(image)
+
+    # Rust validator takes --mode as an arg; Go validator entrypoint is pre-configured
+    if validator_type == "rust":
+        cmd.extend(["--mode", mode])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -331,7 +341,7 @@ def benchmark_mode(
     proc = None
 
     if use_docker:
-        start_server_docker(mode, docker_image, machines_dir, container_name)
+        start_server_docker(mode, docker_image, machines_dir, container_name, validator_type)
     elif validator_type == "go":
         proc = start_server_local_go(go_val_bin)
     else:
@@ -339,10 +349,11 @@ def benchmark_mode(
 
     try:
         print(f"  Waiting for server to start...")
-        if use_docker or validator_type == "rust":
-            wait_for_server_rust(url, timeout=300 if use_docker else 120)
+        timeout = 300 if use_docker else 120
+        if validator_type == "go":
+            wait_for_server_go(url, timeout=timeout)
         else:
-            wait_for_server_go(url, timeout=120)
+            wait_for_server_rust(url, timeout=timeout)
 
         # For Go validator, we need to fetch a module root
         module_root = ""
@@ -527,13 +538,17 @@ def main():
     # Go validator options
     parser.add_argument("--go-val-bin", default="target/bin/nitro-val", help="Path to Go validator binary (nitro-val)")
 
-    # Docker mode options (Rust only)
-    parser.add_argument("--docker", action="store_true", help="Run validator inside Docker (Rust only)")
-    parser.add_argument("--docker-image", default="nitro-validator", help="Docker image name (default: nitro-validator)")
+    # Docker mode options
+    parser.add_argument("--docker", action="store_true", help="Run validator inside Docker")
+    parser.add_argument("--docker-image", default=None, help="Docker image name (auto-detected if not set)")
     parser.add_argument("--machines-dir", default="target/machines", help="Path to machines directory (Docker mode)")
     parser.add_argument("--docker-build", action="store_true", help="Force rebuild of Docker image even if it exists")
 
     args = parser.parse_args()
+
+    # Set default Docker image based on validator type
+    if args.docker_image is None:
+        args.docker_image = "nitro-go-validator" if args.validator_type == "go" else "nitro-validator"
 
     # Set default URL based on validator type
     if args.url is None:
@@ -542,11 +557,6 @@ def main():
         else:
             args.url = "http://localhost:4141/validation_validate"
 
-    # Docker is only for Rust validator
-    if args.docker and args.validator_type == "go":
-        print("ERROR: --docker is only supported with --validator-type rust", file=sys.stderr)
-        sys.exit(1)
-
     # Go validator doesn't have modes (it always uses JIT)
     if args.validator_type == "go":
         args.modes = ["jit"]
@@ -554,7 +564,7 @@ def main():
     # Docker validation and setup
     if args.docker:
         if args.docker_build or not docker_image_exists(args.docker_image):
-            docker_build(args.docker_image)
+            docker_build(args.docker_image, args.validator_type)
         else:
             print(f"Using existing Docker image '{args.docker_image}' (use --docker-build to force rebuild)")
 
@@ -575,7 +585,7 @@ def main():
     print(f"Validator type: {args.validator_type}")
     print(f"Modes: {', '.join(args.modes)}")
     if args.docker:
-        print(f"Runner: Docker ({args.docker_image}) with --network=host")
+        print(f"Runner: Docker ({args.docker_image})")
         print(f"Machines: {os.path.abspath(args.machines_dir)}")
     elif args.validator_type == "go":
         print(f"Go validator: {args.go_val_bin}")
