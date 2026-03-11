@@ -3,6 +3,7 @@
 package conf
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util"
@@ -46,6 +48,19 @@ func (c *GenesisOverrideConfig) ParseInitialL1BaseFee() (*big.Int, error) {
 		return nil, fmt.Errorf("initial-l1-base-fee must be non-negative, got %s", c.InitialL1BaseFee)
 	}
 	return fee, nil
+}
+
+func (c *GenesisOverrideConfig) Validate() error {
+	if c.SerializedChainConfig != "" {
+		var chainConfig params.ChainConfig
+		if err := json.Unmarshal([]byte(c.SerializedChainConfig), &chainConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal serialized-chain-config: %w", err)
+		}
+	}
+	if _, err := c.ParseInitialL1BaseFee(); err != nil {
+		return fmt.Errorf("failed to parse initial-l1-base-fee: %w", err)
+	}
+	return nil
 }
 
 func (c *GenesisOverrideConfig) IsSet() bool {
@@ -160,7 +175,7 @@ func (c *InitConfig) Validate() error {
 	if c.Empty && c.GenesisJsonFile != "" {
 		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
 	}
-	if _, err := c.GenesisOverride.ParseInitialL1BaseFee(); err != nil {
+	if err := c.GenesisOverride.Validate(); err != nil {
 		return fmt.Errorf("invalid init.genesis-override: %w", err)
 	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
