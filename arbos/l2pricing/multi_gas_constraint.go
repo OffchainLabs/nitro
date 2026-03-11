@@ -4,6 +4,9 @@
 package l2pricing
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -75,18 +78,18 @@ func (c *MultiGasConstraint) Clear() error {
 
 // SetResourceWeights assigns per-resource weight multipliers for this constraint.
 func (c *MultiGasConstraint) SetResourceWeights(weights map[uint8]uint64) error {
-	var maxWeight uint64
-	for kind, weight := range weights {
+	for _, kind := range slices.Sorted(maps.Keys(weights)) {
 		if _, err := multigas.CheckResourceKind(kind); err != nil {
 			return err
 		}
-		if weight > maxWeight {
-			maxWeight = weight
-		}
 	}
+	var maxWeight uint64
 	for i := range int(multigas.NumResourceKind) {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		weight := weights[uint8(i)]
+		if weight > maxWeight {
+			maxWeight = weight
+		}
 		if err := c.weightedResources[i].Set(weight); err != nil {
 			return err
 		}
@@ -162,16 +165,15 @@ func (c *MultiGasConstraint) MaxWeight() (uint64, error) {
 	return c.maxWeight.Get()
 }
 
-func (c *MultiGasConstraint) ResourcesWithWeights() (map[multigas.ResourceKind]uint64, error) {
-	result := make(map[multigas.ResourceKind]uint64)
+// GetResourceWeights returns the weight for each resource kind, indexed by ResourceKind.
+func (c *MultiGasConstraint) GetResourceWeights() ([multigas.NumResourceKind]uint64, error) {
+	var result [multigas.NumResourceKind]uint64
 	for i := range uint8(multigas.NumResourceKind) {
 		weight, err := c.weightedResources[i].Get()
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		if weight != 0 {
-			result[multigas.ResourceKind(i)] = weight
-		}
+		result[i] = weight
 	}
 	return result, nil
 }
