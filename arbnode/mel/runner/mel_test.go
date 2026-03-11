@@ -315,23 +315,21 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 
 	t.Run("position below finalized count returns correct message", func(t *testing.T) {
 		// finalizedPos at block 10 is 3, requesting position 1 (< 3) should succeed
-		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 1)
+		msg, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 1)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		expectedRequestID := common.BigToHash(big.NewInt(1))
 		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at requested position")
-		require.Equal(t, common.Hash{}, acc, "MEL should always return zero accumulator")
 	})
 
 	t.Run("last valid position returns correct message", func(t *testing.T) {
 		// finalizedPos at block 10 is 3, requesting position 2 (== finalizedPos-1) is the
 		// last valid position and must succeed. This is the exact boundary for the >= vs > fix.
-		msg, acc, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 2)
+		msg, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.Hash{}, 2)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		expectedRequestID := common.BigToHash(big.NewInt(2))
 		require.Equal(t, &expectedRequestID, msg.Header.RequestId, "should return message at last valid position")
-		require.Equal(t, common.Hash{}, acc, "MEL should always return zero accumulator")
 	})
 
 	t.Run("position equal to finalized count returns not yet finalized", func(t *testing.T) {
@@ -350,12 +348,5 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 		// Block 999 has no state in the DB, so GetDelayedCountAtParentChainBlock returns db not-found
 		_, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 999, common.Hash{}, 0)
 		require.ErrorIs(t, err, mel.ErrDelayedMessageNotYetFinalized)
-	})
-
-	t.Run("accumulator input is ignored", func(t *testing.T) {
-		// Pass a non-zero accumulator; MEL should ignore it and still succeed
-		msg, _, err := extractor.FinalizedDelayedMessageAtPosition(ctx, 10, common.MaxHash, 0)
-		require.NoError(t, err)
-		require.NotNil(t, msg)
 	})
 }
