@@ -380,8 +380,8 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 // if the delayed count at the finalized block position is not yet available in the
 // database, or if the requested position is at or beyond the finalized delayed count.
 // Other errors indicate failures fetching the finalized position or the message itself.
-// The lastDelayedAccumulator parameter is intentionally ignored because MEL does
-// not track delayed message accumulators.
+// When lastDelayedAccumulator is non-zero, it is validated against the message's
+// BeforeInboxAcc to ensure accumulator chain consistency.
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
@@ -404,10 +404,8 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if err != nil {
 		return nil, common.Hash{}, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
 	}
-	if lastDelayedAccumulator != (common.Hash{}) {
-		if msg.BeforeInboxAcc != lastDelayedAccumulator {
-			return nil, common.Hash{}, fmt.Errorf("delayed message before inbox accumulator mismatch. BeforeInboxAcc: %v, lastDelayedAccumulator: %v", msg.BeforeInboxAcc, lastDelayedAccumulator)
-		}
+	if lastDelayedAccumulator != (common.Hash{}) && msg.BeforeInboxAcc != lastDelayedAccumulator {
+		return nil, common.Hash{}, fmt.Errorf("position %d (finalized block %d): BeforeInboxAcc %v != lastDelayedAccumulator %v: %w", requestedPosition, finalizedPosition, msg.BeforeInboxAcc, lastDelayedAccumulator, mel.ErrDelayedAccumulatorMismatch)
 	}
 	return msg.Message, msg.AfterInboxAcc(), nil
 }
