@@ -6,6 +6,8 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/big"
 	"sync"
 	"testing"
 	"time"
@@ -51,8 +53,7 @@ type DelayedSequencer struct {
 	stopwaiter.StopWaiter
 	l1Reader                   *headerreader.HeaderReader
 	bridge                     *DelayedBridge
-	delayedCountFetcher        DelayedMessageFetcher
-	reader                     *InboxReader
+	delayedMessageFetcher      DelayedMessageFetcher
 	exec                       execution.ExecutionSequencer
 	coordinator                *SeqCoordinator
 	waitingForFinalizedSince   time.Time // tracks when we first started waiting for a finalized message
@@ -100,26 +101,14 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	FilteredTxFullRetryInterval: 1 * time.Second,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, delayedCountFetcher DelayedMessageFetcher, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
-	if reader != nil && delayedCountFetcher != nil {
-		return nil, errors.New("delayed sequencer must not have both an inbox reader and a delayed count fetcher")
-	}
-	if reader == nil && delayedCountFetcher == nil {
-		return nil, errors.New("delayed sequencer requires either an inbox reader or a delayed count fetcher")
-	}
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, delayedMessageFetcher DelayedMessageFetcher, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
-		l1Reader:    l1Reader,
-		reader:      reader,
-		coordinator: coordinator,
-		exec:        exec,
-		config:      config,
-	}
-	if reader != nil {
-		d.bridge = reader.DelayedBridge()
-		d.delayedCountFetcher = reader.Tracker()
-	} else {
-		d.bridge = delayedBridge
-		d.delayedCountFetcher = delayedCountFetcher
+		l1Reader:              l1Reader,
+		bridge:                delayedBridge,
+		delayedMessageFetcher: delayedMessageFetcher,
+		coordinator:           coordinator,
+		exec:                  exec,
+		config:                config,
 	}
 	if coordinator != nil {
 		coordinator.SetDelayedSequencer(d)
@@ -214,7 +203,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	dbDelayedCount, err := d.delayedCountFetcher.GetDelayedCount()
+	dbDelayedCount, err := d.delayedMessageFetcher.GetDelayedCount()
 	if err != nil {
 		return err
 	}
@@ -230,7 +219,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var messages []*arbostypes.L1IncomingMessage
 	hitNotFinalized := false
 	for pos < dbDelayedCount {
-		msg, acc, err := d.delayedCountFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
+		msg, acc, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
 			hitNotFinalized = true
 			// Message isn't finalized yet; wait for it to be.
@@ -263,17 +252,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		// SAFETY: Accumulator check is gated on d.reader != nil because MEL does not
-		// track delayed message accumulators. See MessageExtractor.FinalizedDelayedMessageAtPosition doc.
-		if d.reader != nil {
-			if err := d.reader.Tracker().CheckAccumulatorReorg(
-				ctx, lastDelayedAcc, pos, finalizedHash, finalized,
-			); err != nil {
-				return err
-			}
-		} else {
-			log.Debug("skipping accumulator reorg check (MEL mode)", "startPos", startPos, "count", len(messages))
+		if err := d.checkAccumulatorReorg(
+			ctx, lastDelayedAcc, pos, finalizedHash, finalized,
+		); err != nil {
+			return err
 		}
+
 		for i, msg := range messages {
 			// #nosec G115
 			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
@@ -387,4 +371,22 @@ func (d *DelayedSequencer) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bo
 		return nil, false
 	}
 	return d.waitingForFilteredTx.TxHashes, true
+}
+
+func (d *DelayedSequencer) checkAccumulatorReorg(
+	ctx context.Context,
+	lastDelayedAcc common.Hash,
+	pos uint64,
+	finalizedHash common.Hash,
+	finalized uint64,
+) error {
+	delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
+	if err != nil {
+		return err
+	}
+	if delayedBridgeAcc != lastDelayedAcc {
+		// Probably a reorg that hasn't been picked up by the inbox reader
+		return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
+	}
+	return nil
 }

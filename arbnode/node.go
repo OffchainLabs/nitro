@@ -1045,35 +1045,6 @@ func getStatelessBlockValidator(
 	return statelessBlockValidator, nil
 }
 
-// melBatchMetaFetcher adapts a MessageExtractor to the BatchMetadataFetcher
-// interface required by BatchPoster. GetDelayedAcc returns an error because MEL
-// does not track delayed message accumulators. When this adapter is the active
-// BatchMetadataFetcher and a delay proof is needed with DelayedMessagesRead > 1,
-// GenDelayProof will call GetDelayedAcc and propagate the error, causing the
-// batch post to fail.
-type melBatchMetaFetcher struct {
-	extractor *melrunner.MessageExtractor
-}
-
-func newMelBatchMetaFetcher(extractor *melrunner.MessageExtractor) *melBatchMetaFetcher {
-	if extractor == nil {
-		panic("melBatchMetaFetcher requires a non-nil MessageExtractor")
-	}
-	return &melBatchMetaFetcher{extractor: extractor}
-}
-
-func (m *melBatchMetaFetcher) GetBatchCount() (uint64, error) {
-	return m.extractor.GetBatchCount(context.Background())
-}
-
-func (m *melBatchMetaFetcher) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
-	return m.extractor.GetBatchMetadata(seqNum)
-}
-
-func (m *melBatchMetaFetcher) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
-	return common.Hash{}, errors.New("MEL does not support delayed message accumulators; batch posting with delay proofs requires an inbox tracker (enable inbox-reader)")
-}
-
 func getBatchPoster(
 	ctx context.Context,
 	config *Config,
@@ -1109,8 +1080,7 @@ func getBatchPoster(
 		if inboxTracker != nil {
 			batchMetaFetcher = inboxTracker
 		} else if msgExtractor != nil {
-			batchMetaFetcher = newMelBatchMetaFetcher(msgExtractor)
-			log.Warn("batch poster using MEL adapter: delay proofs are not supported and will fail if the delay buffer is enabled on-chain")
+			batchMetaFetcher = msgExtractor
 		} else {
 			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
@@ -1159,11 +1129,16 @@ func getDelayedSequencer(
 	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
 	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
 	var delayedCountFetcher DelayedMessageFetcher
-	if msgExtractor != nil {
+	if inboxReader != nil {
+		delayedCountFetcher = inboxReader.Tracker()
+		delayedBridge = inboxReader.DelayedBridge()
+	} else if msgExtractor != nil {
 		delayedCountFetcher = msgExtractor
+	} else {
+		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	return NewDelayedSequencer(l1Reader, inboxReader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	return NewDelayedSequencer(l1Reader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(

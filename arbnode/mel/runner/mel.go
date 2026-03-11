@@ -329,6 +329,14 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
+func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	delayedMsg, err := m.GetDelayedMessage(seqNum + 1)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return delayedMsg.BeforeInboxAcc, nil
+}
+
 // GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
 // because it is called from FinalizedDelayedMessageAtPosition, which receives its
 // context from the DelayedSequencer — a running component that supplies a valid context.
@@ -456,7 +464,7 @@ func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, erro
 // err will return unexpected/internal errors
 // bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount(ctx)
+	batchCount, err := m.GetBatchCount()
 	if err != nil {
 		return 0, false, err
 	}
@@ -504,8 +512,8 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(ctx context.Context, 
 	}
 }
 
-func (m *MessageExtractor) GetBatchCount(ctx context.Context) (uint64, error) {
-	headState, err := m.melDB.GetHeadMelState(ctx)
+func (m *MessageExtractor) GetBatchCount() (uint64, error) {
+	headState, err := m.melDB.GetHeadMelState(m.GetContext())
 	if err != nil {
 		return 0, err
 	}

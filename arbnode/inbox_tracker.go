@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
 	"sync"
 	"time"
 
@@ -951,22 +950,4 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 		return nil, common.Hash{}, err
 	}
 	return msg, acc, nil
-}
-
-func (t *InboxTracker) CheckAccumulatorReorg(
-	ctx context.Context,
-	lastDelayedAcc common.Hash,
-	pos uint64,
-	finalizedHash common.Hash,
-	finalized uint64,
-) error {
-	delayedBridgeAcc, err := t.txStreamer.delayedBridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
-	if err != nil {
-		return err
-	}
-	if delayedBridgeAcc != lastDelayedAcc {
-		// Probably a reorg that hasn't been picked up by the inbox reader
-		return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
-	}
-	return nil
 }

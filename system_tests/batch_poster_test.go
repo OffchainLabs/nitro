@@ -540,6 +540,7 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 		DefaultConfig(t, true).
 		WithDelayBuffer(threshold)
 	builder.L2Info.GenerateAccount("User2")
+	builder.nodeConfig.MessageExtraction.Enable = true
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
