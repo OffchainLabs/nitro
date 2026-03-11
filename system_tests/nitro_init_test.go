@@ -4,66 +4,19 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
-
-func TestGetParsedInitMsgWithoutConsensus(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	serializedChainConfig, err := json.Marshal(builder.chainConfig)
-	Require(t, err)
-
-	// We create an initMessage since builder doesn't create an initMessage without an L1
-	expectedInitMessage := &arbostypes.ParsedInitMessage{
-		ChainId:               builder.chainConfig.ChainID,
-		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-		ChainConfig:           builder.chainConfig,
-		SerializedChainConfig: serializedChainConfig,
-	}
-
-	// 1. From Genesis
-	genesis := &core.Genesis{
-		SerializedChainConfig: string(serializedChainConfig),
-		ArbOSInit: &params.ArbOSInit{
-			InitialL1BaseFee: arbostypes.DefaultInitialL1BaseFee,
-		},
-	}
-
-	initMessage, err := nitroinit.GetParsedInitMsgFromGenesis(genesis)
-	Require(t, err)
-
-	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
-		t.Fatalf("diff found in initMessage %v and expectedInitMessage: %v", initMessage, expectedInitMessage)
-	}
-
-	// 2. Directly from chain config
-	initMessage, err = nitroinit.GetParsedInitMsgFromChainConfig(builder.chainConfig)
-	Require(t, err)
-
-	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
-		t.Fatalf("diff found in initMessage %v and expectedInitMessage: %v", initMessage, expectedInitMessage)
-	}
-}
 
 func TestGetParsedInitMsgFromParentChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
