@@ -928,7 +928,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 		v.testingProgressMadeMutex.Unlock()
 
-		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+		log.Info("block validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash, "batch", v.lastValidGS.Batch, "posInBatch", v.lastValidGS.PosInBatch)
 	}
 }
 
