@@ -163,7 +163,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		return errors.New("not connected")
 	}
 	logId := c.logId.Add(1)
-	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{c.config().ArgLogLimit, args})
+	log.Info("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{c.config().ArgLogLimit, args})
 	var err error
 	for i := uint(0); i < c.config().Retries+1; i++ {
 		retryDelay := c.config().RetryDelay

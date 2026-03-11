@@ -11,8 +11,11 @@ For each mode:
   5. Prints a summary table and picks the fastest mode
 
 Usage:
-    # Local binary:
+    # Local Rust validator (default):
     python3 benchmark_validator.py [--runs 20] [--warmup 3] [--base-dir system_tests/target]
+
+    # Local Go validator:
+    python3 benchmark_validator.py --validator-type go [--go-val-bin target/bin/nitro-val]
 
     # Docker (builds image if needed, uses --network=host):
     python3 benchmark_validator.py --docker [--docker-image nitro-validator] \
@@ -44,16 +47,24 @@ def percentile(data, p):
     return data[f] + (k - f) * (data[c] - data[f])
 
 
-def send_request(block_inputs_path: str, url: str) -> float:
-    """Send one validation request and return latency in ms."""
+def send_request(block_inputs_path: str, url: str, module_root: str = "") -> float:
+    """Send one validation request and return latency in ms.
+
+    If module_root is provided, it is included as the second param
+    (required for Go validator, optional for Rust validator).
+    """
     with open(block_inputs_path, "r") as f:
         block_input = json.load(f)
+
+    params = [block_input]
+    if module_root:
+        params.append(module_root)
 
     payload = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "validation_validate",
-        "params": [block_input],
+        "params": params,
     }).encode()
 
     req = urllib.request.Request(
@@ -81,25 +92,20 @@ def send_request(block_inputs_path: str, url: str) -> float:
     return elapsed_ms
 
 
-def wait_for_server(url: str, timeout: int = 30):
-    """Poll the server until it responds or timeout is reached."""
-    # Derive a health check URL using the /validation_name GET endpoint
-    # instead of POSTing to /validation_validate with a dummy body
-    # (which returns HTTP 4xx and gets caught as URLError).
+def wait_for_server_rust(url: str, timeout: int = 30):
+    """Poll the Rust validator using the GET /validation_name endpoint."""
     from urllib.parse import urlparse, urlunparse
     parsed = urlparse(url)
     health_url = urlunparse(parsed._replace(path="/validation_name"))
 
     deadline = time.time() + timeout
-    # Give the process a moment to start
     time.sleep(2)
-    elapsed = 0
     while time.time() < deadline:
         try:
             req = urllib.request.Request(health_url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 resp.read()
-            return  # server is up
+            return
         except (urllib.error.URLError, ConnectionRefusedError, OSError):
             elapsed = int(time.time() + timeout - deadline)
             if elapsed > 0 and elapsed % 15 == 0:
@@ -108,8 +114,62 @@ def wait_for_server(url: str, timeout: int = 30):
     raise TimeoutError(f"Server at {url} did not become ready within {timeout}s")
 
 
-def start_server_local(mode: str, validator_bin: str):
-    """Start the validator as a local process, return the Popen object."""
+def wait_for_server_go(url: str, timeout: int = 30):
+    """Poll the Go validator using a JSON-RPC call to validation_name."""
+    deadline = time.time() + timeout
+    time.sleep(2)
+    while time.time() < deadline:
+        try:
+            payload = json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "validation_name",
+                "params": [],
+            }).encode()
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resp.read()
+            return
+        except (urllib.error.URLError, ConnectionRefusedError, OSError):
+            elapsed = int(time.time() + timeout - deadline)
+            if elapsed > 0 and elapsed % 15 == 0:
+                print(f"    Still waiting for server... ({elapsed}s elapsed)")
+            time.sleep(1)
+    raise TimeoutError(f"Server at {url} did not become ready within {timeout}s")
+
+
+def fetch_module_root(url: str) -> str:
+    """Fetch the first available WASM module root from the Go validator."""
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "validation_wasmModuleRoots",
+        "params": [],
+    }).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        body = resp.read()
+    data = json.loads(body)
+    if "error" in data:
+        raise RuntimeError(f"Failed to fetch module roots: {data['error']}")
+    roots = data.get("result", [])
+    if not roots:
+        raise RuntimeError("Go validator returned no WASM module roots")
+    return roots[0]
+
+
+def start_server_local_rust(mode: str, validator_bin: str):
+    """Start the Rust validator as a local process, return the Popen object."""
     env = os.environ.copy()
     env["RUST_LOG"] = "tower_http=debug,info"
     proc = subprocess.Popen(
@@ -117,7 +177,25 @@ def start_server_local(mode: str, validator_bin: str):
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        preexec_fn=os.setsid,  # so we can kill the whole process group
+        preexec_fn=os.setsid,
+    )
+    return proc
+
+
+def start_server_local_go(go_val_bin: str):
+    """Start the Go validator (nitro-val) as a local process, return the Popen object."""
+    proc = subprocess.Popen(
+        [
+            go_val_bin,
+            "--validation.api-auth=false",
+            "--validation.api-public=true",
+            "--http.addr", "127.0.0.1",
+            "--http.port", "8547",
+            "--http.api", "validation",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        preexec_fn=os.setsid,
     )
     return proc
 
@@ -230,8 +308,12 @@ def benchmark_mode(
     url: str,
     runs: int,
     warmup: int,
-    # Local mode params
+    # Validator type
+    validator_type: str = "rust",
+    # Rust local mode params
     validator_bin: str = "",
+    # Go local mode params
+    go_val_bin: str = "",
     # Docker mode params
     use_docker: bool = False,
     docker_image: str = "",
@@ -250,12 +332,24 @@ def benchmark_mode(
 
     if use_docker:
         start_server_docker(mode, docker_image, machines_dir, container_name)
+    elif validator_type == "go":
+        proc = start_server_local_go(go_val_bin)
     else:
-        proc = start_server_local(mode, validator_bin)
+        proc = start_server_local_rust(mode, validator_bin)
 
     try:
         print(f"  Waiting for server to start...")
-        wait_for_server(url, timeout=300 if use_docker else 120)
+        if use_docker or validator_type == "rust":
+            wait_for_server_rust(url, timeout=300 if use_docker else 120)
+        else:
+            wait_for_server_go(url, timeout=120)
+
+        # For Go validator, we need to fetch a module root
+        module_root = ""
+        if validator_type == "go":
+            module_root = fetch_module_root(url)
+            print(f"  Using module root: {module_root}")
+
         print(f"  Server is up. Starting benchmark ({runs} runs + {warmup} warmup per block).\n")
 
         results = {}
@@ -270,7 +364,7 @@ def benchmark_mode(
             # Warmup runs (not counted)
             for w in range(warmup):
                 try:
-                    send_request(inputs_path, url)
+                    send_request(inputs_path, url, module_root)
                 except Exception as e:
                     print(f"  [{i}/{len(test_blocks)}] {test_name}: warmup {w+1} failed: {e}")
 
@@ -278,7 +372,7 @@ def benchmark_mode(
             latencies = []
             for r in range(runs):
                 try:
-                    lat = send_request(inputs_path, url)
+                    lat = send_request(inputs_path, url, module_root)
                     latencies.append(lat)
                 except Exception as e:
                     print(f"  [{i}/{len(test_blocks)}] {test_name}: run {r+1} failed: {e}")
@@ -420,19 +514,42 @@ def main():
     parser.add_argument("--runs", type=int, default=20, help="Measured runs per block (default: 20)")
     parser.add_argument("--warmup", type=int, default=3, help="Warmup runs per block (default: 3)")
     parser.add_argument("--base-dir", default="system_tests/target", help="Directory with test blocks")
-    parser.add_argument("--url", default="http://localhost:4141/validation_validate", help="Validator URL")
-    parser.add_argument("--modes", nargs="+", default=["native", "continuous"], help="Modes to benchmark")
+    parser.add_argument("--modes", nargs="+", default=["native", "continuous"], help="Modes to benchmark (Rust validator only)")
 
-    # Local mode options
-    parser.add_argument("--validator-bin", default="target/bin/validator", help="Path to validator binary (local mode)")
+    # Validator type
+    parser.add_argument("--validator-type", choices=["rust", "go"], default="rust",
+                        help="Validator implementation to benchmark (default: rust)")
 
-    # Docker mode options
-    parser.add_argument("--docker", action="store_true", help="Run validator inside Docker (uses --network=host)")
+    # Rust validator options
+    parser.add_argument("--url", default=None, help="Validator URL (auto-detected if not set)")
+    parser.add_argument("--validator-bin", default="target/bin/validator", help="Path to Rust validator binary")
+
+    # Go validator options
+    parser.add_argument("--go-val-bin", default="target/bin/nitro-val", help="Path to Go validator binary (nitro-val)")
+
+    # Docker mode options (Rust only)
+    parser.add_argument("--docker", action="store_true", help="Run validator inside Docker (Rust only)")
     parser.add_argument("--docker-image", default="nitro-validator", help="Docker image name (default: nitro-validator)")
     parser.add_argument("--machines-dir", default="target/machines", help="Path to machines directory (Docker mode)")
     parser.add_argument("--docker-build", action="store_true", help="Force rebuild of Docker image even if it exists")
 
     args = parser.parse_args()
+
+    # Set default URL based on validator type
+    if args.url is None:
+        if args.validator_type == "go":
+            args.url = "http://localhost:8547"
+        else:
+            args.url = "http://localhost:4141/validation_validate"
+
+    # Docker is only for Rust validator
+    if args.docker and args.validator_type == "go":
+        print("ERROR: --docker is only supported with --validator-type rust", file=sys.stderr)
+        sys.exit(1)
+
+    # Go validator doesn't have modes (it always uses JIT)
+    if args.validator_type == "go":
+        args.modes = ["jit"]
 
     # Docker validation and setup
     if args.docker:
@@ -455,12 +572,15 @@ def main():
 
     print(f"Found {len(test_blocks)} test blocks in {args.base_dir}")
     print(f"Runs per block: {args.runs} (+{args.warmup} warmup)")
+    print(f"Validator type: {args.validator_type}")
     print(f"Modes: {', '.join(args.modes)}")
     if args.docker:
         print(f"Runner: Docker ({args.docker_image}) with --network=host")
         print(f"Machines: {os.path.abspath(args.machines_dir)}")
+    elif args.validator_type == "go":
+        print(f"Go validator: {args.go_val_bin}")
     else:
-        print(f"Validator: {args.validator_bin}")
+        print(f"Rust validator: {args.validator_bin}")
 
     all_results = {}
     for mode in args.modes:
@@ -470,7 +590,9 @@ def main():
             url=args.url,
             runs=args.runs,
             warmup=args.warmup,
+            validator_type=args.validator_type,
             validator_bin=args.validator_bin,
+            go_val_bin=args.go_val_bin,
             use_docker=args.docker,
             docker_image=args.docker_image,
             machines_dir=args.machines_dir,
