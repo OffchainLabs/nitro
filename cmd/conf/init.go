@@ -28,7 +28,7 @@ var GenesisOverrideConfigDefault = GenesisOverrideConfig{
 
 func GenesisOverrideConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".serialized-chain-config", GenesisOverrideConfigDefault.SerializedChainConfig, "JSON-serialized chain config, can be used to provide chain config when genesis.json is not available")
-	f.String(prefix+".initial-l1-base-fee", GenesisOverrideConfigDefault.InitialL1BaseFee, "initial L1 base fee (in wei), can be used to provide this value when genesis.json is not available (empty = not set, use default)")
+	f.String(prefix+".initial-l1-base-fee", GenesisOverrideConfigDefault.InitialL1BaseFee, "initial L1 base fee (in wei), can be used to provide this value when genesis.json is not available (empty = not set, default is 50 GWei = 50000000000)")
 }
 
 // ParseInitialL1BaseFee parses the InitialL1BaseFee string into a *big.Int.
