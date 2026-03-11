@@ -202,7 +202,7 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
+	if executionNodeEnabled && consensusNodeEnabled && nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 
@@ -475,12 +475,15 @@ func mainImpl() int {
 		}
 	}
 
-	consensusDB, err := nitroinit.OpenConsensusDB(stack, nodeConfig)
-	if consensusDB != nil {
-		deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
-	}
-	if err != nil {
-		return 1
+	var consensusDB ethdb.Database
+	if consensusNodeEnabled {
+		consensusDB, err := nitroinit.OpenConsensusDB(stack, nodeConfig)
+		if consensusDB != nil {
+			deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
+		}
+		if err != nil {
+			return 1
+		}
 	}
 
 	if executionNodeEnabled && nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
@@ -535,7 +538,7 @@ func mainImpl() int {
 	}
 
 	var wasmModuleRoot common.Hash
-	if liveNodeConfig.Get().Node.ValidatorRequired() {
+	if consensusNodeEnabled && liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
 			log.Error("failed to create machine locator: %w", err)
@@ -546,7 +549,7 @@ func mainImpl() int {
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 
-	if executionNodeEnabled && nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth" {
+	if executionNodeEnabled && (nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth") {
 		execNode, err = gethexec.CreateExecutionNode(
 			ctx,
 			stack,
