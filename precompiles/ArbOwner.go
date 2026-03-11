@@ -614,10 +614,12 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	evm mech,
 	constraints []MultiGasConstraint,
 ) error {
+	// Clear existing constraints
 	if err := c.State.L2PricingState().ClearMultiGasConstraints(); err != nil {
 		return fmt.Errorf("failed to clear existing multi-gas constraints: %w", err)
 	}
 
+	// Setup new multi-gas constraints
 	for _, constraint := range constraints {
 		if constraint.TargetPerSec == 0 || constraint.AdjustmentWindowSecs == 0 {
 			return fmt.Errorf(
@@ -640,19 +642,21 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 		); err != nil {
 			return fmt.Errorf("failed to add multi-gas constraint: %w", err)
 		}
+	}
 
-		exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
-		if err != nil {
-			return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
-		}
+	// Calculate exponents for all constraints at once
+	exps, err := c.State.L2PricingState().CalcMultiGasConstraintsExponents()
+	if err != nil {
+		return fmt.Errorf("failed to calculate multi-gas constraint exponents: %w", err)
+	}
 
-		// Ensure no exponent exceeds the maximum allowed value
-		for _, exp := range exps {
-			if exp > l2pricing.MaxPricingExponentBips {
-				return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
-			}
+	// Ensure no exponent exceeds the maximum allowed value
+	for _, exp := range exps {
+		if exp > l2pricing.MaxPricingExponentBips {
+			return fmt.Errorf("calculated exponent %d exceeds maximum allowed %d", exp, l2pricing.MaxPricingExponentBips)
 		}
 	}
+
 	return nil
 }
 
