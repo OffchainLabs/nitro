@@ -330,11 +330,11 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 }
 
 func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
-	delayedMsg, err := m.GetDelayedMessage(seqNum + 1)
+	delayedMsg, err := m.GetDelayedMessage(seqNum)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return delayedMsg.BeforeInboxAcc, nil
+	return delayedMsg.AfterInboxAcc(), nil
 }
 
 // GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
@@ -385,7 +385,7 @@ func (m *MessageExtractor) SupportsPushingFinalityData() bool {
 func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	ctx context.Context,
 	finalizedPosition uint64,
-	_ common.Hash,
+	lastDelayedAccumulator common.Hash,
 	requestedPosition uint64,
 ) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
@@ -404,7 +404,12 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if err != nil {
 		return nil, common.Hash{}, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
 	}
-	return msg.Message, common.Hash{}, nil
+	if lastDelayedAccumulator != (common.Hash{}) {
+		if msg.BeforeInboxAcc != lastDelayedAccumulator {
+			return nil, common.Hash{}, fmt.Errorf("delayed message before inbox accumulator mismatch. BeforeInboxAcc: %v, lastDelayedAccumulator: %v", msg.BeforeInboxAcc, lastDelayedAccumulator)
+		}
+	}
+	return msg.Message, msg.AfterInboxAcc(), nil
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {

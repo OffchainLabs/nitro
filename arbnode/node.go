@@ -1053,8 +1053,8 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	msgExtractor *melrunner.MessageExtractor,
 	inboxTracker *InboxTracker,
+	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1115,7 +1115,7 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxReader *InboxReader,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
@@ -1128,17 +1128,16 @@ func getDelayedSequencer(
 	}
 	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
 	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
-	var delayedCountFetcher DelayedMessageFetcher
-	if inboxReader != nil {
-		delayedCountFetcher = inboxReader.Tracker()
-		delayedBridge = inboxReader.DelayedBridge()
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
 	} else if msgExtractor != nil {
-		delayedCountFetcher = msgExtractor
+		delayedMessageFetcher = msgExtractor
 	} else {
 		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	return NewDelayedSequencer(l1Reader, delayedCountFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1317,12 +1316,12 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, messageExtractor, inboxTracker, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
