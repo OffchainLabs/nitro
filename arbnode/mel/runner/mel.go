@@ -327,21 +327,6 @@ func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(parentChainBlockNum
 	return state.DelayedMessagesSeen, nil
 }
 
-func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
-	headState, err := m.melDB.GetHeadMelState()
-	if err != nil {
-		return nil, err
-	}
-	if index >= headState.DelayedMessagesSeen {
-		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
-	}
-	delayedMsg, err := m.melDB.fetchDelayedMessage(index)
-	if err != nil {
-		return nil, err
-	}
-	return delayedMsg.Message.Serialize()
-}
-
 func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 	state, err := m.melDB.GetHeadMelState()
 	if err != nil {
