@@ -41,7 +41,7 @@ repository = "https://github.com/OffchainLabs/nitro.git"
 rust-version = "1.88"
 
 [workspace.dependencies]
-alloy-rpc-types-engine = { version = "1.7.3" }
+alloy-rpc-types-engine = { version = "=1.6.3" }
 anyhow = { version = "1.0.100" }
 axum = { version = "0.8.8" }
 axum-extra = { version = "0.10.3" }
