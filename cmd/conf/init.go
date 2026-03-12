@@ -60,9 +60,9 @@ func (c *GenesisOverrideConfig) Validate() error {
 		if err := json.Unmarshal([]byte(c.SerializedChainConfig), &chainConfig); err != nil {
 			return fmt.Errorf("failed to unmarshal serialized-chain-config: %w", err)
 		}
-	}
-	if _, err := c.ParseInitialL1BaseFee(); err != nil {
-		return fmt.Errorf("failed to parse initial-l1-base-fee: %w", err)
+		if _, err := c.ParseInitialL1BaseFee(); err != nil {
+			return fmt.Errorf("failed to parse initial-l1-base-fee: %w", err)
+		}
 	}
 	return nil
 }
