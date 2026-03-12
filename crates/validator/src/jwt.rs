@@ -1,16 +1,6 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//! JWT authentication middleware and secret loading.
-//!
-//! Implements the same JWT authentication scheme used by go-ethereum's Engine API:
-//! - Algorithm: HS256
-//! - Required claim: `iat` (issued-at), must be within 60 seconds of current time
-//! - Token delivered via `Authorization: Bearer <token>` header
-//!
-//! Secret loading matches Go's `signature.LoadSigningKey`: accepts either a
-//! 64-char hex string (with optional `0x` prefix) or a path to a file containing one.
-
 use std::sync::Arc;
 
 use alloy_rpc_types_engine::JwtSecret;
