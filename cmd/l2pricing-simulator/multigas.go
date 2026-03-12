@@ -93,7 +93,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -108,7 +107,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -123,7 +121,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -138,7 +135,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -153,7 +149,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -168,7 +163,6 @@ const DefaultMultiGasConstraints string = `[
 			"HistoryGrowth": 1,
 			"StorageAccess": 1,
 			"StorageGrowth": 1,
-			"SingleDim": 1,
 			"L2Calldata": 1
 		}
 	}
