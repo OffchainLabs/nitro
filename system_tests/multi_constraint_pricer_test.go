@@ -88,7 +88,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 2},
 			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
 			{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 4},
-			{Resource: uint8(multigas.ResourceKindSpecialFee), Weight: 5},
+			{Resource: uint8(multigas.ResourceKindSingleDim), Weight: 5},
 		},
 		AdjustmentWindowSecs: 102,
 		TargetPerSec:         30_000_000,
@@ -98,7 +98,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 	constraint1 := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
 		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
 			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
-			{Resource: uint8(multigas.ResourceKindSpecialFee), Weight: 9},
+			{Resource: uint8(multigas.ResourceKindSingleDim), Weight: 9},
 			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 11},
 		},
 		AdjustmentWindowSecs: 600,
@@ -500,8 +500,8 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		require.Equal(t, types.ReceiptStatusFailed, retryReceipt.Status)
 
 		// Check multigas special dimension.
-		expectedSpecialFee := redeemReceipt.GasUsedForL1 + event.DonatedGas
-		assert.Equal(t, expectedSpecialFee, redeemReceipt.MultiGasUsed.Get(multigas.ResourceKindSpecialFee))
+		expectedSingleDim := redeemReceipt.GasUsedForL1 + event.DonatedGas
+		assert.Equal(t, expectedSingleDim, redeemReceipt.MultiGasUsed.Get(multigas.ResourceKindSingleDim))
 
 		// Check user balance decreases and network fee balance keeps the same.
 		// If the user is refunded twice, their balance would increase.

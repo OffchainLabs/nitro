@@ -79,7 +79,7 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 			if c.expectZeroMG {
 				require.Equal(t, multigas.ZeroGas(), mg, "expected ZeroGas for this case")
 			} else {
-				require.Greater(t, mg.Get(multigas.ResourceKindSpecialFee), uint64(0), "expected SpecialFee > 0")
+				require.Greater(t, mg.Get(multigas.ResourceKindSingleDim), uint64(0), "expected SingleDim > 0")
 			}
 		})
 	}

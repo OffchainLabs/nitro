@@ -201,7 +201,7 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 			uint8(multigas.ResourceKindComputation):     1,
 			uint8(multigas.ResourceKindStorageAccess):   2,
 			uint8(multigas.ResourceKindStorageGrowth):   3,
-			uint8(multigas.ResourceKindSpecialFee):      4,
+			uint8(multigas.ResourceKindSingleDim):      4,
 			uint8(multigas.ResourceKindL2Calldata):      5,
 			uint8(multigas.ResourceKindWasmComputation): 6,
 		}
