@@ -200,7 +200,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock >= finalized {
+	if d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized {
 		return nil
 	}
 

@@ -439,7 +439,8 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
-// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation
+// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation. To be only
+// called during init when reorging to a message batch
 func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
 	dbBatch := m.melDB.db.NewBatch()
 	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
