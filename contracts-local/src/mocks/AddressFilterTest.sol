@@ -123,4 +123,47 @@ contract AddressFilterTest {
     ) external {
         emit UnfilteredEvent(some);
     }
+
+    /// @notice Makes a DELEGATECALL to the target address
+    function delegatecallTarget(
+        address target
+    ) external returns (bool success) {
+        (success,) = target.delegatecall("");
+        emit CallResult(success);
+    }
+
+    /// @notice Makes a CALLCODE to the target address (requires inline assembly)
+    function callcodeTarget(
+        address target
+    ) external returns (bool success) {
+        assembly {
+            success := callcode(gas(), target, 0, 0, 0, 0, 0)
+        }
+        emit CallResult(success);
+    }
+
+    /// @notice Calls an intermediary contract's callTarget function with the final target.
+    /// This creates a two-hop call chain: this -> intermediary.callTarget(target)
+    function callVia(address intermediary, address target) external returns (bool success) {
+        bytes memory data = abi.encodeWithSignature("callTarget(address)", target);
+        (success,) = intermediary.call(data);
+        emit CallResult(success);
+    }
+
+    /// @notice Accept ETH transfers
+    receive() external payable {}
+
+    /// @notice Send this contract's entire balance to the target address
+    function payTo(address payable target) external {
+        (bool success,) = target.call{value: address(this).balance}("");
+        require(success, "payTo failed");
+    }
+
+    /// @notice Forward msg.value to intermediary and have it pay the final target.
+    /// This creates a two-hop payment: caller -> intermediary -> target
+    function payVia(address intermediary, address payable target) external payable {
+        bytes memory data = abi.encodeWithSignature("payTo(address)", target);
+        (bool success,) = intermediary.call{value: msg.value}(data);
+        require(success, "payVia failed");
+    }
 }
