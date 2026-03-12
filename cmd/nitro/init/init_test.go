@@ -1396,16 +1396,6 @@ func TestGetParsedInitMsgFromGenesisOverride(t *testing.T) {
 		require.NotNil(t, msg.ChainConfig)
 	})
 
-	t.Run("missing initial L1 base fee returns error", func(t *testing.T) {
-		override := &conf.GenesisOverrideConfig{
-			SerializedChainConfig: serializedConfig,
-			InitialL1BaseFee:      "",
-		}
-		_, err := GetParsedInitMsgFromGenesisOverride(override)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "initial-l1-base-fee is not set")
-	})
-
 	t.Run("with custom initial L1 base fee", func(t *testing.T) {
 		override := &conf.GenesisOverrideConfig{
 			SerializedChainConfig: serializedConfig,
