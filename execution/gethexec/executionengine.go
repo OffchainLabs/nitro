@@ -237,9 +237,10 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker               state.AddressChecker
-	eventFilter                  *eventfilter.EventFilter
-	transactionFiltererRPCClient *TransactionFiltererRPCClient
+	addressChecker                 state.AddressChecker
+	eventFilter                    *eventfilter.EventFilter
+	transactionFiltererRPCClient   *TransactionFiltererRPCClient
+	disableDelayedSequencingFilter bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -255,14 +256,20 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+func NewExecutionEngine(
+	bc *core.BlockChain,
+	syncTillBlock uint64,
+	exposeMultiGas bool,
+	disableDelayedSequencingFilter bool,
+) *ExecutionEngine {
 	return &ExecutionEngine{
-		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:  make(chan struct{}, 1),
-		cachedL1PriceData: NewL1PriceData(),
-		exposeMultiGas:    exposeMultiGas,
-		syncTillBlock:     syncTillBlock,
+		bc:                             bc,
+		resequenceChan:                 make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:               make(chan struct{}, 1),
+		cachedL1PriceData:              NewL1PriceData(),
+		exposeMultiGas:                 exposeMultiGas,
+		syncTillBlock:                  syncTillBlock,
+		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 	}
 }
 
@@ -572,9 +579,11 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
 	attempts := 0
 	for {
-		s.createBlocksMutex.Lock()
-		block, err := sequencerFunc()
-		s.createBlocksMutex.Unlock()
+		block, err := func() (*types.Block, error) {
+			s.createBlocksMutex.Lock()
+			defer s.createBlocksMutex.Unlock()
+			return sequencerFunc()
+		}()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
@@ -683,7 +692,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -839,7 +848,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, applyDelayedFilter bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -880,7 +889,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
+	if isSequencing {
+		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
+	} else if isMsgForPrefetch {
 		runCtx = core.NewMessagePrefetchContext()
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
@@ -890,7 +901,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if applyDelayedFilter {
+	if !s.disableDelayedSequencingFilter && isSequencing {
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)

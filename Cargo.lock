@@ -426,6 +426,7 @@ name = "caller-env"
 version = "0.1.0"
 dependencies = [
  "brotli",
+ "hex",
  "k256",
  "rand 0.8.5",
  "rand_pcg",
