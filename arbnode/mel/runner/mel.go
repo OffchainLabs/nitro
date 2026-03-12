@@ -492,6 +492,18 @@ func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 	return headState.BatchCount, nil
 }
 
+func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	headState, err := m.melDB.GetHeadMelState()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	delayed, err := m.melDB.ReadDelayedMessage(headState, seqNum)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return delayed.AfterInboxAcc(), nil
+}
+
 func (m *MessageExtractor) CaughtUp() chan struct{} {
 	return m.caughtUpChan
 }

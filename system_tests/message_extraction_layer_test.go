@@ -82,7 +82,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		reorgEventChan,
 	)
 	Require(t, err)
-	extractor.SetMessageConsumer(mockMsgConsumer)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Create various L2 transactions and wait for them to be included in a batch
@@ -217,6 +217,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Post a blob batch with a bunch of txs
@@ -355,7 +356,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		reorgEventChan,
 	)
 	Require(t, err)
-	extractor.SetMessageConsumer(mockMsgConsumer)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {
@@ -421,6 +422,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, newExtractor.SetMessageConsumer(mockMsgConsumer))
 	newExtractor.StopWaiter.Start(ctx, extractor)
 	for {
 		prevFSMState := newExtractor.CurrentFSMState()
@@ -681,7 +683,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		reorgEventsChan,
 	)
 	Require(t, err)
-	extractor.SetMessageConsumer(mockMsgConsumer)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {
