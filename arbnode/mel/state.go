@@ -155,7 +155,6 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	newAcc := crypto.Keccak256Hash(preimage)
 	// Always record delayed message preimages for pour/pop operations
 	s.delayedMsgPreimages[newAcc] = preimage
-	s.delayedMsgPreimages[msgHash] = msgBytes
 	// Also record to the delayed msg validation preimage map if in recording mode
 	if s.delayedMsgPreimagesDest != nil {
 		keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
@@ -207,11 +206,6 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		if s.delayedMsgPreimagesDest != nil {
 			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
 			keccakMap[newAcc] = preimage
-			msgBytes, err := s.resolveDelayedPreimage(msgHash)
-			if err != nil {
-				return fmt.Errorf("error resolving inbox preimage of message hash during pour at position %d: %w", i, err)
-			}
-			keccakMap[msgHash] = msgBytes
 		}
 		curr = prevAcc
 	}
@@ -272,86 +266,117 @@ func (s *State) RecordDelayedMsgPreimagesTo(preimagesMap daprovider.PreimagesMap
 	return nil
 }
 
-// RebuildDelayedMsgPreimages rebuilds the delayedMsgPreimages map from stored delayed
-// messages. This is needed after loading state from DB (where private fields are nil)
-// so that PourDelayedInboxToOutbox and PopDelayedOutbox can resolve preimages.
-// It uses an O(N) algorithm with pivot finding to reconstruct both the outbox and inbox chains.
-func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error)) error {
-	if s.DelayedMessagesRead == s.DelayedMessagesSeen {
-		return nil
-	}
-	s.delayedMsgPreimages = make(map[common.Hash][]byte)
-	totalUnread := s.DelayedMessagesSeen - s.DelayedMessagesRead
+// fetchAndHashUnreadMessages fetches all unread delayed messages from the database
+// and returns their keccak256 hashes and RLP-encoded bytes. The returned slices
+// are indexed relative to DelayedMessagesRead (i.e., index 0 corresponds to
+// message at DelayedMessagesRead).
+func (s *State) fetchAndHashUnreadMessages(
+	totalUnread uint64,
+	fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error),
+) ([]common.Hash, [][]byte, error) {
 	msgHashes := make([]common.Hash, totalUnread)
 	msgBytesArr := make([][]byte, totalUnread)
 	for i := range totalUnread {
 		msg, err := fetchDelayedMsg(s.DelayedMessagesRead + i)
 		if err != nil {
-			return fmt.Errorf("error fetching delayed message at index %d: %w", s.DelayedMessagesRead+i, err)
+			return nil, nil, fmt.Errorf("error fetching delayed message at index %d: %w", s.DelayedMessagesRead+i, err)
 		}
 		msgBytes, err := rlp.EncodeToBytes(msg)
 		if err != nil {
-			return fmt.Errorf("error encoding delayed message at index %d: %w", s.DelayedMessagesRead+i, err)
+			return nil, nil, fmt.Errorf("error encoding delayed message at index %d: %w", s.DelayedMessagesRead+i, err)
 		}
 		msgHashes[i] = crypto.Keccak256Hash(msgBytes)
 		msgBytesArr[i] = msgBytes
 	}
-	// Find pivot: messages [0..pivot-1] are in outbox, [pivot..totalUnread-1] are in inbox.
-	// The outbox is built by pouring (push in reverse order), so its chain direction is reversed.
-	var pivot uint64
+	return msgHashes, msgBytesArr, nil
+}
+
+// findPivot determines how many of the unread messages are in the outbox vs
+// the inbox. Returns -1 if no valid pivot can be found (legacy fallback failure).
+func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 	if s.DelayedMessageOutboxAcc == (common.Hash{}) {
-		pivot = 0
-	} else if s.DelayedMessageInboxAcc == (common.Hash{}) {
-		pivot = totalUnread
-	} else {
-		// Mixed case: find pivot by trying inbox chains from the end (small inbox first)
-		found := false
-		for candidatePivot := totalUnread - 1; candidatePivot >= 1; candidatePivot-- {
-			acc := common.Hash{}
-			for i := candidatePivot; i < totalUnread; i++ {
-				preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
-				acc = crypto.Keccak256Hash(preimage)
-			}
-			if acc == s.DelayedMessageInboxAcc {
-				pivot = candidatePivot
-				found = true
-				break
-			}
+		return 0
+	}
+	if s.DelayedMessageInboxAcc == (common.Hash{}) {
+		// #nosec G115
+		return int(totalUnread)
+	}
+	// Legacy fallback: try each candidate pivot, starting with the smallest
+	// inbox (most likely case) and working backward.
+	for candidatePivot := totalUnread - 1; candidatePivot >= 1; candidatePivot-- {
+		acc := common.Hash{}
+		for i := candidatePivot; i < totalUnread; i++ {
+			preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
+			acc = crypto.Keccak256Hash(preimage)
 		}
-		if !found {
-			return fmt.Errorf("failed to find pivot: neither outbox acc %s nor inbox acc %s matched any partition", s.DelayedMessageOutboxAcc.Hex(), s.DelayedMessageInboxAcc.Hex())
+		if acc == s.DelayedMessageInboxAcc {
+			// #nosec G115
+			return int(candidatePivot)
 		}
 	}
-	// recordPreimage hashes msgHashes[i] onto acc, stores preimages to both maps, and returns the new accumulator.
-	recordPreimage := func(acc common.Hash, i uint64) common.Hash {
+	return -1
+}
+
+// buildHashChain reconstructs a hash chain by iterating from start (inclusive)
+// toward end (exclusive) with the given step (+1 or -1). Each message hash is
+// accumulated onto a running hash (starting from zero). Preimages are stored in
+// the preimage map and optionally the validation preimage map.
+func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, msgBytesArr [][]byte) common.Hash {
+	acc := common.Hash{}
+	for i := start; i != end; i += step {
 		preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
 		newAcc := crypto.Keccak256Hash(preimage)
 		s.delayedMsgPreimages[newAcc] = preimage
-		s.delayedMsgPreimages[msgHashes[i]] = msgBytesArr[i]
 		if s.delayedMsgPreimagesDest != nil {
 			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
 			keccakMap[newAcc] = preimage
 			keccakMap[msgHashes[i]] = msgBytesArr[i]
 		}
-		return newAcc
+		acc = newAcc
 	}
-	// Build outbox chain: messages [0..pivot-1] pushed in reverse order [pivot-1, pivot-2, ..., 0]
+	return acc
+}
+
+// RebuildDelayedMsgPreimages reconstructs the in-memory preimage cache from
+// delayed messages stored in the database. This is needed after loading state
+// from DB (where the cache is nil), after reorgs, and periodically for memory
+// cleanup.
+//
+// The delayed message queue is a two-stack FIFO: an inbox accumulator and an
+// outbox accumulator. Unread messages (indices [DelayedMessagesRead, DelayedMessagesSeen))
+// are split into two groups by a pivot (the outbox size):
+//   - Outbox [0..pivot): messages already poured, chain built in reverse order
+//   - Inbox  [pivot..N): messages not yet poured, chain built in forward order
+//
+// The pivot is determined by the persisted DelayedMessageOutboxSize. For legacy
+// states without this field, it falls back to an O(N²) search.
+func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error)) error {
+	if s.DelayedMessagesRead == s.DelayedMessagesSeen {
+		return nil
+	}
+	totalUnread := s.DelayedMessagesSeen - s.DelayedMessagesRead
+	s.delayedMsgPreimages = make(map[common.Hash][]byte)
+	msgHashes, msgBytesArr, err := s.fetchAndHashUnreadMessages(totalUnread, fetchDelayedMsg)
+	if err != nil {
+		return err
+	}
+	pivot := s.findPivot(totalUnread, msgHashes)
+	if pivot < 0 {
+		return fmt.Errorf("failed to find pivot: neither outbox acc %s nor inbox acc %s matched any partition",
+			s.DelayedMessageOutboxAcc.Hex(), s.DelayedMessageInboxAcc.Hex())
+	}
+	// Rebuild outbox chain: messages [0..pivot) in reverse order (pivot-1, pivot-2, ..., 0)
 	if pivot > 0 {
-		acc := common.Hash{}
-		// #nosec G115
-		for i := int64(pivot - 1); i >= 0; i-- {
-			acc = recordPreimage(acc, uint64(i))
-		}
+		acc := s.buildHashChain(pivot-1, -1, -1, msgHashes, msgBytesArr)
 		if acc != s.DelayedMessageOutboxAcc {
 			return fmt.Errorf("outbox accumulator mismatch after rebuild: got %s, want %s", acc.Hex(), s.DelayedMessageOutboxAcc.Hex())
 		}
 	}
-	// Build inbox chain: messages [pivot..totalUnread-1] in forward order
-	if pivot < totalUnread {
-		acc := common.Hash{}
-		for i := pivot; i < totalUnread; i++ {
-			acc = recordPreimage(acc, i)
-		}
+	// Rebuild inbox chain: messages [pivot..totalUnread) in forward order
+	// #nosec G115
+	if pivot < int(totalUnread) {
+		// #nosec G115
+		acc := s.buildHashChain(pivot, int(totalUnread), 1, msgHashes, msgBytesArr)
 		if acc != s.DelayedMessageInboxAcc {
 			return fmt.Errorf("inbox accumulator mismatch after rebuild: got %s, want %s", acc.Hex(), s.DelayedMessageInboxAcc.Hex())
 		}
