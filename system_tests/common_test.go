@@ -2657,7 +2657,7 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	machResp, err := http.Get(cr.MachineWavmURL.String())
 	Require(t, err)
 	defer machResp.Body.Close()
-	machineFile, err := os.Create(machineDir + "/latest/machine.wavm.br")
+	machineFile, err := os.Create(machineDir + "/latest/machine.v2.wavm.br")
 	Require(t, err)
 	_, err = io.Copy(machineFile, machResp.Body)
 	Require(t, err)
