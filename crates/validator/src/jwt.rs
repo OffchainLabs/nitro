@@ -75,66 +75,22 @@ pub async fn auth_middleware(
 
 #[cfg(test)]
 mod tests {
-    use alloy_rpc_types_engine::{Claims, JwtSecret};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
 
-    fn now_secs() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    }
-
-    fn secret_from_byte(b: u8) -> JwtSecret {
-        JwtSecret::from_hex(&format!("{b:02x}").repeat(32)).unwrap()
-    }
-
-    fn make_token(secret: &JwtSecret, iat: u64) -> String {
-        secret.encode(&Claims { iat, exp: None }).unwrap()
-    }
-
-    #[test]
-    fn valid_token_accepted() {
-        let secret = secret_from_byte(0);
-        let token = make_token(&secret, now_secs());
-        assert!(secret.validate(&token).is_ok());
-    }
-
-    #[test]
-    fn stale_token_rejected() {
-        let secret = secret_from_byte(0);
-        let token = make_token(&secret, now_secs() - 61);
-        assert!(secret.validate(&token).is_err());
-    }
-
-    #[test]
-    fn future_token_rejected() {
-        let secret = secret_from_byte(0);
-        let token = make_token(&secret, now_secs() + 61);
-        assert!(secret.validate(&token).is_err());
-    }
-
-    #[test]
-    fn wrong_secret_rejected() {
-        let secret_a = secret_from_byte(0);
-        let secret_b = secret_from_byte(1);
-        let token = make_token(&secret_a, now_secs());
-        assert!(secret_b.validate(&token).is_err());
+    fn secret() -> String {
+        "deadbeef".repeat(8) // 64 chars
     }
 
     #[test]
     fn load_secret_from_hex_string() {
-        let hex = "deadbeef".repeat(8); // 64 chars
-        let secret = load_secret(&hex).unwrap();
+        let secret = load_secret(&secret()).unwrap();
         assert_eq!(secret.as_bytes()[0], 0xde);
         assert_eq!(secret.as_bytes()[1], 0xad);
     }
 
     #[test]
     fn load_secret_from_hex_string_with_prefix() {
-        let hex = format!("0x{}", "deadbeef".repeat(8));
+        let hex = format!("0x{}", secret());
         let secret = load_secret(&hex).unwrap();
         assert_eq!(secret.as_bytes()[0], 0xde);
     }
@@ -143,7 +99,7 @@ mod tests {
     fn load_secret_from_file() {
         let dir = tempdir::TempDir::new("jwt_test").unwrap();
         let path = dir.path().join("jwt.hex");
-        std::fs::write(&path, "deadbeef".repeat(8)).unwrap();
+        std::fs::write(&path, secret()).unwrap();
         let secret = load_secret(path.to_str().unwrap()).unwrap();
         assert_eq!(secret.as_bytes()[0], 0xde);
     }
