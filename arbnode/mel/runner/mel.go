@@ -368,7 +368,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(finalizedPosition)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, common.Hash{}, nil
+			return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
 		}
 		return nil, common.Hash{}, err
 	}
