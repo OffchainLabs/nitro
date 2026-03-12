@@ -203,8 +203,8 @@ func TestRustValidationServerJWTRejected(t *testing.T) {
 
 	wrongSecretFile, _ := writeJWTSecretFile(t)
 	tests := []struct {
-		name          string
-		clientSecret  string
+		name         string
+		clientSecret string
 	}{
 		{"no secret", ""},
 		{"wrong secret", wrongSecretFile},
