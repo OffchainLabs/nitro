@@ -1403,7 +1403,7 @@ func TestGetParsedInitMsgFromGenesisOverride(t *testing.T) {
 		}
 		_, err := GetParsedInitMsgFromGenesisOverride(override)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "genesis override is missing initial-l1-base-fee")
+		require.Contains(t, err.Error(), "initial-l1-base-fee is not set")
 	})
 
 	t.Run("with custom initial L1 base fee", func(t *testing.T) {
@@ -1609,11 +1609,11 @@ func TestGenesisOverrideConfig(t *testing.T) {
 		require.False(t, c.IsSet())
 	})
 
-	t.Run("ParseInitialL1BaseFee returns nil when not set", func(t *testing.T) {
+	t.Run("ParseInitialL1BaseFee errors when not set", func(t *testing.T) {
 		c := conf.GenesisOverrideConfig{}
-		fee, err := c.ParseInitialL1BaseFee()
-		require.NoError(t, err)
-		require.Nil(t, fee)
+		_, err := c.ParseInitialL1BaseFee()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "initial-l1-base-fee is not set")
 	})
 
 	t.Run("ParseInitialL1BaseFee returns value when set", func(t *testing.T) {

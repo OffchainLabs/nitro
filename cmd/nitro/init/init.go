@@ -1145,9 +1145,6 @@ func GetParsedInitMsgFromGenesisOverride(genesisOverride *conf.GenesisOverrideCo
 	if err != nil {
 		return nil, err
 	}
-	if fee == nil {
-		return nil, fmt.Errorf("genesis override is missing initial-l1-base-fee")
-	}
 
 	return &arbostypes.ParsedInitMessage{
 		ChainId:               chainConfig.ChainID,

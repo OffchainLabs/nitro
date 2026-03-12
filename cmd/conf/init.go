@@ -34,10 +34,9 @@ func GenesisOverrideConfigAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 // ParseInitialL1BaseFee parses the InitialL1BaseFee string into a *big.Int.
-// Returns nil if the string is empty (not set).
 func (c *GenesisOverrideConfig) ParseInitialL1BaseFee() (*big.Int, error) {
 	if c.InitialL1BaseFee == "" {
-		return nil, nil
+		return nil, fmt.Errorf("initial-l1-base-fee is not set")
 	}
 	fee, ok := new(big.Int).SetString(c.InitialL1BaseFee, 10)
 	if !ok {
