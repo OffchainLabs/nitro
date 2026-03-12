@@ -209,6 +209,9 @@ type SequencingHooks interface {
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
 	// This is a static property of the implementing type (true for sequencer, false for replay).
 	CanDiscardTx() bool
+	// SupportsGroupRollback returns whether the hooks support checkpointing and
+	// rolling back a group of transactions (user tx + its scheduled redeems).
+	SupportsGroupRollback() bool
 	// PreTxFilter rejects a tx before execution.
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
 	// PostTxFilter rejects a tx after execution.
@@ -255,6 +258,8 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
 
 func NewNoopSequencingHooks(txes types.Transactions) *NoopSequencingHooks {
 	return &NoopSequencingHooks{txs: txes}
@@ -486,7 +491,7 @@ func ProduceBlockAdvanced(
 					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result); err != nil {
 						return err
 					}
-					if isUserTx && len(result.ScheduledTxes) > 0 && buildState.statedb.HasActiveAddressFilter() {
+					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
 						if err := buildState.saveGroupCheckpoint(header, snap, tx.Hash()); err != nil {
 							return err
 						}

@@ -151,6 +151,8 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	return nil
 }
 
+func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
+
 // TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
 // and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the
 // existing check fires ErrFilteredDelayedMessage, causing the delayed sequencer

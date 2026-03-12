@@ -1118,6 +1118,8 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 
 func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
 
+func (s *FullSequencingHooks) SupportsGroupRollback() bool { return true }
+
 func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
 	// This is not supposed to happen, if so we have a bug
 	if txId > s.sequencedQueueItemsCount {
