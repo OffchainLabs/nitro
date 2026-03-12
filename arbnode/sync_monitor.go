@@ -89,6 +89,9 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 }
 
 func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	if s.syncProgressFetcher == nil {
+		return 0, nil
+	}
 	return s.syncProgressFetcher.GetFinalizedMsgCount(ctx)
 }
 
@@ -107,11 +110,13 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 		msgCount = pending
 	}
 
-	fetched, err := s.syncProgressFetcher.GetMsgCount()
-	if err != nil {
-		return msgCount, err
+	if s.syncProgressFetcher != nil {
+		fetched, err := s.syncProgressFetcher.GetMsgCount()
+		if err != nil {
+			return msgCount, err
+		}
+		msgCount = max(msgCount, fetched)
 	}
-	msgCount = max(msgCount, fetched)
 
 	if s.coordinator != nil {
 		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount() //NOTE: this creates a remote call
@@ -229,17 +234,18 @@ func (s *SyncMonitor) Synced() bool {
 	if syncTarget > msgCount {
 		return false
 	}
-
-	progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
-	if err != nil {
-		log.Error("Error getting sync progress", "err", err)
-		return false
-	}
-	if progress.BatchSeen == 0 {
-		return false
-	}
-	if progress.BatchProcessed < progress.BatchSeen {
-		return false
+	if s.syncProgressFetcher != nil {
+		progress, err := s.syncProgressFetcher.GetSyncProgress(s.GetContext())
+		if err != nil {
+			log.Error("Error getting sync progress", "err", err)
+			return false
+		}
+		if progress.BatchSeen == 0 {
+			return false
+		}
+		if progress.BatchProcessed < progress.BatchSeen {
+			return false
+		}
 	}
 	return true
 }
