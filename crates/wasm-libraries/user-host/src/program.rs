@@ -226,11 +226,11 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = EvmApiRequestor<VecReader, UserHostRequester>;
 
-    fn args(&self) -> Cow<[u8]> {
+    fn args(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(&self.args)
     }
 
-    fn outs(&self) -> Cow<[u8]> {
+    fn outs(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(&self.outs)
     }
 
