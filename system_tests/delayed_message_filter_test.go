@@ -70,6 +70,14 @@ func advanceAndWaitForDelayed(t *testing.T, ctx context.Context, builder *NodeBu
 	<-time.After(time.Second * 2)
 }
 
+// advanceL1ForDelayed advances L1 blocks so the delayed sequencer picks up pending messages.
+// Callers should use their own wait mechanism (WaitForTx, waitForDelayedSequencerHaltOnHashes, etc.)
+// rather than relying on a sleep.
+func advanceL1ForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder) {
+	t.Helper()
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+}
+
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
 func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
 	t.Helper()
