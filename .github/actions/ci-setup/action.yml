@@ -7,25 +7,94 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y wabt gotestsum
+      run: |
+        set -euo pipefail
+        sudo apt-get update && sudo apt-get install -y wabt gotestsum
       shell: bash
+
+    - name: Set Node.js version
+      id: node-version
+      run: echo "major=24" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Set Foundry version
+      id: foundry-version
+      run: echo "version=v1.0.0" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    # Single source of truth for node_modules directories. Consumed by
+    # cache-node-modules and the validation step. Add new workspaces ONLY here.
+    - name: Set node_modules directory list
+      run: |
+        set -euo pipefail
+        dirs=(
+          contracts/node_modules
+          contracts-legacy/node_modules
+          safe-smart-account/node_modules
+        )
+        {
+          echo "NODE_MODULES_CACHE_PATHS<<NM_EOF"
+          printf '%s\n' "${dirs[@]}"
+          echo "NM_EOF"
+        } >> "$GITHUB_ENV"
+        echo "NODE_MODULES_DIRS=${dirs[*]}" >> "$GITHUB_ENV"
+      shell: bash
+
+    # Single source of truth for solidity cache directories. Consumed by
+    # cache-solidity (SOLIDITY_CACHE_PATHS) and the validate/purge step
+    # (SOLIDITY_DIRS). Add new solidity cache directories ONLY here.
+    - name: Set solidity cache directory list
+      run: |
+        set -euo pipefail
+        # Space-separated; used by SOLIDITY_DIRS (word splitting) and
+        # SOLIDITY_CACHE_PATHS (newline-separated for actions/cache).
+        dirs=(
+          contracts/build
+          contracts/out
+          contracts-legacy/build
+          contracts-legacy/out
+          contracts-local/out
+          safe-smart-account/build
+          solgen/go
+        )
+        {
+          echo "SOLIDITY_CACHE_PATHS<<SOLIDITY_EOF"
+          printf '%s\n' "${dirs[@]}"
+          echo "SOLIDITY_EOF"
+        } >> "$GITHUB_ENV"
+        echo "SOLIDITY_DIRS=${dirs[*]}" >> "$GITHUB_ENV"
+      shell: bash
+
+    # setup-node only caches yarn's global tarball cache, not node_modules.
+    # No restore-keys: for safe-smart-account, npm ci wipes and reinstalls
+    # node_modules (wasting any partial restore); for yarn workspaces,
+    # additive installs over a stale restore could leave orphaned packages.
+    - name: Cache node_modules
+      id: cache-node-modules
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.NODE_MODULES_CACHE_PATHS }}
+        key: ${{ runner.os }}-node-modules-node${{ steps.node-version.outputs.major }}-${{ hashFiles('contracts/yarn.lock', 'contracts-legacy/yarn.lock', 'safe-smart-account/package-lock.json') }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
-        node-version: "24"
+        node-version: ${{ steps.node-version.outputs.major }}
         cache: yarn
         cache-dependency-path: "**/yarn.lock"
 
     - name: Setup Go
+      id: setup-go
       uses: actions/setup-go@v6
       with:
         go-version-file: "go.mod"
+        cache: false  # See "Cache Go build and modules" step for restore-keys fallback
 
     - name: Install wasm-ld
       run: |
-        sudo apt-get update && sudo apt-get install -y lld-14
-        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+        set -euo pipefail
+        sudo apt-get install -y lld-14
+        sudo ln -sf /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
       shell: bash
 
     - name: Install rust
@@ -35,20 +104,210 @@ runs:
     - name: Setup Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
-        cache: false
-        version: v1.0.0
+        cache: true
+        version: ${{ steps.foundry-version.outputs.version }}
 
-    - name: Install cbindgen
-      run: cargo install --force cbindgen
+    - name: Validate cache key inputs
+      env:
+        GO_VERSION: ${{ steps.setup-go.outputs.go-version }}
+        RUST_VERSION: ${{ steps.install-rust.outputs.version }}
+        FOUNDRY_VERSION: ${{ steps.foundry-version.outputs.version }}
+        NODE_VERSION: ${{ steps.node-version.outputs.major }}
+      run: |
+        set -euo pipefail
+        # Version strings used in cache keys must not be empty
+        for pair in "Go:$GO_VERSION" "Rust:$RUST_VERSION" "Foundry:$FOUNDRY_VERSION" "Node:$NODE_VERSION"; do
+          name="${pair%%:*}"; val="${pair#*:}"
+          if [ -z "$val" ]; then
+            echo "ERROR: $name version is empty -- cache keys will collide across versions"; exit 1
+          fi
+          if ! [[ "$val" =~ ^[a-zA-Z0-9._v-]+$ ]]; then
+            echo "ERROR: $name version looks malformed: '$val' -- cache keys may not work correctly"; exit 1
+          fi
+        done
+        # Auto-extract hashFiles() arguments from this file so the validation
+        # stays in sync without maintaining a separate list.
+        shopt -s globstar nullglob
+        self="${GITHUB_ACTION_PATH}/action.yml"
+        args=$(grep -oP "hashFiles\(\K[^)]+(?=\))" "$self" | tr "," "\n" | sed "s/^[[:space:]]*'//;s/'[[:space:]]*$//" | sort -u)
+        # Fail-closed: if the regex stops matching (e.g., multi-line reformat),
+        # surface it immediately rather than silently skipping validation.
+        if [ -z "$args" ]; then
+          echo "ERROR: no hashFiles() patterns extracted from $self -- grep regex may need updating"; exit 1
+        fi
+        # The line-by-line regex silently misses multi-line hashFiles() calls.
+        # Guard against this by comparing call count vs extracted group count.
+        # Only count 'key:' lines (where GHA hashFiles expressions live) to
+        # exclude shell scripts and comments that mention hashFiles().
+        expected=$(grep -cP '^\s*key:.*hashFiles\(' "$self")
+        actual=$(grep -oP "hashFiles\(\K[^)]+(?=\))" "$self" | wc -l)
+        if [ "$actual" -ne "$expected" ]; then
+          echo "ERROR: found $expected hashFiles() calls but only extracted $actual -- possible multi-line hashFiles() call"; exit 1
+        fi
+        # Export for the lint step so the regex is not duplicated.
+        {
+          echo "HASHFILES_PATTERNS<<HASHFILES_EOF"
+          echo "$args"
+          echo "HASHFILES_EOF"
+        } >> "$GITHUB_ENV"
+        # Disable globbing during iteration so nullglob does not silently
+        # remove unmatched patterns from the list; re-enable inside the
+        # body for intentional expansion.
+        set -f
+        for pattern in $args; do
+          set +f
+          # shellcheck disable=SC2206  # intentional glob expansion (globstar enabled above)
+          matches=( $pattern )
+          set -f
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "ERROR: hashFiles pattern '$pattern' matches nothing -- update .github/actions/ci-setup/action.yml"; exit 1
+          fi
+        done
+        set +f
       shell: bash
 
-    - name: Cache Go build
+    # Best-effort lint: warn about cache-sensitive files not covered by
+    # any hashFiles() pattern. Produces ::warning annotations only --
+    # never fails the build. Separate from validation because this is
+    # advisory, not a correctness gate.
+    - name: Lint cache key coverage
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        # Reuse patterns extracted by the validate step (avoid duplicating the regex).
+        args="${HASHFILES_PATTERNS:-}"
+        if [ -z "$args" ]; then
+          echo "::warning::HASHFILES_PATTERNS is empty -- validate step may have failed or been skipped"; exit 0
+        fi
+        # shellcheck disable=SC2317  # function used below
+        file_covered_by() {
+          local file="$1"; shift
+          for hp in "$@"; do
+            set +f
+            # shellcheck disable=SC2206  # intentional glob expansion (globstar enabled)
+            local expanded=( $hp )
+            set -f
+            local m
+            for m in "${expanded[@]}"; do
+              if [ "$m" = "$file" ]; then return 0; fi
+            done
+          done
+          return 1
+        }
+        skip_re='^(.*node_modules.*|.*/lib/.*|.*/build/.*|.*/out/.*|.*/dist/.*|nitro-testnode/.*|go-ethereum/.*|crates/.*|.*typechain.*|.*/certora/.*)$'
+        # Pre-expand args into an array with globbing off so patterns are
+        # preserved as literals for file_covered_by to expand on demand.
+        set -f
+        # shellcheck disable=SC2206  # intentional word splitting
+        args_arr=( $args )
+        set +f
+        # Check lockfiles, configs, and build files.
+        for file in **/yarn.lock **/package-lock.json **/foundry.toml **/hardhat.config.ts; do
+          [[ "$file" =~ $skip_re || "$file" == */src/* ]] && continue
+          file_covered_by "$file" "${args_arr[@]}" ||
+            echo "::warning::$file is not in any hashFiles() cache key in .github/actions/ci-setup/action.yml -- may need adding"
+        done
+        # Check for .sol source files not covered by any hashFiles() glob.
+        sol_patterns=()
+        for p in "${args_arr[@]}"; do
+          [[ "$p" == *.sol ]] && sol_patterns+=("$p")
+        done
+        if [ ${#sol_patterns[@]} -gt 0 ]; then
+          uncovered_sol=()
+          for file in **/*.sol; do
+            [[ "$file" =~ $skip_re || "$file" == */test/* ]] && continue
+            file_covered_by "$file" "${sol_patterns[@]}" || uncovered_sol+=("$file")
+          done
+          if [ ${#uncovered_sol[@]} -gt 0 ]; then
+            echo "::warning::${#uncovered_sol[@]} .sol file(s) not covered by any hashFiles() sol glob -- may need adding: ${uncovered_sol[*]}"
+          fi
+        fi
+      shell: bash
+
+    # restore-keys prefix fallback: Go build cache is content-addressed
+    # (stale entries ignored), module cache self-heals by re-downloading.
+    - name: Cache Go build and modules
+      id: cache-go
       uses: actions/cache@v5
       with:
-        path: ~/.cache/go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
+    # No restore-keys: partial Solidity restores (stale Go bindings with
+    # new ABIs) would produce inconsistent artifacts.
+    - name: Cache contract build artifacts
+      id: cache-solidity
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.SOLIDITY_CACHE_PATHS }}
+        key: ${{ runner.os }}-solidity-go${{ steps.setup-go.outputs.go-version }}-node${{ steps.node-version.outputs.major }}-foundry-${{ steps.foundry-version.outputs.version }}-${{ hashFiles('contracts/src/**/*.sol', 'contracts-legacy/src/**/*.sol', 'contracts-local/src/**/*.sol', 'contracts/foundry.toml', 'contracts-legacy/foundry.toml', 'contracts-local/foundry.toml', 'contracts/hardhat.config.ts', 'contracts-legacy/hardhat.config.ts', 'safe-smart-account/hardhat.config.ts', 'contracts-local/Makefile', 'safe-smart-account/contracts/**/*.sol', 'safe-smart-account/package.json', 'contracts/yarn.lock', 'contracts-legacy/yarn.lock', 'safe-smart-account/package-lock.json', 'solgen/gen.go', 'go-ethereum/accounts/abi/abigen/**/*.go', 'go.mod', 'go.sum') }}
+
+    # On solidity cache hit: validate artifacts, then either touch Make
+    # sentinels (if node_modules also hit) or purge and rebuild (if not).
+    - name: Validate and mark contract builds as up-to-date on cache hit
+      if: steps.cache-solidity.outputs.cache-hit == 'true'
+      env:
+        NODE_MODULES_HIT: ${{ steps.cache-node-modules.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+
+        set -f
+        for dir in $SOLIDITY_DIRS; do
+          if [ ! -d "$dir" ]; then
+            echo "ERROR: cached directory missing: $dir"; exit 1
+          fi
+          if [ -z "$(ls -A "$dir")" ]; then
+            echo "ERROR: cached directory empty: $dir"; exit 1
+          fi
+        done
+        set +f
+        # Spot-check a known solgen output file to catch partial cache restores
+        # (e.g., interrupted extraction) that pass the non-empty dir check above.
+        if [ ! -f "solgen/go/bridgegen/bridgegen.go" ]; then
+          echo "ERROR: solgen/go output looks incomplete despite cache hit -- possible partial restore"; exit 1
+        fi
+
+        # Touch Make sentinels only when both solidity AND node_modules hit.
+        mkdir -p .make
+        if [ "$NODE_MODULES_HIT" = "true" ]; then
+          if [ -z "${NODE_MODULES_DIRS:-}" ]; then
+            echo "ERROR: NODE_MODULES_DIRS is empty or unset"; exit 1
+          fi
+          set -f
+          for dir in $NODE_MODULES_DIRS; do
+            test -d "$dir" || { echo "ERROR: $dir missing despite node_modules cache hit"; exit 1; }
+            if [ -z "$(ls -A "$dir")" ]; then
+              echo "ERROR: $dir is empty despite node_modules cache hit -- cache may be corrupted"; exit 1
+            fi
+          done
+          set +f
+          touch .make/yarndeps .make/solidity .make/solgen
+          echo "INFO: All sentinels touched; Make will skip solidity/solgen/yarndeps targets"
+        else
+          # Solidity cache hit but node_modules missed -- purge cached
+          # solidity artifacts so Make rebuilds with fresh node_modules.
+          # One-time cost: node_modules saves on this run, so next run
+          # both caches hit.
+          echo "::warning::node_modules cache missed (likely evicted) -- purging cached solidity artifacts to rebuild (one-time cost)"
+          if [ -z "${SOLIDITY_DIRS:-}" ]; then
+            echo "ERROR: SOLIDITY_DIRS is empty or unset"; exit 1
+          fi
+          set -f  # disable globbing for safe word splitting on $SOLIDITY_DIRS
+          for dir in $SOLIDITY_DIRS; do
+            rm -rf "$dir"
+          done
+          set +f
+        fi
+      shell: bash
+
+    # ORDERING: Must appear before "Cache cbrotli" -- the Rust cache
+    # includes all of target/ which overlaps cbrotli paths.
     - name: Cache Rust build
+      id: cache-rust
       uses: actions/cache@v5
       with:
         path: |
@@ -59,7 +318,23 @@ runs:
           target/etc/initial-machine-cache/
           /home/runner/.rustup/toolchains/
         key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.version }}-
 
+    - name: Install cbindgen
+      run: |
+        set -euo pipefail
+        CBINDGEN_VERSION="0.24.3"
+        actual=$(cbindgen --version 2>/dev/null) || true
+        if [ "$actual" != "cbindgen $CBINDGEN_VERSION" ]; then
+          echo "Installing cbindgen $CBINDGEN_VERSION (found: '${actual:-not installed}')"
+          cargo install cbindgen --version "$CBINDGEN_VERSION" --force
+        else
+          echo "cbindgen $CBINDGEN_VERSION already installed"
+        fi
+      shell: bash
+
+    # ORDERING: Must appear after "Cache Rust build" -- see comment there.
     - name: Cache cbrotli
       id: cache-cbrotli
       uses: actions/cache@v5
@@ -70,7 +345,17 @@ runs:
           target/lib/libbrotlicommon-static.a
           target/lib/libbrotlienc-static.a
           target/lib/libbrotlidec-static.a
-        key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}
+        key: ${{ runner.os }}-brotli-rust${{ steps.install-rust.outputs.version }}-${{ hashFiles('scripts/build-brotli.sh') }}
+
+    # A partial Rust restore may place stale cbrotli artifacts in target/.
+    # Remove them before rebuilding.
+    - name: Clean stale cbrotli paths on cache miss
+      if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+      run: |
+        set -euo pipefail
+        rm -rf target/include/brotli target/lib-wasm
+        rm -f target/lib/libbrotli{common,enc,dec}-static.a
+      shell: bash
 
     - name: Build cbrotli-local
       if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -80,4 +365,40 @@ runs:
     - name: Build cbrotli-wasm in docker
       if: steps.cache-cbrotli.outputs.cache-hit != 'true'
       run: ./scripts/build-brotli.sh -w -d
+      shell: bash
+
+    # Runs after both cache-restore and build paths. Do not split into
+    # separate "validate on hit" / "validate after build" steps -- identical
+    # validation applies regardless of source, and splitting invites drift.
+    - name: Validate cbrotli artifacts
+      run: |
+        set -euo pipefail
+        for f in target/lib/libbrotli{common,enc,dec}-static.a \
+                 target/lib-wasm/libbrotli{common,enc,dec}-static.a; do
+          [ -f "$f" ] && [ -s "$f" ] || { echo "ERROR: $f missing or empty"; exit 1; }
+        done
+        for f in target/include/brotli/encode.h target/include/brotli/decode.h; do
+          test -f "$f" || { echo "ERROR: $f missing"; exit 1; }
+        done
+      shell: bash
+
+    # cache-hit is 'true' only on exact key match. For Go/Rust
+    # (restore-keys enabled), 'false' could mean a partial restore
+    # or a full miss.
+    - name: Cache status summary
+      env:
+        NODE_MODULES_HIT: ${{ steps.cache-node-modules.outputs.cache-hit }}
+        GO_HIT: ${{ steps.cache-go.outputs.cache-hit }}
+        SOLIDITY_HIT: ${{ steps.cache-solidity.outputs.cache-hit }}
+        RUST_HIT: ${{ steps.cache-rust.outputs.cache-hit }}
+        CBROTLI_HIT: ${{ steps.cache-cbrotli.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        echo "=== Cache Status ==="
+        printf "  %-14s %s\n" \
+          "node_modules" "${NODE_MODULES_HIT:-MISS}" \
+          "go"           "${GO_HIT:-MISS}" \
+          "solidity"     "${SOLIDITY_HIT:-MISS}" \
+          "rust"         "${RUST_HIT:-MISS}" \
+          "cbrotli"      "${CBROTLI_HIT:-MISS}"
       shell: bash

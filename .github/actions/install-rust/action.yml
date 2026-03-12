@@ -36,4 +36,6 @@ runs:
     - name: Get Rust version
       id: get-version
       shell: bash
-      run: echo "version=$(rustc --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+      run: |
+        set -euo pipefail
+        echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
