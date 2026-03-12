@@ -95,7 +95,7 @@ fn round_up_to_power_of_two(mut input: usize) -> usize {
 /// Overflow safe divide and round up
 fn div_round_up(num: usize, denom: usize) -> usize {
     let mut res = num / denom;
-    if !num.is_multiple_of(denom) {
+    if num % denom > 0 {
         res += 1;
     }
     res
@@ -286,7 +286,7 @@ impl Memory {
     /// The length of value <= 32.
     pub fn store_slice_aligned(&mut self, idx: u64, value: &[u8]) -> bool {
         assert!(value.len() <= Self::LEAF_SIZE);
-        if !idx.is_multiple_of(Self::LEAF_SIZE as u64) {
+        if idx % Self::LEAF_SIZE as u64 != 0 {
             return false;
         }
         let Some(end_idx) = idx.checked_add(value.len() as u64) else {
@@ -305,7 +305,7 @@ impl Memory {
 
     #[must_use]
     pub fn load_32_byte_aligned(&self, idx: u64) -> Option<Bytes32> {
-        if !idx.is_multiple_of(Self::LEAF_SIZE as u64) {
+        if idx % Self::LEAF_SIZE as u64 != 0 {
             return None;
         }
         let Ok(idx) = usize::try_from(idx) else {

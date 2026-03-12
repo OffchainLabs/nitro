@@ -32,11 +32,11 @@ where
     type MemoryErr = MemoryAccessError;
     type A = A;
 
-    fn args(&self) -> Cow<'_, [u8]> {
+    fn args(&self) -> Cow<[u8]> {
         Cow::Borrowed(&self.args)
     }
 
-    fn outs(&self) -> Cow<'_, [u8]> {
+    fn outs(&self) -> Cow<[u8]> {
         Cow::Borrowed(&self.outs)
     }
 

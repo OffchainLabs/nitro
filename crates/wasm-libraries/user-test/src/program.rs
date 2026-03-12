@@ -39,11 +39,11 @@ impl UserHost<VecReader> for Program {
     type MemoryErr = MemoryBoundsError;
     type A = MockEvmApi;
 
-    fn args(&self) -> Cow<'_, [u8]> {
+    fn args(&self) -> Cow<[u8]> {
         Cow::Owned(GLOBAL_STATE.lock().args.clone())
     }
 
-    fn outs(&self) -> Cow<'_, [u8]> {
+    fn outs(&self) -> Cow<[u8]> {
         Cow::Owned(GLOBAL_STATE.lock().outs.clone())
     }
 

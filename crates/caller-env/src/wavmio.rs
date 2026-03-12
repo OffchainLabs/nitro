@@ -122,7 +122,7 @@ pub fn resolve_preimage(
         ));
     };
 
-    if !offset.is_multiple_of(32) {
+    if offset % 32 != 0 {
         return Err(format!("bad offset {offset} in {name}"));
     }
 
