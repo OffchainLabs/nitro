@@ -390,7 +390,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// This prevents the auto-redeem from executing calls against
 		// potentially filtered addresses.
 		if isFiltered {
-			return true, multigas.L2CalldataGas(usergas), filteredErr, ticketId.Bytes()
+			return true, multigas.SingleDimGas(usergas), filteredErr, ticketId.Bytes()
 		}
 
 		// emit RedeemScheduled event
@@ -432,7 +432,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			}
 		}
 
-		return true, multigas.L2CalldataGas(usergas), nil, ticketId.Bytes()
+		return true, multigas.SingleDimGas(usergas), nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
 		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
 		if err != nil {
