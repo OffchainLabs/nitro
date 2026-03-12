@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::ServerState;
+use crate::jwt;
 use crate::spawner_endpoints;
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
@@ -22,19 +23,25 @@ async fn run_server_internal(
     state: Arc<ServerState>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, create_router().with_state(state.clone()))
+    let shutdown_state = state.clone();
+    axum::serve(listener, create_router(state))
         .with_graceful_shutdown(shutdown)
         .await?;
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.shutdown().await
+    shutdown_state.shutdown().await
 }
 
-fn create_router() -> Router<Arc<ServerState>> {
+fn create_router(state: Arc<ServerState>) -> Router {
     let router = Router::new()
         .route("/", post(spawner_endpoints::jsonrpc_dispatch))
-        .layer(TraceLayer::new_for_http());
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            jwt::auth_middleware,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
 
     // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
     #[cfg(test)]
