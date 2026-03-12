@@ -22,7 +22,7 @@ func InitAndStartExecutionAndConsensusNodes(ctx context.Context, stack *node.Nod
 	if err := stack.Start(); err != nil {
 		return nil, fmt.Errorf("error starting geth stack: %w", err)
 	}
-	if execNode != nil {
+	if execNode != nil && consensusNode != nil {
 		execNode.SetConsensusClient(consensusNode)
 		if err := execNode.Start(ctx); err != nil {
 			return nil, fmt.Errorf("error starting exec node: %w", err)
