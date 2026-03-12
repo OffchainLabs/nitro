@@ -499,7 +499,7 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, types.ReceiptStatusFailed, retryReceipt.Status)
 
-		// Check multigas special dimension.
+		// Check multigas single-dimensional gas.
 		expectedSingleDim := redeemReceipt.GasUsedForL1 + event.DonatedGas
 		assert.Equal(t, expectedSingleDim, redeemReceipt.MultiGasUsed.Get(multigas.ResourceKindSingleDim))
 
