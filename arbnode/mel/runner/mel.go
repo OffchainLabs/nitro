@@ -319,6 +319,14 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
+func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	delayedMsg, err := m.GetDelayedMessage(seqNum)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return delayedMsg.AfterInboxAcc(), nil
+}
+
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
@@ -492,13 +500,6 @@ func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 	return headState.BatchCount, nil
 }
 
-func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
-	delayedMsg, err := m.GetDelayedMessage(seqNum)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return delayedMsg.AfterInboxAcc(), nil
-}
 func (m *MessageExtractor) CaughtUp() chan struct{} {
 	return m.caughtUpChan
 }
