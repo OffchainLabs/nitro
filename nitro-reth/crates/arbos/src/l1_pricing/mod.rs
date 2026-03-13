@@ -606,12 +606,19 @@ pub fn compute_poster_cost_standalone(
     poster: Address,
     price_per_unit: U256,
     brotli_compression_level: u64,
+    per_batch_gas_cost: i64,
 ) -> (U256, u64) {
     if poster != BATCH_POSTER_ADDRESS {
         return (U256::ZERO, 0);
     }
     let units = poster_units_from_bytes(tx_bytes, brotli_compression_level);
-    (price_per_unit.saturating_mul(U256::from(units)), units)
+    let calldata_cost = price_per_unit.saturating_mul(U256::from(units));
+    let poster_cost = if per_batch_gas_cost >= 0 {
+        calldata_cost.saturating_add(U256::from(per_batch_gas_cost as u64))
+    } else {
+        calldata_cost.saturating_sub(U256::from((-per_batch_gas_cost) as u64))
+    };
+    (poster_cost, units)
 }
 
 /// Compute calldata units from tx bytes using brotli compression.

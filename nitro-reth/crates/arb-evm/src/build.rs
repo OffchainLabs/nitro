@@ -355,6 +355,9 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         if let Ok(price) = arb_state.l1_pricing_state.price_per_unit() {
             self.arb_ctx.l1_price_per_unit = price;
         }
+        if let Ok(cost) = arb_state.l1_pricing_state.per_batch_gas_cost() {
+            self.arb_ctx.per_batch_gas_cost = cost;
+        }
         if let Ok(min_fee) = arb_state.l2_pricing_state.min_base_fee_wei() {
             self.arb_ctx.min_base_fee = min_fee;
         }
@@ -1425,6 +1428,7 @@ where
                 self.arb_ctx.coinbase,
                 self.arb_ctx.l1_price_per_unit,
                 self.arb_ctx.brotli_compression_level,
+                self.arb_ctx.per_batch_gas_cost,
             );
 
             if let Some(hooks) = self.arb_hooks.as_mut() {
