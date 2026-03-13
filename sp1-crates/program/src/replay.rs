@@ -10,7 +10,7 @@ use arbutil::{Bytes32, evm::EvmData};
 use bytes::Bytes;
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
-use prover::{binary_input, programs::meter::MeteredMachine};
+use prover::programs::meter::MeteredMachine;
 use validation::ValidationInput;
 use rand_pcg::Pcg32;
 use std::marker::PhantomData;
@@ -133,7 +133,7 @@ impl CustomEnvData {
         let Some(module) = self.input.module_asms.get(module_hash.deref()) else {
             return Escape::logical(format!("Unable to locate module: {module_hash}"));
         };
-        let aligned = binary_input::align_bytes(module);
+        let aligned = align_bytes(module);
         let cothread = Cothread::new(aligned, calldata, config, evm_data, gas);
 
         cothreads_mut().push(cothread);
@@ -394,6 +394,19 @@ fn build_imports(
         },
         func_env,
     )
+}
+
+/// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.
+/// SP1's wasmer fork requires aligned memory for `Module::deserialize`.
+fn align_bytes(data: &[u8]) -> Bytes {
+    use bytes::BytesMut;
+    let mut buffer = BytesMut::zeroed(data.len() + 7);
+    let p = buffer.as_ptr() as usize;
+    let aligned_p = (p + 7) / 8 * 8;
+    let offset = aligned_p - p;
+    buffer[offset..offset + data.len()].copy_from_slice(data);
+    let bytes = buffer.freeze();
+    bytes.slice(offset..offset + data.len())
 }
 
 pub(crate) fn handle_result(result: Result<Box<[Value]>, RuntimeError>) -> ! {
