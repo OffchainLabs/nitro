@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn load_secret_from_file() {
-        let dir = tempdir::TempDir::new("jwt_test").unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("jwt.hex");
         std::fs::write(&path, secret()).unwrap();
         let secret = load_secret(path.to_str().unwrap()).unwrap();
