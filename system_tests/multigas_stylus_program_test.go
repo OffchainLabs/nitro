@@ -45,7 +45,7 @@ func TestMultigasStylus_GetBytes32(t *testing.T) {
 	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 	require.NoError(t, err)
 
-	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, params.ColdSloadCostEIP2929-params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead))
 	require.Equal(t, params.TxGas+params.WarmStorageReadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindComputation))
 	require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 
@@ -114,7 +114,7 @@ func TestMultigasStylus_AccountAccessHostIOs(t *testing.T) {
 			}
 
 			require.Equal(t, expectedAccess,
-				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead),
 			)
 			require.Equal(t, expectedCompute,
 				receipt.MultiGasUsed.Get(multigas.ResourceKindComputation),
@@ -330,7 +330,7 @@ func TestMultigasStylus_Calls(t *testing.T) {
 
 			require.Equal(t,
 				expectedStorageAccess,
-				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess),
+				receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead),
 			)
 		})
 	}
@@ -374,7 +374,7 @@ func TestMultigasStylus_StorageWrite(t *testing.T) {
 
 				// Expected multigas for create slot operation
 				require.Equal(t, receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
-				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+				require.Equal(t, params.ColdSloadCostEIP2929, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessRead))
 				require.Equal(t, params.SstoreSetGasEIP2200, receipt.MultiGasUsed.Get(multigas.ResourceKindStorageGrowth))
 			} else {
 				require.Error(t, err)

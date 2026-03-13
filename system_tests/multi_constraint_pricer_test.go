@@ -85,7 +85,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
 			{Resource: uint8(multigas.ResourceKindComputation), Weight: 3},
 			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 2},
-			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 1},
+			{Resource: uint8(multigas.ResourceKindStorageAccessWrite), Weight: 1},
 			{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 4},
 			{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 5},
 		},
@@ -96,7 +96,7 @@ func TestSetAndGetMultiGasPricingConstraints(t *testing.T) {
 
 	constraint1 := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
 		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
-			{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+			{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 7},
 			{Resource: uint8(multigas.ResourceKindL1Calldata), Weight: 9},
 			{Resource: uint8(multigas.ResourceKindHistoryGrowth), Weight: 11},
 		},

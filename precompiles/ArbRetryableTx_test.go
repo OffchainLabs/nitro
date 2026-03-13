@@ -198,12 +198,13 @@ func TestRetryableRedeemWithMultiGasConstraints(t *testing.T) {
 		backlog := uint64((i + 1) * 500000)
 
 		weights := map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):     1,
-			uint8(multigas.ResourceKindStorageAccess):   2,
-			uint8(multigas.ResourceKindStorageGrowth):   3,
-			uint8(multigas.ResourceKindL1Calldata):      4,
-			uint8(multigas.ResourceKindL2Calldata):      5,
-			uint8(multigas.ResourceKindWasmComputation): 6,
+			uint8(multigas.ResourceKindComputation):        1,
+			uint8(multigas.ResourceKindStorageAccessRead):  2,
+			uint8(multigas.ResourceKindStorageAccessWrite): 3,
+			uint8(multigas.ResourceKindStorageGrowth):      4,
+			uint8(multigas.ResourceKindL1Calldata):         5,
+			uint8(multigas.ResourceKindL2Calldata):         6,
+			uint8(multigas.ResourceKindWasmComputation):    7,
 		}
 
 		err := precompileCtx.State.L2PricingState().AddMultiGasConstraint(target, window, backlog, weights)
