@@ -189,7 +189,9 @@ func NewSeqCoordinator(
 		config:           config,
 		signer:           signer,
 	}
-	streamer.SetSeqCoordinator(coordinator)
+	if err := streamer.SetSeqCoordinator(coordinator); err != nil {
+		return nil, err
+	}
 	return coordinator, nil
 }
 
@@ -543,13 +545,15 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 	// Was, and still is, the active sequencer
 	if c.config.DeleteFinalizedMsgs {
 		// Before proceeding, first try deleting finalized messages from redis and setting the finalizedMsgCount key
-		finalized, err := c.sync.GetFinalizedMsgCount(ctx)
-		if err != nil {
-			log.Warn("Error getting finalizedMessageCount from syncMonitor", "err", err)
-		} else if finalized == 0 {
-			log.Warn("SyncMonitor returned zero finalizedMessageCount")
-		} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
-			log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
+		if c.sync.syncProgressFetcher != nil {
+			finalized, err := c.sync.GetFinalizedMsgCount(ctx)
+			if err != nil {
+				log.Warn("Error getting finalizedMessageCount from syncMonitor", "err", err)
+			} else if finalized == 0 {
+				log.Warn("SyncMonitor returned zero finalizedMessageCount")
+			} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
+				log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
+			}
 		}
 	}
 	// We leave a margin of error of either a five times the update interval or a fifth of the lockout duration, whichever is greater.

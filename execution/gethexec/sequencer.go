@@ -850,6 +850,12 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		return state.ErrArbTxFilter
 	}
 
+	// For redeems, skip nonce/revert-gas checks since those
+	// don't apply to protocol-scheduled transactions.
+	if tx.Type() == types.ArbitrumRetryTxType {
+		return nil
+	}
+
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
@@ -1076,7 +1082,14 @@ func (s *FullSequencingHooks) GetTxErrors() []error {
 	return s.txErrors
 }
 
-func (s *FullSequencingHooks) InsertLastTxError(err error) {
+func (s *FullSequencingHooks) TxSucceeded() {
+	s.txErrors = append(s.txErrors, nil)
+}
+
+func (s *FullSequencingHooks) TxFailed(err error) {
+	if len(s.txErrors) >= s.sequencedQueueItemsCount {
+		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
+	}
 	s.txErrors = append(s.txErrors, err)
 }
 
@@ -1096,7 +1109,7 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 		}
 		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
 			s.sequencedQueueItemsCount += 1
-			s.InsertLastTxError(core.ErrGasLimitReached)
+			s.TxFailed(core.ErrGasLimitReached)
 			s.txSizeLimitReached = true
 		} else {
 			s.sequencedQueueItemsCount += 1
@@ -1106,9 +1119,9 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
 }
 
-func (s *FullSequencingHooks) DiscardInvalidTxsEarly() bool {
-	return true
-}
+func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
+
+func (s *FullSequencingHooks) SupportsGroupRollback() bool { return true }
 
 func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
 	// This is not supposed to happen, if so we have a bug
@@ -1126,6 +1139,9 @@ func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 }
 
 func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult) error {
+	if transaction.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
 	if s.postTxFilter != nil {
 		return s.postTxFilter(header, db, a, transaction, address, u, result)
 	}

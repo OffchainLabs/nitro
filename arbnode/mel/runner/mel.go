@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -21,11 +22,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -79,6 +82,11 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
+// SequencerBatchCountFetcher queries the on-chain sequencer inbox batch count at a given parent chain block.
+type SequencerBatchCountFetcher interface {
+	GetBatchCount(ctx context.Context, blockNum *big.Int) (uint64, error)
+}
+
 // TODO (ganesh): cleanup unused methods from this interface after checking with wasm mode
 type ParentChainReader interface {
 	Client() rpc.ClientInterface // to make BatchCallContext requests
@@ -110,6 +118,8 @@ type MessageExtractor struct {
 	lastBlockToRead          atomic.Uint64
 	stuckCount               uint64
 	reorgEventsNotifier      chan uint64
+	seqBatchCounter          SequencerBatchCountFetcher
+	l1Reader                 *headerreader.HeaderReader
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -121,8 +131,9 @@ func NewMessageExtractor(
 	chainConfig *params.ChainConfig,
 	rollupAddrs *chaininfo.RollupAddresses,
 	melDB *Database,
-	msgConsumer mel.MessageConsumer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	seqBatchCounter SequencerBatchCountFetcher,
+	l1Reader *headerreader.HeaderReader,
 	reorgEventsNotifier chan uint64,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
@@ -135,12 +146,24 @@ func NewMessageExtractor(
 		chainConfig:         chainConfig,
 		addrs:               rollupAddrs,
 		melDB:               melDB,
-		msgConsumer:         msgConsumer,
 		dataProviders:       dapRegistry,
 		fsm:                 fsm,
 		caughtUpChan:        make(chan struct{}),
 		reorgEventsNotifier: reorgEventsNotifier,
+		seqBatchCounter:     seqBatchCounter,
+		l1Reader:            l1Reader,
 	}, nil
+}
+
+func (m *MessageExtractor) SetMessageConsumer(consumer mel.MessageConsumer) error {
+	if m.Started() {
+		return errors.New("cannot set message consumer after start")
+	}
+	if m.msgConsumer != nil {
+		return errors.New("message consumer already set")
+	}
+	m.msgConsumer = consumer
+	return nil
 }
 
 // Starts a message extraction service using a stopwaiter. The message extraction
@@ -150,6 +173,9 @@ func NewMessageExtractor(
 // resilient to errors, and each error will retry the same FSM state after a specified interval
 // in this Start method.
 func (m *MessageExtractor) Start(ctxIn context.Context) error {
+	if m.msgConsumer == nil {
+		return errors.New("message consumer not set")
+	}
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
 	if m.config.ReadMode != "latest" {
@@ -230,6 +256,33 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 	return arbutil.MessageIndex(state.MsgCount), nil
 }
 
+func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error) {
+	headState, err := m.melDB.GetHeadMelState()
+	if err != nil {
+		return mel.MessageSyncProgress{}, err
+	}
+	batchSeen := headState.BatchCount // fallback when seqBatchCounter is nil or returns error
+	if m.seqBatchCounter != nil {
+		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber))
+		if err != nil {
+			if !strings.Contains(err.Error(), "header not found") {
+				log.Error("SequencerInbox GetBatchCount error", "err", err)
+			}
+		} else {
+			batchSeen = seen
+		}
+	}
+	return mel.MessageSyncProgress{
+		BatchSeen:      batchSeen,
+		BatchProcessed: headState.BatchCount,
+		MsgCount:       arbutil.MessageIndex(headState.MsgCount),
+	}, nil
+}
+
+func (m *MessageExtractor) GetL1Reader() *headerreader.HeaderReader {
+	return m.l1Reader
+}
+
 // GetFinalizedDelayedMessagesRead uses MessageExtractor's context for calls to parentChainReader
 func (m *MessageExtractor) GetFinalizedDelayedMessagesRead() (uint64, error) {
 	state, err := m.getStateByRPCBlockNum(m.GetContext(), rpc.FinalizedBlockNumber)
@@ -266,29 +319,16 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	return m.melDB.fetchDelayedMessage(index)
 }
 
-func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
-	headState, err := m.melDB.GetHeadMelState()
+func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
+	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	if index >= headState.DelayedMessagesSeen {
-		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
-	}
-	delayedMsg, err := m.melDB.fetchDelayedMessage(index)
-	if err != nil {
-		return nil, err
-	}
-	return delayedMsg.Message.Serialize()
+	return state.DelayedMessagesSeen, nil
 }
 
-func (m *MessageExtractor) GetDelayedCount(block uint64) (uint64, error) {
-	var state *mel.State
-	var err error
-	if block == 0 {
-		state, err = m.melDB.GetHeadMelState()
-	} else {
-		state, err = m.melDB.State(block)
-	}
+func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
+	state, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return 0, err
 	}
@@ -308,6 +348,38 @@ func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, e
 		return mel.BatchMetadata{}, err
 	}
 	return *batchMetadata, nil
+}
+
+func (m *MessageExtractor) SupportsPushingFinalityData() bool {
+	return false
+}
+
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
+func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
+	ctx context.Context,
+	finalizedPosition uint64,
+	_ common.Hash,
+	requestedPosition uint64,
+) (*arbostypes.L1IncomingMessage, common.Hash, error) {
+	finalizedPos, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedPosition)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, common.Hash{}, nil
+		}
+		return nil, common.Hash{}, err
+	}
+	if requestedPosition > finalizedPos {
+		return nil, common.Hash{}, mel.ErrDelayedMessageNotYetFinalized
+	}
+	msg, err := m.GetDelayedMessage(requestedPosition)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	return msg.Message, common.Hash{}, nil
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {

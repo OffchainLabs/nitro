@@ -139,7 +139,7 @@ func TestGetL1ConfirmationsForL3WithL2WithoutConsensusArbRPC(t *testing.T) {
 
 	// forces using http RPC instead of direct method call
 	builder.l2StackConfig.HTTPHost = "localhost"
-	builder.l2StackConfig.HTTPPort = getRandomPort(t)
+	builder.l2StackConfig.HTTPPort = getFreePort(t)
 	// disables arb module on HTTP RPC
 	httpModulesWithoutArb := make([]string, 0)
 	for i, module := range builder.l2StackConfig.HTTPModules {
@@ -155,12 +155,12 @@ func TestGetL1ConfirmationsForL3WithL2WithoutConsensusArbRPC(t *testing.T) {
 	l2SecondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	l2SecondNodeStackConfig := builder.l2StackConfig
 	l2SecondNodeStackConfig.DataDir = t.TempDir()
-	l2SecondNodeStackConfig.HTTPPort = getRandomPort(t)
+	l2SecondNodeStackConfig.HTTPPort = getFreePort(t)
 	testClientL2SecondNode, cleanupL2SecondNode := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: l2SecondNodeNodeConfig, stackConfig: l2SecondNodeStackConfig})
 	defer cleanupL2SecondNode()
 
 	builder.l3Config.stackConfig.HTTPHost = "localhost"
-	builder.l3Config.stackConfig.HTTPPort = getRandomPort(t)
+	builder.l3Config.stackConfig.HTTPPort = getFreePort(t)
 	cleanupL3 := builder.BuildL3OnL2(t)
 	defer cleanupL3()
 

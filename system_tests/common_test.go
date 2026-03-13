@@ -220,6 +220,12 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 	return arbmath.BigSub(newBalance, prevBalance), nil
 }
 
+func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
+	for range numBlocks {
+		tc.TransferBalance(t, "Faucet", "Faucet", common.Big1, lInfo)
+	}
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -2712,7 +2718,8 @@ func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
 	Fatal(t, "timed out waiting for TCP", addr)
 }
 
-func getRandomPort(t testing.TB) int {
+func getFreePort(t testing.TB) int {
+	t.Helper()
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	defer listener.Close()
