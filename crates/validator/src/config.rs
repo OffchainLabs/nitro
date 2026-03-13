@@ -53,6 +53,10 @@ impl ServerState {
             .transpose()
             .context("failed to load JWT secret")?;
 
+        if jwt_secret.is_some() {
+            info!("JWT authentication enabled");
+        }
+
         let execution = match config.mode {
             InputMode::Continuous => ExecutionMode::Continuous {
                 jit_manager: JitProcessManager::new(&locator)?,
