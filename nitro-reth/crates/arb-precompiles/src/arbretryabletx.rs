@@ -321,8 +321,8 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Nitro charges SloadGas (800) per 32-byte word of the retryable's total
     // stored size: 6 fixed fields + calldata length word + calldata content.
     let ticket_key_pre = ticket_storage_key(ticket_id);
-    let retryable_size_gas = {
-        // Read timeout to verify retryable exists (for RetryableSizeBytes).
+    // Read retryable size data for gas computation.
+    let (calldata_words, write_bytes) = {
         let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
         let timeout_check = internals
             .sload(ARBOS_STATE_ADDRESS, timeout_slot)
@@ -334,8 +334,6 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         if timeout_check_u64 == 0 || timeout_check_u64 < current_timestamp {
             return Err(PrecompileError::other("retryable ticket not found or expired"));
         }
-
-        // Read calldata size.
         let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
         let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
         let calldata_size = internals
@@ -343,12 +341,10 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
         let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
-        let calldata_words = (calldata_size_u64 + 31) / 32;
-        // nbytes = 6*32 (fixed fields) + 32 (length word) + 32*calldata_words
-        let nbytes = 6 * 32 + 32 + 32 * calldata_words;
-        let write_bytes = (nbytes + 31) / 32;
-        // SloadGas (800) per word, matching Nitro's c.Burn(StorageAccess, SloadGas*writeBytes)
-        800u64.saturating_mul(write_bytes)
+        let cw = (calldata_size_u64 + 31) / 32;
+        let nbytes = 6 * 32 + 32 + 32 * cw;
+        let wb = (nbytes + 31) / 32;
+        (cw, wb)
     };
 
     // Open the retryable (re-read timeout after size computation).
@@ -390,41 +386,67 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(&hash_input);
 
-    // Gas consumed so far, matching Nitro's gas accounting:
-    // - retryable_size_gas: explicit c.Burn(SloadGas * writeBytes) = 800 * writeBytes
-    // - currentRetryable: 1 sload (ArbOS scratch slot check)
-    // - timeout: 1 sload (OpenRetryable)
-    // - numTries: 1 sload + 1 sstore (read + increment)
-    // Note: RetryableSizeBytes reads (timeout + calldata_size) go through
-    // SystemBurner in Nitro = no gas cost. OpenRetryable re-read also free.
-    let gas_used_so_far = 3 * SLOAD_GAS + SSTORE_GAS + retryable_size_gas;
+    // Gas accounting matching Nitro's precompile framework.
+    //
+    // In Nitro, `c.State` uses the precompile Context as burner, so ALL
+    // storage reads/writes charge gas. Additionally, the explicit
+    // `c.Burn(StorageAccess, params.SloadGas * writeBytes)` uses
+    // params.SloadGas = 50 (NOT StorageReadCost = 800).
+    //
+    // Charges before gas_to_donate calculation (all through burner):
+    //   Framework argsCost:        3  (CopyGas * 1 word)
+    //   OpenArbosState version:  800  (1 storage read)
+    //   RetryableSizeBytes:     1600  (2 storage reads: timeout + calldataSize)
+    //   Explicit burn:    50*writeBytes  (params.SloadGas * writeBytes)
+    //   OpenRetryable:          800  (1 storage read: timeout)
+    //   IncrementNumTries:    20800  (1 read + 1 write: 800 + 20000)
+    //   MakeTx reads:          N*800  (from + to + value + calldataSize + calldataWords)
+    //
+    // After gas_to_donate: event + c.Burn(donate) + ShrinkBacklog + copyGas
+    //
+    // The precompile returns gasLeft = BacklogUpdateCost_reserved - actual_shrinkBacklog_cost.
+    // When backlog is zero, ShrinkBacklog costs 5800 instead of 20800, leaving 15000 as gasLeft.
 
-    // Compute backlog update cost dynamically. In Nitro, ShrinkBacklog
-    // runs inside the precompile with the burner charging StorageReadCost
-    // (800) for the read + writeCost for the write. writeCost depends on
-    // the new value: StorageClearCost (5000) if zero, StorageWriteCost
-    // (20000) if non-zero. The donated gas shrinks the backlog, so if
-    // the backlog will reach zero, the write is cheaper.
-    let backlog_update_cost = {
+    // Compute retryable size gas: params.SloadGas (50) * writeBytes
+    const PARAMS_SLOAD_GAS: u64 = 50; // params.SloadGas (NOT StorageReadCost)
+    let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
+
+    // Count MakeTx burner reads: from(1) + to(1) + value(1) + calldataSize(1) + calldataWords
+    let make_tx_reads = 4 + calldata_words;
+
+    // Total gas charged before gas_to_donate
+    let gas_used_so_far =
+        COPY_GAS                                // framework argsCost (3)
+        + SLOAD_GAS                             // OpenArbosState version read (800)
+        + 2 * SLOAD_GAS                         // RetryableSizeBytes: timeout + calldataSize (1600)
+        + retryable_size_gas                    // explicit c.Burn: 50 * writeBytes
+        + SLOAD_GAS                             // OpenRetryable timeout (800)
+        + SLOAD_GAS + SSTORE_GAS                // IncrementNumTries: read + write (20800)
+        + make_tx_reads * SLOAD_GAS;            // MakeTx reads
+
+    // BacklogUpdateCost: RESERVATION used for computing gas_to_donate.
+    // Actual ShrinkBacklog cost may be less (5800 if writing zero).
+    let backlog_reservation = SLOAD_GAS + SSTORE_GAS; // 800 + 20000 = 20800
+
+    // Actual ShrinkBacklog cost depends on current backlog value.
+    let actual_backlog_cost = {
         let backlog_slot = alloy_primitives::uint!(0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204_U256);
         let current_backlog = internals
             .sload(ARBOS_STATE_ADDRESS, backlog_slot)
             .map(|r| r.data.to::<u64>())
             .unwrap_or(0);
-        // gas_to_donate is approximately gas_remaining - future_costs.
-        // If backlog <= approximate_donated: new backlog = 0, write = 5000
-        // Otherwise: write = 20000. Use conservative estimate.
         let write_cost = if current_backlog == 0 {
-            SSTORE_ZERO_GAS // 5000
+            SSTORE_ZERO_GAS // 5000 (StorageWriteZeroCost)
         } else {
-            SSTORE_GAS // 20000
+            SSTORE_GAS // 20000 (StorageWriteCost)
         };
-        SLOAD_GAS + write_cost // read + write
+        SLOAD_GAS + write_cost
     };
 
-    // Calculate gas to donate to the retry tx.
-    // Reserve gas for: event emission + copy (return result) + backlog update.
-    let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_update_cost;
+    // Future gas costs: use RESERVATION for computing gas_to_donate
+    // (matching Nitro's BacklogUpdateCost()). The savings from
+    // over-reservation naturally become gasLeft.
+    let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_reservation;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
         return Err(PrecompileError::other(
@@ -457,15 +479,21 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         event_data.into(),
     ));
 
-    // Return only the precompile's own gas (NOT gas_to_donate).
-    // In Nitro, gas_to_donate stays as gasLeft in the precompile return.
-    // The EVM sees: gas_consumed = gasSupplied - gasLeft = own_gas.
-    // The donated gas is then consumed by the block executor when it
-    // processes the RedeemScheduled event and schedules the retry tx.
-    let own_gas = gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + COPY_GAS;
+    // Return total gas consumed, matching Nitro's model:
+    // gas_used = pre-donate charges + event + donated gas + actual backlog cost + copy
+    // gasLeft = gas_limit - gas_used = BacklogUpdateCost_reserved - actual_backlog_cost
+    //
+    // This matches Nitro where the precompile burns gas_to_donate, then
+    // ShrinkBacklog charges the actual (possibly cheaper) cost, leaving
+    // the over-reservation savings as gasLeft.
+    let total_gas = gas_used_so_far
+        + REDEEM_SCHEDULED_EVENT_COST
+        + gas_to_donate
+        + actual_backlog_cost
+        + COPY_GAS;
 
     Ok(PrecompileOutput::new(
-        own_gas.min(gas_limit),
+        total_gas.min(gas_limit),
         retry_tx_hash.to_vec().into(),
     ))
 }

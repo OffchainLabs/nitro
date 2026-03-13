@@ -1850,12 +1850,10 @@ where
             }
         }
 
-        // Add donated gas from Redeem precompile to gas_used. The precompile
-        // returns only its own gas; the donated gas is consumed here to match
-        // Nitro's burn-then-return pattern.
-        if total_donated_gas > 0 {
-            adjust_result_gas_used(&mut output.result.result, total_donated_gas);
-        }
+        // Note: donated gas from Redeem precompile is already included in the
+        // precompile's returned gas_used (matching Nitro's model where the
+        // precompile burns gas_to_donate + actual_shrinkBacklog_cost, leaving
+        // over-reservation savings as gasLeft).
 
         // Store per-tx state for fee distribution in commit_transaction.
         // Build multi-gas: L1 calldata from poster costs + EVM execution as computation.
