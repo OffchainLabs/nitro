@@ -214,8 +214,12 @@ func TestRustValidationServerJWTRejected(t *testing.T) {
 			config := rustValidatorClientConfig(rvAddr, tc.clientSecret)
 			valClient := client.NewValidationClient(StaticFetcherFrom(t, &config), nil)
 			defer valClient.Stop()
-			if err := valClient.Start(ctx); err == nil {
+			err := valClient.Start(ctx)
+			if err == nil {
 				Fatal(t, "expected connection to fail with", tc.name, "but it succeeded")
+			}
+			if !strings.Contains(err.Error(), "401") {
+				Fatal(t, "expected HTTP 401 error, got:", err)
 			}
 		})
 	}
