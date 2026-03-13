@@ -144,6 +144,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -151,7 +157,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:         nil,
 				L1Reader:             builder.L2.ConsensusNode.L1Reader,
-				BatchMetadataFetcher: builder.L2.ConsensusNode.InboxTracker,
+				BatchMetadataFetcher: batchMetaFetcher,
 				Streamer:             builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter:        builder.L2.ExecNode,
 				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
