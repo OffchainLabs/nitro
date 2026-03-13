@@ -1,10 +1,10 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::{
-    receive_response, receive_validation_input, send_failure_response, send_successful_response,
-    send_validation_input,
+    receive_response, receive_validation_request, send_failure_response, send_successful_response,
+    send_validation_request,
 };
-use crate::{local_target, BatchInfo, GoGlobalState, UserWasm, ValidationInput};
+use crate::{local_target, BatchInfo, GoGlobalState, UserWasm, ValidationRequest};
 use arbutil::{Bytes32, PreimageType};
 use std::collections::HashMap;
 use std::io::pipe;
@@ -47,7 +47,7 @@ fn transfer_failure_response() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
-    let input = ValidationInput {
+    let input = ValidationRequest {
         start_state: Default::default(),
 
         batch_info: vec![
@@ -95,8 +95,8 @@ fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
 
     let (mut reader, mut writer) = pipe()?;
 
-    send_validation_input(&mut writer, &input)?;
-    let received_input = receive_validation_input(&mut reader)?;
+    send_validation_request(&mut writer, &input)?;
+    let received_input = receive_validation_request(&mut reader)?;
 
     assert_eq!(received_input, input);
 
@@ -105,7 +105,7 @@ fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn local_stylus_target_must_be_present_if_some_target_is_present() {
-    let input = ValidationInput {
+    let input = ValidationRequest {
         user_wasms: HashMap::from([(
             "some-other-target".to_string(),
             HashMap::from([(Bytes32::from([0u8; 32]), UserWasm(vec![1, 2, 3]))]),
@@ -115,7 +115,7 @@ fn local_stylus_target_must_be_present_if_some_target_is_present() {
 
     let (_, mut writer) = pipe().unwrap();
 
-    let result = send_validation_input(&mut writer, &input);
+    let result = send_validation_request(&mut writer, &input);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("bad stylus arch"));
 }

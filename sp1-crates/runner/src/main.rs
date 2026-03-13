@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::SystemTime;
-use validation::ValidationInput;
+use validation::ValidationRequest;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -118,7 +118,7 @@ async fn main() {
 // we can easily inject debugging code to dump stdin when needed.
 fn build_input(cli: &Cli) -> Vec<u8> {
     let file_data =
-        serde_json::from_slice::<ValidationInput>(&std::fs::read(&cli.block_file).expect("read input block"))
+        serde_json::from_slice::<ValidationRequest>(&std::fs::read(&cli.block_file).expect("read input block"))
             .expect("parse input block");
 
     let mut module_asms = HashMap::default();

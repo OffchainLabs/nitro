@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     io::Read,
 };
-use validation::{UserWasm, ValidationInput};
+use validation::{UserWasm, ValidationRequest};
 
 /// This groups components in Arbitrum's WasmEnv that come from FileData.
 /// It helps us maintain a clear separation between Arbitrum inputs, and other
@@ -40,7 +40,7 @@ pub fn decompress_aligned(user_wasm: &UserWasm) -> ModuleAsm {
 
 impl Input {
     /// This takes hint from `arbitrator/jit/src/prepare.rs`
-    pub fn from_file_data(data: ValidationInput) -> eyre::Result<Self> {
+    pub fn from_file_data(data: ValidationRequest) -> eyre::Result<Self> {
         let large_globals = [data.start_state.block_hash.0, data.start_state.send_root.0];
         let small_globals = [data.start_state.batch, data.start_state.pos_in_batch];
 

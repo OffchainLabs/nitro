@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use axum::Json;
 use jit::CompiledModule;
 use tracing::info;
-use validation::{local_target, BatchInfo, GoGlobalState, ValidationInput};
+use validation::{local_target, BatchInfo, GoGlobalState, ValidationRequest};
 
 use crate::{
     engine::{
@@ -31,7 +31,7 @@ use crate::{
 pub async fn validate_native(
     locator: &MachineLocator,
     module_cache: &HashMap<ModuleRoot, CompiledModule>,
-    input: ValidationInput,
+    input: ValidationRequest,
     module_root: Option<ModuleRoot>,
 ) -> Result<Json<GoGlobalState>, String> {
     let delayed_inbox = match input.has_delayed_msg {
@@ -81,7 +81,7 @@ pub async fn validate_native(
 pub async fn validate_continuous(
     locator: &MachineLocator,
     jit_manager: &JitProcessManager,
-    input: ValidationInput,
+    input: ValidationRequest,
     module_root: Option<ModuleRoot>,
 ) -> Result<Json<GoGlobalState>, String> {
     let module_root =

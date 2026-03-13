@@ -2,13 +2,13 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::primitives::{write_bytes, write_bytes32, write_u32, write_u64, write_u8};
 use crate::transfer::{markers, IOResult};
-use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};
+use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationRequest};
 use arbutil::Bytes32;
 use std::collections::HashMap;
 use std::io::ErrorKind::InvalidData;
 use std::io::{Error, Write};
 
-pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -> IOResult<()> {
+pub fn send_validation_request(writer: &mut impl Write, input: &ValidationRequest) -> IOResult<()> {
     send_global_state(writer, &input.start_state)?;
     send_batches(writer, &input.batch_info)?;
     let batch = input.delayed_msg().map(|b| [b]).unwrap_or_default();

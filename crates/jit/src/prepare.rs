@@ -6,13 +6,13 @@ use eyre::Ok;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use validation::{local_target, ValidationInput};
+use validation::{local_target, ValidationRequest};
 
 pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<WasmEnv> {
     let file = File::open(json_inputs)?;
     let reader = BufReader::new(file);
 
-    let data = ValidationInput::from_reader(reader)?;
+    let data = ValidationRequest::from_reader(reader)?;
 
     let mut env = WasmEnv::default();
     env.process.already_has_input = true;

@@ -16,7 +16,7 @@
 //! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its
 //!    address to the subprocess's Standard Input.
 //! 2. **Data Transport (TCP):** The subprocess connects back to the provided address.
-//!    This TCP stream is then used for data transfer of the `ValidationInput` and
+//!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
 use crate::config::get_jit_path;
@@ -44,8 +44,8 @@ use tokio::{
     sync::Mutex,
 };
 use tracing::{debug, error, info, warn};
-use validation::transfer::{receive_response, send_validation_input};
-use validation::{GoGlobalState, ValidationInput};
+use validation::transfer::{receive_response, send_validation_request};
+use validation::{GoGlobalState, ValidationRequest};
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -65,7 +65,7 @@ impl JitMachine {
     pub async fn feed_machine(
         &self,
         wasm_memory_usage_limit: u64,
-        request: &ValidationInput,
+        request: &ValidationRequest,
     ) -> Result<GoGlobalState> {
         // 0. Ensure process is alive
         self.ensure_alive().await?;
@@ -93,7 +93,7 @@ impl JitMachine {
             .context("failed to open listener connection")?;
 
         // 5. Send data
-        send_validation_input(&mut conn, request)?;
+        send_validation_request(&mut conn, request)?;
 
         // 6. Read Response and return new state
         match receive_response(&mut conn)? {
@@ -159,7 +159,7 @@ impl JitProcessManager {
 
     pub async fn feed_machine_with_root(
         &self,
-        request: &ValidationInput,
+        request: &ValidationRequest,
         module_root: ModuleRoot,
     ) -> Result<GoGlobalState> {
         // Reject new operations if we're shutting down

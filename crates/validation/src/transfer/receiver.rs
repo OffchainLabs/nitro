@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use crate::transfer::primitives::{read_bytes, read_bytes32, read_u32, read_u64, read_u8};
 use crate::transfer::{markers, IOResult};
-use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationInput};
+use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationRequest};
 use arbutil::{Bytes32, PreimageType};
 use io::Error;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::Read;
 
-pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationInput> {
+pub fn receive_validation_request(reader: &mut impl Read) -> IOResult<ValidationRequest> {
     let start_state = receive_global_state(reader)?;
     let inbox = receive_batches(reader)?;
     let delayed_message = receive_delayed_message(reader)?.unwrap_or_default();
@@ -18,7 +18,7 @@ pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationIn
     let user_wasms = receive_user_wasms(reader)?;
     ensure_readiness(reader)?;
 
-    Ok(ValidationInput {
+    Ok(ValidationRequest {
         has_delayed_msg: !delayed_message.data.is_empty(),
         delayed_msg_nr: delayed_message.number,
         preimages,

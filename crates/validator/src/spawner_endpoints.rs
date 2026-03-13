@@ -16,7 +16,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use validation::ValidationInput;
+use validation::ValidationRequest;
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]
@@ -103,7 +103,7 @@ fn module_roots(state: Arc<ServerState>) -> Vec<String> {
 }
 
 async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, String> {
-    let validation_input: ValidationInput = params
+    let validation_input: ValidationRequest = params
         .first()
         .ok_or_else(|| "Missing params".to_string())
         .and_then(|v| {

@@ -14,7 +14,7 @@ use std::{
     time::Instant,
 };
 use validation::local_target;
-use validation::transfer::receive_validation_input;
+use validation::transfer::receive_validation_request;
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
@@ -228,7 +228,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
-    let input = receive_validation_input(&mut reader)?;
+    let input = receive_validation_request(&mut reader)?;
 
     env.small_globals = [input.start_state.batch, input.start_state.pos_in_batch];
     env.large_globals = [input.start_state.block_hash, input.start_state.send_root];

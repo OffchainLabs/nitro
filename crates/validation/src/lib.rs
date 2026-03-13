@@ -78,7 +78,7 @@ impl TryFrom<Vec<u8>> for UserWasm {
 /// Counterpart to Go `validator.server_api.InputJSON`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct ValidationInput {
+pub struct ValidationRequest {
     pub id: u64,
     pub has_delayed_msg: bool,
     pub delayed_msg_nr: u64,
@@ -98,7 +98,7 @@ pub struct ValidationInput {
     pub max_user_wasm_size: u64,
 }
 
-impl ValidationInput {
+impl ValidationRequest {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         Ok(serde_json::from_reader(&mut reader)?)
     }
