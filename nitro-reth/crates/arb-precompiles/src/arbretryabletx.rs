@@ -55,14 +55,9 @@ const REDEEM_SCHEDULED_DATA_BYTES: u64 = 128;
 const REDEEM_SCHEDULED_EVENT_COST: u64 =
     LOG_GAS + 4 * LOG_TOPIC_GAS + LOG_DATA_GAS * REDEEM_SCHEDULED_DATA_BYTES;
 
-/// Backlog update cost reserved by the Redeem precompile.
-///
-/// In Nitro, `c.State.L2PricingState().BacklogUpdateCost()` returns
-/// StorageReadCost + StorageWriteCost = 20800. But the actual gasLeft
-/// returned to the EVM is ~15000, implying additional framework overhead
-/// (OpenArbosState version read + storage reads) reduces the effective
-/// reservation. We use 15000 to match canonical gas accounting.
-const BACKLOG_UPDATE_COST: u64 = 15_000;
+/// Backlog update cost: read + write. Write cost depends on whether
+/// the new value is zero (StorageClearCost=5000) or non-zero (StorageWriteCost=20000).
+/// This is computed dynamically in handle_redeem based on current backlog.
 
 /// TicketCreated event topic0.
 /// keccak256("TicketCreated(bytes32)")
@@ -404,9 +399,32 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // SystemBurner in Nitro = no gas cost. OpenRetryable re-read also free.
     let gas_used_so_far = 3 * SLOAD_GAS + SSTORE_GAS + retryable_size_gas;
 
+    // Compute backlog update cost dynamically. In Nitro, ShrinkBacklog
+    // runs inside the precompile with the burner charging StorageReadCost
+    // (800) for the read + writeCost for the write. writeCost depends on
+    // the new value: StorageClearCost (5000) if zero, StorageWriteCost
+    // (20000) if non-zero. The donated gas shrinks the backlog, so if
+    // the backlog will reach zero, the write is cheaper.
+    let backlog_update_cost = {
+        let backlog_slot = alloy_primitives::uint!(0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204_U256);
+        let current_backlog = internals
+            .sload(ARBOS_STATE_ADDRESS, backlog_slot)
+            .map(|r| r.data.to::<u64>())
+            .unwrap_or(0);
+        // gas_to_donate is approximately gas_remaining - future_costs.
+        // If backlog <= approximate_donated: new backlog = 0, write = 5000
+        // Otherwise: write = 20000. Use conservative estimate.
+        let write_cost = if current_backlog == 0 {
+            SSTORE_ZERO_GAS // 5000
+        } else {
+            SSTORE_GAS // 20000
+        };
+        SLOAD_GAS + write_cost // read + write
+    };
+
     // Calculate gas to donate to the retry tx.
     // Reserve gas for: event emission + copy (return result) + backlog update.
-    let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + BACKLOG_UPDATE_COST;
+    let future_gas_costs = REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + backlog_update_cost;
     let gas_remaining = gas_limit.saturating_sub(gas_used_so_far);
     if gas_remaining < future_gas_costs + TX_GAS {
         return Err(PrecompileError::other(
