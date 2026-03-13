@@ -268,7 +268,6 @@ where
             // State-derived fields populated by block executor after state open.
             l1_price_per_unit: U256::ZERO,
             brotli_compression_level: 0,
-            per_batch_gas_cost: 0,
             network_fee_account: Address::ZERO,
             infra_fee_account: Address::ZERO,
             min_base_fee: U256::ZERO,
@@ -299,7 +298,6 @@ where
             coinbase: Address::ZERO,
             l1_price_per_unit: U256::ZERO,
             brotli_compression_level: 0,
-            per_batch_gas_cost: 0,
             network_fee_account: Address::ZERO,
             infra_fee_account: Address::ZERO,
             min_base_fee: U256::ZERO,

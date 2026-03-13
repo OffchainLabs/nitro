@@ -34,8 +34,6 @@ pub struct ArbBlockExecutionCtx {
     pub l1_price_per_unit: U256,
     /// L1 pricing: brotli compression level from ArbOS state.
     pub brotli_compression_level: u64,
-    /// L1 pricing: per-batch gas cost (amortized batch overhead).
-    pub per_batch_gas_cost: i64,
     /// ArbOS version.
     pub arbos_version: u64,
     /// Network fee account address.
