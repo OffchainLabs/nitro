@@ -868,16 +868,16 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	version := p.state.ArbOSVersion()
 	if version != params.ArbosVersion_9 {
 		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
-		gasPrice = p.evm.Context.BaseFee
+		return p.evm.Context.BaseFee
 	}
-	return gasPrice
+	return gasPrice.ToBig()
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 	if p.state.ArbOSVersion() >= params.ArbosVersion_3 {
 		return p.GetPaidGasPrice()
 	}
-	return evm.GasPrice
+	return evm.GasPrice.ToBig()
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {

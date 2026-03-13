@@ -53,9 +53,11 @@ type CachingConfig struct {
 	DisableStylusCacheMetricsCollection bool          `koanf:"disable-stylus-cache-metrics-collection"`
 	StateScheme                         string        `koanf:"state-scheme"`
 	StateHistory                        uint64        `koanf:"state-history"`
+	TrienodeHistory                     int64         `koanf:"trienode-history"`
 	EnablePreimages                     bool          `koanf:"enable-preimages"`
 	PathdbMaxDiffLayers                 int           `koanf:"pathdb-max-diff-layers"`
 	StateSizeTracking                   bool          `koanf:"state-size-tracking"`
+	NodeFullValueCheckpoint             uint32        `koanf:"node-full-value-checkpoint"`
 }
 
 func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -80,9 +82,11 @@ func CachingConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-stylus-cache-metrics-collection", DefaultCachingConfig.DisableStylusCacheMetricsCollection, "disable metrics collection for the stylus cache")
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hash, path)")
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
+	f.Int64(prefix+".trienode-history", DefaultCachingConfig.TrienodeHistory, "number of recent blocks to retain trienode history for (path state-scheme only). 0: full chain, negative: disable")
 	f.Bool(prefix+".enable-preimages", DefaultCachingConfig.EnablePreimages, "enable recording of preimages")
 	f.Int(prefix+".pathdb-max-diff-layers", DefaultCachingConfig.PathdbMaxDiffLayers, "maximum number of diff layers to keep in pathdb (path state-scheme only)")
 	f.Bool(prefix+".state-size-tracking", DefaultCachingConfig.StateSizeTracking, "enable tracking of state size over time")
+	f.Uint32(prefix+".node-full-value-checkpoint", DefaultCachingConfig.NodeFullValueCheckpoint, "rate at which trie nodes are encoded in full-value format in trienode history (path state-scheme only)")
 }
 
 func GetStateHistory(maxBlockSpeed time.Duration) uint64 {
@@ -111,9 +115,11 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCacheCapacity:              256,
 	StateScheme:                         rawdb.HashScheme,
 	StateHistory:                        UninitializedStateHistory,
+	TrienodeHistory:                     -1,
 	EnablePreimages:                     false,
 	PathdbMaxDiffLayers:                 128,
 	StateSizeTracking:                   false,
+	NodeFullValueCheckpoint:             8,
 }
 
 func DefaultCacheConfigFor(cachingConfig *CachingConfig) *core.BlockChainConfig {
@@ -145,9 +151,11 @@ func DefaultCacheConfigTrieNoFlushFor(cachingConfig *CachingConfig, trieNoAsyncF
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
 		StateHistory:                       cachingConfig.StateHistory,
+		TrienodeHistory:                    cachingConfig.TrienodeHistory,
 		MaxDiffLayers:                      cachingConfig.PathdbMaxDiffLayers,
 		TrieNoAsyncFlush:                   trieNoAsyncFlush,
 		StateSizeTracking:                  cachingConfig.StateSizeTracking,
+		NodeFullValueCheckpoint:            cachingConfig.NodeFullValueCheckpoint,
 	}
 }
 
