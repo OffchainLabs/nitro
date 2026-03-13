@@ -16,7 +16,7 @@
 //! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its
 //!    address to the subprocess's Standard Input.
 //! 2. **Data Transport (TCP):** The subprocess connects back to the provided address.
-//!    This TCP stream is then used for data transfer of the `ValidationRequest` and
+//!    This TCP stream is then used for data transfer of the `ValidationTask` and
 //!    the resulting `GlobalState`.
 
 use crate::config::get_jit_path;

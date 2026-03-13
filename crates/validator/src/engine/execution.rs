@@ -4,7 +4,7 @@
 //! Validation Execution Logic and Request Models.
 //!
 //! This module serves as the central entry point for running validation tasks.
-//! It defines the standard `ValidationRequest` structure used by the API and
+//! It defines the standard `ValidationTask` structure used by the API and
 //! implements the two primary validation strategies:
 //!
 //! 1. **Native Mode (`validate_native`):** Runs validation in-process using the
@@ -28,23 +28,23 @@ use crate::{
         machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
         DEFAULT_JIT_CRANELIFT,
     },
-    spawner_endpoints::ValidationRequest,
+    spawner_endpoints::ValidationTask,
 };
 
 pub async fn validate_native(
     locator: &MachineLocator,
     module_cache: &HashMap<ModuleRoot, CompiledModule>,
-    request: ValidationRequest,
+    task: ValidationTask,
 ) -> Result<Json<GoGlobalState>, String> {
-    let delayed_inbox = match request.validation_input.has_delayed_msg {
+    let delayed_inbox = match task.validation_input.has_delayed_msg {
         true => vec![BatchInfo {
-            number: request.validation_input.delayed_msg_nr,
-            data: request.validation_input.delayed_msg,
+            number: task.validation_input.delayed_msg_nr,
+            data: task.validation_input.delayed_msg,
         }],
         false => vec![],
     };
 
-    let module_root = request
+    let module_root = task
         .module_root
         .unwrap_or(locator.latest_wasm_module_root().module_root);
 
@@ -60,11 +60,11 @@ pub async fn validate_native(
             require_success: false, // Relevant for JIT binary only.
         },
         input_mode: jit::InputMode::Native(jit::NativeInput {
-            old_state: request.validation_input.start_state.into(),
-            inbox: request.validation_input.batch_info,
+            old_state: task.validation_input.start_state.into(),
+            inbox: task.validation_input.batch_info,
             delayed_inbox,
-            preimages: request.validation_input.preimages,
-            programs: request.validation_input.user_wasms[local_target()].clone(),
+            preimages: task.validation_input.preimages,
+            programs: task.validation_input.user_wasms[local_target()].clone(),
         }),
     };
 
@@ -85,16 +85,16 @@ pub async fn validate_native(
 pub async fn validate_continuous(
     locator: &MachineLocator,
     jit_manager: &JitProcessManager,
-    request: ValidationRequest,
+    task: ValidationTask,
 ) -> Result<Json<GoGlobalState>, String> {
-    let module_root = request
+    let module_root = task
         .module_root
         .unwrap_or_else(|| locator.latest_wasm_module_root().module_root);
 
     info!("validate continuous serving request with module_root {module_root}");
 
     let new_state = jit_manager
-        .feed_machine_with_root(&request.validation_input, module_root)
+        .feed_machine_with_root(&task.validation_input, module_root)
         .await
         .map_err(|error| format!("{error:?}"))?;
 

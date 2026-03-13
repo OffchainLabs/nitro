@@ -58,8 +58,8 @@ impl<T: Serialize> JsonRpcResponse<T> {
     }
 }
 
-/// Validation request that includes both ValidationInput and module_root.
-pub struct ValidationRequest {
+/// A single validation task: the input data paired with an optional module root.
+pub struct ValidationTask {
     pub validation_input: ValidationInput,
     pub module_root: Option<ModuleRoot>,
 }
@@ -122,7 +122,7 @@ async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, S
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
-    let request = ValidationRequest {
+    let request = ValidationTask {
         validation_input,
         module_root,
     };
