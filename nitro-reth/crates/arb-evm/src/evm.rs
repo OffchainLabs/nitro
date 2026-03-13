@@ -1247,11 +1247,9 @@ fn build_arb_evm<DB: Database, I>(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
     );
-    // SHA3 tracer: captures keccak outputs for diagnostic comparison.
-    instruction.insert_instruction(
-        0x20, // SHA3 / KECCAK256
-        revm::interpreter::Instruction::new(arb_sha3_tracer, 0),
-    );
+    // SHA3 tracer disabled - use standard revm keccak256 handler.
+    // The custom tracer had a memory resize bug: resize(new_size) instead of
+    // resize(new_words * 32), causing under-allocated memory for non-word-aligned inputs.
     register_arb_precompiles(&mut precompiles);
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 
