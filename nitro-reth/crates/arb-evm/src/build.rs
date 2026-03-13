@@ -337,6 +337,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         arb_precompiles::set_arbos_version(arbos_version);
         arb_precompiles::set_block_timestamp(self.arb_ctx.block_timestamp);
         arb_precompiles::set_current_l2_block(self.arb_ctx.l2_block_number);
+        arb_precompiles::set_l1_block_number_for_evm(self.arb_ctx.l1_block_number);
         arb_precompiles::set_cached_l1_block_number(
             self.arb_ctx.l2_block_number,
             self.arb_ctx.l1_block_number,
@@ -1081,12 +1082,23 @@ where
                     if is_start_block {
                         self.load_state_params(&arb_state);
 
-                        // Refresh L1 block hashes cache after StartBlock.
-                        // StartBlock calls record_new_l1_block which may add
-                        // gap hashes that weren't in the initial pre-population.
+                        // Update L1 block number from ArbOS state. The mixHash
+                        // L1 block number can differ from the StartBlock data's
+                        // value; Nitro reads from ArbOS state for the NUMBER
+                        // opcode. Set thread-local for custom NUMBER handler.
                         if let Ok(l1_block_number) =
                             arb_state.blockhashes.l1_block_number()
                         {
+                            self.arb_ctx.l1_block_number = l1_block_number;
+                            arb_precompiles::set_l1_block_number_for_evm(
+                                l1_block_number,
+                            );
+                            arb_precompiles::set_cached_l1_block_number(
+                                self.arb_ctx.l2_block_number,
+                                l1_block_number,
+                            );
+
+                            // Refresh L1 block hashes cache after StartBlock.
                             let lower = l1_block_number.saturating_sub(256);
                             let state_ref = unsafe { &mut *state_ptr };
                             for n in lower..l1_block_number {

@@ -58,6 +58,8 @@ use std::cell::Cell;
 thread_local! {
     /// Current ArbOS version, set by the block executor before transaction execution.
     static ARBOS_VERSION: Cell<u64> = const { Cell::new(0) };
+    /// L1 block number for the NUMBER opcode, from ArbOS state after StartBlock.
+    static L1_BLOCK_NUMBER_FOR_EVM: Cell<u64> = const { Cell::new(0) };
     /// Current EVM call depth, incremented on each CALL/CREATE frame.
     /// Used by precompiles (e.g., ArbSys.isTopLevelCall) to determine
     /// the call stack position. Reset to 0 at transaction start.
@@ -75,6 +77,16 @@ pub fn set_arbos_version(version: u64) {
 /// Get the current ArbOS version.
 pub fn get_arbos_version() -> u64 {
     ARBOS_VERSION.with(|v| v.get())
+}
+
+/// Set the L1 block number for the NUMBER opcode.
+pub fn set_l1_block_number_for_evm(number: u64) {
+    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.set(number));
+}
+
+/// Get the L1 block number for the NUMBER opcode.
+pub fn get_l1_block_number_for_evm() -> u64 {
+    L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.get())
 }
 
 /// Set the EVM call depth to a specific value.

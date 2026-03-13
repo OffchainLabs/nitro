@@ -32,6 +32,24 @@ const BLOBBASEFEE_OPCODE: u8 = 0x4a;
 /// SELFDESTRUCT opcode (0xff).
 const SELFDESTRUCT_OPCODE: u8 = 0xff;
 
+/// NUMBER opcode (0x43).
+const NUMBER_OPCODE: u8 = 0x43;
+
+/// Arbitrum NUMBER: returns the L1 block number from ArbOS state.
+///
+/// Nitro's NUMBER reads from `ProcessingHook.L1BlockNumber()` which returns
+/// the value stored by `record_new_l1_block` during StartBlock. The mixHash
+/// L1 block number in the header can differ from this value, so we read from
+/// the thread-local set after StartBlock processing.
+fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    let l1_block = arb_precompiles::get_l1_block_number_for_evm();
+    if !ctx.interpreter.stack.push(U256::from(l1_block)) {
+        ctx.interpreter.halt(InstructionResult::StackOverflow);
+    }
+}
+
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
 fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
@@ -1246,6 +1264,12 @@ fn build_arb_evm<DB: Database, I>(
     instruction.insert_instruction(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
+    );
+    // NUMBER returns L1 block number from ArbOS state (updated by StartBlock),
+    // not the mixHash L1 block number which can differ.
+    instruction.insert_instruction(
+        NUMBER_OPCODE,
+        revm::interpreter::Instruction::new(arb_number, 2),
     );
     // SHA3 tracer disabled - use standard revm keccak256 handler.
     // The custom tracer had a memory resize bug: resize(new_size) instead of
