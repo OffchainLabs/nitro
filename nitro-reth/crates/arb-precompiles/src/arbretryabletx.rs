@@ -39,10 +39,8 @@ const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 /// Timeout queue subspace key within the retryables storage.
 const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 
-/// Arbitrum precompile storage gas costs (matches Nitro's StorageReadCost/StorageWriteCost).
-/// These are NOT the standard EVM SLOAD/SSTORE gas costs.
-const SLOAD_GAS: u64 = 4_000;
-const SSTORE_GAS: u64 = 6_000;
+const SLOAD_GAS: u64 = 800;
+const SSTORE_GAS: u64 = 20_000;
 const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 const TX_GAS: u64 = 21_000;
@@ -318,9 +316,43 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // Open the retryable (verifies exists and not expired).
+    // Compute RetryableSizeBytes and charge gas for reading retryable data.
+    // Nitro charges SloadGas (800) per 32-byte word of the retryable's total
+    // stored size: 6 fixed fields + calldata length word + calldata content.
+    let ticket_key_pre = ticket_storage_key(ticket_id);
+    let retryable_size_gas = {
+        // Read timeout to verify retryable exists (for RetryableSizeBytes).
+        let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
+        let timeout_check = internals
+            .sload(ARBOS_STATE_ADDRESS, timeout_slot)
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
+        let timeout_check_u64: u64 = timeout_check
+            .try_into()
+            .map_err(|_| PrecompileError::other("invalid timeout value"))?;
+        if timeout_check_u64 == 0 || timeout_check_u64 < current_timestamp {
+            return Err(PrecompileError::other("retryable ticket not found or expired"));
+        }
+
+        // Read calldata size.
+        let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
+        let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
+        let calldata_size = internals
+            .sload(ARBOS_STATE_ADDRESS, calldata_size_slot)
+            .map_err(|_| PrecompileError::other("sload failed"))?
+            .data;
+        let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
+        let calldata_words = (calldata_size_u64 + 31) / 32;
+        // nbytes = 6*32 (fixed fields) + 32 (length word) + 32*calldata_words
+        let nbytes = 6 * 32 + 32 + 32 * calldata_words;
+        let write_bytes = (nbytes + 31) / 32;
+        // SloadGas (800) per word, matching Nitro's c.Burn(StorageAccess, SloadGas*writeBytes)
+        800u64.saturating_mul(write_bytes)
+    };
+
+    // Open the retryable (re-read timeout after size computation).
     let ticket_key = {
-        let tk = ticket_storage_key(ticket_id);
+        let tk = ticket_key_pre;
         let timeout_slot = map_slot(tk.as_slice(), TIMEOUT_OFFSET);
         let timeout = internals
             .sload(ARBOS_STATE_ADDRESS, timeout_slot)
@@ -357,8 +389,14 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
     let retry_tx_hash = keccak256(&hash_input);
 
-    // Gas consumed so far: OpenArbosState(1) + currentRetryable(1) + timeout(1) + numTries(1) sloads + 1 sstore.
-    let gas_used_so_far = 4 * SLOAD_GAS + SSTORE_GAS;
+    // Gas consumed so far, matching Nitro's gas accounting:
+    // - retryable_size_gas: explicit c.Burn(SloadGas * writeBytes) = 800 * writeBytes
+    // - currentRetryable: 1 sload (ArbOS scratch slot check)
+    // - timeout: 1 sload (OpenRetryable)
+    // - numTries: 1 sload + 1 sstore (read + increment)
+    // Note: RetryableSizeBytes reads (timeout + calldata_size) go through
+    // SystemBurner in Nitro = no gas cost. OpenRetryable re-read also free.
+    let gas_used_so_far = 3 * SLOAD_GAS + SSTORE_GAS + retryable_size_gas;
 
     // Calculate gas to donate to the retry tx.
     // Reserve gas for: event emission + copy (return result) + backlog update.
