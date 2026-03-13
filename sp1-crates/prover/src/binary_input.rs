@@ -1,18 +1,9 @@
 use bytes::{Bytes, BytesMut};
 use std::io::Read;
-use validation::{UserWasm, ValidationInput};
+use validation::ValidationInput;
 
-// SP1 has additional alignment requirements, we have to decompress the data
-// into aligned bytes
-pub fn decompress_aligned(user_wasm: &UserWasm) -> Bytes {
-    // This is less ideal but until one of the following happens, we
-    // will have to stick with it:
-    // * Allocator allocates aligned memory
-    // * Bytes add alignment options
-    // * Wasmer's Module does not simply accept `IntoBytes` trait.
-    align_bytes(&user_wasm.as_vec())
-}
-
+/// Copies `data` into 8-byte-aligned memory and returns it as `Bytes`.
+/// SP1's wasmer fork requires aligned memory for `Module::deserialize`.
 pub fn align_bytes(data: &[u8]) -> Bytes {
     let mut buffer = BytesMut::zeroed(data.len() + 7);
     let p = buffer.as_ptr() as usize;

@@ -5869,7 +5869,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "clap",
- "prover",
  "rkyv",
  "serde_json",
  "sp1-core-executor",

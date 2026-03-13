@@ -1,5 +1,4 @@
 use clap::{ArgAction, Parser, ValueEnum};
-use prover::binary_input::decompress_aligned;
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
 use std::ops::Deref;
@@ -128,8 +127,7 @@ fn build_input(cli: &Cli) -> Vec<u8> {
             if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
             }
-            let decompressed = decompress_aligned(wasm);
-            let binary = run_in_sp1(cli, &decompressed);
+            let binary = run_in_sp1(cli, wasm.as_ref());
             input.module_asms.insert(**module_hash, binary);
         }
     }
