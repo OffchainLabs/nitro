@@ -1,13 +1,11 @@
 use clap::{ArgAction, Parser, ValueEnum};
-use prover::{
-    binary_input::{Input, decompress_aligned},
-};
+use prover::binary_input::decompress_aligned;
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::SystemTime;
-use validation::ValidationRequest;
+use validation::{ValidationInput, ValidationRequest};
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -120,7 +118,7 @@ fn build_input(cli: &Cli) -> Vec<u8> {
         serde_json::from_slice::<ValidationRequest>(&std::fs::read(&cli.block_file).expect("read input block"))
             .expect("parse input block");
 
-    let mut input = Input::from_request(&req);
+    let mut input = ValidationInput::from_request(&req, "rv64");
 
     // Compile wasm modules that don't have rv64 binaries via the SP1 stylus compiler.
     if let Some(wasms) = req.user_wasms.get("wasm") {
@@ -132,7 +130,7 @@ fn build_input(cli: &Cli) -> Vec<u8> {
             }
             let decompressed = decompress_aligned(wasm);
             let binary = run_in_sp1(cli, &decompressed);
-            input.module_asms.insert(**module_hash, binary.into());
+            input.module_asms.insert(**module_hash, binary);
         }
     }
 
