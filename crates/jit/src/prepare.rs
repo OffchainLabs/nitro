@@ -2,47 +2,45 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::WasmEnv;
+use arbutil::{Bytes32, PreimageType};
 use eyre::Ok;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use validation::{local_target, ValidationRequest};
+use validation::{local_target, ValidationInput, ValidationRequest};
 
 pub fn prepare_env_from_json(json_inputs: &Path, debug: bool) -> eyre::Result<WasmEnv> {
     let file = File::open(json_inputs)?;
     let reader = BufReader::new(file);
 
-    let data = ValidationRequest::from_reader(reader)?;
+    let req = ValidationRequest::from_reader(reader)?;
+    let input = ValidationInput::from_request(&req, local_target());
 
     let mut env = WasmEnv::default();
     env.process.already_has_input = true;
     env.process.debug = debug;
 
-    env.small_globals = [data.start_state.batch, data.start_state.pos_in_batch];
-    env.large_globals = [data.start_state.block_hash, data.start_state.send_root];
+    env.small_globals = input.small_globals;
+    env.large_globals = input.large_globals.map(Bytes32);
 
-    for batch_info in data.batch_info.iter() {
-        env.sequencer_messages
-            .insert(batch_info.number, batch_info.data.clone());
+    for (num, data) in input.sequencer_messages {
+        env.sequencer_messages.insert(num, data);
+    }
+    for (num, data) in input.delayed_messages {
+        env.delayed_messages.insert(num, data);
     }
 
-    if data.delayed_msg_nr != 0 && !data.delayed_msg.is_empty() {
-        env.delayed_messages
-            .insert(data.delayed_msg_nr, data.delayed_msg.clone());
-    }
-
-    for (preimage_ty, inner_map) in data.preimages {
+    for (preimage_ty, inner_map) in input.preimages {
+        let preimage_ty = PreimageType::try_from(preimage_ty)
+            .unwrap_or_else(|_| panic!("unknown preimage type: {preimage_ty}"));
         let map = env.preimages.entry(preimage_ty).or_default();
         for (hash, preimage) in inner_map {
-            map.insert(hash, preimage);
+            map.insert(Bytes32(hash), preimage);
         }
     }
 
-    if let Some(user_wasms) = data.user_wasms.get(local_target()) {
-        for (module_hash, module_asm) in user_wasms.iter() {
-            env.module_asms
-                .insert(*module_hash, module_asm.as_vec().into());
-        }
+    for (module_hash, asm) in input.module_asms {
+        env.module_asms.insert(Bytes32(module_hash), asm.into());
     }
 
     Ok(env)

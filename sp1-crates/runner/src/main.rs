@@ -4,7 +4,6 @@ use prover::{
 };
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -117,31 +116,25 @@ async fn main() {
 // Build SP1 input from Arbitrum block. It is serialized to Vec<u8>, so
 // we can easily inject debugging code to dump stdin when needed.
 fn build_input(cli: &Cli) -> Vec<u8> {
-    let file_data =
+    let req =
         serde_json::from_slice::<ValidationRequest>(&std::fs::read(&cli.block_file).expect("read input block"))
             .expect("parse input block");
 
-    let mut module_asms = HashMap::default();
-    if let Some(binaries) = file_data.user_wasms.get("rv64") {
-        for (module_hash, binary) in binaries.iter() {
-            module_asms.insert(**module_hash, decompress_aligned(binary));
-        }
-    }
-    if let Some(wasms) = file_data.user_wasms.get("wasm") {
+    let mut input = Input::from_request(&req);
+
+    // Compile wasm modules that don't have rv64 binaries via the SP1 stylus compiler.
+    if let Some(wasms) = req.user_wasms.get("wasm") {
         for (module_hash, wasm) in wasms.iter() {
             // rv64 binaries take precedence. This way when nitro introduces
             // caching for rv64 binaries, no changes will be needed for runner.
-            if module_asms.contains_key(module_hash.deref()) {
+            if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
             }
             let decompressed = decompress_aligned(wasm);
-            let binary = run_in_sp1(&cli, &decompressed);
-            module_asms.insert(**module_hash, binary.into());
+            let binary = run_in_sp1(cli, &decompressed);
+            input.module_asms.insert(**module_hash, binary.into());
         }
     }
-
-    let mut input = Input::from_file_data(file_data).expect("create input");
-    input.module_asms = module_asms;
 
     let binary_input = rkyv::to_bytes::<rkyv::rancor::Error>(&input)
         .expect("to bytes")

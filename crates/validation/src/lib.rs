@@ -4,13 +4,67 @@ use arbutil::{Bytes32, PreimageType};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, As, DisplayFromStr};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     io::{self, BufRead},
 };
 
 pub mod transfer;
 
 pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
+
+pub type Inbox = BTreeMap<u64, Vec<u8>>;
+pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
+
+/// The runtime data needed by any machine (JIT, SP1, Prover) to execute
+/// a single block validation. Extracted from a `ValidationRequest` by
+/// selecting a target architecture and stripping request metadata.
+pub struct ValidationInput {
+    pub small_globals: [u64; 2],
+    pub large_globals: [[u8; 32]; 2],
+    pub preimages: Preimages,
+    pub sequencer_messages: Inbox,
+    pub delayed_messages: Inbox,
+    pub module_asms: HashMap<[u8; 32], Vec<u8>>,
+}
+
+impl ValidationInput {
+    /// Extract runtime data from a request for the given target architecture.
+    pub fn from_request(req: &ValidationRequest, target: &str) -> Self {
+        let mut sequencer_messages = Inbox::new();
+        for batch in &req.batch_info {
+            sequencer_messages.insert(batch.number, batch.data.clone());
+        }
+
+        let mut delayed_messages = Inbox::new();
+        if req.delayed_msg_nr != 0 && !req.delayed_msg.is_empty() {
+            delayed_messages.insert(req.delayed_msg_nr, req.delayed_msg.clone());
+        }
+
+        let mut preimages = Preimages::new();
+        for (preimage_ty, inner_map) in &req.preimages {
+            let map = preimages.entry(*preimage_ty as u8).or_default();
+            for (hash, preimage) in inner_map {
+                map.insert(**hash, preimage.clone());
+            }
+        }
+
+        let mut module_asms = HashMap::new();
+        if let Some(user_wasms) = req.user_wasms.get(target) {
+            for (module_hash, wasm) in user_wasms {
+                module_asms.insert(**module_hash, wasm.as_vec());
+            }
+        }
+
+        Self {
+            small_globals: [req.start_state.batch, req.start_state.pos_in_batch],
+            large_globals: [req.start_state.block_hash.0, req.start_state.send_root.0],
+            preimages,
+            sequencer_messages,
+            delayed_messages,
+            module_asms,
+        }
+    }
+}
 
 pub const TARGET_ARM_64: &str = "arm64";
 pub const TARGET_AMD_64: &str = "amd64";
