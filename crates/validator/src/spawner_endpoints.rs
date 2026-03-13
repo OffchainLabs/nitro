@@ -8,7 +8,7 @@
 //! field names).
 
 use crate::config::ExecutionMode;
-use crate::engine::execution::{validate_continuous, validate_native};
+use crate::engine::execution::{validate_continuous, validate_native, ValidationTask};
 use crate::engine::ModuleRoot;
 use crate::ServerState;
 use axum::extract::State;
@@ -56,12 +56,6 @@ impl<T: Serialize> JsonRpcResponse<T> {
             }),
         }
     }
-}
-
-/// A single validation task: the input data paired with an optional module root.
-pub struct ValidationTask {
-    pub validation_input: ValidationInput,
-    pub module_root: Option<ModuleRoot>,
 }
 
 /// JSON-RPC 2.0 dispatch request with `method` field.

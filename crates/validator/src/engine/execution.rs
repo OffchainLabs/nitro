@@ -21,15 +21,20 @@ use std::collections::HashMap;
 use axum::Json;
 use jit::CompiledModule;
 use tracing::info;
-use validation::{local_target, BatchInfo, GoGlobalState};
+use validation::{local_target, BatchInfo, GoGlobalState, ValidationInput};
 
 use crate::{
     engine::{
         machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
         DEFAULT_JIT_CRANELIFT,
     },
-    spawner_endpoints::ValidationTask,
 };
+
+/// A single validation task: the input data paired with an optional module root.
+pub struct ValidationTask {
+    pub validation_input: ValidationInput,
+    pub module_root: Option<ModuleRoot>,
+}
 
 pub async fn validate_native(
     locator: &MachineLocator,
