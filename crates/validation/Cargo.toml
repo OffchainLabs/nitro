@@ -12,6 +12,11 @@ rust-version.workspace = true
 [dependencies]
 arbutil = { workspace = true }
 brotli = { workspace = true }
+rkyv = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true, features = ["base64"] }
+
+[features]
+default = []
+rkyv = ["dep:rkyv"]

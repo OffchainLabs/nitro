@@ -3770,6 +3770,7 @@ dependencies = [
  "sp1-zkvm",
  "thiserror 1.0.69",
  "tiny-keccak 2.0.2 (git+https://github.com/sp1-patches/tiny-keccak?tag=patch-2.0.2-sp1-6.0.0)",
+ "validation",
  "wasmer",
  "wasmer-types",
  "wasmer-vm",
@@ -6736,6 +6737,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "brotli",
+ "rkyv",
  "serde",
  "serde_json",
  "serde_with",
