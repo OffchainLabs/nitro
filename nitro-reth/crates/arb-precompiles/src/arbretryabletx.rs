@@ -39,8 +39,10 @@ const TIMEOUT_WINDOWS_LEFT_OFFSET: u64 = 6;
 /// Timeout queue subspace key within the retryables storage.
 const TIMEOUT_QUEUE_KEY: &[u8] = &[0];
 
-const SLOAD_GAS: u64 = 800;
-const SSTORE_GAS: u64 = 20_000;
+/// Arbitrum precompile storage gas costs (matches Nitro's StorageReadCost/StorageWriteCost).
+/// These are NOT the standard EVM SLOAD/SSTORE gas costs.
+const SLOAD_GAS: u64 = 4_000;
+const SSTORE_GAS: u64 = 6_000;
 const SSTORE_ZERO_GAS: u64 = 5_000;
 const COPY_GAS: u64 = 3;
 const TX_GAS: u64 = 21_000;
