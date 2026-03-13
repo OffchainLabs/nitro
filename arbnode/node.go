@@ -1053,8 +1053,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	batchMetaFetcher BatchMetadataFetcher,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1075,14 +1074,6 @@ func getBatchPoster(
 		}
 		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
-		}
-		var batchMetaFetcher BatchMetadataFetcher
-		if inboxTracker != nil {
-			batchMetaFetcher = inboxTracker
-		} else if msgExtractor != nil {
-			batchMetaFetcher = msgExtractor
-		} else {
-			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -1316,7 +1307,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}

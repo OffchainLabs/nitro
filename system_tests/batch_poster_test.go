@@ -144,6 +144,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -151,7 +157,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:         nil,
 				L1Reader:             builder.L2.ConsensusNode.L1Reader,
-				BatchMetadataFetcher: builder.L2.ConsensusNode.InboxTracker,
+				BatchMetadataFetcher: batchMetaFetcher,
 				Streamer:             builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter:        builder.L2.ExecNode,
 				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
@@ -929,7 +935,6 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
-		WithPreBoldDeployment().
 		TakeOwnership()
 
 	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
@@ -968,18 +973,14 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	// Spin L1 to get batch poster report
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	// The batch posting report's timestamp comes from the L1 block that included it.
-	// In the simulated beacon, block timestamps can race far ahead of wall clock
-	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
-	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
-	// before the batch poster will consider the report old enough to trigger posting.
-	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
-	require.NoError(t, err)
-	l1AheadBy := time.Until(time.Unix(int64(latestHeader.Time), 0)) //#nosec G115
-	if l1AheadBy > 0 {
-		time.Sleep(l1AheadBy)
-	}
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay)
+	// Wait for the delayed message's timestamp to become old enough to trigger MaxEmptyBatchDelay.
+	// The batch posting report comes back as a delayed message with an L1 block timestamp.
+	// L1 block timestamps can be up to ~12 seconds ahead of wall clock time (Ethereum PoS block interval).
+	// We need to wait for:
+	// 1. MaxEmptyBatchDelay (1 second) - the configured threshold that triggers batch posting
+	// 2. ~12-13 seconds - to ensure the L1 block timestamp is in the past relative to time.Now()
+	// 3. Extra buffer - for the delayed sequencer to process and make the report available
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 15*time.Second)
 
 	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)
