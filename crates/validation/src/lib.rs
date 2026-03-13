@@ -68,6 +68,18 @@ impl ValidationInput {
             module_asms,
         }
     }
+
+    #[cfg(feature = "rkyv")]
+    pub fn from_reader<R: io::Read>(mut reader: R) -> Result<Self, String> {
+        let mut s = Vec::new();
+        reader
+            .read_to_end(&mut s)
+            .map_err(|e| format!("IO Error: {e:?}"))?;
+        let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(&s[..])
+            .map_err(|e| format!("rkyv access error: {e:?}"))?;
+        rkyv::deserialize::<ValidationInput, rkyv::rancor::Error>(archived)
+            .map_err(|e| format!("rkyv deserialize error: {e:?}"))
+    }
 }
 
 pub const TARGET_ARM_64: &str = "arm64";

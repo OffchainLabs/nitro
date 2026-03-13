@@ -1,4 +1,3 @@
-use prover::binary_input::read_validation_input;
 use sp1_zkvm::{io, syscalls};
 use validation::ValidationInput;
 
@@ -8,7 +7,7 @@ pub fn print_string(fd: u32, bytes: &[u8]) {
 
 pub fn read_input() -> ValidationInput {
     let s = io::read::<Vec<u8>>();
-    read_validation_input(std::io::Cursor::new(s)).expect("parse input file")
+    ValidationInput::from_reader(std::io::Cursor::new(s)).expect("parse input file")
 }
 
 pub fn exit(code: u32) -> ! {

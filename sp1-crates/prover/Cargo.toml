@@ -19,8 +19,6 @@ parking_lot = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_with = { workspace = true, features = ["base64"] }
 sha3 = { workspace = true }
-rkyv = { workspace = true }
-validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
 wasmer-types = { workspace = true, optional = true }
 wasmparser = { workspace = true, optional = true }
