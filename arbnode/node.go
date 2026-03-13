@@ -1296,7 +1296,7 @@ func registerAPIs(currentNode *Node, stack *node.Node, genesisBlockNum uint64) {
 func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	ctx context.Context,
 	stack *node.Node,
-	executionClient execution.FullExecutionClient,
+	executionClient execution.ExecutionClient,
 	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1317,7 +1317,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
