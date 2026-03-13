@@ -8,7 +8,7 @@
 //! field names).
 
 use crate::config::ExecutionMode;
-use crate::engine::execution::{validate_continuous, validate_native, ValidationTask};
+use crate::engine::execution::{validate_continuous, validate_native};
 use crate::engine::ModuleRoot;
 use crate::ServerState;
 use axum::extract::State;
@@ -116,17 +116,12 @@ async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, S
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
-    let request = ValidationTask {
-        validation_input,
-        module_root,
-    };
-
     let Json(gs) = match &state.execution {
         ExecutionMode::Native { module_cache } => {
-            validate_native(&state.locator, module_cache, request).await
+            validate_native(&state.locator, module_cache, validation_input, module_root).await
         }
         ExecutionMode::Continuous { jit_manager } => {
-            validate_continuous(&state.locator, jit_manager, request).await
+            validate_continuous(&state.locator, jit_manager, validation_input, module_root).await
         }
     }?;
 
