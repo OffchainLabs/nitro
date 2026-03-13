@@ -385,7 +385,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
-	hooks.InsertLastTxError(nil)
+	hooks.TxSucceeded()
 	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
 	Require(t, err)
 
