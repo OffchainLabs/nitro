@@ -1434,8 +1434,6 @@ where
                 hooks.tx_proc.poster_fee =
                     base_fee.saturating_mul(U256::from(hooks.tx_proc.poster_gas));
                 poster_gas = hooks.tx_proc.poster_gas;
-
-
             }
 
             units
@@ -1790,6 +1788,9 @@ where
         // Scan execution logs for RedeemScheduled events (manual redeem path).
         // The ArbRetryableTx.Redeem precompile emits this event; we discover it
         // here and schedule the retry tx via the ScheduledTxes() mechanism.
+        // The precompile returns only its own gas; donated gas must be added
+        // to gas_used here (matching Nitro's burn-then-return pattern).
+        let mut total_donated_gas = 0u64;
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
             let redeem_topic = arb_precompiles::redeem_scheduled_topic();
             let precompile_addr = arb_precompiles::ARBRETRYABLETX_ADDRESS;
@@ -1804,6 +1805,7 @@ where
                 let nonce = u64::from_be_bytes(seq_num_bytes.0[24..32].try_into().unwrap_or([0u8; 8]));
                 let data = &log.data.data;
                 let donated_gas = U256::from_be_slice(&data[0..32]).to::<u64>();
+                total_donated_gas = total_donated_gas.saturating_add(donated_gas);
                 let gas_donor = Address::from_slice(&data[44..64]);
                 let max_refund = U256::from_be_slice(&data[64..96]);
                 let submission_fee_refund = U256::from_be_slice(&data[96..128]);
@@ -1846,6 +1848,13 @@ where
                     );
                 }
             }
+        }
+
+        // Add donated gas from Redeem precompile to gas_used. The precompile
+        // returns only its own gas; the donated gas is consumed here to match
+        // Nitro's burn-then-return pattern.
+        if total_donated_gas > 0 {
+            adjust_result_gas_used(&mut output.result.result, total_donated_gas);
         }
 
         // Store per-tx state for fee distribution in commit_transaction.

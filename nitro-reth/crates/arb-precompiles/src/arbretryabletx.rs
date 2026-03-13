@@ -433,12 +433,15 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         event_data.into(),
     ));
 
-    // Total gas: initial costs + event + copy + donated gas.
-    // The donated gas is "burned" from the caller and given to the retry tx.
-    let total_gas = gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + COPY_GAS + gas_to_donate;
+    // Return only the precompile's own gas (NOT gas_to_donate).
+    // In Nitro, gas_to_donate stays as gasLeft in the precompile return.
+    // The EVM sees: gas_consumed = gasSupplied - gasLeft = own_gas.
+    // The donated gas is then consumed by the block executor when it
+    // processes the RedeemScheduled event and schedules the retry tx.
+    let own_gas = gas_used_so_far + REDEEM_SCHEDULED_EVENT_COST + COPY_GAS;
 
     Ok(PrecompileOutput::new(
-        total_gas.min(gas_limit),
+        own_gas.min(gas_limit),
         retry_tx_hash.to_vec().into(),
     ))
 }
