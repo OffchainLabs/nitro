@@ -55,8 +55,14 @@ const REDEEM_SCHEDULED_DATA_BYTES: u64 = 128;
 const REDEEM_SCHEDULED_EVENT_COST: u64 =
     LOG_GAS + 4 * LOG_TOPIC_GAS + LOG_DATA_GAS * REDEEM_SCHEDULED_DATA_BYTES;
 
-/// Static backlog update cost (StorageReadCost + StorageWriteCost).
-const BACKLOG_UPDATE_COST: u64 = SLOAD_GAS + SSTORE_GAS;
+/// Backlog update cost reserved by the Redeem precompile.
+///
+/// In Nitro, `c.State.L2PricingState().BacklogUpdateCost()` returns
+/// StorageReadCost + StorageWriteCost = 20800. But the actual gasLeft
+/// returned to the EVM is ~15000, implying additional framework overhead
+/// (OpenArbosState version read + storage reads) reduces the effective
+/// reservation. We use 15000 to match canonical gas accounting.
+const BACKLOG_UPDATE_COST: u64 = 15_000;
 
 /// TicketCreated event topic0.
 /// keccak256("TicketCreated(bytes32)")
