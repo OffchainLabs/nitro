@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // SplitPreimage validates that a preimage is exactly 2*common.HashLength bytes
@@ -50,7 +51,7 @@ type State struct {
 	// delayedMsgPreimages is always populated during delayed message operations
 	// (inbox push, pour, outbox pop) regardless of recording mode. It enables
 	// the pour and pop operations in native mode without requiring full recording.
-	delayedMsgPreimages map[common.Hash][]byte
+	delayedMsgPreimages *containers.LruCache[common.Hash, []byte]
 
 	// initMsg holds the init delayed message (index 0) in memory. It is both
 	// accumulated and read in the same block, so it may not be in the DB yet
@@ -136,7 +137,7 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 
 func (s *State) ensureDelayedMsgPreimages() {
 	if s.delayedMsgPreimages == nil {
-		s.delayedMsgPreimages = make(map[common.Hash][]byte)
+		s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](0)
 	}
 }
 
@@ -146,6 +147,17 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		s.initMsg = msg
 	}
 	s.ensureDelayedMsgPreimages()
+	// totalUnread is the count of live unread messages before this accumulation
+	// (DelayedMessagesSeen is incremented by the caller after this returns).
+	// Resize to totalUnread+1 to ensure capacity for the entry about to be added.
+	// Stale entries (e.g. old inbox preimages left after pour) are the oldest in
+	// LRU order and will be evicted first if the cache is full, so sizing for
+	// live entries only is safe.
+	// #nosec G115
+	totalUnread := int(s.DelayedMessagesSeen - s.DelayedMessagesRead)
+	if s.delayedMsgPreimages.Size() <= totalUnread {
+		s.delayedMsgPreimages.Resize(totalUnread + 1)
+	}
 	msgBytes, err := rlp.EncodeToBytes(msg)
 	if err != nil {
 		return err
@@ -154,7 +166,7 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	preimage := append(s.DelayedMessageInboxAcc.Bytes(), msgHash.Bytes()...)
 	newAcc := crypto.Keccak256Hash(preimage)
 	// Always record delayed message preimages for pour/pop operations
-	s.delayedMsgPreimages[newAcc] = preimage
+	s.delayedMsgPreimages.Add(newAcc, preimage)
 	// Also record to the delayed msg validation preimage map if in recording mode
 	if s.delayedMsgPreimagesDest != nil {
 		keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
@@ -168,9 +180,9 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 // resolveDelayedPreimage resolves a preimage from the delayed message preimage map.
 func (s *State) resolveDelayedPreimage(hash common.Hash) ([]byte, error) {
 	if s.delayedMsgPreimages == nil {
-		return nil, fmt.Errorf("delayed message preimage map not initialized")
+		return nil, fmt.Errorf("delayed message preimage cache not initialized")
 	}
-	preimage, ok := s.delayedMsgPreimages[hash]
+	preimage, ok := s.delayedMsgPreimages.Peek(hash)
 	if !ok {
 		return nil, fmt.Errorf("delayed message preimage not found for hash %s", hash.Hex())
 	}
@@ -187,6 +199,14 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		return nil
 	}
 	s.ensureDelayedMsgPreimages()
+	// During pour, existing inbox entries are read via Peek (no LRU promotion)
+	// while new outbox entries are Added. Both coexist in the cache simultaneously,
+	// requiring at least 2*inboxSize capacity. We use 3*inboxSize to leave headroom
+	// for post-pour accumulations before the next resize.
+	// #nosec G115
+	if s.delayedMsgPreimages.Size() < 3*int(inboxSize) {
+		s.delayedMsgPreimages.Resize(3 * int(inboxSize))
+	}
 	// Pop all items from inbox (LIFO: last-seen comes out first) and Push onto outbox
 	// in original order (first-seen first → it ends up on top)
 	curr := s.DelayedMessageInboxAcc
@@ -202,7 +222,7 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		preimage := append(s.DelayedMessageOutboxAcc.Bytes(), msgHash.Bytes()...)
 		newAcc := crypto.Keccak256Hash(preimage)
 		s.DelayedMessageOutboxAcc = newAcc
-		s.delayedMsgPreimages[newAcc] = preimage
+		s.delayedMsgPreimages.Add(newAcc, preimage)
 		if s.delayedMsgPreimagesDest != nil {
 			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
 			keccakMap[newAcc] = preimage
@@ -320,13 +340,13 @@ func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 // buildHashChain reconstructs a hash chain by iterating from start (inclusive)
 // toward end (exclusive) with the given step (+1 or -1). Each message hash is
 // accumulated onto a running hash (starting from zero). Preimages are stored in
-// the preimage map and optionally the validation preimage map.
+// the LRU cache and optionally the validation preimage map.
 func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, msgBytesArr [][]byte) common.Hash {
 	acc := common.Hash{}
 	for i := start; i != end; i += step {
 		preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
 		newAcc := crypto.Keccak256Hash(preimage)
-		s.delayedMsgPreimages[newAcc] = preimage
+		s.delayedMsgPreimages.Add(newAcc, preimage)
 		if s.delayedMsgPreimagesDest != nil {
 			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
 			keccakMap[newAcc] = preimage
@@ -348,14 +368,15 @@ func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, ms
 //   - Outbox [0..pivot): messages already poured, chain built in reverse order
 //   - Inbox  [pivot..N): messages not yet poured, chain built in forward order
 //
-// The pivot is determined by the persisted DelayedMessageOutboxSize. For legacy
-// states without this field, it falls back to an O(N²) search.
+// The pivot is found via an O(N²) search that tries each candidate partition
+// until the recomputed inbox accumulator matches.
 func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error)) error {
 	if s.DelayedMessagesRead == s.DelayedMessagesSeen {
 		return nil
 	}
 	totalUnread := s.DelayedMessagesSeen - s.DelayedMessagesRead
-	s.delayedMsgPreimages = make(map[common.Hash][]byte)
+	// #nosec G115
+	s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](int(totalUnread))
 	msgHashes, msgBytesArr, err := s.fetchAndHashUnreadMessages(totalUnread, fetchDelayedMsg)
 	if err != nil {
 		return err
