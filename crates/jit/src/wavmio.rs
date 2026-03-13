@@ -13,8 +13,7 @@ use std::{
     net::TcpStream,
     time::Instant,
 };
-use validation::local_target;
-use validation::transfer::receive_validation_request;
+use validation::transfer::receive_validation_input;
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
@@ -228,27 +227,28 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
-    let input = receive_validation_request(&mut reader)?;
+    let input = receive_validation_input(&mut reader)?;
 
-    env.small_globals = [input.start_state.batch, input.start_state.pos_in_batch];
-    env.large_globals = [input.start_state.block_hash, input.start_state.send_root];
+    env.small_globals = input.small_globals;
+    env.large_globals = input.large_globals.map(arbutil::Bytes32);
 
-    for batch in input.batch_info {
-        env.sequencer_messages.insert(batch.number, batch.data);
+    for (num, data) in input.sequencer_messages {
+        env.sequencer_messages.insert(num, data);
     }
-    if input.has_delayed_msg {
-        env.delayed_messages
-            .insert(input.delayed_msg_nr, input.delayed_msg);
+    for (num, data) in input.delayed_messages {
+        env.delayed_messages.insert(num, data);
     }
-    for (preimage_type, preimages) in input.preimages {
-        let preimage_map = env.preimages.entry(preimage_type).or_default();
-        for (hash, preimage) in preimages {
-            preimage_map.insert(hash, preimage);
+    for (preimage_ty, inner_map) in input.preimages {
+        let preimage_ty = arbutil::PreimageType::try_from(preimage_ty)
+            .unwrap_or_else(|_| panic!("unknown preimage type: {preimage_ty}"));
+        let map = env.preimages.entry(preimage_ty).or_default();
+        for (hash, preimage) in inner_map {
+            map.insert(arbutil::Bytes32(hash), preimage);
         }
     }
-    for (module_hash, module_asm) in &input.user_wasms[local_target()] {
+    for (module_hash, module_asm) in input.module_asms {
         env.module_asms
-            .insert(*module_hash, module_asm.as_vec().into());
+            .insert(arbutil::Bytes32(module_hash), module_asm.into());
     }
 
     let writer = BufWriter::new(socket);

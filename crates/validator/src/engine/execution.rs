@@ -21,11 +21,9 @@ use jit::CompiledModule;
 use tracing::info;
 use validation::{local_target, BatchInfo, GoGlobalState, ValidationRequest};
 
-use crate::{
-    engine::{
-        machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
-        DEFAULT_JIT_CRANELIFT,
-    },
+use crate::engine::{
+    machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
+    DEFAULT_JIT_CRANELIFT,
 };
 
 pub async fn validate_native(
@@ -84,8 +82,7 @@ pub async fn validate_continuous(
     input: ValidationRequest,
     module_root: Option<ModuleRoot>,
 ) -> Result<Json<GoGlobalState>, String> {
-    let module_root =
-        module_root.unwrap_or_else(|| locator.latest_wasm_module_root().module_root);
+    let module_root = module_root.unwrap_or_else(|| locator.latest_wasm_module_root().module_root);
 
     info!("validate continuous serving request with module_root {module_root}");
 

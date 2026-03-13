@@ -44,8 +44,8 @@ use tokio::{
     sync::Mutex,
 };
 use tracing::{debug, error, info, warn};
-use validation::transfer::{receive_response, send_validation_request};
-use validation::{GoGlobalState, ValidationRequest};
+use validation::transfer::{receive_response, send_validation_input};
+use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -93,7 +93,16 @@ impl JitMachine {
             .context("failed to open listener connection")?;
 
         // 5. Send data
-        send_validation_request(&mut conn, request)?;
+        let target = local_target();
+        if request.user_wasms.get(target).is_none_or(|m| m.is_empty()) {
+            for (arch, wasms) in &request.user_wasms {
+                if !wasms.is_empty() {
+                    return Err(anyhow!("bad stylus arch: got {arch}, expected {target}"));
+                }
+            }
+        }
+        let input = ValidationInput::from_request(request, target);
+        send_validation_input(&mut conn, &input)?;
 
         // 6. Read Response and return new state
         match receive_response(&mut conn)? {

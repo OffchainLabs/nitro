@@ -1,39 +1,42 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::transfer::primitives::{read_bytes, read_bytes32, read_u32, read_u64, read_u8};
+use crate::transfer::primitives::{read_bytes, read_u32, read_u64, read_u8};
 use crate::transfer::{markers, IOResult};
-use crate::{local_target, BatchInfo, GoGlobalState, PreimageMap, UserWasm, ValidationRequest};
-use arbutil::{Bytes32, PreimageType};
+use crate::{GoGlobalState, Inbox, Preimages, ValidationInput};
 use io::Error;
 use std::collections::HashMap;
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::Read;
 
-pub fn receive_validation_request(reader: &mut impl Read) -> IOResult<ValidationRequest> {
-    let start_state = receive_global_state(reader)?;
-    let inbox = receive_batches(reader)?;
-    let delayed_message = receive_delayed_message(reader)?.unwrap_or_default();
+pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationInput> {
+    let (small_globals, large_globals) = receive_globals(reader)?;
+    let sequencer_messages = receive_inbox(reader)?;
+    let delayed_messages = receive_inbox(reader)?;
     let preimages = receive_preimages(reader)?;
-    let user_wasms = receive_user_wasms(reader)?;
+    let module_asms = receive_module_asms(reader)?;
     ensure_readiness(reader)?;
 
-    Ok(ValidationRequest {
-        has_delayed_msg: !delayed_message.data.is_empty(),
-        delayed_msg_nr: delayed_message.number,
+    Ok(ValidationInput {
+        small_globals,
+        large_globals,
         preimages,
-        batch_info: inbox,
-        delayed_msg: delayed_message.data,
-        start_state,
-        user_wasms: HashMap::from([(local_target().to_string(), user_wasms)]),
-        ..Default::default()
+        sequencer_messages,
+        delayed_messages,
+        module_asms,
     })
 }
 
 pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalState, u64), String>> {
     match read_u8(reader)? {
         markers::SUCCESS => {
-            let new_state = receive_global_state(reader)?;
+            let (small, large) = receive_globals(reader)?;
+            let new_state = GoGlobalState {
+                batch: small[0],
+                pos_in_batch: small[1],
+                block_hash: arbutil::Bytes32(large[0]),
+                send_root: arbutil::Bytes32(large[1]),
+            };
             let memory_used = read_u64(reader)?;
             Ok(Ok((new_state, memory_used)))
         }
@@ -46,47 +49,34 @@ pub fn receive_response(reader: &mut impl Read) -> IOResult<Result<(GoGlobalStat
     }
 }
 
-fn receive_global_state(reader: &mut impl Read) -> IOResult<GoGlobalState> {
-    let inbox_position = read_u64(reader)?;
-    let position_within_message = read_u64(reader)?;
-    let last_block_hash = read_bytes32(reader)?;
-    let last_send_root = read_bytes32(reader)?;
-    Ok(GoGlobalState {
-        block_hash: last_block_hash,
-        send_root: last_send_root,
-        batch: inbox_position,
-        pos_in_batch: position_within_message,
-    })
+fn receive_globals(reader: &mut impl Read) -> IOResult<([u64; 2], [[u8; 32]; 2])> {
+    let small_globals = [read_u64(reader)?, read_u64(reader)?];
+    let mut large_globals = [[0u8; 32]; 2];
+    reader.read_exact(&mut large_globals[0])?;
+    reader.read_exact(&mut large_globals[1])?;
+    Ok((small_globals, large_globals))
 }
 
-fn receive_batches(reader: &mut impl Read) -> IOResult<Vec<BatchInfo>> {
-    let mut batches = vec![];
+fn receive_inbox(reader: &mut impl Read) -> IOResult<Inbox> {
+    let mut inbox = Inbox::new();
     while read_u8(reader)? == markers::ANOTHER {
         let number = read_u64(reader)?;
         let data = read_bytes(reader)?;
-        batches.push(BatchInfo { number, data });
+        inbox.insert(number, data);
     }
-    Ok(batches)
+    Ok(inbox)
 }
 
-fn receive_delayed_message(reader: &mut impl Read) -> IOResult<Option<BatchInfo>> {
-    match &receive_batches(reader)?[..] {
-        [] => Ok(None),
-        [batch_info] => Ok(Some(batch_info.clone())),
-        _ => Err(Error::new(InvalidData, "multiple delayed batches")),
-    }
-}
-
-fn receive_preimages(reader: &mut impl Read) -> IOResult<PreimageMap> {
+fn receive_preimages(reader: &mut impl Read) -> IOResult<Preimages> {
     let preimage_types = read_u32(reader)?;
-    let mut preimages = PreimageMap::with_capacity(preimage_types as usize);
+    let mut preimages = Preimages::new();
     for _ in 0..preimage_types {
-        let preimage_ty = PreimageType::try_from(read_u8(reader)?)
-            .map_err(|e| Error::new(InvalidData, e.to_string()))?;
+        let preimage_ty = read_u8(reader)?;
         let map = preimages.entry(preimage_ty).or_default();
         let preimage_count = read_u32(reader)?;
         for _ in 0..preimage_count {
-            let hash = read_bytes32(reader)?;
+            let mut hash = [0u8; 32];
+            reader.read_exact(&mut hash)?;
             let preimage = read_bytes(reader)?;
             map.insert(hash, preimage);
         }
@@ -94,15 +84,16 @@ fn receive_preimages(reader: &mut impl Read) -> IOResult<PreimageMap> {
     Ok(preimages)
 }
 
-fn receive_user_wasms(reader: &mut impl Read) -> IOResult<HashMap<Bytes32, UserWasm>> {
-    let programs_count = read_u32(reader)?;
-    let mut user_wasms = HashMap::with_capacity(programs_count as usize);
-    for _ in 0..programs_count {
-        let module_hash = read_bytes32(reader)?;
-        let module_asm = read_bytes(reader)?;
-        user_wasms.insert(module_hash, UserWasm(module_asm));
+fn receive_module_asms(reader: &mut impl Read) -> IOResult<HashMap<[u8; 32], Vec<u8>>> {
+    let count = read_u32(reader)?;
+    let mut module_asms = HashMap::with_capacity(count as usize);
+    for _ in 0..count {
+        let mut hash = [0u8; 32];
+        reader.read_exact(&mut hash)?;
+        let asm = read_bytes(reader)?;
+        module_asms.insert(hash, asm);
     }
-    Ok(user_wasms)
+    Ok(module_asms)
 }
 
 fn ensure_readiness(reader: &mut impl Read) -> IOResult<()> {
