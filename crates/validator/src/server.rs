@@ -43,7 +43,9 @@ fn create_router(state: Arc<ServerState>) -> Router {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
+    // Test-only health-check endpoint. Added after route_layer so it is NOT
+    // behind JWT auth — this is intentional: tests use it to verify the server
+    // is up without needing a valid token.
     #[cfg(test)]
     let router = router.route("/test", axum::routing::get(|| async { "OK" }));
 
