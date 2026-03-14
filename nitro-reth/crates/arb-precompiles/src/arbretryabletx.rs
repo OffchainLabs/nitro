@@ -429,12 +429,11 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let backlog_reservation = SLOAD_GAS + SSTORE_GAS; // 800 + 20000 = 20800
 
     // Actual ShrinkBacklog cost depends on current backlog value.
+    // Read from thread-local (set by executor before EVM runs) to avoid
+    // creating revm cache entries that would contaminate subsequent blocks.
+    // In Nitro, BacklogUpdateCost() at ArbOS v10 is a pure computation.
     let actual_backlog_cost = {
-        let backlog_slot = alloy_primitives::uint!(0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204_U256);
-        let current_backlog = internals
-            .sload(ARBOS_STATE_ADDRESS, backlog_slot)
-            .map(|r| r.data.to::<u64>())
-            .unwrap_or(0);
+        let current_backlog = crate::get_current_gas_backlog();
         let write_cost = if current_backlog == 0 {
             SSTORE_ZERO_GAS // 5000 (StorageWriteZeroCost)
         } else {

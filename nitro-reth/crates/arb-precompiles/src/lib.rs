@@ -67,6 +67,9 @@ thread_local! {
     /// Current block timestamp, set before transaction execution.
     /// Used by ArbWasm to compute program age for expiry checks.
     static BLOCK_TIMESTAMP: Cell<u64> = const { Cell::new(0) };
+    /// Current gas backlog value, set by executor before each tx.
+    /// Used by Redeem precompile to determine ShrinkBacklog write cost.
+    static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Set the current ArbOS version for precompile version gating.
@@ -87,6 +90,16 @@ pub fn set_l1_block_number_for_evm(number: u64) {
 /// Get the L1 block number for the NUMBER opcode.
 pub fn get_l1_block_number_for_evm() -> u64 {
     L1_BLOCK_NUMBER_FOR_EVM.with(|v| v.get())
+}
+
+/// Set the current gas backlog value for the Redeem precompile.
+pub fn set_current_gas_backlog(backlog: u64) {
+    CURRENT_GAS_BACKLOG.with(|v| v.set(backlog));
+}
+
+/// Get the current gas backlog value.
+pub fn get_current_gas_backlog() -> u64 {
+    CURRENT_GAS_BACKLOG.with(|v| v.get())
 }
 
 /// Set the EVM call depth to a specific value.

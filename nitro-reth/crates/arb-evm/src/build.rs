@@ -343,6 +343,11 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
             self.arb_ctx.l1_block_number,
         );
 
+        // Set gas backlog for Redeem precompile's ShrinkBacklog cost computation.
+        if let Ok(backlog) = arb_state.l2_pricing_state.gas_backlog() {
+            arb_precompiles::set_current_gas_backlog(backlog);
+        }
+
         if let Ok(addr) = arb_state.network_fee_account() {
             self.arb_ctx.network_fee_account = addr;
         }
