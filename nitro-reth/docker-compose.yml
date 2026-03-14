@@ -19,7 +19,7 @@ services:
       - --http
       - --http.addr=0.0.0.0
       - --http.port=8545
-      - --http.api=eth,web3,net
+      - --http.api=eth,web3,net,debug
       - --authrpc.addr=0.0.0.0
       - --authrpc.port=8551
       - --authrpc.jwtsecret=/data/jwt.hex

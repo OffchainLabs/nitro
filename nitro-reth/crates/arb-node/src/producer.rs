@@ -649,6 +649,30 @@ where
             let arbos_hps_slots = hashed_state.storages.get(&arbos_hash)
                 .map(|s| s.storage.len()).unwrap_or(0);
             eprintln!("[DIAG] block={} HashedPostState has_arbos={} arbos_slots={}", l2_block_number, has_arbos_in_hps, arbos_hps_slots);
+
+            // Dump FULL HashedPostState for block 616862
+            if l2_block_number == 616862 {
+                eprintln!("[HPS] === HashedPostState accounts: {} ===", hashed_state.accounts.len());
+                let mut acct_keys: Vec<_> = hashed_state.accounts.keys().collect();
+                acct_keys.sort();
+                for key in acct_keys {
+                    let val = &hashed_state.accounts[key];
+                    match val {
+                        Some(acct) => eprintln!("[HPS]   {:?} n={} b={} code={:?}", key, acct.nonce, acct.balance, acct.bytecode_hash),
+                        None => eprintln!("[HPS]   {:?} DELETED", key),
+                    }
+                }
+                eprintln!("[HPS] === HashedPostState storages: {} accounts with storage ===", hashed_state.storages.len());
+                let mut sto_keys: Vec<_> = hashed_state.storages.keys().collect();
+                sto_keys.sort();
+                for key in sto_keys {
+                    let sto = &hashed_state.storages[key];
+                    eprintln!("[HPS]   {:?}: wiped={} slots={}", key, sto.wiped, sto.storage.len());
+                    for (slot, val) in &sto.storage {
+                        eprintln!("[HPS]     {:?} = {:?}", slot, val);
+                    }
+                }
+            }
         }
 
         let (state_root, trie_updates) = state_provider

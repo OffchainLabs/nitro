@@ -317,23 +317,21 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
 
-    // Compute RetryableSizeBytes and charge gas for reading retryable data.
-    // Nitro charges SloadGas (800) per 32-byte word of the retryable's total
-    // stored size: 6 fixed fields + calldata length word + calldata content.
+    // Read retryable data through internals.sload.
     let ticket_key_pre = ticket_storage_key(ticket_id);
-    // Read retryable size data for gas computation.
-    let (calldata_words, write_bytes) = {
+    let (calldata_words, write_bytes, nonce) = {
+        // Read timeout
         let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
         let timeout_check = internals
             .sload(ARBOS_STATE_ADDRESS, timeout_slot)
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
-        let timeout_check_u64: u64 = timeout_check
-            .try_into()
-            .map_err(|_| PrecompileError::other("invalid timeout value"))?;
-        if timeout_check_u64 == 0 || timeout_check_u64 < current_timestamp {
+        let timeout_u64: u64 = timeout_check.try_into().unwrap_or(0);
+        if timeout_u64 == 0 || timeout_u64 < current_timestamp {
             return Err(PrecompileError::other("retryable ticket not found or expired"));
         }
+
+        // Read calldata size
         let calldata_sub = derive_subspace_key(ticket_key_pre.as_slice(), &[1]);
         let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
         let calldata_size = internals
@@ -344,40 +342,18 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         let cw = (calldata_size_u64 + 31) / 32;
         let nbytes = 6 * 32 + 32 + 32 * cw;
         let wb = (nbytes + 31) / 32;
-        (cw, wb)
-    };
 
-    // Open the retryable (re-read timeout after size computation).
-    let ticket_key = {
-        let tk = ticket_key_pre;
-        let timeout_slot = map_slot(tk.as_slice(), TIMEOUT_OFFSET);
-        let timeout = internals
-            .sload(ARBOS_STATE_ADDRESS, timeout_slot)
+        // Read numTries
+        let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
+        let num_tries = internals
+            .sload(ARBOS_STATE_ADDRESS, num_tries_slot)
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
-        let timeout_u64: u64 = timeout
-            .try_into()
-            .map_err(|_| PrecompileError::other("invalid timeout value"))?;
-        if timeout_u64 == 0 {
-            return Err(PrecompileError::other("retryable ticket not found"));
-        }
-        if timeout_u64 < current_timestamp {
-            return Err(PrecompileError::other("retryable ticket expired"));
-        }
-        tk
-    };
+        let n: u64 = num_tries.try_into().unwrap_or(0);
 
-    // Read numTries (but don't write - the executor handles the increment
-    // via write_storage_at to avoid revm journal transitions contaminating
-    // subsequent blocks' state roots).
-    let num_tries_slot = map_slot(ticket_key.as_slice(), NUM_TRIES_OFFSET);
-    let num_tries = internals
-        .sload(ARBOS_STATE_ADDRESS, num_tries_slot)
-        .map_err(|_| PrecompileError::other("sload failed"))?
-        .data;
-    let nonce: u64 = num_tries
-        .try_into()
-        .map_err(|_| PrecompileError::other("invalid numTries"))?;
+        (cw, wb, n)
+    };
+    let ticket_key = ticket_key_pre;
 
     // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];
