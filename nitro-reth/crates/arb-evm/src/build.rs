@@ -2167,7 +2167,11 @@ where
                 if let Some(ref dist) = fee_dist {
                     let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                     apply_fee_distribution(db, dist, None);
-                    self.touched_accounts.insert(dist.network_fee_account);
+                    // Only mark fee accounts as touched when they receive funds.
+                    // Nitro skips MintBalance for network fee when compute cost is 0.
+                    if !dist.network_fee_amount.is_zero() {
+                        self.touched_accounts.insert(dist.network_fee_account);
+                    }
                     self.touched_accounts.insert(dist.infra_fee_account);
                     self.touched_accounts.insert(dist.poster_fee_destination);
 
@@ -2556,7 +2560,11 @@ fn apply_fee_distribution<DB: Database>(
     dist: &EndTxFeeDistribution,
     l1_pricing: Option<&l1_pricing::L1PricingState<DB>>,
 ) {
-    mint_balance(state, dist.network_fee_account, dist.network_fee_amount);
+    // Nitro only mints to network fee account when compute cost > 0.
+    // Minting 0 would unnecessarily touch the account, triggering EIP-161.
+    if !dist.network_fee_amount.is_zero() {
+        mint_balance(state, dist.network_fee_account, dist.network_fee_amount);
+    }
     mint_balance(state, dist.infra_fee_account, dist.infra_fee_amount);
     mint_balance(state, dist.poster_fee_destination, dist.poster_fee_amount);
 

@@ -289,7 +289,8 @@ where
         executor.arb_ctx.l1_block_number = l1_block_number;
 
         // --- Diagnostic: enable gasBacklog tracing for target block window ---
-        let diag_window = (616858..=616866).contains(&l2_block_number);
+        let diag_window = (616858..=616866).contains(&l2_block_number)
+            || (621375..=621380).contains(&l2_block_number);
         arb_storage::GASBACKLOG_TRACE.store(diag_window, std::sync::atomic::Ordering::Relaxed);
         if diag_window {
             eprintln!("[DIAG] ===== block {} =====", l2_block_number);
@@ -637,6 +638,42 @@ where
             eprintln!("[DIAG] block={} STAGE3(post-delete) backlog={:?} arbos_in_bundle={}", l2_block_number, stage3, arbos_in_bundle);
         }
 
+        // Dump raw bundle and cache for block 621377.
+        if l2_block_number == 621377 {
+            eprintln!("[BUNDLE] === Block 621377 raw bundle: {} accounts ===", bundle.state.len());
+            for (addr, acct) in &bundle.state {
+                let info_str = acct.info.as_ref().map_or("DELETED".to_string(), |i| format!("n={} b={} code={:?}", i.nonce, i.balance, i.code_hash));
+                eprintln!("[BUNDLE]   {:?} status={:?} {}", addr, acct.status, info_str);
+                for (slot, val) in &acct.storage {
+                    eprintln!("[BUNDLE]     slot {} = {} (orig={})", slot, val.present_value, val.previous_or_original_value);
+                }
+            }
+            // Dump ALL cache accounts to find any that were touched but not in bundle
+            eprintln!("[CACHE] === Block 621377 cache: {} accounts ===", db.cache.accounts.len());
+            for (addr, cached) in &db.cache.accounts {
+                let in_bundle = bundle.state.contains_key(addr);
+                let info_str = cached.account.as_ref().map_or("NONE".to_string(),
+                    |a| format!("n={} b={} sto={}", a.info.nonce, a.info.balance, a.storage.len()));
+                eprintln!("[CACHE]   {:?} status={:?} in_bundle={} {}", addr, cached.status, in_bundle, info_str);
+                // Check: account in cache but NOT in bundle → original vs cache?
+                if !in_bundle {
+                    let orig = state_provider.basic_account(addr).ok().flatten();
+                    let cache_info = cached.account.as_ref().map(|a| &a.info);
+                    let differs = match (&orig, &cache_info) {
+                        (None, None) => false,
+                        (Some(_), None) | (None, Some(_)) => true,
+                        (Some(o), Some(c)) => o.balance != c.balance || o.nonce != c.nonce,
+                    };
+                    if differs {
+                        eprintln!("[CACHE]     DIFFERS from state_provider! orig={:?}", orig);
+                    }
+                }
+            }
+            // Dump finalise_deleted
+            eprintln!("[FINALISE] deleted={:?}", finalise_deleted);
+            eprintln!("[ZOMBIE] zombies={:?}", zombie_accounts);
+        }
+
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(
                 bundle.state(),
@@ -650,8 +687,8 @@ where
                 .map(|s| s.storage.len()).unwrap_or(0);
             eprintln!("[DIAG] block={} HashedPostState has_arbos={} arbos_slots={}", l2_block_number, has_arbos_in_hps, arbos_hps_slots);
 
-            // Dump FULL HashedPostState for block 616862
-            if l2_block_number == 616862 {
+            // Dump FULL HashedPostState for diagnostic blocks
+            if l2_block_number == 616862 || l2_block_number == 621377 {
                 eprintln!("[HPS] === HashedPostState accounts: {} ===", hashed_state.accounts.len());
                 let mut acct_keys: Vec<_> = hashed_state.accounts.keys().collect();
                 acct_keys.sort();
