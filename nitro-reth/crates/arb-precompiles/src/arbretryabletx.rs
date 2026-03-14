@@ -403,20 +403,6 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Actual ShrinkBacklog cost may be less (5800 if writing zero).
     let backlog_reservation = SLOAD_GAS + SSTORE_GAS; // 800 + 20000 = 20800
 
-    // Actual ShrinkBacklog cost depends on current backlog value.
-    // Read from thread-local (set by executor before EVM runs) to avoid
-    // creating revm cache entries that would contaminate subsequent blocks.
-    // In Nitro, BacklogUpdateCost() at ArbOS v10 is a pure computation.
-    let actual_backlog_cost = {
-        let current_backlog = crate::get_current_gas_backlog();
-        let write_cost = if current_backlog == 0 {
-            SSTORE_ZERO_GAS // 5000 (StorageWriteZeroCost)
-        } else {
-            SSTORE_GAS // 20000 (StorageWriteCost)
-        };
-        SLOAD_GAS + write_cost
-    };
-
     // Future gas costs: use RESERVATION for computing gas_to_donate
     // (matching Nitro's BacklogUpdateCost()). The savings from
     // over-reservation naturally become gasLeft.
@@ -428,6 +414,20 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         ));
     }
     let gas_to_donate = gas_remaining - future_gas_costs;
+
+    // Actual ShrinkBacklog cost: Nitro's writeCost() checks the VALUE
+    // BEING WRITTEN, not the current value. After ShrinkBacklog shrinks
+    // by gas_to_donate, the new backlog determines the write cost.
+    let actual_backlog_cost = {
+        let current_backlog = crate::get_current_gas_backlog();
+        let new_backlog = current_backlog.saturating_sub(gas_to_donate);
+        let write_cost = if new_backlog == 0 {
+            SSTORE_ZERO_GAS // 5000 (StorageWriteZeroCost)
+        } else {
+            SSTORE_GAS // 20000 (StorageWriteCost)
+        };
+        SLOAD_GAS + write_cost
+    };
 
     // Manual redeem: maxRefund = 2^256 - 1, submissionFeeRefund = 0.
     let max_refund = U256::MAX;

@@ -1855,6 +1855,10 @@ where
                         donated_gas,
                         MultiGas::default(),
                     );
+                    // Update thread-local so Redeem precompile sees current backlog.
+                    if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                        arb_precompiles::set_current_gas_backlog(b);
+                    }
                 }
             }
         }
@@ -2131,20 +2135,14 @@ where
                         if let Ok(arb_state) =
                             ArbosState::open(state_ptr, SystemBurner::new(None, false))
                         {
-                            let backlog_before = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            let grow_result = arb_state.l2_pricing_state.grow_backlog(
+                            let _ = arb_state.l2_pricing_state.grow_backlog(
                                 result.compute_gas_for_backlog,
                                 pending.charged_multi_gas,
                             );
-                            let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                                eprintln!(
-                                    "[BACKLOG] RetryTx grow: gas={} before={} after={} ok={}",
-                                    result.compute_gas_for_backlog, backlog_before, backlog_after, grow_result.is_ok()
-                                );
+                            // Update thread-local so Redeem precompile sees current backlog.
+                            if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                                arb_precompiles::set_current_gas_backlog(b);
                             }
-                        } else if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                            eprintln!("[BACKLOG] RetryTx grow: ArbosState::open FAILED");
                         }
                     }
                 }
@@ -2215,20 +2213,14 @@ where
                     {
                         // Backlog update is skipped when gas price is zero.
                         if pending.gas_price_positive {
-                            let backlog_before = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            let grow_result = arb_state.l2_pricing_state.grow_backlog(
+                            let _ = arb_state.l2_pricing_state.grow_backlog(
                                 dist.compute_gas_for_backlog,
                                 used_multi_gas,
                             );
-                            let backlog_after = arb_state.l2_pricing_state.gas_backlog().unwrap_or(u64::MAX);
-                            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                                eprintln!(
-                                    "[BACKLOG] NormalTx grow: gas={} before={} after={} ok={}",
-                                    dist.compute_gas_for_backlog, backlog_before, backlog_after, grow_result.is_ok()
-                                );
+                            // Update thread-local so Redeem precompile sees current backlog.
+                            if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
+                                arb_precompiles::set_current_gas_backlog(b);
                             }
-                        } else if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                            eprintln!("[BACKLOG] NormalTx: gas_price=0, skipping grow");
                         }
                         if !dist.l1_fees_to_add.is_zero() {
                             let _ = arb_state
