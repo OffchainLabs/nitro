@@ -1793,14 +1793,18 @@ where
         // Scan execution logs for RedeemScheduled events (manual redeem path).
         // The ArbRetryableTx.Redeem precompile emits this event; we discover it
         // here and schedule the retry tx via the ScheduledTxes() mechanism.
-        // The precompile returns only its own gas; donated gas must be added
-        // to gas_used here (matching Nitro's burn-then-return pattern).
+        //
+        // The precompile emits a placeholder retry tx hash (keccak256(ticket_id||nonce)).
+        // We replace it with the actual EIP-2718 encoded tx hash to match Nitro,
+        // which computes types.NewTx(retryTxInner).Hash() inside the precompile.
         let mut total_donated_gas = 0u64;
+        // Collect (log_index, correct_hash) for patching logs before commit.
+        let mut retry_tx_hash_fixes: Vec<(usize, B256)> = Vec::new();
         if let ExecutionResult::Success { ref logs, .. } = output.result.result {
             let redeem_topic = arb_precompiles::redeem_scheduled_topic();
             let precompile_addr = arb_precompiles::ARBRETRYABLETX_ADDRESS;
 
-            for log in logs {
+            for (log_idx, log) in logs.iter().enumerate() {
                 if log.address != precompile_addr { continue; }
                 if log.topics().is_empty() || log.topics()[0] != redeem_topic { continue; }
                 if log.topics().len() < 4 || log.data.data.len() < 128 { continue; }
@@ -1827,8 +1831,6 @@ where
                         ticket_id,
                         current_time,
                     ) {
-                        // Increment numTries via write_storage_at (not internals.sstore)
-                        // to avoid revm journal contamination.
                         let _ = retryable.increment_num_tries();
 
                         if let Ok(retry_tx) = retryable.make_tx(
@@ -1841,10 +1843,14 @@ where
                             max_refund,
                             submission_fee_refund,
                         ) {
+                            // Compute the actual EIP-2718 retry tx hash.
+                            let mut encoded = Vec::new();
+                            encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
+                            alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
+                            let correct_hash = keccak256(&encoded);
+                            retry_tx_hash_fixes.push((log_idx, correct_hash));
+
                             if let Some(hooks) = self.arb_hooks.as_mut() {
-                                let mut encoded = Vec::new();
-                                encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
-                                alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
                                 hooks.tx_proc.scheduled_txs.push(encoded);
                             }
                         }
@@ -1855,7 +1861,6 @@ where
                         donated_gas,
                         MultiGas::default(),
                     );
-                    // Update thread-local so Redeem precompile sees current backlog.
                     if let Ok(b) = arb_state.l2_pricing_state.gas_backlog() {
                         arb_precompiles::set_current_gas_backlog(b);
                     }
@@ -1863,10 +1868,21 @@ where
             }
         }
 
-        // Note: donated gas from Redeem precompile is already included in the
-        // precompile's returned gas_used (matching Nitro's model where the
-        // precompile burns gas_to_donate + actual_shrinkBacklog_cost, leaving
-        // over-reservation savings as gasLeft).
+        // Patch RedeemScheduled event logs with the correct retry tx hash.
+        // The precompile emits a placeholder; we replace topic[2] with the
+        // actual EIP-2718 encoded tx hash computed from the constructed retry tx.
+        if !retry_tx_hash_fixes.is_empty() {
+            if let ExecutionResult::Success { ref mut logs, .. } = output.result.result {
+                for (log_idx, correct_hash) in &retry_tx_hash_fixes {
+                    if let Some(log) = logs.get_mut(*log_idx) {
+                        if log.data.topics().len() > 2 {
+                            let topics = log.data.topics_mut_unchecked();
+                            topics[2] = *correct_hash;
+                        }
+                    }
+                }
+            }
+        }
 
         // Store per-tx state for fee distribution in commit_transaction.
         // Build multi-gas: L1 calldata from poster costs + EVM execution as computation.
