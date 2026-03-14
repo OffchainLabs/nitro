@@ -139,3 +139,26 @@ func TestGetWasmFromRootStylusBurnsActualFragmentReadCostAfterPreflight(t *testi
 	require.Equal(t, maxCost.SingleGas()-actualCost.SingleGas(), burner.GasLeft())
 	require.True(t, statedb.AddressInAccessList(fragmentAddr))
 }
+
+func TestGetWasmFromRootStylusUsesWarmFragmentReadCostWhenAddressIsWarm(t *testing.T) {
+	statedb, rootCode, expectedWasm, fragmentAddr, fragmentCode := makeFragmentedRootForTest(t)
+	statedb.AddAddressToAccessList(fragmentAddr)
+
+	actualCost, err := fragmentReadGasCost(true, uint64(len(fragmentCode)))
+	require.NoError(t, err)
+	maxCost, err := fragmentReadGasCost(true, gethParams.DefaultMaxCodeSize)
+	require.NoError(t, err)
+	require.Greater(t, maxCost.SingleGas(), actualCost.SingleGas())
+
+	burner := newTestBurner(maxCost.SingleGas())
+	charger, err := newFragmentReadCharger(burner, gethParams.DefaultMaxCodeSize)
+	require.NoError(t, err)
+
+	// #nosec G115
+	wasm, err := getWasmFromRootStylus(statedb, rootCode, uint32(len(expectedWasm)), 1, charger)
+	require.NoError(t, err)
+	require.Equal(t, expectedWasm, wasm)
+	require.Equal(t, actualCost.SingleGas(), burner.Burned())
+	require.Equal(t, maxCost.SingleGas()-actualCost.SingleGas(), burner.GasLeft())
+	require.True(t, statedb.AddressInAccessList(fragmentAddr))
+}

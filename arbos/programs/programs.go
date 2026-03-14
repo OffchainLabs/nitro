@@ -335,6 +335,36 @@ func newFragmentReadCharger(burner burn.Burner, maxCodeSize uint64) (*fragmentRe
 	}, nil
 }
 
+func (charger *fragmentReadCharger) canReadNewFragment(statedb vm.StateDB, addr common.Address) error {
+	if charger == nil {
+		return nil
+	}
+	cost, err := fragmentReadGasCost(statedb.AddressInAccessList(addr), charger.maxCodeSize)
+	if err != nil {
+		return err
+	}
+	if charger.burner.GasLeft() < cost.SingleGas() {
+		return charger.burner.BurnOut()
+	}
+	return nil
+}
+
+func (charger *fragmentReadCharger) chargeForReadingFragment(statedb vm.StateDB, addr common.Address, codeSize uint64) error {
+	if charger == nil {
+		return nil
+	}
+	warm := statedb.AddressInAccessList(addr)
+	if !warm {
+		statedb.AddAddressToAccessList(addr)
+	}
+	cost, err := fragmentReadGasCost(warm, codeSize)
+	if err != nil {
+		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "err", err)
+		return err
+	}
+	return charger.burner.BurnMultiGas(cost)
+}
+
 func getWasm(statedb vm.StateDB, program common.Address, params *StylusParams, charger *fragmentReadCharger) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
 	return getWasmFromContractCode(statedb, prefixedWasm, params, charger)
@@ -403,21 +433,13 @@ func getWasmFromRootStylus(statedb vm.StateDB, data []byte, maxSize uint32, maxF
 	for _, addr := range root.Addresses {
 		// Fail before touching state unless the caller can afford a max-sized fragment
 		// read; once the fragment length is known, charge only the actual read cost.
-		if charger != nil {
-			cost, err := fragmentReadGasCost(statedb.AddressInAccessList(addr), charger.maxCodeSize)
-			if err != nil {
-				return nil, err
-			}
-			if charger.burner.GasLeft() < cost.SingleGas() {
-				return nil, charger.burner.BurnOut()
-			}
+		if err := charger.canReadNewFragment(statedb, addr); err != nil {
+			return nil, err
 		}
 
 		fragCode := statedb.GetCode(addr)
-		if charger != nil {
-			if err := chargeFragmentReadGas(charger.burner, statedb, addr, uint64(len(fragCode))); err != nil {
-				return nil, err
-			}
+		if err := charger.chargeForReadingFragment(statedb, addr, uint64(len(fragCode))); err != nil {
+			return nil, err
 		}
 
 		payload, err := state.StripStylusFragmentPrefix(fragCode)
@@ -463,23 +485,6 @@ func fragmentReadGasCost(warm bool, codeSize uint64) (multigas.MultiGas, error) 
 		return multigas.ZeroGas(), vm.ErrGasUintOverflow
 	}
 	return cost, nil
-}
-
-// chargeFragmentReadGas charges EXTCODECOPY-style gas for reading fragment code.
-func chargeFragmentReadGas(burner burn.Burner, statedb vm.StateDB, addr common.Address, codeSize uint64) error {
-	warm := statedb.AddressInAccessList(addr)
-	if !warm {
-		statedb.AddAddressToAccessList(addr)
-	}
-	cost, err := fragmentReadGasCost(warm, codeSize)
-	if err != nil {
-		log.Trace("fragment copy gas overflow", "address", addr, "codeSize", codeSize, "err", err)
-		return err
-	}
-	if err := burner.BurnMultiGas(cost); err != nil {
-		return err
-	}
-	return nil
 }
 
 func getStylusCompressionDict(id byte) (arbcompress.Dictionary, error) {
