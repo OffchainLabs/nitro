@@ -367,7 +367,9 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         tk
     };
 
-    // Read and increment numTries.
+    // Read numTries (but don't write - the executor handles the increment
+    // via write_storage_at to avoid revm journal transitions contaminating
+    // subsequent blocks' state roots).
     let num_tries_slot = map_slot(ticket_key.as_slice(), NUM_TRIES_OFFSET);
     let num_tries = internals
         .sload(ARBOS_STATE_ADDRESS, num_tries_slot)
@@ -376,9 +378,6 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let nonce: u64 = num_tries
         .try_into()
         .map_err(|_| PrecompileError::other("invalid numTries"))?;
-    internals
-        .sstore(ARBOS_STATE_ADDRESS, num_tries_slot, U256::from(nonce + 1))
-        .map_err(|_| PrecompileError::other("sstore failed"))?;
 
     // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];

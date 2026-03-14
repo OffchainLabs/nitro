@@ -1827,6 +1827,10 @@ where
                         ticket_id,
                         current_time,
                     ) {
+                        // Increment numTries via write_storage_at (not internals.sstore)
+                        // to avoid revm journal contamination.
+                        let _ = retryable.increment_num_tries();
+
                         if let Ok(retry_tx) = retryable.make_tx(
                             U256::from(self.arb_ctx.chain_id),
                             nonce,
