@@ -187,6 +187,7 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
     let is_submit_retryable = arb_type == Some(ArbTxType::ArbitrumSubmitRetryableTx);
 
     let mut env = TxEnv::default();
+    env.tx_type = Typed2718::ty(tx);
     env.caller = sender;
     env.gas_limit = tx.gas_limit();
     env.nonce = tx.nonce();
