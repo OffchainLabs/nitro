@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,20 +39,41 @@ var (
 	clientsTotalFailedUpgradeCounter = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
 	clientsTotalFailedWorkerCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
 	clientsDurationHistogram         = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
+
+	flateWriterPool = sync.Pool{
+		New: func() interface{} {
+			// Parameters validated by init(); this allocation cannot fail.
+			w, _ := flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			return w
+		},
+	}
 )
+
+func init() {
+	// Validate compression parameters at startup so a misconfiguration
+	// causes a clear init-time panic rather than an unrecoverable crash
+	// during broadcast serving.
+	if _, err := flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary()); err != nil {
+		panic(fmt.Sprintf("flateWriterPool: invalid DeflateCompressionLevel %d: %v", DeflateCompressionLevel, err))
+	}
+}
 
 // ClientManager manages client connections
 type ClientManager struct {
 	stopwaiter.StopWaiter
 
-	clientPtrMap  map[*ClientConnection]bool
-	clientCount   atomic.Int32
-	pool          *gopool.Pool
-	poller        netpoll.Poller
-	broadcastChan chan *m.BroadcastMessage
-	clientAction  chan ClientConnectionAction
-	config        BroadcasterConfigFetcher
-	backlog       backlog.Backlog
+	clientPtrMap map[*ClientConnection]bool
+	clientCount  atomic.Int32
+	// compressedClientCount tracks how many connected clients have compression enabled.
+	// It is an unprotected int because all mutations happen on the single manager
+	// goroutine launched in Start(); no atomic or mutex is needed.
+	compressedClientCount int
+	pool                  *gopool.Pool
+	poller                netpoll.Poller
+	broadcastChan         chan *m.BroadcastMessage
+	clientAction          chan ClientConnectionAction
+	config                BroadcasterConfigFetcher
+	backlog               backlog.Backlog
 
 	connectionLimiter *ConnectionLimiter
 }
@@ -69,17 +92,33 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 	}
 }
 
-func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *ClientConnection) error {
+func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *ClientConnection) (err error) {
+	limiterRegistered := false
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("Recovered in registerClient", "recover", r)
+			err = fmt.Errorf("panic during client registration: %v\n%s", r, debug.Stack())
+		}
+		if err != nil {
+			// Undo any partial registration state from a mid-function panic.
+			if cm.clientPtrMap[clientConnection] {
+				if clientConnection.Compression() {
+					cm.compressedClientCount--
+				}
+				delete(cm.clientPtrMap, clientConnection)
+				cm.clientCount.Add(-1)
+				clientsCurrentGauge.Dec(1)
+			}
+			if limiterRegistered {
+				cm.connectionLimiter.Release(clientConnection.clientIp)
+			}
 		}
 	}()
 
-	// TODO:(clamb) the clientsTotalFailedRegisterCounter was deleted after backlog logic moved to ClientConnection. Should this metric be reintroduced or will it be ok to just delete completely given the behaviour has changed, ask Lee
-
-	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
-		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
+	if cm.config().ConnectionLimits.Enable {
+		if !cm.connectionLimiter.Register(clientConnection.clientIp) {
+			return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
+		}
+		limiterRegistered = true
 	}
 
 	clientsCurrentGauge.Inc(1)
@@ -87,16 +126,22 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	cm.clientCount.Add(1)
 	cm.clientPtrMap[clientConnection] = true
+	if clientConnection.Compression() {
+		cm.compressedClientCount++
+	}
 	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
 }
 
-// removeAll removes all clients after main ClientManager thread exits
 func (cm *ClientManager) removeAll() {
 	// Only called after main ClientManager thread exits, so remove client directly
 	for client := range cm.clientPtrMap {
 		cm.removeClientImpl(client)
+	}
+	if cm.compressedClientCount != 0 {
+		log.Error("BUG: compressedClientCount not zero after removeAll", "remaining", cm.compressedClientCount)
+		cm.compressedClientCount = 0
 	}
 }
 
@@ -117,6 +162,14 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
 	}
 
+	if clientConnection.Compression() {
+		if cm.compressedClientCount <= 0 {
+			log.Error("BUG: compressedClientCount underflow", "current", cm.compressedClientCount, "client", clientConnection.Name)
+			cm.compressedClientCount = 0
+		} else {
+			cm.compressedClientCount--
+		}
+	}
 	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsCurrentGauge.Dec(1)
 	clientsDisconnectCount.Inc(1)
@@ -146,6 +199,7 @@ func (cm *ClientManager) Broadcast(bm *m.BroadcastMessage) {
 		// This should only occur if a reorg occurs after the broadcast server is stopped,
 		// with the sequencer enabled but not the sequencer coordinator.
 		// In this case we should proceed without broadcasting the message.
+		log.Debug("dropping broadcast message because ClientManager is stopped", "messageCount", len(bm.Messages))
 		return
 	}
 	cm.broadcastChan <- bm
@@ -161,15 +215,15 @@ func (cm *ClientManager) populateFeedBacklog(bm *m.BroadcastMessage) error {
 		return cm.backlog.Append(bm)
 	}
 	for i, msg := range bm.Messages {
-		m := &m.BroadcastMessage{
+		singleMsg := &m.BroadcastMessage{
 			Version:  bm.Version,
 			Messages: []*m.BroadcastFeedMessage{msg},
 		}
 		// This ensures that only one message is added to backlog with the confirmed sequence number
 		if i == 0 {
-			m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
+			singleMsg.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
 		}
-		if err := cm.backlog.Append(m); err != nil {
+		if err := cm.backlog.Append(singleMsg); err != nil {
 			return err
 		}
 	}
@@ -181,13 +235,24 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 		return nil, err
 	}
 	config := cm.config()
-	//                                        /-> wsutil.Writer -> not compressed msg buffer
-	// bm -> json.Encoder -> io.MultiWriter -|
-	//                                        \-> flateWriter -> wsutil.Writer -> compressed msg buffer
 
-	notCompressed, compressed, err := serializeMessage(bm, !config.RequireCompression, config.EnableCompression)
+	totalClients := len(cm.clientPtrMap)
+	needCompressed := cm.compressedClientCount > 0 && config.EnableCompression
+	needNotCompressed := cm.compressedClientCount < totalClients && !config.RequireCompression
+
+	notCompressed, compressed, err := serializeMessage(bm, needNotCompressed, needCompressed)
 	if err != nil {
 		return nil, err
+	}
+
+	var seqNum *arbutil.MessageIndex
+	switch len(bm.Messages) {
+	case 0:
+		// seqNum remains nil for confirmation-only messages
+	case 1:
+		seqNum = &bm.Messages[0].SequenceNumber
+	default:
+		return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", len(bm.Messages))
 	}
 
 	sendQueueTooLargeCount := 0
@@ -212,22 +277,18 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 			}
 		}
 
-		var seqNum *arbutil.MessageIndex
-		n := len(bm.Messages)
-		if n == 0 {
-			seqNum = nil
-		} else if n == 1 {
-			seqNum = &bm.Messages[0].SequenceNumber
-		} else {
-			return nil, fmt.Errorf("doBroadcast was sent %d BroadcastFeedMessages, it can only parse 1 BroadcastFeedMessage at a time", n)
+		if len(data) == 0 {
+			log.Error("BUG: serialized data is empty for client, skipping send", "client", client.Name, "compression", client.Compression())
+			clientDeleteList = append(clientDeleteList, client)
+			continue
 		}
 
-		m := message{
+		msg := message{
 			sequenceNumber: seqNum,
 			data:           data,
 		}
 		select {
-		case client.out <- m:
+		case client.out <- msg:
 		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
 			sendQueueTooLargeCount++
@@ -246,22 +307,46 @@ func (cm *ClientManager) doBroadcast(bm *m.BroadcastMessage) ([]*ClientConnectio
 	return clientDeleteList, nil
 }
 
+// serializeMessage encodes the broadcast message into websocket frames.
+// Each output is only produced when its corresponding flag is true:
+//
+//	enableNonCompressedOutput: json.Encoder -> wsutil.Writer -> notCompressed buffer
+//	enableCompressedOutput:    json.Encoder -> flateWriter (pooled) -> wsutil.Writer -> compressed buffer
+//
+// When both flags are true, a single json.Encoder writes through an io.MultiWriter
+// to both branches simultaneously, encoding the JSON only once.
+// When both flags are false, the function returns immediately with empty buffers.
 func serializeMessage(bm *m.BroadcastMessage, enableNonCompressedOutput, enableCompressedOutput bool) (bytes.Buffer, bytes.Buffer, error) {
-	flateWriter, err := flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
-	if err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to create flate writer: %w", err)
-	}
-
 	var notCompressed bytes.Buffer
 	var compressed bytes.Buffer
-	writers := []io.Writer{}
+	if !enableNonCompressedOutput && !enableCompressedOutput {
+		return notCompressed, compressed, nil
+	}
+	var writers []io.Writer
 	var notCompressedWriter *wsutil.Writer
 	var compressedWriter *wsutil.Writer
+	var flateWriter *flate.Writer
+	var returnToPool bool
+
 	if enableNonCompressedOutput {
 		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
 		writers = append(writers, notCompressedWriter)
 	}
 	if enableCompressedOutput {
+		poolVal := flateWriterPool.Get()
+		var ok bool
+		flateWriter, ok = poolVal.(*flate.Writer)
+		if !ok || flateWriter == nil {
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("flateWriterPool returned invalid value: got %T, want *flate.Writer", poolVal)
+		}
+		defer func() {
+			// Reset reinitializes the writer for reuse. The dictionary from
+			// NewWriterDict is preserved across Reset calls.
+			flateWriter.Reset(nil)
+			if returnToPool {
+				flateWriterPool.Put(flateWriter)
+			}
+		}()
 		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
 		var msg wsflate.MessageState
 		msg.SetCompressed(true)
@@ -288,10 +373,13 @@ func serializeMessage(bm *m.BroadcastMessage, enableNonCompressedOutput, enableC
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unable to flush message: %w", err)
 		}
 	}
+	returnToPool = true
 	return notCompressed, compressed, nil
 }
 
-// verifyClients should be called every cm.config.ClientPingInterval
+// verifyClients checks all connected clients and returns those that should be
+// disconnected. A client is marked for disconnection if it has exceeded the
+// configured timeout without activity, or if sending a ping to it fails.
 func (cm *ClientManager) verifyClients() []*ClientConnection {
 	clientConnectionCount := len(cm.clientPtrMap)
 
@@ -335,33 +423,50 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
 					if err != nil {
-						// Log message already output in registerClient
-						cm.removeClientImpl(clientAction.cc)
+						log.Error("client registration failed", "client", clientAction.cc.Name, "err", err)
+						// Clean up connection resources directly without counter decrements,
+						// since the client was never successfully registered.
+						// StopOnly closes the connection and, if the client was started, signals the goroutine to stop.
+						clientAction.cc.StopOnly()
+						if stopErr := cm.poller.Stop(clientAction.cc.desc); stopErr != nil {
+							log.Warn("failed to stop poller for unregistered client", "client", clientAction.cc.Name, "err", stopErr)
+						}
+					} else {
+						clientAction.cc.Registered()
 					}
-					clientAction.cc.Registered()
 				} else {
 					cm.removeClient(clientAction.cc)
 				}
 			case bm := <-cm.broadcastChan:
-				var err error
 				for i, msg := range bm.Messages {
-					m := &m.BroadcastMessage{
+					singleMsg := &m.BroadcastMessage{
 						Version:  bm.Version,
 						Messages: []*m.BroadcastFeedMessage{msg},
 					}
-					// This ensures that only one message is sent with the confirmed sequence number
 					if i == 0 {
-						m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
+						singleMsg.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
 					}
-					clientDeleteList, err = cm.doBroadcast(m)
-					logError(err, "failed to do broadcast")
+					deleteList, err := cm.doBroadcast(singleMsg)
+					if err != nil {
+						log.Error("failed to do broadcast", "err", err, "messageIndex", i, "sequenceNumber", msg.SequenceNumber)
+					}
+					// Remove disconnected clients immediately so they are not
+					// re-processed by subsequent doBroadcast calls.
+					for _, client := range deleteList {
+						cm.removeClient(client)
+					}
 				}
 
 				// A message with ConfirmedSequenceNumberMessage could be sent without any messages
 				// this section ensures that message is still sent.
 				if len(bm.Messages) == 0 {
-					clientDeleteList, err = cm.doBroadcast(bm)
-					logError(err, "failed to do broadcast")
+					deleteList, err := cm.doBroadcast(bm)
+					if err != nil {
+						log.Error("failed to do broadcast for confirmation message", "err", err)
+					}
+					for _, client := range deleteList {
+						cm.removeClient(client)
+					}
 				}
 			case <-pingTimer.C:
 				clientDeleteList = cm.verifyClients()
