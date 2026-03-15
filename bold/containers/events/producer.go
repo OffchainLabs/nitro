@@ -5,12 +5,11 @@ package events
 
 import (
 	"context"
+	"slices"
 	"sync"
-	"time"
 )
 
 const (
-	defaultBroadcastTimeout       = time.Millisecond * 500
 	defaultSubscriptionBufferSize = 10
 )
 
@@ -19,24 +18,19 @@ type Producer[T any] struct {
 	sync.RWMutex
 	subscriptionBufferSize int
 	subs                   []*Subscription[T]
-	doneListener           chan subId    // channel to listen for IDs of subscriptions to be remove.
-	broadcastTimeout       time.Duration // maximum duration to wait for an event to be sent.
-	nextId                 subId         // monotonically increasing id for stable subscription identification
+	doneListener           chan subId // channel to listen for IDs of subscriptions to be removed.
+	nextId                 subId      // monotonically increasing id for stable subscription identification
 }
 
 type ProducerOpt[T any] func(*Producer[T])
 
-// WithBroadcastTimeout enables the amount of time the broadcaster will wait to send
-// to each subscriber before dropping the send.
-func WithBroadcastTimeout[T any](timeout time.Duration) ProducerOpt[T] {
-	return func(ep *Producer[T]) {
-		ep.broadcastTimeout = timeout
-	}
-}
-
 // WithSubscriptionBuffer customizes the size of the subscription buffer channel.
+// If size is less than 1, the default buffer size is used.
 func WithSubscriptionBuffer[T any](size int) ProducerOpt[T] {
 	return func(ep *Producer[T]) {
+		if size < 1 {
+			size = defaultSubscriptionBufferSize
+		}
 		ep.subscriptionBufferSize = size
 	}
 }
@@ -46,7 +40,6 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 		subs:                   make([]*Subscription[T], 0),
 		subscriptionBufferSize: defaultSubscriptionBufferSize,
 		doneListener:           make(chan subId, 100),
-		broadcastTimeout:       defaultBroadcastTimeout,
 	}
 	for _, opt := range opts {
 		opt(producer)
@@ -54,27 +47,20 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 	return producer
 }
 
-// Start begins listening for subscription cancelation requests or context cancelation.
+// Start begins listening for subscription cancellation requests or context cancellation.
 func (ep *Producer[T]) Start(ctx context.Context) {
 	for {
 		select {
 		case id := <-ep.doneListener:
 			ep.Lock()
-			// Find the subscription by stable id and remove it if present.
-			idx := -1
-			for i, s := range ep.subs {
-				if s.id == id {
-					idx = i
-					break
-				}
-			}
-			if idx >= 0 {
-				ep.subs = append(ep.subs[:idx], ep.subs[idx+1:]...)
-			}
+			ep.subs = slices.DeleteFunc(ep.subs, func(s *Subscription[T]) bool {
+				return s.id == id
+			})
 			ep.Unlock()
 		case <-ctx.Done():
-			close(ep.doneListener)
+			ep.Lock()
 			ep.subs = nil
+			ep.Unlock()
 			return
 		}
 	}
@@ -86,8 +72,8 @@ func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
 	sub := &Subscription[T]{
-		id:     ep.nextId, // Assign a stable, monotonically increasing ID
-		events: make(chan T),
+		id:     ep.nextId,
+		events: make(chan T, ep.subscriptionBufferSize),
 		done:   ep.doneListener,
 	}
 	ep.nextId++
@@ -95,21 +81,19 @@ func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	return sub
 }
 
-// Broadcast sends an event to all active subscriptions, respecting a configured timeout or context.
-// It spawns goroutines to send events to each subscription so as to not block the producer to submitting
-// to all consumers. Broadcast should be used if not all consumers are expected to consume the event,
-// within a reasonable time, or if the configured broadcast timeout is short enough.
-func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
+// Broadcast sends an event to all active subscriptions. If a subscription's
+// buffer is full the event is dropped, as the subscriber already has pending
+// events to process. This avoids spawning goroutines per broadcast and
+// eliminates goroutine leaks when subscribers are slow. The ctx parameter is
+// unused but retained for API compatibility.
+func (ep *Producer[T]) Broadcast(_ context.Context, event T) {
 	ep.RLock()
 	defer ep.RUnlock()
 	for _, sub := range ep.subs {
-		go func(listener *Subscription[T]) {
-			select {
-			case listener.events <- event:
-			case <-time.After(ep.broadcastTimeout):
-			case <-ctx.Done():
-			}
-		}(sub)
+		select {
+		case sub.events <- event:
+		default:
+		}
 	}
 }
 
@@ -123,17 +107,19 @@ type Subscription[T any] struct {
 	done   chan subId
 }
 
-// Next waits for the next event or context cancelation, returning the event or an error.
+// Next waits for the next event or context cancellation. It returns the event
+// and false on success, or a zero value and true if the context was cancelled.
 func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 	var zeroVal T
-	for {
+	select {
+	case ev := <-es.events:
+		return ev, false
+	case <-ctx.Done():
+		// Non-blocking send: Start() may have already exited, leaving no receiver.
 		select {
-		case ev := <-es.events:
-			return ev, false
-		case <-ctx.Done():
-			es.done <- es.id
-			close(es.events)
-			return zeroVal, true
+		case es.done <- es.id:
+		default:
 		}
+		return zeroVal, true
 	}
 }
