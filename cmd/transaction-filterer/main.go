@@ -214,18 +214,20 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "error starting API: %v\n", err)
 		return 1
 	}
+	defer func() {
+		api.StopAndWait()
+		stack.Close()
+	}()
 
 	err = stack.Start()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error starting stack: %v\n", err)
 		return 1
 	}
-	defer stack.Close()
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 	<-sigint
-	api.StopAndWait()
 
 	return 0
 }
