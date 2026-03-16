@@ -127,8 +127,16 @@ pub struct NativeInput {
 
 impl From<&NativeInput> for validation::ValidationInput {
     fn from(input: &NativeInput) -> Self {
-        let sequencer_messages = input.inbox.iter().map(|m| (m.number, m.data.clone())).collect();
-        let delayed_messages = input.delayed_inbox.iter().map(|m| (m.number, m.data.clone())).collect();
+        let sequencer_messages = input
+            .inbox
+            .iter()
+            .map(|m| (m.number, m.data.clone()))
+            .collect();
+        let delayed_messages = input
+            .delayed_inbox
+            .iter()
+            .map(|m| (m.number, m.data.clone()))
+            .collect();
 
         let mut preimages = validation::Preimages::new();
         for (preimage_type, preimages_map) in &input.preimages {

@@ -21,7 +21,11 @@ pub fn send_successful_response(
     memory_used: u64,
 ) -> IOResult<()> {
     write_u8(writer, markers::SUCCESS)?;
-    send_globals(writer, &[new_state.batch, new_state.pos_in_batch], &[new_state.block_hash.0, new_state.send_root.0])?;
+    send_globals(
+        writer,
+        &[new_state.batch, new_state.pos_in_batch],
+        &[new_state.block_hash.0, new_state.send_root.0],
+    )?;
     write_u64(writer, memory_used)
 }
 

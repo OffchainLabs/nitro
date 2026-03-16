@@ -5,9 +5,9 @@ use crate::transfer::{
     send_validation_input,
 };
 use crate::{GoGlobalState, ValidationInput};
+use arbutil::Bytes32;
 use std::collections::{BTreeMap, HashMap};
 use std::io::pipe;
-use arbutil::Bytes32;
 
 #[test]
 fn transfer_successful_response() -> Result<(), Box<dyn std::error::Error>> {
@@ -73,10 +73,7 @@ fn transfer_validation_input() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ]),
 
-        module_asms: HashMap::from([
-            ([3u8; 32], vec![20, 21, 22]),
-            ([4u8; 32], vec![30, 31, 32]),
-        ]),
+        module_asms: HashMap::from([([3u8; 32], vec![20, 21, 22]), ([4u8; 32], vec![30, 31, 32])]),
     };
 
     let (mut reader, mut writer) = pipe()?;

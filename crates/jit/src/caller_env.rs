@@ -159,7 +159,10 @@ impl WavmIo for WasmEnv {
     }
 
     fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
-        self.input.sequencer_messages.get(&num).map(|v| v.as_slice())
+        self.input
+            .sequencer_messages
+            .get(&num)
+            .map(|v| v.as_slice())
     }
 
     fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
