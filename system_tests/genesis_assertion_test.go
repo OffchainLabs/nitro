@@ -318,12 +318,11 @@ func createL2NodeWithRollupAddresses(
 	Require(t, err)
 
 	// Create parent chain reader
-	configFetcher := NewCommonConfigFetcher(execConfig)
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
-	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, parentChainId, l1Reader)
-	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, configFetcher, parentChainId, 0, parentChain)
+	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), parentChainId, 0, parentChain)
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator("")

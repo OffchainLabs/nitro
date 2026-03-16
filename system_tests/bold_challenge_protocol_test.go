@@ -46,11 +46,13 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -606,11 +608,15 @@ func create2ndNodeWithConfigForBoldProtocol(
 
 	l1ChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
+	parentChain := parent.NewParentChain(ctx, l1ChainId, l1Reader)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot())
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))
