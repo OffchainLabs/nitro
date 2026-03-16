@@ -347,7 +347,6 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
-	t.Skip("published machine uses pre-Wasmer 7 format, incompatible with current prover")
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
