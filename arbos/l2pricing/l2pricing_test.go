@@ -204,7 +204,7 @@ func TestMultiGasConstraints(t *testing.T) {
 			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
 		}
 
-		weights, err := c.ResourcesWithWeights()
+		weights, err := c.GetResourceWeights()
 		Require(t, err)
 		if weights[multigas.ResourceKindComputation] != 10+i {
 			t.Errorf("wrong computation weight: got %v, want %v", weights[multigas.ResourceKindComputation], 10+i)

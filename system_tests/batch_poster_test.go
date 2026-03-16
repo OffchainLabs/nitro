@@ -144,24 +144,29 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
-				ChainConfig:   builder.chainConfig,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChainID:        parentChainID,
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -285,25 +290,29 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
-				ChainConfig:   builder.chainConfig,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChainID:        parentChainID,
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -447,7 +456,6 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	// creates first node with batch poster disabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
-	builder.nodeConfig.MessageExtraction.Enable = !enabled // TODO: figure out how to handle AllowPostingFirstBatchWhenSequencerMessageCountMismatch with MEL
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientNonBatchPoster := builder.L2
@@ -546,7 +554,6 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
-	builder.nodeConfig.MessageExtraction.Enable = !delayBufferEnabled
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
@@ -691,7 +698,6 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t).
 		WithTakeOwnership(false)
-	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -897,7 +903,11 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		} else {
+			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		}
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
@@ -910,7 +920,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		var sequencerMessageBytes []byte
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		} else {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		}
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])

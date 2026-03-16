@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -1483,8 +1481,8 @@ func setupExpressLaneAuction(
 	extraNodeTy extraNodeType,
 	queueTimeoutInBlocks uint64,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func(), *timeboost.BidValidator) {
-	seqPort := getRandomPort(t)
-	forwarderPort := getRandomPort(t)
+	seqPort := getFreePort(t)
+	forwarderPort := getFreePort(t)
 
 	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
 	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
@@ -1748,8 +1746,8 @@ func setupExpressLaneAuction(
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
-	bidValidatorPort := getRandomPort(t)
-	bidValidatorWsPort := getRandomPort(t)
+	bidValidatorPort := getFreePort(t)
+	bidValidatorWsPort := getFreePort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
 		HTTPPort:            bidValidatorPort,
@@ -2007,15 +2005,4 @@ func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
 	}
 	sig[64] += 27
 	return sig, nil
-}
-
-func getRandomPort(t testing.TB) int {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }
