@@ -151,7 +151,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	})
 	defer cleanupEvilNode()
 
-	go keepChainMoving(t, ctx, builder.L1Info, builder.L1.Client)
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L1Info, builder.L1.Client)
 
 	builder.L1Info.GenerateAccount("HonestAsserter")
 	fundBoldStaker(t, ctx, builder, "HonestAsserter")

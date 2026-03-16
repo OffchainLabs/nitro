@@ -2740,3 +2740,27 @@ func getFreePort(t testing.TB) int {
 	}
 	return tcpAddr.Port
 }
+
+func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(delay)
+			if ctx.Err() != nil {
+				break
+			}
+			to := l1Info.GetAddress("Faucet")
+			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
+			if err := client.SendTransaction(ctx, tx); err != nil {
+				t.Log("Error sending tx:", err)
+				continue
+			}
+			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				t.Log("Error ensuring tx succeeded:", err)
+				continue
+			}
+		}
+	}
+}

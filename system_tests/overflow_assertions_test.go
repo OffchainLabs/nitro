@@ -84,7 +84,7 @@ func TestOverflowAssertions(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))

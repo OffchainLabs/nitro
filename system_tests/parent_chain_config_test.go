@@ -92,7 +92,7 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	// far in the future. The pointer is shared with the geth node's config so we
 	// can mutate it later to simulate a fork activation without restarting the node
 	// #nosec G115
-	farFuture := uint64(time.Now().Unix()) + 3600
+	farFuture := uint64(time.Now().Unix()) + 60
 	l1ChainConfig := *params.AllDevChainProtocolChanges
 	l1ChainConfig.BPO1Time = &farFuture
 	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
@@ -131,7 +131,7 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 
 	// Phase 1: Verify initial config is Osaka (BPO1 is far in the future)
 	var blobConfigPhase1 *params.BlobConfig
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 50; i++ {
 		time.Sleep(200 * time.Millisecond)
 		blobConfigPhase1 = pc.CachedBlobConfig()
 		if blobConfigPhase1 != nil {
@@ -141,6 +141,9 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	if blobConfigPhase1 == nil {
 		t.Fatal("ParentChain did not fetch initial blob config within timeout")
 	}
+
+	// Phase 2: Activate BPO1 by advancing L1
+	go keepChainMoving(t, 100*time.Millisecond, ctx, builder.L1Info, builder.L1.Client)
 
 	t.Logf("Phase 1: got initial blob config target=%d max=%d (expecting Osaka: target=%d max=%d)",
 		blobConfigPhase1.Target, blobConfigPhase1.Max,
@@ -152,22 +155,17 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 			blobConfigPhase1.Target, blobConfigPhase1.Max)
 	}
 
-	// Phase 2: Activate BPO1 by mutating the shared pointer to time 0
-	// (already active). The geth node's in-memory chain config shares this
-	// pointer via the shallow copy made during genesis setup, so the next
-	// eth_config poll will see BPO1 as the active fork.
-	*l1ChainConfig.BPO1Time = 0
-
 	var blobConfigPhase2 *params.BlobConfig
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
 		blobConfigPhase2 = pc.CachedBlobConfig()
-		if blobConfigPhase2 != nil {
+		if blobConfigPhase2 != nil && blobConfigPhase2.Target == params.DefaultBPO1BlobConfig.Target {
 			break
 		}
 	}
 
+	// Now we verify the activated fork was indeed BPO1
 	if blobConfigPhase2 == nil ||
 		blobConfigPhase2.Target != params.DefaultBPO1BlobConfig.Target ||
 		blobConfigPhase2.Max != params.DefaultBPO1BlobConfig.Max {

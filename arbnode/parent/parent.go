@@ -93,8 +93,11 @@ func NewParentChainWithConfig(ctx context.Context, chainID *big.Int, l1Reader *h
 		config:   config,
 	}
 
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	if l1Reader != nil {
-		if err := parentChain.pollEthConfig(ctx); err != nil && ctx.Err() == nil {
+		if err := parentChain.pollEthConfig(fetchCtx); err != nil && fetchCtx.Err() == nil {
 			log.Warn("Failed to poll parent chain eth_config from NewParentChainWithConfig", "err", err)
 		}
 	}

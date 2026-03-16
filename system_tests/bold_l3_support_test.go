@@ -74,8 +74,8 @@ func TestL3ChallengeProtocolBOLD(t *testing.T) {
 	secondNodeTestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeNodeConfig})
 	defer cleanupL3SecondNode()
 
-	go keepChainMoving(t, ctx, builder.L1Info, builder.L1.Client) // Advance L1.
-	go keepChainMoving(t, ctx, builder.L2Info, builder.L2.Client) // Advance L2.
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L1Info, builder.L1.Client) // Advance L1.
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L2Info, builder.L2.Client) // Advance L2.
 
 	builder.L2Info.GenerateAccount("HonestAsserter")
 	fundL3Staker(t, ctx, builder, builder.L2.Client, "HonestAsserter")

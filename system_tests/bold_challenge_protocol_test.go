@@ -132,7 +132,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	l2StackB, _, l2nodeB, l2execNodeB, _ := create2ndNodeWithConfigForBoldProtocol(
@@ -514,32 +514,6 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 			fromBlock = toBlock
 		case <-ctx.Done():
 			return
-		}
-	}
-}
-
-// Every 3 seconds, send an L1 transaction to keep the chain moving.
-func keepChainMoving(t *gotesting.T, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
-	delay := time.Second * 3
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			time.Sleep(delay)
-			if ctx.Err() != nil {
-				break
-			}
-			to := l1Info.GetAddress("Faucet")
-			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
-			if err := client.SendTransaction(ctx, tx); err != nil {
-				t.Log("Error sending tx:", err)
-				continue
-			}
-			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
-				t.Log("Error ensuring tx succeeded:", err)
-				continue
-			}
 		}
 	}
 }

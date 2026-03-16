@@ -335,7 +335,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	// Configure external DA for node B
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
