@@ -351,17 +351,19 @@ func (con ArbGasInfo) GetMultiGasPricingConstraints(
 			return nil, fmt.Errorf("failed to read backlog for constraint %d: %w", i, err)
 		}
 
-		resourceMap, err := constraint.ResourcesWithWeights()
+		weights, err := constraint.GetResourceWeights()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read resource weights for constraint %d: %w", i, err)
 		}
-
-		resources := make([]WeightedResource, 0, len(resourceMap))
-		for kind, weight := range resourceMap {
-			resources = append(resources, WeightedResource{
-				Resource: uint8(kind),
-				Weight:   weight,
-			})
+		var resources []WeightedResource
+		for kind, weight := range weights {
+			if weight != 0 {
+				// #nosec G115 safe: kind < NumResourceKind
+				resources = append(resources, WeightedResource{
+					Resource: uint8(kind),
+					Weight:   weight,
+				})
+			}
 		}
 
 		result = append(result, MultiGasConstraint{

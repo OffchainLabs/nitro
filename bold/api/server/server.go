@@ -52,15 +52,19 @@ func New(addr string, backend backend.BusinessLogicProvider) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
-	go func() {
-		<-ctx.Done()
-		if err := s.srv.Shutdown(ctx); err != nil {
-			log.Error("Could not shutdown API server", "err", err)
+	s.LaunchThread(func(ctx context.Context) {
+		go func() {
+			<-ctx.Done()
+			if err := s.srv.Shutdown(ctx); err != nil {
+				log.Error("Could not shutdown API server", "err", err)
+			}
+		}()
+		if err := s.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("Could not start API server", "address", s.srv.Addr, "err", err)
 		}
-	}()
-	return s.srv.ListenAndServe()
+	})
 }
 
 func (s *Server) Addr() string {
