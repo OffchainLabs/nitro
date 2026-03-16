@@ -41,6 +41,22 @@ const NUMBER_OPCODE: u8 = 0x43;
 /// the value stored by `record_new_l1_block` during StartBlock. The mixHash
 /// L1 block number in the header can differ from this value, so we read from
 /// the thread-local set after StartBlock processing.
+/// Gas probe counter — logs gas at the first few JUMPDEST executions when tracing.
+pub static JUMPDEST_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn arb_jumpdest_probe<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    if arb_storage::GASBACKLOG_TRACE.load(core::sync::atomic::Ordering::Relaxed) {
+        let n = JUMPDEST_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 20 {
+            let gas = ctx.interpreter.gas.remaining();
+            eprintln!("[GAS-PROBE] JUMPDEST#{} gas_remaining={}", n, gas);
+        }
+    }
+    // JUMPDEST is a no-op (base_gas=1 already deducted by revm)
+}
+
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
 ) {
@@ -1270,6 +1286,11 @@ fn build_arb_evm<DB: Database, I>(
     instruction.insert_instruction(
         NUMBER_OPCODE,
         revm::interpreter::Instruction::new(arb_number, 2),
+    );
+    // JUMPDEST gas probe for debugging (base_gas=1, same as standard).
+    instruction.insert_instruction(
+        0x5b, // JUMPDEST
+        revm::interpreter::Instruction::new(arb_jumpdest_probe, 1),
     );
     // SHA3 tracer disabled - use standard revm keccak256 handler.
     // The custom tracer had a memory resize bug: resize(new_size) instead of

@@ -1646,6 +1646,13 @@ where
             }
         }
 
+        // Set the address aliasing flag for L1→L2 message types. Nitro's
+        // StartTxHook sets this based on the tx type; ArbSys.wasMyCallersAddressAliased()
+        // and myCallersAddressWithoutAliasing() read it.
+        arb_precompiles::set_tx_is_aliased(
+            arbos::util::does_tx_type_alias(tx_type_raw),
+        );
+
         // Write the poster fee to a scratch storage slot AND set the thread-local
         // so ArbGasInfo.getCurrentTxL1GasFees can return it without storage reads
         // (matching Nitro's c.txProcessor.PosterFee pattern).
@@ -1759,6 +1766,11 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
+        // Reset JUMPDEST probe counter before each tx in diag window
+        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::evm::JUMPDEST_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+
         let mut output = match self.inner.execute_transaction_without_commit((tx_env, recovered)) {
             Ok(o) => o,
             Err(e) => {
@@ -1767,6 +1779,25 @@ where
             }
         };
 
+        // Diagnostic: compute revm's actual intrinsic gas from the execution result
+        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            // revm_intrinsic = evm_gas_limit - first_opcode_gas
+            // We can't directly get first_opcode_gas, but we can check:
+            // If execution reverts: gas_used = intrinsic + execution_consumed
+            // gas_remaining = evm_gas_limit - gas_used
+            // For the NUMBER probe, we already know the EVM starts with specific gas
+            let gu = output.result.result.gas_used();
+            let gr = match &output.result.result {
+                ExecutionResult::Success { gas_refunded, .. } => *gas_refunded,
+                _ => 0,
+            };
+            eprintln!("[EVM-INTRINSIC] block={} evm_limit={} gas_used={} gas_refunded={} \
+                revm_gas_remaining={}",
+                self.arb_ctx.l2_block_number,
+                evm_gas_limit_after,
+                gu, gr,
+                evm_gas_limit_after.saturating_sub(gu));
+        }
         // Diagnostic: dump EVM output state for blocks in diag window
         if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
             eprintln!("[EVM-OUT] block={} status={:?} accounts={}",
