@@ -333,7 +333,7 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     prepare_env_from_validation_input(env, &vi)
 }
 
-pub(crate) fn prepare_env_from_validation_input(
+fn prepare_env_from_validation_input(
     mut env: WasmEnv,
     input: &validation::ValidationInput,
 ) -> Result<WasmEnv> {
