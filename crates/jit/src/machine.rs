@@ -5,7 +5,6 @@ use crate::{
     arbcompress, arbcrypto, program, stylus_backend::CothreadHandler, wasip1_stub, wavmio,
     InputMode, LocalInput, Opts, ValidatorOpts,
 };
-use validation::local_target;
 use arbutil::{Bytes32, PreimageType};
 use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
@@ -19,6 +18,7 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
+use validation::local_target;
 use wasmer::{
     imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
     Module, RuntimeError, Store,
