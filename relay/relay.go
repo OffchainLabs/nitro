@@ -86,7 +86,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		return errors.New("broadcast unable to start")
 	}
 
-	r.broadcastClients.Start(ctx)
+	r.broadcastClients.Start(r.GetContext())
 
 	r.LaunchThread(func(ctx context.Context) {
 		for {
@@ -112,9 +112,9 @@ func (r *Relay) GetListenerAddr() net.Addr {
 }
 
 func (r *Relay) StopAndWait() {
-	r.StopWaiter.StopAndWait()
 	r.broadcastClients.StopAndWait()
 	r.broadcaster.StopAndWait()
+	r.StopWaiter.StopAndWait()
 }
 
 type Config struct {
