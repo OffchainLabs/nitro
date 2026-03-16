@@ -274,7 +274,10 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
             input.old_state.inbox_position,
             input.old_state.position_within_message,
         ],
-        large_globals: [input.old_state.last_block_hash.0, input.old_state.last_send_root.0],
+        large_globals: [
+            input.old_state.last_block_hash.0,
+            input.old_state.last_send_root.0,
+        ],
         ..Default::default()
     };
 

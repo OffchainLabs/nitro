@@ -114,7 +114,6 @@ impl From<GlobalState> for validation::GoGlobalState {
     }
 }
 
-
 /// Result of running the JIT validation.
 pub struct RunResult {
     /// Amount of memory used by the Wasm instance.
