@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -251,7 +252,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
-		builder.L2Info.Signer.ChainID(),
+		parent.NewParentChain(ctx, builder.L2Info.Signer.ChainID(), builder.L3.ConsensusNode.L1Reader),
 	)
 	Require(t, err)
 

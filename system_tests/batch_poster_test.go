@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -159,7 +160,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:         &seqTxOpts,
 				DAPWriters:           nil,
-				ParentChainID:        parentChainID,
+				ParentChain:          parent.NewParentChain(ctx, parentChainID, builder.L2.ConsensusNode.L1Reader),
 				ChainConfig:          builder.chainConfig,
 			},
 		)
@@ -300,7 +301,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:         &seqTxOpts,
 				DAPWriters:           nil,
-				ParentChainID:        parentChainID,
+				ParentChain:          parent.NewParentChain(ctx, parentChainID, builder.L2.ConsensusNode.L1Reader),
 				ChainConfig:          builder.chainConfig,
 			},
 		)

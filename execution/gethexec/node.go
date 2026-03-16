@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -244,19 +245,22 @@ type ConfigFetcher interface {
 
 type ExecutionNode struct {
 	stopwaiter.StopWaiter
-	ExecutionDB              ethdb.Database
-	Backend                  *arbitrum.Backend
-	FilterSystem             *filters.FilterSystem
-	ArbInterface             *ArbInterface
-	ExecEngine               *ExecutionEngine
-	Recorder                 *BlockRecorder
-	Sequencer                *Sequencer // either nil or same as TxPublisher
-	TxPreChecker             *TxPreChecker
-	TxPublisher              TransactionPublisher
-	ExpressLaneService       *expressLaneService
-	configFetcher            ConfigFetcher
-	SyncMonitor              *SyncMonitor
-	ParentChainReader        *headerreader.HeaderReader
+	ExecutionDB        ethdb.Database
+	Backend            *arbitrum.Backend
+	FilterSystem       *filters.FilterSystem
+	ArbInterface       *ArbInterface
+	ExecEngine         *ExecutionEngine
+	Recorder           *BlockRecorder
+	Sequencer          *Sequencer // either nil or same as TxPublisher
+	TxPreChecker       *TxPreChecker
+	TxPublisher        TransactionPublisher
+	ExpressLaneService *expressLaneService
+	configFetcher      ConfigFetcher
+	SyncMonitor        *SyncMonitor
+	ParentChainReader  *headerreader.HeaderReader
+	// ParentChain might be shared with the consensus node when co-located.
+	// StopWaiter is safe to Start/Stop multiple times.
+	ParentChain              *parent.ParentChain
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
@@ -272,6 +276,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 	parentChainID *big.Int,
 	syncTillBlock uint64,
+	seqParentChain *parent.ParentChain,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
@@ -301,7 +306,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, seqParentChain)
 		if err != nil {
 			return nil, err
 		}
@@ -361,6 +366,7 @@ func CreateExecutionNode(
 		configFetcher:            configFetcher,
 		SyncMonitor:              syncMon,
 		ParentChainReader:        parentChainReader,
+		ParentChain:              seqParentChain,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 	}
@@ -487,6 +493,9 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
+	if n.ParentChain != nil {
+		n.ParentChain.Start(ctx)
+	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	return nil
 }
@@ -502,6 +511,9 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
+	if n.ParentChain != nil && n.ParentChain.Started() {
+		n.ParentChain.StopAndWait()
+	}
 	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
 		n.ParentChainReader.StopAndWait()
 	}

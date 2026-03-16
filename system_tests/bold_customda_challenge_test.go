@@ -29,6 +29,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
@@ -519,7 +520,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		&evilOpts,
 		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2nodeB.L1Reader),
 	)
 	Require(t, err)
 	chainB, err := sol.NewAssertionChain(

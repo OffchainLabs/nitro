@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -276,7 +277,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		&evilOpts,
 		NewCommonConfigFetcher(l2nodeConfig),
 		l2nodeB.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2nodeB.L1Reader),
 	)
 	Require(t, err)
 	chainB, err := sol.NewAssertionChain(
@@ -628,7 +629,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		&evilOpts,
 		NewCommonConfigFetcher(nodeConfig),
 		l2node.SyncMonitor,
-		l1ChainId,
+		parent.NewParentChain(ctx, l1ChainId, l2node.L1Reader),
 	)
 	Require(t, err)
 	assertionChain, err := sol.NewAssertionChain(

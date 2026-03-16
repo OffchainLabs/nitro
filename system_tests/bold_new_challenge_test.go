@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
@@ -332,7 +333,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
-		builder.L1Info.Signer.ChainID(),
+		parent.NewParentChain(ctx, builder.L1Info.Signer.ChainID(), node.ConsensusNode.L1Reader),
 	)
 	Require(t, err)
 
