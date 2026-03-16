@@ -763,13 +763,6 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		deployConfig,
 	)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
-
-	// Create parentChain with nil L1Reader. With no L1Reader, eth_config
-	// polling is skipped and blobConfig() falls back to the static chain
-	// config, which is sufficient for most tests. Tests that need to
-	// exercise the polling path create their own ParentChain with a real
-	// L1Reader (see parent_chain_config_test.go).
-	b.parentChain = parent.NewParentChainWithConfig(b.ctx, big.NewInt(1337), nil, func() *parent.Config { return &parent.TestConfig })
 }
 
 func clientForStackUseHTTP(stackConfig *node.Config) bool {
@@ -794,7 +787,6 @@ func buildOnParentChain(
 	valnodeConfig *valnode.Config,
 	isSequencer bool,
 	chainInfo info,
-	parentChain *parent.ParentChain,
 
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
@@ -805,6 +797,13 @@ func buildOnParentChain(
 	}
 
 	chainTestClient := NewTestClient(ctx)
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, parentChainTestClient.Client)
+	l1Reader, err := headerreader.New(parentChainTestClient.ctx, parentChainTestClient.Client, func() *headerreader.Config {
+		return &parentChainTestClient.ConsensusConfigFetcher.Get().ParentChainReader
+	}, arbSys)
+	Require(t, err)
+	parentChain := parent.NewParentChainWithConfig(ctx, parentChainId, l1Reader, func() *parent.Config { return &parent.TestConfig })
 
 	var executionDB ethdb.Database
 	var consensusDB ethdb.Database
@@ -893,6 +892,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
 		configureConsensusExecutionOverRPC(b.l3Config.execConfig, b.l3Config.nodeConfig, b.l3Config.stackConfig)
 	}
+
 	b.L3 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -911,7 +911,6 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3Config.valnodeConfig,
 		b.l3Config.isSequencer,
 		b.L3Info,
-		b.parentChain,
 
 		b.l3InitMessage,
 		b.l3Addresses,
@@ -927,6 +926,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if *testflag.ConsensusExecutionInSameProcessUseRPC {
 		configureConsensusExecutionOverRPC(b.execConfig, b.nodeConfig, b.l2StackConfig)
 	}
+
 	b.L2 = buildOnParentChain(
 		t,
 		b.ctx,
@@ -945,7 +945,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.valnodeConfig,
 		b.isSequencer,
 		b.L2Info,
-		b.parentChain,
 
 		b.initMessage,
 		b.addresses,
@@ -1137,7 +1136,6 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
-	parentChain *parent.ParentChain,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1177,7 +1175,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, parentChain)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1210,7 +1208,6 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
-		b.parentChain,
 	)
 }
 
@@ -1218,6 +1215,12 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 	DontWaitAndRun(b.ctx, 1, t.Name())
 	if b.L3 == nil {
 		t.Fatal("builder did not previously built an L3 Node")
+	}
+	if b.L2 == nil {
+		t.Fatal("builder did not previously build an L2 Node")
+	}
+	if b.L1 == nil {
+		t.Fatal("builder did not previously build an L1 Node")
 	}
 	return build2ndNode(
 		t,
@@ -1237,7 +1240,6 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
-		b.parentChain,
 	)
 }
 
