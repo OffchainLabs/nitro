@@ -1461,7 +1461,8 @@ where
         // GasChargingHook runs for every tx that enters the EVM.
         if let Some(hooks) = self.arb_hooks.as_mut() {
             if !hooks.is_eth_call {
-                let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx());
+                let spec = arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version);
+                let intrinsic_estimate = estimate_intrinsic_gas(recovered.tx(), spec);
                 let gas_after_intrinsic =
                     tx_gas_limit.saturating_sub(intrinsic_estimate);
                 let gas_after_poster =
@@ -1518,7 +1519,8 @@ where
 
         // Diagnostic: log the full gas breakdown before EVM execution
         if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            let intrinsic_est = estimate_intrinsic_gas(recovered.tx());
+            let intrinsic_est = estimate_intrinsic_gas(recovered.tx(),
+                arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version));
             let al = revm::context_interface::Transaction::access_list(&tx_env);
             let al_count = al.map(|it| it.count()).unwrap_or(0);
             eprintln!("[GAS-PRE] block={} tx_gas_limit={} intrinsic_est={} poster_gas={} compute_hold={} gas_deduction={} evm_sees={}  al_entries={}",
@@ -2677,8 +2679,9 @@ fn apply_fee_distribution<DB: Database>(
 /// Estimate intrinsic gas for a transaction.
 ///
 /// Matches geth's `IntrinsicGas()`: base 21000 + calldata cost + create cost +
-/// access list cost + EIP-3860 initcode cost.
-fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
+/// access list cost + EIP-3860 initcode cost (Shanghai+).
+/// Must be spec-aware to avoid charging initcode cost at pre-Shanghai specs.
+fn estimate_intrinsic_gas(tx: &impl Transaction, spec: revm::primitives::hardfork::SpecId) -> u64 {
     const TX_GAS: u64 = 21_000;
     const TX_CREATE_GAS: u64 = 32_000;
     const TX_DATA_ZERO_GAS: u64 = 4;
@@ -2714,7 +2717,10 @@ fn estimate_intrinsic_gas(tx: &impl Transaction) -> u64 {
     }
 
     // EIP-3860: initcode word cost for CREATE txs (Shanghai+).
-    if is_create && !data.is_empty() {
+    if spec.is_enabled_in(revm::primitives::hardfork::SpecId::SHANGHAI)
+        && is_create
+        && !data.is_empty()
+    {
         let words = (data.len() as u64 + 31) / 32;
         gas = gas.saturating_add(words.saturating_mul(INIT_CODE_WORD_GAS));
     }
