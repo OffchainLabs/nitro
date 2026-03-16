@@ -399,9 +399,11 @@ fn do_send_tx_to_l1(
 ) -> PrecompileResult {
     let caller = input.caller;
     let value = input.value;
-    // block_env.number holds L1 block number in Arbitrum (for the NUMBER opcode).
-    // The L2 block number is stored separately.
-    let l1_block_number = input.internals().block_number();
+    // Use the L1 block number from ArbOS state (set by StartBlock), not from
+    // block_env.number (mix_hash). These can differ — the mix_hash value is the
+    // header's L1 block number, while ArbOS state holds the value updated during
+    // StartBlock which is what Nitro's evm.Context.BlockNumber returns.
+    let l1_block_number = U256::from(crate::get_l1_block_number_for_evm());
     let l2_block_number = U256::from(get_current_l2_block());
     let timestamp = input.internals().block_timestamp();
 
