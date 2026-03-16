@@ -42,9 +42,7 @@ func NewTransactionFiltererAPI(
 		queue:  make(chan common.Hash, filterQueueSize),
 		txOpts: txOpts,
 	}
-	if manager != nil {
-		api.arbFilteredTransactionsManager.Store(manager)
-	}
+	api.arbFilteredTransactionsManager.Store(manager)
 	return api
 }
 
