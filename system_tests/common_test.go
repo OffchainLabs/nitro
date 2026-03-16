@@ -220,6 +220,12 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 	return arbmath.BigSub(newBalance, prevBalance), nil
 }
 
+func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
+	for range numBlocks {
+		tc.TransferBalance(t, "Faucet", "Faucet", common.Big1, lInfo)
+	}
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
