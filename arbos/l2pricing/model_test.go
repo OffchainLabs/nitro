@@ -170,8 +170,8 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	if got := exponents[multigas.ResourceKindHistoryGrowth]; got != 0 {
 		t.Errorf("expected zero history-growth exponent, got %v", got)
 	}
-	if got := exponents[multigas.ResourceKindL1Calldata]; got != 0 {
-		t.Errorf("expected zero L1 calldata exponent, got %v", got)
+	if got := exponents[multigas.ResourceKindSingleDim]; got != 0 {
+		t.Errorf("expected zero single-dimensional gas exponent, got %v", got)
 	}
 	if got := exponents[multigas.ResourceKindL2Calldata]; got != 0 {
 		t.Errorf("expected zero L2 calldata exponent, got %v", got)
@@ -253,7 +253,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		Require(t, err)
 
 		// Same override logic as MultiDimensionalPriceForRefund
-		if kind == multigas.ResourceKindL1Calldata || baseFeeKind.Sign() == 0 {
+		if kind == multigas.ResourceKindSingleDim || baseFeeKind.Sign() == 0 {
 			baseFeeKind = baseFeeWei
 		}
 

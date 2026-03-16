@@ -13,10 +13,38 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 type ClassicOutboxRetriever struct {
 	db ethdb.Database
+}
+
+// OpenClassicOutboxFromStack opens the classic-msg database from a node stack
+// and returns a ClassicOutboxRetriever, or nil if the database does not exist.
+func OpenClassicOutboxFromStack(stack *node.Node) (*ClassicOutboxRetriever, error) {
+	classicMsgDB, err := stack.OpenDatabaseWithOptions("classic-msg", node.DatabaseOptions{
+		MetricsNamespace: "classicmsg/",
+		Cache:            0, // will be sanitized to minimum
+		Handles:          0, // will be sanitized to minimum
+		ReadOnly:         true,
+		NoFreezer:        true,
+	})
+	if dbutil.IsNotExistError(err) {
+		log.Warn("Classic Msg Database not found", "err", err)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
+	}
+	if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
+		classicMsgDB.Close()
+		return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
+	}
+	return NewClassicOutboxRetriever(classicMsgDB), nil
 }
 
 func NewClassicOutboxRetriever(db ethdb.Database) *ClassicOutboxRetriever {
@@ -47,7 +75,7 @@ func (m *ClassicOutboxRetriever) GetMsg(batchNum *big.Int, index uint64) (*Class
 	lowest := uint64(0)
 	var root common.Hash
 	copy(root[:], batchHeader[8:40])
-	if merkleSize < index {
+	if merkleSize <= index {
 		return nil, fmt.Errorf("batch %d only has %d indexes", batchNum, merkleSize)
 	}
 	proofNodes := [][32]byte{}

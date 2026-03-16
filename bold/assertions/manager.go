@@ -271,6 +271,10 @@ func (m *Manager) SetRivalHandler(handler types.RivalHandler) {
 
 func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
+	m.LaunchThread(m.initialize)
+}
+
+func (m *Manager) initialize(ctx context.Context) {
 	if m.mode != types.WatchTowerMode {
 		if m.delegatedStaking {
 			// Attempt to become a new staker onchain until successful.

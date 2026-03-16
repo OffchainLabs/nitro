@@ -5,7 +5,6 @@ package melextraction
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -147,16 +146,16 @@ func extractMessagesImpl(
 		// If this message is a batch posting report, we save it for later
 		// use in this function once we extract messages from batches and
 		// need to fill in their batch posting report.
-		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport || delayed.Message.Header.Kind == arbostypes.L1MessageType_Initialize { // Let's consider the init message as a batch posting report, since it is seen as a batch as well, we can later ignore filling its batchGasCost anyway
+		if delayed.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
 			batchPostingReports = append(batchPostingReports, delayed)
 		}
 	}
 
 	// Batch posting reports are included in the same transaction as a batch, so there should
-	// always be the same number of reports as there are batches.
-	if len(batchPostingReports) != len(batches) {
+	// be the same or lesser number of reports as there are batches.
+	if len(batchPostingReports) > len(batches) {
 		return nil, nil, nil, nil, fmt.Errorf(
-			"batch posting reports %d do not match the number of batches %d",
+			"number of batch posting reports %d higher than the number of batches %d",
 			len(batchPostingReports),
 			len(batches),
 		)
@@ -165,6 +164,8 @@ func extractMessagesImpl(
 	var batchMetas []*mel.BatchMetadata
 	var messages []*arbostypes.MessageWithMetadata
 	var serializedBatches [][]byte
+	var batchPostReportIndex int
+	var batchPostReportBatchHash common.Hash
 	for i, batch := range batches {
 		batchTx := batchTxs[i]
 		serialized, err := serialize(
@@ -177,29 +178,36 @@ func extractMessagesImpl(
 			return nil, nil, nil, nil, err
 		}
 
-		batchPostReport := batchPostingReports[i]
-		if batchPostReport.Message.Header.Kind != arbostypes.L1MessageType_Initialize {
-			_, _, batchHash, _, _, _, err := parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
-			if err != nil {
-				return nil, nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+		if batchPostReportIndex < len(batchPostingReports) {
+			batchPostReport := batchPostingReports[batchPostReportIndex]
+			if (batchPostReportBatchHash == common.Hash{}) {
+				_, _, batchPostReportBatchHash, _, _, _, err = parseBatchPostingReport(bytes.NewReader(batchPostReport.Message.L2msg))
+				if err != nil {
+					return nil, nil, nil, nil, fmt.Errorf("failed to parse batch posting report: %w", err)
+				}
 			}
 			gotHash := crypto.Keccak256Hash(serialized)
-			if gotHash != batchHash {
-				return nil, nil, nil, nil, fmt.Errorf(
-					"batch data hash incorrect %v (wanted %v for batch %v)",
-					gotHash,
-					batchHash,
-					batch.SequenceNumber,
-				)
+			if gotHash == batchPostReportBatchHash {
+				// Fill in the batch gas stats into the batch posting report.
+				batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
+				legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
+				batchPostReport.Message.LegacyBatchGasCost = &legacyCost
+				// Process next report
+				batchPostReportIndex++
+				batchPostReportBatchHash = common.Hash{}
 			}
-			// Fill in the batch gas stats into the batch posting report.
-			batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
-			legacyCost := arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
-			batchPostReport.Message.LegacyBatchGasCost = &legacyCost
-		} else if !(inputState.DelayedMessagesSeen == 0 && i == 0 && delayedMessages[i] == batchPostReport) {
-			return nil, nil, nil, nil, errors.New("encountered initialize message that is not the first delayed message and the first batch ")
 		}
 		serializedBatches = append(serializedBatches, serialized)
+	}
+
+	// Batch posting reports are included in the same transaction as a batch, so all the
+	// reports should have been filled in with the batch gas stats
+	if len(batchPostingReports) != batchPostReportIndex {
+		return nil, nil, nil, nil, fmt.Errorf(
+			"not all batch posting reports processed. Have: %d, Processed: %d",
+			len(batchPostingReports),
+			batchPostReportIndex,
+		)
 	}
 
 	// Update the delayed message inbox accumulator in the MEL state.

@@ -910,3 +910,44 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	log.Info("InboxTracker", "SequencerBatchCount", count)
 	return t.txStreamer.ReorgAtAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
 }
+
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
+func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
+	ctx context.Context,
+	finalizedBlock uint64,
+	lastDelayedAccumulator common.Hash,
+	requestedPosition uint64,
+) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
+	msg, acc, parentChainBlockNumber, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, requestedPosition)
+	if err != nil {
+		return nil, common.Hash{}, 0, err
+	}
+	if parentChainBlockNumber > finalizedBlock {
+		return nil, common.Hash{}, parentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
+	}
+	if lastDelayedAccumulator != (common.Hash{}) {
+		// Ensure that there hasn't been a reorg and this message follows the last
+		fullMsg := mel.DelayedInboxMessage{
+			BeforeInboxAcc:         lastDelayedAccumulator,
+			Message:                msg,
+			ParentChainBlockNumber: parentChainBlockNumber,
+		}
+		if fullMsg.AfterInboxAcc() != acc {
+			return nil, common.Hash{}, 0, errors.New("delayed message accumulator mismatch while sequencing")
+		}
+	}
+	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(
+			ctx, batchNum, parentChainBlockNumber,
+		)
+		return data, err
+	})
+	if err != nil {
+		return nil, common.Hash{}, 0, err
+	}
+	return msg, acc, parentChainBlockNumber, nil
+}

@@ -773,7 +773,9 @@ func getInboxTrackerAndReader(
 	if err != nil {
 		return nil, nil, err
 	}
-	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
+	if err := txStreamer.SetInboxReaders(inboxReader, delayedBridge); err != nil {
+		return nil, nil, err
+	}
 
 	return inboxTracker, inboxReader, nil
 }
@@ -785,8 +787,9 @@ func getMessageExtractor(
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	arbDb ethdb.Database,
-	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	sequencerInbox *SequencerInbox,
+	l1Reader *headerreader.HeaderReader,
 	melReorgDetector chan uint64,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
@@ -808,14 +811,14 @@ func getMessageExtractor(
 		l2Config,
 		deployInfo,
 		melDB,
-		txStreamer,
 		dapRegistry,
+		sequencerInbox,
+		l1Reader,
 		melReorgDetector,
 	)
 	if err != nil {
 		return nil, err
 	}
-	txStreamer.SetMsgExtractor(msgExtractor)
 	return msgExtractor, nil
 }
 
@@ -1119,8 +1122,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	batchMetaFetcher BatchMetadataFetcher,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1144,20 +1146,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
-			L1Reader:      l1Reader,
-			Inbox:         inboxTracker,
-			MsgExtractor:  msgExtractor,
-			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
-			SyncMonitor:   syncMonitor,
-			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:    deployInfo,
-			TransactOpts:  txOptsBatchPoster,
-			DAPWriters:    dapWriters,
-			ParentChainID: parentChainID,
-			DAPReaders:    dapReaders,
-			ChainConfig:   l2Config,
+			DataPosterDB:         rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
+			L1Reader:             l1Reader,
+			BatchMetadataFetcher: batchMetaFetcher,
+			Streamer:             txStreamer,
+			VersionGetter:        arbOSVersionGetter,
+			SyncMonitor:          syncMonitor,
+			Config:               func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:           deployInfo,
+			TransactOpts:         txOptsBatchPoster,
+			DAPWriters:           dapWriters,
+			ParentChainID:        parentChainID,
+			DAPReaders:           dapReaders,
+			ChainConfig:          l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1174,26 +1175,29 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxReader *InboxReader,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, nil
-	}
 	if exec == nil {
+		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-
-	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
+	} else if msgExtractor != nil {
+		delayedMessageFetcher = msgExtractor
+	} else {
+		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
-	return delayedSequencer, nil
+	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1219,8 +1223,7 @@ func getNodeParentChainReaderDisabled(
 	}
 	consensusExecutionSyncer := NewConsensusExecutionSyncer(
 		consensusExecutionSyncerConfigFetcher,
-		nil, // inboxReader
-		nil, // msgExtractor
+		nil, // msgCountFetcher
 		executionClient,
 		nil, // blockValidator
 		txStreamer,
@@ -1350,9 +1353,17 @@ func createNodeImpl(
 	if config.MessageExtraction.Enable && config.MELValidator.Enable {
 		melReorgDetector = make(chan uint64)
 	}
-	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry, melReorgDetector)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, dapRegistry, sequencerInbox, l1Reader, melReorgDetector)
 	if err != nil {
 		return nil, err
+	}
+	if messageExtractor != nil {
+		if err := txStreamer.SetMsgExtractor(messageExtractor); err != nil {
+			return nil, err
+		}
+		if err := messageExtractor.SetMessageConsumer(txStreamer); err != nil {
+			return nil, err
+		}
 	}
 
 	melValidator, err := getMELValidator(ctx, config, configFetcher, consensusDB, deployInfo, l1client, stack, messageExtractor, dapRegistry, latestWasmModuleRoot, melReorgDetector)
@@ -1375,12 +1386,18 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1388,7 +1405,13 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, messageExtractor, executionClient, blockValidator, txStreamer, syncMonitor)
+	var msgCountFetcher MessageCountFetcher
+	if messageExtractor != nil {
+		msgCountFetcher = messageExtractor
+	} else {
+		msgCountFetcher = inboxReader
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, msgCountFetcher, executionClient, blockValidator, txStreamer, syncMonitor)
 
 	return &Node{
 		ConsensusDB:              consensusDB,
@@ -1691,7 +1714,13 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
-	n.SyncMonitor.Initialize(n.MessageExtractor, n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.L1Reader, n.sequencerInbox)
+	var syncFetcher MessageSyncProgressFetcher
+	if n.MessageExtractor != nil {
+		syncFetcher = n.MessageExtractor
+	} else if n.InboxReader != nil {
+		syncFetcher = n.InboxReader
+	}
+	n.SyncMonitor.Initialize(syncFetcher, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)

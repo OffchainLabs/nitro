@@ -376,7 +376,7 @@ func TestRedisProduceComplex(t *testing.T) {
 				}
 				for j := 0; j < len(responses); j++ {
 					request, response, err := requests[i][j], responses[j], errs[j]
-					if err != nil && strings.Contains(err.Error(), "request has been waiting for too long") && tc.notRetryingConsumers == consumersCount && killedConsumers > 0 {
+					if err != nil && strings.Contains(err.Error(), TimeoutErrorMessage) && tc.notRetryingConsumers == consumersCount && killedConsumers > 0 {
 						// we expect this error in case all consumers are not retrying and some have been killed
 						waitingForTooLong++
 						continue

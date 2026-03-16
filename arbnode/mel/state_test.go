@@ -7,8 +7,9 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -111,9 +112,9 @@ func TestRebuildDelayedMsgPreimages(t *testing.T) {
 
 			// Create a fresh state with same accumulators but nil cache
 			rebuilt := &State{
-				DelayedMessagesRead:    s.DelayedMessagesRead,
-				DelayedMessagesSeen:    s.DelayedMessagesSeen,
-				DelayedMessageInboxAcc: s.DelayedMessageInboxAcc,
+				DelayedMessagesRead:     s.DelayedMessagesRead,
+				DelayedMessagesSeen:     s.DelayedMessagesSeen,
+				DelayedMessageInboxAcc:  s.DelayedMessageInboxAcc,
 				DelayedMessageOutboxAcc: s.DelayedMessageOutboxAcc,
 			}
 
@@ -295,9 +296,9 @@ func TestRebuildThenPourAndPop_MatchesOriginal(t *testing.T) {
 	// Rebuild cache from scratch on a new state with same accumulators
 	allMsgs := append(batch1, extra...)
 	rebuilt := &State{
-		DelayedMessagesRead:    s2.DelayedMessagesRead,
-		DelayedMessagesSeen:    s2.DelayedMessagesSeen,
-		DelayedMessageInboxAcc: s2.DelayedMessageInboxAcc,
+		DelayedMessagesRead:     s2.DelayedMessagesRead,
+		DelayedMessagesSeen:     s2.DelayedMessagesSeen,
+		DelayedMessageInboxAcc:  s2.DelayedMessageInboxAcc,
 		DelayedMessageOutboxAcc: s2.DelayedMessageOutboxAcc,
 	}
 	fetcher := makeFetcher(allMsgs[rebuilt.DelayedMessagesRead:], rebuilt.DelayedMessagesRead)
