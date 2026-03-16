@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use axum::Json;
 use jit::CompiledModule;
 use tracing::info;
-use validation::{local_target, BatchInfo, GoGlobalState, ValidationRequest};
+use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
 
 use crate::engine::{
     machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
@@ -32,14 +32,6 @@ pub async fn validate_native(
     input: ValidationRequest,
     module_root: Option<ModuleRoot>,
 ) -> Result<Json<GoGlobalState>, String> {
-    let delayed_inbox = match input.has_delayed_msg {
-        true => vec![BatchInfo {
-            number: input.delayed_msg_nr,
-            data: input.delayed_msg,
-        }],
-        false => vec![],
-    };
-
     let module_root = module_root.unwrap_or(locator.latest_wasm_module_root().module_root);
 
     let binary_path = locator.get_machine_path(module_root)?;
@@ -53,13 +45,9 @@ pub async fn validate_native(
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
         },
-        input_mode: jit::InputMode::Native(jit::NativeInput {
-            old_state: input.start_state.into(),
-            inbox: input.batch_info,
-            delayed_inbox,
-            preimages: input.preimages,
-            programs: input.user_wasms[local_target()].clone(),
-        }),
+        input_mode: jit::InputMode::Native(
+            ValidationInput::from_request(&input, local_target()),
+        ),
     };
 
     let result = match module_cache.get(&module_root) {

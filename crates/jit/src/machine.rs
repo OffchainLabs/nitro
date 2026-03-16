@@ -3,7 +3,7 @@
 
 use crate::{
     arbcompress, arbcrypto, prepare::prepare_env_from_json, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
     ValidatorOpts,
 };
 use arbutil::{Bytes32, PreimageType};
@@ -19,7 +19,6 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
-use validation::BatchInfo;
 use wasmer::{
     imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
     Module, RuntimeError, Store,
@@ -263,19 +262,20 @@ impl TryFrom<&Opts> for WasmEnv {
         match &opts.input_mode {
             InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
             InputMode::Local(local) => prepare_env_from_files(env, local),
-            InputMode::Native(native) => prepare_env_from_native(env, native),
+            InputMode::Native(vi) => prepare_env_from_validation_input(env, vi),
             InputMode::Continuous => Ok(env),
         }
     }
 }
 
 fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    let mut native = NativeInput {
-        old_state: input.old_state.clone(),
-        inbox: vec![],
-        delayed_inbox: vec![],
-        preimages: HashMap::new(),
-        programs: HashMap::new(),
+    let mut vi = validation::ValidationInput {
+        small_globals: [
+            input.old_state.inbox_position,
+            input.old_state.position_within_message,
+        ],
+        large_globals: [input.old_state.last_block_hash.0, input.old_state.last_send_root.0],
+        ..Default::default()
     };
 
     let mut inbox_position = input.old_state.inbox_position;
@@ -284,19 +284,13 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.inbox.push(BatchInfo {
-            number: inbox_position,
-            data: msg,
-        });
+        vi.sequencer_messages.insert(inbox_position, msg);
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.delayed_inbox.push(BatchInfo {
-            number: delayed_position,
-            data: msg,
-        });
+        vi.delayed_messages.insert(delayed_position, msg);
         delayed_position += 1;
     }
 
@@ -316,7 +310,10 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = vi
+            .preimages
+            .entry(PreimageType::Keccak256 as u8)
+            .or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -325,13 +322,15 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
         }
     }
 
-    prepare_env_from_native(env, &native)
+    prepare_env_from_validation_input(env, &vi)
 }
 
-fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+fn prepare_env_from_validation_input(
+    mut env: WasmEnv,
+    input: &validation::ValidationInput,
+) -> Result<WasmEnv> {
     env.process.already_has_input = true;
-
-    let mut vi = validation::ValidationInput::from(input);
+    let mut vi = input.clone();
     for (module_hash, module_asm) in vi.module_asms.drain() {
         env.module_asms
             .insert(Bytes32(module_hash), module_asm.into());

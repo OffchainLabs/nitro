@@ -16,7 +16,7 @@ pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 /// The runtime data needed by any machine (JIT, SP1, Prover) to execute
 /// a single block validation. Extracted from a `ValidationRequest` by
 /// selecting a target architecture and stripping request metadata.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(
     feature = "rkyv",
     derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
