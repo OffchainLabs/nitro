@@ -65,23 +65,31 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	}
 
 	logHandler.Clear()
-	// Node version meets requirement but node version date is older than required.
-	// With default UpgradeGracePeriod (0), now + 0 <= deadline (1h ahead), so INFO level.
+	// Node version (v3.2.2) meets requirement, but node version date is shifted 1 minute before
+	// the required minimum date, triggering the date check. With default UpgradeGracePeriod (0),
+	// now + 0 <= deadline (1h ahead), so INFO level.
 	alerter.NodeVersionTime = alerter.NodeVersionTime.Add(-time.Minute)
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) {
 		t.Fatal("minimum required node version message was not logged at level Info")
 	}
+	if logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) || logHandler.WasLoggedAtLevel(msg, slog.LevelError) {
+		t.Fatal("minimum required node version message should only be logged at level Info")
+	}
 
 	logHandler.Clear()
-	// Node version date meets required minimum but node version is below required. UpgradeGracePeriod
-	// is set large enough that now + gracePeriod > deadline, but now < deadline, so we should see a WARN log
+	// Node version date equals the required minimum (passes the strict less-than check), but
+	// node version "v3.2" is below required "v3.2.1". UpgradeGracePeriod is set large enough
+	// that now + gracePeriod > deadline, but now < deadline, so we should see a WARN log.
 	alerter.NodeVersionTime = nodeVersionTime
 	alerter.NodeVersion = "v3.2"
 	alerter.Cfg.UpgradeGracePeriod = 2 * time.Hour
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) {
 		t.Fatal("minimum required node version message was not logged at level Warn")
+	}
+	if logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) || logHandler.WasLoggedAtLevel(msg, slog.LevelError) {
+		t.Fatal("minimum required node version message should only be logged at level Warn")
 	}
 
 	logHandler.Clear()
@@ -92,5 +100,8 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelError) {
 		t.Fatal("minimum required node version message was not logged at level Error")
+	}
+	if logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) || logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) {
+		t.Fatal("minimum required node version message should only be logged at level Error")
 	}
 }
