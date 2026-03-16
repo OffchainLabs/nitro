@@ -2,10 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, arbcrypto, prepare::prepare_env_from_json, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, Opts,
-    ValidatorOpts,
+    arbcompress, arbcrypto, program, stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts,
 };
+use validation::local_target;
 use arbutil::{Bytes32, PreimageType};
 use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
@@ -260,7 +260,12 @@ impl TryFrom<&Opts> for WasmEnv {
         env.process.debug = opts.validator.debug;
 
         match &opts.input_mode {
-            InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
+            InputMode::Json { inputs } => {
+                let file = File::open(inputs)?;
+                let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
+                let input = validation::ValidationInput::from_request(&req, local_target());
+                prepare_env_from_validation_input(env, &input)
+            }
             InputMode::Local(local) => prepare_env_from_files(env, local),
             InputMode::Native(vi) => prepare_env_from_validation_input(env, vi),
             InputMode::Continuous => Ok(env),
@@ -328,7 +333,7 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     prepare_env_from_validation_input(env, &vi)
 }
 
-fn prepare_env_from_validation_input(
+pub(crate) fn prepare_env_from_validation_input(
     mut env: WasmEnv,
     input: &validation::ValidationInput,
 ) -> Result<WasmEnv> {
