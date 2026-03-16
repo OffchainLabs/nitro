@@ -10,8 +10,6 @@ use std::{
 
 pub mod transfer;
 
-pub type PreimageMap = HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>;
-
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 
@@ -157,7 +155,7 @@ pub struct ValidationRequest {
         rename = "PreimagesB64",
         with = "As::<HashMap<DisplayFromStr, HashMap<Base64, Base64>>>"
     )]
-    pub preimages: PreimageMap,
+    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
     pub batch_info: Vec<BatchInfo>,
     #[serde(rename = "DelayedMsgB64", with = "As::<Base64>")]
     pub delayed_msg: Vec<u8>,
