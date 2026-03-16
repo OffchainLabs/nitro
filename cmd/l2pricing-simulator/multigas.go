@@ -22,8 +22,8 @@ func ParseResourceKind(s string) (multigas.ResourceKind, error) {
 		return multigas.ResourceKindStorageAccessWrite, nil
 	case "StorageGrowth":
 		return multigas.ResourceKindStorageGrowth, nil
-	case "L1Calldata":
-		return multigas.ResourceKindL1Calldata, nil
+	case "SingleDim":
+		return multigas.ResourceKindSingleDim, nil
 	case "L2Calldata":
 		return multigas.ResourceKindL2Calldata, nil
 	case "WasmComputation":
@@ -96,7 +96,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -112,7 +111,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -128,7 +126,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -144,7 +141,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -160,7 +156,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -176,7 +171,6 @@ const DefaultMultiGasConstraints string = `[
 			"StorageAccessRead": 1,
 			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	}
