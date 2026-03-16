@@ -590,10 +590,6 @@ func (s *Sequencer) FilteringReady() bool {
 	return !s.addressFilterService.GetLoadedAt().IsZero()
 }
 
-func (s *Sequencer) SetAddressFilterServiceForTesting(service *addressfilter.FilterService) {
-	s.addressFilterService = service
-}
-
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 	if failure.revived {
 		return

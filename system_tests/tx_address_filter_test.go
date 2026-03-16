@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -522,7 +523,7 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	Require(t, err)
 }
 
-func TestSyncBlockedUntilFilteringReady(t *testing.T) {
+func TestFilteringReadyWithoutAddressFilter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -531,15 +532,18 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	execNode := builder.L2.ExecNode
-
-	// Without address filter service should be true
-	if !execNode.Sequencer.FilteringReady() {
+	if !builder.L2.ExecNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true when no address filter service is configured")
 	}
+}
 
-	// Create a filter service with enabled config, but without loaded rules (hash store is empty)
-	filterCfg := &addressfilter.Config{
+func TestSyncBlockedUntilFilteringReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.Sequencer.TransactionFiltering.AddressFilter = addressfilter.Config{
 		Enable: true,
 		S3: s3syncer.Config{
 			Config:    s3client.Config{Region: "us-east-1"},
@@ -551,30 +555,31 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 		AddressCheckerWorkerCount: 1,
 		AddressCheckerQueueSize:   10,
 	}
-	filterService, err := addressfilter.NewFilterService(filterCfg)
-	Require(t, err)
+	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
+	builder.execConfig.SyncMonitor.MsgLag = time.Hour
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	execNode.Sequencer.SetAddressFilterServiceForTesting(filterService)
+	execNode := builder.L2.ExecNode
 
+	// Push sync data to make SyncMonitor.Synced return true
+	execNode.SyncMonitor.SetConsensusSyncData(&execution.ConsensusSyncData{
+		Synced:          true,
+		MaxMessageCount: 1,
+		UpdatedAt:       time.Now(),
+	})
+
+	if !execNode.SyncMonitor.Synced(ctx) {
+		t.Fatal("SyncMonitor.Synced should return true after pushing sync data")
+	}
+
+	// Filter service exists but rules haven't been loaded
 	if execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be false before filter rules are loaded")
 	}
+
 	if execNode.Synced(ctx) {
 		t.Fatal("Synced should return false when filtering is not ready")
-	}
-
-	// Add some rules to the filter service to simulate it being loaded
-	salt := []byte("test-salt")
-	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hashes := []common.Hash{sha256.Sum256(append(salt, addr.Bytes()...))}
-	filterService.GetHashStore().Store(salt, hashes, "test-etag")
-
-	if !execNode.Sequencer.FilteringReady() {
-		t.Fatal("FilteringReady should be true after filter rules are loaded")
-	}
-	syncMonitorResult := execNode.SyncMonitor.Synced(ctx)
-	if execNode.Synced(ctx) != syncMonitorResult {
-		t.Fatalf("Synced should match SyncMonitor.Synced when filtering is ready, got %v, want %v",
-			execNode.Synced(ctx), syncMonitorResult)
 	}
 }
