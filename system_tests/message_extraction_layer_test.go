@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -69,17 +69,20 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
-		nil,
+		nil, // TODO: SequencerInbox interface needed.
+		l1Reader,
+		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Create various L2 transactions and wait for them to be included in a batch
@@ -109,11 +112,6 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 			break
 		}
 	}
-
-	// // Assert details about the extraction routine.
-	// if len(mockDB.savedStates) == 0 {
-	// 	t.Fatal("MEL did not save any states")
-	// }
 
 	inboxTracker := builder.L2.ConsensusNode.InboxTracker
 	numBatches, err := inboxTracker.GetBatchCount()
@@ -206,17 +204,20 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
 	Require(t, blobReaderRegistry.SetupBlobReader(daprovider.NewReaderForBlobReader(builder.L1.L1BlobReader)))
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		blobReaderRegistry,
 		nil,
+		nil,
+		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	// Post a blob batch with a bunch of txs
@@ -342,17 +343,20 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
 		nil,
+		nil,
+		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {
@@ -412,11 +416,13 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
 		nil,
+		nil,
+		reorgEventChan,
 	)
 	Require(t, err)
+	Require(t, newExtractor.SetMessageConsumer(mockMsgConsumer))
 	newExtractor.StopWaiter.Start(ctx, extractor)
 	for {
 		prevFSMState := newExtractor.CurrentFSMState()
@@ -664,17 +670,20 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
+	reorgEventsChan := make(chan uint64, 1)
 	extractor, err := melrunner.NewMessageExtractor(
 		melrunner.DefaultMessageExtractionConfig,
 		l1Reader.Client(),
 		builder.chainConfig,
 		builder.addresses,
 		melDB,
-		mockMsgConsumer,
 		daprovider.NewDAProviderRegistry(),
 		nil,
+		nil,
+		reorgEventsChan,
 	)
 	Require(t, err)
+	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
 	extractor.StopWaiter.Start(ctx, extractor)
 
 	for {

@@ -177,35 +177,44 @@ func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator
 	s.validator = validator
 }
 
-func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
+func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) error {
 	if s.Started() {
-		panic("trying to set coordinator after start")
+		return errors.New("trying to set coordinator after start")
 	}
 	if s.coordinator != nil {
-		panic("trying to set coordinator when already set")
+		return errors.New("trying to set coordinator when already set")
 	}
 	s.coordinator = coordinator
+	return nil
 }
 
-func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) {
+func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) error {
 	if s.Started() {
-		panic("trying to set inbox reader after start")
+		return errors.New("trying to set inbox reader after start")
 	}
 	if s.inboxReader != nil || s.delayedBridge != nil {
-		panic("trying to set inbox reader when already set")
+		return errors.New("trying to set inbox reader when already set")
+	}
+	if s.msgExtractor != nil {
+		return errors.New("cannot set inbox reader: message extractor is already set")
 	}
 	s.inboxReader = inboxReader
 	s.delayedBridge = delayedBridge
+	return nil
 }
 
-func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) {
+func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) error {
 	if s.Started() {
-		panic("trying to set inbox reader after start")
+		return errors.New("trying to set message extractor after start")
 	}
 	if s.msgExtractor != nil {
-		panic("trying to set msgExtractor when already set")
+		return errors.New("trying to set message extractor when already set")
+	}
+	if s.inboxReader != nil {
+		return errors.New("cannot set message extractor: inbox reader is already set")
 	}
 	s.msgExtractor = msgExtractor
+	return nil
 }
 
 func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {

@@ -86,6 +86,7 @@ type MELValidatorConfig struct {
 	PendingUpgradeModuleRoot          string                       `koanf:"pending-upgrade-module-root"`
 	ValidationServerConfigsList       string                       `koanf:"validation-server-configs-list"`
 	ValidationSpawningAllowedAttempts uint64                       `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
+	ValidationSpawningAllowedTimeouts uint64                       `koanf:"validation-spawning-allowed-timeouts" reload:"hot"`
 }
 
 func (c *MELValidatorConfig) Validate() error {
@@ -132,6 +133,7 @@ func MELValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultMELValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultMELValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultMELValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Uint64(prefix+".validation-spawning-allowed-timeouts", DefaultMELValidatorConfig.ValidationSpawningAllowedTimeouts, "number of timeout errors allowed per validation attempt before treating it as a fatal error (separate from allowed-attempts)")
 }
 
 var DefaultMELValidatorConfig = MELValidatorConfig{
@@ -143,6 +145,7 @@ var DefaultMELValidatorConfig = MELValidatorConfig{
 	CurrentModuleRoot:                 "current",
 	PendingUpgradeModuleRoot:          "latest",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 var TestMELValidatorConfig = MELValidatorConfig{
@@ -154,6 +157,7 @@ var TestMELValidatorConfig = MELValidatorConfig{
 	CurrentModuleRoot:                 "latest",
 	PendingUpgradeModuleRoot:          "latest",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 }
 
 func NewMELValidator(
@@ -590,7 +594,7 @@ func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validati
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, mv.config().ValidationSpawningAllowedAttempts)
+		run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, mv.config().ValidationSpawningAllowedAttempts, mv.config().ValidationSpawningAllowedTimeouts)
 		log.Trace("sendValidations: launched", "pos", entry.Pos, "moduleRoot", moduleRoot)
 		runs = append(runs, run)
 	}

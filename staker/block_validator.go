@@ -167,6 +167,7 @@ type BlockValidatorConfig struct {
 	MemoryFreeLimit                   string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList       string                        `koanf:"validation-server-configs-list"`
 	ValidationSpawningAllowedAttempts uint64                        `koanf:"validation-spawning-allowed-attempts" reload:"hot"`
+	ValidationSpawningAllowedTimeouts uint64                        `koanf:"validation-spawning-allowed-timeouts" reload:"hot"`
 	// The directory to which the BlockValidator will write the
 	// block_inputs_<id>.json files when WriteToFile() is called.
 	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
@@ -252,6 +253,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 	f.Uint64(prefix+".validation-spawning-allowed-attempts", DefaultBlockValidatorConfig.ValidationSpawningAllowedAttempts, "number of attempts allowed when trying to spawn a validation before erroring out")
+	f.Uint64(prefix+".validation-spawning-allowed-timeouts", DefaultBlockValidatorConfig.ValidationSpawningAllowedTimeouts, "number of timeout errors allowed per validation attempt before treating it as a fatal error (separate from allowed-attempts)")
 	f.Bool(prefix+".enable-mel", DefaultBlockValidatorConfig.EnableMEL, "enables MEL support for the block validator")
 }
 
@@ -285,6 +287,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RecordingIterLimit:                20,
 	ValidationSentLimit:               1024,
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 	EnableMEL:                         false,
 }
 
@@ -307,6 +310,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	BlockInputsFilePath:               "./target/validation_inputs",
 	MemoryFreeLimit:                   "default",
 	ValidationSpawningAllowedAttempts: 1,
+	ValidationSpawningAllowedTimeouts: 3,
 	EnableMEL:                         false,
 }
 
@@ -342,6 +346,7 @@ type validationStatus struct {
 
 type validationDoneEntry struct {
 	Success         bool
+	Err             error
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
@@ -975,7 +980,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v", pos, validationStatus.DoneEntry.Start))
+			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
 			return &pos, nil // if not fatal - retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
@@ -1075,7 +1080,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts)
+			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
@@ -1099,6 +1104,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 			}()
 			markSuccess := len(runs) > 0
+			if !markSuccess {
+				validationStatus.DoneEntry.Err = errors.New("no validation runs were launched")
+			}
 
 			// validationStatus might be removed from under us
 			// trigger validation progress when done
@@ -1110,6 +1118,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				if err != nil {
 					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
+					validationStatus.DoneEntry.Err = err
 					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
 					break
 				}
