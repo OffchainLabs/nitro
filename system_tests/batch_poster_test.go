@@ -903,7 +903,11 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		} else {
+			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		}
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
@@ -916,7 +920,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		var sequencerMessageBytes []byte
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		} else {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		}
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
