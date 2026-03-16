@@ -52,12 +52,6 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	}
 }
 
-func (t *TransactionFiltererAPI) IsReady() bool {
-	t.apiMutex.Lock()
-	defer t.apiMutex.Unlock()
-	return t.arbFilteredTransactionsManager != nil
-}
-
 // Only used for testing.
 // Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.
@@ -137,11 +131,7 @@ func NewStack(
 		w.WriteHeader(http.StatusOK)
 	}))
 	stack.RegisterHandler("readiness", "/readiness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if api.IsReady() {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
+		w.WriteHeader(http.StatusOK)
 	}))
 
 	return stack, api, nil

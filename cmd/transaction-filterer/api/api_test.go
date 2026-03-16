@@ -11,8 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
-
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func newTestStack(t *testing.T) (*node.Node, *TransactionFiltererAPI) {
@@ -53,26 +51,8 @@ func TestLiveness(t *testing.T) {
 	}
 }
 
-func TestReadinessNotReady(t *testing.T) {
+func TestReadiness(t *testing.T) {
 	stack, _ := newTestStack(t)
-
-	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("expected status 503, got %d", resp.StatusCode)
-	}
-}
-
-func TestReadinessReady(t *testing.T) {
-	stack, api := newTestStack(t)
-
-	// Set a non-nil arbFilteredTransactionsManager to simulate readiness
-	api.apiMutex.Lock()
-	api.arbFilteredTransactionsManager = &precompilesgen.ArbFilteredTransactionsManager{}
-	api.apiMutex.Unlock()
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
