@@ -187,7 +187,12 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
     let is_submit_retryable = arb_type == Some(ArbTxType::ArbitrumSubmitRetryableTx);
 
     let mut env = TxEnv::default();
-    env.tx_type = Typed2718::ty(tx);
+    // Set tx_type for standard EVM types so revm correctly handles access
+    // list gas in intrinsic calculation. Arb custom types (0x64+) must remain
+    // Legacy (0) — revm doesn't understand them and would apply wrong gas rules
+    // (e.g., non-Legacy warming behavior, unknown type validation).
+    let raw_type = Typed2718::ty(tx);
+    env.tx_type = if raw_type < 0x64 { raw_type } else { 0 };
     env.caller = sender;
     env.gas_limit = tx.gas_limit();
     env.nonce = tx.nonce();
