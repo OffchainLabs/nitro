@@ -264,16 +264,17 @@ impl TryFrom<&Opts> for WasmEnv {
                 let file = File::open(inputs)?;
                 let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
                 let input = validation::ValidationInput::from_request(&req, local_target());
-                prepare_env_from_validation_input(env, &input)
+                load_validation_input(&mut env, &input);
             }
-            InputMode::Local(local) => prepare_env_from_files(env, local),
-            InputMode::Native(vi) => prepare_env_from_validation_input(env, vi),
-            InputMode::Continuous => Ok(env),
+            InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,
+            InputMode::Native(vi) => load_validation_input(&mut env, vi),
+            InputMode::Continuous => {}
         }
+        Ok(env)
     }
 }
 
-fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
+fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
     let mut vi = validation::ValidationInput {
         small_globals: [
             input.old_state.inbox_position,
@@ -330,13 +331,11 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
         }
     }
 
-    prepare_env_from_validation_input(env, &vi)
+    load_validation_input(env, &vi);
+    Ok(())
 }
 
-fn prepare_env_from_validation_input(
-    mut env: WasmEnv,
-    input: &validation::ValidationInput,
-) -> Result<WasmEnv> {
+pub(crate) fn load_validation_input(env: &mut WasmEnv, input: &validation::ValidationInput) {
     env.process.already_has_input = true;
     let mut vi = input.clone();
     for (module_hash, module_asm) in vi.module_asms.drain() {
@@ -344,7 +343,6 @@ fn prepare_env_from_validation_input(
             .insert(Bytes32(module_hash), module_asm.into());
     }
     env.input = vi;
-    Ok(env)
 }
 
 pub struct ProcessEnv {

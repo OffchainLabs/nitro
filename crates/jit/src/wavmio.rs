@@ -228,14 +228,8 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
-    let mut input = receive_validation_input(&mut reader)?;
-
-    for (module_hash, module_asm) in input.module_asms.drain() {
-        env.module_asms
-            .insert(arbutil::Bytes32(module_hash), module_asm.into());
-    }
-
-    env.input = input;
+    let input = receive_validation_input(&mut reader)?;
+    crate::machine::load_validation_input(env, &input);
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));
