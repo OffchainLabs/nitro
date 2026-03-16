@@ -125,6 +125,42 @@ pub struct NativeInput {
     pub programs: HashMap<Bytes32, UserWasm>,
 }
 
+impl From<&NativeInput> for validation::ValidationInput {
+    fn from(input: &NativeInput) -> Self {
+        let sequencer_messages = input.inbox.iter().map(|m| (m.number, m.data.clone())).collect();
+        let delayed_messages = input.delayed_inbox.iter().map(|m| (m.number, m.data.clone())).collect();
+
+        let mut preimages = validation::Preimages::new();
+        for (preimage_type, preimages_map) in &input.preimages {
+            let type_map = preimages.entry(*preimage_type as u8).or_default();
+            for (hash, preimage) in preimages_map {
+                type_map.insert(hash.0, preimage.clone());
+            }
+        }
+
+        let module_asms = input
+            .programs
+            .iter()
+            .map(|(hash, wasm)| (hash.0, wasm.as_vec()))
+            .collect();
+
+        Self {
+            small_globals: [
+                input.old_state.inbox_position,
+                input.old_state.position_within_message,
+            ],
+            large_globals: [
+                input.old_state.last_block_hash.0,
+                input.old_state.last_send_root.0,
+            ],
+            preimages,
+            sequencer_messages,
+            delayed_messages,
+            module_asms,
+        }
+    }
+}
+
 /// Result of running the JIT validation.
 pub struct RunResult {
     /// Amount of memory used by the Wasm instance.

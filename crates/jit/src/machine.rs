@@ -331,32 +331,12 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
 fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
     env.process.already_has_input = true;
 
-    for msg in &input.inbox {
-        env.input.sequencer_messages.insert(msg.number, msg.data.clone());
+    let mut vi = validation::ValidationInput::from(input);
+    for (module_hash, module_asm) in vi.module_asms.drain() {
+        env.module_asms
+            .insert(Bytes32(module_hash), module_asm.into());
     }
-    for msg in &input.delayed_inbox {
-        env.input.delayed_messages.insert(msg.number, msg.data.clone());
-    }
-
-    for (preimage_type, preimages_map) in &input.preimages {
-        let type_map = env.input.preimages.entry(*preimage_type as u8).or_default();
-        for (hash, preimage) in preimages_map {
-            type_map.insert(hash.0, preimage.clone());
-        }
-    }
-
-    for (hash, program) in &input.programs {
-        env.module_asms.insert(*hash, program.as_ref().into());
-    }
-
-    env.input.small_globals = [
-        input.old_state.inbox_position,
-        input.old_state.position_within_message,
-    ];
-    env.input.large_globals = [
-        input.old_state.last_block_hash.0,
-        input.old_state.last_send_root.0,
-    ];
+    env.input = vi;
     Ok(env)
 }
 
