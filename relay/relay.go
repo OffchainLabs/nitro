@@ -81,7 +81,7 @@ func (r *Relay) Start(ctx context.Context) error {
 	if err != nil {
 		return errors.New("broadcast unable to initialize")
 	}
-	err = r.broadcaster.Start(ctx)
+	err = r.broadcaster.Start(r.GetContext())
 	if err != nil {
 		return errors.New("broadcast unable to start")
 	}
