@@ -69,6 +69,7 @@ type ArbosState struct {
 	nativeTokenEnabledTime          storage.StorageBackedUint64
 	transactionFilteringEnabledTime storage.StorageBackedUint64
 	filteredFundsRecipient          storage.StorageBackedAddress
+	tipCapFloor                     storage.StorageBackedBigUint
 	backingStorage                  *storage.Storage
 	Burner                          burn.Burner
 }
@@ -110,6 +111,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		nativeTokenEnabledTime:          backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
 		transactionFilteringEnabledTime: backingStorage.OpenStorageBackedUint64(uint64(transactionFilteringEnabledFromTimeOffset)),
 		filteredFundsRecipient:          backingStorage.OpenStorageBackedAddress(uint64(filteredFundsRecipientOffset)),
+		tipCapFloor:                     backingStorage.OpenStorageBackedBigUint(uint64(tipCapFloorOffset)),
 		backingStorage:                  backingStorage,
 		Burner:                          burner,
 	}, nil
@@ -190,6 +192,7 @@ const (
 	nativeTokenEnabledFromTimeOffset
 	transactionFilteringEnabledFromTimeOffset
 	filteredFundsRecipientOffset
+	tipCapFloorOffset
 )
 
 type SubspaceID []byte
@@ -675,6 +678,14 @@ func (state *ArbosState) FilteredFundsRecipientOrDefault() (common.Address, erro
 		return state.networkFeeAccount.Get()
 	}
 	return recipient, nil
+}
+
+func (state *ArbosState) TipCapFloor() (*big.Int, error) {
+	return state.tipCapFloor.Get()
+}
+
+func (state *ArbosState) SetTipCapFloor(floor *big.Int) error {
+	return state.tipCapFloor.SetChecked(floor)
 }
 
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
