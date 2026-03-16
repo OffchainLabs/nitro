@@ -11,7 +11,6 @@ use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
-    collections::BTreeMap,
     collections::HashMap,
     fs::File,
     io::{self, BufReader, BufWriter, ErrorKind, Read},
@@ -236,8 +235,6 @@ impl From<RuntimeError> for Escape {
 }
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
-pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
@@ -246,18 +243,10 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// An ordered list of the 8-byte globals
-    pub small_globals: [u64; 2],
-    /// An ordered list of the 32-byte globals
-    pub large_globals: [Bytes32; 2],
-    /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Preimages,
+    /// Validation input (globals, inbox, preimages)
+    pub input: validation::ValidationInput,
     /// A collection of programs called during the course of execution
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
-    /// The sequencer inbox's messages
-    pub sequencer_messages: Inbox,
-    /// The delayed inbox's messages
-    pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
     // threads
@@ -343,16 +332,16 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
     env.process.already_has_input = true;
 
     for msg in &input.inbox {
-        env.sequencer_messages.insert(msg.number, msg.data.clone());
+        env.input.sequencer_messages.insert(msg.number, msg.data.clone());
     }
     for msg in &input.delayed_inbox {
-        env.delayed_messages.insert(msg.number, msg.data.clone());
+        env.input.delayed_messages.insert(msg.number, msg.data.clone());
     }
 
     for (preimage_type, preimages_map) in &input.preimages {
-        let type_map = env.preimages.entry(*preimage_type).or_default();
+        let type_map = env.input.preimages.entry(*preimage_type as u8).or_default();
         for (hash, preimage) in preimages_map {
-            type_map.insert(*hash, preimage.clone());
+            type_map.insert(hash.0, preimage.clone());
         }
     }
 
@@ -360,13 +349,13 @@ fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<Wasm
         env.module_asms.insert(*hash, program.as_ref().into());
     }
 
-    env.small_globals = [
+    env.input.small_globals = [
         input.old_state.inbox_position,
         input.old_state.position_within_message,
     ];
-    env.large_globals = [
-        input.old_state.last_block_hash,
-        input.old_state.last_send_root,
+    env.input.large_globals = [
+        input.old_state.last_block_hash.0,
+        input.old_state.last_send_root.0,
     ];
     Ok(env)
 }

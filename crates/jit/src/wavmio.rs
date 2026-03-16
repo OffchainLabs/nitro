@@ -122,13 +122,14 @@ pub fn resolve_preimage_impl(
         use sha3::{Digest, Keccak256};
 
         let hash: [u8; 32] = mem.read_fixed(hash_ptr);
-        let preimage_type: PreimageType = preimage_type.try_into().unwrap();
+        let pt: PreimageType = preimage_type.try_into().unwrap();
         if let Some(preimage) = exec
+            .input
             .preimages
             .get(&preimage_type)
-            .and_then(|m| m.get(&arbutil::Bytes32(hash)))
+            .and_then(|m| m.get(&hash))
         {
-            let calculated_hash: [u8; 32] = match preimage_type {
+            let calculated_hash: [u8; 32] = match pt {
                 PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
                 PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
                 PreimageType::EthVersionedHash => hash,
@@ -227,29 +228,14 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
-    let input = receive_validation_input(&mut reader)?;
+    let mut input = receive_validation_input(&mut reader)?;
 
-    env.small_globals = input.small_globals;
-    env.large_globals = input.large_globals.map(arbutil::Bytes32);
-
-    for (num, data) in input.sequencer_messages {
-        env.sequencer_messages.insert(num, data);
-    }
-    for (num, data) in input.delayed_messages {
-        env.delayed_messages.insert(num, data);
-    }
-    for (preimage_ty, inner_map) in input.preimages {
-        let preimage_ty = arbutil::PreimageType::try_from(preimage_ty)
-            .unwrap_or_else(|_| panic!("unknown preimage type: {preimage_ty}"));
-        let map = env.preimages.entry(preimage_ty).or_default();
-        for (hash, preimage) in inner_map {
-            map.insert(arbutil::Bytes32(hash), preimage);
-        }
-    }
-    for (module_hash, module_asm) in input.module_asms {
+    for (module_hash, module_asm) in input.module_asms.drain() {
         env.module_asms
             .insert(arbutil::Bytes32(module_hash), module_asm.into());
     }
+
+    env.input = input;
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));
