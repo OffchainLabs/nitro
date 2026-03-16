@@ -89,9 +89,8 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	defer cancel()
 
 	// Create a custom L1 chain config: all forks active at genesis except BPO1
-	// far in the future. The pointer is shared with the geth node's in-memory
-	// config (shallow copy in genesis.copy()), so we can mutate it later to
-	// simulate a fork activation without restarting the node.
+	// far in the future. The pointer is shared with the geth node's config so we
+	// can mutate it later to simulate a fork activation without restarting the node
 	// #nosec G115
 	farFuture := uint64(time.Now().Unix()) + 3600
 	l1ChainConfig := *params.AllDevChainProtocolChanges
@@ -131,26 +130,26 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	defer pc.StopAndWait()
 
 	// Phase 1: Verify initial config is Osaka (BPO1 is far in the future)
-	var blobConfig *params.BlobConfig
+	var blobConfigPhase1 *params.BlobConfig
 	for i := 0; i < 30; i++ {
 		time.Sleep(200 * time.Millisecond)
-		blobConfig = pc.CachedBlobConfig()
-		if blobConfig != nil {
+		blobConfigPhase1 = pc.CachedBlobConfig()
+		if blobConfigPhase1 != nil {
 			break
 		}
 	}
-	if blobConfig == nil {
+	if blobConfigPhase1 == nil {
 		t.Fatal("ParentChain did not fetch initial blob config within timeout")
 	}
 
 	t.Logf("Phase 1: got initial blob config target=%d max=%d (expecting Osaka: target=%d max=%d)",
-		blobConfig.Target, blobConfig.Max,
+		blobConfigPhase1.Target, blobConfigPhase1.Max,
 		params.DefaultOsakaBlobConfig.Target, params.DefaultOsakaBlobConfig.Max)
 
-	if blobConfig.Target != params.DefaultOsakaBlobConfig.Target ||
-		blobConfig.Max != params.DefaultOsakaBlobConfig.Max {
+	if blobConfigPhase1.Target != params.DefaultOsakaBlobConfig.Target ||
+		blobConfigPhase1.Max != params.DefaultOsakaBlobConfig.Max {
 		t.Fatalf("initial blob config should be Osaka, got target=%d max=%d",
-			blobConfig.Target, blobConfig.Max)
+			blobConfigPhase1.Target, blobConfigPhase1.Max)
 	}
 
 	// Phase 2: Activate BPO1 by mutating the shared pointer to time 0
@@ -159,27 +158,26 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	// eth_config poll will see BPO1 as the active fork.
 	*l1ChainConfig.BPO1Time = 0
 
+	var blobConfigPhase2 *params.BlobConfig
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
-		blobConfig = pc.CachedBlobConfig()
-		if blobConfig != nil &&
-			blobConfig.Target == params.DefaultBPO1BlobConfig.Target &&
-			blobConfig.Max == params.DefaultBPO1BlobConfig.Max {
+		blobConfigPhase2 = pc.CachedBlobConfig()
+		if blobConfigPhase2 != nil {
 			break
 		}
 	}
 
-	if blobConfig == nil ||
-		blobConfig.Target != params.DefaultBPO1BlobConfig.Target ||
-		blobConfig.Max != params.DefaultBPO1BlobConfig.Max {
+	if blobConfigPhase2 == nil ||
+		blobConfigPhase2.Target != params.DefaultBPO1BlobConfig.Target ||
+		blobConfigPhase2.Max != params.DefaultBPO1BlobConfig.Max {
 		t.Fatalf("blob config did not transition to BPO1: got target=%d max=%d, want target=%d max=%d",
-			blobConfig.Target, blobConfig.Max,
+			blobConfigPhase2.Target, blobConfigPhase2.Max,
 			params.DefaultBPO1BlobConfig.Target, params.DefaultBPO1BlobConfig.Max)
 	}
 
 	t.Logf("Phase 2: blob config transitioned to BPO1 target=%d max=%d updateFraction=%d",
-		blobConfig.Target, blobConfig.Max, blobConfig.UpdateFraction)
+		blobConfigPhase2.Target, blobConfigPhase1.Max, blobConfigPhase2.UpdateFraction)
 
 	// Also verify MaxBlobGasPerBlock reflects the new config
 	maxBlobGas, err := pc.MaxBlobGasPerBlock(ctx, nil)

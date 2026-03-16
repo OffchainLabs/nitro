@@ -117,7 +117,6 @@ type SecondNodeParams struct {
 	anyTrustConfig         *anytrust.Config
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
-	parentChain            *parent.ParentChain
 	useExecutionClientOnly bool
 }
 
@@ -306,7 +305,6 @@ type NodeBuilder struct {
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
 	l3Config      *NitroConfig
-	parentChain   *parent.ParentChain
 	deployBold    bool
 	parallelise   bool
 	L1Info        info
@@ -1017,7 +1015,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, b.parentChain)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, nil)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1027,7 +1025,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateConsensusNode(
 		b.ctx, b.L2.Stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), b.parentChain)
+		nil, nil, nil, nil, nil, fatalErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), nil)
 	Require(t, err)
 	b.L2.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -1077,7 +1075,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, b.parentChain)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, nil, execConfigFetcher, big.NewInt(1337), 0, b.L2.ExecNode.ParentChain)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -1096,7 +1094,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), b.parentChain)
+	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil, locator.LatestWasmModuleRoot(), b.L2.ConsensusNode.ParentChain)
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
