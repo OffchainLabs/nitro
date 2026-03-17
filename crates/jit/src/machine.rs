@@ -242,9 +242,11 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// Validation input (globals, inbox, preimages)
+    /// Validation input (globals, inbox, preimages). Note: module_asms is drained
+    /// into the `module_asms` field below during loading, so it will be empty at runtime.
     pub input: validation::ValidationInput,
-    /// A collection of programs called during the course of execution
+    /// Arc-wrapped module assemblies, drained from `input.module_asms` to allow
+    /// cheap cloning when passing modules to stylus program threads.
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
@@ -338,6 +340,9 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
 pub(crate) fn load_validation_input(env: &mut WasmEnv, input: &validation::ValidationInput) {
     env.process.already_has_input = true;
     let mut vi = input.clone();
+    // Drain module_asms into a separate Arc-based cache to avoid copying
+    // the full wasm binary on each lookup. vi.module_asms will be empty after this,
+    // but that's fine — module lookups go through env.module_asms instead.
     for (module_hash, module_asm) in vi.module_asms.drain() {
         env.module_asms
             .insert(Bytes32(module_hash), module_asm.into());
