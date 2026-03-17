@@ -1481,8 +1481,8 @@ func setupExpressLaneAuction(
 	extraNodeTy extraNodeType,
 	queueTimeoutInBlocks uint64,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func(), *timeboost.BidValidator) {
-	seqPort := getRandomPort(t)
-	forwarderPort := getRandomPort(t)
+	seqPort := getFreePort(t)
+	forwarderPort := getFreePort(t)
 
 	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
 	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
@@ -1746,8 +1746,8 @@ func setupExpressLaneAuction(
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
-	bidValidatorPort := getRandomPort(t)
-	bidValidatorWsPort := getRandomPort(t)
+	bidValidatorPort := getFreePort(t)
+	bidValidatorWsPort := getFreePort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
 		HTTPPort:            bidValidatorPort,
