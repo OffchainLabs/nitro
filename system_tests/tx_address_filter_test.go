@@ -563,6 +563,10 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	execNode := builder.L2.ExecNode
 
+	// Small delay to ensure ConsensusExecutionSyncer's initial sync call
+	// (which happens immediately on start) completes before we set our own data.
+	time.Sleep(500 * time.Millisecond)
+
 	// Push sync data to make SyncMonitor.Synced return true
 	execNode.SyncMonitor.SetConsensusSyncData(&execution.ConsensusSyncData{
 		Synced:          true,
@@ -581,5 +585,16 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	if execNode.Synced(ctx) {
 		t.Fatal("Synced should return false when filtering is not ready")
+	}
+
+	// Store hashes to the hashstore so FilteringReady returns true
+	execNode.Sequencer.StoreFilterRulesForTest(t, []byte("test-salt"), nil, "test-digest")
+
+	if !execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true after filter rules are loaded")
+	}
+
+	if !execNode.Synced(ctx) {
+		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
 }

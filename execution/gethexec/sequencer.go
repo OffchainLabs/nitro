@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -1932,4 +1933,12 @@ func (s *Sequencer) StopAndWait() {
 		}
 		wg.Wait()
 	}
+}
+
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt []byte, hashes []common.Hash, digest string) {
+	t.Helper()
+	if s.addressFilterService == nil {
+		t.Fatal("addressFilterService is nil")
+	}
+	s.addressFilterService.GetHashStore().Store(salt, hashes, digest)
 }
