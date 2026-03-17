@@ -296,7 +296,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(800_000), backlog)
 
-	resMap, err := first.ResourcesWithWeights()
+	resMap, err := first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), resMap[multigas.ResourceKindComputation])
 	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccess])
@@ -312,7 +312,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1_600_000), backlog)
 
-	resMap, err = second.ResourcesWithWeights()
+	resMap, err = second.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), resMap[multigas.ResourceKindComputation])
 	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccess])
@@ -363,7 +363,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(50_000_000), backlog)
 
-	resMap, err = first.ResourcesWithWeights()
+	resMap, err = first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), resMap[multigas.ResourceKindComputation])
 	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccess])
