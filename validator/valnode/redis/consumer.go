@@ -59,7 +59,7 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Executio
 
 func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
-	s.StartBoldSpawner(ctx_in)
+	s.StartBoldSpawner(s.GetContext())
 	// Channel that all consumers use to indicate their readiness.
 	readyStreams := make(chan struct{}, len(s.consumers))
 	type workUnit struct {
@@ -82,7 +82,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(ctx_in)
+		c.Start(s.GetContext())
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
@@ -240,7 +240,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(ctx_in)
+		c.Start(s.GetContext())
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
