@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbnode/mel/runner"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -800,7 +800,6 @@ func createInitialMELState(
 		ParentChainBlockNumber:             startBlock.NumberU64(),
 		ParentChainBlockHash:               startBlock.Hash(),
 		ParentChainPreviousBlockHash:       startBlock.ParentHash(),
-		MsgRoot:                            common.Hash{},
 		DelayedMessagesSeen:                1,
 		DelayedMessagesRead:                1, // Assumes we have read the init message.
 		MsgCount:                           1,
