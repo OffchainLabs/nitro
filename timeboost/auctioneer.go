@@ -445,7 +445,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Start S3 storage service to persist validated bids to s3
 	if a.s3StorageService != nil {
-		a.s3StorageService.Start(ctx_in)
+		a.s3StorageService.Start(a.GetContext())
 	}
 
 	// Start coordination to manage primary/secondary status
@@ -453,7 +453,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
-	a.consumer.Start(ctx_in)
+	a.consumer.Start(a.GetContext())
 	// Channel for single consumer, once readiness is indicated in this,
 	// consumer will start consuming iteratively.
 	ready := make(chan struct{}, 1)
@@ -795,6 +795,9 @@ func (a *AuctioneerServer) StopAndWait() {
 	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
 	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
 	// messages.
-	a.StopWaiter.StopAndWait()
 	a.consumer.StopAndWait()
+	if a.s3StorageService != nil {
+		a.s3StorageService.StopAndWait()
+	}
+	a.StopWaiter.StopAndWait()
 }

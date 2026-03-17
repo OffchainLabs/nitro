@@ -1864,13 +1864,15 @@ func (s TxSource) String() string {
 }
 
 func (s *Sequencer) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-	if s.addressFilterService != nil {
-		s.addressFilterService.StopAndWait()
-	}
+	// expressLaneService is started by ExecutionNode via StartExpressLaneService,
+	// but stopped here because the Sequencer owns it.
 	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		s.expressLaneService.StopAndWait()
 	}
+	if s.addressFilterService != nil {
+		s.addressFilterService.StopAndWait()
+	}
+	s.StopWaiter.StopAndWait()
 	if s.txRetryQueue.Len() == 0 &&
 		len(s.txQueue) == 0 &&
 		s.nonceFailures.Len() == 0 &&
