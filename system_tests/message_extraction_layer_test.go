@@ -3,8 +3,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -423,7 +421,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	)
 	Require(t, err)
 	Require(t, newExtractor.SetMessageConsumer(mockMsgConsumer))
-	newExtractor.StopWaiter.Start(ctx, extractor)
+	newExtractor.StopWaiter.Start(ctx, newExtractor)
 	for {
 		prevFSMState := newExtractor.CurrentFSMState()
 		_, err = newExtractor.Act(ctx)
@@ -770,59 +768,6 @@ type mockMELDB struct {
 func (m *mockMELDB) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
 	m.savedMsgs = append(m.savedMsgs, messages...)
 	return nil
-}
-
-func (m *mockMELDB) State(
-	ctx context.Context,
-	parentChainBlockNumber uint64,
-) (*mel.State, error) {
-	state, ok := m.savedStates[parentChainBlockNumber]
-	if !ok {
-		return nil, errors.New("state not found")
-	}
-	return state, nil
-}
-
-func (m *mockMELDB) SaveState(
-	ctx context.Context,
-	state *mel.State,
-) error {
-	m.savedStates[state.ParentChainBlockNumber] = state
-	m.lastState = state
-	return nil
-}
-
-func (m *mockMELDB) FetchInitialState(
-	ctx context.Context, parentChainBlockHash common.Hash, _ uint64,
-) (*mel.State, error) {
-	if m.lastState.ParentChainBlockHash != parentChainBlockHash {
-		return nil, fmt.Errorf("parentChainBlockHash of db doesnt match the hash queried by initialStateFetcher")
-	}
-	return m.savedStates[m.lastState.ParentChainBlockNumber], nil
-}
-
-func (m *mockMELDB) SaveDelayedMessages(
-	ctx context.Context,
-	state *mel.State,
-	delayedMessages []*mel.DelayedInboxMessage,
-) error {
-	m.savedDelayedMsgs = append(m.savedDelayedMsgs, delayedMessages...)
-	return nil
-}
-func (m *mockMELDB) ReadDelayedMessage(
-	ctx context.Context,
-	_ *mel.State,
-	index uint64,
-) (*mel.DelayedInboxMessage, error) {
-	if index == 0 {
-		return nil, errors.New("index cannot be 0")
-	}
-	// Ignore the init message, as we do not store it in this mock DB.
-	index = index - 1
-	if index >= uint64(len(m.savedDelayedMsgs)) {
-		return nil, errors.New("index out of bounds")
-	}
-	return m.savedDelayedMsgs[index], nil
 }
 
 func createInitialMELState(
