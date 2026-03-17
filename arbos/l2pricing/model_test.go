@@ -170,6 +170,9 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	if got := exponents[multigas.ResourceKindHistoryGrowth]; got != 0 {
 		t.Errorf("expected zero history-growth exponent, got %v", got)
 	}
+	if got := exponents[multigas.ResourceKindStorageAccessWrite]; got != 0 {
+		t.Errorf("expected zero storage-access-write exponent, got %v", got)
+	}
 	if got := exponents[multigas.ResourceKindSingleDim]; got != 0 {
 		t.Errorf("expected zero single-dimensional gas exponent, got %v", got)
 	}
