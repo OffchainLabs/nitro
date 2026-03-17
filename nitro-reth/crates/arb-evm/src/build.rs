@@ -939,15 +939,6 @@ where
             "starting block execution"
         );
 
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            let ptgl = self.arb_hooks.as_ref().map(|h| h.per_tx_gas_limit).unwrap_or(0);
-            let pbgl = self.arb_hooks.as_ref().map(|h| h.per_block_gas_limit).unwrap_or(0);
-            eprintln!("[BLOCK] block={} arbos_version={} basefee={} l1_block={} block_gas_left={} per_tx={} per_block={}",
-                self.arb_ctx.l2_block_number, self.arb_ctx.arbos_version,
-                self.arb_ctx.basefee, self.arb_ctx.l1_block_number, self.block_gas_left,
-                ptgl, pbgl);
-        }
-
         Ok(())
     }
 
@@ -1515,18 +1506,6 @@ where
         if gas_deduction > 0 {
             tx_env.set_gas_limit(evm_gas_limit_before.saturating_sub(gas_deduction));
         }
-        let evm_gas_limit_after = revm::context_interface::Transaction::gas_limit(&tx_env);
-
-        // Diagnostic: log the full gas breakdown before EVM execution
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            let intrinsic_est = estimate_intrinsic_gas(recovered.tx(),
-                arb_chainspec::spec_id_by_arbos_version(self.arb_ctx.arbos_version));
-            let al = revm::context_interface::Transaction::access_list(&tx_env);
-            let al_count = al.map(|it| it.count()).unwrap_or(0);
-            eprintln!("[GAS-PRE] block={} tx_gas_limit={} intrinsic_est={} poster_gas={} compute_hold={} gas_deduction={} evm_sees={}  al_entries={}",
-                self.arb_ctx.l2_block_number, tx_gas_limit, intrinsic_est, poster_gas,
-                compute_hold_gas, gas_deduction, evm_gas_limit_after, al_count);
-        }
 
         // --- RevertedTxHook: check for pre-recorded reverted or filtered txs ---
         // Called after gas charging but before EVM execution.
@@ -1766,11 +1745,6 @@ where
             tx_env.set_nonce(sender_nonce);
         }
 
-        // Reset JUMPDEST probe counter before each tx in diag window
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            crate::evm::JUMPDEST_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
-        }
-
         let mut output = match self.inner.execute_transaction_without_commit((tx_env, recovered)) {
             Ok(o) => o,
             Err(e) => {
@@ -1779,103 +1753,9 @@ where
             }
         };
 
-        // Diagnostic: compute revm's actual intrinsic gas from the execution result
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            // revm_intrinsic = evm_gas_limit - first_opcode_gas
-            // We can't directly get first_opcode_gas, but we can check:
-            // If execution reverts: gas_used = intrinsic + execution_consumed
-            // gas_remaining = evm_gas_limit - gas_used
-            // For the NUMBER probe, we already know the EVM starts with specific gas
-            let gu = output.result.result.gas_used();
-            let gr = match &output.result.result {
-                ExecutionResult::Success { gas_refunded, .. } => *gas_refunded,
-                _ => 0,
-            };
-            eprintln!("[EVM-INTRINSIC] block={} evm_limit={} gas_used={} gas_refunded={} \
-                revm_gas_remaining={}",
-                self.arb_ctx.l2_block_number,
-                evm_gas_limit_after,
-                gu, gr,
-                evm_gas_limit_after.saturating_sub(gu));
-        }
-        // Diagnostic: dump EVM output state for blocks in diag window
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            eprintln!("[EVM-OUT] block={} status={:?} accounts={}",
-                self.arb_ctx.l2_block_number,
-                match &output.result.result {
-                    ExecutionResult::Success { .. } => "success",
-                    ExecutionResult::Revert { .. } => "revert",
-                    ExecutionResult::Halt { .. } => "halt",
-                },
-                output.result.state.len());
-            let mut addrs: Vec<_> = output.result.state.keys().collect();
-            addrs.sort();
-            for addr in addrs {
-                let a = &output.result.state[addr];
-                eprintln!("[EVM-OUT]   {:?} nonce={} balance={} status={:?} storage={}",
-                    addr, a.info.nonce, a.info.balance, a.status, a.storage.len());
-            }
-        }
-
-        // Diagnostic: at block 616862, dump RAW EVM output for RetryTx
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed)
-            && is_retry_tx
-        {
-            let contract = alloy_primitives::address!("35aa95ac4747d928e2cd42fe4461f6d9d1826346");
-            let wrong_slot = alloy_primitives::uint!(0xf652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377f75ee_U256);
-            let ref_value = alloy_primitives::uint!(0xb7fca51a6c2ed40703e3724e88407f02c51761d245734714631d912aa0ad814b_U256);
-
-            if let Some(acct) = output.result.state.get(&contract) {
-                eprintln!("[EVM-RAW] RetryTx output for 0x35aa95ac: nonce={} balance={} status={:?}",
-                    acct.info.nonce, acct.info.balance, acct.status);
-                for (slot, val) in &acct.storage {
-                    let pv = val.present_value;
-                    let marker = if *slot == wrong_slot {
-                        let ok = pv == ref_value;
-                        format!(" ← TARGET slot match_ref={}", ok)
-                    } else { String::new() };
-                    eprintln!("[EVM-RAW]   slot {} = {} (orig={}){}", slot, pv, val.original_value(), marker);
-                }
-            } else {
-                eprintln!("[EVM-RAW] RetryTx: 0x35aa95ac NOT in EVM output state!");
-            }
-
-            // Also dump all accounts in the EVM output for comparison
-            eprintln!("[EVM-RAW] RetryTx output: {} accounts modified", output.result.state.len());
-            let mut addrs: Vec<_> = output.result.state.keys().collect();
-            addrs.sort();
-            for addr in addrs {
-                let a = &output.result.state[addr];
-                let storage_count = a.storage.len();
-                eprintln!("[EVM-RAW]   {:?} n={} b={} status={:?} storage={}",
-                    addr, a.info.nonce, a.info.balance, a.status, storage_count);
-            }
-        }
-
         // Capture gas_used as reported by reth's EVM (before our adjustments).
         // This represents the gas cost reth already deducted from the sender.
         let evm_gas_used = output.result.result.gas_used();
-
-        if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-            let gas_refunded = match &output.result.result {
-                ExecutionResult::Success { gas_refunded, .. } => *gas_refunded,
-                _ => 0,
-            };
-            // gas_remaining = evm_gas_limit - evm_gas_used (what the EVM left unused)
-            let gas_remaining = evm_gas_limit_after.saturating_sub(evm_gas_used);
-            // revm intrinsic = evm_gas_limit - first_opcode_gas (not directly available,
-            // but we can compute: evm_gas_used = intrinsic + execution_gas, where
-            // execution_gas = first_opcode_gas - last_opcode_remaining)
-            // For canonical: intrinsic=62628, execution=87781, total=150409
-            eprintln!("[TX-GAS] block={} evm_gas_used={} gas_refunded={} poster_gas={} compute_hold={} tx_gas_limit={} nonrefundable={} evm_limit={} gas_remaining={} receipt_gasUsed_would_be={}",
-                self.arb_ctx.l2_block_number, evm_gas_used, gas_refunded, poster_gas,
-                self.arb_hooks.as_ref().map(|h| h.tx_proc.compute_hold_gas).unwrap_or(0),
-                tx_gas_limit,
-                self.arb_hooks.as_ref().map(|h| h.nonrefundable_gas()).unwrap_or(0),
-                evm_gas_limit_after,
-                gas_remaining,
-                evm_gas_used + poster_gas);
-        }
 
         // Adjust gas_used to include poster_gas only.
         // poster_gas was deducted from gas_limit before EVM execution so reth's
@@ -2046,13 +1926,6 @@ where
 
         // Burn ETH from ArbSys address for L2→L1 withdrawals.
         if !withdrawal_value.is_zero() {
-            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                let db: &mut State<DB> = self.inner.evm_mut().db_mut();
-                let arbsys_bal = db.load_cache_account(arb_precompiles::ARBSYS_ADDRESS)
-                    .ok().and_then(|a| a.account_info()).map(|i| i.balance).unwrap_or(U256::ZERO);
-                eprintln!("[WITHDRAW] block={} burn_value={} arbsys_bal_before={}",
-                    self.arb_ctx.l2_block_number, withdrawal_value, arbsys_bal);
-            }
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             burn_balance(db, arb_precompiles::ARBSYS_ADDRESS, withdrawal_value);
             self.touched_accounts.insert(arb_precompiles::ARBSYS_ADDRESS);
@@ -2090,14 +1963,6 @@ where
                 let db: &mut State<DB> = self.inner.evm_mut().db_mut();
                 burn_balance(db, pending.sender, extra_cost);
                 self.touched_accounts.insert(pending.sender);
-            }
-
-            if arb_storage::GASBACKLOG_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[BACKLOG] commit_tx: poster_costs={} retry={} gas_used={} poster_gas={} type={:?}",
-                    pending.has_poster_costs, pending.retry_context.is_some(),
-                    gas_used_total, pending.poster_gas, pending.arb_tx_type
-                );
             }
 
             if let Some(retry_ctx) = pending.retry_context {

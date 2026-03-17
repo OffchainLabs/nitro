@@ -41,22 +41,6 @@ const NUMBER_OPCODE: u8 = 0x43;
 /// the value stored by `record_new_l1_block` during StartBlock. The mixHash
 /// L1 block number in the header can differ from this value, so we read from
 /// the thread-local set after StartBlock processing.
-/// Gas probe counter — logs gas at the first few JUMPDEST executions when tracing.
-pub static JUMPDEST_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-fn arb_jumpdest_probe<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
-    if arb_storage::GASBACKLOG_TRACE.load(core::sync::atomic::Ordering::Relaxed) {
-        let n = JUMPDEST_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-        if n < 20 {
-            let gas = ctx.interpreter.gas.remaining();
-            eprintln!("[GAS-PROBE] JUMPDEST#{} gas_remaining={}", n, gas);
-        }
-    }
-    // JUMPDEST is a no-op (base_gas=1 already deducted by revm)
-}
-
 fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
 ) {
@@ -71,80 +55,6 @@ fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
 ) {
     ctx.interpreter.halt(InstructionResult::OpcodeNotFound);
-}
-
-/// SHA3/KECCAK256 tracer: reimplements the standard SHA3 opcode exactly,
-/// logging hash outputs for inputs > 60 bytes when GASBACKLOG_TRACE is enabled.
-fn arb_sha3_tracer<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
-    use revm::interpreter::interpreter_types::MemoryTr;
-
-    let Some(offset_u256) = ctx.interpreter.stack.pop() else {
-        ctx.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    };
-    let Some(len_u256) = ctx.interpreter.stack.pop() else {
-        ctx.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    };
-
-    let len: usize = match len_u256.try_into() {
-        Ok(v) => v,
-        Err(_) => {
-            ctx.interpreter.halt(InstructionResult::InvalidOperandOOG);
-            return;
-        }
-    };
-
-    let words = ((len + 31) / 32) as u64;
-    if !ctx.interpreter.gas.record_cost(30 + 6 * words) {
-        ctx.interpreter.halt(InstructionResult::OutOfGas);
-        return;
-    }
-
-    let hash = if len == 0 {
-        alloy_primitives::keccak256([])
-    } else {
-        let from: usize = match offset_u256.try_into() {
-            Ok(v) => v,
-            Err(_) => {
-                ctx.interpreter.halt(InstructionResult::InvalidOperandOOG);
-                return;
-            }
-        };
-
-        let new_size = from.saturating_add(len);
-        let new_words = (new_size + 31) / 32;
-        if let Some(expansion_cost) =
-            ctx.interpreter.gas.memory_mut().record_new_len(new_words, 3, 512)
-        {
-            if !ctx.interpreter.gas.record_cost(expansion_cost) {
-                ctx.interpreter.halt(InstructionResult::MemoryOOG);
-                return;
-            }
-            ctx.interpreter.memory.resize(new_size);
-        }
-
-        let slice = ctx.interpreter.memory.slice_len(from, len);
-        let slice_ref: &[u8] = slice.as_ref();
-        let h = alloy_primitives::keccak256(slice_ref);
-
-        if arb_storage::GASBACKLOG_TRACE.load(core::sync::atomic::Ordering::Relaxed) && len > 60 {
-            use revm::interpreter::interpreter_types::Jumps;
-            eprintln!("[SHA3] pc={} len={} off={} → {:?}", ctx.interpreter.bytecode.pc(), len, from, h);
-            // Log full preimage for the critical 133-byte keccak
-            if len == 133 || len == 1028 {
-                eprintln!("[SHA3]   preimage={}", slice_ref.iter().map(|b| format!("{:02x}", b)).collect::<String>());
-            }
-        }
-
-        h
-    };
-
-    if !ctx.interpreter.stack.push(hash.into()) {
-        ctx.interpreter.halt(InstructionResult::StackOverflow);
-    }
 }
 
 /// Arbitrum SELFDESTRUCT: reverts if the acting account is a Stylus program,
@@ -1287,14 +1197,6 @@ fn build_arb_evm<DB: Database, I>(
         NUMBER_OPCODE,
         revm::interpreter::Instruction::new(arb_number, 2),
     );
-    // JUMPDEST gas probe for debugging (base_gas=1, same as standard).
-    instruction.insert_instruction(
-        0x5b, // JUMPDEST
-        revm::interpreter::Instruction::new(arb_jumpdest_probe, 1),
-    );
-    // SHA3 tracer disabled - use standard revm keccak256 handler.
-    // The custom tracer had a memory resize bug: resize(new_size) instead of
-    // resize(new_words * 32), causing under-allocated memory for non-word-aligned inputs.
     register_arb_precompiles(&mut precompiles);
     let arb_precompiles = ArbPrecompilesMap(precompiles);
 

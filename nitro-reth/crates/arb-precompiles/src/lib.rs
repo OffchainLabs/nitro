@@ -70,6 +70,10 @@ thread_local! {
     /// Current gas backlog value, set by executor before each tx.
     /// Used by Redeem precompile to determine ShrinkBacklog write cost.
     static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
+    /// Current tx poster fee (wei), set by executor before each tx.
+    /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
+    /// In Nitro, this is read from c.txProcessor.PosterFee (a memory field).
+    static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
 }
 
 /// Set the current ArbOS version for precompile version gating.
@@ -100,6 +104,16 @@ pub fn set_current_gas_backlog(backlog: u64) {
 /// Get the current gas backlog value.
 pub fn get_current_gas_backlog() -> u64 {
     CURRENT_GAS_BACKLOG.with(|v| v.get())
+}
+
+/// Set the current tx poster fee for ArbGasInfo.getCurrentTxL1GasFees.
+pub fn set_current_tx_poster_fee(fee_wei: u128) {
+    CURRENT_TX_POSTER_FEE.with(|v| v.set(fee_wei));
+}
+
+/// Get the current tx poster fee.
+pub fn get_current_tx_poster_fee() -> u128 {
+    CURRENT_TX_POSTER_FEE.with(|v| v.get())
 }
 
 /// Set the EVM call depth to a specific value.

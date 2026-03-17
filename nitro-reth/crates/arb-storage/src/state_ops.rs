@@ -1,14 +1,6 @@
 use alloy_primitives::{Address, Bytes, U256, address, keccak256};
 use revm::Database;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// When true, gasBacklog read/write operations emit diagnostic traces to stderr.
-/// Set by producer.rs for the target block window only.
-pub static GASBACKLOG_TRACE: AtomicBool = AtomicBool::new(false);
-
-/// The storage slot for L2 gas backlog (L2 pricing subspace, offset 4).
-pub const GASBACKLOG_SLOT: U256 = alloy_primitives::uint!(0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204_U256);
 
 /// ArbOS state address — the fictional account that stores all ArbOS state.
 pub const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
@@ -95,15 +87,10 @@ pub fn read_storage_at<D: Database>(
     account: Address,
     slot: U256,
 ) -> U256 {
-    let trace = GASBACKLOG_TRACE.load(Ordering::Relaxed)
-        && account == ARBOS_STATE_ADDRESS
-        && slot == GASBACKLOG_SLOT;
-
     // Check cache first
     if let Some(cached_acc) = state.cache.accounts.get(&account) {
         if let Some(ref account) = cached_acc.account {
             if let Some(&value) = account.storage.get(&slot) {
-                if trace { eprintln!("[BACKLOG] read: CACHE val={}", value); }
                 return value;
             }
         }
@@ -112,18 +99,15 @@ pub fn read_storage_at<D: Database>(
     // Check bundle_state
     if let Some(acc) = state.bundle_state.state.get(&account) {
         if let Some(slot_entry) = acc.storage.get(&slot) {
-            if trace { eprintln!("[BACKLOG] read: BUNDLE val={}", slot_entry.present_value); }
             return slot_entry.present_value;
         }
     }
 
     // Fall back to database
-    let value = state
+    state
         .database
         .storage(account, slot)
-        .unwrap_or(U256::ZERO);
-    if trace { eprintln!("[BACKLOG] read: DB val={}", value); }
-    value
+        .unwrap_or(U256::ZERO)
 }
 
 /// Writes a storage slot to the ArbOS account using the transition mechanism.
@@ -175,18 +159,6 @@ pub fn write_storage_at<D: Database>(
 
     // Skip no-op writes
     let prev_value = current_value.unwrap_or(original_value);
-
-    let trace = GASBACKLOG_TRACE.load(Ordering::Relaxed)
-        && account == ARBOS_STATE_ADDRESS
-        && slot == GASBACKLOG_SLOT;
-
-    if trace {
-        let ts_some = state.transition_state.is_some();
-        eprintln!(
-            "[BACKLOG] write: val={} prev={} orig={} cached={} noop={} transition_state={}",
-            value, prev_value, original_value, current_value.is_some(), value == prev_value, ts_some
-        );
-    }
 
     if value == prev_value {
         return;
