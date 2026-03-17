@@ -128,9 +128,12 @@ func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string)
 func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
+	// Network revenue = baseFee * l2GasUsed (minted in EndTxHook) + tip * totalGasUsed (tip payment)
 	baseFeeOnly := env.baseFeeRevenue(receipt)
-	if revenue.Cmp(baseFeeOnly) <= 0 {
-		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
+	tipRevenue := arbmath.BigMulByUint(tipCap, receipt.GasUsed)
+	expected := new(big.Int).Add(baseFeeOnly, tipRevenue)
+	if revenue.Cmp(expected) != 0 {
+		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "expected", expected)
 	}
 }
 
