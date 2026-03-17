@@ -143,8 +143,8 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	err = transactionFiltererAPI.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		transactionFiltererAPI.StopAndWait()
 		transactionFiltererStack.Close()
+		transactionFiltererAPI.StopAndWait()
 	})
 
 	err = transactionFiltererStack.Start()
