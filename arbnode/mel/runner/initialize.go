@@ -35,6 +35,8 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	if err != nil {
 		return m.config.RetryInterval, fmt.Errorf("failed to get start parent chain block: %d corresponding to head mel state from parent chain: %w", melState.ParentChainBlockNumber, err)
 	}
+	// Initialize logsPreFetcher
+	m.logsAndHeadersPreFetcher = newLogsAndHeadersFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
 	// We check if our head mel state's parentChainBlockHash matches the one on-chain, if it doesnt then we detected a reorg
 	if melState.ParentChainBlockHash != startBlock.Hash() {
 		log.Info("MEL detected L1 reorg at the start", "block", melState.ParentChainBlockNumber, "parentChainBlockHash", melState.ParentChainBlockHash, "onchainParentChainBlockHash", startBlock.Hash()) // Log level is Info because L1 reorgs are a common occurrence
@@ -42,8 +44,6 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 			melState: melState,
 		})
 	}
-	// Initialize logsPreFetcher
-	m.logsAndHeadersPreFetcher = newLogsAndHeadersFetcher(m.parentChainReader, m.config.BlocksToPrefetch)
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(processNextBlock{
 		melState: melState,

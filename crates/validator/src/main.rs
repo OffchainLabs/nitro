@@ -14,6 +14,7 @@ use crate::server::run_server;
 
 mod config;
 mod engine;
+mod jwt;
 mod logging;
 mod server;
 mod spawner_endpoints;
