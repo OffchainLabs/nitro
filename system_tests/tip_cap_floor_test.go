@@ -244,8 +244,9 @@ func TestTipCapDelayedInboxDropsTips(t *testing.T) {
 	env.setTipCapFloor(big.NewInt(1))
 
 	// Prepare a delayed tx with a tip
-	tipCap := big.NewInt(10)
-	gasFeeCap := new(big.Int).Add(env.baseFee, tipCap)
+	tipCap := env.baseFee
+	// Use a high gasFeeCap to account for baseFee drift between measurement and sequencing
+	gasFeeCap := new(big.Int).Mul(env.baseFee, big.NewInt(5))
 	info := env.builder.L2Info.GetInfoWithPrivKey("Owner")
 	delayedTx := env.builder.L2Info.SignTxAs("Owner", &types.DynamicFeeTx{
 		To:        &info.Address,
