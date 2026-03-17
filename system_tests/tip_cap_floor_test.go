@@ -109,9 +109,9 @@ func (env *tipCapFloorTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.
 	return revenue, receipt
 }
 
-// computeOnlyRevenue returns the expected network revenue when tips are dropped:
+// baseFeeRevenue returns the expected network revenue when tips are dropped:
 // baseFee * l2GasUsed (the compute portion minted in EndTxHook).
-func (env *tipCapFloorTestEnv) computeOnlyRevenue(receipt *types.Receipt) *big.Int {
+func (env *tipCapFloorTestEnv) baseFeeRevenue(receipt *types.Receipt) *big.Int {
 	l2GasUsed := receipt.GasUsed - receipt.GasUsedForL1
 	return arbmath.BigMulByUint(env.baseFee, l2GasUsed)
 }
@@ -119,18 +119,18 @@ func (env *tipCapFloorTestEnv) computeOnlyRevenue(receipt *types.Receipt) *big.I
 func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
-	computeOnly := env.computeOnlyRevenue(receipt)
-	if revenue.Cmp(computeOnly) != 0 {
-		Fatal(env.t, context+": tip should be dropped", "revenue", revenue, "computeOnly", computeOnly)
+	baseFeeOnly := env.baseFeeRevenue(receipt)
+	if revenue.Cmp(baseFeeOnly) != 0 {
+		Fatal(env.t, context+": tip should be dropped", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
 	}
 }
 
 func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
-	computeOnly := env.computeOnlyRevenue(receipt)
-	if revenue.Cmp(computeOnly) <= 0 {
-		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "computeOnly", computeOnly)
+	baseFeeOnly := env.baseFeeRevenue(receipt)
+	if revenue.Cmp(baseFeeOnly) <= 0 {
+		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
 	}
 }
 
@@ -273,10 +273,10 @@ func TestTipCapDelayedInboxDropsTips(t *testing.T) {
 
 	networkAfter := env.builder.L2.GetBalance(t, env.networkFeeAddr)
 	revenue := new(big.Int).Sub(networkAfter, networkBefore)
-	computeOnly := env.computeOnlyRevenue(receipt)
+	baseFeeOnly := env.baseFeeRevenue(receipt)
 
-	if revenue.Cmp(computeOnly) != 0 {
-		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "computeOnly", computeOnly)
+	if revenue.Cmp(baseFeeOnly) != 0 {
+		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
 	}
 }
 
