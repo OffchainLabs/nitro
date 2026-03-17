@@ -876,7 +876,7 @@ func (p *TxProcessor) DropTip() bool {
 	// v60+: collect tips if the tip meets or exceeds the floor
 	floor, err := p.state.TipCapFloor()
 	if err != nil || floor.Sign() == 0 {
-		return true // safe default: drop tips
+		return true
 	}
 
 	// proposed tip is the difference between the gas price and the base fee
