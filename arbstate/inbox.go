@@ -135,6 +135,11 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		} else {
 			// No reader found for this header byte - check if it's a known type
 			if daprovider.IsAnyTrustMessageHeaderByte(payload[0]) {
+				if len(payload) < 33 {
+					// Too short to be a valid AnyTrust certificate (need at least 1 header byte + 32 keyset hash).
+					log.Warn("AnyTrust message too short to contain a valid certificate, treating as empty batch", "batch", batchNum, "payloadLength", len(payload))
+					return parsedMsg, nil
+				}
 				return nil, fmt.Errorf("no AnyTrust reader configured for AnyTrust message (header byte 0x%02x)", payload[0])
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
 				return nil, daprovider.ErrNoBlobReader
