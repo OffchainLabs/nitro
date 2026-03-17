@@ -80,13 +80,6 @@ fn transfer_validation_input() -> Result<(), Box<dyn std::error::Error>> {
 
     send_validation_input(&mut writer, &input)?;
     let received = receive_validation_input(&mut reader)?;
-
-    assert_eq!(received.small_globals, input.small_globals);
-    assert_eq!(received.large_globals, input.large_globals);
-    assert_eq!(received.sequencer_messages, input.sequencer_messages);
-    assert_eq!(received.delayed_messages, input.delayed_messages);
-    assert_eq!(received.preimages, input.preimages);
-    assert_eq!(received.module_asms, input.module_asms);
-
+    assert_eq!(received, input);
     Ok(())
 }
