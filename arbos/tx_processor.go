@@ -859,18 +859,40 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 }
 
 func (p *TxProcessor) DropTip() bool {
+	// never collect tips on delayed inbox messages
+	if p.delayedInbox {
+		return true
+	}
+
 	version := p.state.ArbOSVersion()
-	return version != params.ArbosVersion_9 || p.delayedInbox
+	// v9: collect all tips
+	if version == params.ArbosVersion_9 {
+		return false
+	}
+	// up to v60: drop all tips
+	if version < params.ArbosVersion_60 {
+		return true
+	}
+	// v60+: collect tips if the tip meets or exceeds the floor
+	floor, _ := p.state.TipCapFloor()
+	if floor.Sign() == 0 {
+		return true // floor set to 0: drop all tips
+	}
+
+	// proposed tip is the difference between the gas price and the base fee
+	if p.evm.GasPrice.Cmp(p.evm.Context.BaseFee) <= 0 {
+		return true // no tip to collect
+	}
+	tip := new(big.Int).Sub(p.evm.GasPrice, p.evm.Context.BaseFee)
+	return tip.Cmp(floor) < 0
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
-	gasPrice := p.evm.GasPrice
-	version := p.state.ArbOSVersion()
-	if version != params.ArbosVersion_9 {
-		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
-		gasPrice = p.evm.Context.BaseFee
+	if !p.DropTip() {
+		return p.evm.GasPrice
 	}
-	return gasPrice
+	// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
+	return p.evm.Context.BaseFee
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
