@@ -921,9 +921,14 @@ where
                 // SAFETY: state_ptr is valid for the lifetime of this block.
                 let state_ref = unsafe { &mut *state_ptr };
                 for n in lower..l1_block_number {
-                    if let Ok(Some(hash)) = arb_state.blockhashes.block_hash(n) {
-                        state_ref.block_hashes.insert(n, hash);
-                    }
+                    // Insert the ArbOS hash, or B256::ZERO if not available.
+                    // This prevents the journal from falling through to reth's
+                    // header table which has L2 hashes (wrong for Arbitrum's
+                    // L1-indexed block hash cache).
+                    let hash = arb_state.blockhashes.block_hash(n)
+                        .ok().flatten()
+                        .unwrap_or(B256::ZERO);
+                    state_ref.block_hashes.insert(n, hash);
                 }
             }
         }
