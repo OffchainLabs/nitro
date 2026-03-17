@@ -1,4 +1,4 @@
-// Copyright 2025-2026, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package arbtest
 
@@ -175,7 +175,7 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	}
 
 	t.Logf("Phase 2: blob config transitioned to BPO1 target=%d max=%d updateFraction=%d",
-		blobConfigPhase2.Target, blobConfigPhase1.Max, blobConfigPhase2.UpdateFraction)
+		blobConfigPhase2.Target, blobConfigPhase2.Max, blobConfigPhase2.UpdateFraction)
 
 	// Also verify MaxBlobGasPerBlock reflects the new config
 	maxBlobGas, err := pc.MaxBlobGasPerBlock(ctx, nil)

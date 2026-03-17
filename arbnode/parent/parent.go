@@ -69,7 +69,7 @@ type ParentChain struct {
 	L1Reader *headerreader.HeaderReader
 	config   ConfigFetcher
 
-	cachedBlobConfig atomic.Pointer[params.BlobConfig]
+	cachedEthConfig atomic.Pointer[ethConfigResponse]
 }
 
 func NewParentChain(ctx context.Context, chainID *big.Int, l1Reader *headerreader.HeaderReader) *ParentChain {
@@ -109,11 +109,13 @@ func NewParentChainWithConfig(ctx context.Context, chainID *big.Int, l1Reader *h
 // We only parse the fields we need.
 type ethConfigResponse struct {
 	Current *ethConfigEntry `json:"current"`
+	Next    *ethConfigEntry `json:"next"`
 }
 
 type ethConfigEntry struct {
-	BlobSchedule *params.BlobConfig `json:"blobSchedule"`
-	ChainId      *hexutil.Big       `json:"chainId"`
+	BlobSchedule   *params.BlobConfig `json:"blobSchedule"`
+	ChainId        *hexutil.Big       `json:"chainId"`
+	ActivationTime uint64             `json:"activationTime"`
 }
 
 func (p *ParentChain) Start(ctxIn context.Context) {
@@ -142,25 +144,29 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 	if resp.Current == nil {
 		return fmt.Errorf("eth_config returned nil current config")
 	}
-	if resp.Current.BlobSchedule != nil {
-		if resp.Current.ChainId != nil && resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
-			return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
-		}
-
-		p.cachedBlobConfig.Store(resp.Current.BlobSchedule)
-		log.Info("Updated parent chain blob config from eth_config",
-			"target", resp.Current.BlobSchedule.Target,
-			"max", resp.Current.BlobSchedule.Max,
-			"updateFraction", resp.Current.BlobSchedule.UpdateFraction,
-		)
+	if resp.Current.BlobSchedule == nil {
+		return nil
 	}
+	if resp.Current.ChainId != nil && resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
+		return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
+	}
+
+	p.cachedEthConfig.Store(&resp)
+	log.Info("Updated parent chain config from eth_config",
+		"currentTarget", resp.Current.BlobSchedule.Target,
+		"currentMax", resp.Current.BlobSchedule.Max,
+		"hasNext", resp.Next != nil,
+	)
 	return nil
 }
 
-// CachedBlobConfig returns the cached blob config from the last successful
+// CachedBlobConfig returns the current blob config from the last successful
 // eth_config poll, or nil if no config has been fetched yet.
 func (p *ParentChain) CachedBlobConfig() *params.BlobConfig {
-	return p.cachedBlobConfig.Load()
+	if cached := p.cachedEthConfig.Load(); cached != nil && cached.Current != nil {
+		return cached.Current.BlobSchedule
+	}
+	return nil
 }
 
 // ErrUnknownChain is returned when an unknown chain ID is requested.
@@ -186,39 +192,39 @@ func (p *ParentChain) chainConfig() (*params.ChainConfig, error) {
 	return cfg, nil
 }
 
-// cachedBlobConfigMaxAge is the maximum age of a header (relative to the
-// current wall-clock time) for which we trust the cached blob config obtained
-// from eth_config. The cached value reflects the *current* fork's blob
-// schedule, so it is only valid for recent headers. For older headers (e.g.
-// during historical replay) we fall through to the static chain config which
-// can resolve the correct blob schedule for any timestamp.
-const cachedBlobConfigMaxAge = 12 * time.Hour
-
 // blobConfig returns the currently active blob config, preferring the
 // value fetched from the parent chain's eth_config RPC.
-// Falls back to the hardcoded chain config if no cached value is available.
+// Falls back to the hardcoded chain config if no cached value is available
+// or if headerTime is earlier than the current cached config.
+// Returns (nil, nil) when the parent chain does not support blobs (e.g. an
+// Arbitrum L2 acting as parent for an L3). Callers must handle a nil config.
 func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) {
-	if cachedBlobConfig := p.cachedBlobConfig.Load(); cachedBlobConfig != nil {
-		headerAge := time.Since(time.Unix(int64(headerTime), 0)) // #nosec G115
-		if headerAge < cachedBlobConfigMaxAge {
-			return cachedBlobConfig, nil
+	if cached := p.cachedEthConfig.Load(); cached != nil {
+		// If next config exists and headerTime is at or past its activation,
+		// use the next config's blob schedule.
+		if cached.Next != nil && cached.Next.BlobSchedule != nil &&
+			headerTime >= cached.Next.ActivationTime {
+			return cached.Next.BlobSchedule, nil
+		}
+		// Only use current if headerTime is at or past its activation;
+		// otherwise fall through to the static chain config for older forks.
+		if cached.Current != nil && cached.Current.BlobSchedule != nil &&
+			headerTime >= cached.Current.ActivationTime {
+			return cached.Current.BlobSchedule, nil
 		}
 	}
+	// Fall back to the hardcoded chain config. If the parent chain is an
+	// Arbitrum chain (e.g. an L2 acting as parent for an L3), it won't
+	// have blob support: chainConfig().BlobConfig() returns nil because
+	// IsArbitrum() is true. In that case we return nil so callers can
+	// handle it gracefully (e.g. return 0 for blob fees).
 	staticBlobConfig, err := p.chainConfig()
 	if err != nil {
 		return nil, err
 	}
 	// We bring staticBlobConfig.LatestFork() to an earlier spot which is the equivalent of latestBlobConfig
 	// from eip4844 which is called from MaxBlobGasPerBlock and CalcBlobFee.
-	// currentArbosVersion as 0 matches latestBlobConfig from eip4844
-	blobConfig := staticBlobConfig.BlobConfig(staticBlobConfig.LatestFork(headerTime, 0))
-	// We return an error if staticBlobConfig.IsArbitrum() since blobConfig == nil. From the
-	// hardcoded chainConfigs none of them sets ArbitrumChainParams.EnableArbOS so we're safe
-	// with current configuration
-	if blobConfig == nil {
-		return nil, fmt.Errorf("no blob config for parent chain %s at time %d", p.ChainID, headerTime)
-	}
-	return blobConfig, nil
+	return staticBlobConfig.BlobConfig(staticBlobConfig.LatestFork(headerTime, 0)), nil
 }
 
 // MaxBlobGasPerBlock returns the maximum blob gas per block according to
@@ -236,6 +242,10 @@ func (p *ParentChain) MaxBlobGasPerBlock(ctx context.Context, h *types.Header) (
 	blobConfig, err := p.blobConfig(header.Time)
 	if err != nil {
 		return 0, err
+	}
+	// nil means the parent chain doesn't support blobs (e.g. Arbitrum L2 parent).
+	if blobConfig == nil {
+		return 0, nil
 	}
 	// #nosec G115
 	return uint64(blobConfig.Max) * params.BlobTxBlobGasPerBlob, nil
@@ -257,8 +267,10 @@ func (p *ParentChain) BlobFeePerByte(ctx context.Context, h *types.Header) (*big
 	if err != nil {
 		return big.NewInt(0), err
 	}
-	// TODO: do we want to return 0 if config.IsArbitrum()? Again, none of the hardcoded
-	// chainConfig sets ArbitrumChainParams.EnableArbOS. But then we need to get that info
-	// from somewhere
+	// nil means the parent chain doesn't support blobs (e.g. Arbitrum L2
+	// parent). Return 0, matching CalcBlobFee behavior.
+	if bc == nil {
+		return big.NewInt(0), nil
+	}
 	return eip4844.CalcBlobFeeWithConfig(bc, header.ExcessBlobGas), nil
 }
