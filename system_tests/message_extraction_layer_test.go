@@ -597,7 +597,8 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 		defer tick.Stop()
 		for {
 			headState, err := testClientB.ConsensusNode.MessageExtractor.GetHeadState()
-			if err == nil && headState != nil && headState.ParentChainBlockNumber <= reorgToBlock.NumberU64() {
+			Require(t, err)
+			if headState.ParentChainBlockNumber >= currHead-reorgToBlock.NumberU64()+5 {
 				break
 			}
 			select {
