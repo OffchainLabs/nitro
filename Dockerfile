@@ -140,6 +140,7 @@ RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
 FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -344,6 +345,13 @@ COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/
+COPY --from=prover-export /bin/validator /usr/local/bin/
+# Symlink legacy machine dirs into /home/user/target/machines so the Rust
+# validator can serve all module roots from a single --root-path.
+RUN for dir in /home/user/nitro-legacy/machines/*/; do \
+      name=$(basename "$dir"); \
+      [ "$name" != "latest" ] && ln -sf "$dir" /home/user/target/machines/"$name" || true; \
+    done
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \

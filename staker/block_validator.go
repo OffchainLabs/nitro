@@ -203,8 +203,8 @@ func (c *BlockValidatorConfig) Validate() error {
 			if err != nil {
 				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
 			}
-			if u.Scheme != "ws" && u.Scheme != "wss" {
-				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			if u.Scheme != "ws" && u.Scheme != "wss" && u.Scheme != "http" && u.Scheme != "https" {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should be ws, wss, http, or https, url:%s", serverUrl)
 			}
 		}
 	}
@@ -928,7 +928,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		}
 		v.testingProgressMadeMutex.Unlock()
 
-		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+		log.Info("block validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash, "batch", v.lastValidGS.Batch, "posInBatch", v.lastValidGS.PosInBatch)
 	}
 }
 
