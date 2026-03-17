@@ -5,13 +5,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arbutil = { workspace = true }
 caller-env = { workspace = true, features = ["brotli"] }
+prover = { workspace = true, features = ["native"] }
 sp1-zkvm = { workspace = true }
+validation = { workspace = true, features = ["rkyv"] }
 wasmer = { workspace = true }
 wasmer-types = { workspace = true }
 wasmer-vm = { workspace = true }
-prover = { workspace = true, features = ["native"] }
-arbutil = { workspace = true }
 
 bytes = { workspace = true }
 corosensei = { workspace = true }

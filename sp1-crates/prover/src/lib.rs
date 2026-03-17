@@ -20,4 +20,3 @@ pub mod value;
 #[path = "../../../crates/arbutil/src/operator.rs"]
 pub mod operator;
 
-pub mod binary_input;

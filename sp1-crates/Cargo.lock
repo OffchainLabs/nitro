@@ -3770,6 +3770,7 @@ dependencies = [
  "sp1-zkvm",
  "thiserror 1.0.69",
  "tiny-keccak 2.0.2 (git+https://github.com/sp1-patches/tiny-keccak?tag=patch-2.0.2-sp1-6.0.0)",
+ "validation",
  "wasmer",
  "wasmer-types",
  "wasmer-vm",
@@ -3833,7 +3834,6 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "brotli",
- "bytes",
  "derivative",
  "digest",
  "eyre",
@@ -3843,11 +3843,9 @@ dependencies = [
  "num-derive",
  "num-traits",
  "parking_lot",
- "rkyv",
  "serde",
  "serde_with",
  "sha3",
- "validation",
  "wasmer",
  "wasmer-types",
  "wasmparser 0.224.1",
@@ -5868,7 +5866,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "clap",
- "prover",
  "rkyv",
  "serde_json",
  "sp1-core-executor",
@@ -6736,6 +6733,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "brotli",
+ "rkyv",
  "serde",
  "serde_json",
  "serde_with",

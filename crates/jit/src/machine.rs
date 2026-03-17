@@ -2,16 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, arbcrypto, prepare::prepare_env_from_json, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
-    ValidatorOpts,
+    arbcompress, arbcrypto, program, stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts,
 };
 use arbutil::{Bytes32, PreimageType};
 use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
-    collections::BTreeMap,
     collections::HashMap,
     fs::File,
     io::{self, BufReader, BufWriter, ErrorKind, Read},
@@ -20,7 +18,7 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
-use validation::BatchInfo;
+use validation::local_target;
 use wasmer::{
     imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
     Module, RuntimeError, Store,
@@ -236,8 +234,6 @@ impl From<RuntimeError> for Escape {
 }
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
-pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
@@ -246,18 +242,12 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// An ordered list of the 8-byte globals
-    pub small_globals: [u64; 2],
-    /// An ordered list of the 32-byte globals
-    pub large_globals: [Bytes32; 2],
-    /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Preimages,
-    /// A collection of programs called during the course of execution
+    /// Validation input (globals, inbox, preimages). Note: module_asms is drained
+    /// into the `module_asms` field below during loading, so it will be empty at runtime.
+    pub input: validation::ValidationInput,
+    /// Arc-wrapped module assemblies, drained from `input.module_asms` to allow
+    /// cheap cloning when passing modules to stylus program threads.
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
-    /// The sequencer inbox's messages
-    pub sequencer_messages: Inbox,
-    /// The delayed inbox's messages
-    pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
     // threads
@@ -272,21 +262,31 @@ impl TryFrom<&Opts> for WasmEnv {
         env.process.debug = opts.validator.debug;
 
         match &opts.input_mode {
-            InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
-            InputMode::Local(local) => prepare_env_from_files(env, local),
-            InputMode::Native(native) => prepare_env_from_native(env, native),
-            InputMode::Continuous => Ok(env),
+            InputMode::Json { inputs } => {
+                let file = File::open(inputs)?;
+                let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
+                let input = validation::ValidationInput::from_request(&req, local_target());
+                load_validation_input(&mut env, &input);
+            }
+            InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,
+            InputMode::Native(vi) => load_validation_input(&mut env, vi),
+            InputMode::Continuous => {}
         }
+        Ok(env)
     }
 }
 
-fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    let mut native = NativeInput {
-        old_state: input.old_state.clone(),
-        inbox: vec![],
-        delayed_inbox: vec![],
-        preimages: HashMap::new(),
-        programs: HashMap::new(),
+fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
+    let mut vi = validation::ValidationInput {
+        small_globals: [
+            input.old_state.inbox_position,
+            input.old_state.position_within_message,
+        ],
+        large_globals: [
+            input.old_state.last_block_hash.0,
+            input.old_state.last_send_root.0,
+        ],
+        ..Default::default()
     };
 
     let mut inbox_position = input.old_state.inbox_position;
@@ -295,19 +295,13 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.inbox.push(BatchInfo {
-            number: inbox_position,
-            data: msg,
-        });
+        vi.sequencer_messages.insert(inbox_position, msg);
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.delayed_inbox.push(BatchInfo {
-            number: delayed_position,
-            data: msg,
-        });
+        vi.delayed_messages.insert(delayed_position, msg);
         delayed_position += 1;
     }
 
@@ -327,7 +321,10 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = vi
+            .preimages
+            .entry(PreimageType::Keccak256 as u8)
+            .or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -336,39 +333,21 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
         }
     }
 
-    prepare_env_from_native(env, &native)
+    load_validation_input(env, &vi);
+    Ok(())
 }
 
-fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+pub(crate) fn load_validation_input(env: &mut WasmEnv, input: &validation::ValidationInput) {
     env.process.already_has_input = true;
-
-    for msg in &input.inbox {
-        env.sequencer_messages.insert(msg.number, msg.data.clone());
+    let mut vi = input.clone();
+    // Drain module_asms into a separate Arc-based cache to avoid copying
+    // the full wasm binary on each lookup. vi.module_asms will be empty after this,
+    // but that's fine — module lookups go through env.module_asms instead.
+    for (module_hash, module_asm) in vi.module_asms.drain() {
+        env.module_asms
+            .insert(Bytes32(module_hash), module_asm.into());
     }
-    for msg in &input.delayed_inbox {
-        env.delayed_messages.insert(msg.number, msg.data.clone());
-    }
-
-    for (preimage_type, preimages_map) in &input.preimages {
-        let type_map = env.preimages.entry(*preimage_type).or_default();
-        for (hash, preimage) in preimages_map {
-            type_map.insert(*hash, preimage.clone());
-        }
-    }
-
-    for (hash, program) in &input.programs {
-        env.module_asms.insert(*hash, program.as_ref().into());
-    }
-
-    env.small_globals = [
-        input.old_state.inbox_position,
-        input.old_state.position_within_message,
-    ];
-    env.large_globals = [
-        input.old_state.last_block_hash,
-        input.old_state.last_send_root,
-    ];
-    Ok(env)
+    env.input = vi;
 }
 
 pub struct ProcessEnv {
