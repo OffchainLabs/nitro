@@ -264,7 +264,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
 		uuid.New().String()[:8], // Short UUID
-		time.Now().UnixNano()) // Timestamp for uniqueness
+		time.Now().UnixNano())   // Timestamp for uniqueness
 
 	log.Info("Auctioneer coordinator initialized", "id", myId)
 
