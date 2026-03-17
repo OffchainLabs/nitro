@@ -759,10 +759,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 }
 
 type mockMELDB struct {
-	savedMsgs        []*arbostypes.MessageWithMetadata
-	savedDelayedMsgs []*mel.DelayedInboxMessage
-	savedStates      map[uint64]*mel.State
-	lastState        *mel.State
+	savedMsgs []*arbostypes.MessageWithMetadata
 }
 
 func (m *mockMELDB) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
