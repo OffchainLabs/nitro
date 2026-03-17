@@ -328,3 +328,22 @@ func TestTipCapGetPaidGasPrice(t *testing.T) {
 		Fatal(t, "floor=1: GASPRICE should equal baseFee+tip", "observed", observedPrice, "expected", expectedPrice)
 	}
 }
+
+// TestTipCapFloorPrecompileVersionGating verifies that SetTipCapFloor and
+// GetTipCapFloor revert on pre-v60 chains.
+func TestTipCapFloorPrecompileVersionGating(t *testing.T) {
+	env, cleanup := setupTipCapTest(t, params.ArbosVersion_51, false)
+	defer cleanup()
+
+	ownerAuth := env.builder.L2Info.GetDefaultTransactOpts("Owner", env.ctx)
+	_, err := env.arbOwner.SetTipCapFloor(&ownerAuth, big.NewInt(1))
+	if err == nil {
+		Fatal(t, "SetTipCapFloor should revert on pre-v60")
+	}
+
+	callOpts := env.builder.L2Info.GetDefaultCallOpts("Owner", env.ctx)
+	_, err = env.arbOwnerPublic.GetTipCapFloor(callOpts)
+	if err == nil {
+		Fatal(t, "GetTipCapFloor should revert on pre-v60")
+	}
+}
