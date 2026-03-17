@@ -249,8 +249,8 @@ func (es *ExpressLaneService) CurrentRoundHasController() bool {
 	return controller != (common.Address{})
 }
 
-func (es *ExpressLaneService) GetRoundTimingInfo() *RoundTimingInfo {
-	return &es.roundTimingInfo
+func (es *ExpressLaneService) GetRoundTimingInfo() RoundTimingInfo {
+	return es.roundTimingInfo
 }
 
 func (es *ExpressLaneService) AuctionContractAddr() common.Address {
