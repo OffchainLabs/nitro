@@ -145,10 +145,10 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 }
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
-	for _, p := range c.producers {
-		p.Start(ctx_in)
-	}
 	c.StopWaiter.Start(ctx_in, c)
+	for _, p := range c.producers {
+		p.Start(c.GetContext())
+	}
 	return nil
 }
 
@@ -236,10 +236,10 @@ func (br *BOLDRedisExecutionClient) Start(ctx_in context.Context) error {
 	if err := br.Initialize(ctx_in, br.redisValidationClient.moduleRoots); err != nil {
 		return err
 	}
-	for _, p := range br.producers {
-		p.Start(ctx_in)
-	}
 	br.StopWaiter.Start(ctx_in, br)
+	for _, p := range br.producers {
+		p.Start(br.GetContext())
+	}
 	return nil
 }
 
