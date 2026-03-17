@@ -208,7 +208,7 @@ func TestArbOwner(t *testing.T) {
 }
 
 func TestArbOwnerSetChainConfig(t *testing.T) {
-	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationContext())
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, core.NewMessageGasEstimationContext(false))
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))

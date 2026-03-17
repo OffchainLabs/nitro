@@ -152,7 +152,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		evm := vm.NewEVM(blockContext, statedb, testChainConfig, vm.Config{})
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed)
+			_, _, err := core.ApplyTransaction(evm, &gasPool, statedb, header, tx, &header.GasUsed, false)
 			if err != nil {
 				Fail(t, err)
 			}

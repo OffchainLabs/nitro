@@ -15,7 +15,7 @@ import (
 )
 
 // SaveActiveProgramToWasmStore is used to save active stylus programs to wasm store during rebuilding
-func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash common.Hash, code []byte, time uint64, debugMode bool, rebuildingStartBlockTime uint64, targets []rawdb.WasmTarget) error {
+func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash common.Hash, code []byte, time uint64, debugMode bool, rebuildingStartBlockTime uint64, targets []rawdb.WasmTarget, craneliftFallback bool) error {
 	progParams, err := p.Params()
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
 	// recompile only missing targets
-	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
+	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, craneliftFallback)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)

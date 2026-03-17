@@ -85,7 +85,7 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 		AccessList:            call.AccessList,
 		SkipNonceChecks:       true,
 		SkipTransactionChecks: true,
-		TxRunContext:          core.NewMessageEthcallContext(), // Indicate this is an eth_call
+		TxRunContext:          core.NewMessageEthcallContext(a.apiBackend.CraneliftFallback()), // Indicate this is an eth_call
 		SkipL1Charging:        true,                            // Skip L1 data fees
 	}
 

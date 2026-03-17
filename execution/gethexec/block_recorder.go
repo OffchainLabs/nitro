@@ -99,6 +99,10 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 	}
 }
 
+func (r *BlockRecorder) newRecordingContext(wasmTargets []rawdb.WasmTarget) *core.MessageRunContext {
+	return core.NewMessageRecordingContext(wasmTargets, r.execEngine.craneliftFallback)
+}
+
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
 // If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (r *BlockRecorder) RecordBlockCreation(
@@ -165,7 +169,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			recordingdb,
 			chaincontext,
 			false,
-			core.NewMessageRecordingContext(wasmTargets),
+			r.newRecordingContext(wasmTargets),
 			false,
 		)
 		if err != nil {

@@ -229,7 +229,8 @@ type ExecutionEngine struct {
 
 	cachedL1PriceData *L1PriceData
 
-	wasmTargets []rawdb.WasmTarget
+	wasmTargets       []rawdb.WasmTarget
+	craneliftFallback bool
 
 	syncTillBlock uint64
 
@@ -343,7 +344,17 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
+	s.craneliftFallback = targetConfig.CraneliftFallback
+	s.bc.SetCraneliftFallback(s.craneliftFallback)
 	return nil
+}
+
+func (s *ExecutionEngine) newSequencingContext() *core.MessageRunContext {
+	return core.NewMessageSequencingContext(s.wasmTargets, s.craneliftFallback)
+}
+
+func (s *ExecutionEngine) newCommitContext() *core.MessageRunContext {
+	return core.NewMessageCommitContext(s.wasmTargets, s.craneliftFallback)
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
@@ -450,7 +461,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 		s.bc.SetFinalized(nil)
 	}
 
-	tag := core.NewMessageCommitContext(nil).WasmCacheTag() // we don't pass any targets, we just want the tag
+	tag := core.NewMessageCommitContext(nil, false).WasmCacheTag() // we don't pass any targets, we just want the tag
 	// reorg Rust-side VM state
 	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
 
@@ -692,7 +703,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageSequencingContext(s.wasmTargets),
+		s.newSequencingContext(),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -890,11 +901,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 
 	var runCtx *core.MessageRunContext
 	if isSequencing {
-		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
+		runCtx = s.newSequencingContext()
 	} else if isMsgForPrefetch {
-		runCtx = core.NewMessagePrefetchContext()
+		runCtx = core.NewMessagePrefetchContext(s.craneliftFallback)
 	} else {
-		runCtx = core.NewMessageCommitContext(s.wasmTargets)
+		runCtx = s.newCommitContext()
 	}
 
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can

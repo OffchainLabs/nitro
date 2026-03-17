@@ -236,17 +236,17 @@ func FuzzStateTransition(f *testing.F) {
 		var runCtx *core.MessageRunContext
 		switch runCtxNumber {
 		case 0:
-			runCtx = core.NewMessageCommitContext(targets)
+			runCtx = core.NewMessageCommitContext(targets, false)
 		case 1:
-			runCtx = core.NewMessageReplayContext()
+			runCtx = core.NewMessageReplayContext(false)
 		case 2:
-			runCtx = core.NewMessageRecordingContext(targets)
+			runCtx = core.NewMessageRecordingContext(targets, false)
 		case 3:
-			runCtx = core.NewMessagePrefetchContext()
+			runCtx = core.NewMessagePrefetchContext(false)
 		case 4:
-			runCtx = core.NewMessageEthcallContext()
+			runCtx = core.NewMessageEthcallContext(false)
 		case 5:
-			runCtx = core.NewMessageGasEstimationContext()
+			runCtx = core.NewMessageGasEstimationContext(false)
 		}
 
 		_, err = BuildBlock(statedb, genesis.Header(), noopChainContext{chainConfig: getChainConfig()}, inbox, seqBatch, runCtx)

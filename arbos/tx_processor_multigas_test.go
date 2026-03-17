@@ -64,7 +64,7 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 			evm := newMockEVMForTestingWithBaseFee(big.NewInt(1))
 
 			msg := &core.Message{
-				TxRunContext: core.NewMessageReplayContext(),
+				TxRunContext: core.NewMessageReplayContext(false),
 				GasTipCap:    big.NewInt(1),
 				GasFeeCap:    big.NewInt(1),
 			}
@@ -93,7 +93,7 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 	evm := newMockEVMForTestingWithBaseFee(big.NewInt(l2pricing.InitialBaseFeeWei))
 
 	msg := &core.Message{
-		TxRunContext: core.NewMessageReplayContext(),
+		TxRunContext: core.NewMessageReplayContext(false),
 		From:         from,
 		GasLimit:     gasLimit,
 		GasPrice:     big.NewInt(0),
@@ -167,7 +167,7 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 	evm := newMockEVMForTestingWithBaseFee(big.NewInt(l2pricing.InitialBaseFeeWei))
 
 	msg := &core.Message{
-		TxRunContext: core.NewMessageReplayContext(),
+		TxRunContext: core.NewMessageReplayContext(false),
 		From:         from,
 		GasLimit:     gasLimit,
 		GasPrice:     big.NewInt(0),
