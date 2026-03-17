@@ -5,18 +5,18 @@ package melrunner
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
-// Database holds an ethdb.KeyValueStore underneath and implements StateDatabase interface defined in 'mel'. It implements
-// reading of delayed messages in native mode by also verifying if the read delayed message is part of the delayed msgs seen root
+// Database holds an ethdb.KeyValueStore underneath and implements reading of
+// delayed messages in native mode by verifying the read delayed message
+// against the outbox accumulator.
 type Database struct {
 	db ethdb.KeyValueStore
 }
@@ -131,107 +131,40 @@ func (d *Database) SaveDelayedMessages(state *mel.State, delayedMessages []*mel.
 	return dbBatch.Write()
 }
 
+// ReadDelayedMessage reads a delayed message by index from the database.
+// It pops from the outbox accumulator (pouring inbox first if needed)
+// and verifies the fetched message's hash matches the expected hash.
 func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
-	if index == 0 { // Init message
-		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
-		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
+	expectedMsgHash, err := state.PopDelayedOutbox()
+	if err != nil {
+		return nil, fmt.Errorf("error popping delayed outbox for index %d: %w", index, err)
 	}
-	delayed, err := d.fetchDelayedMessage(index)
+	// The init message (index 0) is accumulated and read in the same block,
+	// so it may not be in the DB yet. Use the in-memory copy from state.
+	var delayed *mel.DelayedInboxMessage
+	if index == 0 && state.InitMsg() != nil {
+		delayed = state.InitMsg()
+	} else {
+		delayed, err = d.FetchDelayedMessage(index)
+		if err != nil {
+			return nil, err
+		}
+	}
+	delayedBytes, err := rlp.EncodeToBytes(delayed)
 	if err != nil {
 		return nil, err
 	}
-	if ok, err := d.checkAgainstAccumulator(state, delayed, index); err != nil {
-		return nil, fmt.Errorf("error checking if delayed message is part of the mel state accumulator: %w", err)
-	} else if !ok {
-		return nil, fmt.Errorf("delayed message not part of the mel state accumulator. ParentChainBlockNumber: %d, Index: %d", state.ParentChainBlockNumber, index)
+	actualHash := crypto.Keccak256Hash(delayedBytes)
+	if actualHash != expectedMsgHash {
+		return nil, fmt.Errorf("delayed message hash mismatch at index %d: expected %s, got %s", index, expectedMsgHash.Hex(), actualHash.Hex())
 	}
 	return delayed, nil
 }
 
-func (d *Database) fetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
+func (d *Database) FetchDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
 	delayed, err := read.Value[mel.DelayedInboxMessage](d.db, read.Key(schema.MelDelayedMessagePrefix, index))
 	if err != nil {
 		return nil, err
 	}
 	return &delayed, nil
-}
-
-// checkAgainstAccumulator is used to validate the fetched delayed inbox message from the database that is currently being READ. We do this by first checking
-// if the message has already been pre-read via state.GetReadCountFromBacklog(), if it is then we simply check that the message hashes match. Else, we create a new
-// merkle accumulator that has accumulated messages till the position 'index' and then accumulate all the messages in the backlog i.e pre-reading them and we
-// update the readCountFromBacklog of the state accordingly. The optimization is done as it is unfeasible to store merkle partials for each delayed inbox message
-// and accumulate all the future seen but not read messages every single time
-func (d *Database) checkAgainstAccumulator(state *mel.State, msg *mel.DelayedInboxMessage, index uint64) (bool, error) {
-	delayedMessageBacklog := state.GetDelayedMessageBacklog()
-	delayedMeta, err := delayedMessageBacklog.Get(index)
-	if err != nil {
-		return false, err
-	}
-	preReadCount := state.GetReadCountFromBacklog()
-	if index < preReadCount {
-		// Delayed message has already been verified with a merkle root, we just need to verify that the hash matches
-		if msg.Hash() != delayedMeta.MsgHash {
-			return false, nil
-		}
-		return true, nil
-	}
-	targetState, err := d.State(delayedMeta.MelStateParentChainBlockNum - 1)
-	if err != nil {
-		return false, err
-	}
-	acc, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(
-		mel.ToPtrSlice(targetState.DelayedMessageMerklePartials),
-	)
-	if err != nil {
-		return false, err
-	}
-	for i := targetState.DelayedMessagesSeen; i < index; i++ {
-		delayed, err := d.fetchDelayedMessage(i)
-		if err != nil {
-			return false, err
-		}
-		_, err = acc.Append(delayed.Hash())
-		if err != nil {
-			return false, err
-		}
-	}
-	// Accumulate this message
-	_, err = acc.Append(msg.Hash())
-	if err != nil {
-		return false, err
-	}
-	// Accumulate rest of the message-hashes in backlog
-	for i := index + 1; i < state.DelayedMessagesSeen; i++ {
-		backlogEntry, err := delayedMessageBacklog.Get(i)
-		if err != nil {
-			return false, err
-		}
-		_, err = acc.Append(backlogEntry.MsgHash)
-		if err != nil {
-			return false, err
-		}
-	}
-	have, err := acc.Root()
-	if err != nil {
-		return false, err
-	}
-	seenAcc := state.GetSeenDelayedMsgsAcc()
-	if seenAcc == nil {
-		log.Debug("Initializing MelState's seenDelayedMsgsAcc, needed for validation")
-		// This is very low cost hence better to reconstruct seenDelayedMsgsAcc from fresh partals instead of risking using a dirty acc
-		seenAcc, err = merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(mel.ToPtrSlice(state.DelayedMessageMerklePartials))
-		if err != nil {
-			return false, err
-		}
-		state.SetSeenDelayedMsgsAcc(seenAcc)
-	}
-	want, err := seenAcc.Root()
-	if err != nil {
-		return false, err
-	}
-	if have == want {
-		state.SetReadCountFromBacklog(state.DelayedMessagesSeen) // meaning all messages from index to state.DelayedMessagesSeen-1 inclusive have been pre-read
-		return true, nil
-	}
-	return false, nil
 }

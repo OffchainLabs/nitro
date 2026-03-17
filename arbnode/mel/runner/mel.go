@@ -38,12 +38,11 @@ var (
 )
 
 type MessageExtractionConfig struct {
-	Enable                        bool          `koanf:"enable"`
-	RetryInterval                 time.Duration `koanf:"retry-interval"`
-	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
-	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch"`
-	ReadMode                      string        `koanf:"read-mode"`
-	StallTolerance                uint64        `koanf:"stall-tolerance"`
+	Enable           bool          `koanf:"enable"`
+	RetryInterval    time.Duration `koanf:"retry-interval"`
+	BlocksToPrefetch uint64        `koanf:"blocks-to-prefetch"`
+	ReadMode         string        `koanf:"read-mode"`
+	StallTolerance   uint64        `koanf:"stall-tolerance"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -58,26 +57,23 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable: false,
 	// The retry interval for the message extractor FSM. After each tick of the FSM,
 	// the extractor service stop waiter will wait for this duration before trying to act again.
-	RetryInterval:                 time.Millisecond * 500,
-	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
-	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	RetryInterval:    time.Millisecond * 500,
+	BlocksToPrefetch: 499, // 500 is the eth_getLogs block range limit
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 var TestMessageExtractionConfig = MessageExtractionConfig{
-	Enable:                        false,
-	RetryInterval:                 time.Millisecond * 10,
-	DelayedMessageBacklogCapacity: 100,
-	BlocksToPrefetch:              499,
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	Enable:           false,
+	RetryInterval:    time.Millisecond * 10,
+	BlocksToPrefetch: 499,
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
-	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from. Recommend using max allowed range for eth_getLogs rpc query")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
@@ -310,6 +306,10 @@ func (m *MessageExtractor) GetState(parentchainBlocknumber uint64) (*mel.State, 
 	return m.melDB.State(parentchainBlocknumber)
 }
 
+func (m *MessageExtractor) RebuildStateDelayedMsgPreimages(state *mel.State) error {
+	return state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage)
+}
+
 func (m *MessageExtractor) GetMsgCount() (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
@@ -326,7 +326,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	if index >= headState.DelayedMessagesSeen {
 		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
 	}
-	return m.melDB.fetchDelayedMessage(index)
+	return m.melDB.FetchDelayedMessage(index)
 }
 
 func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {

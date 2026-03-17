@@ -31,11 +31,10 @@ func (m *MessageReader) Read(
 	if msgIndex >= state.MsgCount {
 		return nil, fmt.Errorf("index %d out of range, total messages: %d", msgIndex, state.MsgCount)
 	}
-	return PeekFromAccumulator[arbostypes.MessageWithMetadata](ctx, m.preimageResolver, state.LocalMsgAccumulator, state.MsgCount-msgIndex)
+	return PeekFromAccumulator[arbostypes.MessageWithMetadata](m.preimageResolver, state.LocalMsgAccumulator, state.MsgCount-msgIndex)
 }
 
 func PeekFromAccumulator[T any](
-	ctx context.Context,
 	preimageResolver PreimageResolver,
 	outBox common.Hash,
 	lookbacks uint64,
@@ -48,15 +47,10 @@ func PeekFromAccumulator[T any](
 		if err != nil {
 			return nil, err
 		}
-		if len(result) != 2*common.HashLength {
-			return nil, fmt.Errorf("invalid preimage result length: %d, wanted %d", len(result), 2*common.HashLength)
+		curr, msgHash, err = mel.SplitPreimage(result)
+		if err != nil {
+			return nil, fmt.Errorf("accumulator preimage at lookback %d: %w", lookbacks, err)
 		}
-		// Split result into left and right halves.
-		// TODO: Make a helper function.
-		mid := len(result) / 2
-		left := result[:mid]
-		msgHash = common.BytesToHash(result[mid:])
-		curr = common.BytesToHash(left)
 		lookbacks--
 	}
 	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
