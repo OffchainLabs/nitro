@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -210,8 +211,8 @@ func (c *BlockValidatorConfig) Validate() error {
 			if err != nil {
 				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
 			}
-			if u.Scheme != "ws" && u.Scheme != "wss" {
-				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			if !slices.Contains([]string{"ws", "wss", "http", "https"}, u.Scheme) {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should be ws, wss, http, or https, url:%s", serverUrl)
 			}
 		}
 	}

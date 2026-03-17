@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -253,7 +254,6 @@ type ExecutionNode struct {
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
-	ExpressLaneService       *expressLaneService
 	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
@@ -645,7 +645,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -653,7 +653,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}
@@ -666,7 +666,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 		}
 
-		expressLaneTracker, err := NewExpressLaneTracker(
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),

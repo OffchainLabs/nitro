@@ -561,10 +561,11 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 }
 
 func (s *Staker) StopAndWait() {
-	s.StopWaiter.StopAndWait()
+	// wallet is started externally, but stopped here because the Staker owns it.
 	if s.Strategy() != WatchtowerStrategy {
 		s.wallet.StopAndWait()
 	}
+	s.StopWaiter.StopAndWait()
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
