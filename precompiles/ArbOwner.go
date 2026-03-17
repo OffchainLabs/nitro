@@ -660,6 +660,13 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	return nil
 }
 
+// SetTipCapFloor sets the minimum tip (wei per gas) for tip collection.
+// Tips below this floor are dropped.
+// Set to 0 to drop all tips (default). Set to 1 to collect all tips.
+func (con ArbOwner) SetTipCapFloor(c ctx, evm mech, tipCapFloor huge) error {
+	return c.State.SetTipCapFloor(tipCapFloor)
+}
+
 func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint8) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
