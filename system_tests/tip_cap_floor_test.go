@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -276,5 +277,54 @@ func TestTipCapDelayedInboxDropsTips(t *testing.T) {
 
 	if revenue.Cmp(computeOnly) != 0 {
 		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "computeOnly", computeOnly)
+	}
+}
+
+// TestTipCapGetPaidGasPrice verifies that the GASPRICE opcode (which calls
+// GetPaidGasPrice) returns the full gas price when tips are collected and
+// only the base fee when tips are dropped.
+func TestTipCapGetPaidGasPrice(t *testing.T) {
+	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+	defer cleanup()
+
+	// Deploy a contract that stores tx.gasprice in slot 0: GASPRICE PUSH1(0) SSTORE STOP
+	runtimeCode := []byte{byte(vm.GASPRICE), byte(vm.PUSH1), 0, byte(vm.SSTORE), byte(vm.STOP)}
+	auth := env.builder.L2Info.GetDefaultTransactOpts("Faucet", env.ctx)
+	contractAddr := deployContract(t, env.ctx, auth, env.builder.L2.Client, runtimeCode)
+
+	callContract := func(tipCap *big.Int) *big.Int {
+		t.Helper()
+		info := env.builder.L2Info.GetInfoWithPrivKey("Faucet")
+		gasFeeCap := new(big.Int).Add(env.baseFee, tipCap)
+		tx := env.builder.L2Info.SignTxAs("Faucet", &types.DynamicFeeTx{
+			To:        &contractAddr,
+			Gas:       env.builder.L2Info.TransferGas,
+			GasTipCap: tipCap,
+			GasFeeCap: gasFeeCap,
+			Nonce:     info.Nonce.Add(1) - 1,
+		})
+		err := env.builder.L2.Client.SendTransaction(env.ctx, tx)
+		Require(t, err)
+		_, err = env.builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+		slot0, err := env.builder.L2.Client.StorageAt(env.ctx, contractAddr, common.Hash{}, nil)
+		Require(t, err)
+		return new(big.Int).SetBytes(slot0)
+	}
+
+	tip := big.NewInt(50)
+
+	// With floor=0 (default), tips are dropped: GASPRICE should return baseFee
+	observedPrice := callContract(tip)
+	if observedPrice.Cmp(env.baseFee) != 0 {
+		Fatal(t, "floor=0: GASPRICE should equal baseFee", "observed", observedPrice, "baseFee", env.baseFee)
+	}
+
+	// With floor=1, tips are collected: GASPRICE should return baseFee + tip
+	env.setTipCapFloor(big.NewInt(1))
+	observedPrice = callContract(tip)
+	expectedPrice := new(big.Int).Add(env.baseFee, tip)
+	if observedPrice.Cmp(expectedPrice) != 0 {
+		Fatal(t, "floor=1: GASPRICE should equal baseFee+tip", "observed", observedPrice, "expected", expectedPrice)
 	}
 }
