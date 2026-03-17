@@ -566,13 +566,22 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 }
 
 func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
+	t.Helper()
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
 	for {
 		count, err := tc.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		if count > 0 {
-			break
+			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatal("timed out waiting for MEL to read init message")
+		}
 	}
 }
 

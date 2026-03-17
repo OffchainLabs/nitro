@@ -592,7 +592,23 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(currHead-reorgToBlock.NumberU64()+5)) // we need to advance L1 blocks up until the current head so that reorg is detected
 
 	// Wait until mel can detect reorg and rewind head state
-	time.Sleep(5 * time.Second)
+	{
+		timeout := time.NewTimer(time.Minute)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			headState, err := testClientB.ConsensusNode.MessageExtractor.GetHeadState()
+			if err == nil && headState != nil && headState.ParentChainBlockNumber <= reorgToBlock.NumberU64() {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				t.Fatal("timed out waiting for MEL to rewind head state after L1 reorg")
+			}
+		}
+	}
 
 	// Post a batch so that mel can send up-to-date L2 messages to txStreamer
 	initialBatchCount := GetBatchCount(t, builder)
