@@ -1,7 +1,7 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package gethexec
+package timeboost
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -20,7 +21,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 )
 
 // contractAdapter is an impl of bind.ContractBackend with necessary methods defined to work with the ExpressLaneAuction contract
@@ -97,4 +101,40 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 	}
 
 	return result.ReturnData, nil
+}
+
+func NewExpressLaneAuctionFromInternalAPI(
+	apiBackend *arbitrum.APIBackend,
+	filterSystem *filters.FilterSystem,
+	auctionContractAddr common.Address,
+) (*express_lane_auctiongen.ExpressLaneAuction, error) {
+	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem), nil, apiBackend}
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
+	if err != nil {
+		return nil, err
+	}
+
+	return auctionContract, nil
+}
+
+func GetRoundTimingInfo(
+	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
+) (*RoundTimingInfo, error) {
+	retries := 0
+
+pending:
+	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	if err != nil {
+		const maxRetries = 5
+		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
+			wait := time.Millisecond * 250 * (1 << retries)
+			log.Info("ExpressLaneAuction contract not ready, will retry after wait", "err", err, "wait", wait, "maxRetries", maxRetries)
+			retries++
+			time.Sleep(wait)
+			goto pending
+		}
+		return nil, err
+	}
+	return NewRoundTimingInfo(rawRoundTimingInfo)
 }

@@ -144,24 +144,29 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
-				ChainConfig:   builder.chainConfig,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChainID:        parentChainID,
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -285,25 +290,29 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB:  nil,
-				L1Reader:      builder.L2.ConsensusNode.L1Reader,
-				Inbox:         builder.L2.ConsensusNode.InboxTracker,
-				MsgExtractor:  builder.L2.ConsensusNode.MessageExtractor,
-				Streamer:      builder.L2.ConsensusNode.TxStreamer,
-				VersionGetter: builder.L2.ExecNode,
-				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
-				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts:  &seqTxOpts,
-				DAPWriters:    nil,
-				ParentChainID: parentChainID,
-				ChainConfig:   builder.chainConfig,
+				DataPosterDB:         nil,
+				L1Reader:             builder.L2.ConsensusNode.L1Reader,
+				BatchMetadataFetcher: batchMetaFetcher,
+				Streamer:             builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter:        builder.L2.ExecNode,
+				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
+				Config:               func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:           builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:         &seqTxOpts,
+				DAPWriters:           nil,
+				ParentChainID:        parentChainID,
+				ChainConfig:          builder.chainConfig,
 			},
 		)
 		Require(t, err)
@@ -447,7 +456,6 @@ func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, e
 	// creates first node with batch poster disabled
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
-	builder.nodeConfig.MessageExtraction.Enable = !enabled // TODO: figure out how to handle AllowPostingFirstBatchWhenSequencerMessageCountMismatch with MEL
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientNonBatchPoster := builder.L2
@@ -546,7 +554,6 @@ func testBatchPosterDelayBuffer(t *testing.T, delayBufferEnabled bool) {
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer
 	builder.nodeConfig.BatchPoster.PollInterval = time.Hour // set a high poll interval to avoid continuous polling
 	// and prevent race conditions due to config changes during the test. We'll call MaybePostSequencerBatch manually.
-	builder.nodeConfig.MessageExtraction.Enable = !delayBufferEnabled
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
@@ -691,7 +698,6 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t).
 		WithTakeOwnership(false)
-	builder.nodeConfig.MessageExtraction.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -897,7 +903,11 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount(ctx)
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		} else {
+			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		}
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
@@ -910,7 +920,12 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		var sequencerMessageBytes []byte
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+		} else {
+			sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+		}
 		Require(t, err)
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
@@ -931,6 +946,7 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		WithPreBoldDeployment().
 		TakeOwnership()
 
 	// Enable delayed sequencer and set fast finalization so reports appear quickly on L2
@@ -969,14 +985,18 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	// Spin L1 to get batch poster report
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
-	// Wait for the delayed message's timestamp to become old enough to trigger MaxEmptyBatchDelay.
-	// The batch posting report comes back as a delayed message with an L1 block timestamp.
-	// L1 block timestamps can be up to ~12 seconds ahead of wall clock time (Ethereum PoS block interval).
-	// We need to wait for:
-	// 1. MaxEmptyBatchDelay (1 second) - the configured threshold that triggers batch posting
-	// 2. ~12-13 seconds - to ensure the L1 block timestamp is in the past relative to time.Now()
-	// 3. Extra buffer - for the delayed sequencer to process and make the report available
-	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay + 15*time.Second)
+	// The batch posting report's timestamp comes from the L1 block that included it.
+	// In the simulated beacon, block timestamps can race far ahead of wall clock
+	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
+	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
+	// before the batch poster will consider the report old enough to trigger posting.
+	latestHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
+	require.NoError(t, err)
+	l1AheadBy := time.Until(time.Unix(int64(latestHeader.Time), 0)) //#nosec G115
+	if l1AheadBy > 0 {
+		time.Sleep(l1AheadBy)
+	}
+	time.Sleep(builder.nodeConfig.BatchPoster.MaxEmptyBatchDelay)
 
 	// Force second batch, posting should be triggered by MaxEmptyBatchDelay
 	posted, err = builder.L2.ConsensusNode.BatchPoster.MaybePostSequencerBatch(ctx)

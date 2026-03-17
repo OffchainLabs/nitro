@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	messageKey   = "msg"
-	defaultGroup = "default_consumer_group"
+	messageKey          = "msg"
+	defaultGroup        = "default_consumer_group"
+	TimeoutErrorMessage = "request has been waiting for too long"
 )
 
 type Producer[Request any, Response any] struct {
@@ -171,7 +172,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			} else if cmpMsgId(id, allowedOldestID) == -1 {
 				// The request this producer is waiting for has been past its TTL or is older than current PEL's lower,
 				// so safe to error and stop tracking this promise
-				promise.ProduceError(errors.New("error getting response, request has been waiting for too long"))
+				promise.ProduceError(errors.New("error getting response, " + TimeoutErrorMessage))
 				log.Debug("request timed out waiting for response", "msgId", id, "allowedOldestId", allowedOldestID)
 				errored++
 				delete(p.promises, id)

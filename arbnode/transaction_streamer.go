@@ -56,10 +56,9 @@ type TransactionStreamer struct {
 	prevHeadMsgIdx *arbutil.MessageIndex
 	validator      *staker.BlockValidator
 
-	db             ethdb.Database
-	fatalErrChan   chan<- error
-	config         TransactionStreamerConfigFetcher
-	snapSyncConfig *SnapSyncConfig
+	db           ethdb.Database
+	fatalErrChan chan<- error
+	config       TransactionStreamerConfigFetcher
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
@@ -127,7 +126,6 @@ func NewTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
-	snapSyncConfig *SnapSyncConfig,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		exec:               exec,
@@ -137,7 +135,6 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
-		snapSyncConfig:     snapSyncConfig,
 	}
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
@@ -180,35 +177,44 @@ func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator
 	s.validator = validator
 }
 
-func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
+func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) error {
 	if s.Started() {
-		panic("trying to set coordinator after start")
+		return errors.New("trying to set coordinator after start")
 	}
 	if s.coordinator != nil {
-		panic("trying to set coordinator when already set")
+		return errors.New("trying to set coordinator when already set")
 	}
 	s.coordinator = coordinator
+	return nil
 }
 
-func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) {
+func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) error {
 	if s.Started() {
-		panic("trying to set inbox reader after start")
+		return errors.New("trying to set inbox reader after start")
 	}
 	if s.inboxReader != nil || s.delayedBridge != nil {
-		panic("trying to set inbox reader when already set")
+		return errors.New("trying to set inbox reader when already set")
+	}
+	if s.msgExtractor != nil {
+		return errors.New("cannot set inbox reader: message extractor is already set")
 	}
 	s.inboxReader = inboxReader
 	s.delayedBridge = delayedBridge
+	return nil
 }
 
-func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) {
+func (s *TransactionStreamer) SetMsgExtractor(msgExtractor *melrunner.MessageExtractor) error {
 	if s.Started() {
-		panic("trying to set inbox reader after start")
+		return errors.New("trying to set message extractor after start")
 	}
 	if s.msgExtractor != nil {
-		panic("trying to set msgExtractor when already set")
+		return errors.New("trying to set message extractor when already set")
+	}
+	if s.inboxReader != nil {
+		return errors.New("cannot set message extractor: inbox reader is already set")
 	}
 	s.msgExtractor = msgExtractor
+	return nil
 }
 
 func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
@@ -823,9 +829,6 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(msgIdx arbutil.MessageIndex) (uint64, error) {
-	if s.snapSyncConfig.Enabled && uint64(msgIdx) == s.snapSyncConfig.PrevBatchMessageCount {
-		return s.snapSyncConfig.PrevDelayedRead, nil
-	}
 	var prevDelayedRead uint64
 	if msgIdx > 0 {
 		prevMsg, err := s.GetMessage(msgIdx - 1)

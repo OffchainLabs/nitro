@@ -36,10 +36,10 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
@@ -254,7 +254,6 @@ type ExecutionNode struct {
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
-	ExpressLaneService       *expressLaneService
 	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
@@ -276,7 +275,7 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -302,7 +301,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(ctx, execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
 		if err != nil {
 			return nil, err
 		}
@@ -340,17 +339,10 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDB, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
-		if dbutil.IsNotExistError(err) {
-			log.Warn("Classic Msg Database not found", "err", err)
-			classicOutbox = nil
-		} else if err != nil {
-			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
-		} else {
-			if err := dbutil.UnfinishedConversionCheck(classicMsgDB); err != nil {
-				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
-			}
-			classicOutbox = NewClassicOutboxRetriever(classicMsgDB)
+		var err error
+		classicOutbox, err = OpenClassicOutboxFromStack(stack)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -633,7 +625,7 @@ func (n *ExecutionNode) SetFinalityData(
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) containers.PromiseInterface[struct{}] {
-	err := n.SyncMonitor.SetFinalityData(safeFinalityData, finalizedFinalityData, validatedFinalityData)
+	err := n.SyncMonitor.SetFinalityData(n.ExecutionDB, safeFinalityData, finalizedFinalityData, validatedFinalityData)
 	if err != nil {
 		return containers.NewReadyPromise(struct{}{}, err)
 	}
@@ -653,7 +645,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -661,7 +653,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}
@@ -674,7 +666,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 		}
 
-		expressLaneTracker, err := NewExpressLaneTracker(
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),

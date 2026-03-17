@@ -334,7 +334,6 @@ type mockDelayedMessageDB struct {
 }
 
 func (m *mockDelayedMessageDB) ReadDelayedMessage(
-	_ context.Context,
 	_ *mel.State,
 	delayedMsgsRead uint64,
 ) (*mel.DelayedInboxMessage, error) {

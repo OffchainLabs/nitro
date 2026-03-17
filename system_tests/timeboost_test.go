@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -1483,8 +1481,8 @@ func setupExpressLaneAuction(
 	extraNodeTy extraNodeType,
 	queueTimeoutInBlocks uint64,
 ) (common.Address, *timeboost.BidderClient, *timeboost.BidderClient, time.Duration, *NodeBuilder, func(), *TestClient, func(), *timeboost.BidValidator) {
-	seqPort := getRandomPort(t)
-	forwarderPort := getRandomPort(t)
+	seqPort := getFreePort(t)
+	forwarderPort := getFreePort(t)
 
 	nodeNames := []string{fmt.Sprintf("http://127.0.0.1:%d", seqPort), fmt.Sprintf("http://127.0.0.1:%d", forwarderPort)}
 	expressLaneRedisURL := redisutil.CreateTestRedis(ctx, t)
@@ -1502,7 +1500,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = timeboost.Config{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1529,7 +1527,7 @@ func setupExpressLaneAuction(
 		extraNodebuilder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 		extraNodebuilder.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 		extraNodebuilder.execConfig.Sequencer.Enable = true
-		extraNodebuilder.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		extraNodebuilder.execConfig.Sequencer.Timeboost = timeboost.Config{
 			Enable:                       true,
 			ExpressLaneAdvantage:         time.Second * 5,
 			RedisUrl:                     expressLaneRedisURL,
@@ -1704,10 +1702,10 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),
@@ -1748,8 +1746,8 @@ func setupExpressLaneAuction(
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
-	bidValidatorPort := getRandomPort(t)
-	bidValidatorWsPort := getRandomPort(t)
+	bidValidatorPort := getFreePort(t)
+	bidValidatorWsPort := getFreePort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
 		HTTPPort:            bidValidatorPort,
@@ -2007,15 +2005,4 @@ func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
 	}
 	sig[64] += 27
 	return sig, nil
-}
-
-func getRandomPort(t testing.TB) int {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
 }

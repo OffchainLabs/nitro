@@ -385,7 +385,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
-	hooks.InsertLastTxError(nil)
+	hooks.TxSucceeded()
 	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
 	Require(t, err)
 
@@ -519,7 +519,12 @@ func TestRegressionInPopulateFeedBacklog(t *testing.T) {
 	Require(t, err)
 
 	// sub in correct batch hash
-	batchData, _, err := builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, 0)
+	var batchData []byte
+	if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchData, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, 0)
+	} else {
+		batchData, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 0)
+	}
 	Require(t, err)
 	expectedBatchHash := crypto.Keccak256Hash(batchData)
 	copy(data[52:52+32], expectedBatchHash[:])

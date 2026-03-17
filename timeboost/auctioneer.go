@@ -79,6 +79,28 @@ type AuctioneerServerConfig struct {
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
 	BidsReceiverBufferSize    uint64                   `koanf:"bids-receiver-buffer-size"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
+	BidFloorAgentAddress      string                   `koanf:"bid-floor-agent-address"`
+}
+
+func (c *AuctioneerServerConfig) Validate() error {
+	if c.AuctionContractAddress != "" && !common.IsHexAddress(c.AuctionContractAddress) {
+		return errors.New("invalid auctioneer-server.auction-contract-address")
+	}
+
+	if c.BidFloorAgentAddress != "" {
+		if !common.IsHexAddress(c.BidFloorAgentAddress) {
+			return errors.New("invalid auctioneer-server.bid-floor-agent-address")
+		}
+
+		if common.HexToAddress(c.BidFloorAgentAddress) == (common.Address{}) {
+			return errors.New("auctioneer-server.bid-floor-agent-address cannot be the zero address")
+		}
+	}
+
+	if err := c.S3Storage.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 var DefaultAuctioneerConsumerConfig = pubsub.ConsumerConfig{
@@ -122,6 +144,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
 	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, fmt.Sprintf("buffer size for the bids receiver channel (0 = use default of %d)", DefaultBidsReceiverBufferSize))
+	f.String(prefix+".bid-floor-agent-address", DefaultAuctioneerServerConfig.BidFloorAgentAddress, "bid floor agent address, on-chain auction resolution is skipped if this address wins")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -145,6 +168,7 @@ type AuctioneerServer struct {
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
 	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
+	bidFloorAgentAddr              common.Address
 
 	// Coordination fields
 	redisClient               redis.UniversalClient
@@ -178,6 +202,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		}
 	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
+	bidFloorAgentAddr := common.HexToAddress(cfg.BidFloorAgentAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
@@ -243,6 +268,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
 	}
 
+	if cfg.BidFloorAgentAddress != "" {
+		log.Info(
+			"BidFloorAgent configured, on-chain auction resolution will be skipped when this address wins",
+			"address",
+			bidFloorAgentAddr.String(),
+		)
+	}
+
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
 		uuid.New().String()[:8], // Short UUID
@@ -269,6 +302,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		redisClient:                    redisClient,
 		myId:                           myId,
 		auctioneerLivenessTimeout:      cfg.ConsumerConfig.IdletimeToAutoclaim * 3,
+		bidFloorAgentAddr:              bidFloorAgentAddr,
 	}, nil
 }
 
@@ -411,7 +445,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Start S3 storage service to persist validated bids to s3
 	if a.s3StorageService != nil {
-		a.s3StorageService.Start(ctx_in)
+		a.s3StorageService.Start(a.GetContext())
 	}
 
 	// Start coordination to manage primary/secondary status
@@ -419,7 +453,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
-	a.consumer.Start(ctx_in)
+	a.consumer.Start(a.GetContext())
 	// Channel for single consumer, once readiness is indicated in this,
 	// consumer will start consuming iteratively.
 	ready := make(chan struct{}, 1)
@@ -512,15 +546,47 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		if second == nil {
 			log.Info("No bids received for auction resolution", "round", upcomingRound)
 			return nil
-		} else {
-			return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
 		}
+
+		return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
 	}
 
 	// Once resolveAuction returns, we acknowledge all bids to remove them from redis.
 	// We remove them unconditionally, since resolveAuction retries until the round ends,
 	// and there is no way to use them after the round ends.
 	defer a.acknowledgeAllBids(ctx, upcomingRound)
+
+	// If BidFloorAgent is configured, and it won this round, skip on-chain auction resolution
+	if a.bidFloorAgentAddr != (common.Address{}) && a.bidFloorAgentAddr == first.Bidder {
+		FirstBidValueGauge.Update(first.Amount.Int64())
+		if second == nil {
+			log.Info(
+				"Only BidFloorAgent bid received for auction resolution",
+				"round",
+				upcomingRound,
+				"firstBid",
+				first.Amount.String(),
+				"firstBidder",
+				first.Bidder.Hex(),
+			)
+		} else {
+			SecondBidValueGauge.Update(second.Amount.Int64())
+			log.Info(
+				"BidFloorAgent won round so skipping auction resolution",
+				"round",
+				upcomingRound,
+				"firstBid",
+				first.Amount.String(),
+				"secondBid",
+				second.Amount.String(),
+				"firstBidder",
+				first.Bidder.Hex(),
+				"secondBidder",
+				second.Bidder.Hex(),
+			)
+		}
+		return nil
+	}
 
 	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
@@ -729,6 +795,9 @@ func (a *AuctioneerServer) StopAndWait() {
 	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
 	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
 	// messages.
-	a.StopWaiter.StopAndWait()
 	a.consumer.StopAndWait()
+	if a.s3StorageService != nil {
+		a.s3StorageService.StopAndWait()
+	}
+	a.StopWaiter.StopAndWait()
 }

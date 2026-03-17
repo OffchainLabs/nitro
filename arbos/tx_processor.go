@@ -390,7 +390,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// This prevents the auto-redeem from executing calls against
 		// potentially filtered addresses.
 		if isFiltered {
-			return true, multigas.L2CalldataGas(usergas), filteredErr, ticketId.Bytes()
+			return true, multigas.SingleDimGas(usergas), filteredErr, ticketId.Bytes()
 		}
 
 		// emit RedeemScheduled event
@@ -432,7 +432,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			}
 		}
 
-		return true, multigas.L2CalldataGas(usergas), nil, ticketId.Bytes()
+		return true, multigas.SingleDimGas(usergas), nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
 		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
 		if err != nil {
@@ -527,7 +527,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		return tipReceipient, multigas.ZeroGas(), core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
-	multiGas := multigas.L1CalldataGas(gasNeededToStartEVM)
+	multiGas := multigas.SingleDimGas(gasNeededToStartEVM)
 
 	if !p.msg.TxRunContext.IsEthcall() {
 		var max uint64
@@ -781,8 +781,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		// Poster gas added to multiGas in GasChargingHook as L1CalldataGas
-		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindL1Calldata, p.posterGas)
+		// Poster gas added to multiGas in GasChargingHook as SingleDimGas
+		usedMultiGas = usedMultiGas.SaturatingDecrement(multigas.ResourceKindSingleDim, p.posterGas)
 		p.state.Restrict(p.state.L2PricingState().GrowBacklog(computeGas, usedMultiGas))
 	}
 }

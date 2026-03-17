@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -17,18 +19,18 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
 	saveAction.postState.GetDelayedMessageBacklog().CommitDirties()
-	if err := m.melDB.SaveBatchMetas(ctx, saveAction.postState, saveAction.batchMetas); err != nil {
+	if err := m.melDB.SaveBatchMetas(saveAction.postState, saveAction.batchMetas); err != nil {
 		return m.config.RetryInterval, err
 	}
-	if err := m.melDB.SaveDelayedMessages(ctx, saveAction.postState, saveAction.delayedMessages); err != nil {
+	if err := m.melDB.SaveDelayedMessages(saveAction.postState, saveAction.delayedMessages); err != nil {
 		return m.config.RetryInterval, err
 	}
 	if err := m.msgConsumer.PushMessages(ctx, saveAction.preStateMsgCount, saveAction.messages); err != nil {
 		return m.config.RetryInterval, err
 	}
 	msgsPushedCounter.Inc(int64(len(saveAction.messages)))
-	if err := m.melDB.SaveState(ctx, saveAction.postState); err != nil {
-		log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
+	if err := m.melDB.SaveState(saveAction.postState); err != nil {
+		log.Error("Error saving latest state as head state to db", "err", err)
 		return m.config.RetryInterval, err
 	}
 	return 0, m.fsm.Do(processNextBlock{
