@@ -197,25 +197,18 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let requested: u64 = U256::from_be_slice(&data[4..36])
         .try_into()
         .unwrap_or(u64::MAX);
+    let current = get_current_l2_block();
 
-    // In Nitro, arbBlockHash reads from ArbOS state's blockhash cache
-    // (indexed by L1 block number). The block_hashes map in the EVM context
-    // is populated from the same source during apply_pre_execution_changes.
-    //
-    // Bounds check uses L1 block number (from ArbOS state, same as NUMBER opcode).
-    // Out-of-range: return zeros with NO error (matching Nitro's behavior).
-    // Nitro returns [32]byte{} for out-of-range blocks, not an error.
-    let current_l1 = crate::get_l1_block_number_for_evm();
-    let out_of_range = requested >= current_l1 || requested + 256 < current_l1;
-    let hash = if out_of_range {
-        B256::ZERO
-    } else {
-        input
-            .internals_mut()
-            .db_mut()
-            .block_hash(requested)
-            .unwrap_or(B256::ZERO)
-    };
+    // Must be strictly less than current and within 256 blocks.
+    if requested >= current || requested + 256 < current {
+        return Err(PrecompileError::other("invalid block number"));
+    }
+
+    let hash = input
+        .internals_mut()
+        .db_mut()
+        .block_hash(requested)
+        .map_err(|e| PrecompileError::other(format!("block_hash: {e}")))?;
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);

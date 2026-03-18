@@ -35,39 +35,6 @@ const SELFDESTRUCT_OPCODE: u8 = 0xff;
 /// NUMBER opcode (0x43).
 const NUMBER_OPCODE: u8 = 0x43;
 
-/// Targeted JUMPI probe: just logs gas at each JUMPI for a specific block.
-/// Does NOT reimplement JUMPI — we register it as a PRE-hook by using base_gas=0
-/// and letting the standard handler run after. Actually, we can't chain handlers.
-/// Instead, just log gas and pop/push to reimpl JUMPI correctly.
-fn arb_jumpi_probe<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
-    use revm::interpreter::interpreter_types::Jumps;
-    // Pop dest and cond
-    let Some(dest_val) = ctx.interpreter.stack.pop() else {
-        ctx.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    };
-    let Some(cond_val) = ctx.interpreter.stack.pop() else {
-        ctx.interpreter.halt(InstructionResult::StackUnderflow);
-        return;
-    };
-
-    let l2_block = arb_precompiles::get_current_l2_block();
-    if l2_block == 5023519 {
-        let gas = ctx.interpreter.gas.remaining();
-        let cond: u64 = cond_val.to();
-        let dest: u64 = dest_val.to();
-        eprintln!("[PROBE] JUMPI gas={} cond={} dest={}", gas, cond, dest);
-    }
-
-    // Standard JUMPI: jump if cond != 0
-    if !cond_val.is_zero() {
-        let dest_usize: usize = dest_val.to();
-        ctx.interpreter.bytecode.absolute_jump(dest_usize);
-    }
-}
-
 /// Arbitrum NUMBER: returns the L1 block number from ArbOS state.
 ///
 /// Nitro's NUMBER reads from `ProcessingHook.L1BlockNumber()` which returns
@@ -1223,11 +1190,6 @@ fn build_arb_evm<DB: Database, I>(
     instruction.insert_instruction(
         SELFDESTRUCT_OPCODE,
         revm::interpreter::Instruction::new(arb_selfdestruct, 5000),
-    );
-    // JUMPI probe (only logs for target block, zero overhead otherwise).
-    instruction.insert_instruction(
-        0x57, // JUMPI
-        revm::interpreter::Instruction::new(arb_jumpi_probe, 10),
     );
     // NUMBER returns L1 block number from ArbOS state (updated by StartBlock),
     // not the mixHash L1 block number which can differ.
