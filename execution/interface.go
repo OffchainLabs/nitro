@@ -91,8 +91,6 @@ func ErrFilteredDelayedMessageFromRPCData(data interface{}) (*ErrFilteredDelayed
 
 // always needed
 type ExecutionClient interface {
-	ArbOSVersionGetter
-
 	DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*MessageResult]
 	HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex]
@@ -133,7 +131,7 @@ type ExecutionSequencer interface {
 }
 
 // needed for batch poster
-type ArbOSVersionGetter interface {
+type ExecutionBatchPoster interface {
 	ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
@@ -141,4 +139,5 @@ type FullExecutionClient interface {
 	ExecutionClient
 	ExecutionSequencer
 	ExecutionRecorder
+	ExecutionBatchPoster
 }
