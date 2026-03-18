@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
@@ -91,6 +93,11 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.chainConfig,
 	)
 	if err != nil {
+		if strings.Contains(err.Error(), mel.ErrDelayedMessagePreimageNotFound.Error()) {
+			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
+			}
+		}
 		return m.config.RetryInterval, err
 	}
 	// Begin the next FSM state immediately.

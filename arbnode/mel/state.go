@@ -184,7 +184,7 @@ func (s *State) resolveDelayedPreimage(hash common.Hash) ([]byte, error) {
 	}
 	preimage, ok := s.delayedMsgPreimages.Peek(hash)
 	if !ok {
-		return nil, fmt.Errorf("delayed message preimage not found for hash %s", hash.Hex())
+		return nil, fmt.Errorf("%w for hash: %s", ErrDelayedMessagePreimageNotFound, hash.Hex())
 	}
 	return preimage, nil
 }
