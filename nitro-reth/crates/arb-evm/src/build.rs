@@ -928,6 +928,9 @@ where
             }
         }
 
+        // L2 block hash cache for arbBlockHash() is populated by the producer
+        // (which has access to the state provider's header chain).
+
         tracing::trace!(
             target: "arb::executor",
             l1_block = self.arb_ctx.l1_block_number,

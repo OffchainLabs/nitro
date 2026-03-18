@@ -288,6 +288,28 @@ where
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
 
+        // Populate the L2 block hash cache for the arbBlockHash() precompile.
+        // Nitro's ArbBlockHash uses evm.Context.GetHash() which walks the L2 header
+        // chain via parent hashes. We pre-populate from the state provider which has
+        // the full header chain. This is SEPARATE from the journal's block_hashes
+        // (which holds L1 hashes for the BLOCKHASH opcode).
+        {
+            let mut hash = parent_header.hash();
+            for i in 0..256u64 {
+                let n = l2_block_number.checked_sub(i + 1);
+                if let Some(n) = n {
+                    arb_precompiles::set_l2_block_hash(n, hash);
+                    // Walk to the next parent
+                    match self.provider
+                        .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
+                    {
+                        Ok(Some(h)) => hash = h.parent_hash(),
+                        _ => break,
+                    }
+                }
+            }
+        }
+
         // Apply pre-execution changes (loads ArbOS state, fee accounts, block hashes).
         executor
             .apply_pre_execution_changes()

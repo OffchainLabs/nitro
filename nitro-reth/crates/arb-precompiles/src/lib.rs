@@ -76,6 +76,27 @@ thread_local! {
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
 }
 
+use std::sync::Mutex as StdMutex;
+
+/// Cache of L2 block hashes for the arbBlockHash() precompile.
+/// Populated from the header chain during apply_pre_execution_changes.
+/// Separate from the journal's block_hashes (which holds L1 hashes for BLOCKHASH opcode).
+static L2_BLOCKHASH_CACHE: StdMutex<Option<std::collections::HashMap<u64, alloy_primitives::B256>>> =
+    StdMutex::new(None);
+
+/// Set an L2 block hash in the arbBlockHash cache.
+pub fn set_l2_block_hash(l2_block_number: u64, hash: alloy_primitives::B256) {
+    let mut cache = L2_BLOCKHASH_CACHE.lock().unwrap();
+    let map = cache.get_or_insert_with(std::collections::HashMap::new);
+    map.insert(l2_block_number, hash);
+}
+
+/// Get an L2 block hash from the arbBlockHash cache.
+pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
+    let cache = L2_BLOCKHASH_CACHE.lock().unwrap();
+    cache.as_ref()?.get(&l2_block_number).copied()
+}
+
 /// Set the current ArbOS version for precompile version gating.
 pub fn set_arbos_version(version: u64) {
     ARBOS_VERSION.with(|v| v.set(version));

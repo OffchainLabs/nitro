@@ -204,11 +204,12 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("invalid block number"));
     }
 
-    let hash = input
-        .internals_mut()
-        .db_mut()
-        .block_hash(requested)
-        .map_err(|e| PrecompileError::other(format!("block_hash: {e}")))?;
+    // Read from the L2 block hash cache (populated from the header chain).
+    // Do NOT use db.block_hash() which reads from the journal's block_hashes
+    // map — that map is pre-populated with L1 hashes (for the BLOCKHASH opcode)
+    // and would return wrong values for L2 block numbers.
+    let hash = crate::get_l2_block_hash(requested)
+        .unwrap_or(alloy_primitives::B256::ZERO);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
