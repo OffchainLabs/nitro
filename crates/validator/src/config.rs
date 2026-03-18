@@ -7,7 +7,8 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
-use anyhow::{anyhow, Context, Result};
+use alloy_rpc_types_engine::JwtSecret;
+use anyhow::{anyhow, Context as _, Result};
 use clap::{Parser, ValueEnum};
 use std::collections::HashMap;
 use std::env;
@@ -18,6 +19,7 @@ use tracing::info;
 use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
 use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
+use crate::jwt;
 
 /// Mode-specific execution state, built at startup.
 pub enum ExecutionMode {
@@ -36,11 +38,24 @@ pub struct ServerState {
     pub locator: MachineLocator,
     pub available_workers: usize,
     pub execution: ExecutionMode,
+    /// HS256 secret for JWT authentication; `None` disables auth.
+    pub jwt_secret: Option<JwtSecret>,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         let locator = MachineLocator::new(&config.root_path)?;
+
+        let jwt_secret = config
+            .jwt_secret
+            .as_deref()
+            .map(jwt::load_secret)
+            .transpose()
+            .context("failed to load JWT secret")?;
+
+        if jwt_secret.is_some() {
+            info!("JWT authentication enabled");
+        }
 
         let execution = match config.mode {
             InputMode::Continuous => ExecutionMode::Continuous {
@@ -80,6 +95,7 @@ impl ServerState {
             locator,
             available_workers,
             execution,
+            jwt_secret,
         })
     }
 
@@ -129,6 +145,11 @@ pub struct ServerConfig {
     /// Root path to where 0x1234.../replay.wasm machines are located
     #[clap(long)]
     pub root_path: Option<PathBuf>,
+
+    /// Path to a file containing a 64-char hex JWT secret, or the hex string itself.
+    /// When set, all requests must carry a valid `Authorization: Bearer <HS256-token>` header.
+    #[clap(long)]
+    pub jwt_secret: Option<String>,
 }
 
 impl ServerConfig {

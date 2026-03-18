@@ -25,6 +25,10 @@ func NewValidationSpawnerRetryWrapper(spawner validator.ValidationSpawner) *Vali
 	}
 }
 
+func (v *ValidationSpawnerRetryWrapper) Start(ctx context.Context) {
+	v.StopWaiter.Start(ctx, v)
+}
+
 // LaunchWithNAllowedAttempts launches the validation with a specified number of
 // allowed attempts to retry in case of failure. Timeout errors have their own
 // separate counter (allowedTimeouts) since they typically represent transient

@@ -17,6 +17,7 @@ import (
 )
 
 var ErrDelayedMessageNotYetFinalized = errors.New("delayed message not yet finalized")
+var ErrDelayedAccumulatorMismatch = errors.New("delayed message accumulator mismatch")
 
 type BatchDataLocation uint8
 
