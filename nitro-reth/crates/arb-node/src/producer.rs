@@ -288,29 +288,23 @@ where
         executor.arb_ctx.l2_block_number = l2_block_number;
         executor.arb_ctx.l1_block_number = l1_block_number;
 
-        // Add the parent hash to the L2 block hash cache for arbBlockHash().
-        // The cache persists across blocks (static HashMap), so we only need
-        // to add one new entry per block. Old entries remain from previous blocks.
-        // First block populates the full 256 entries; subsequent blocks add 1.
+        // Populate the L2 block hash cache for the arbBlockHash() precompile.
+        // Nitro's ArbBlockHash uses evm.Context.GetHash() which walks the L2 header
+        // chain via parent hashes. We pre-populate from the state provider which has
+        // the full header chain. This is SEPARATE from the journal's block_hashes
+        // (which holds L1 hashes for the BLOCKHASH opcode).
         {
-            let parent_num = l2_block_number.saturating_sub(1);
-            arb_precompiles::set_l2_block_hash(parent_num, parent_header.hash());
-
-            // If cache is mostly empty (first block or after restart), do a full populate.
-            if arb_precompiles::get_l2_block_hash(parent_num.saturating_sub(1)).is_none()
-                && parent_num > 1
-            {
-                let mut hash = parent_header.parent_hash();
-                for i in 2..=256u64 {
-                    let n = l2_block_number.checked_sub(i);
-                    if let Some(n) = n {
-                        arb_precompiles::set_l2_block_hash(n, hash);
-                        match self.provider.sealed_header_by_number_or_tag(
-                            BlockNumberOrTag::Number(n),
-                        ) {
-                            Ok(Some(h)) => hash = h.parent_hash(),
-                            _ => break,
-                        }
+            let mut hash = parent_header.hash();
+            for i in 0..256u64 {
+                let n = l2_block_number.checked_sub(i + 1);
+                if let Some(n) = n {
+                    arb_precompiles::set_l2_block_hash(n, hash);
+                    // Walk to the next parent
+                    match self.provider
+                        .sealed_header_by_number_or_tag(BlockNumberOrTag::Number(n))
+                    {
+                        Ok(Some(h)) => hash = h.parent_hash(),
+                        _ => break,
                     }
                 }
             }
