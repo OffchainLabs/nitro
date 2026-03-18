@@ -1500,7 +1500,7 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
 	builderSeq.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 	builderSeq.execConfig.Sequencer.Enable = true
-	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+	builderSeq.execConfig.Sequencer.Timeboost = timeboost.Config{
 		Enable:                       false, // We need to start without timeboost initially to create the auction contract
 		ExpressLaneAdvantage:         time.Second * 5,
 		RedisUrl:                     expressLaneRedisURL,
@@ -1527,7 +1527,7 @@ func setupExpressLaneAuction(
 		extraNodebuilder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 		extraNodebuilder.nodeConfig.SeqCoordinator.DeleteFinalizedMsgs = false
 		extraNodebuilder.execConfig.Sequencer.Enable = true
-		extraNodebuilder.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		extraNodebuilder.execConfig.Sequencer.Timeboost = timeboost.Config{
 			Enable:                       true,
 			ExpressLaneAdvantage:         time.Second * 5,
 			RedisUrl:                     expressLaneRedisURL,
@@ -1702,10 +1702,10 @@ func setupExpressLaneAuction(
 
 	// This is hacky- we are manually starting the ExpressLaneService here instead of letting it be started
 	// by the sequencer. This is due to needing to deploy the auction contract first.
-	roundTimingInfo, err := gethexec.GetRoundTimingInfo(auctionContract)
+	roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 	Require(t, err)
 
-	expressLaneTracker, err := gethexec.NewExpressLaneTracker(
+	expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 		*roundTimingInfo,
 		builderSeq.execConfig.Sequencer.MaxBlockSpeed,
 		builderSeq.L2.ExecNode.Backend.APIBackend(),

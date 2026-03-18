@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -245,19 +246,18 @@ type ConfigFetcher interface {
 
 type ExecutionNode struct {
 	stopwaiter.StopWaiter
-	ExecutionDB        ethdb.Database
-	Backend            *arbitrum.Backend
-	FilterSystem       *filters.FilterSystem
-	ArbInterface       *ArbInterface
-	ExecEngine         *ExecutionEngine
-	Recorder           *BlockRecorder
-	Sequencer          *Sequencer // either nil or same as TxPublisher
-	TxPreChecker       *TxPreChecker
-	TxPublisher        TransactionPublisher
-	ExpressLaneService *expressLaneService
-	configFetcher      ConfigFetcher
-	SyncMonitor        *SyncMonitor
-	ParentChainReader  *headerreader.HeaderReader
+	ExecutionDB       ethdb.Database
+	Backend           *arbitrum.Backend
+	FilterSystem      *filters.FilterSystem
+	ArbInterface      *ArbInterface
+	ExecEngine        *ExecutionEngine
+	Recorder          *BlockRecorder
+	Sequencer         *Sequencer // either nil or same as TxPublisher
+	TxPreChecker      *TxPreChecker
+	TxPublisher       TransactionPublisher
+	configFetcher     ConfigFetcher
+	SyncMonitor       *SyncMonitor
+	ParentChainReader *headerreader.HeaderReader
 	// ParentChain might be shared with the consensus node when co-located.
 	// StopWaiter is safe to Start/Stop multiple times.
 	ParentChain              *parent.ParentChain
@@ -657,7 +657,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -665,7 +665,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}
@@ -678,7 +678,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 		}
 
-		expressLaneTracker, err := NewExpressLaneTracker(
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),
