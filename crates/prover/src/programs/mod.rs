@@ -11,7 +11,6 @@ use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Byt
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
-use wasmer::MiddlewareReaderState;
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
@@ -155,7 +154,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut MiddlewareReaderState<'a>,
+        out: &mut wasmer::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));
