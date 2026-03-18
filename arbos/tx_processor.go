@@ -717,16 +717,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	} else {
 		basefee = p.evm.Context.BaseFee
 	}
-	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
-	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
-	if computeCost.Sign() < 0 {
-		// Uh oh, there's a bug in our charging code.
-		// Give all funds to the network account and continue.
-
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "basefee", basefee, "posterFee", p.PosterFee)
-		p.PosterFee = big.NewInt(0)
-		computeCost = totalCost
+	if gasUsed < p.posterGas {
+		log.Error("gas used < poster gas", "gasUsed", gasUsed, "posterGas", p.posterGas)
 	}
+	computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
+	computeCost := arbmath.BigMulByUint(basefee, computeGas) // network gets baseFee * computeGas
 
 	if p.state.ArbOSVersion() > params.ArbosVersion_4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
@@ -735,7 +730,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 			p.state.Restrict(err)
 			infraFee := arbmath.BigMin(minBaseFee, basefee)
-			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
 			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, tracing.BalanceIncreaseInfraFee)
 			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
@@ -757,6 +751,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 
 	// Multi-dimensional refund (normal tx path)
 	if multiDimensionalCost != nil {
+		totalCost := arbmath.BigMulByUint(basefee, gasUsed) // baseFee * gasUsed for multi-gas refund calc
 		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
 		if amount.Sign() > 0 {
 			err := util.TransferBalance(
@@ -890,6 +885,10 @@ func (p *TxProcessor) DropTip() bool {
 	}
 	tip := new(big.Int).Sub(p.evm.GasPrice, p.evm.Context.BaseFee)
 	return tip.Cmp(floor) < 0
+}
+
+func (p *TxProcessor) PosterGas() uint64 {
+	return p.posterGas
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
