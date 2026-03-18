@@ -95,6 +95,7 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	logHandler.Clear()
 	// Same case as above where node version is still below required minimum.
 	// Set upgrade deadline to the past so now exceeds it, should see an ERROR log.
+	alerter.Cfg.UpgradeGracePeriod = 0
 	builder.nodeConfig.VersionAlerterServer.UpgradeDeadline = time.Now().Add(-time.Minute).Format(time.RFC3339)
 	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	alerter.LogUpgradeMsgIfNecessary(ctx)

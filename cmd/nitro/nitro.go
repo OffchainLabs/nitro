@@ -696,8 +696,10 @@ func mainImpl() int {
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
 		}
-		alerter.Start(ctx)
-		defer alerter.StopAndWait()
+		if alerter != nil {
+			alerter.Start(ctx)
+			defer alerter.StopAndWait()
+		}
 	}
 
 	sigint := make(chan os.Signal, 1)
