@@ -30,7 +30,7 @@ func (con ArbNativeTokenManager) MintNativeToken(c ctx, evm mech, amount huge) e
 	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
-	if err := c.Burn(multigas.ResourceKindStorageAccess, mintBurnGasCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, mintBurnGasCost); err != nil {
 		return err
 	}
 
@@ -44,7 +44,7 @@ func (con ArbNativeTokenManager) BurnNativeToken(c ctx, evm mech, amount huge) e
 	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
-	if err := c.Burn(multigas.ResourceKindStorageAccess, mintBurnGasCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, mintBurnGasCost); err != nil {
 		return err
 	}
 
