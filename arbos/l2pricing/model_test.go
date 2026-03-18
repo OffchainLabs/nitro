@@ -139,8 +139,8 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 		10,
 		20000,
 		map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):   1,
-			uint8(multigas.ResourceKindStorageAccess): 2,
+			uint8(multigas.ResourceKindComputation):       1,
+			uint8(multigas.ResourceKindStorageAccessRead): 2,
 		},
 	))
 	Require(t, pricing.AddMultiGasConstraint(
@@ -158,7 +158,7 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	if got, want := exponents[multigas.ResourceKindComputation], arbmath.Bips(100); got != want {
 		t.Errorf("unexpected computation exponent: got %v, want %v", got, want)
 	}
-	if got, want := exponents[multigas.ResourceKindStorageAccess], arbmath.Bips(200); got != want {
+	if got, want := exponents[multigas.ResourceKindStorageAccessRead], arbmath.Bips(200); got != want {
 		t.Errorf("unexpected storage-access exponent: got %v, want %v", got, want)
 	}
 
@@ -169,6 +169,9 @@ func TestCalcMultiGasConstraintsExponents(t *testing.T) {
 	// All other kinds should be zero
 	if got := exponents[multigas.ResourceKindHistoryGrowth]; got != 0 {
 		t.Errorf("expected zero history-growth exponent, got %v", got)
+	}
+	if got := exponents[multigas.ResourceKindStorageAccessWrite]; got != 0 {
+		t.Errorf("expected zero storage-access-write exponent, got %v", got)
 	}
 	if got := exponents[multigas.ResourceKindSingleDim]; got != 0 {
 		t.Errorf("expected zero single-dimensional gas exponent, got %v", got)
@@ -189,7 +192,7 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 
 	multiGas := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50000},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 15000},
 	)
 	// #nosec G115
 	singleGas := big.NewInt(int64(multiGas.SingleGas()))
@@ -212,8 +215,8 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		10,
 		20000,
 		map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):   1,
-			uint8(multigas.ResourceKindStorageAccess): 2,
+			uint8(multigas.ResourceKindComputation):       1,
+			uint8(multigas.ResourceKindStorageAccessRead): 2,
 		},
 	))
 	Require(t, pricing.AddMultiGasConstraint(
@@ -221,13 +224,13 @@ func TestMultiDimensionalPriceForRefund(t *testing.T) {
 		5,
 		15000,
 		map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):   2,
-			uint8(multigas.ResourceKindStorageAccess): 1,
+			uint8(multigas.ResourceKindComputation):       2,
+			uint8(multigas.ResourceKindStorageAccessRead): 1,
 		},
 	))
 	usedMultiGas := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 500000},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 1500000},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 1500000},
 	)
 	err = pricing.GrowBacklog(usedMultiGas.SingleGas(), usedMultiGas)
 	Require(t, err)
