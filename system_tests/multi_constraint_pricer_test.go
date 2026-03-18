@@ -421,15 +421,16 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	require.NotNil(t, tx)
 	builder.L2.AdvanceBlocks(t, 2, builder.L2Info) // Advance blocks so changes take effect
 	baseFeeAfter := builder.L2.GetBaseFee(t)
-	t.Log("Base fee before: ", baseFeeBefore.Int64())
-	t.Log("Base fee after:  ", baseFeeAfter.Int64())
+	t.Log("Base fee before: ", arbmath.WeiToGwei(baseFeeBefore))
+	t.Log("Base fee after:  ", arbmath.WeiToGwei(baseFeeAfter))
 
 	// Create an user to send the retryable.
 	const user = "RetryableUser"
 	builder.L1Info.GenerateAccount(user)
 	builder.L2Info.GenerateAccount(user)
-	builder.L1.TransferBalance(t, "Faucet", user, big.NewInt(params.Ether), builder.L1Info)
-	builder.L2.TransferBalance(t, "Faucet", user, big.NewInt(params.Ether), builder.L2Info)
+	balance := arbmath.BigMul(big.NewInt(params.Ether), big.NewInt(10))
+	builder.L1.TransferBalance(t, "Faucet", user, balance, builder.L1Info)
+	builder.L2.TransferBalance(t, "Faucet", user, balance, builder.L2Info)
 	userAddr := builder.L1Info.GetAddress(user)
 
 	// Create retryable ticket calling simple.pleaseRevert.
@@ -503,24 +504,29 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		expectedSingleDim := redeemReceipt.GasUsedForL1 + event.DonatedGas
 		assert.Equal(t, expectedSingleDim, redeemReceipt.MultiGasUsed.Get(multigas.ResourceKindSingleDim))
 
-		// Check user balance decreases and network fee balance keeps the same.
-		// If the user is refunded twice, their balance would increase.
+		// Check user balance decreases. If the user is refunded twice, their balance would increase.
 		userBalanceDiff, err := builder.L2.BalanceDifferenceAtBlock(userAddr, redeemReceipt.BlockNumber)
 		require.NoError(t, err)
 		networkFeeBalanceDiff, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, redeemReceipt.BlockNumber)
 		require.NoError(t, err)
 		assert.Negative(t, userBalanceDiff.Sign())
-		assert.Zero(t, networkFeeBalanceDiff.Sign())
+
+		// Check network balance fee increase by the amount paid in tips
+		singleGasBaseFee := builder.L2.GetBaseFeeAt(t, redeemReceipt.BlockNumber)
+		tipPerGas, err := redeemTx.EffectiveGasTip(singleGasBaseFee)
+		assert.NoError(t, err)
+		tipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsed))
+		assert.Equal(t, networkFeeBalanceDiff.Int64(), tipFee.Int64())
 
 		// Compute what the user actually paid for the retryable redeem attempt.
-		maxBaseFee := builder.L2.GetBaseFeeAt(t, redeemReceipt.BlockNumber)
 		constrainedGas := redeemReceipt.MultiGasUsed.Get(expensiveResourceKind) + retryReceipt.MultiGasUsed.Get(expensiveResourceKind)
 		l1CalldataGas := redeemReceipt.GasUsedForL1 + retryReceipt.GasUsedForL1
-		expensiveGas := constrainedGas + l1CalldataGas
-		expensiveGasFee := new(big.Int).Mul(maxBaseFee, new(big.Int).SetUint64(expensiveGas))
-		remainingGas := redeemReceipt.GasUsed + retryReceipt.GasUsed - expensiveGas - event.DonatedGas
+		singleGas := constrainedGas + l1CalldataGas
+		singleGasFee := new(big.Int).Mul(singleGasBaseFee, new(big.Int).SetUint64(singleGas))
+		remainingGas := redeemReceipt.GasUsed + retryReceipt.GasUsed - singleGas - event.DonatedGas
 		remainingGasFee := new(big.Int).Mul(minimumBaseFee, new(big.Int).SetUint64(remainingGas))
-		expectedFee := new(big.Int).Add(expensiveGasFee, remainingGasFee)
+		expectedFee := arbmath.BigAdd(arbmath.BigAdd(singleGasFee, remainingGasFee), tipFee)
+
 		assert.Equal(t, expectedFee.Uint64(), new(big.Int).Abs(userBalanceDiff).Uint64())
 		t.Logf("Sent transaction %v with cost %0.9f Ether", i, arbmath.BalancePerEther(expectedFee))
 	}
@@ -533,5 +539,5 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	t.Logf("Initial net-fee balance: %v Eth", arbmath.BalancePerEther(initialNetworkFeeBalance))
 	t.Logf("Final net fee balance:   %v Eth", arbmath.BalancePerEther(finalNetworkFeeBalance))
 	assert.True(t, finalUserBalance.Cmp(initialUserBalance) < 0, "user balance should decrease")
-	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) == 0, "network fee balance remain the same")
+	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) > 0, "network fee balance should increase")
 }
