@@ -179,7 +179,6 @@ impl HostioTest {
         Ok(self.vm().msg_sender())
     }
 
-    #[payable]
     fn msg_value(&self) -> Result<U256> {
         Ok(self.vm().msg_value())
     }
