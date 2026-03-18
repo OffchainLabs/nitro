@@ -238,7 +238,7 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 
 	// Expect actualCost equal to multi-gas cost
 	actualCost := new(big.Int).Sub(balanceBefore, balanceAfter)
-	require.Less(t, actualCost.Cmp(singleCost), 0, "expected actual cost < single cost")
+	require.Less(t, actualCost, singleCost, "expected actual cost < single cost")
 
 	require.Equal(t, mgPrice, actualCost.Uint64(), "multi-gas price mismatch")
 
