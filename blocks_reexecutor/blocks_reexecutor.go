@@ -355,14 +355,19 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}
 	for ctx.Err() == nil {
 		var receipts types.Receipts
-		// Wrap in a closure with recover to convert panics (e.g., "ArbOS uninitialized"
-		// when a concurrent thread dereferences a trie root whose nodes this thread
-		// is still reading) into errors instead of crashing the process and all
-		// parallel tests.
+		// Wrap AdvanceStateByBlock in a closure with recover to convert panics
+		// from concurrent trie access into errors instead of crashing the process
+		// and all parallel tests. The race occurs when a concurrent thread
+		// dereferences a trie root whose nodes this thread is still reading,
+		// which can manifest as various panics: "ArbOS uninitialized", trie node
+		// decode failures, invalid node types, etc.
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Error("panic during block re-execution", "block", blockToRecreate, "recover", r, "stack", string(debug.Stack()))
+					state = nil
+					block = nil
+					receipts = nil
 					err = fmt.Errorf("panic during block re-execution at block %d: %v", blockToRecreate, r)
 				}
 			}()
