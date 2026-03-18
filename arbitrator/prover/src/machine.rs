@@ -65,6 +65,10 @@ lazy_static! {
     static ref MALICIOUS_INBOX_MUTATION: bool = std::env::var("NITRO_MALICIOUS_MODE")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
+    static ref MALICIOUS_START_BATCH: u64 = std::env::var("NITRO_MALICIOUS_START_BATCH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
 }
 
 #[cfg(feature = "counters")]
@@ -2564,7 +2568,11 @@ impl Machine {
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
                             let read = message.get(offset..(offset + len)).unwrap_or_default();
                             let mut mutated = None;
-                            if *MALICIOUS_INBOX_MUTATION {
+                            if *MALICIOUS_INBOX_MUTATION
+                                && inbox_identifier == InboxIdentifier::Sequencer
+                                && msg_num == self.global_state.u64_vals[0]
+                                && msg_num >= *MALICIOUS_START_BATCH
+                            {
                                 if let Some(rel) = INBOX_MUTATION_OFFSET.checked_sub(offset) {
                                     if rel < read.len() {
                                         let mut buf = read.to_vec();

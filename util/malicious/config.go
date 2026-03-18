@@ -8,6 +8,7 @@ import "sync"
 type Config struct {
 	Enabled                   bool
 	AllowGasEstimationFailure bool
+	MutationStartBatch        uint64
 }
 
 // InboxMutationOffset selects a byte in the serialized sequencer batch data.
@@ -41,8 +42,15 @@ func AllowGasEstimationFailure() bool {
 	return GetConfig().AllowGasEstimationFailure
 }
 
-func MutateInboxMessage(data []byte) []byte {
+func MutationStartBatch() uint64 {
+	return GetConfig().MutationStartBatch
+}
+
+func MutateInboxMessage(data []byte, batchNum uint64) []byte {
 	if !Enabled() {
+		return data
+	}
+	if batchNum < MutationStartBatch() {
 		return data
 	}
 	if len(data) <= InboxMutationOffset {

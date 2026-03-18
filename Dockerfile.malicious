@@ -5,10 +5,10 @@
 #
 # Usage:
 #   docker build -f Dockerfile.malicious \
-#     --build-arg HONEST_IMAGE=offchainlabs/nitro-node:v3.9.5-66e42c4-validator \
+#     --build-arg HONEST_IMAGE=offchainlabs/nitro-node:v3.9.6-91bf578-validator \
 #     -t nitro-malicious .
 
-ARG HONEST_IMAGE=offchainlabs/nitro-node:v3.9.5-66e42c4-validator
+ARG HONEST_IMAGE=offchainlabs/nitro-node:v3.9.6-91bf578-validator
 
 # ─── Extract artifacts from the honest image ────────────────────────────────
 FROM ${HONEST_IMAGE} AS honest

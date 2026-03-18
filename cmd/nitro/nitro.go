@@ -159,9 +159,11 @@ func mainImpl() int {
 	malicious.SetConfig(malicious.Config{
 		Enabled:                   nodeConfig.Validation.Wasm.MaliciousMode,
 		AllowGasEstimationFailure: nodeConfig.Validation.Wasm.AllowGasEstimateFail,
+		MutationStartBatch:        nodeConfig.Validation.Wasm.MutationStartBatch,
 	})
 	if nodeConfig.Validation.Wasm.MaliciousMode {
 		_ = os.Setenv("NITRO_MALICIOUS_MODE", "1")
+		_ = os.Setenv("NITRO_MALICIOUS_START_BATCH", fmt.Sprintf("%d", nodeConfig.Validation.Wasm.MutationStartBatch))
 	}
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain

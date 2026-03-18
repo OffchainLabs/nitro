@@ -23,6 +23,10 @@ lazy_static! {
     static ref MALICIOUS_INBOX_MUTATION: bool = std::env::var("NITRO_MALICIOUS_MODE")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
         .unwrap_or(false);
+    static ref MALICIOUS_START_BATCH: u64 = std::env::var("NITRO_MALICIOUS_START_BATCH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
 }
 
 /// Reads 32-bytes of global state.
@@ -91,7 +95,7 @@ pub fn read_inbox_message(
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    if *MALICIOUS_INBOX_MUTATION {
+    if *MALICIOUS_INBOX_MUTATION && msg_num == exec.small_globals[0] && msg_num >= *MALICIOUS_START_BATCH {
         if let Some(rel) = INBOX_MUTATION_OFFSET.checked_sub(offset) {
             if rel < read.len() {
                 let mut mutated = read.to_vec();

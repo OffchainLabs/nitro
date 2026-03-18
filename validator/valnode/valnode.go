@@ -23,6 +23,7 @@ type WasmConfig struct {
 	AllowedWasmModuleRoots []string `koanf:"allowed-wasm-module-roots"`
 	MaliciousMode          bool     `koanf:"malicious-mode"`
 	AllowGasEstimateFail   bool     `koanf:"allow-gas-estimation-failure"`
+	MutationStartBatch     uint64   `koanf:"mutation-start-batch"`
 }
 
 func WasmConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -31,6 +32,7 @@ func WasmConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".allowed-wasm-module-roots", DefaultWasmConfig.AllowedWasmModuleRoots, "list of WASM module roots or machine base paths to match against on-chain WasmModuleRoot")
 	f.Bool(prefix+".malicious-mode", DefaultWasmConfig.MaliciousMode, "enable malicious validation behaviors (experimental)")
 	f.Bool(prefix+".allow-gas-estimation-failure", DefaultWasmConfig.AllowGasEstimateFail, "allow sending OSP transactions even if gas estimation fails")
+	f.Uint64(prefix+".mutation-start-batch", DefaultWasmConfig.MutationStartBatch, "sequencer batch number from which to start mutating inbox messages (0 = mutate all)")
 }
 
 var DefaultWasmConfig = WasmConfig{
@@ -39,6 +41,7 @@ var DefaultWasmConfig = WasmConfig{
 	AllowedWasmModuleRoots: []string{},
 	MaliciousMode:          false,
 	AllowGasEstimateFail:   false,
+	MutationStartBatch:     0,
 }
 
 type Config struct {

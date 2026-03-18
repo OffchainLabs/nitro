@@ -643,7 +643,7 @@ func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
 	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
-	bytes = malicious.MutateInboxMessage(bytes)
+	bytes = malicious.MutateInboxMessage(bytes, b.batchSeqNum)
 	return bytes, b.batches[0].BlockHash, err
 }
 
