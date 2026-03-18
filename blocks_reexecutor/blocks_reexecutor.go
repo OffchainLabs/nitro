@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -354,7 +355,19 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}
 	for ctx.Err() == nil {
 		var receipts types.Receipts
-		state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		// Wrap in a closure with recover to convert panics (e.g., "ArbOS uninitialized"
+		// when a concurrent thread dereferences a trie root whose nodes this thread
+		// is still reading) into errors instead of crashing the process and all
+		// parallel tests.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic during block re-execution", "block", blockToRecreate, "recover", r, "stack", string(debug.Stack()))
+					err = fmt.Errorf("panic during block re-execution at block %d: %v", blockToRecreate, r)
+				}
+			}()
+			state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		}()
 		if err != nil {
 			return err
 		}
