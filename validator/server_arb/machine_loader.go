@@ -16,7 +16,7 @@ type ArbitratorMachineConfig struct {
 }
 
 var DefaultArbitratorMachineConfig = ArbitratorMachineConfig{
-	WavmBinaryPath:       "machine.wavm.br",
+	WavmBinaryPath:       "machine.v2.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 }
 

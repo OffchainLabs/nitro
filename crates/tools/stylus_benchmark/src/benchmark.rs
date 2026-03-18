@@ -8,7 +8,7 @@ use jit::program::JitConfig;
 use prover::programs::{config::CompileConfig, config::PricingParams, prelude::StylusConfig};
 use std::str;
 use stylus::native;
-use wasmer::Target;
+use wasmer::sys::Target;
 
 const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
 
