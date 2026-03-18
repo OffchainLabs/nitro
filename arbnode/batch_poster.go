@@ -1862,7 +1862,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isn't needed, but better to be safe
 	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
-		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher) // TODO: how to replace inboxTracer with msgExtractor here?
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
 		}

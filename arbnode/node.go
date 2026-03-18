@@ -1053,7 +1053,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	batchMetaFetcher BatchMetadataFetcher,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	execBatchPoster execution.ExecutionBatchPoster,
@@ -1075,6 +1075,14 @@ func getBatchPoster(
 		}
 		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
+		}
+		var batchMetaFetcher BatchMetadataFetcher
+		if inboxTracker != nil {
+			batchMetaFetcher = inboxTracker
+		} else if msgExtractor != nil {
+			batchMetaFetcher = msgExtractor
+		} else {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -1107,26 +1115,29 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxReader *InboxReader,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, errors.New("delayed sequencer either an inbox reader or message extractor, but neither was provided")
-	}
 	if exec == nil {
+		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-
-	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
+	} else if msgExtractor != nil {
+		delayedMessageFetcher = msgExtractor
+	} else {
+		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
-	return delayedSequencer, nil
+	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1310,7 +1321,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}

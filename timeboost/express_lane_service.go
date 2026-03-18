@@ -1,7 +1,7 @@
 // Copyright 2024-2025, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package gethexec
+package timeboost
 
 import (
 	"bytes"
@@ -13,43 +13,27 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
-	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-var (
-	auctionResolutionLatency = metrics.NewRegisteredGauge("arb/sequencer/timeboost/auctionresolution", nil)
-)
-
-type transactionPublisher interface {
-	PublishTimeboostedTransaction(context.Context, *types.Transaction, *arbitrum_types.ConditionalOptions) error
-}
 
 type expressLaneRoundInfo struct {
 	sequence uint64
 
 	// The per-round sequence number reordering queue
-	msgBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
+	msgBySequenceNumber map[uint64]*ExpressLaneSubmission
 }
 
-type expressLaneService struct {
+type ExpressLaneService struct {
 	stopwaiter.StopWaiter
-	transactionPublisher transactionPublisher
-	seqConfig            SequencerConfigFetcher
-	roundTimingInfo      timeboost.RoundTimingInfo
-	redisCoordinator     *timeboost.RedisCoordinator
+	transactionPublisher TransactionPublisher
+	seqConfig            ExpressLaneServiceConfigFetcher
+	roundTimingInfo      RoundTimingInfo
+	redisCoordinator     *RedisCoordinator
 
 	roundInfoMutex sync.Mutex
 	roundInfo      *containers.LruCache[uint64, *expressLaneRoundInfo]
@@ -57,59 +41,22 @@ type expressLaneService struct {
 	tracker *ExpressLaneTracker
 }
 
-func NewExpressLaneAuctionFromInternalAPI(
-	apiBackend *arbitrum.APIBackend,
-	filterSystem *filters.FilterSystem,
-	auctionContractAddr common.Address,
-) (*express_lane_auctiongen.ExpressLaneAuction, error) {
-	var contractBackend bind.ContractBackend = &contractAdapter{filters.NewFilterAPI(filterSystem), nil, apiBackend}
-
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, contractBackend)
-	if err != nil {
-		return nil, err
-	}
-
-	return auctionContract, nil
-}
-
-func GetRoundTimingInfo(
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
-) (*timeboost.RoundTimingInfo, error) {
-	retries := 0
-
-pending:
-	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
-	if err != nil {
-		const maxRetries = 5
-		if errors.Is(err, bind.ErrNoCode) && retries < maxRetries {
-			wait := time.Millisecond * 250 * (1 << retries)
-			log.Info("ExpressLaneAuction contract not ready, will retry after wait", "err", err, "wait", wait, "maxRetries", maxRetries)
-			retries++
-			time.Sleep(wait)
-			goto pending
-		}
-		return nil, err
-	}
-	return timeboost.NewRoundTimingInfo(rawRoundTimingInfo)
-}
-
-func newExpressLaneService(
-	transactionPublisher transactionPublisher,
-	seqConfig SequencerConfigFetcher,
-	roundTimingInfo *timeboost.RoundTimingInfo,
-	bc *core.BlockChain,
+func NewExpressLaneService(
+	transactionPublisher TransactionPublisher,
+	seqConfig ExpressLaneServiceConfigFetcher,
+	roundTimingInfo *RoundTimingInfo,
 	expressLaneTracker *ExpressLaneTracker,
-) (*expressLaneService, error) {
+) (*ExpressLaneService, error) {
 	var err error
-	var redisCoordinator *timeboost.RedisCoordinator
-	if seqConfig().Timeboost.RedisUrl != "" {
-		redisCoordinator, err = timeboost.NewRedisCoordinator(seqConfig().Timeboost.RedisUrl, roundTimingInfo, seqConfig().Timeboost.RedisUpdateEventsChannelSize)
+	var redisCoordinator *RedisCoordinator
+	if seqConfig().RedisUrl != "" {
+		redisCoordinator, err = NewRedisCoordinator(seqConfig().RedisUrl, roundTimingInfo, seqConfig().RedisUpdateEventsChannelSize)
 		if err != nil {
-			return nil, fmt.Errorf("error initializing expressLaneService redis: %w", err)
+			return nil, fmt.Errorf("error initializing ExpressLaneService redis: %w", err)
 		}
 	}
 
-	return &expressLaneService{
+	return &ExpressLaneService{
 		transactionPublisher: transactionPublisher,
 		seqConfig:            seqConfig,
 		roundTimingInfo:      *roundTimingInfo,
@@ -119,7 +66,7 @@ func newExpressLaneService(
 	}, nil
 }
 
-func (es *expressLaneService) Start(ctxIn context.Context) {
+func (es *ExpressLaneService) Start(ctxIn context.Context) {
 	es.StopWaiter.Start(ctxIn, es)
 
 	if es.redisCoordinator != nil {
@@ -127,7 +74,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	}
 }
 
-func (es *expressLaneService) StopAndWait() {
+func (es *ExpressLaneService) StopAndWait() {
 	if es.redisCoordinator != nil {
 		es.redisCoordinator.StopAndWait()
 	}
@@ -143,21 +90,21 @@ func (es *expressLaneService) StopAndWait() {
 // normal sequence ordering requirements and be processed immediately
 const DontCareSequence = math.MaxUint64
 
-// sequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
+// SequenceExpressLaneSubmission with the roundInfo lock held, validates sequence number and sender address fields of the message
 // adds the message to the sequencer transaction queue
-func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.ExpressLaneSubmission) error {
+func (es *ExpressLaneService) SequenceExpressLaneSubmission(msg *ExpressLaneSubmission) error {
 	if msg.SequenceNumber == DontCareSequence {
 		// Don't store DontCareSequence txs with the redisCoordinator. The redisCoordinator is
 		// meant for restoring messages in the reordering queue if the sequencer fails over,
 		// but for messages with DontCareSequence we skip the reordernig queue.
 
 		if es.roundTimingInfo.RoundNumber() != msg.Round {
-			return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
+			return errors.Wrapf(ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, es.roundTimingInfo.RoundNumber())
 		}
 
 		// Process immediately without affecting sequence ordering
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), es.seqConfig().QueueTimeout)
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeoutOrCancel(es.GetContext(), timeout)
 		return es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, msg.Transaction, msg.Options)
 	}
 
@@ -174,14 +121,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		return err
 	}
 	if sender != controller {
-		return timeboost.ErrNotExpressLaneController
+		return ErrNotExpressLaneController
 	}
 
 	// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
 	if !es.roundInfo.Contains(msg.Round) {
 		es.roundInfo.Add(msg.Round, &expressLaneRoundInfo{
 			0,
-			make(map[uint64]*timeboost.ExpressLaneSubmission),
+			make(map[uint64]*ExpressLaneSubmission),
 		})
 	}
 	roundInfo, _ := es.roundInfo.Get(msg.Round)
@@ -193,7 +140,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		if exists && bytes.Equal(prev.Signature, msg.Signature) {
 			return nil
 		}
-		return timeboost.ErrSequenceNumberTooLow
+		return ErrSequenceNumberTooLow
 	}
 
 	// Check if a duplicate submission exists already, and reject if so.
@@ -201,14 +148,14 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		if bytes.Equal(prev.Signature, msg.Signature) {
 			return nil
 		}
-		return timeboost.ErrDuplicateSequenceNumber
+		return ErrDuplicateSequenceNumber
 	}
 
 	seqConfig := es.seqConfig()
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.SequenceNumber > roundInfo.sequence {
-		if msg.SequenceNumber > roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance {
-			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.Timeboost.MaxFutureSequenceDistance)
+		if msg.SequenceNumber > roundInfo.sequence+seqConfig.MaxFutureSequenceDistance {
+			return fmt.Errorf("message sequence number has reached max allowed limit. SequenceNumber: %d, ExpectedSequenceNumber: %d, Limit: %d", msg.SequenceNumber, roundInfo.sequence, roundInfo.sequence+seqConfig.MaxFutureSequenceDistance)
 		}
 		log.Info("Received express lane submission with future sequence number", "SequenceNumber", msg.SequenceNumber)
 	}
@@ -234,7 +181,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 		// Txs (current or buffered) cannot use this function's context as it would lead to context canceled error later on, once the tx is queued and this function returns, hence we
 		// use es.GetContext(). Txs sequenced this round shouldn't be processed by sequencer into next round, to enforce this, queueCtx has a timeout = min(TimeTilNextRound, queueTimeout)
 		timeout := min(es.roundTimingInfo.TimeTilNextRound(), queueTimeout)
-		queueCtx, _ := ctxWithTimeout(es.GetContext(), timeout)
+		queueCtx, _ := ctxhelper.WithTimeoutOrCancel(es.GetContext(), timeout)
 		if err := es.transactionPublisher.PublishTimeboostedTransaction(queueCtx, nextMsg.Transaction, nextMsg.Options); err != nil {
 			logLevel := log.Error
 			// If tx sequencing was attempted right around the edge of a round then an error due to context timing out is expected, so we log a warning in such a case
@@ -261,7 +208,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(msg *timeboost.Expre
 	return retErr
 }
 
-func (es *expressLaneService) syncFromRedis() {
+func (es *ExpressLaneService) SyncFromRedis() {
 	if es.redisCoordinator == nil {
 		return
 	}
@@ -276,7 +223,7 @@ func (es *expressLaneService) syncFromRedis() {
 	roundInfo, exists := es.roundInfo.Get(currentRound)
 	if !exists {
 		// If expressLaneRoundInfo for current round doesn't exist yet, we'll add it to the cache
-		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*timeboost.ExpressLaneSubmission)}
+		roundInfo = &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)}
 	}
 	if redisSeqCount > roundInfo.sequence {
 		roundInfo.sequence = redisSeqCount
@@ -285,16 +232,16 @@ func (es *expressLaneService) syncFromRedis() {
 	sequenceCount := roundInfo.sequence
 	es.roundInfoMutex.Unlock()
 
-	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().Timeboost.MaxFutureSequenceDistance)
+	pendingMsgs := es.redisCoordinator.GetAcceptedTxs(currentRound, sequenceCount, sequenceCount+es.seqConfig().MaxFutureSequenceDistance)
 	log.Info("Attempting to sequence pending expressLane transactions from redis", "count", len(pendingMsgs))
 	for _, msg := range pendingMsgs {
-		if err := es.sequenceExpressLaneSubmission(msg); err != nil {
+		if err := es.SequenceExpressLaneSubmission(msg); err != nil {
 			log.Error("Untracked expressLaneSubmission returned an error while sequencing", "round", msg.Round, "seqNum", msg.SequenceNumber, "txHash", msg.Transaction.Hash(), "err", err)
 		}
 	}
 }
 
-func (es *expressLaneService) currentRoundHasController() bool {
+func (es *ExpressLaneService) CurrentRoundHasController() bool {
 	controller, err := es.tracker.RoundController(es.roundTimingInfo.RoundNumber())
 	if err != nil {
 		return false
@@ -302,10 +249,14 @@ func (es *expressLaneService) currentRoundHasController() bool {
 	return controller != (common.Address{})
 }
 
-func (es *expressLaneService) AuctionContractAddr() common.Address {
+func (es *ExpressLaneService) GetRoundTimingInfo() RoundTimingInfo {
+	return es.roundTimingInfo
+}
+
+func (es *ExpressLaneService) AuctionContractAddr() common.Address {
 	return es.tracker.AuctionContractAddr()
 }
 
-func (es *expressLaneService) ValidateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
+func (es *ExpressLaneService) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
 	return es.tracker.ValidateExpressLaneTx(msg)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -149,7 +150,7 @@ func (c *ExpressLaneProxyConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *ExpressLaneProxyConfig) Validate() error {
-	if err := gethexec.ValidateMaxTxDataSize(c.MaxTxDataSize); err != nil {
+	if err := arbostypes.ValidateMaxTxDataSize(c.MaxTxDataSize); err != nil {
 		return err
 	}
 	return nil
