@@ -43,6 +43,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		opcode  vm.OpCode
 		params  []any
 		maxDiff float64
+		mode    compareGasMode // defaults to compareGasForEach (zero value)
 	}{
 		{hostio: "exit_early", opcode: vm.STOP},
 		{hostio: "transient_load_bytes32", opcode: vm.TLOAD, params: []any{common.HexToHash("dead")}},
@@ -66,7 +67,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "math_add_mod", opcode: vm.ADDMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
 		{hostio: "math_mul_mod", opcode: vm.MULMOD, params: []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)}, maxDiff: 0.7},
 		{hostio: "msg_sender", opcode: vm.CALLER, maxDiff: 0.5},
-		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5},
+		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5, mode: compareGasSum},
 		{hostio: "tx_gas_price", opcode: vm.GASPRICE, maxDiff: 0.5},
 		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5},
 		{hostio: "tx_origin", opcode: vm.ORIGIN, maxDiff: 0.5},
@@ -78,7 +79,7 @@ func TestProgramSimpleCost(t *testing.T) {
 			packer, _ := util.NewCallParser(localgen.HostioTestABI, solFunc)
 			data, err := packer(tc.params...)
 			Require(t, err)
-			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, compareGasForEach, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
+			compareGasUsage(t, builder, evmProgram, stylusProgram, data, nil, tc.mode, tc.maxDiff, compareGasPair{tc.opcode, tc.hostio})
 		})
 	}
 }

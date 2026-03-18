@@ -42,116 +42,118 @@ func TestSimpleInkUsage(t *testing.T) {
 		hostio      string
 		signature   string
 		args        []any
-		expectedInk uint64
+		expectedInk []uint64
 	}{
 		{
 			hostio:      "exit_early",
-			expectedInk: 0,
+			expectedInk: []uint64{0},
 		},
 		{
 			hostio:      "transient_load_bytes32",
 			args:        []any{common.HexToHash("dead")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "transient_store_bytes32",
 			args:        []any{common.HexToHash("dead"), common.HexToHash("beef")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "return_data_size",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "account_balance",
 			args:        []any{builder.L2Info.GetAddress("Owner")},
-			expectedInk: HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000,
+			expectedInk: []uint64{HOSTIO_INK + 2*PTR_INK + EVM_API_INK + 1000000},
 		},
 		{
 			hostio:      "account_code_size",
 			args:        []any{otherProgram},
-			expectedInk: 33068073,
+			expectedInk: []uint64{33068073},
 		},
 		{
 			hostio:      "account_codehash",
 			args:        []any{otherProgram},
-			expectedInk: 26078153,
+			expectedInk: []uint64{26078153},
 		},
 		{
 			hostio:      "evm_gas_left",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "evm_ink_left",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_basefee",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "chainid",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_coinbase",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "block_gas_limit",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_number",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "block_timestamp",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "contract_address",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "math_div",
 			args:        []any{big.NewInt(1), big.NewInt(3)},
-			expectedInk: 43520,
+			expectedInk: []uint64{43520},
 		},
 		{
 			hostio:      "math_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3)},
-			expectedInk: 43520,
+			expectedInk: []uint64{43520},
 		},
 		{
 			hostio:      "math_add_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)},
-			expectedInk: 49560,
+			expectedInk: []uint64{49560},
 		},
 		{
 			hostio:      "math_mul_mod",
 			args:        []any{big.NewInt(1), big.NewInt(3), big.NewInt(5)},
-			expectedInk: 52660,
+			expectedInk: []uint64{52660},
 		},
 		{
 			hostio:      "msg_sender",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
+			// msg_value hostio is called twice: once by the deny_value payability guard
+			// and once by the method body itself.
 			hostio:      "msg_value",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK, HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "tx_gas_price",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
 			hostio:      "tx_ink_price",
-			expectedInk: HOSTIO_INK,
+			expectedInk: []uint64{HOSTIO_INK},
 		},
 		{
 			hostio:      "tx_origin",
-			expectedInk: HOSTIO_INK + PTR_INK,
+			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {
@@ -159,7 +161,7 @@ func TestSimpleInkUsage(t *testing.T) {
 				return strings.ToUpper(strings.TrimPrefix(s, "_"))
 			})
 			data := encodeHostioTestCalldata(t, solFunc, tc.args)
-			checkInkUsage(t, builder, stylusProgram, tc.hostio, tc.hostio, data, nil, tc.expectedInk)
+			checkInkUsage(t, builder, stylusProgram, tc.hostio, tc.hostio, data, nil, tc.expectedInk...)
 		})
 	}
 }
