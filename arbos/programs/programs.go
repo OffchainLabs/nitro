@@ -472,7 +472,7 @@ func fragmentReadGasCost(warm bool, codeSize uint64) (multigas.MultiGas, error) 
 	if warm {
 		cost = multigas.ComputationGas(gethParams.WarmStorageReadCostEIP2929)
 	} else {
-		cost = multigas.StorageAccessGas(gethParams.ColdAccountAccessCostEIP2929)
+		cost = multigas.StorageAccessReadGas(gethParams.ColdAccountAccessCostEIP2929)
 	}
 	words := ToWordSize(codeSize)
 	copyGas, overflow := gethMath.SafeMul(words, gethParams.CopyGas)
@@ -480,7 +480,7 @@ func fragmentReadGasCost(warm bool, codeSize uint64) (multigas.MultiGas, error) 
 		log.Trace("fragment copy gas overflow", "codeSize", codeSize, "words", words, "copyGas", gethParams.CopyGas)
 		return multigas.ZeroGas(), vm.ErrGasUintOverflow
 	}
-	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccess, copyGas); overflow {
+	if cost, overflow = cost.SafeIncrement(multigas.ResourceKindStorageAccessRead, copyGas); overflow {
 		log.Trace("fragment copy gas overflow", "codeSize", codeSize, "copyGas", copyGas)
 		return multigas.ZeroGas(), vm.ErrGasUintOverflow
 	}
@@ -621,7 +621,7 @@ func (p Programs) SetProgramCached(
 	}
 
 	// pay to cache the program, or to re-cache in case of upcoming revert
-	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccess, uint64(program.initCost)); err != nil {
+	if err := p.programs.Burner().Burn(multigas.ResourceKindStorageAccessRead, uint64(program.initCost)); err != nil {
 		return err
 	}
 	moduleHash, err := p.moduleHashes.Get(codeHash)
