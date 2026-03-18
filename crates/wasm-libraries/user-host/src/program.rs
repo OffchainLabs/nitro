@@ -55,7 +55,7 @@ unsafe impl<T> Sync for SyncUnsafe<T> {}
 #[allow(clippy::vec_box)]
 static PROGRAMS: SyncUnsafe<Vec<Box<Program>>> = SyncUnsafe(UnsafeCell::new(vec![]));
 
-static mut LAST_REQUEST_ID: u32 = 0x10000;
+static LAST_REQUEST_ID: SyncUnsafe<u32> = SyncUnsafe(UnsafeCell::new(0x10000));
 
 #[derive(Clone)]
 pub(crate) struct UserHostRequester {
@@ -118,8 +118,8 @@ impl UserHostRequester {
     }
 
     pub unsafe fn set_request(&mut self, req_type: u32, data: &[u8]) -> u32 {
-        LAST_REQUEST_ID += 1;
-        self.id = LAST_REQUEST_ID;
+        *LAST_REQUEST_ID.0.get() += 1;
+        self.id = *LAST_REQUEST_ID.0.get();
         self.req_type = req_type;
         self.data = Some(data.to_vec());
         self.answer = None;

@@ -520,9 +520,9 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         ) => u64::MAX,
         // `wasmparser::Operator` is marked `non_exhaustive`, so we must
         // include a wildcard arm even though we handle all known variants.
-        // If a new variant appears that we don't explicitly map yet, panic
-        // so that it is noticed and added with a proper opcode.
-        _ => unreachable!("ink not supported for opcode {op:?}")
+        // If a new variant appears that we don't explicitly map yet, return
+        // unsupported opcode
+        _ => u64::MAX,
     };
     ink
 }

@@ -69,7 +69,7 @@ func TestProgramSimpleCost(t *testing.T) {
 		{hostio: "msg_sender", opcode: vm.CALLER, maxDiff: 0.5},
 		{hostio: "msg_value", opcode: vm.CALLVALUE, maxDiff: 0.5, mode: compareGasSum},
 		{hostio: "tx_gas_price", opcode: vm.GASPRICE, maxDiff: 0.5},
-		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5},
+		{hostio: "tx_ink_price", opcode: vm.GASPRICE, maxDiff: 1.5, mode: compareGasSum},
 		{hostio: "tx_origin", opcode: vm.ORIGIN, maxDiff: 0.5},
 	} {
 		t.Run(tc.hostio, func(t *testing.T) {

@@ -197,7 +197,7 @@ impl HostioTest {
 
     fn tx_ink_price(&self) -> Result<U256> {
         let ink_price = self.vm().tx_ink_price();
-        let gas = u64::from(ink_price) / u64::from(ink_price);
+        let gas = self.vm().ink_to_gas(u64::from(ink_price));
         Ok(gas.try_into().unwrap())
     }
 

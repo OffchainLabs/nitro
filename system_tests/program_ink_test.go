@@ -148,8 +148,10 @@ func TestSimpleInkUsage(t *testing.T) {
 			expectedInk: []uint64{HOSTIO_INK + PTR_INK},
 		},
 		{
+			// tx_ink_price hostio is called twice: once explicitly and once
+			// inside ink_to_gas which also reads the ink price.
 			hostio:      "tx_ink_price",
-			expectedInk: []uint64{HOSTIO_INK},
+			expectedInk: []uint64{HOSTIO_INK, HOSTIO_INK},
 		},
 		{
 			hostio:      "tx_origin",
