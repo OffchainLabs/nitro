@@ -392,24 +392,41 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 		return err
 	}
 
-	// Execute scheduled redeems to capture their event logs for filtering.
-	for i, redeemTx := range scheduledTxes {
+	// Execute scheduled redeems in FIFO order, including cascading redeems,
+	// mirroring the block processor's redeem loop in ProduceBlockAdvanced.
+	txIndex := 1
+	for len(scheduledTxes) > 0 {
+		redeemTx := scheduledTxes[0]
+		scheduledTxes = scheduledTxes[1:]
 		redeemSender, err := types.Sender(signer, redeemTx)
 		if err != nil {
 			continue
 		}
-		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, i+1,
+		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, txIndex,
 			func(result *core.ExecutionResult) error {
 				touchFilterAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
+				// Touch addresses from cascading redeems so they are
+				// checked before we even execute them (same as the user
+				// tx callback above does for its scheduled redeems).
+				for _, cascading := range result.ScheduledTxes {
+					if inner, ok := cascading.GetInner().(*types.ArbitrumRetryTx); ok {
+						statedb.TouchAddress(inner.From)
+						if inner.To != nil {
+							statedb.TouchAddress(*inner.To)
+						}
+					}
+				}
 				if statedb.IsAddressFiltered() {
 					return state.ErrArbTxFilter
 				}
+				scheduledTxes = append(scheduledTxes, result.ScheduledTxes...)
 				return nil
 			},
 		)
 		if err != nil {
 			return err
 		}
+		txIndex++
 	}
 
 	return nil

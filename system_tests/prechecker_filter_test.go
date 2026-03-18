@@ -415,6 +415,137 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	}
 }
 
+// precheckerSubmitRetryable creates a retryable ticket via the L1 delayed inbox,
+// advances L1, waits for the sequencer to process it, and verifies the ticket
+// exists. Returns the ticket ID (L2 submission tx hash).
+func precheckerSubmitRetryable(
+	t *testing.T, ctx context.Context, builder *NodeBuilder,
+	destAddr common.Address, calldata []byte, gasLimit *big.Int,
+) common.Hash {
+	t.Helper()
+	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
+	require.NoError(t, err)
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	maxSubmissionCost := big.NewInt(1e16)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	l1opts.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&l1opts,
+		destAddr,
+		common.Big0,
+		maxSubmissionCost,
+		common.Address{},
+		common.Address{},
+		gasLimit,
+		maxFeePerGas,
+		calldata,
+	)
+	require.NoError(t, err)
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+
+	ticketId := lookupSubmissionTxHash(t, ctx, builder, l1Receipt)
+
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
+
+	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
+	require.NoError(t, err)
+
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err, "retryable ticket %s should exist", ticketId.Hex())
+
+	return ticketId
+}
+
+// testPrecheckerFilterCascadingRedeem tests that the prechecker's FIFO redeem
+// loop catches filtered addresses at arbitrary cascade depth.
+func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
+	defer cleanup()
+
+	// Deploy a contract to serve as the filtered target
+	filteredTarget, _ := deployAddressFilterTestContract(t, ctx, builder)
+
+	// Fund redeemer early so balance syncs when we sync the forwarder later
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+
+	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	require.NoError(t, err)
+	arbRetryableTxAddr := common.HexToAddress("6e")
+
+	// Build retryable chain bottom-up.
+	// ticket[0] is the deepest: dest=filteredTarget.
+	// ticket[i>0]: dest=ArbRetryableTx, data=redeem(ticket[i-1]).
+	ticketIds := make([]common.Hash, depth)
+
+	// Deepest ticket targets filteredTarget directly (empty calldata).
+	ticketIds[0] = precheckerSubmitRetryable(
+		t, ctx, builder, filteredTarget, nil, common.Big0,
+	)
+
+	// Each subsequent ticket redeems the previous one.
+	for i := 1; i < depth; i++ {
+		redeemData, err := arbRetryableABI.Pack("redeem", ticketIds[i-1])
+		require.NoError(t, err)
+		ticketIds[i] = precheckerSubmitRetryable(
+			t, ctx, builder, arbRetryableTxAddr, redeemData, common.Big0,
+		)
+	}
+
+	topTicketId := ticketIds[depth-1]
+
+	// Sync forwarder to sequencer's latest block
+	seqLatest, err := builder.L2.Client.BlockNumber(ctx)
+	require.NoError(t, err)
+	waitForForwarderSync(t, ctx, forwarder, seqLatest)
+
+	// Set filter on forwarder's prechecker targeting filteredTarget
+	filter := newHashedChecker([]common.Address{filteredTarget})
+	forwarder.ExecNode.TxPreChecker.SetAddressChecker(filter)
+
+	// Manual redeem of the top ticket through forwarder — prechecker should reject
+	arbRetryableOnForwarder, err := precompilesgen.NewArbRetryableTx(
+		common.HexToAddress("6e"), forwarder.Client,
+	)
+	require.NoError(t, err)
+	auth := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
+	auth.GasLimit = 2_000_000
+	auth.NoSend = true
+	redeemTx, err := arbRetryableOnForwarder.Redeem(&auth, topTicketId)
+	require.NoError(t, err, "building redeem tx should not error")
+
+	err = forwarder.Client.SendTransaction(ctx, redeemTx)
+	if !isFilteredError(err) {
+		t.Fatalf("expected prechecker to reject cascading redeem at depth %d, got: %v", depth, err)
+	}
+}
+
+// TestPrecheckerFilterCascadingRedeemDepth2 tests A -> B -> filtered via manual redeem
+// through the forwarder's prechecker. Requires the FIFO cascading redeem loop.
+func TestPrecheckerFilterCascadingRedeemDepth2(t *testing.T) {
+	testPrecheckerFilterCascadingRedeem(t, 2)
+}
+
+// TestPrecheckerFilterCascadingRedeemDepth3 tests A -> B -> C -> filtered.
+func TestPrecheckerFilterCascadingRedeemDepth3(t *testing.T) {
+	testPrecheckerFilterCascadingRedeem(t, 3)
+}
+
+// TestPrecheckerFilterCascadingRedeemDepth4 tests A -> B -> C -> D -> filtered.
+func TestPrecheckerFilterCascadingRedeemDepth4(t *testing.T) {
+	testPrecheckerFilterCascadingRedeem(t, 4)
+}
+
 // lookupSubmissionTxHash finds the ArbitrumSubmitRetryableTx hash from an L1 receipt
 // by parsing the delayed message.
 func lookupSubmissionTxHash(t *testing.T, ctx context.Context, builder *NodeBuilder, l1Receipt *types.Receipt) common.Hash {
