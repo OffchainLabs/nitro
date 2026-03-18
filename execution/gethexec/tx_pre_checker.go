@@ -350,6 +350,18 @@ func (c *TxPreChecker) speculativeFilterExec(
 	return nil
 }
 
+// touchScheduledRetryableAddresses touches From/To of scheduled ArbitrumRetryTx
+func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes types.Transactions) {
+	for _, scheduledTx := range scheduledTxes {
+		if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
+			statedb.TouchAddress(inner.From)
+			if inner.To != nil {
+				statedb.TouchAddress(*inner.To)
+			}
+		}
+	}
+}
+
 // preCheckAddressFilter speculatively executes the transaction to detect filtered addresses.
 func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender common.Address, header *types.Header) error {
 	if c.addressChecker == nil {
@@ -370,17 +382,7 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, tx, 0,
 		func(result *core.ExecutionResult) error {
 			touchFilterAddresses(statedb, c.eventFilter, tx, sender)
-
-			// Touch addresses from scheduled retry txes (redeems).
-			for _, scheduledTx := range result.ScheduledTxes {
-				if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
-					statedb.TouchAddress(inner.From)
-					if inner.To != nil {
-						statedb.TouchAddress(*inner.To)
-					}
-				}
-			}
-
+			touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
 			if statedb.IsAddressFiltered() {
 				return state.ErrArbTxFilter
 			}
@@ -405,17 +407,7 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, txIndex,
 			func(result *core.ExecutionResult) error {
 				touchFilterAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
-				// Touch addresses from cascading redeems so they are
-				// checked before we even execute them (same as the user
-				// tx callback above does for its scheduled redeems).
-				for _, cascading := range result.ScheduledTxes {
-					if inner, ok := cascading.GetInner().(*types.ArbitrumRetryTx); ok {
-						statedb.TouchAddress(inner.From)
-						if inner.To != nil {
-							statedb.TouchAddress(*inner.To)
-						}
-					}
-				}
+				touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
 				if statedb.IsAddressFiltered() {
 					return state.ErrArbTxFilter
 				}
