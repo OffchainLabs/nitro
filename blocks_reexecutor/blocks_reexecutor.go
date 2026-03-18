@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -109,6 +110,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
 	config       *Config
+	scheme       string
+	room         int
 	db           state.Database
 	blockchain   *core.BlockChain
 	stateFor     arbitrum.StateForHeaderFunction
@@ -119,13 +122,18 @@ type BlocksReExecutor struct {
 	success      chan struct{}
 }
 
+var pathdbNoStateTrieChangesToCommitError = regexp.MustCompile("^triedb layer .+ is disk layer$")
+
 func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksReExecutor, error) {
-	if blockchain.TrieDB().Scheme() == rawdb.PathScheme {
-		return nil, errors.New("blocksReExecutor not supported on pathdb")
-	}
+	scheme := blockchain.TrieDB().Scheme()
 	chainStart := blockchain.Config().ArbitrumChainParams.GenesisBlockNum
 	chainEnd := blockchain.CurrentBlock().Number.Uint64()
 	minBlocksPerThread := uint64(10000)
+	room := c.Room
+	if scheme == rawdb.PathScheme && room > 1 {
+		log.Info("pathdb blocks reexecution is single-threaded; collapsing room to 1", "configuredRoom", room)
+		room = 1
+	}
 	if c.MinBlocksPerThread != 0 {
 		minBlocksPerThread = c.MinBlocksPerThread
 	}
@@ -160,11 +168,15 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksR
 		if start > 0 && start != chainStart {
 			start--
 		}
+		if scheme == rawdb.PathScheme {
+			blocks = append(blocks, [3]uint64{start, end, end - start})
+			continue
+		}
 		// Divide work equally among available threads when MinBlocksPerThread is zero
 		var work uint64
 		if c.MinBlocksPerThread == 0 {
 			// #nosec G115
-			work = (end - start) / uint64(c.Room*2)
+			work = (end - start) / uint64(room*2)
 		}
 		if work > 0 {
 			blocks = append(blocks, [3]uint64{start, end, work})
@@ -176,35 +188,57 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksR
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i][1] > blocks[j][1]
 	})
-	hashConfig := *hashdb.Defaults
-	hashConfig.CleanCacheSize = c.TrieCleanLimit * 1024 * 1024
-	trieConfig := triedb.Config{
-		Preimages: false,
-		HashDB:    &hashConfig,
-	}
-
 	var blocksReExecutor *BlocksReExecutor
 
-	stateForFunc := func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
-		blocksReExecutor.mutex.Lock()
-		defer blocksReExecutor.mutex.Unlock()
-		sdb, err := state.New(header.Root, blocksReExecutor.db)
-		if err == nil {
-			_ = blocksReExecutor.db.TrieDB().Reference(header.Root, common.Hash{}) // Will be dereferenced later in advanceStateUpToBlock
-			return sdb, func() { blocksReExecutor.dereferenceRoot(header.Root) }, nil
+	var (
+		db           state.Database
+		stateForFunc arbitrum.StateForHeaderFunction
+	)
+	if scheme == rawdb.HashScheme {
+		hashConfig := *hashdb.Defaults
+		hashConfig.CleanCacheSize = c.TrieCleanLimit * 1024 * 1024
+		trieConfig := triedb.Config{
+			Preimages: false,
+			HashDB:    &hashConfig,
 		}
-		return sdb, arbitrum.NoopStateRelease, err
+		db = state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil)
+		stateForFunc = func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+			blocksReExecutor.mutex.Lock()
+			defer blocksReExecutor.mutex.Unlock()
+			sdb, err := state.New(header.Root, blocksReExecutor.db)
+			if err == nil {
+				_ = blocksReExecutor.db.TrieDB().Reference(header.Root, common.Hash{}) // Will be dereferenced later in advanceStateUpToBlock
+				return sdb, func() { blocksReExecutor.dereferenceRoot(header.Root) }, nil
+			}
+			return sdb, arbitrum.NoopStateRelease, err
+		}
+	} else if scheme == rawdb.PathScheme {
+		stateForFunc = func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+			if header == nil {
+				return nil, arbitrum.NoopStateRelease, errors.New("start header not found")
+			}
+			statedb, err := blockchain.StateAt(header.Root)
+			if err != nil {
+				return nil, arbitrum.NoopStateRelease, fmt.Errorf("pathdb state for block %d (root %v) is not available: %w",
+					header.Number.Uint64(), header.Root, err)
+			}
+			return statedb, arbitrum.NoopStateRelease, nil
+		}
+	} else {
+		return nil, fmt.Errorf("blocksReExecutor: unsupported trie database scheme %q", scheme)
 	}
 
 	blocksReExecutor = &BlocksReExecutor{
 		StopWaiter:   stopwaiter.StopWaiter{},
 		config:       c,
-		db:           state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
+		scheme:       scheme,
+		room:         room,
+		db:           db,
 		blockchain:   blockchain,
 		stateFor:     stateForFunc,
 		blocks:       blocks,
-		done:         make(chan struct{}, c.Room),
-		fatalErrChan: make(chan error, c.Room),
+		done:         make(chan struct{}, room),
+		fatalErrChan: make(chan error, room),
 		success:      make(chan struct{}),
 		mutex:        sync.Mutex{},
 	}
@@ -217,26 +251,40 @@ func logState(header *types.Header, hasState bool) {
 	}
 }
 
+func (s *BlocksReExecutor) getStateForStartBlock(ctx context.Context, startHeader *types.Header) (*state.StateDB, *types.Header, arbitrum.StateReleaseFunc, error) {
+	return arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
+}
+
 // LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.MinBlocksPerThread, currentBlock] to the last available valid state
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlock, currentBlock, minBlocksPerThread uint64) uint64 {
 	start := arbmath.SaturatingUSub(currentBlock, minBlocksPerThread)
 	if start < startBlock {
 		start = startBlock
 	}
+	requestedStart := start
 	startHeader := s.blockchain.GetHeaderByNumber(start)
 	if startHeader == nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
 		return startBlock
 	}
-	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
+	targetHeader := s.blockchain.GetHeaderByNumber(currentBlock)
+	if targetHeader == nil {
+		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get target header at %d", currentBlock)
+		return startBlock
+	}
+	startState, startHeader, release, err := s.getStateForStartBlock(ctx, startHeader)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return startBlock
 	}
 	start = startHeader.Number.Uint64()
+	if start < requestedStart {
+		log.Info("BlocksReExecutor fell back to an earlier available anchor state", "requestedAnchor", requestedStart, "stateAt", start, "endBlock", currentBlock)
+	}
 	s.LaunchThread(func(ctx context.Context) {
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader, release); err != nil {
+		err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release)
+		if err != nil {
 			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
@@ -249,7 +297,7 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 func (s *BlocksReExecutor) Impl(ctx context.Context, startBlock, currentBlock, minBlocksPerThread uint64) uint64 {
 	var threadsLaunched uint64
 	end := currentBlock
-	for i := 0; i < s.config.Room && currentBlock > startBlock; i++ {
+	for i := 0; i < s.room && currentBlock > startBlock; i++ {
 		threadsLaunched++
 		currentBlock = s.LaunchBlocksReExecution(ctx, startBlock, currentBlock, minBlocksPerThread)
 	}
@@ -308,12 +356,35 @@ func (s *BlocksReExecutor) StopAndWait() {
 }
 
 func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
+	if s.db == nil {
+		return
+	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	_ = s.db.TrieDB().Dereference(root)
 }
 
 func (s *BlocksReExecutor) commitStateAndVerify(statedb *state.StateDB, expected common.Hash, blockNumber uint64) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+	if s.scheme == rawdb.PathScheme {
+		result, err := statedb.Commit(blockNumber, true, false)
+		if err != nil {
+			return nil, arbitrum.NoopStateRelease, err
+		}
+		if result != expected {
+			return nil, arbitrum.NoopStateRelease, fmt.Errorf("bad root hash expected: %v got: %v", expected, result)
+		}
+		if s.config.CommitStateToDisk {
+			err = s.blockchain.TrieDB().Commit(expected, false)
+			if err != nil && !pathdbNoStateTrieChangesToCommitError.MatchString(err.Error()) {
+				return nil, arbitrum.NoopStateRelease, fmt.Errorf("trieDB commit failed in commitStateAndVerify, number %d root %v: %w", blockNumber, expected, err)
+			}
+		}
+		sdb, err := s.blockchain.StateAt(result)
+		if err != nil {
+			return nil, arbitrum.NoopStateRelease, err
+		}
+		return sdb, arbitrum.NoopStateRelease, nil
+	}
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	result, err := statedb.Commit(blockNumber, true, false)
