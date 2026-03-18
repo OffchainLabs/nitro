@@ -137,20 +137,18 @@ func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context strin
 	}
 }
 
-// TestTipCapFloorDefault verifies that when floor=0, tips are dropped on v60.
+// TestTipCapFloorDefault verifies that by default (floor=0), tips are dropped on v60.
 func TestTipCapFloorDefault(t *testing.T) {
 	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
-	env.setTipCapFloor(big.NewInt(0))
-
 	floor := env.getTipCapFloor()
 	if floor.Sign() != 0 {
-		Fatal(t, "expected tip cap floor to be 0, got", floor)
+		Fatal(t, "expected default tip cap floor to be 0, got", floor)
 	}
 
 	tip := big.NewInt(41)
-	env.assertTipDropped(tip, "floor=0")
+	env.assertTipDropped(tip, "default floor=0")
 }
 
 // TestTipCapFloorCollectTips verifies that setting floor=1 causes all tips to be collected.
@@ -319,8 +317,7 @@ func TestTipCapGetPaidGasPrice(t *testing.T) {
 
 	tip := big.NewInt(50)
 
-	// With floor=0, tips are dropped: GASPRICE should return baseFee
-	env.setTipCapFloor(big.NewInt(0))
+	// With floor=0 (default), tips are dropped: GASPRICE should return baseFee
 	observedPrice := callContract(tip)
 	if observedPrice.Cmp(env.baseFee) != 0 {
 		Fatal(t, "floor=0: GASPRICE should equal baseFee", "observed", observedPrice, "baseFee", env.baseFee)
