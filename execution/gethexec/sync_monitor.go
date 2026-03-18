@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -21,9 +22,32 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 )
 
+var ValidatedBlockHashKey = []byte("LastValidatedBlockHashKey")
+
 type syncDataEntry struct {
 	maxMessageCount arbutil.MessageIndex
 	timestamp       time.Time
+}
+
+type FinalityType int
+
+const (
+	Safe FinalityType = iota
+	Finalized
+	Validated
+)
+
+func (f FinalityType) String() string {
+	switch f {
+	case Safe:
+		return "Safe"
+	case Finalized:
+		return "Finalized"
+	case Validated:
+		return "Validated"
+	default:
+		return "Not defined"
+	}
 }
 
 // syncHistory maintains a time-based sliding window of sync data
@@ -236,64 +260,100 @@ func (s *SyncMonitor) BlockMetadataByNumber(ctx context.Context, blockNum uint64
 	return nil, nil
 }
 
+func (s *SyncMonitor) checkBlockHashAndGetHeader(
+	finalityData *arbutil.FinalityData,
+	finalityDataType FinalityType,
+) (*types.Header, error) {
+	if finalityData == nil {
+		return nil, nil
+	}
+
+	blockNumber := s.exec.MessageIndexToBlockNumber(finalityData.MsgIdx)
+	block := s.exec.bc.GetBlockByNumber(blockNumber)
+	if block == nil {
+		log.Debug("block not found", "finalityDataType", finalityDataType.String(), "blockNumber", blockNumber)
+		return nil, nil
+	}
+	if block.Hash() != finalityData.BlockHash {
+		errorMsg := fmt.Sprintf(
+			"block hash mismatch,finalityDataType=%s blockNumber=%v, block hash provided by consensus=%v, block hash from execution=%v",
+			finalityDataType.String(),
+			blockNumber,
+			finalityData.BlockHash,
+			block.Hash(),
+		)
+		return nil, errors.New(errorMsg)
+	}
+	return block.Header(), nil
+}
+
 func (s *SyncMonitor) getFinalityBlockHeader(
 	waitForBlockValidator bool,
 	validatedFinalityData *arbutil.FinalityData,
 	finalityFinalityData *arbutil.FinalityData,
+	finalityDataType FinalityType,
 ) (*types.Header, error) {
 	if finalityFinalityData == nil {
 		return nil, nil
 	}
 
-	finalityMsgIdx := finalityFinalityData.MsgIdx
-	finalityBlockHash := finalityFinalityData.BlockHash
+	targetFinalityData := finalityFinalityData
+
 	if waitForBlockValidator {
 		if validatedFinalityData == nil {
 			return nil, errors.New("block validator not set")
 		}
-		if finalityFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
-			finalityMsgIdx = validatedFinalityData.MsgIdx
-			finalityBlockHash = validatedFinalityData.BlockHash
+
+		// If the finalized index is ahead of the validated one, cap it
+		if targetFinalityData.MsgIdx > validatedFinalityData.MsgIdx {
+			targetFinalityData = validatedFinalityData
 		}
 	}
 
-	finalityBlockNumber := s.exec.MessageIndexToBlockNumber(finalityMsgIdx)
-	finalityBlock := s.exec.bc.GetBlockByNumber(finalityBlockNumber)
-	if finalityBlock == nil {
-		log.Debug("Finality block not found", "blockNumber", finalityBlockNumber)
-		return nil, nil
-	}
-	if finalityBlock.Hash() != finalityBlockHash {
-		errorMsg := fmt.Sprintf(
-			"finality block hash mismatch, blockNumber=%v, block hash provided by consensus=%v, block hash from execution=%v",
-			finalityBlockNumber,
-			finalityBlockHash,
-			finalityBlock.Hash(),
-		)
-		return nil, errors.New(errorMsg)
-	}
-	return finalityBlock.Header(), nil
+	return s.checkBlockHashAndGetHeader(targetFinalityData, finalityDataType)
 }
 
 func (s *SyncMonitor) SetFinalityData(
+	executionDB ethdb.Database,
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
 	validatedFinalityData *arbutil.FinalityData,
 ) error {
+	// Check finalized blocks
 	finalizedBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.FinalizedBlockWaitForBlockValidator,
 		validatedFinalityData,
 		finalizedFinalityData,
+		Finalized,
 	)
 	if err != nil {
 		return err
 	}
 	s.exec.bc.SetFinalized(finalizedBlockHeader)
 
+	// Check validated blocks
+	validatedBlockHeader, err := s.checkBlockHashAndGetHeader(
+		validatedFinalityData,
+		Validated,
+	)
+	if err != nil {
+		return err
+	}
+
+	if executionDB != nil && validatedBlockHeader != nil {
+		validatedBlockHash := validatedBlockHeader.Hash()
+		err := executionDB.Put(ValidatedBlockHashKey, validatedBlockHash.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	// Check safe blocks
 	safeBlockHeader, err := s.getFinalityBlockHeader(
 		s.config.SafeBlockWaitForBlockValidator,
 		validatedFinalityData,
 		safeFinalityData,
+		Safe,
 	)
 	if err != nil {
 		return err
