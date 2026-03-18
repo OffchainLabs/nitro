@@ -585,12 +585,13 @@ func create2ndNodeWithConfigForBoldProtocol(
 
 	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
+	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, l1ChainId, l1Reader)
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), l1ChainId, 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
+	l2node, err := arbnode.CreateConsensusNode(ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, nil /* blob reader */, locator.LatestWasmModuleRoot(), parentChain)
 	Require(t, err)
 
 	l2client := ClientForStack(t, l2stack, clientForStackUseHTTP(stackConfig))

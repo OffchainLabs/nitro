@@ -555,7 +555,6 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		parentChainID,
 		blobReader,
 		wasmModuleRoot,
 		parentChain,

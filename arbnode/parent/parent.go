@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync/atomic"
@@ -220,6 +221,10 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 	// handle it gracefully (e.g. return 0 for blob fees).
 	staticBlobConfig, err := p.chainConfig()
 	if err != nil {
+		var unknownErr ErrUnknownChain
+		if errors.As(err, &unknownErr) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	// We bring staticBlobConfig.LatestFork() to an earlier spot which is the equivalent of latestBlobConfig

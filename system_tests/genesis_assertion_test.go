@@ -329,7 +329,7 @@ func createL2NodeWithRollupAddresses(
 	Require(t, err)
 	currentNode, err = arbnode.CreateConsensusNode(
 		ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 		nil, // Blob reader.
 		locator.LatestWasmModuleRoot(), parentChain,
 	)
