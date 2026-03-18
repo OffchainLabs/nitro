@@ -120,6 +120,9 @@ func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string)
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
 	expected := env.expectedRevenue(env.baseFee, receipt)
+	if env.baseFee.Cmp(receipt.EffectiveGasPrice) != 0 {
+		Fatal(env.t, context+": incorrect receipt.EffectiveGasPrice", "want", env.baseFee, "got", receipt.EffectiveGasPrice)
+	}
 	if revenue.Cmp(expected) != 0 {
 		Fatal(env.t, context+": tip should be dropped", "revenue", revenue, "expected", expected)
 	}
@@ -130,6 +133,9 @@ func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context strin
 	revenue, receipt := env.sendTxWithTip(tipCap)
 	gasPrice := new(big.Int).Add(env.baseFee, tipCap)
 	expected := env.expectedRevenue(gasPrice, receipt)
+	if gasPrice.Cmp(receipt.EffectiveGasPrice) != 0 {
+		Fatal(env.t, context+": incorrect receipt.EffectiveGasPrice", "want", gasPrice, "got", receipt.EffectiveGasPrice)
+	}
 	if revenue.Cmp(expected) != 0 {
 		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "expected", expected)
 	}
