@@ -206,12 +206,13 @@ func (ps *L2PricingState) setMultiGasConstraintsFromSingleGasConstraints() error
 
 		// Transfer to multi-gas constraint with equal weights
 		weights := map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):     1,
-			uint8(multigas.ResourceKindHistoryGrowth):   1,
-			uint8(multigas.ResourceKindStorageAccess):   1,
-			uint8(multigas.ResourceKindStorageGrowth):   1,
-			uint8(multigas.ResourceKindL2Calldata):      1,
-			uint8(multigas.ResourceKindWasmComputation): 1,
+			uint8(multigas.ResourceKindComputation):        1,
+			uint8(multigas.ResourceKindHistoryGrowth):      1,
+			uint8(multigas.ResourceKindStorageAccessRead):  1,
+			uint8(multigas.ResourceKindStorageAccessWrite): 1,
+			uint8(multigas.ResourceKindStorageGrowth):      1,
+			uint8(multigas.ResourceKindL2Calldata):         1,
+			uint8(multigas.ResourceKindWasmComputation):    1,
 		}
 
 		var adjustmentWindow uint32
