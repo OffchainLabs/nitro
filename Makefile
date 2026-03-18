@@ -148,8 +148,8 @@ stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
 stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+#stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+#stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
@@ -203,7 +203,7 @@ build-jit: $(arbitrator_jit)
 build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env
-build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
 
 .PHONY: build-wasm-libs
 build-wasm-libs: $(arbitrator_wasm_libs)
@@ -482,7 +482,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 	cargo run --release --package forward -- --path $(forward_dir)/forward_stub.wat --stub
 	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
-$(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+$(output_latest)/machine.v2.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
 	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 

@@ -625,6 +625,9 @@ func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	if n.Sequencer != nil && !n.Sequencer.FilteringReady() {
+		return false
+	}
 	return n.SyncMonitor.Synced(ctx)
 }
 

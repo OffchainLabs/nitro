@@ -700,9 +700,10 @@ func mainImpl() int {
 		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		} else if alerter != nil {
+			alerter.Start(ctx)
+			defer alerter.StopAndWait()
 		}
-		alerter.Start(ctx)
-		defer alerter.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -528,6 +529,13 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	execEngine.EnableReorgSequencing()
 	execEngine.SetEventFilter(eventFilter)
 	return s, nil
+}
+
+func (s *Sequencer) FilteringReady() bool {
+	if s.addressFilterService == nil {
+		return true
+	}
+	return !s.addressFilterService.GetLoadedAt().IsZero()
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -1875,4 +1883,12 @@ func (s *Sequencer) StopAndWait() {
 		}
 		wg.Wait()
 	}
+}
+
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt []byte, hashes []common.Hash, digest string) {
+	t.Helper()
+	if s.addressFilterService == nil {
+		t.Fatal("addressFilterService is nil")
+	}
+	s.addressFilterService.GetHashStore().Store(salt, hashes, digest)
 }
