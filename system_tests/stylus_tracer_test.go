@@ -67,6 +67,10 @@ func TestStylusTracer(t *testing.T) {
 			args:     loadStoreArgs,
 			want: []gethexec.HostioTraceInfo{
 				{Name: "user_entrypoint", Args: intToBe32(len(loadStoreArgs))},
+				// The new SDK no longer uses wee_alloc, so multicall does not call
+				// memory.grow at startup and stays at 1 open page (previously 2).
+				// With footprint=1, the callee fits within the 2 free-page
+				// allowance (1 open + 1 footprint) and no extra gas is charged.
 				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 				{Name: "read_args", Outs: loadStoreArgs},
 				{Name: "storage_cache_bytes32", Args: append(key.Bytes(), value.Bytes()...)},

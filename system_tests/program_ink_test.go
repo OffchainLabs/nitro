@@ -404,6 +404,12 @@ func TestCallInkUsage(t *testing.T) {
 		name = tc.hostio + "/stylusContract"
 		t.Run(name, func(t *testing.T) {
 			data := argsForMulticall(tc.opcode, otherStylusProgram, nil, otherData)
+			// Wasmer 7 uses 1 open page for the caller (multicall), whereas the
+			// previous version used 2. Since write_args has footprint=1 and the
+			// free-page allowance is 2, the callee's memory stays within the free
+			// limit under Wasmer 7 (1 open + 1 footprint = 2) so no extra gas is
+			// charged, while previously it exceeded the limit (2 open + 1 = 3)
+			// and incurred a 1,000 gas charge.
 			expectedInk := uint64(118475955)
 			checkInkUsage(t, builder, stylusProgram, tc.hostio, name, data, nil, expectedInk)
 		})
@@ -556,6 +562,9 @@ func TestPayForMemoryGrowInkUsage(t *testing.T) {
 
 	testname = "pay_for_memory_grow_0"
 	data = encodeHostioFromSignature(t, signature, []uint64{0})
+	// On wasmer7, when hostio-test calls payForMemoryGrow(100), there are two pay_for_memory_grow hostio calls traced:
+	// - 8400 (HOSTIO_INK) — an extra call that grows 0 pages (new allocator behavior)
+	// - 9320660000 — the actual call to grow 100 pages
 	checkInkUsage(t, builder, stylusProgram, hostio, testname, data, nil, HOSTIO_INK, HOSTIO_INK)
 }
 
