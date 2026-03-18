@@ -108,25 +108,25 @@ type BatchMetadataFetcher interface {
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader           *headerreader.HeaderReader
-	batchMetaFetcher   BatchMetadataFetcher
-	streamer           *TransactionStreamer
-	arbOSVersionGetter execution.ArbOSVersionGetter
-	chainConfig        *params.ChainConfig
-	config             BatchPosterConfigFetcher
-	seqInbox           *bridgegen.SequencerInbox
-	syncMonitor        *SyncMonitor
-	seqInboxABI        *abi.ABI
-	seqInboxAddr       common.Address
-	bridgeAddr         common.Address
-	gasRefunderAddr    common.Address
-	building           *buildingBatch
-	dapWriters         []daprovider.Writer
-	dapReaders         *daprovider.DAProviderRegistry
-	dataPoster         *dataposter.DataPoster
-	redisLock          *redislock.Simple
-	messagesPerBatch   *arbmath.MovingAverage[uint64]
-	non4844BatchCount  int // Count of consecutive non-4844 batches posted
+	l1Reader          *headerreader.HeaderReader
+	batchMetaFetcher  BatchMetadataFetcher
+	streamer          *TransactionStreamer
+	execBatchPoster   execution.ExecutionBatchPoster
+	chainConfig       *params.ChainConfig
+	config            BatchPosterConfigFetcher
+	seqInbox          *bridgegen.SequencerInbox
+	syncMonitor       *SyncMonitor
+	seqInboxABI       *abi.ABI
+	seqInboxAddr      common.Address
+	bridgeAddr        common.Address
+	gasRefunderAddr   common.Address
+	building          *buildingBatch
+	dapWriters        []daprovider.Writer
+	dapReaders        *daprovider.DAProviderRegistry
+	dataPoster        *dataposter.DataPoster
+	redisLock         *redislock.Simple
+	messagesPerBatch  *arbmath.MovingAverage[uint64]
+	non4844BatchCount int // Count of consecutive non-4844 batches posted
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -374,7 +374,7 @@ type BatchPosterOpts struct {
 	L1Reader             *headerreader.HeaderReader
 	BatchMetadataFetcher BatchMetadataFetcher
 	Streamer             *TransactionStreamer
-	VersionGetter        execution.ArbOSVersionGetter
+	ExecBatchPoster      execution.ExecutionBatchPoster
 	SyncMonitor          *SyncMonitor
 	Config               BatchPosterConfigFetcher
 	DeployInfo           *chaininfo.RollupAddresses
@@ -425,24 +425,24 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:           opts.L1Reader,
-		batchMetaFetcher:   opts.BatchMetadataFetcher,
-		streamer:           opts.Streamer,
-		arbOSVersionGetter: opts.VersionGetter,
-		chainConfig:        opts.ChainConfig,
-		syncMonitor:        opts.SyncMonitor,
-		config:             opts.Config,
-		seqInbox:           seqInbox,
-		seqInboxABI:        seqInboxABI,
-		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr:    opts.Config().gasRefunder,
-		bridgeAddr:         opts.DeployInfo.Bridge,
-		dapWriters:         opts.DAPWriters,
-		redisLock:          redisLock,
-		dapReaders:         opts.DAPReaders,
-		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
-		checkEip7623:       checkEip7623,
-		useEip7623:         useEip7623,
+		l1Reader:         opts.L1Reader,
+		batchMetaFetcher: opts.BatchMetadataFetcher,
+		streamer:         opts.Streamer,
+		execBatchPoster:  opts.ExecBatchPoster,
+		chainConfig:      opts.ChainConfig,
+		syncMonitor:      opts.SyncMonitor,
+		config:           opts.Config,
+		seqInbox:         seqInbox,
+		seqInboxABI:      seqInboxABI,
+		seqInboxAddr:     opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr:  opts.Config().gasRefunder,
+		bridgeAddr:       opts.DeployInfo.Bridge,
+		dapWriters:       opts.DAPWriters,
+		redisLock:        redisLock,
+		dapReaders:       opts.DAPReaders,
+		parentChain:      &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		checkEip7623:     checkEip7623,
+		useEip7623:       useEip7623,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -1441,7 +1441,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			config.Post4844Blobs &&
 			latestHeader.ExcessBlobGas != nil &&
 			latestHeader.BlobGasUsed != nil {
-			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
+			arbOSVersion, err := b.execBatchPoster.ArbOSVersionForMessageIndex(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1))).Await(ctx)
 			if err != nil {
 				return false, err
 			}

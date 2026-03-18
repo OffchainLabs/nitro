@@ -1056,7 +1056,7 @@ func getBatchPoster(
 	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	execBatchPoster execution.ExecutionBatchPoster,
 	consensusDB ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
@@ -1066,7 +1066,7 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
-		if arbOSVersionGetter == nil {
+		if execBatchPoster == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
 
@@ -1090,7 +1090,7 @@ func getBatchPoster(
 			L1Reader:             l1Reader,
 			BatchMetadataFetcher: batchMetaFetcher,
 			Streamer:             txStreamer,
-			VersionGetter:        arbOSVersionGetter,
+			ExecBatchPoster:      execBatchPoster,
 			SyncMonitor:          syncMonitor,
 			Config:               func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:           deployInfo,
@@ -1206,7 +1206,7 @@ func createNodeImpl(
 	executionClient execution.ExecutionClient,
 	executionSequencer execution.ExecutionSequencer,
 	executionRecorder execution.ExecutionRecorder,
-	arbOSVersionGetter execution.ArbOSVersionGetter,
+	execBatchPoster execution.ExecutionBatchPoster,
 	consensusDB ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -1316,7 +1316,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, execBatchPoster, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1446,7 +1446,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, nil, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1471,24 +1471,11 @@ func CreateConsensusNode(
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
 ) (*Node, error) {
-	var executionClient execution.ExecutionClient
-	var executionRecorder execution.ExecutionRecorder
-	var executionSequencer execution.ExecutionSequencer
-	var arbOSVersionGetter execution.ArbOSVersionGetter
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
-		rpcClient := executionrpcclient.NewClient(execConfigFetcher, stack)
-		executionClient = rpcClient
-		executionRecorder = rpcClient
-		arbOSVersionGetter = rpcClient
-		// executionSequencer intentionally left nil - RPC client does not implement ExecutionSequencer
-	} else {
-		executionClient = fullExecutionClient
-		executionRecorder = fullExecutionClient
-		executionSequencer = fullExecutionClient
-		arbOSVersionGetter = fullExecutionClient
+		fullExecutionClient = executionrpcclient.NewClient(execConfigFetcher, stack)
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, fullExecutionClient, fullExecutionClient, fullExecutionClient, fullExecutionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1554,7 +1541,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else if n.ExecutionSequencer != nil {
-		n.ExecutionSequencer.Activate()
+		if _, err := n.ExecutionSequencer.Activate().Await(ctx); err != nil {
+			return fmt.Errorf("error activating execution sequencer: %w", err)
+		}
 	}
 	if n.MaintenanceRunner != nil {
 		n.MaintenanceRunner.Start(ctx)

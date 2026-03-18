@@ -113,8 +113,8 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, delayedMessageFetc
 	return d, nil
 }
 
-func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	return d.exec.NextDelayedMessageNumber()
+func (d *DelayedSequencer) getDelayedMessagesRead(ctx context.Context) (uint64, error) {
+	return d.exec.NextDelayedMessageNumber().Await(ctx)
 }
 
 func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
@@ -159,7 +159,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Fast-path: check if all filtered tx hashes are now in the onchain filter
 			allInFilter := true
 			for _, txHash := range d.waitingForFilteredTx.TxHashes {
-				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash)
+				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash).Await(ctx)
 				if err != nil {
 					log.Error("error checking onchain filter", "err", err, "txHash", txHash)
 					allInFilter = false
@@ -212,7 +212,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		return err
 	}
 
-	startPos, err := d.getDelayedMessagesRead()
+	startPos, err := d.getDelayedMessagesRead(ctx)
 	if err != nil {
 		return err
 	}
@@ -243,9 +243,9 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		}
 		for i, msg := range messages {
 			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
+			_, err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i)).Await(ctx)
 			if err != nil {
-				var filteredErr *gethexec.ErrFilteredDelayedMessage
+				var filteredErr *execution.ErrFilteredDelayedMessage
 				if errors.As(err, &filteredErr) {
 					now := time.Now()
 					if d.waitingForFilteredTx == nil {
