@@ -133,10 +133,11 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     debug_chain: usize,
 ) -> *mut Machine {
     let debug_chain = debug_chain != 0;
-    arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain).unwrap_or_else(|err| {
-        eprintln!("Error loading binary: {err:?}");
-        ptr::null_mut()
-    })
+    arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
+        .unwrap_or_else(|err| {
+            eprintln!("Error loading binary: {err:?}");
+            ptr::null_mut()
+        })
 }
 
 unsafe fn arbitrator_load_machine_impl(
