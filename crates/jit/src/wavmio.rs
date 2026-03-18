@@ -13,7 +13,6 @@ use std::{
     net::TcpStream,
     time::Instant,
 };
-use validation::local_target;
 use validation::transfer::receive_validation_input;
 
 /// Reads 32-bytes of global state.
@@ -123,13 +122,14 @@ pub fn resolve_preimage_impl(
         use sha3::{Digest, Keccak256};
 
         let hash: [u8; 32] = mem.read_fixed(hash_ptr);
-        let preimage_type: PreimageType = preimage_type.try_into().unwrap();
+        let pt: PreimageType = preimage_type.try_into().unwrap();
         if let Some(preimage) = exec
+            .input
             .preimages
             .get(&preimage_type)
-            .and_then(|m| m.get(&arbutil::Bytes32(hash)))
+            .and_then(|m| m.get(&hash))
         {
-            let calculated_hash: [u8; 32] = match preimage_type {
+            let calculated_hash: [u8; 32] = match pt {
                 PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
                 PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
                 PreimageType::EthVersionedHash => hash,
@@ -229,27 +229,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
     let mut reader = BufReader::new(socket.try_clone()?);
     let input = receive_validation_input(&mut reader)?;
-
-    env.small_globals = [input.start_state.batch, input.start_state.pos_in_batch];
-    env.large_globals = [input.start_state.block_hash, input.start_state.send_root];
-
-    for batch in input.batch_info {
-        env.sequencer_messages.insert(batch.number, batch.data);
-    }
-    if input.has_delayed_msg {
-        env.delayed_messages
-            .insert(input.delayed_msg_nr, input.delayed_msg);
-    }
-    for (preimage_type, preimages) in input.preimages {
-        let preimage_map = env.preimages.entry(preimage_type).or_default();
-        for (hash, preimage) in preimages {
-            preimage_map.insert(hash, preimage);
-        }
-    }
-    for (module_hash, module_asm) in &input.user_wasms[local_target()] {
-        env.module_asms
-            .insert(*module_hash, module_asm.as_vec().into());
-    }
+    crate::machine::load_validation_input(env, &input);
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));

@@ -2,21 +2,18 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::machine::Escape;
-use arbutil::{Bytes32, PreimageType};
+use arbutil::Bytes32;
 use clap::{Args, Parser, Subcommand};
-use std::collections::HashMap;
 use std::io::BufWriter;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
-use validation::{BatchInfo, UserWasm};
 use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
 
 mod arbcompress;
 mod arbcrypto;
 mod caller_env;
 pub mod machine;
-mod prepare;
 pub mod program;
 pub mod stylus_backend;
 mod test;
@@ -63,7 +60,7 @@ pub enum InputMode {
     Local(LocalInput),
     /// Use direct Rust objects
     #[command(skip)]
-    Native(NativeInput),
+    Native(validation::ValidationInput),
     /// Continuously read new inputs from TCP connections
     Continuous,
 }
@@ -114,15 +111,6 @@ impl From<GlobalState> for validation::GoGlobalState {
             pos_in_batch: state.position_within_message,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct NativeInput {
-    pub old_state: GlobalState,
-    pub inbox: Vec<BatchInfo>,
-    pub delayed_inbox: Vec<BatchInfo>,
-    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
-    pub programs: HashMap<Bytes32, UserWasm>,
 }
 
 /// Result of running the JIT validation.
@@ -176,10 +164,10 @@ fn run_instance(
         memory_used,
         runtime: env.process.timestamp.elapsed(),
         new_state: GlobalState {
-            last_block_hash: env.large_globals[0],
-            last_send_root: env.large_globals[1],
-            inbox_position: env.small_globals[0],
-            position_within_message: env.small_globals[1],
+            last_block_hash: Bytes32(env.input.large_globals[0]),
+            last_send_root: Bytes32(env.input.large_globals[1]),
+            inbox_position: env.input.small_globals[0],
+            position_within_message: env.input.small_globals[1],
         },
         error: None,
         trace: vec![],
