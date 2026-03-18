@@ -17,14 +17,19 @@ A multi-dimensional gas metering approach is adopted, introducing distinct `Reso
     - Hashing
     - Bloom filter updates
 
-- ResourceKindStorageAccess. Represents read access to the global state:
-    - Account lookups (CALL, EXTCODESIZE, BALANCE)
-    - Storage slot reads
-    - Storage slot writes (nonzero → nonzero and nonzero → zero)
-    - Witness generation for reads (e.g. Verkle/stateless mode)
-    - Access list updates (EIP-2929/2930)
-    - Verkle proof traversal
-    - Target address resolution (DELEGATECALL, STATICCALL)
+- ResourceKindStorageAccessRead. Represents read access to the global state:
+    - Storage slot reads (SLOAD, SSTORE cold slot load)
+    - Account lookups (BALANCE, EXTCODESIZE, EXTCODEHASH, EXTCODECOPY)
+    - CALL/DELEGATECALL/STATICCALL cold account access and target resolution
+    - SELFDESTRUCT cold beneficiary access
+    - Access list intrinsic gas (EIP-2929/2930)
+    - Verkle/EIP-4762 witness reads and code chunk reads
+    - WASM state loads and cold access
+
+- ResourceKindStorageAccessWrite. Represents write access to the global state:
+    - SSTORE write costs (EIP-2200, EIP-1283, Verkle, WASM)
+    - SELFDESTRUCT base cost (EIP-150) and deletion
+    - Verkle/EIP-4762 witness writes and value transfers
 
 - ResourceKindStorageGrowth. Includes operations that increase the persistent state size:
     - New account creation

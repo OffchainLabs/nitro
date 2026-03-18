@@ -137,7 +137,7 @@ func (s *Storage) Account() common.Address {
 }
 
 func (s *Storage) Get(key common.Hash) (common.Hash, error) {
-	err := s.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
+	err := s.burner.Burn(multigas.ResourceKindStorageAccessRead, StorageReadCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -185,7 +185,7 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := s.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
+	err := s.burner.Burn(multigas.ResourceKindStorageAccessWrite, writeCost(value))
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,7 @@ func (s *Storage) ClearBytes() error {
 }
 
 func (s *Storage) GetCodeHash(address common.Address) (common.Hash, error) {
-	err := s.burner.Burn(multigas.ResourceKindStorageAccess, StorageCodeHashCost)
+	err := s.burner.Burn(multigas.ResourceKindStorageAccessRead, StorageCodeHashCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -395,7 +395,7 @@ func (s *Storage) NewSlot(offset uint64) StorageSlot {
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, StorageReadCost)
+	err := ss.burner.Burn(multigas.ResourceKindStorageAccessRead, StorageReadCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -410,7 +410,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(multigas.ResourceKindStorageAccess, writeCost(value))
+	err := ss.burner.Burn(multigas.ResourceKindStorageAccessWrite, writeCost(value))
 	if err != nil {
 		return err
 	}
