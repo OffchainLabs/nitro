@@ -5,7 +5,7 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::{host::InternalFunc, value::FunctionType, Machine};
+use crate::{value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -16,6 +16,7 @@ use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
 use wasmparser::{BlockType, Operator, ValType};
+use crate::internal_func::InternalFunc;
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 

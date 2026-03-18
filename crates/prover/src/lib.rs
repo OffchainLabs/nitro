@@ -18,6 +18,8 @@ mod reinterpret;
 pub mod utils;
 pub mod value;
 pub mod wavm;
+pub(crate) mod internal_func;
+pub(crate) mod memory_type;
 
 #[cfg(test)]
 mod test;

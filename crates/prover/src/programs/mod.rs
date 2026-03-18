@@ -4,7 +4,6 @@
 use crate::{
     binary::{ExportKind, WasmBinary},
     machine::Module,
-    memory::MemoryType,
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
@@ -12,6 +11,7 @@ use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Byt
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
+use wasmer::MiddlewareReaderState;
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
@@ -27,6 +27,7 @@ use {
     },
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
+use crate::memory_type::MemoryType;
 
 pub mod config;
 pub mod counter;
@@ -127,7 +128,7 @@ where
     fn generate_function_middleware<'a>(
         &self,
         local_function_index: LocalFunctionIndex,
-    ) -> Box<dyn wasmer::FunctionMiddleware<'a> + 'a> {
+    ) -> Box<dyn FunctionMiddleware<'a> + 'a> {
         let worker = self.0.instrument(local_function_index).unwrap();
         Box::new(FuncMiddlewareWrapper(worker, PhantomData))
     }
@@ -154,7 +155,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut wasmer::MiddlewareReaderState<'a>,
+        out: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));
