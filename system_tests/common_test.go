@@ -2073,6 +2073,12 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 		case <-ctx.Done():
 			return
 		case err := <-feedErrChan:
+			// During shutdown, ctx.Done() and feedErrChan may both be ready
+			// simultaneously and Go's select picks randomly. Ignore errors
+			// that arrive after the context is canceled (normal shutdown).
+			if ctx.Err() != nil {
+				return
+			}
 			t.Errorf("error occurred: %v", err)
 			if node != nil {
 				node.StopAndWait()
