@@ -564,7 +564,9 @@ fn signed_div(mag: U256, positive: bool, divisor: U256) -> (U256, bool) {
         return (mag / divisor, true);
     }
 
-    // Negative dividend: Euclidean rounds toward negative infinity.
+    // Negative dividend: Euclidean division (matching Go's big.Int.Div).
+    // Go's big.Int.Div rounds toward negative infinity with non-negative remainder.
+    // -7 / 2 = -4 (since -7 = 2*(-4) + 1, remainder 1 >= 0)
     let quotient = mag / divisor;
     let remainder = mag % divisor;
     if remainder.is_zero() {
@@ -574,7 +576,7 @@ fn signed_div(mag: U256, positive: bool, divisor: U256) -> (U256, bool) {
             (quotient, false)
         }
     } else {
-        // Non-zero remainder: round away from zero (more negative).
+        // Non-zero remainder: round toward negative infinity.
         (quotient + U256::from(1), false)
     }
 }
