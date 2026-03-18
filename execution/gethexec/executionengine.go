@@ -113,6 +113,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // sender, recipient, de-aliased sender (for aliasing tx types), retryable fields,
 // and addresses extracted from event logs.
 func touchFilterAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *types.Transaction, sender common.Address) {
+
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
@@ -133,9 +134,17 @@ func touchFilterAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *ty
 // Collects tx hashes that touch filtered addresses but are not in the onchain filter.
 // Does not return an error - the caller checks FilteredTxHashes after block production.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if tx.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
 	touchFilterAddresses(db, f.eventFilter, tx, sender)
 
 	if db.IsAddressFiltered() {
+		// For redeems, return the filter error so the block processor can
+		// trigger a group rollback.
+		if tx.Type() == types.ArbitrumRetryTxType {
+			return state.ErrArbTxFilter
+		}
 		// If the STF already handled this tx via the onchain filter mechanism,
 		// the filter entry has been cleaned up and we're done.
 		var filteredErr *core.ErrFilteredTx
@@ -147,6 +156,19 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
 	}
 	return nil
+}
+
+func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
+
+// TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
+// and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the
+// existing check fires ErrFilteredDelayedMessage, causing the delayed sequencer
+// to halt and the transaction-filterer to add the hash to the onchain filter.
+func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
+	var cascadingErr *arbos.ErrFilteredCascadingRedeem
+	if errors.As(err, &cascadingErr) {
+		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
+	}
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -222,9 +244,10 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
-	addressChecker               state.AddressChecker
-	eventFilter                  *eventfilter.EventFilter
-	transactionFiltererRPCClient *TransactionFiltererRPCClient
+	addressChecker                 state.AddressChecker
+	eventFilter                    *eventfilter.EventFilter
+	transactionFiltererRPCClient   *TransactionFiltererRPCClient
+	disableDelayedSequencingFilter bool
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -240,14 +263,20 @@ func init() {
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, syncTillBlock uint64, exposeMultiGas bool) *ExecutionEngine {
+func NewExecutionEngine(
+	bc *core.BlockChain,
+	syncTillBlock uint64,
+	exposeMultiGas bool,
+	disableDelayedSequencingFilter bool,
+) *ExecutionEngine {
 	return &ExecutionEngine{
-		bc:                bc,
-		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:  make(chan struct{}, 1),
-		cachedL1PriceData: NewL1PriceData(),
-		exposeMultiGas:    exposeMultiGas,
-		syncTillBlock:     syncTillBlock,
+		bc:                             bc,
+		resequenceChan:                 make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:               make(chan struct{}, 1),
+		cachedL1PriceData:              NewL1PriceData(),
+		exposeMultiGas:                 exposeMultiGas,
+		syncTillBlock:                  syncTillBlock,
+		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 	}
 }
 
@@ -662,7 +691,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
 	startTime := time.Now()
-	block, receipts, err := arbos.ProduceBlockAdvanced(
+	block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		delayedMessagesRead,
 		lastBlockHeader,
@@ -670,7 +699,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		hooks,
 		false,
-		core.NewMessageCommitContext(s.wasmTargets),
+		core.NewMessageSequencingContext(s.wasmTargets),
 		s.exposeMultiGas,
 	)
 	if err != nil {
@@ -826,7 +855,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, applyDelayedFilter bool) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool, isSequencing bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -867,7 +896,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
-	if isMsgForPrefetch {
+	if isSequencing {
+		runCtx = core.NewMessageSequencingContext(s.wasmTargets)
+	} else if isMsgForPrefetch {
 		runCtx = core.NewMessagePrefetchContext()
 	} else {
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
@@ -877,7 +908,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
 	// different hooks, and we need access to filteringHooks.FilteredTxHash to report
 	// which tx caused the halt.
-	if applyDelayedFilter {
+	if !s.disableDelayedSequencingFilter && isSequencing {
 		chainConfig := s.bc.Config()
 		currentArbosVersion := types.DeserializeHeaderExtraInformation(currentHeader).ArbOSFormatVersion
 		txes, err := arbos.ParseL2Transactions(msg.Message, chainConfig.ChainID, currentArbosVersion)
@@ -887,7 +918,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
 
-		block, receipts, err := arbos.ProduceBlockAdvanced(
+		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
 			msg.DelayedMessagesRead,
 			currentHeader,
@@ -925,7 +956,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return block, statedb, receipts, nil
 	}
 
-	block, receipts, err := arbos.ProduceBlock(
+	block, statedb, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		currentHeader,

@@ -70,7 +70,7 @@ type TxPreChecker struct {
 	TransactionPublisher
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
-	expressLaneTracker *ExpressLaneTracker
+	expressLaneTracker *timeboost.ExpressLaneTracker
 	addressChecker     state.AddressChecker
 	eventFilter        *eventfilter.EventFilter
 }
@@ -306,7 +306,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
-func (c *TxPreChecker) SetExpressLaneTracker(tracker *ExpressLaneTracker) {
+func (c *TxPreChecker) SetExpressLaneTracker(tracker *timeboost.ExpressLaneTracker) {
 	c.expressLaneTracker = tracker
 }
 

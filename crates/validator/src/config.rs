@@ -7,16 +7,19 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
-use anyhow::Result;
+use alloy_rpc_types_engine::JwtSecret;
+use anyhow::{anyhow, Context as _, Result};
 use clap::{Parser, ValueEnum};
 use std::collections::HashMap;
+use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::info;
 
 use crate::engine::machine::JitProcessManager;
 use crate::engine::machine_locator::MachineLocator;
 use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
+use crate::jwt;
 
 /// Mode-specific execution state, built at startup.
 pub enum ExecutionMode {
@@ -35,11 +38,24 @@ pub struct ServerState {
     pub locator: MachineLocator,
     pub available_workers: usize,
     pub execution: ExecutionMode,
+    /// HS256 secret for JWT authentication; `None` disables auth.
+    pub jwt_secret: Option<JwtSecret>,
 }
 
 impl ServerState {
     pub fn new(config: &ServerConfig, available_workers: usize) -> Result<Self> {
         let locator = MachineLocator::new(&config.root_path)?;
+
+        let jwt_secret = config
+            .jwt_secret
+            .as_deref()
+            .map(jwt::load_secret)
+            .transpose()
+            .context("failed to load JWT secret")?;
+
+        if jwt_secret.is_some() {
+            info!("JWT authentication enabled");
+        }
 
         let execution = match config.mode {
             InputMode::Continuous => ExecutionMode::Continuous {
@@ -79,6 +95,7 @@ impl ServerState {
             locator,
             available_workers,
             execution,
+            jwt_secret,
         })
     }
 
@@ -128,6 +145,11 @@ pub struct ServerConfig {
     /// Root path to where 0x1234.../replay.wasm machines are located
     #[clap(long)]
     pub root_path: Option<PathBuf>,
+
+    /// Path to a file containing a 64-char hex JWT secret, or the hex string itself.
+    /// When set, all requests must carry a valid `Authorization: Bearer <HS256-token>` header.
+    #[clap(long)]
+    pub jwt_secret: Option<String>,
 }
 
 impl ServerConfig {
@@ -148,11 +170,53 @@ impl ServerConfig {
     }
 }
 
+pub fn get_jit_path() -> Result<PathBuf> {
+    let current_exe = env::current_exe().context("failed to get path of current executable")?;
+
+    let is_test_env = current_exe.to_string_lossy().contains("deps");
+
+    let candidate = if is_test_env {
+        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
+            grandparent.join("target").join("bin").join("jit")
+        } else {
+            return Err(anyhow!(
+                "Custom JIT path not found for test env: {manifest_dir:?}",
+            ));
+        }
+    } else {
+        current_exe
+            .parent()
+            .ok_or_else(|| anyhow!("failed to resolve parent directory of executable"))?
+            .join("jit")
+    };
+
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+
+    // 3. Fallback: Search system PATH
+    // We treat a missing PATH var as "just continue" rather than a hard error
+    if let Ok(path_var) = env::var("PATH") {
+        for split_path in env::split_paths(&path_var) {
+            let joined = split_path.join("jit");
+            if joined.exists() {
+                return Ok(joined);
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "jit binary not found in local paths or system PATH"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
 
-    use crate::config::ServerConfig;
+    use crate::config::{get_jit_path, ServerConfig};
 
     #[test]
     fn verify_cli() {
@@ -167,5 +231,24 @@ mod tests {
         assert!(server_config.workers.is_none());
         let workers = server_config.get_workers().unwrap();
         assert!(workers > 0);
+    }
+
+    #[test]
+    fn test_get_jit_path() {
+        let jit_path = get_jit_path().unwrap();
+
+        assert!(jit_path.exists(), "JIT binary does not exist");
+        assert!(
+            jit_path.is_file(),
+            "JIT path points to a directory, expected a file"
+        );
+
+        let path_str = jit_path.to_str().expect("path contains invalid utf-8");
+
+        assert!(
+            path_str.contains("nitro/target/bin/jit"),
+            "Path {:?} did not contain expected substring 'nitro/target/bin/jit'",
+            jit_path
+        );
     }
 }
