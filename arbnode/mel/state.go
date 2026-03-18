@@ -247,7 +247,7 @@ func (s *State) PopDelayedOutbox() (common.Hash, error) {
 	}
 	result, err := s.resolveDelayedPreimage(s.DelayedMessageOutboxAcc)
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("error resolving outbox preimage: %w", err)
+		return common.Hash{}, fmt.Errorf("error resolving outbox preimage, delayedMsgPreimages of size: %d, seenCount: %d, readCount: %d, err: %w", s.delayedMsgPreimages.Size(), s.DelayedMessagesSeen, s.DelayedMessagesRead, err)
 	}
 	prevOutbox, msgHash, err := SplitPreimage(result)
 	if err != nil {
