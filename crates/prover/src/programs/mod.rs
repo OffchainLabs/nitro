@@ -18,6 +18,7 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
+use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
 use {
     super::value,
@@ -27,7 +28,6 @@ use {
     },
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
-use crate::memory_type::MemoryType;
 
 pub mod config;
 pub mod counter;

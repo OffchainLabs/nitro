@@ -1,9 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use num_derive::FromPrimitive;
 use crate::value::ArbValueType::{I32, I64};
 use crate::value::FunctionType;
+use num_derive::FromPrimitive;
 
 /// Represents the internal hostio functions a module may have.
 #[derive(Clone, Copy, Debug, FromPrimitive)]

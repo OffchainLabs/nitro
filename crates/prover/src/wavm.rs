@@ -1,9 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::internal_func::InternalFunc;
 use crate::{
     binary::FloatInstruction,
-    host::InternalFunc,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
 use arbutil::{Bytes32, Color, DebugColor};

@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{value::FunctionType, Machine};
 
+use crate::internal_func::InternalFunc;
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
@@ -16,7 +17,6 @@ use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
 use wasmparser::{BlockType, Operator, ValType};
-use crate::internal_func::InternalFunc;
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 

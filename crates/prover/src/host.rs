@@ -3,6 +3,7 @@
 
 #![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
+use crate::internal_func::InternalFunc;
 use crate::{
     binary, host,
     machine::{Function, InboxIdentifier},
@@ -15,7 +16,6 @@ use arbutil::{evm::user::UserOutcomeKind, Color, PreimageType};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
 use std::{collections::HashMap, path::Path, str::FromStr};
-use crate::internal_func::InternalFunc;
 
 /// Represents the internal hostio functions a module may have.
 pub enum Hostio {

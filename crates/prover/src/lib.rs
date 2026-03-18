@@ -5,11 +5,13 @@
 
 pub mod binary;
 mod host;
+pub(crate) mod internal_func;
 #[cfg(feature = "native")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 pub mod memory;
+pub(crate) mod memory_type;
 pub mod merkle;
 pub mod prepare;
 mod print;
@@ -18,8 +20,6 @@ mod reinterpret;
 pub mod utils;
 pub mod value;
 pub mod wavm;
-pub(crate) mod internal_func;
-pub(crate) mod memory_type;
 
 #[cfg(test)]
 mod test;
