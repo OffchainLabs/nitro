@@ -592,9 +592,15 @@ func ProduceBlockAdvanced(
 			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.DepositValue)
 		}
 
-		computeUsed := txGasUsed - dataGas
-		if txGasUsed < dataGas {
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-txGasUsed)
+		// Use the actual poster gas from the receipt (which accounts for tip collection)
+		// rather than the pre-tx estimate which always uses basefee.
+		posterGasUsed := dataGas
+		if arbosVersion >= params.ArbosVersion_60 {
+			posterGasUsed = receipt.GasUsedForL1
+		}
+		computeUsed := txGasUsed - posterGasUsed
+		if txGasUsed < posterGasUsed {
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", posterGasUsed-txGasUsed)
 			computeUsed = params.TxGas
 		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
