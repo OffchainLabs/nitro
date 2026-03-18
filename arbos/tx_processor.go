@@ -506,8 +506,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
-		// Since tips go to the network, and not to the poster, we use the basefee.
-		// Note, this only determines the amount of gas bought, not the price per gas.
+		// When tips are collected, use the full gas price to convert poster L1 costs into gas
+		// units. This avoids overcharging the user for the tip on the poster's data gas, since
+		// each gas unit is worth more when tips are collected.
+		actualGasPrice := p.GetPaidGasPrice()
+		if actualGasPrice.Sign() == 0 { // fall back to basefee, in case of no paid gas price
+			actualGasPrice = basefee
+		}
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
@@ -517,8 +522,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
-		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunContext, posterCost)
-		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
+		p.posterGas = GetPosterGas(p.state, actualGasPrice, p.msg.TxRunContext, posterCost)
+		p.PosterFee = arbmath.BigMulByUint(actualGasPrice, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
 

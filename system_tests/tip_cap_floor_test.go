@@ -109,29 +109,27 @@ func (env *tipCapFloorTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.
 	return revenue, receipt
 }
 
-// baseFeeRevenue returns the expected network revenue when tips are dropped:
-// baseFee * l2GasUsed (the compute portion minted in EndTxHook).
-func (env *tipCapFloorTestEnv) baseFeeRevenue(receipt *types.Receipt) *big.Int {
+// expectedRevenue returns the expected network fee account revenue for a receipt
+// given the effective gas price: gasPrice * l2GasUsed.
+func (env *tipCapFloorTestEnv) expectedRevenue(gasPrice *big.Int, receipt *types.Receipt) *big.Int {
 	l2GasUsed := receipt.GasUsed - receipt.GasUsedForL1
-	return arbmath.BigMulByUint(env.baseFee, l2GasUsed)
+	return arbmath.BigMulByUint(gasPrice, l2GasUsed)
 }
 
 func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
-	baseFeeOnly := env.baseFeeRevenue(receipt)
-	if revenue.Cmp(baseFeeOnly) != 0 {
-		Fatal(env.t, context+": tip should be dropped", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
+	expected := env.expectedRevenue(env.baseFee, receipt)
+	if revenue.Cmp(expected) != 0 {
+		Fatal(env.t, context+": tip should be dropped", "revenue", revenue, "expected", expected)
 	}
 }
 
 func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
-	// Network revenue = baseFee * l2GasUsed (minted in EndTxHook) + tip * totalGasUsed (tip payment)
-	baseFeeOnly := env.baseFeeRevenue(receipt)
-	tipRevenue := arbmath.BigMulByUint(tipCap, receipt.GasUsed)
-	expected := new(big.Int).Add(baseFeeOnly, tipRevenue)
+	gasPrice := new(big.Int).Add(env.baseFee, tipCap)
+	expected := env.expectedRevenue(gasPrice, receipt)
 	if revenue.Cmp(expected) != 0 {
 		Fatal(env.t, context+": tip should be collected", "revenue", revenue, "expected", expected)
 	}
@@ -276,10 +274,10 @@ func TestTipCapDelayedInboxDropsTips(t *testing.T) {
 
 	networkAfter := env.builder.L2.GetBalance(t, env.networkFeeAddr)
 	revenue := new(big.Int).Sub(networkAfter, networkBefore)
-	baseFeeOnly := env.baseFeeRevenue(receipt)
+	expected := env.expectedRevenue(env.baseFee, receipt)
 
-	if revenue.Cmp(baseFeeOnly) != 0 {
-		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "baseFeeOnly", baseFeeOnly)
+	if revenue.Cmp(expected) != 0 {
+		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "expected", expected)
 	}
 }
 
