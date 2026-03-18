@@ -77,6 +77,38 @@ func TestParseSequencerMessage_LongAnyTrustNoReaderErrors(t *testing.T) {
 	}
 }
 
+func TestParseSequencerMessage_DACertWithFallbackReader(t *testing.T) {
+	ctx := context.Background()
+	registry := daprovider.NewDAProviderRegistry()
+	if err := registry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
+		t.Fatalf("failed to register fallback DACert reader: %v", err)
+	}
+
+	payload := append([]byte{daprovider.DACertificateMessageHeaderFlag}, make([]byte, 64)...)
+	data := buildSequencerMsg(payload)
+
+	msg, err := ParseSequencerMessage(ctx, 0, common.Hash{}, data, registry, daprovider.KeysetValidate, nil)
+	if err != nil {
+		t.Fatalf("expected no error with fallback DACert reader, got: %v", err)
+	}
+	if len(msg.Segments) != 0 {
+		t.Fatalf("expected empty segments for rejected DACert batch, got %d segments", len(msg.Segments))
+	}
+}
+
+func TestParseSequencerMessage_DACertNoReaderErrors(t *testing.T) {
+	ctx := context.Background()
+	registry := daprovider.NewDAProviderRegistry()
+
+	payload := append([]byte{daprovider.DACertificateMessageHeaderFlag}, make([]byte, 64)...)
+	data := buildSequencerMsg(payload)
+
+	_, err := ParseSequencerMessage(ctx, 0, common.Hash{}, data, registry, daprovider.KeysetValidate, nil)
+	if err == nil {
+		t.Fatal("expected error for DACert message with no reader configured, got nil")
+	}
+}
+
 func TestParseSequencerMessage_MinimalHeader(t *testing.T) {
 	ctx := context.Background()
 	// Ensure messages shorter than 40 bytes return an error
