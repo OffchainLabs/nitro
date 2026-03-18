@@ -57,7 +57,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	writeBytes := arbmath.WordsForBytes(byteCount)
-	if err := c.Burn(multigas.ResourceKindStorageAccess, params.SloadGas*writeBytes); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, params.SloadGas*writeBytes); err != nil {
 		return hash{}, err
 	}
 
@@ -192,7 +192,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return nil, con.oldNotFoundError(c)
 	}
 	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
-	if err := c.Burn(multigas.ResourceKindStorageAccess, updateCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, updateCost); err != nil {
 		return big.NewInt(0), err
 	}
 
