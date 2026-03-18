@@ -41,6 +41,7 @@ func (r *Router) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessa
 }
 
 type BroadcastClients struct {
+	stopwaiter.StopWaiter
 	primaryClients   []*broadcastclient.BroadcastClient
 	secondaryClients []*broadcastclient.BroadcastClient
 	secondaryURL     []string
@@ -135,17 +136,18 @@ func clearAndResetTicker(timer *time.Ticker, interval time.Duration) {
 }
 
 func (bcs *BroadcastClients) Start(ctx context.Context) {
-	bcs.primaryRouter.StopWaiter.Start(ctx, bcs.primaryRouter)
-	bcs.secondaryRouter.StopWaiter.Start(ctx, bcs.secondaryRouter)
+	bcs.StopWaiter.Start(ctx, bcs)
+	bcs.primaryRouter.StopWaiter.Start(bcs.GetContext(), bcs.primaryRouter)
+	bcs.secondaryRouter.StopWaiter.Start(bcs.GetContext(), bcs.secondaryRouter)
 
 	for _, client := range bcs.primaryClients {
-		client.Start(ctx)
+		client.Start(bcs.GetContext())
 	}
 
 	var lastConfirmed arbutil.MessageIndex
 	recentFeedItemsNew := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 	recentFeedItemsOld := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
-	bcs.primaryRouter.LaunchThread(func(ctx context.Context) {
+	bcs.LaunchThread(func(ctx context.Context) {
 		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
 		startSecondaryFeedTimer := time.NewTicker(MAX_FEED_INACTIVE_TIME)
 		stopSecondaryFeedTimer := time.NewTicker(PRIMARY_FEED_UPTIME)
@@ -297,10 +299,13 @@ func (bcs *BroadcastClients) stopSecondaryFeed() {
 }
 
 func (bcs *BroadcastClients) StopAndWait() {
-	for _, client := range bcs.primaryClients {
-		client.StopAndWait()
-	}
 	for _, client := range bcs.secondaryClients {
 		client.StopAndWait()
 	}
+	for _, client := range bcs.primaryClients {
+		client.StopAndWait()
+	}
+	bcs.secondaryRouter.StopWaiter.StopAndWait()
+	bcs.primaryRouter.StopWaiter.StopAndWait()
+	bcs.StopWaiter.StopAndWait()
 }
