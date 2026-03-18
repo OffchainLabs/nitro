@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -2074,9 +2075,10 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 			return
 		case err := <-feedErrChan:
 			// During shutdown, ctx.Done() and feedErrChan may both be ready
-			// simultaneously and Go's select picks randomly. Ignore errors
-			// that arrive after the context is canceled (normal shutdown).
-			if ctx.Err() != nil {
+			// simultaneously and Go's select picks randomly. Ignore context
+			// cancellation errors that are expected during normal shutdown,
+			// but still report any other errors.
+			if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 				return
 			}
 			t.Errorf("error occurred: %v", err)
