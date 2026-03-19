@@ -70,7 +70,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	targets := targetConfig.WasmTargets()
-	programs.SetCraneliftFallback(targetConfig.CraneliftFallback)
+	programs.SetAllowFallback(targetConfig.AllowFallback)
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion

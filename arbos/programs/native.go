@@ -50,18 +50,18 @@ type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
-// craneliftFallback controls whether LLVM compilation failures fall back to Cranelift.
-// Set once at startup via SetCraneliftFallback; defaults to true (fallback enabled).
-var craneliftFallback atomic.Bool
+// allowFallback controls whether compilation failures fall back to an alternative compiler.
+// Set once at startup via SetAllowFallback; defaults to true (fallback enabled).
+var allowFallback atomic.Bool
 
 func init() {
-	craneliftFallback.Store(true)
+	allowFallback.Store(true)
 }
 
-// SetCraneliftFallback configures whether to fall back to Cranelift on LLVM failure.
-func SetCraneliftFallback(enabled bool) {
-	craneliftFallback.Store(enabled)
-	log.Info("Cranelift fallback for Stylus compilation configured", "enabled", enabled)
+// SetAllowFallback configures whether to fall back to an alternative compiler on failure.
+func SetAllowFallback(enabled bool) {
+	allowFallback.Store(enabled)
+	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
 }
 
 var (
@@ -241,11 +241,11 @@ func activateProgramInternal(
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					if craneliftFallback.Load() {
+					if allowFallback.Load() {
 						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
 					} else {
-						log.Warn("stylus LLVM compilation failed and cranelift fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
 					}
 				}
 				results <- result{target, asm, err}
@@ -273,10 +273,10 @@ func activateProgramInternal(
 			"codehash", codehash,
 			"moduleHash", info.moduleHash,
 			"targets", targets,
-			"craneliftFallback", craneliftFallback.Load(),
+			"allowFallback", allowFallback.Load(),
 			"err", err,
 		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (craneliftFallback=%v): %v", addressForLogging, craneliftFallback.Load(), err))
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (allowFallback=%v): %v", addressForLogging, allowFallback.Load(), err))
 	}
 	return info, asmMap, err
 }
