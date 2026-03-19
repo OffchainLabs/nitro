@@ -957,7 +957,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
 			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
 			Require(t, err)
-			tx, err = arbowner.SetTipCapFloor(&debugAuth, big.NewInt(1))
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
 			Require(t, err)
 			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 			Require(t, err)
@@ -1045,7 +1045,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
 			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
 			Require(t, err)
-			tx, err = arbowner.SetTipCapFloor(&debugAuth, big.NewInt(1))
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
 			Require(t, err)
 			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 			Require(t, err)
