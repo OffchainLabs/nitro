@@ -18,6 +18,7 @@ Thumbs.db
 *.md
 !CLAUDE.md
 !README.md
+!LICENSE.md
 
 # Environment (keep .env.example tracked)
 .env
