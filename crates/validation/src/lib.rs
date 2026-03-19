@@ -180,3 +180,128 @@ impl ValidationRequest {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_user_wasm(data: &[u8]) -> UserWasm {
+        let compressed = brotli::compress(data, 1, 22, brotli::Dictionary::Empty).unwrap();
+        UserWasm::try_from(compressed).unwrap()
+    }
+
+    fn make_request() -> ValidationRequest {
+        let block_hash = Bytes32([1u8; 32]);
+        let send_root = Bytes32([2u8; 32]);
+
+        let keccak_map = HashMap::from_iter([(Bytes32([0xAA; 32]), vec![10, 20, 30])]);
+        let preimages = HashMap::from_iter([(PreimageType::Keccak256, keccak_map)]);
+
+        let target_map = HashMap::from_iter([(Bytes32([0xBB; 32]), make_user_wasm(&[0, 1, 2, 3]))]);
+        let user_wasms = HashMap::from_iter([("host".to_string(), target_map)]);
+
+        ValidationRequest {
+            id: 42,
+            has_delayed_msg: true,
+            delayed_msg_nr: 7,
+            preimages,
+            batch_info: vec![
+                BatchInfo {
+                    number: 0,
+                    data: vec![1, 2, 3],
+                },
+                BatchInfo {
+                    number: 1,
+                    data: vec![4, 5, 6],
+                },
+            ],
+            delayed_msg: vec![9, 8, 7],
+            start_state: GoGlobalState {
+                block_hash,
+                send_root,
+                batch: 100,
+                pos_in_batch: 200,
+            },
+            user_wasms,
+            debug_chain: false,
+            max_user_wasm_size: 0,
+        }
+    }
+
+    #[test]
+    fn from_request_populates_globals() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert_eq!(input.small_globals, [100, 200]);
+        assert_eq!(input.large_globals[0], [1u8; 32]);
+        assert_eq!(input.large_globals[1], [2u8; 32]);
+    }
+
+    #[test]
+    fn from_request_populates_sequencer_messages() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert_eq!(input.sequencer_messages.len(), 2);
+        assert_eq!(input.sequencer_messages[&0], vec![1, 2, 3]);
+        assert_eq!(input.sequencer_messages[&1], vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn from_request_includes_delayed_message_when_present() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert_eq!(input.delayed_messages.len(), 1);
+        assert_eq!(input.delayed_messages[&7], vec![9, 8, 7]);
+    }
+
+    #[test]
+    fn from_request_skips_delayed_message_when_flag_false() {
+        let mut req = make_request();
+        req.has_delayed_msg = false;
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert!(input.delayed_messages.is_empty());
+    }
+
+    #[test]
+    fn from_request_skips_delayed_message_when_empty() {
+        let mut req = make_request();
+        req.delayed_msg = vec![];
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert!(input.delayed_messages.is_empty());
+    }
+
+    #[test]
+    fn from_request_populates_preimages() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host");
+
+        let keccak_map = input
+            .preimages
+            .get(&(PreimageType::Keccak256 as u8))
+            .unwrap();
+        assert_eq!(keccak_map.len(), 1);
+        assert_eq!(keccak_map[&[0xAA; 32]], vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn from_request_populates_module_asms_for_matching_target() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host");
+
+        assert_eq!(input.module_asms.len(), 1);
+        assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn from_request_returns_empty_module_asms_for_unknown_target() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "nonexistent");
+
+        assert!(input.module_asms.is_empty());
+    }
+}
