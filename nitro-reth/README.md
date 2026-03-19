@@ -1,6 +1,9 @@
 # ArbReth
 
 [![license](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE.md)
+[![lint](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml)
+[![test](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml)
+[![build](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml)
 
 A modular, Rust-native execution client for Arbitrum, built on [reth](https://github.com/paradigmxyz/reth).
 
