@@ -226,17 +226,26 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	startHeader := s.blockchain.GetHeaderByNumber(start)
 	if startHeader == nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
+		s.done <- struct{}{}
 		return startBlock
 	}
 	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
+		s.done <- struct{}{}
 		return startBlock
 	}
 	start = startHeader.Number.Uint64()
+	targetHeader := s.blockchain.GetHeaderByNumber(currentBlock)
+	if targetHeader == nil {
+		release()
+		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get target header at %d", currentBlock)
+		s.done <- struct{}{}
+		return startBlock
+	}
 	s.LaunchThread(func(ctx context.Context) {
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader, release); err != nil {
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
 			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)

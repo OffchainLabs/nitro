@@ -77,6 +77,8 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// block timestamp at which the next tx actually executes.
 	hdr, err = builder.L2.Client.HeaderByNumber(ctx, nil)
 	require.NoError(t, err)
+	// Add 120s buffer to account for drift between the header timestamp we read
+	// and the block timestamp at which the enable tx actually executes in CI.
 	enableAt := hdr.Time + precompiles.FeatureEnableDelay + 120
 	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
 	require.NoError(t, err)

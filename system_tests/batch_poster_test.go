@@ -752,10 +752,12 @@ drain:
 	// Disable the filter and send the captured batch poster transactions.
 	builder.L1.ClientWrapper.DisableRawTransactionFilter()
 	var sentTxs []*types.Transaction
+	var skipped int
 	for _, bptx := range batchPosterTxs {
 		err := builder.L1.Client.SendTransaction(ctx, bptx)
 		if err != nil {
 			if strings.Contains(err.Error(), "nonce too low") {
+				skipped++
 				t.Logf("Skipping batch poster tx with stale nonce: %v", err)
 				continue
 			}
@@ -763,6 +765,7 @@ drain:
 		}
 		sentTxs = append(sentTxs, bptx)
 	}
+	t.Logf("Replayed %d batch poster txs (%d captured, %d skipped due to stale nonce)", len(sentTxs), len(batchPosterTxs), skipped)
 	for _, tx := range sentTxs {
 		_, err := EnsureTxSucceeded(ctx, builder.L1.Client, tx)
 		Require(t, err)
