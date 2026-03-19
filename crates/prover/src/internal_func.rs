@@ -1,7 +1,8 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use super::{ArbValueType, FunctionType};
+use crate::value::ArbValueType::{I32, I64};
+use crate::value::FunctionType;
 use num_derive::FromPrimitive;
 
 /// Represents the internal hostio functions a module may have.
@@ -25,7 +26,6 @@ pub enum InternalFunc {
 
 impl InternalFunc {
     pub fn ty(&self) -> FunctionType {
-        use ArbValueType::*;
         use InternalFunc::*;
         macro_rules! func {
             ([$($args:expr),*], [$($outs:expr),*]) => {

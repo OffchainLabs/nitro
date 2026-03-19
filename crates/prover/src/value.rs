@@ -496,11 +496,3 @@ impl Display for ArbValueType {
         }
     }
 }
-
-#[path = "internal_func.rs"]
-mod internal_func;
-pub use internal_func::InternalFunc;
-
-#[path = "memory_type.rs"]
-mod memory_type;
-pub use memory_type::MemoryType;

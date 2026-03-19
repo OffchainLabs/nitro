@@ -35,8 +35,6 @@ pub fn print_counters() {
     );
 }
 
-pub use crate::value::MemoryType;
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
