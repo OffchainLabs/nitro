@@ -4,9 +4,9 @@ use crate::transfer::{
     receive_response, receive_validation_input, send_failure_response, send_successful_response,
     send_validation_input,
 };
-use crate::{local_target, BatchInfo, GoGlobalState, UserWasm, ValidationInput};
-use arbutil::{Bytes32, PreimageType};
-use std::collections::HashMap;
+use crate::{GoGlobalState, ValidationInput};
+use arbutil::Bytes32;
+use std::collections::BTreeMap;
 use std::io::pipe;
 
 #[test]
@@ -46,76 +46,40 @@ fn transfer_failure_response() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn transfer_input() -> Result<(), Box<dyn std::error::Error>> {
+fn transfer_validation_input() -> Result<(), Box<dyn std::error::Error>> {
     let input = ValidationInput {
-        start_state: Default::default(),
+        small_globals: [42, 7],
+        large_globals: [[1u8; 32], [2u8; 32]],
 
-        batch_info: vec![
-            BatchInfo {
-                number: 10,
-                data: vec![1, 2, 3],
-            },
-            BatchInfo {
-                number: 11,
-                data: vec![4, 5, 6],
-            },
-            BatchInfo {
-                number: 12,
-                data: vec![7, 8],
-            },
-        ],
+        sequencer_messages: BTreeMap::from([
+            (10, vec![1, 2, 3]),
+            (11, vec![4, 5, 6]),
+            (12, vec![7, 8]),
+        ]),
 
-        has_delayed_msg: true,
-        delayed_msg_nr: 1,
-        delayed_msg: vec![0xAA, 0xBB, 0xCC],
+        delayed_messages: BTreeMap::from([(1, vec![0xAA, 0xBB, 0xCC])]),
 
-        preimages: HashMap::from([
+        preimages: BTreeMap::from([
             (
-                PreimageType::Keccak256,
-                HashMap::from([
-                    (Bytes32::from([0u8; 32]), vec![0xDE, 0xAD, 0xBE, 0xEF]),
-                    (Bytes32::from([1u8; 32]), vec![0xBA, 0xAD, 0xF0, 0x0D]),
+                0, // Keccak256
+                BTreeMap::from([
+                    ([0u8; 32], vec![0xDE, 0xAD, 0xBE, 0xEF]),
+                    ([1u8; 32], vec![0xBA, 0xAD, 0xF0, 0x0D]),
                 ]),
             ),
             (
-                PreimageType::DACertificate,
-                HashMap::from([(Bytes32::from([2u8; 32]), vec![0xFE, 0xED, 0xFA, 0xCE])]),
+                3, // DACertificate
+                BTreeMap::from([([2u8; 32], vec![0xFE, 0xED, 0xFA, 0xCE])]),
             ),
         ]),
-        user_wasms: HashMap::from([(
-            local_target().to_string(),
-            HashMap::from([
-                (Bytes32::from([3u8; 32]), UserWasm(vec![20, 21, 22])),
-                (Bytes32::from([4u8; 32]), UserWasm(vec![30, 31, 32])),
-            ]),
-        )]),
 
-        ..Default::default()
+        module_asms: BTreeMap::from([([3u8; 32], vec![20, 21, 22]), ([4u8; 32], vec![30, 31, 32])]),
     };
 
     let (mut reader, mut writer) = pipe()?;
 
     send_validation_input(&mut writer, &input)?;
-    let received_input = receive_validation_input(&mut reader)?;
-
-    assert_eq!(received_input, input);
-
+    let received = receive_validation_input(&mut reader)?;
+    assert_eq!(received, input);
     Ok(())
-}
-
-#[test]
-fn local_stylus_target_must_be_present_if_some_target_is_present() {
-    let input = ValidationInput {
-        user_wasms: HashMap::from([(
-            "some-other-target".to_string(),
-            HashMap::from([(Bytes32::from([0u8; 32]), UserWasm(vec![1, 2, 3]))]),
-        )]),
-        ..Default::default()
-    };
-
-    let (_, mut writer) = pipe().unwrap();
-
-    let result = send_validation_input(&mut writer, &input);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("bad stylus arch"));
 }

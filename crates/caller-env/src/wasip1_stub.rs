@@ -10,7 +10,7 @@
 use crate::{ExecEnv, GuestPtr, MemAccess};
 
 #[repr(transparent)]
-pub struct Errno(pub(crate) u16);
+pub struct Errno(pub u16);
 
 pub const ERRNO_SUCCESS: Errno = Errno(0);
 pub const ERRNO_BADF: Errno = Errno(8);
