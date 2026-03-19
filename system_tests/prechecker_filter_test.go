@@ -463,7 +463,9 @@ func precheckerSubmitRetryable(
 }
 
 // testPrecheckerFilterCascadingRedeem tests that the prechecker's FIFO redeem
-// loop catches filtered addresses at arbitrary cascade depth.
+// loop catches filtered addresses at arbitrary cascade depth. The deepest ticket
+// targets a neutral wrapper contract that internally CALLs filteredTarget, so the
+// filtered address is only discovered during actual execution (not via the To field).
 func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -472,25 +474,31 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true)
 	defer cleanup()
 
-	// Deploy a contract to serve as the filtered target
+	// Deploy wrapper (neutral) and filteredTarget contracts
+	wrapperAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 	filteredTarget, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Fund redeemer early so balance syncs when we sync the forwarder later
 	builder.L2Info.GenerateAccount("Redeemer")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
 
+	wrapperABI, err := localgen.AddressFilterTestMetaData.GetAbi()
+	require.NoError(t, err)
 	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	require.NoError(t, err)
 	arbRetryableTxAddr := common.HexToAddress("6e")
 
 	// Build retryable chain bottom-up.
-	// ticket[0] is the deepest: dest=filteredTarget.
+	// ticket[0] is the deepest: targets wrapper with callTarget(filteredTarget).
 	// ticket[i>0]: dest=ArbRetryableTx, data=redeem(ticket[i-1]).
 	ticketIds := make([]common.Hash, depth)
 
-	// Deepest ticket targets filteredTarget directly (empty calldata).
+	// Deepest ticket targets wrapper.callTarget(filteredTarget) — the filtered
+	// address is only touched during execution, not in the To field.
+	callTargetData, err := wrapperABI.Pack("callTarget", filteredTarget)
+	require.NoError(t, err)
 	ticketIds[0] = precheckerSubmitRetryable(
-		t, ctx, builder, filteredTarget, nil, common.Big0,
+		t, ctx, builder, wrapperAddr, callTargetData, common.Big0,
 	)
 
 	// Each subsequent ticket redeems the previous one.
@@ -513,7 +521,9 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	filter := newHashedChecker([]common.Address{filteredTarget})
 	forwarder.ExecNode.TxPreChecker.SetAddressChecker(filter)
 
-	// Manual redeem of the top ticket through forwarder — prechecker should reject
+	// Manual redeem of the top ticket through forwarder — prechecker must
+	// execute the full cascade including the deepest redeem to discover the
+	// filtered address touched via wrapper.callTarget().
 	arbRetryableOnForwarder, err := precompilesgen.NewArbRetryableTx(
 		common.HexToAddress("6e"), forwarder.Client,
 	)
@@ -530,18 +540,17 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	}
 }
 
-// TestPrecheckerFilterCascadingRedeemDepth2 tests A -> B -> filtered via manual redeem
-// through the forwarder's prechecker. Requires the FIFO cascading redeem loop.
+// TestPrecheckerFilterCascadingRedeemDepth2 tests A -> B -> wrapper.callTarget(filtered).
 func TestPrecheckerFilterCascadingRedeemDepth2(t *testing.T) {
 	testPrecheckerFilterCascadingRedeem(t, 2)
 }
 
-// TestPrecheckerFilterCascadingRedeemDepth3 tests A -> B -> C -> filtered.
+// TestPrecheckerFilterCascadingRedeemDepth3 tests A -> B -> C -> wrapper.callTarget(filtered).
 func TestPrecheckerFilterCascadingRedeemDepth3(t *testing.T) {
 	testPrecheckerFilterCascadingRedeem(t, 3)
 }
 
-// TestPrecheckerFilterCascadingRedeemDepth4 tests A -> B -> C -> D -> filtered.
+// TestPrecheckerFilterCascadingRedeemDepth4 tests A -> B -> C -> D -> wrapper.callTarget(filtered).
 func TestPrecheckerFilterCascadingRedeemDepth4(t *testing.T) {
 	testPrecheckerFilterCascadingRedeem(t, 4)
 }
