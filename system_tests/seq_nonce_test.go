@@ -44,11 +44,7 @@ func TestSequencerParallelNonces(t *testing.T) {
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
 				t.Log("Submitting transaction with nonce", tx.Nonce())
 				err := builder.L2.Client.SendTransaction(ctx, tx)
-				if err != nil {
-					if ctx.Err() == nil {
-						t.Errorf("SendTransaction failed: %v", err)
-					}
-					cancel()
+				if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
 					return
 				}
 				t.Log("Got response for transaction with nonce", tx.Nonce())

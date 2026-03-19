@@ -199,16 +199,17 @@ func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksR
 	}
 
 	blocksReExecutor = &BlocksReExecutor{
-		StopWaiter:   stopwaiter.StopWaiter{},
-		config:       c,
-		db:           state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
-		blockchain:   blockchain,
-		stateFor:     stateForFunc,
-		blocks:       blocks,
-		done:         make(chan struct{}, c.Room),
-		fatalErrChan: make(chan error, c.Room),
-		success:      make(chan struct{}),
-		mutex:        sync.Mutex{},
+		StopWaiter:    stopwaiter.StopWaiter{},
+		config:        c,
+		db:            state.NewDatabase(triedb.NewDatabase(ethDb, &trieConfig), nil),
+		blockchain:    blockchain,
+		stateFor:      stateForFunc,
+		blocks:        blocks,
+		done:          make(chan struct{}, c.Room),
+		fatalErrChan:  make(chan error, c.Room),
+		fatalReported: atomic.Bool{},
+		success:       make(chan struct{}),
+		mutex:         sync.Mutex{},
 	}
 	return blocksReExecutor, nil
 }
@@ -221,13 +222,14 @@ func logState(header *types.Header, hasState bool) {
 
 // reportFatalErr marks a fatal error and attempts to send it to the fatal error channel.
 // The fatalReported flag is set unconditionally so that Impl and Start stop launching
-// new work. If the channel is full, this new error is logged and dropped.
+// new work. The error is always logged; if the channel is full, the error is dropped
+// from the channel but remains visible in logs.
 func (s *BlocksReExecutor) reportFatalErr(err error) {
 	s.fatalReported.Store(true)
+	log.Error("blocksReExecutor: fatal error", "err", err)
 	select {
 	case s.fatalErrChan <- err:
 	default:
-		log.Error("blocksReExecutor: fatal error channel full, error already reported", "err", err)
 	}
 }
 
@@ -269,7 +271,7 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	s.LaunchThread(func(ctx context.Context) {
 		defer func() { s.done <- struct{}{} }()
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil && ctx.Err() == nil {
 			s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
@@ -290,24 +292,18 @@ func (s *BlocksReExecutor) Impl(ctx context.Context, startBlock, currentBlock, m
 	}
 	// Wait for all launched threads to complete, launching new work as threads
 	// finish unless a fatal error has been reported or the context is cancelled.
+	// No special drain path is needed: launched goroutines respect ctx and will
+	// finish promptly on cancellation, so the loop naturally drains.
 	for threadsLaunched > 0 {
-		select {
-		case <-s.done:
-			threadsLaunched--
-			if !s.fatalReported.Load() && currentBlock > startBlock {
-				threadsLaunched++
-				currentBlock = s.LaunchBlocksReExecution(ctx, startBlock, currentBlock, minBlocksPerThread)
-			}
-		case <-ctx.Done():
+		<-s.done
+		threadsLaunched--
+		if !s.fatalReported.Load() && ctx.Err() == nil && currentBlock > startBlock {
+			threadsLaunched++
+			currentBlock = s.LaunchBlocksReExecution(ctx, startBlock, currentBlock, minBlocksPerThread)
 		}
-		// After a fatal error or context cancellation, drain without launching new work.
-		if s.fatalReported.Load() || ctx.Err() != nil {
-			for threadsLaunched > 0 {
-				<-s.done
-				threadsLaunched--
-			}
-			return 0
-		}
+	}
+	if s.fatalReported.Load() || ctx.Err() != nil {
+		return 0
 	}
 	log.Info("BlocksReExecutor successfully completed re-execution of blocks against historic state", "stateAt", startBlock, "startBlock", startBlock+1, "endBlock", end)
 	return currentBlock
@@ -347,7 +343,6 @@ func (s *BlocksReExecutor) WaitForReExecution(ctx context.Context) error {
 }
 
 func (s *BlocksReExecutor) wrapFatalErr(err error) error {
-	log.Error("shutting BlocksReExecutor down due to fatal error", "err", err)
 	return fmt.Errorf("shutting BlocksReExecutor down due to fatal error: %w", err)
 }
 

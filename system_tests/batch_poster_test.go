@@ -412,28 +412,18 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	go func() {
 		data := make([]byte, 90000)
 		_, err := rand.Read(data)
-		if err != nil {
-			t.Errorf("rand.Read failed: %v", err)
-			cancel()
+		if goroutineErrorf(t, ctx, cancel, err, "rand.Read failed: %v", err) {
 			return
 		}
 		for ctx.Err() == nil {
 			gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
 			tx := builder.L2Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
 			err = builder.L2.Client.SendTransaction(ctx, tx)
-			if err != nil {
-				if ctx.Err() == nil {
-					t.Errorf("SendTransaction failed: %v", err)
-				}
-				cancel()
+			if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
 				return
 			}
 			_, err := builder.L2.EnsureTxSucceeded(tx)
-			if err != nil {
-				if ctx.Err() == nil {
-					t.Errorf("EnsureTxSucceeded failed: %v", err)
-				}
-				cancel()
+			if goroutineErrorf(t, ctx, cancel, err, "EnsureTxSucceeded failed: %v", err) {
 				return
 			}
 		}

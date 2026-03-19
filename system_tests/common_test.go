@@ -2172,6 +2172,24 @@ func retryUntilFound(t *testing.T, ctx context.Context, maxRetries int, interval
 	t.Fatalf("%s: exhausted %d retries: %v", desc, maxRetries, lastErr)
 }
 
+// goroutineErrorf reports an error from a background goroutine in a goroutine-safe way.
+// It calls t.Errorf (safe from any goroutine, unlike t.Fatal) and cancels the context
+// to signal other goroutines to stop. Errors caused by context cancellation are suppressed
+// since they are expected consequences of another goroutine failing first.
+// Returns true if an error was reported or the context is already cancelled, signaling
+// the caller should return.
+func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFunc, err error, format string, args ...interface{}) bool {
+	t.Helper()
+	if err == nil {
+		return false
+	}
+	if ctx.Err() == nil {
+		t.Errorf(format, args...)
+	}
+	cancel()
+	return true
+}
+
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
