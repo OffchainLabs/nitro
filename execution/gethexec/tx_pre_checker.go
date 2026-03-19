@@ -43,20 +43,22 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
-const speculativeFilterGasCap uint64 = 50_000_000
+const defaultSpeculativeFilterGasCap uint64 = 50_000_000
 
 type TxPreCheckerConfig struct {
-	Strictness             uint  `koanf:"strictness" reload:"hot"`
-	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
-	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
+	Strictness              uint   `koanf:"strictness" reload:"hot"`
+	RequiredStateAge        int64  `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks  uint   `koanf:"required-state-max-blocks" reload:"hot"`
+	SpeculativeFilterGasCap uint64 `koanf:"speculative-filter-gas-cap" reload:"hot"`
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
-	RequiredStateAge:       2,
-	RequiredStateMaxBlocks: 4,
+	Strictness:              TxPreCheckerStrictnessLikelyCompatible,
+	RequiredStateAge:        2,
+	RequiredStateMaxBlocks:  4,
+	SpeculativeFilterGasCap: defaultSpeculativeFilterGasCap,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -65,6 +67,7 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"30 = full validation which may reject txs that would succeed")
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
+	f.Uint64(prefix+".speculative-filter-gas-cap", DefaultTxPreCheckerConfig.SpeculativeFilterGasCap, "maximum gas limit for transactions subject to address filtering, also used as cumulative gas budget for redeem tickets")
 }
 
 type TxPreChecker struct {
@@ -379,8 +382,9 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	runCtx := core.NewMessageEthcallContext()
 	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
 
-	if tx.Gas() > speculativeFilterGasCap {
-		return fmt.Errorf("transaction gas limit %d exceeds maximum allowed %d", tx.Gas(), speculativeFilterGasCap)
+	gasCap := c.config().SpeculativeFilterGasCap
+	if tx.Gas() > gasCap {
+		return fmt.Errorf("transaction gas limit %d exceeds maximum allowed %d", tx.Gas(), gasCap)
 	}
 
 	var scheduledTxes types.Transactions
@@ -401,7 +405,7 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 
 	// Execute scheduled redeems in FIFO order, including cascading redeems,
 	// mirroring the block processor's redeem loop in ProduceBlockAdvanced.
-	redeemBudget := uint64(speculativeFilterGasCap)
+	redeemBudget := gasCap
 	txIndex := 1
 	for len(scheduledTxes) > 0 {
 		redeemGas := arbmath.MinInt(scheduledTxes[0].Gas(), redeemBudget)
