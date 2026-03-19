@@ -46,10 +46,7 @@ impl SignableTxRequest<ArbTransactionSigned> for ArbTransactionRequest {
 
 impl TryIntoSimTx<ArbTransactionSigned> for ArbTransactionRequest {
     fn try_into_sim_tx(self) -> Result<ArbTransactionSigned, ValueError<Self>> {
-        Err(ValueError::new(
-            self,
-            "simulate_v1 not yet supported",
-        ))
+        Err(ValueError::new(self, "simulate_v1 not yet supported"))
     }
 }
 

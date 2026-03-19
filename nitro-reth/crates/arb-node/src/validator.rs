@@ -42,11 +42,10 @@ where
         let ExecutionData { payload, sidecar } = payload;
         let expected_hash = payload.block_hash();
 
-        let sealed_block: SealedBlock<alloy_consensus::Block<ArbTransactionSigned>> =
-            payload
-                .try_into_block_with_sidecar(&sidecar)
-                .map_err(|e| NewPayloadError::Other(e.into()))?
-                .seal_slow();
+        let sealed_block: SealedBlock<alloy_consensus::Block<ArbTransactionSigned>> = payload
+            .try_into_block_with_sidecar(&sidecar)
+            .map_err(|e| NewPayloadError::Other(e.into()))?
+            .seal_slow();
 
         if expected_hash != sealed_block.hash() {
             return Err(NewPayloadError::Other(
@@ -64,19 +63,12 @@ where
 
 impl<Types> EngineApiValidator<Types> for ArbPayloadValidator
 where
-    Types: PayloadTypes<
-        ExecutionData = ExecutionData,
-        PayloadAttributes = ArbPayloadAttributes,
-    >,
+    Types: PayloadTypes<ExecutionData = ExecutionData, PayloadAttributes = ArbPayloadAttributes>,
 {
     fn validate_version_specific_fields(
         &self,
         version: EngineApiMessageVersion,
-        payload_or_attrs: PayloadOrAttributes<
-            '_,
-            Types::ExecutionData,
-            ArbPayloadAttributes,
-        >,
+        payload_or_attrs: PayloadOrAttributes<'_, Types::ExecutionData, ArbPayloadAttributes>,
     ) -> Result<(), EngineObjectValidationError> {
         validate_version_specific_fields(&*self.chain_spec, version, payload_or_attrs)
     }

@@ -9,8 +9,8 @@ use crate::storage_slot::{
 
 /// ArbWasm precompile address (0x71).
 pub const ARBWASM_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x71,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x71,
 ]);
 
 // Function selectors — view methods returning Stylus program config.
@@ -51,9 +51,9 @@ pub fn create_arbwasm_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     // ArbWasm requires ArbOS >= 30 (Stylus).
-    if let Some(result) = crate::check_precompile_version(
-        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
-    ) {
+    if let Some(result) =
+        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
+    {
         return result;
     }
 
@@ -72,8 +72,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         INK_PRICE => {
             let params = load_params_word(&mut input)?;
-            let ink_price =
-                (params[2] as u32) << 16 | (params[3] as u32) << 8 | params[4] as u32;
+            let ink_price = (params[2] as u32) << 16 | (params[3] as u32) << 8 | params[4] as u32;
             ok_u256(SLOAD_GAS + COPY_GAS, U256::from(ink_price))
         }
         MAX_STACK_DEPTH => {
@@ -182,8 +181,8 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             let cached_cost_scalar = params_word[18] as u64;
 
             let init_base = min_init.saturating_mul(MIN_INIT_GAS_UNITS);
-            let init_dyno = (program.init_cost as u64)
-                .saturating_mul(init_cost_scalar * COST_SCALAR_PERCENT);
+            let init_dyno =
+                (program.init_cost as u64).saturating_mul(init_cost_scalar * COST_SCALAR_PERCENT);
             let mut init_gas = init_base.saturating_add(div_ceil(init_dyno, 100));
 
             let cached_base = min_cached.saturating_mul(MIN_CACHED_GAS_UNITS);
@@ -226,7 +225,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // State-modifying.
         ACTIVATE_PROGRAM => {
             let _ = &mut input;
-            Err(PrecompileError::other("Stylus activation not yet supported"))
+            Err(PrecompileError::other(
+                "Stylus activation not yet supported",
+            ))
         }
         CODEHASH_KEEPALIVE => {
             let _ = &mut input;
@@ -283,7 +284,10 @@ fn load_params_and_program(
     let program_slot = map_slot_b256(data_key.as_slice(), &codehash);
     let program_value = sload_field(input, program_slot)?;
 
-    Ok((params_value.to_be_bytes::<32>(), program_value.to_be_bytes::<32>()))
+    Ok((
+        params_value.to_be_bytes::<32>(),
+        program_value.to_be_bytes::<32>(),
+    ))
 }
 
 /// Get the code hash for an account address.
@@ -352,7 +356,10 @@ fn hours_to_age(time: u64, hours: u32) -> u64 {
 }
 
 /// Validate that a program is active (version matches and not expired).
-fn validate_active_program(program: &ProgramInfo, params_version: u16) -> Result<(), PrecompileError> {
+fn validate_active_program(
+    program: &ProgramInfo,
+    params_version: u16,
+) -> Result<(), PrecompileError> {
     if program.version == 0 {
         return Err(PrecompileError::other("program not activated"));
     }

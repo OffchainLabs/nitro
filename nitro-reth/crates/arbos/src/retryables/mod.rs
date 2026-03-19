@@ -1,9 +1,9 @@
-use alloy_primitives::{Address, B256, U256, keccak256};
+use alloy_primitives::{keccak256, Address, B256, U256};
 use revm::Database;
 
 use arb_storage::{
-    Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigUint,
-    StorageBackedBytes, StorageBackedUint64, initialize_queue, open_queue,
+    initialize_queue, open_queue, Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil,
+    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
 };
 
 pub const RETRYABLE_LIFETIME_SECONDS: u64 = 7 * 24 * 60 * 60; // one week
@@ -94,7 +94,8 @@ impl<D: Database> RetryableState<D> {
         current_timestamp: u64,
     ) -> Result<Option<Retryable<D>>, ()> {
         let sto = self.retryables.open_sub_storage(id.as_slice());
-        let timeout_storage = StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), TIMEOUT_OFFSET);
+        let timeout_storage =
+            StorageBackedUint64::new(sto.state_ptr(), sto.base_key(), TIMEOUT_OFFSET);
         let timeout = timeout_storage.get()?;
         if timeout == 0 || timeout < current_timestamp {
             return Ok(None);
@@ -103,11 +104,7 @@ impl<D: Database> RetryableState<D> {
     }
 
     /// Gets the size in bytes a retryable occupies in storage.
-    pub fn retryable_size_bytes(
-        &self,
-        id: B256,
-        current_time: u64,
-    ) -> Result<u64, ()> {
+    pub fn retryable_size_bytes(&self, id: B256, current_time: u64) -> Result<u64, ()> {
         let retryable = self.open_retryable(id, current_time)?;
         match retryable {
             None => Ok(0),
@@ -248,7 +245,11 @@ impl<D: Database> RetryableState<D> {
             beneficiary: StorageBackedAddress::new(state, base_key, BENEFICIARY_OFFSET),
             calldata: StorageBackedBytes::new(sto.open_sub_storage(CALLDATA_KEY)),
             timeout: StorageBackedUint64::new(state, base_key, TIMEOUT_OFFSET),
-            timeout_windows_left: StorageBackedUint64::new(state, base_key, TIMEOUT_WINDOWS_LEFT_OFFSET),
+            timeout_windows_left: StorageBackedUint64::new(
+                state,
+                base_key,
+                TIMEOUT_WINDOWS_LEFT_OFFSET,
+            ),
             backing_storage: sto,
         }
     }

@@ -1,7 +1,6 @@
 use alloy_primitives::{Address, U256};
 
-use arb_primitives::multigas::MultiGas;
-use arb_primitives::tx_types::ArbTxType;
+use arb_primitives::{multigas::MultiGas, tx_types::ArbTxType};
 
 /// Context passed to ArbOS hooks at the start of transaction execution.
 #[derive(Debug, Clone)]

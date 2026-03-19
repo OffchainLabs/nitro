@@ -115,11 +115,7 @@ impl<D: Database> MultiGasConstraint<D> {
         self.update_backlog(super::model::BacklogOperation::Shrink, gas)
     }
 
-    fn update_backlog(
-        &self,
-        op: super::model::BacklogOperation,
-        gas: MultiGas,
-    ) -> Result<(), ()> {
+    fn update_backlog(&self, op: super::model::BacklogOperation, gas: MultiGas) -> Result<(), ()> {
         let mut backlog = self.backlog.get()?;
         for kind in ResourceKind::ALL {
             let weight = self.resource_weight(kind)?;

@@ -4,8 +4,8 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 /// ArbFunctionTable precompile address (0x68).
 pub const ARBFUNCTIONTABLE_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x68,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x68,
 ]);
 
 const UPLOAD: [u8; 4] = [0x88, 0x3c, 0x9d, 0x6b]; // upload(bytes)
@@ -43,9 +43,7 @@ fn handler(input: PrecompileInput<'_>) -> PrecompileResult {
             ))
         }
         GET => Err(PrecompileError::other("table is empty")),
-        _ => Err(PrecompileError::other(
-            "unknown ArbFunctionTable selector",
-        )),
+        _ => Err(PrecompileError::other("unknown ArbFunctionTable selector")),
     };
     crate::gas_check(gas_limit, result)
 }

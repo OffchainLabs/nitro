@@ -1,15 +1,18 @@
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 
-use alloy_consensus::{Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH, proofs};
-use alloy_evm::block::{BlockExecutionError, BlockExecutionResult, BlockExecutorFactory};
-use alloy_evm::eth::EthBlockExecutionCtx;
-use alloy_primitives::{B64, B256, U256};
+use alloy_consensus::{
+    proofs, Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
+};
+use alloy_evm::{
+    block::{BlockExecutionError, BlockExecutionResult, BlockExecutorFactory},
+    eth::EthBlockExecutionCtx,
+};
+use alloy_primitives::{B256, B64, U256};
 use reth_evm::execute::{BlockAssembler, BlockAssemblerInput};
-use reth_primitives_traits::{Receipt, SignedTransaction, logs_bloom};
+use reth_primitives_traits::{logs_bloom, Receipt, SignedTransaction};
 use revm::context::Block as RevmBlock;
 
-use arbos::header::{ArbHeaderInfo, derive_arb_header_info, read_l2_base_fee};
+use arbos::header::{derive_arb_header_info, read_l2_base_fee, ArbHeaderInfo};
 
 /// Arbitrum block assembler.
 ///
@@ -50,7 +53,9 @@ where
             execution_ctx: ctx,
             parent,
             transactions,
-            output: BlockExecutionResult { receipts, gas_used, .. },
+            output: BlockExecutionResult {
+                receipts, gas_used, ..
+            },
             bundle_state,
             state_provider,
             state_root,
@@ -65,7 +70,10 @@ where
 
         let transactions_root = proofs::calculate_transaction_root(&transactions);
         let receipts_root = proofs::calculate_receipt_root(
-            &receipts.iter().map(|r| r.with_bloom_ref()).collect::<Vec<_>>(),
+            &receipts
+                .iter()
+                .map(|r| r.with_bloom_ref())
+                .collect::<Vec<_>>(),
         );
         let logs_bloom = logs_bloom(receipts.iter().flat_map(|r| r.logs()));
 
@@ -109,8 +117,10 @@ where
             timestamp,
             mix_hash,
             nonce: B64::from(delayed_messages_read.to_be_bytes()),
-            base_fee_per_gas: Some(read_base_fee_from_state(state_provider, bundle_state)
-                .unwrap_or(evm_env.block_env.basefee())),
+            base_fee_per_gas: Some(
+                read_base_fee_from_state(state_provider, bundle_state)
+                    .unwrap_or(evm_env.block_env.basefee()),
+            ),
             number: l2_block_number,
             gas_limit: evm_env.block_env.gas_limit(),
             difficulty: U256::from(1),

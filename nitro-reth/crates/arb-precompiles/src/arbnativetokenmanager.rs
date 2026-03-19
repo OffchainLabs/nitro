@@ -9,8 +9,8 @@ use crate::storage_slot::{
 
 /// ArbNativeTokenManager precompile address (0x73).
 pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x73,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x73,
 ]);
 
 // Function selectors.
@@ -29,9 +29,9 @@ pub fn create_arbnativetokenmanager_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     // ArbNativeTokenManager requires ArbOS >= 41.
-    if let Some(result) = crate::check_precompile_version(
-        arb_chainspec::arbos_version::ARBOS_VERSION_41,
-    ) {
+    if let Some(result) =
+        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_41)
+    {
         return result;
     }
 
@@ -96,9 +96,7 @@ fn handle_mint(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     load_arbos(input)?;
 
     if !is_native_token_owner(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a native token owner",
-        ));
+        return Err(PrecompileError::other("caller is not a native token owner"));
     }
 
     // Add balance to the caller.
@@ -124,9 +122,7 @@ fn handle_burn(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     load_arbos(input)?;
 
     if !is_native_token_owner(input, caller)? {
-        return Err(PrecompileError::other(
-            "caller is not a native token owner",
-        ));
+        return Err(PrecompileError::other("caller is not a native token owner"));
     }
 
     // Check balance sufficiency.

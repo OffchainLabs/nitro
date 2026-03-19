@@ -44,7 +44,9 @@ mod u256_dec_or_hex {
                     U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)
                 }
             }
-            _ => Err(serde::de::Error::custom("expected number or string for U256")),
+            _ => Err(serde::de::Error::custom(
+                "expected number or string for U256",
+            )),
         }
     }
 }
@@ -82,15 +84,16 @@ mod opt_u256_dec_or_hex {
             }
             serde_json::Value::String(s) if s.is_empty() => Ok(None),
             serde_json::Value::String(s) => {
-                let val = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
-                {
+                let val = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
                     U256::from_str_radix(hex, 16).map_err(serde::de::Error::custom)?
                 } else {
                     U256::from_str_radix(&s, 10).map_err(serde::de::Error::custom)?
                 };
                 Ok(Some(val))
             }
-            _ => Err(serde::de::Error::custom("expected number, string, or null for U256")),
+            _ => Err(serde::de::Error::custom(
+                "expected number, string, or null for U256",
+            )),
         }
     }
 }
@@ -136,10 +139,18 @@ pub struct RpcL1IncomingMessage {
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "l2Msg")]
     pub l2_msg: Option<String>,
     /// Legacy batch gas cost (for older batch posting reports).
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "batchGasCost")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "batchGasCost"
+    )]
     pub batch_gas_cost: Option<u64>,
     /// Batch data statistics (for newer batch posting reports).
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "batchDataTokens")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "batchDataTokens"
+    )]
     pub batch_data_tokens: Option<RpcBatchDataStats>,
 }
 
@@ -253,10 +264,7 @@ pub trait NitroExecutionApi {
 
     /// Updates consensus sync data.
     #[method(name = "setConsensusSyncData")]
-    fn set_consensus_sync_data(
-        &self,
-        sync_data: RpcConsensusSyncData,
-    ) -> RpcResult<()>;
+    fn set_consensus_sync_data(&self, sync_data: RpcConsensusSyncData) -> RpcResult<()>;
 
     /// Marks the feed start position.
     #[method(name = "markFeedStart")]

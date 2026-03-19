@@ -42,7 +42,11 @@ pub struct ArbHeaderInfo {
 impl ArbHeaderInfo {
     /// Compute the mix_hash from send_count, l1_block_number, and arbos_version.
     pub fn compute_mix_hash(&self) -> B256 {
-        compute_nitro_mixhash(self.send_count, self.l1_block_number, self.arbos_format_version)
+        compute_nitro_mixhash(
+            self.send_count,
+            self.l1_block_number,
+            self.arbos_format_version,
+        )
     }
 }
 
@@ -201,13 +205,11 @@ pub fn derive_arb_header_info<F: Fn(Address, B256) -> Option<U256>>(
     let send_count_slot = storage_key_map(&send_merkle_sub, uint_to_hash_u64_be(0));
     let send_count = read_storage_u64_be(read_slot, addr, send_count_slot).unwrap_or(0);
 
-    let send_root =
-        merkle_root_from_partials(read_slot, addr, &send_merkle_sub, send_count)
-            .unwrap_or(B256::ZERO);
+    let send_root = merkle_root_from_partials(read_slot, addr, &send_merkle_sub, send_count)
+        .unwrap_or(B256::ZERO);
 
     let l1_block_num_slot = storage_key_map(&blockhashes_sub, uint_to_hash_u64_be(0));
-    let l1_block_number =
-        read_storage_u64_be(read_slot, addr, l1_block_num_slot).unwrap_or(0);
+    let l1_block_number = read_storage_u64_be(read_slot, addr, l1_block_num_slot).unwrap_or(0);
 
     Some(ArbHeaderInfo {
         send_root,
@@ -227,9 +229,7 @@ pub fn arbos_l1_block_number_slot() -> (Address, B256) {
 }
 
 /// Read ArbOS version from storage.
-pub fn read_arbos_version<F: Fn(Address, B256) -> Option<U256>>(
-    read_slot: &F,
-) -> Option<u64> {
+pub fn read_arbos_version<F: Fn(Address, B256) -> Option<U256>>(read_slot: &F) -> Option<u64> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
     let version_slot = storage_key_map(root_storage_key, uint_to_hash_u64_be(0));
@@ -248,9 +248,7 @@ pub fn read_l2_per_block_gas_limit<F: Fn(Address, B256) -> Option<U256>>(
 }
 
 /// Read the L2 base fee from storage.
-pub fn read_l2_base_fee<F: Fn(Address, B256) -> Option<U256>>(
-    read_slot: &F,
-) -> Option<u64> {
+pub fn read_l2_base_fee<F: Fn(Address, B256) -> Option<U256>>(read_slot: &F) -> Option<u64> {
     let addr = ARBOS_STATE_ADDRESS;
     let root_storage_key: &[u8] = &[];
     let l2_pricing_subspace = subspace(root_storage_key, &[1u8]);

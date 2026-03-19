@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, U256, address, hex};
+use alloy_primitives::{address, hex, Address, U256};
 use revm::database::{EmptyDB, State, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
-use arb_node::genesis::{INITIAL_ARBOS_VERSION, initialize_arbos_state};
+use arb_node::genesis::{initialize_arbos_state, INITIAL_ARBOS_VERSION};
 use arbos::arbos_types::ParsedInitMessage;
 
 /// Arbitrum Sepolia chain owner.
@@ -27,7 +27,8 @@ fn main() {
     // Initialize ArbOS state with Arbitrum Sepolia parameters.
     let init_msg = ParsedInitMessage {
         chain_id: U256::from(CHAIN_ID),
-        initial_l1_base_fee: U256::from(1_517_780_963u64), // L1 base fee at rollup creation (0x5a777fe3)
+        initial_l1_base_fee: U256::from(1_517_780_963u64), /* L1 base fee at rollup creation
+                                                            * (0x5a777fe3) */
         serialized_chain_config: serialized_chain_config.to_vec(),
     };
 
@@ -58,10 +59,7 @@ fn main() {
 
             // Nonce
             if info.nonce > 0 {
-                entry.insert(
-                    "nonce".into(),
-                    Value::String(format!("{:#x}", info.nonce)),
-                );
+                entry.insert("nonce".into(), Value::String(format!("{:#x}", info.nonce)));
             }
 
             // Code

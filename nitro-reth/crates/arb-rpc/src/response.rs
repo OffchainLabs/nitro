@@ -11,8 +11,12 @@ use std::convert::Infallible;
 #[derive(Debug, Clone)]
 pub struct ArbRpcTxConverter;
 
-impl RpcTxConverter<ArbTransactionSigned, WithOtherFields<Transaction<ArbTransactionSigned>>, TransactionInfo>
-    for ArbRpcTxConverter
+impl
+    RpcTxConverter<
+        ArbTransactionSigned,
+        WithOtherFields<Transaction<ArbTransactionSigned>>,
+        TransactionInfo,
+    > for ArbRpcTxConverter
 {
     type Err = Infallible;
 
@@ -26,8 +30,7 @@ impl RpcTxConverter<ArbTransactionSigned, WithOtherFields<Transaction<ArbTransac
 
         let other = arb_tx_fields(tx.inner());
 
-        let base =
-            Transaction::from_transaction(Recovered::new_unchecked(tx, signer), tx_info);
+        let base = Transaction::from_transaction(Recovered::new_unchecked(tx, signer), tx_info);
 
         Ok(WithOtherFields {
             inner: base,
@@ -37,7 +40,9 @@ impl RpcTxConverter<ArbTransactionSigned, WithOtherFields<Transaction<ArbTransac
 }
 
 /// Extract Arbitrum-specific extension fields from a transaction.
-fn arb_tx_fields(tx: &ArbTypedTransaction) -> std::collections::BTreeMap<String, serde_json::Value> {
+fn arb_tx_fields(
+    tx: &ArbTypedTransaction,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
     let mut fields = std::collections::BTreeMap::new();
 
     match tx {

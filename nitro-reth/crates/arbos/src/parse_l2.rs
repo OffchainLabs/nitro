@@ -1,21 +1,22 @@
 use alloy_eips::eip2718::{Decodable2718, Typed2718};
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
-use arb_primitives::signed_tx::ArbTransactionSigned;
-use arb_primitives::tx_types::{
-    ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx,
+use arb_primitives::{
+    signed_tx::ArbTransactionSigned,
+    tx_types::{ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx},
 };
 use std::io::{self, Cursor, Read};
 
-use crate::arbos_types::{
-    L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
-    L1_MESSAGE_TYPE_END_OF_BLOCK, L1_MESSAGE_TYPE_ETH_DEPOSIT,
-    L1_MESSAGE_TYPE_INITIALIZE, L1_MESSAGE_TYPE_L2_FUNDED_BY_L1,
-    L1_MESSAGE_TYPE_L2_MESSAGE, L1_MESSAGE_TYPE_ROLLUP_EVENT,
-    L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
-};
-use crate::util::{
-    address_from_256_from_reader, address_from_reader, bytestring_from_reader, hash_from_reader,
-    uint256_from_reader, uint64_from_reader,
+use crate::{
+    arbos_types::{
+        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
+        L1_MESSAGE_TYPE_END_OF_BLOCK, L1_MESSAGE_TYPE_ETH_DEPOSIT, L1_MESSAGE_TYPE_INITIALIZE,
+        L1_MESSAGE_TYPE_L2_FUNDED_BY_L1, L1_MESSAGE_TYPE_L2_MESSAGE, L1_MESSAGE_TYPE_ROLLUP_EVENT,
+        L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
+    },
+    util::{
+        address_from_256_from_reader, address_from_reader, bytestring_from_reader,
+        hash_from_reader, uint256_from_reader, uint64_from_reader,
+    },
 };
 
 /// L2 message kind constants.
@@ -207,9 +208,8 @@ fn parse_l2_message(
                     B256::from(keccak256(&preimage))
                 });
                 index += 1;
-                let mut sub_txs = parse_l2_message(
-                    &segment, poster, sub_request_id, depth + 1, chain_id,
-                )?;
+                let mut sub_txs =
+                    parse_l2_message(&segment, poster, sub_request_id, depth + 1, chain_id)?;
                 txs.append(&mut sub_txs);
             }
             Ok(txs)
@@ -239,7 +239,10 @@ fn parse_unsigned_tx(
 
     let gas_limit = uint256_from_reader(&mut reader)?;
     let gas_limit: u64 = gas_limit.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "unsigned user tx gas limit >= 2^64")
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsigned user tx gas limit >= 2^64",
+        )
     })?;
 
     let max_fee_per_gas = uint256_from_reader(&mut reader)?;
@@ -372,9 +375,9 @@ fn parse_submit_retryable_message(
     let fee_refund_addr = address_from_256_from_reader(&mut reader)?;
     let beneficiary = address_from_256_from_reader(&mut reader)?;
     let gas_limit_u256 = uint256_from_reader(&mut reader)?;
-    let gas_limit = gas_limit_u256.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "gas limit too large")
-    })?;
+    let gas_limit = gas_limit_u256
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "gas limit too large"))?;
     let gas_feature_cap = uint256_from_reader(&mut reader)?;
 
     // Data length is encoded as a 32-byte hash, then raw bytes follow.
@@ -419,18 +422,18 @@ fn parse_batch_posting_report(
     // All fields use 32-byte Hash format except batchPosterAddr (20 bytes)
     // and extraGas (8-byte uint64, optional).
     let batch_timestamp_u256 = uint256_from_reader(&mut reader)?;
-    let batch_timestamp: u64 = batch_timestamp_u256.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "batch timestamp too large")
-    })?;
+    let batch_timestamp: u64 = batch_timestamp_u256
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "batch timestamp too large"))?;
 
     let batch_poster = address_from_reader(&mut reader)?;
 
     let data_hash = hash_from_reader(&mut reader)?;
 
     let batch_number_u256 = uint256_from_reader(&mut reader)?;
-    let batch_number: u64 = batch_number_u256.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "batch number too large")
-    })?;
+    let batch_number: u64 = batch_number_u256
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "batch number too large"))?;
 
     let l1_base_fee_estimate = uint256_from_reader(&mut reader)?;
 

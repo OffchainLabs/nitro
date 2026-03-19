@@ -2,9 +2,7 @@ use alloy_primitives::{Address, B256, U256};
 
 use arb_chainspec::arbos_version as arb_ver;
 
-use crate::header::ArbHeaderInfo;
-use crate::internal_tx::L1Info;
-use crate::l2_pricing::GETH_BLOCK_GAS_LIMIT;
+use crate::{header::ArbHeaderInfo, internal_tx::L1Info, l2_pricing::GETH_BLOCK_GAS_LIMIT};
 
 /// Standard Ethereum transaction gas.
 const TX_GAS: u64 = 21_000;
@@ -267,10 +265,7 @@ impl BlockProductionState {
     }
 
     /// Get the next transaction action. The block executor calls this in a loop.
-    pub fn next_tx_action<H: SequencingHooks>(
-        &mut self,
-        hooks: &mut H,
-    ) -> TxAction {
+    pub fn next_tx_action<H: SequencingHooks>(&mut self, hooks: &mut H) -> TxAction {
         if !self.start_block_produced {
             self.start_block_produced = true;
             return TxAction::ExecuteStartBlock;
@@ -301,11 +296,7 @@ impl BlockProductionState {
     /// In ArbOS < 50, user txs whose compute gas exceeds block_gas_left
     /// are rejected (after the first tx). In ArbOS >= 50, per-tx gas limiting
     /// is handled in the gas charging hook instead.
-    pub fn should_reject_for_block_gas(
-        &self,
-        compute_gas: u64,
-        is_user_tx: bool,
-    ) -> bool {
+    pub fn should_reject_for_block_gas(&self, compute_gas: u64, is_user_tx: bool) -> bool {
         self.arbos_version < arb_ver::ARBOS_VERSION_50
             && compute_gas > self.block_gas_left
             && is_user_tx
@@ -313,11 +304,7 @@ impl BlockProductionState {
     }
 
     /// Compute the poster data gas cost in L2 terms for block-level tracking.
-    pub fn compute_data_gas(
-        poster_cost: U256,
-        base_fee: U256,
-        tx_gas: u64,
-    ) -> u64 {
+    pub fn compute_data_gas(poster_cost: U256, base_fee: U256, tx_gas: u64) -> u64 {
         if base_fee.is_zero() {
             return 0;
         }
@@ -379,13 +366,13 @@ impl BlockProductionState {
                 // Compute used compute gas for block rate limiting.
                 let compute_used = if tx_gas_used >= data_gas {
                     let c = tx_gas_used - data_gas;
-                    if c < TX_GAS { TX_GAS } else { c }
+                    if c < TX_GAS {
+                        TX_GAS
+                    } else {
+                        c
+                    }
                 } else {
-                    tracing::error!(
-                        tx_gas_used,
-                        data_gas,
-                        "tx used less gas than expected"
-                    );
+                    tracing::error!(tx_gas_used, data_gas, "tx used less gas than expected");
                     TX_GAS
                 };
 

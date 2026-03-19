@@ -1,8 +1,10 @@
 use alloy_primitives::{B256, U256};
 use revm::Database;
 
-use crate::slot::storage_key_map;
-use crate::state_ops::{read_arbos_storage, write_arbos_storage};
+use crate::{
+    slot::storage_key_map,
+    state_ops::{read_arbos_storage, write_arbos_storage},
+};
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
     if base_key == B256::ZERO {
@@ -58,7 +60,10 @@ impl<D: Database> StorageBackedBips<D> {
 
 impl<D> Clone for StorageBackedBips<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -91,7 +96,10 @@ impl<D: Database> StorageBackedUBips<D> {
 
 impl<D> Clone for StorageBackedUBips<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -124,7 +132,10 @@ impl<D: Database> StorageBackedUint16<D> {
 
 impl<D> Clone for StorageBackedUint16<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -158,7 +169,10 @@ impl<D: Database> StorageBackedUint24<D> {
 
 impl<D> Clone for StorageBackedUint24<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -195,7 +209,10 @@ impl<D: Database> StorageBackedUint32<D> {
 
 impl<D> Clone for StorageBackedUint32<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 

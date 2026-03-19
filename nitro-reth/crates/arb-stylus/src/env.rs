@@ -3,11 +3,13 @@ use std::marker::PhantomData;
 use arbos::programs::types::EvmData;
 use wasmer::{FunctionEnvMut, Memory, MemoryView, Pages, StoreMut};
 
-use crate::config::{CompileConfig, StylusConfig};
-use crate::error::Escape;
-use crate::evm_api::EvmApi;
-use crate::ink::Ink;
-use crate::meter::{GasMeteredMachine, MachineMeter, MeteredMachine, HOSTIO_INK};
+use crate::{
+    config::{CompileConfig, StylusConfig},
+    error::Escape,
+    evm_api::EvmApi,
+    ink::Ink,
+    meter::{GasMeteredMachine, MachineMeter, MeteredMachine, HOSTIO_INK},
+};
 
 pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 
@@ -159,7 +161,10 @@ impl<E: EvmApi> HostioInfo<'_, E> {
         self.memory.ty(&self.store).minimum
     }
 
-    pub fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], wasmer::MemoryAccessError> {
+    pub fn read_fixed<const N: usize>(
+        &self,
+        ptr: u32,
+    ) -> Result<[u8; N], wasmer::MemoryAccessError> {
         let mut data = [0u8; N];
         self.view().read(ptr as u64, &mut data)?;
         Ok(data)

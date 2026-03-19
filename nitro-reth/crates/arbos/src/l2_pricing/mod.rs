@@ -3,9 +3,9 @@ mod model;
 mod multi_gas_constraint;
 mod multi_gas_fees;
 
-pub use gas_constraint::{GasConstraint, open_gas_constraint};
+pub use gas_constraint::{open_gas_constraint, GasConstraint};
 pub use model::*;
-pub use multi_gas_constraint::{MultiGasConstraint, open_multi_gas_constraint};
+pub use multi_gas_constraint::{open_multi_gas_constraint, MultiGasConstraint};
 pub use multi_gas_fees::MultiGasFees;
 
 use alloy_primitives::U256;
@@ -76,8 +76,8 @@ pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>) {
         .set(INITIAL_SPEED_LIMIT_PER_SECOND_V0);
     let _ = StorageBackedUint64::new(state, base_key, PER_BLOCK_GAS_LIMIT_OFFSET)
         .set(INITIAL_PER_BLOCK_GAS_LIMIT_V0);
-    let _ = StorageBackedUint64::new(state, base_key, BASE_FEE_WEI_OFFSET)
-        .set(INITIAL_BASE_FEE_WEI);
+    let _ =
+        StorageBackedUint64::new(state, base_key, BASE_FEE_WEI_OFFSET).set(INITIAL_BASE_FEE_WEI);
     let _ = StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET)
         .set(U256::from(INITIAL_MINIMUM_BASE_FEE_WEI));
     let _ = StorageBackedUint64::new(state, base_key, GAS_BACKLOG_OFFSET).set(0);
@@ -87,7 +87,10 @@ pub fn initialize_l2_pricing_state<D: Database>(sto: &Storage<D>) {
         .set(INITIAL_BACKLOG_TOLERANCE);
 }
 
-pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>, arbos_version: u64) -> L2PricingState<D> {
+pub fn open_l2_pricing_state<D: Database>(
+    sto: Storage<D>,
+    arbos_version: u64,
+) -> L2PricingState<D> {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
@@ -102,11 +105,7 @@ pub fn open_l2_pricing_state<D: Database>(sto: Storage<D>, arbos_version: u64) -
             base_key,
             SPEED_LIMIT_PER_SECOND_OFFSET,
         ),
-        per_block_gas_limit: StorageBackedUint64::new(
-            state,
-            base_key,
-            PER_BLOCK_GAS_LIMIT_OFFSET,
-        ),
+        per_block_gas_limit: StorageBackedUint64::new(state, base_key, PER_BLOCK_GAS_LIMIT_OFFSET),
         base_fee_wei: StorageBackedBigUint::new(state, base_key, BASE_FEE_WEI_OFFSET),
         min_base_fee_wei: StorageBackedBigUint::new(state, base_key, MIN_BASE_FEE_WEI_OFFSET),
         gas_backlog: StorageBackedUint64::new(state, base_key, GAS_BACKLOG_OFFSET),

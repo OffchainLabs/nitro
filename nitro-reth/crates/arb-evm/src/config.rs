@@ -1,31 +1,28 @@
 use alloc::sync::Arc;
-use core::convert::Infallible;
-use core::fmt::Debug;
+use core::{convert::Infallible, fmt::Debug};
 
 use alloy_consensus::{BlockHeader, Header};
 use alloy_eips::Decodable2718;
-use alloy_evm::eth::EthBlockExecutionCtx;
-use alloy_evm::eth::spec::EthExecutorSpec;
+use alloy_evm::eth::{spec::EthExecutorSpec, EthBlockExecutionCtx};
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_engine::ExecutionData;
 use arb_chainspec::ArbitrumChainSpec;
-use reth_chainspec::{EthChainSpec, Hardforks};
 use arb_primitives::ArbPrimitives;
+use reth_chainspec::{EthChainSpec, Hardforks};
 use reth_evm::{
     ConfigureEngineEvm, ConfigureEvm, EvmEnv, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor,
     NextBlockEnvAttributes,
 };
 
-use crate::assembler::ArbBlockAssembler;
-use crate::receipt::ArbReceiptBuilder;
+use crate::{assembler::ArbBlockAssembler, receipt::ArbReceiptBuilder};
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
-use revm::context::{BlockEnv, CfgEnv};
-use revm::primitives::hardfork::SpecId;
+use revm::{
+    context::{BlockEnv, CfgEnv},
+    primitives::hardfork::SpecId,
+};
 
-use crate::build::ArbBlockExecutorFactory;
-use crate::context::ArbBlockExecutionCtx;
-use crate::evm::ArbEvmFactory;
+use crate::{build::ArbBlockExecutorFactory, context::ArbBlockExecutionCtx, evm::ArbEvmFactory};
 
 /// Arbitrum EVM configuration.
 ///
@@ -33,8 +30,7 @@ use crate::evm::ArbEvmFactory;
 /// to use ArbOS versioning from the mix_hash field.
 #[derive(Debug, Clone)]
 pub struct ArbEvmConfig<ChainSpec = reth_chainspec::ChainSpec> {
-    pub executor_factory:
-        ArbBlockExecutorFactory<ArbReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>,
+    pub executor_factory: ArbBlockExecutorFactory<ArbReceiptBuilder, Arc<ChainSpec>, ArbEvmFactory>,
     pub block_assembler: ArbBlockAssembler<ChainSpec>,
     chain_spec: Arc<ChainSpec>,
 }
@@ -176,16 +172,10 @@ where
 
 impl<ChainSpec> ConfigureEngineEvm<ExecutionData> for ArbEvmConfig<ChainSpec>
 where
-    ChainSpec: EthExecutorSpec
-        + EthChainSpec<Header = Header>
-        + ArbitrumChainSpec
-        + Hardforks
-        + 'static,
+    ChainSpec:
+        EthExecutorSpec + EthChainSpec<Header = Header> + ArbitrumChainSpec + Hardforks + 'static,
 {
-    fn evm_env_for_payload(
-        &self,
-        payload: &ExecutionData,
-    ) -> Result<EvmEnvFor<Self>, Self::Error> {
+    fn evm_env_for_payload(&self, payload: &ExecutionData) -> Result<EvmEnvFor<Self>, Self::Error> {
         let prev_randao = payload.payload.as_v1().prev_randao;
         let arbos_version = arbos_version_from_mix_hash(&prev_randao);
         let spec = self.chain_spec.spec_id_by_arbos_version(arbos_version);

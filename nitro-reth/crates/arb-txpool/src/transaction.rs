@@ -1,9 +1,11 @@
-use alloy_consensus::transaction::{Recovered, TxHashRef};
-use alloy_consensus::{BlobTransactionValidationError, Typed2718};
-use alloy_eips::eip2718::WithEncoded;
-use alloy_eips::eip2930::AccessList;
-use alloy_eips::eip7594::BlobTransactionSidecarVariant;
-use alloy_eips::Encodable2718;
+use alloy_consensus::{
+    transaction::{Recovered, TxHashRef},
+    BlobTransactionValidationError, Typed2718,
+};
+use alloy_eips::{
+    eip2718::WithEncoded, eip2930::AccessList, eip7594::BlobTransactionSidecarVariant,
+    Encodable2718,
+};
 use alloy_primitives::{Address, Bytes, TxHash, TxKind, B256, U256};
 use c_kzg::KzgSettings;
 use core::convert::Infallible;
@@ -168,6 +170,8 @@ impl EthPoolTransaction for ArbPooledTransaction {
         _blob: &BlobTransactionSidecarVariant,
         _settings: &KzgSettings,
     ) -> Result<(), BlobTransactionValidationError> {
-        Err(BlobTransactionValidationError::NotBlobTransaction(self.ty()))
+        Err(BlobTransactionValidationError::NotBlobTransaction(
+            self.ty(),
+        ))
     }
 }

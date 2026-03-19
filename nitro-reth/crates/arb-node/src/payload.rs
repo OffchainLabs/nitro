@@ -95,8 +95,7 @@ where
         _pool: Pool,
         _evm_config: Evm,
     ) -> eyre::Result<PayloadBuilderHandle<<Node::Types as NodeTypes>::Payload>> {
-        let (service, handle) =
-            ArbPayloadService::<<Node::Types as NodeTypes>::Payload>::new();
+        let (service, handle) = ArbPayloadService::<<Node::Types as NodeTypes>::Payload>::new();
         ctx.task_executor()
             .spawn_critical_task("payload builder service", Box::pin(service));
         info!(target: "reth::cli", "Payload builder service initialized");

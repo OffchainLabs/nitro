@@ -1,9 +1,10 @@
-use alloy_evm::Evm;
-use alloy_evm::eth::receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx};
+use alloy_evm::{
+    eth::receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx},
+    Evm,
+};
 use alloy_primitives::Log;
 
-use arb_primitives::{ArbReceipt, ArbReceiptKind, ArbTransactionSigned};
-use arb_primitives::signed_tx::ArbTxTypeLocal;
+use arb_primitives::{signed_tx::ArbTxTypeLocal, ArbReceipt, ArbReceiptKind, ArbTransactionSigned};
 
 /// Builds `ArbReceipt` from execution results.
 #[derive(Debug, Clone, Copy, Default)]
@@ -17,7 +18,12 @@ impl ReceiptBuilder for ArbReceiptBuilder {
         &self,
         ctx: ReceiptBuilderCtx<'_, ArbTxTypeLocal, E>,
     ) -> Self::Receipt {
-        let ReceiptBuilderCtx { tx_type, result, cumulative_gas_used, .. } = ctx;
+        let ReceiptBuilderCtx {
+            tx_type,
+            result,
+            cumulative_gas_used,
+            ..
+        } = ctx;
         let success = result.is_success();
         let logs: Vec<Log> = result.into_logs();
 

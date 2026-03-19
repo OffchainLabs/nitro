@@ -1,12 +1,14 @@
 use arbos::programs::types::UserOutcome;
 use eyre::Result;
 
-use crate::config::StylusConfig;
-use crate::error::Escape;
-use crate::evm_api::EvmApi;
-use crate::ink::Ink;
-use crate::meter::{DepthCheckedMachine, MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
-use crate::native::NativeInstance;
+use crate::{
+    config::StylusConfig,
+    error::Escape,
+    evm_api::EvmApi,
+    ink::Ink,
+    meter::{DepthCheckedMachine, MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT},
+    native::NativeInstance,
+};
 
 /// Trait for running Stylus WASM programs.
 pub trait RunProgram {
@@ -76,13 +78,8 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
 
         let env = self.env_mut();
         if env.evm_data.tracing {
-            env.evm_api.capture_hostio(
-                "user_returned",
-                &[],
-                &status.to_be_bytes(),
-                ink,
-                ink,
-            );
+            env.evm_api
+                .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink, ink);
         }
 
         Ok(match status {

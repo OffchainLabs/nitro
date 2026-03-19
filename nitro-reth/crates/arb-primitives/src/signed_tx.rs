@@ -1,17 +1,19 @@
 use alloc::vec::Vec;
-use core::hash::{Hash, Hasher};
-use core::ops::Deref;
+use core::{
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
 
 use alloy_consensus::{
-    SignableTransaction, Transaction as ConsensusTx, TxLegacy, Typed2718,
     transaction::{RlpEcdsaDecodableTx, RlpEcdsaEncodableTx, TxHashRef},
+    SignableTransaction, Transaction as ConsensusTx, TxLegacy, Typed2718,
 };
 use alloy_eips::eip2718::{Decodable2718, Eip2718Error, Eip2718Result, Encodable2718, IsTyped2718};
 use alloy_primitives::{keccak256, Address, Bytes, Signature, TxHash, TxKind, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use reth_primitives_traits::{
-    InMemorySize, SignedTransaction,
     crypto::secp256k1::{recover_signer, recover_signer_unchecked},
+    InMemorySize, SignedTransaction,
 };
 
 use arb_alloy_consensus::tx::{
@@ -20,7 +22,8 @@ use arb_alloy_consensus::tx::{
 };
 
 /// Internal ArbOS address used as sender for internal transactions.
-const ARBOS_ADDRESS: Address = alloy_primitives::address!("00000000000000000000000000000000000A4B05");
+const ARBOS_ADDRESS: Address =
+    alloy_primitives::address!("00000000000000000000000000000000000A4B05");
 
 /// Retryable precompile address (0x6e).
 const RETRYABLE_ADDRESS: Address =
@@ -144,7 +147,9 @@ impl ArbTransactionSigned {
     }
 
     /// Construct from a signed Ethereum envelope (standard tx types only).
-    pub fn from_envelope(envelope: alloy_consensus::EthereumTxEnvelope<alloy_consensus::TxEip4844>) -> Self {
+    pub fn from_envelope(
+        envelope: alloy_consensus::EthereumTxEnvelope<alloy_consensus::TxEip4844>,
+    ) -> Self {
         use alloy_consensus::EthereumTxEnvelope;
         match envelope {
             EthereumTxEnvelope::Legacy(signed) => {
@@ -352,9 +357,7 @@ impl Typed2718 for ArbTransactionSigned {
             ArbTypedTransaction::Unsigned(_) => ArbTxType::ArbitrumUnsignedTx.as_u8(),
             ArbTypedTransaction::Contract(_) => ArbTxType::ArbitrumContractTx.as_u8(),
             ArbTypedTransaction::Retry(_) => ArbTxType::ArbitrumRetryTx.as_u8(),
-            ArbTypedTransaction::SubmitRetryable(_) => {
-                ArbTxType::ArbitrumSubmitRetryableTx.as_u8()
-            }
+            ArbTypedTransaction::SubmitRetryable(_) => ArbTxType::ArbitrumSubmitRetryableTx.as_u8(),
             ArbTypedTransaction::Internal(_) => ArbTxType::ArbitrumInternalTx.as_u8(),
             ArbTypedTransaction::Eip2930(_) => 0x01,
             ArbTypedTransaction::Eip1559(_) => 0x02,
@@ -371,8 +374,7 @@ impl Typed2718 for ArbTransactionSigned {
 impl IsTyped2718 for ArbTransactionSigned {
     fn is_type(type_id: u8) -> bool {
         // Standard Ethereum types.
-        matches!(type_id, 0x01 | 0x02 | 0x03 | 0x04)
-            || ArbTxType::from_u8(type_id).is_ok()
+        matches!(type_id, 0x01 | 0x02 | 0x03 | 0x04) || ArbTxType::from_u8(type_id).is_ok()
     }
 }
 
@@ -478,9 +480,7 @@ impl Decodable2718 for ArbTransactionSigned {
         }
 
         // Standard Ethereum typed transactions.
-        match alloy_consensus::TxType::try_from(ty)
-            .map_err(|_| Eip2718Error::UnexpectedType(ty))?
-        {
+        match alloy_consensus::TxType::try_from(ty).map_err(|_| Eip2718Error::UnexpectedType(ty))? {
             alloy_consensus::TxType::Legacy => Err(Eip2718Error::UnexpectedType(0)),
             alloy_consensus::TxType::Eip2930 => {
                 let (tx, sig) = alloy_consensus::TxEip2930::rlp_decode_with_signature(buf)?;
@@ -520,8 +520,11 @@ impl Encodable for ArbTransactionSigned {
     fn length(&self) -> usize {
         let mut payload_length = self.encode_2718_len();
         if !self.is_legacy() {
-            payload_length +=
-                alloy_rlp::Header { list: false, payload_length }.length();
+            payload_length += alloy_rlp::Header {
+                list: false,
+                payload_length,
+            }
+            .length();
         }
         payload_length
     }
@@ -696,18 +699,15 @@ impl ConsensusTx for ArbTransactionSigned {
         match &self.transaction {
             ArbTypedTransaction::Legacy(tx) => &tx.input,
             ArbTypedTransaction::Deposit(_) => self.input_cache.get_or_init(Bytes::new),
-            ArbTypedTransaction::Unsigned(tx) => {
-                self.input_cache
-                    .get_or_init(|| Bytes::from(tx.data.clone()))
-            }
-            ArbTypedTransaction::Contract(tx) => {
-                self.input_cache
-                    .get_or_init(|| Bytes::from(tx.data.clone()))
-            }
-            ArbTypedTransaction::Retry(tx) => {
-                self.input_cache
-                    .get_or_init(|| Bytes::from(tx.data.clone()))
-            }
+            ArbTypedTransaction::Unsigned(tx) => self
+                .input_cache
+                .get_or_init(|| Bytes::from(tx.data.clone())),
+            ArbTypedTransaction::Contract(tx) => self
+                .input_cache
+                .get_or_init(|| Bytes::from(tx.data.clone())),
+            ArbTypedTransaction::Retry(tx) => self
+                .input_cache
+                .get_or_init(|| Bytes::from(tx.data.clone())),
             ArbTypedTransaction::SubmitRetryable(tx) => self.input_cache.get_or_init(|| {
                 let sel = arb_alloy_predeploys::selector(
                     arb_alloy_predeploys::SIG_RETRY_SUBMIT_RETRYABLE,
@@ -717,10 +717,9 @@ impl ConsensusTx for ArbTransactionSigned {
                 out.extend_from_slice(&tx.retry_data);
                 Bytes::from(out)
             }),
-            ArbTypedTransaction::Internal(tx) => {
-                self.input_cache
-                    .get_or_init(|| Bytes::from(tx.data.clone()))
-            }
+            ArbTypedTransaction::Internal(tx) => self
+                .input_cache
+                .get_or_init(|| Bytes::from(tx.data.clone())),
             ArbTypedTransaction::Eip2930(tx) => &tx.input,
             ArbTypedTransaction::Eip1559(tx) => &tx.input,
             ArbTypedTransaction::Eip4844(tx) => &tx.input,

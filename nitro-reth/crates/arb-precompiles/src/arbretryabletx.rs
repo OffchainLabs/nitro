@@ -1,5 +1,5 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, B256, Log, U256};
+use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
@@ -9,8 +9,8 @@ use crate::storage_slot::{
 
 /// ArbRetryableTx precompile address (0x6e).
 pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x6e,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x6e,
 ]);
 
 // Function selectors.
@@ -117,9 +117,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         REDEEM => handle_redeem(&mut input),
         KEEPALIVE => handle_keepalive(&mut input),
         CANCEL => handle_cancel(&mut input),
-        _ => Err(PrecompileError::other(
-            "unknown ArbRetryableTx selector",
-        )),
+        _ => Err(PrecompileError::other("unknown ArbRetryableTx selector")),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -215,10 +213,14 @@ fn handle_get_timeout(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     let effective_timeout = timeout_u64 + windows_u64 * RETRYABLE_LIFETIME_SECONDS;
 
-    // OAS(1) + OpenRetryable timeout(1) + CalculateTimeout timeout+windows(2) + argsCost(3) + resultCost(3).
+    // OAS(1) + OpenRetryable timeout(1) + CalculateTimeout timeout+windows(2) + argsCost(3) +
+    // resultCost(3).
     Ok(PrecompileOutput::new(
         (4 * SLOAD_GAS + 2 * COPY_GAS).min(gas_limit),
-        U256::from(effective_timeout).to_be_bytes::<32>().to_vec().into(),
+        U256::from(effective_timeout)
+            .to_be_bytes::<32>()
+            .to_vec()
+            .into(),
     ))
 }
 
@@ -228,7 +230,8 @@ fn timeout_queue_key() -> B256 {
     derive_subspace_key(retryables_key.as_slice(), TIMEOUT_QUEUE_KEY)
 }
 
-/// Queue Put: reads nextPutOffset (slot 0), writes the value at that offset, increments nextPutOffset.
+/// Queue Put: reads nextPutOffset (slot 0), writes the value at that offset, increments
+/// nextPutOffset.
 fn queue_put(input: &mut PrecompileInput<'_>, value: B256) -> Result<(), PrecompileError> {
     let queue_key = timeout_queue_key();
 
@@ -312,9 +315,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     if !current_retryable.is_zero()
         && B256::from(current_retryable.to_be_bytes::<32>()) == ticket_id
     {
-        return Err(PrecompileError::other(
-            "retryable cannot redeem itself",
-        ));
+        return Err(PrecompileError::other("retryable cannot redeem itself"));
     }
 
     // Read retryable data through internals.sload.
@@ -328,7 +329,9 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .data;
         let timeout_u64: u64 = timeout_check.try_into().unwrap_or(0);
         if timeout_u64 == 0 || timeout_u64 < current_timestamp {
-            return Err(PrecompileError::other("retryable ticket not found or expired"));
+            return Err(PrecompileError::other(
+                "retryable ticket not found or expired",
+            ));
         }
 
         // Read calldata size
@@ -353,7 +356,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
         (cw, wb, n)
     };
-    let ticket_key = ticket_key_pre;
+    let _ticket_key = ticket_key_pre;
 
     // Compute deterministic retry tx hash: keccak256(ticket_id || nonce).
     let mut hash_input = [0u8; 64];
@@ -390,14 +393,13 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let make_tx_reads = 4 + calldata_words;
 
     // Total gas charged before gas_to_donate
-    let gas_used_so_far =
-        COPY_GAS                                // framework argsCost (3)
+    let gas_used_so_far = COPY_GAS                                // framework argsCost (3)
         + SLOAD_GAS                             // OpenArbosState version read (800)
         + 2 * SLOAD_GAS                         // RetryableSizeBytes: timeout + calldataSize (1600)
         + retryable_size_gas                    // explicit c.Burn: 50 * writeBytes
         + SLOAD_GAS                             // OpenRetryable timeout (800)
         + SLOAD_GAS + SSTORE_GAS                // IncrementNumTries: read + write (20800)
-        + make_tx_reads * SLOAD_GAS;            // MakeTx reads
+        + make_tx_reads * SLOAD_GAS; // MakeTx reads
 
     // BacklogUpdateCost: RESERVATION used for computing gas_to_donate.
     // Actual ShrinkBacklog cost may be less (5800 if writing zero).
@@ -539,8 +541,12 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let nbytes = 6 * 32 + 32 + 32 * calldata_words;
     let update_cost = ((nbytes + 31) / 32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
-    let gas_used = 8 * SLOAD_GAS + 3 * SSTORE_GAS + 2 * COPY_GAS
-        + update_cost + event_cost + RETRYABLE_REAP_PRICE;
+    let gas_used = 8 * SLOAD_GAS
+        + 3 * SSTORE_GAS
+        + 2 * COPY_GAS
+        + update_cost
+        + event_cost
+        + RETRYABLE_REAP_PRICE;
 
     Ok(PrecompileOutput::new(
         gas_used.min(gas_limit),
@@ -623,8 +629,10 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         0
     };
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS;
-    let gas_used = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost
-        + event_cost + COPY_GAS;
+    let gas_used = 6 * SLOAD_GAS + 7 * SSTORE_ZERO_GAS + clear_bytes_cost + event_cost + COPY_GAS;
 
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), Vec::new().into()))
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        Vec::new().into(),
+    ))
 }

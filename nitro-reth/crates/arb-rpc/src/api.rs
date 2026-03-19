@@ -3,20 +3,18 @@
 //! Wraps reth's [`EthApiInner`] to override gas estimation
 //! with L1 posting cost awareness.
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use alloy_primitives::{B256, StorageKey, U256};
+use alloy_primitives::{StorageKey, B256, U256};
 use alloy_rpc_types_eth::{state::StateOverride, BlockId};
+use reth_primitives_traits::{Recovered, WithEncoded};
 use reth_rpc::eth::core::EthApiInner;
 use reth_rpc_convert::{RpcConvert, RpcTxReq};
 use reth_rpc_eth_api::{
     helpers::{
-        estimate::EstimateCall,
-        pending_block::PendingEnvBuilder,
-        EthSigner,
-        Call, EthApiSpec, EthBlocks, EthCall, EthFees, EthState, EthTransactions, LoadBlock,
-        LoadFee, LoadPendingBlock, LoadReceipt, LoadState, LoadTransaction, SpawnBlocking, Trace,
+        estimate::EstimateCall, pending_block::PendingEnvBuilder, Call, EthApiSpec, EthBlocks,
+        EthCall, EthFees, EthSigner, EthState, EthTransactions, LoadBlock, LoadFee,
+        LoadPendingBlock, LoadReceipt, LoadState, LoadTransaction, SpawnBlocking, Trace,
     },
     EthApiTypes, FromEvmError, RpcNodeCore, RpcNodeCoreExt,
 };
@@ -25,9 +23,13 @@ use reth_rpc_eth_types::{
     PendingBlock,
 };
 use reth_storage_api::{ProviderHeader, StateProviderFactory, TransactionsProvider};
-use reth_tasks::{pool::{BlockingTaskGuard, BlockingTaskPool}, Runtime};
-use reth_transaction_pool::{AddedTransactionOutcome, PoolPooledTx, PoolTransaction, TransactionOrigin, TransactionPool};
-use reth_primitives_traits::{Recovered, WithEncoded};
+use reth_tasks::{
+    pool::{BlockingTaskGuard, BlockingTaskPool},
+    Runtime,
+};
+use reth_transaction_pool::{
+    AddedTransactionOutcome, PoolPooledTx, PoolTransaction, TransactionOrigin, TransactionPool,
+};
 use tracing::trace;
 
 use arb_precompiles::storage_slot::{
@@ -297,9 +299,7 @@ where
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
 {
-    fn pending_block(
-        &self,
-    ) -> &tokio::sync::Mutex<Option<PendingBlock<N::Primitives>>> {
+    fn pending_block(&self) -> &tokio::sync::Mutex<Option<PendingBlock<N::Primitives>>> {
         self.inner.pending_block()
     }
 
@@ -356,8 +356,7 @@ where
         tx: WithEncoded<Recovered<PoolPooledTx<Self::Pool>>>,
     ) -> Result<B256, Self::Error> {
         let (_tx_bytes, recovered) = tx.split();
-        let pool_transaction =
-            <Self::Pool as TransactionPool>::Transaction::from_pooled(recovered);
+        let pool_transaction = <Self::Pool as TransactionPool>::Transaction::from_pooled(recovered);
 
         let AddedTransactionOutcome { hash, .. } = self
             .inner

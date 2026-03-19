@@ -49,8 +49,7 @@ where
     ) -> eyre::Result<Self::Pool> {
         let pool_config = ctx.pool_config();
 
-        let blob_store =
-            reth_node_builder::components::create_blob_store_with_cache(ctx, Some(0))?;
+        let blob_store = reth_node_builder::components::create_blob_store_with_cache(ctx, Some(0))?;
 
         let validator =
             TransactionValidationTaskExecutor::eth_builder(ctx.provider().clone(), evm_config)

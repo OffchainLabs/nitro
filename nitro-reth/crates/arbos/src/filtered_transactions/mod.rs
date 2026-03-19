@@ -34,7 +34,10 @@ impl<D: Database> FilteredTransactionsState<D> {
 
     /// Check if a tx is filtered without charging gas.
     pub fn is_filtered_free(&self, tx_hash: B256) -> bool {
-        self.store.get(tx_hash).map(|v| v == PRESENT_HASH).unwrap_or(false)
+        self.store
+            .get(tx_hash)
+            .map(|v| v == PRESENT_HASH)
+            .unwrap_or(false)
     }
 
     /// Delete a tx hash without charging gas (cleanup after no-op execution).

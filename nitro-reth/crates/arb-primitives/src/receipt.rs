@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use alloy_consensus::{
-    Eip2718EncodableReceipt, Eip658Value, Receipt as AlloyReceipt, Typed2718, TxReceipt,
+    Eip2718EncodableReceipt, Eip658Value, Receipt as AlloyReceipt, TxReceipt, Typed2718,
 };
 use alloy_eips::{Decodable2718, Encodable2718};
 use alloy_primitives::{Bloom, Log};
@@ -26,7 +26,11 @@ pub struct ArbReceipt {
 impl ArbReceipt {
     /// Create a new receipt with no L1 gas usage (filled in later).
     pub fn new(kind: ArbReceiptKind) -> Self {
-        Self { kind, gas_used_for_l1: 0, multi_gas_used: MultiGas::zero() }
+        Self {
+            kind,
+            gas_used_for_l1: 0,
+            multi_gas_used: MultiGas::zero(),
+        }
     }
 
     pub fn with_gas_used_for_l1(mut self, gas: u64) -> Self {
@@ -77,10 +81,9 @@ pub struct ArbDepositReceipt;
 impl ArbReceiptKind {
     pub const fn arb_tx_type(&self) -> ArbTxType {
         match self {
-            Self::Legacy(_)
-            | Self::Eip2930(_)
-            | Self::Eip1559(_)
-            | Self::Eip7702(_) => ArbTxType::ArbitrumLegacyTx,
+            Self::Legacy(_) | Self::Eip2930(_) | Self::Eip1559(_) | Self::Eip7702(_) => {
+                ArbTxType::ArbitrumLegacyTx
+            }
             Self::Deposit(_) => ArbTxType::ArbitrumDepositTx,
             Self::Unsigned(_) => ArbTxType::ArbitrumUnsignedTx,
             Self::Contract(_) => ArbTxType::ArbitrumContractTx,
@@ -187,11 +190,11 @@ impl ArbReceiptKind {
             | Self::Contract(r)
             | Self::Retry(r)
             | Self::SubmitRetryable(r)
-            | Self::Internal(r) => r.status.length() + r.cumulative_gas_used.length() + r.logs.length(),
+            | Self::Internal(r) => {
+                r.status.length() + r.cumulative_gas_used.length() + r.logs.length()
+            }
             Self::Deposit(_) => {
-                Eip658Value::Eip658(true).length()
-                    + (0u64).length()
-                    + Vec::<Log>::new().length()
+                Eip658Value::Eip658(true).length() + (0u64).length() + Vec::<Log>::new().length()
             }
         }
     }
@@ -227,10 +230,12 @@ impl ArbReceiptKind {
                 })
             }
             _ => {
-                let alloy_consensus::ReceiptWithBloom { receipt, logs_bloom } =
-                    <AlloyReceipt as alloy_consensus::RlpDecodableReceipt>::rlp_decode_with_bloom(
-                        buf,
-                    )?;
+                let alloy_consensus::ReceiptWithBloom {
+                    receipt,
+                    logs_bloom,
+                } = <AlloyReceipt as alloy_consensus::RlpDecodableReceipt>::rlp_decode_with_bloom(
+                    buf,
+                )?;
                 Ok(alloy_consensus::ReceiptWithBloom {
                     receipt: ArbReceipt::new(ArbReceiptKind::Legacy(receipt)),
                     logs_bloom,
@@ -451,7 +456,11 @@ impl alloy_consensus::RlpDecodableReceipt for ArbReceipt {
 impl Encodable2718 for ArbReceipt {
     fn encode_2718_len(&self) -> usize {
         let type_len = if self.is_legacy() { 0 } else { 1 };
-        type_len + self.kind.rlp_header_inner_without_bloom().length_with_payload()
+        type_len
+            + self
+                .kind
+                .rlp_header_inner_without_bloom()
+                .length_with_payload()
     }
 
     fn encode_2718(&self, out: &mut dyn alloy_rlp::bytes::BufMut) {
@@ -482,11 +491,16 @@ impl Decodable2718 for ArbReceipt {
         }
         let tx_type = ArbTxType::from_u8(ty)
             .map_err(|_| alloy_eips::eip2718::Eip2718Error::UnexpectedType(ty))?;
-        Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(buf, tx_type)?)
+        Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(
+            buf, tx_type,
+        )?)
     }
 
     fn fallback_decode(buf: &mut &[u8]) -> alloy_eips::eip2718::Eip2718Result<Self> {
-        Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(buf, ArbTxType::ArbitrumLegacyTx)?)
+        Ok(ArbReceiptKind::rlp_decode_inner_without_bloom(
+            buf,
+            ArbTxType::ArbitrumLegacyTx,
+        )?)
     }
 }
 
@@ -615,9 +629,12 @@ impl reth_codecs::Compact for ArbReceipt {
         buf.put_u64(self.gas_used_for_l1);
         // Append multi_gas_used (8 dimensions + total + refund = 10 u64s).
         for i in 0..crate::multigas::NUM_RESOURCE_KIND {
-            buf.put_u64(self.multi_gas_used.get(
-                crate::multigas::ResourceKind::from_u8(i as u8).unwrap_or(crate::multigas::ResourceKind::Unknown),
-            ));
+            buf.put_u64(
+                self.multi_gas_used.get(
+                    crate::multigas::ResourceKind::from_u8(i as u8)
+                        .unwrap_or(crate::multigas::ResourceKind::Unknown),
+                ),
+            );
         }
         buf.put_u64(self.multi_gas_used.total());
         buf.put_u64(self.multi_gas_used.refund());

@@ -1,5 +1,7 @@
 # ArbReth
 
+[![license](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE.md)
+
 A modular, Rust-native execution client for Arbitrum, built on [reth](https://github.com/paradigmxyz/reth).
 
 ## What is ArbReth?

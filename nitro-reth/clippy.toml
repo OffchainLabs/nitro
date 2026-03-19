@@ -1,0 +1,18 @@
+too-large-for-stack = 128
+doc-valid-idents = [
+    "ArbOS",
+    "ArbReth",
+    "EVM",
+    "WASM",
+    "RPC",
+    "JSON",
+    "L1",
+    "L2",
+    "L3",
+    "Wei",
+    "Gwei",
+    "GasFees",
+    "InfraFeeAccount",
+    "NetworkFeeAccount",
+]
+allow-dbg-in-tests = true

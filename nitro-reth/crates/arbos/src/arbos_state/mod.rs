@@ -7,21 +7,23 @@ use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
 use arb_storage::{
-    Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
-    get_account_balance, set_account_code, set_account_nonce, FILTERED_TX_STATE_ADDRESS,
+    get_account_balance, set_account_code, set_account_nonce, Storage, StorageBackedAddress,
+    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, FILTERED_TX_STATE_ADDRESS,
 };
 
-use crate::address_set::{self, AddressSet};
-use crate::address_table::{self, AddressTable};
-use crate::blockhash::{self, Blockhashes};
-use crate::burn::Burner;
-use crate::features::{self, Features};
-use crate::filtered_transactions::FilteredTransactionsState;
-use crate::l1_pricing::{self, L1PricingState};
-use crate::l2_pricing::{self, L2PricingState};
-use crate::merkle_accumulator::{self, MerkleAccumulator};
-use crate::programs::Programs;
-use crate::retryables::RetryableState;
+use crate::{
+    address_set::{self, AddressSet},
+    address_table::{self, AddressTable},
+    blockhash::{self, Blockhashes},
+    burn::Burner,
+    features::{self, Features},
+    filtered_transactions::FilteredTransactionsState,
+    l1_pricing::{self, L1PricingState},
+    l2_pricing::{self, L2PricingState},
+    merkle_accumulator::{self, MerkleAccumulator},
+    programs::Programs,
+    retryables::RetryableState,
+};
 
 // Storage offsets for root-level ArbOS state values.
 const VERSION_OFFSET: u64 = 0;
@@ -171,19 +173,17 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
             transaction_filterers: address_set::open_address_set(
                 backing_storage.open_sub_storage(TRANSACTION_FILTERING_SUBSPACE),
             ),
-            features: features::open_features(
-                state,
-                features_sto.base_key(),
-                0,
-            ),
+            features: features::open_features(state, features_sto.base_key(), 0),
             filtered_funds_recipient: StorageBackedAddress::new(
                 state,
                 B256::ZERO,
                 FILTERED_FUNDS_RECIPIENT_OFFSET,
             ),
-            filtered_transactions: FilteredTransactionsState::open(
-                Storage::new_with_account(state, B256::ZERO, FILTERED_TX_STATE_ADDRESS),
-            ),
+            filtered_transactions: FilteredTransactionsState::open(Storage::new_with_account(
+                state,
+                B256::ZERO,
+                FILTERED_TX_STATE_ADDRESS,
+            )),
             backing_storage,
             burner,
         })
@@ -290,10 +290,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     }
 
     /// Checks and performs a scheduled ArbOS version upgrade if due.
-    pub fn upgrade_arbos_version_if_necessary(
-        &mut self,
-        current_timestamp: u64,
-    ) -> Result<(), ()> {
+    pub fn upgrade_arbos_version_if_necessary(&mut self, current_timestamp: u64) -> Result<(), ()> {
         let scheduled_version = self.upgrade_version.get()?;
         let scheduled_timestamp = self.upgrade_timestamp.get()?;
 
@@ -331,11 +328,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
     ///
     /// `first_time` is true during genesis initialization, which affects
     /// some initial parameter values.
-    pub fn upgrade_arbos_version(
-        &mut self,
-        upgrade_to: u64,
-        first_time: bool,
-    ) -> Result<(), ()> {
+    pub fn upgrade_arbos_version(&mut self, upgrade_to: u64, first_time: bool) -> Result<(), ()> {
         while self.arbos_version < upgrade_to {
             let next = self.arbos_version + 1;
 
@@ -345,7 +338,8 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                 }
                 3 => {
                     self.l1_pricing_state.set_per_batch_gas_cost(0)?;
-                    self.l1_pricing_state.set_amortized_cost_cap_bips(u64::MAX)?;
+                    self.l1_pricing_state
+                        .set_amortized_cost_cap_bips(u64::MAX)?;
                 }
                 4 | 5 | 6 | 7 | 8 | 9 => {
                     // No state changes needed

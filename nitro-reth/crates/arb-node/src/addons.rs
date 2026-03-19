@@ -4,8 +4,7 @@ use arb_payload::ArbEngineTypes;
 use arb_primitives::ArbPrimitives;
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
-    rpc::PayloadValidatorBuilder,
-    AddOnsContext, FullNodeComponents, NodeTypes,
+    rpc::PayloadValidatorBuilder, AddOnsContext, FullNodeComponents, NodeTypes,
 };
 
 use crate::validator::ArbPayloadValidator;

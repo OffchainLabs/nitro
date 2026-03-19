@@ -11,17 +11,13 @@ use reth_node_builder::{
     NodeTypes,
 };
 use reth_rpc_convert::{RpcConvert, RpcConverter, RpcTypes, SignableTxRequest};
-use reth_rpc_eth_api::{
-    helpers::pending_block::BuildPendingEnv,
-    FromEvmError, FullEthApiServer,
-};
+use reth_rpc_eth_api::{helpers::pending_block::BuildPendingEnv, FromEvmError, FullEthApiServer};
 use reth_rpc_eth_types::EthApiError;
 
-use crate::api::ArbEthApi;
-use crate::header::ArbHeaderConverter;
-use crate::receipt::ArbReceiptConverter;
-use crate::response::ArbRpcTxConverter;
-use crate::types::ArbRpcTypes;
+use crate::{
+    api::ArbEthApi, header::ArbHeaderConverter, receipt::ArbReceiptConverter,
+    response::ArbRpcTxConverter, types::ArbRpcTypes,
+};
 
 /// Type alias for the Arbitrum RPC converter.
 pub type ArbRpcConvert<N> = RpcConverter<
@@ -42,9 +38,7 @@ pub struct ArbEthApiBuilder<NetworkT = ArbRpcTypes> {
 
 impl<NetworkT> Default for ArbEthApiBuilder<NetworkT> {
     fn default() -> Self {
-        Self {
-            _nt: PhantomData,
-        }
+        Self { _nt: PhantomData }
     }
 }
 

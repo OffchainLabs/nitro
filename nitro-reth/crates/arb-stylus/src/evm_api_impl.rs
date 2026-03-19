@@ -2,9 +2,11 @@ use alloy_primitives::{Address, Log, B256, U256};
 use arbos::programs::memory::MemoryModel;
 use revm::Database;
 
-use crate::evm_api::{CreateResponse, EvmApi, UserOutcomeKind};
-use crate::ink::Gas;
-use crate::pages;
+use crate::{
+    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
+    ink::Gas,
+    pages,
+};
 
 /// EIP-2929 gas costs for storage operations.
 const COLD_SLOAD_COST: u64 = 2100;
@@ -112,15 +114,12 @@ impl<DB: Database> JournalAccess for revm::Journal<DB> {
 
     fn address_in_access_list(&self, addr: Address) -> bool {
         // An address is "warm" if it's in the loaded state or warm_addresses
-        self.inner.state.contains_key(&addr)
-            || self.inner.warm_addresses.is_warm(&addr)
+        self.inner.state.contains_key(&addr) || self.inner.warm_addresses.is_warm(&addr)
     }
 
     fn add_address_to_access_list(&mut self, addr: Address) {
         // Load the account to mark it warm in the state map.
-        let _ = self
-            .inner
-            .load_account(&mut self.database, addr);
+        let _ = self.inner.load_account(&mut self.database, addr);
     }
 
     fn is_account_empty(&mut self, addr: Address) -> eyre::Result<bool> {
@@ -155,15 +154,13 @@ pub struct SubCreateResult {
 ///
 /// Parameters: (ctx_ptr, call_type, contract, caller, input, gas, value)
 /// call_type: 0=CALL, 1=DELEGATECALL, 2=STATICCALL
-pub type DoCallFn =
-    fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCallResult;
+pub type DoCallFn = fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCallResult;
 
 /// Type-erased function pointer for executing CREATE/CREATE2 from Stylus.
 ///
 /// Parameters: (ctx_ptr, caller, code, gas, endowment, salt)
 /// salt=None for CREATE, Some for CREATE2.
-pub type DoCreateFn =
-    fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
+pub type DoCreateFn = fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
 
 /// Concrete [`EvmApi`] bridging WASM host function calls to revm's journaled state.
 ///
@@ -345,13 +342,16 @@ impl EvmApi for StylusEvmApi {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
+                return Ok((
+                    self.return_data.len() as u32,
+                    Gas(0),
+                    UserOutcomeKind::Failure,
+                ));
             }
         };
 
         // WasmCallCost equivalent: warm/cold access + value transfer + new account
-        let (base_cost, oog) =
-            wasm_call_cost(self.journal(), contract, &value, gas_left.0);
+        let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &value, gas_left.0);
         if oog {
             self.return_data = Vec::new();
             return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
@@ -401,13 +401,16 @@ impl EvmApi for StylusEvmApi {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
+                return Ok((
+                    self.return_data.len() as u32,
+                    Gas(0),
+                    UserOutcomeKind::Failure,
+                ));
             }
         };
 
         // For DELEGATECALL, no value transfer cost
-        let (base_cost, oog) =
-            wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
+        let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
             return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
@@ -449,12 +452,15 @@ impl EvmApi for StylusEvmApi {
             Some(f) => f,
             None => {
                 self.return_data = b"sub-calls not available".to_vec();
-                return Ok((self.return_data.len() as u32, Gas(0), UserOutcomeKind::Failure));
+                return Ok((
+                    self.return_data.len() as u32,
+                    Gas(0),
+                    UserOutcomeKind::Failure,
+                ));
             }
         };
 
-        let (base_cost, oog) =
-            wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
+        let (base_cost, oog) = wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
             return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));

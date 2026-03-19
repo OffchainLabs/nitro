@@ -9,8 +9,8 @@ use crate::storage_slot::{
 
 /// ArbFilteredTransactionsManager precompile address (0x74).
 pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x74,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x74,
 ]);
 
 // Function selectors.
@@ -163,7 +163,10 @@ fn handle_add_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     sstore_filtered(input, slot, PRESENT_VALUE)?;
 
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        vec![].into(),
+    ))
 }
 
 /// Delete a transaction hash from the filtered transactions list.
@@ -188,5 +191,8 @@ fn handle_delete_filtered_tx(input: &mut PrecompileInput<'_>) -> PrecompileResul
     sstore_filtered(input, slot, U256::ZERO)?;
 
     let gas_used = 2 * SLOAD_GAS + SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        vec![].into(),
+    ))
 }

@@ -1,8 +1,10 @@
 use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
-use crate::burn::Burner;
-use crate::retryables::{self, RetryableState};
+use crate::{
+    burn::Burner,
+    retryables::{self, RetryableState},
+};
 
 use super::ArbosState;
 
@@ -107,11 +109,7 @@ pub fn initialize_retryables<D: Database>(
     }
 
     // Sort by timeout, then by id for determinism.
-    active_retryables.sort_by(|a, b| {
-        a.timeout
-            .cmp(&b.timeout)
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    active_retryables.sort_by(|a, b| a.timeout.cmp(&b.timeout).then_with(|| a.id.cmp(&b.id)));
 
     let mut escrow_credits = Vec::new();
 

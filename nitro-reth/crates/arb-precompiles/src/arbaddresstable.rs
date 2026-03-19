@@ -3,14 +3,14 @@ use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::storage_slot::{
-    derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, ADDRESS_TABLE_SUBSPACE,
+    derive_subspace_key, map_slot, map_slot_b256, ADDRESS_TABLE_SUBSPACE, ARBOS_STATE_ADDRESS,
     ROOT_STORAGE_KEY,
 };
 
 /// ArbAddressTable precompile address (0x66).
 pub const ARBADDRESSTABLE_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x66,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x66,
 ]);
 
 // Function selectors.
@@ -47,9 +47,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         REGISTER => handle_register(&mut input),
         COMPRESS => handle_compress(&mut input),
         DECOMPRESS => handle_decompress(&mut input),
-        _ => Err(PrecompileError::other(
-            "unknown ArbAddressTable selector",
-        )),
+        _ => Err(PrecompileError::other("unknown ArbAddressTable selector")),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -342,16 +340,16 @@ fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     load_arbos(input)?;
 
     // Try to RLP-decode as byte string first.
-    let (decoded, bytes_read) = rlp_decode_bytes(slice)
-        .map_err(|_| PrecompileError::other("RLP decode failed"))?;
+    let (decoded, bytes_read) =
+        rlp_decode_bytes(slice).map_err(|_| PrecompileError::other("RLP decode failed"))?;
 
     let (addr, final_bytes_read) = if decoded.len() == 20 {
         // Raw 20-byte address.
         (Address::from_slice(&decoded), bytes_read)
     } else {
         // Re-decode as u64 index.
-        let (index, idx_bytes_read) = rlp_decode_u64(slice)
-            .map_err(|_| PrecompileError::other("RLP decode index failed"))?;
+        let (index, idx_bytes_read) =
+            rlp_decode_u64(slice).map_err(|_| PrecompileError::other("RLP decode index failed"))?;
 
         let table_key = derive_subspace_key(ROOT_STORAGE_KEY, ADDRESS_TABLE_SUBSPACE);
 
@@ -359,7 +357,9 @@ fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         let num_items_slot = map_slot(table_key.as_slice(), 0);
         let num_items = sload_field(input, num_items_slot)?;
         if U256::from(index) >= num_items {
-            return Err(PrecompileError::other("index does not exist in AddressTable"));
+            return Err(PrecompileError::other(
+                "index does not exist in AddressTable",
+            ));
         }
 
         let entry_slot = map_slot(table_key.as_slice(), index + 1);

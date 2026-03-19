@@ -13,11 +13,8 @@ pub fn initialize_blockhashes<D: Database>(_backing_storage: &Storage<D>) {
 }
 
 pub fn open_blockhashes<D: Database>(backing_storage: Storage<D>) -> Blockhashes<D> {
-    let l1_block_number = StorageBackedUint64::new(
-        backing_storage.state_ptr(),
-        backing_storage.base_key(),
-        0,
-    );
+    let l1_block_number =
+        StorageBackedUint64::new(backing_storage.state_ptr(), backing_storage.base_key(), 0);
     Blockhashes {
         backing_storage,
         l1_block_number,

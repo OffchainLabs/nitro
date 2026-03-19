@@ -1,9 +1,8 @@
 use alloy_primitives::{Address, B256, U256};
 use std::collections::HashMap;
 
+use crate::{l1_pricing, retryables};
 use arb_chainspec::arbos_version as arb_ver;
-use crate::l1_pricing;
-use crate::retryables;
 
 /// ArbOS system address (0x00000000000000000000000000000000000a4b05).
 pub const ARBOS_ADDRESS: Address = {
@@ -142,10 +141,10 @@ impl TxProcessor {
     /// Returns an action describing how the caller should handle this tx
     /// before normal execution. The caller should:
     /// - `None`: proceed with normal execution
-    /// - `PreRecordedRevert`: increment sender nonce, deduct `gas_to_consume`
-    ///   from gas remaining, and return execution-reverted error
-    /// - `FilteredTx`: increment sender nonce, consume ALL remaining gas,
-    ///   and return filtered-tx error
+    /// - `PreRecordedRevert`: increment sender nonce, deduct `gas_to_consume` from gas remaining,
+    ///   and return execution-reverted error
+    /// - `FilteredTx`: increment sender nonce, consume ALL remaining gas, and return filtered-tx
+    ///   error
     pub fn reverted_tx_hook(
         &self,
         tx_hash: Option<B256>,
@@ -274,9 +273,7 @@ impl TxProcessor {
 
         let mut infra_fee_amount = U256::ZERO;
 
-        if params.arbos_version > 4
-            && params.infra_fee_account != Address::ZERO
-        {
+        if params.arbos_version > 4 && params.infra_fee_account != Address::ZERO {
             let infra_fee = params.min_base_fee.min(base_fee);
             let compute_gas = gas_used.saturating_sub(self.poster_gas);
             infra_fee_amount = infra_fee.saturating_mul(U256::from(compute_gas));
@@ -402,8 +399,8 @@ impl TxProcessor {
         // refund the difference. Only when effective_base_fee == block_base_fee
         // (skip during retryable gas estimation).
         if let Some(multi_cost) = params.multi_dimensional_cost {
-            let should_refund = single_gas_cost > multi_cost
-                && effective_base_fee == params.block_base_fee;
+            let should_refund =
+                single_gas_cost > multi_cost && effective_base_fee == params.block_base_fee;
             if should_refund {
                 let refund_amount = single_gas_cost.saturating_sub(multi_cost);
                 refund_with_pool(
@@ -525,8 +522,7 @@ pub struct EndTxRetryableParams {
 /// The caller should:
 /// - Grow gas backlog by `compute_gas_for_backlog`
 /// - If `should_delete_retryable`: delete the retryable ticket
-/// - If `should_return_value_to_escrow`: transfer value from `from`
-///   back to `escrow_address`
+/// - If `should_return_value_to_escrow`: transfer value from `from` back to `escrow_address`
 #[derive(Debug, Clone)]
 pub struct EndTxRetryableResult {
     pub compute_gas_for_backlog: u64,
@@ -541,9 +537,7 @@ pub enum RevertedTxAction {
     /// No special handling; proceed with normal execution.
     None,
     /// Pre-recorded revert: increment nonce, consume specific gas, return revert.
-    PreRecordedRevert {
-        gas_to_consume: u64,
-    },
+    PreRecordedRevert { gas_to_consume: u64 },
     /// Filtered transaction: increment nonce, consume all remaining gas.
     FilteredTx,
 }
@@ -687,8 +681,7 @@ pub fn get_poster_gas(
         return (0, 0);
     }
 
-    let calldata_units = tx_data_non_zero_count(tx_data) * 16
-        + tx_data_zero_count(tx_data) * 4;
+    let calldata_units = tx_data_non_zero_count(tx_data) * 16 + tx_data_zero_count(tx_data) * 4;
 
     let l1_cost = U256::from(calldata_units) * l1_base_fee;
     let poster_gas = l1_cost / l2_base_fee;
@@ -731,9 +724,7 @@ pub fn compute_retryable_gas_split(
     let mut network_cost = gas_cost;
     let mut infra_cost = U256::ZERO;
 
-    if arbos_version >= arb_ver::ARBOS_VERSION_11
-        && infra_fee_account != Address::ZERO
-    {
+    if arbos_version >= arb_ver::ARBOS_VERSION_11 && infra_fee_account != Address::ZERO {
         let infra_fee = min_base_fee.min(effective_base_fee);
         infra_cost = infra_fee.saturating_mul(U256::from(gas));
         infra_cost = take_funds(&mut network_cost, infra_cost);
@@ -748,10 +739,8 @@ pub fn compute_retryable_gas_split(
 /// operations. The caller should execute the operations described in
 /// the `SubmitRetryableFees` documentation.
 pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRetryableFees {
-    let submission_fee = retryables::retryable_submission_fee(
-        params.retry_data_len,
-        params.l1_base_fee,
-    );
+    let submission_fee =
+        retryables::retryable_submission_fee(params.retry_data_len, params.l1_base_fee);
 
     let escrow = retryables::retryable_escrow_address(params.ticket_id);
     let timeout = params.current_time + retryables::RETRYABLE_LIFETIME_SECONDS;
@@ -801,16 +790,16 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
     // Balance after all deductions so far.
     // Go reads statedb.GetBalance(tx.From) after executing the transfers, so
     // self-transfers (fee_refund_addr == from) don't reduce the balance.
-    let mut balance_after_deductions = params.balance_after_mint
+    let mut balance_after_deductions = params
+        .balance_after_mint
         .saturating_sub(submission_fee)
         .saturating_sub(params.retry_value);
     if params.fee_refund_addr != params.from {
         balance_after_deductions = balance_after_deductions.saturating_sub(submission_fee_refund);
     }
 
-    let can_pay_for_gas = !fee_cap_too_low
-        && params.gas >= TX_GAS
-        && balance_after_deductions >= max_gas_cost;
+    let can_pay_for_gas =
+        !fee_cap_too_low && params.gas >= TX_GAS && balance_after_deductions >= max_gas_cost;
 
     // Compute gas cost split.
     let (infra_cost, network_cost) = compute_retryable_gas_split(
@@ -820,7 +809,9 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
         params.min_base_fee,
         params.arbos_version,
     );
-    let gas_cost = params.effective_base_fee.saturating_mul(U256::from(params.gas));
+    let gas_cost = params
+        .effective_base_fee
+        .saturating_mul(U256::from(params.gas));
 
     // Gas cost refund if user can't pay.
     let gas_cost_refund = if !can_pay_for_gas {
@@ -831,8 +822,7 @@ pub fn compute_submit_retryable_fees(params: &SubmitRetryableParams) -> SubmitRe
 
     // Gas price refund (difference between fee cap and effective base fee).
     let gas_price_refund = if params.gas_fee_cap > params.effective_base_fee {
-        (params.gas_fee_cap - params.effective_base_fee)
-            .saturating_mul(U256::from(params.gas))
+        (params.gas_fee_cap - params.effective_base_fee).saturating_mul(U256::from(params.gas))
     } else {
         U256::ZERO
     };

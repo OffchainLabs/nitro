@@ -21,3 +21,6 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 bytes = { workspace = true }
+
+[lints]
+workspace = true

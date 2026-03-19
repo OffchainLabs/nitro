@@ -1,7 +1,6 @@
 use revm::Database;
 
-use crate::backed_types::StorageBackedUint64;
-use crate::storage::Storage;
+use crate::{backed_types::StorageBackedUint64, storage::Storage};
 
 const LENGTH_OFFSET: u64 = 0;
 
@@ -29,8 +28,7 @@ impl<D: Database> SubStorageVector<D> {
 
     /// Returns the sub-storage at the given index.
     pub fn at(&self, index: u64) -> Storage<D> {
-        self.storage
-            .open_sub_storage(&index.to_be_bytes())
+        self.storage.open_sub_storage(&index.to_be_bytes())
     }
 
     /// Appends a new sub-storage and returns it.

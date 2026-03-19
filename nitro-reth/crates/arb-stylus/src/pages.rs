@@ -1,7 +1,8 @@
 use alloy_primitives::Address;
-use std::cell::Cell;
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+};
 
 thread_local! {
     /// Currently open WASM memory pages across all active Stylus calls.

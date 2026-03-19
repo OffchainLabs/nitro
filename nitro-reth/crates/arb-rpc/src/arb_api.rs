@@ -89,8 +89,7 @@ where
 
         let send_count = u64::from_be_bytes(mix.0[0..8].try_into().unwrap_or_default());
         let l1_block_number = u64::from_be_bytes(mix.0[8..16].try_into().unwrap_or_default());
-        let arbos_format_version =
-            u64::from_be_bytes(mix.0[16..24].try_into().unwrap_or_default());
+        let arbos_format_version = u64::from_be_bytes(mix.0[16..24].try_into().unwrap_or_default());
 
         let send_root = if extra.len() >= 32 {
             B256::from_slice(&extra[..32])

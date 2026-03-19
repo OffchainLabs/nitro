@@ -88,9 +88,7 @@ impl L1IncomingMessage {
         let mut buf = Vec::new();
         buf.push(self.header.kind);
         // poster (32 bytes, left-padded address)
-        buf.extend_from_slice(
-            B256::left_padding_from(self.header.poster.as_slice()).as_slice(),
-        );
+        buf.extend_from_slice(B256::left_padding_from(self.header.poster.as_slice()).as_slice());
         // block number (8 bytes BE)
         buf.extend_from_slice(&self.header.block_number.to_be_bytes());
         // timestamp (8 bytes BE)
@@ -228,17 +226,17 @@ pub fn parse_batch_posting_report_fields(data: &[u8]) -> io::Result<BatchPosting
     let mut reader = Cursor::new(data);
 
     let batch_timestamp_u256 = uint256_from_reader(&mut reader)?;
-    let batch_timestamp: u64 = batch_timestamp_u256.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "batch timestamp too large")
-    })?;
+    let batch_timestamp: u64 = batch_timestamp_u256
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "batch timestamp too large"))?;
 
     let batch_poster = address_from_reader(&mut reader)?;
     let data_hash = hash_from_reader(&mut reader)?;
 
     let batch_number_u256 = uint256_from_reader(&mut reader)?;
-    let batch_number: u64 = batch_number_u256.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "batch number too large")
-    })?;
+    let batch_number: u64 = batch_number_u256
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "batch number too large"))?;
 
     let l1_base_fee_estimate = uint256_from_reader(&mut reader)?;
 

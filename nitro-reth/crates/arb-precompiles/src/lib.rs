@@ -89,8 +89,9 @@ use std::sync::Mutex as StdMutex;
 /// Cache of L2 block hashes for the arbBlockHash() precompile.
 /// Populated from the header chain during apply_pre_execution_changes.
 /// Separate from the journal's block_hashes (which holds L1 hashes for BLOCKHASH opcode).
-static L2_BLOCKHASH_CACHE: StdMutex<Option<std::collections::HashMap<u64, alloy_primitives::B256>>> =
-    StdMutex::new(None);
+static L2_BLOCKHASH_CACHE: StdMutex<
+    Option<std::collections::HashMap<u64, alloy_primitives::B256>>,
+> = StdMutex::new(None);
 
 /// Set an L2 block hash in the arbBlockHash cache.
 pub fn set_l2_block_hash(l2_block_number: u64, hash: alloy_primitives::B256) {
@@ -221,7 +222,9 @@ fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
 fn check_method_version(min_version: u64, max_version: u64) -> Option<PrecompileResult> {
     let v = get_arbos_version();
     if v < min_version || (max_version > 0 && v > max_version) {
-        Some(Err(PrecompileError::other("method not available at this ArbOS version")))
+        Some(Err(PrecompileError::other(
+            "method not available at this ArbOS version",
+        )))
     } else {
         None
     }
@@ -239,19 +242,10 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
             create_arbfunctiontable_precompile(),
         ),
         (ARBOSACTS_ADDRESS, create_arbosacts_precompile()),
-        (
-            ARBOWNERPUBLIC_ADDRESS,
-            create_arbownerpublic_precompile(),
-        ),
-        (
-            ARBADDRESSTABLE_ADDRESS,
-            create_arbaddresstable_precompile(),
-        ),
+        (ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile()),
+        (ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile()),
         (ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile()),
-        (
-            ARBRETRYABLETX_ADDRESS,
-            create_arbretryabletx_precompile(),
-        ),
+        (ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile()),
         (ARBOWNER_ADDRESS, create_arbowner_precompile()),
         (ARBBLS_ADDRESS, create_arbbls_precompile()),
         (ARBDEBUG_ADDRESS, create_arbdebug_precompile()),
@@ -265,9 +259,6 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
             ARBNATIVETOKENMANAGER_ADDRESS,
             create_arbnativetokenmanager_precompile(),
         ),
-        (
-            NODE_INTERFACE_ADDRESS,
-            create_nodeinterface_precompile(),
-        ),
+        (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
     ]);
 }

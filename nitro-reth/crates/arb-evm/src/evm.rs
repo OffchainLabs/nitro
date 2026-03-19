@@ -2,27 +2,29 @@ use alloy_evm::{
     eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
 };
 use alloy_primitives::{Address, Bytes, B256, U256};
-use arbos::programs::types::EvmData;
 use arb_precompiles::register_arb_precompiles;
-use arb_stylus::config::StylusConfig;
-use arb_stylus::ink::Gas as StylusGas;
-use arb_stylus::meter::MeteredMachine;
-use arb_stylus::run::RunProgram;
-use arb_stylus::StylusEvmApi;
-use core::fmt::Debug;
-use revm::context::result::EVMError;
-use revm::context_interface::host::LoadError;
-use revm::context_interface::result::{HaltReason, ResultAndState};
-use revm::handler::instructions::EthInstructions;
-use revm::handler::{EthFrame, PrecompileProvider};
-use revm::inspector::NoOpInspector;
-use revm::interpreter::interpreter::EthInterpreter;
-use revm::interpreter::interpreter_types::{InputsTr, ReturnData, RuntimeFlag, StackTr};
-use revm::interpreter::{
-    CallInput, CallInputs, CallScheme, Gas as EvmGas, Host, InstructionContext, InstructionResult,
-    InterpreterResult, InterpreterTypes,
+use arb_stylus::{
+    config::StylusConfig, ink::Gas as StylusGas, meter::MeteredMachine, run::RunProgram,
+    StylusEvmApi,
 };
-use revm::primitives::hardfork::SpecId;
+use arbos::programs::types::EvmData;
+use core::fmt::Debug;
+use revm::{
+    context::result::EVMError,
+    context_interface::{
+        host::LoadError,
+        result::{HaltReason, ResultAndState},
+    },
+    handler::{instructions::EthInstructions, EthFrame, PrecompileProvider},
+    inspector::NoOpInspector,
+    interpreter::{
+        interpreter::EthInterpreter,
+        interpreter_types::{InputsTr, ReturnData, RuntimeFlag, StackTr},
+        CallInput, CallInputs, CallScheme, Gas as EvmGas, Host, InstructionContext,
+        InstructionResult, InterpreterResult, InterpreterTypes,
+    },
+    primitives::hardfork::SpecId,
+};
 
 use crate::transaction::ArbTransaction;
 
@@ -47,9 +49,7 @@ const BALANCE_OPCODE: u8 = 0x31;
 /// the value stored by `record_new_l1_block` during StartBlock. The mixHash
 /// L1 block number in the header can differ from this value, so we read from
 /// the thread-local set after StartBlock processing.
-fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
+fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     let l1_block = arb_precompiles::get_l1_block_number_for_evm();
     if !ctx.interpreter.stack.push(U256::from(l1_block)) {
         ctx.interpreter.halt(InstructionResult::StackOverflow);
@@ -62,9 +62,7 @@ fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
 /// which is the L2 block number. Since Arbitrum's NUMBER opcode returns the L1
 /// block number, BLOCKHASH must also use L1 block numbers for the range check.
 /// Otherwise requests for L1 block hashes would always be out of range.
-fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
+fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     use revm::interpreter::InstructionResult;
 
     let requested = match ctx.interpreter.stack.pop() {
@@ -112,21 +110,20 @@ fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
 /// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
 /// charges posterGas * baseFee less. When a contract checks BALANCE(sender),
 /// we subtract the correction from the result to match Nitro.
-fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
+fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     // Pop address from stack
     let addr_u256 = match ctx.interpreter.stack.pop() {
         Some(v) => v,
         None => {
-            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackUnderflow);
+            ctx.interpreter
+                .halt(revm::interpreter::InstructionResult::StackUnderflow);
             return;
         }
     };
 
-    let addr = alloy_primitives::Address::from_word(
-        alloy_primitives::B256::from(addr_u256.to_be_bytes::<32>()),
-    );
+    let addr = alloy_primitives::Address::from_word(alloy_primitives::B256::from(
+        addr_u256.to_be_bytes::<32>(),
+    ));
 
     // Load account via host (handles cold/warm tracking)
     let spec_id = ctx.interpreter.runtime_flag.spec_id();
@@ -139,19 +136,23 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(
         // Charge gas: 2600 for cold, 100 for warm
         let gas_cost = if state_load.is_cold { 2600u64 } else { 100u64 };
         if !ctx.interpreter.gas.record_cost(gas_cost) {
-            ctx.interpreter.halt(revm::interpreter::InstructionResult::OutOfGas);
+            ctx.interpreter
+                .halt(revm::interpreter::InstructionResult::OutOfGas);
             return;
         }
 
         // Apply poster fee correction for sender
         let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+            state_load
+                .data
+                .saturating_sub(arb_precompiles::get_poster_balance_correction())
         } else {
             state_load.data
         };
 
         if !ctx.interpreter.stack.push(balance) {
-            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+            ctx.interpreter
+                .halt(revm::interpreter::InstructionResult::StackOverflow);
         }
     } else {
         // Pre-Berlin: always 400 gas, load via basic path
@@ -161,13 +162,16 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(
         };
 
         let balance = if addr == arb_precompiles::get_current_tx_sender() {
-            state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+            state_load
+                .data
+                .saturating_sub(arb_precompiles::get_poster_balance_correction())
         } else {
             state_load.data
         };
 
         if !ctx.interpreter.stack.push(balance) {
-            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+            ctx.interpreter
+                .halt(revm::interpreter::InstructionResult::StackOverflow);
         }
     }
 }
@@ -177,9 +181,7 @@ const SELFBALANCE_OPCODE: u8 = 0x47;
 
 /// Arbitrum SELFBALANCE: adjusts for poster fee correction if the executing
 /// contract IS the tx sender (edge case: sender calls own address).
-fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    ctx: InstructionContext<'_, H, WIRE>,
-) {
+fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(ctx: InstructionContext<'_, H, WIRE>) {
     let target = ctx.interpreter.input.target_address();
 
     let Some(state_load) = ctx.host.balance(target) else {
@@ -189,13 +191,16 @@ fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(
 
     // Apply poster fee correction if the contract being executed is the tx sender
     let balance = if target == arb_precompiles::get_current_tx_sender() {
-        state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+        state_load
+            .data
+            .saturating_sub(arb_precompiles::get_poster_balance_correction())
     } else {
         state_load.data
     };
 
     if !ctx.interpreter.stack.push(balance) {
-        ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+        ctx.interpreter
+            .halt(revm::interpreter::InstructionResult::StackOverflow);
     }
 }
 
@@ -294,19 +299,14 @@ pub use arb_stylus::pages::{
 
 // ── Stylus storage helpers ───────────────────────────────────────────
 
-use arbos::programs::Program;
-use arbos::programs::memory::MemoryModel;
-use arbos::programs::params::StylusParams;
 use arb_precompiles::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, ARBOS_STATE_ADDRESS, PROGRAMS_DATA_KEY,
     PROGRAMS_PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
 };
+use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
 
 /// Read a storage slot from ArbOS state via the journal.
-fn sload_arbos<DB: Database>(
-    journal: &mut revm::Journal<DB>,
-    slot: U256,
-) -> Option<U256> {
+fn sload_arbos<DB: Database>(journal: &mut revm::Journal<DB>, slot: U256) -> Option<U256> {
     let _ = journal
         .inner
         .load_account(&mut journal.database, ARBOS_STATE_ADDRESS)
@@ -363,11 +363,7 @@ fn parse_stylus_params(word: &[u8; 32], arbos_version: u64) -> StylusParams {
 }
 
 /// Compute upfront gas cost for a Stylus call, per `Programs.CallProgram`.
-fn stylus_call_gas_cost(
-    params: &StylusParams,
-    program: &Program,
-    pages_open: u16,
-) -> u64 {
+fn stylus_call_gas_cost(params: &StylusParams, program: &Program, pages_open: u16) -> u64 {
     let model = MemoryModel::new(params.free_pages, params.page_gas);
     let mut cost = model.gas_cost(program.footprint, pages_open, pages_open);
 
@@ -417,20 +413,14 @@ where
 
     // For CALL with value, transfer ETH
     if !is_delegate && !value.is_zero() {
-        let transfer_result = context
-            .journaled_state
-            .inner
-            .transfer(
-                &mut context.journaled_state.database,
-                caller,
-                contract,
-                value,
-            );
+        let transfer_result = context.journaled_state.inner.transfer(
+            &mut context.journaled_state.database,
+            caller,
+            contract,
+            value,
+        );
         if transfer_result.is_err() {
-            context
-                .journaled_state
-                .inner
-                .checkpoint_revert(checkpoint);
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCallResult {
                 output: Vec::new(),
                 gas_cost: 0,
@@ -456,10 +446,7 @@ where
             .map(|c| c.original_bytes())
             .unwrap_or_default(),
         Err(_) => {
-            context
-                .journaled_state
-                .inner
-                .checkpoint_revert(checkpoint);
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCallResult {
                 output: Vec::new(),
                 gas_cost: 0,
@@ -470,10 +457,7 @@ where
 
     // Empty code — just a value transfer, already done above
     if bytecode.is_empty() {
-        context
-            .journaled_state
-            .inner
-            .checkpoint_commit();
+        context.journaled_state.inner.checkpoint_commit();
         return SubCallResult {
             output: Vec::new(),
             gas_cost: 0,
@@ -631,7 +615,10 @@ where
         .load_account(&mut context.journaled_state.database, caller);
     if let Some(acc) = context.journaled_state.inner.state.get_mut(&caller) {
         acc.info.nonce += 1;
-        context.journaled_state.inner.nonce_bump_journal_entry(caller);
+        context
+            .journaled_state
+            .inner
+            .nonce_bump_journal_entry(caller);
     }
 
     // Transfer endowment
@@ -647,10 +634,7 @@ where
             )
             .is_err()
         {
-            context
-                .journaled_state
-                .inner
-                .checkpoint_revert(checkpoint);
+            context.journaled_state.inner.checkpoint_revert(checkpoint);
             return SubCreateResult {
                 address: None,
                 output: Vec::new(),
@@ -699,10 +683,7 @@ where
         }
     } else {
         let output = result.output.to_vec();
-        context
-            .journaled_state
-            .inner
-            .checkpoint_revert(checkpoint);
+        context.journaled_state.inner.checkpoint_revert(checkpoint);
         SubCreateResult {
             address: None,
             output, // revert returns data
@@ -728,10 +709,12 @@ where
     CfgEnv: revm::context::Cfg,
     DB: Database,
 {
-    use revm::bytecode::Bytecode;
-    use revm::interpreter::{
-        interpreter::{ExtBytecode, InputsImpl},
-        FrameInput, InterpreterAction, SharedMemory,
+    use revm::{
+        bytecode::Bytecode,
+        interpreter::{
+            interpreter::{ExtBytecode, InputsImpl},
+            FrameInput, InterpreterAction, SharedMemory,
+        },
     };
 
     let code = Bytecode::new_raw(bytecode.to_vec().into());
@@ -825,10 +808,9 @@ where
                 if ins_result.is_ok_or_revert() {
                     interpreter.gas.erase_cost(gas_remaining);
                     if target_len > 0 {
-                        interpreter.memory.set(
-                            mem_start,
-                            &interpreter.return_data.buffer()[..target_len],
-                        );
+                        interpreter
+                            .memory
+                            .set(mem_start, &interpreter.return_data.buffer()[..target_len]);
                     }
                 }
 
@@ -839,7 +821,9 @@ where
             InterpreterAction::NewFrame(FrameInput::Create(sub_create)) => {
                 // Dispatch create through our trampoline
                 let salt = match sub_create.scheme() {
-                    revm::interpreter::CreateScheme::Create2 { salt } => Some(B256::from(salt.to_be_bytes())),
+                    revm::interpreter::CreateScheme::Create2 { salt } => {
+                        Some(B256::from(salt.to_be_bytes()))
+                    }
                     _ => None,
                 };
 
@@ -966,7 +950,10 @@ where
 
     // ── Track reentrancy ────────────────────────────────────────────
     let target_addr = inputs.target_address;
-    let is_delegate = matches!(inputs.scheme, CallScheme::DelegateCall | CallScheme::CallCode);
+    let is_delegate = matches!(
+        inputs.scheme,
+        CallScheme::DelegateCall | CallScheme::CallCode
+    );
     let reentrant = if !is_delegate {
         push_stylus_program(target_addr)
     } else {
@@ -1015,7 +1002,9 @@ where
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed from cached module");
                 set_stylus_pages_open(prev_open);
-                if !is_delegate { pop_stylus_program(target_addr); }
+                if !is_delegate {
+                    pop_stylus_program(target_addr);
+                }
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1023,13 +1012,19 @@ where
         // Compile from WASM source.
         let compile = arb_stylus::CompileConfig::version(params.version, false);
         match arb_stylus::NativeInstance::from_bytes(
-            module_bytes, evm_api, evm_data, &compile, stylus_config,
+            module_bytes,
+            evm_api,
+            evm_data,
+            &compile,
+            stylus_config,
         ) {
             Ok(inst) => inst,
             Err(e) => {
                 tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "failed to compile WASM");
                 set_stylus_pages_open(prev_open);
-                if !is_delegate { pop_stylus_program(target_addr); }
+                if !is_delegate {
+                    pop_stylus_program(target_addr);
+                }
                 return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
             }
         }
@@ -1272,9 +1267,7 @@ where
         (db, inspector, &arb_precompiles.0)
     }
 
-    fn components_mut(
-        &mut self,
-    ) -> (&mut Self::DB, &mut Self::Inspector, &mut Self::Precompiles) {
+    fn components_mut(&mut self) -> (&mut Self::DB, &mut Self::Inspector, &mut Self::Precompiles) {
         let (db, inspector, arb_precompiles) = self.inner.components_mut();
         (db, inspector, &mut arb_precompiles.0)
     }

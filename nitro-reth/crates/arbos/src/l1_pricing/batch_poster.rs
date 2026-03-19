@@ -1,8 +1,8 @@
 use alloy_primitives::{Address, U256};
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt};
 use crate::address_set::AddressSet;
+use arb_storage::{Storage, StorageBackedAddress, StorageBackedBigInt};
 
 const BATCH_POSTER_TABLE_KEY: &[u8] = &[0];
 const POSTER_ADDRS_KEY: &[u8] = &[0];
@@ -40,17 +40,28 @@ pub fn initialize_batch_posters_table<D: Database>(
     let _ = addrs.add(initial_poster);
 
     let bp_storage = poster_info.open_sub_storage(initial_poster.as_slice());
-    let pay_to = StorageBackedAddress::new(bp_storage.state_ptr(), bp_storage.base_key(), PAY_TO_OFFSET);
+    let pay_to =
+        StorageBackedAddress::new(bp_storage.state_ptr(), bp_storage.base_key(), PAY_TO_OFFSET);
     let _ = pay_to.set(initial_poster);
 
-    let funds_due = StorageBackedBigInt::new(bp_storage.state_ptr(), bp_storage.base_key(), FUNDS_DUE_OFFSET);
+    let funds_due = StorageBackedBigInt::new(
+        bp_storage.state_ptr(),
+        bp_storage.base_key(),
+        FUNDS_DUE_OFFSET,
+    );
     let _ = funds_due.set(U256::ZERO);
 
-    let total_funds_due = StorageBackedBigInt::new(bpt_storage.state_ptr(), bpt_storage.base_key(), TOTAL_FUNDS_DUE_OFFSET);
+    let total_funds_due = StorageBackedBigInt::new(
+        bpt_storage.state_ptr(),
+        bpt_storage.base_key(),
+        TOTAL_FUNDS_DUE_OFFSET,
+    );
     let _ = total_funds_due.set(U256::ZERO);
 }
 
-pub fn open_batch_posters_table<D: Database>(l1_pricing_storage: &Storage<D>) -> BatchPostersTable<D> {
+pub fn open_batch_posters_table<D: Database>(
+    l1_pricing_storage: &Storage<D>,
+) -> BatchPostersTable<D> {
     let bpt_storage = l1_pricing_storage.open_sub_storage(BATCH_POSTER_TABLE_KEY);
     let poster_addrs_storage = bpt_storage.open_sub_storage(POSTER_ADDRS_KEY);
     let poster_info = bpt_storage.open_sub_storage(POSTER_INFO_KEY);

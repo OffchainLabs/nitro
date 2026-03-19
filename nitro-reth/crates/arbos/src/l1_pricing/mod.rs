@@ -27,14 +27,14 @@ const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
 
 // Well-known addresses.
 pub const BATCH_POSTER_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75,
-    0x65, 0x6e, 0x63, 0x65, 0x72,
+    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
+    0x6e, 0x63, 0x65, 0x72,
 ]);
 pub const BATCH_POSTER_PAY_TO_ADDRESS: Address = BATCH_POSTER_ADDRESS;
 
 pub const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0xf6,
+    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xf6,
 ]);
 
 // Initial values.
@@ -80,15 +80,18 @@ pub fn initialize_l1_pricing_state<D: Database>(
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
-    let _ = StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient);
+    let _ =
+        StorageBackedAddress::new(state, base_key, PAY_REWARDS_TO_OFFSET).set(rewards_recipient);
     let _ = StorageBackedBigUint::new(state, base_key, EQUILIBRATION_UNITS_OFFSET)
         .set(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
     let _ = StorageBackedUint64::new(state, base_key, INERTIA_OFFSET).set(INITIAL_INERTIA);
-    let _ = StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET).set(INITIAL_PER_UNIT_REWARD);
+    let _ = StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET)
+        .set(INITIAL_PER_UNIT_REWARD);
     let _ = StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET).set(0);
     let _ = StorageBackedBigInt::new(state, base_key, FUNDS_DUE_FOR_REWARDS_OFFSET).set(U256::ZERO);
     let _ = StorageBackedUint64::new(state, base_key, UNITS_SINCE_OFFSET).set(0);
-    let _ = StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET).set(initial_l1_base_fee);
+    let _ =
+        StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET).set(initial_l1_base_fee);
     let _ = StorageBackedBigInt::new(state, base_key, LAST_SURPLUS_OFFSET).set(U256::ZERO);
     let _ = StorageBackedInt64::new(state, base_key, PER_BATCH_GAS_COST_OFFSET)
         .set(INITIAL_PER_BATCH_GAS_COST_V6);
@@ -99,7 +102,10 @@ pub fn initialize_l1_pricing_state<D: Database>(
     initialize_batch_posters_table(sto, BATCH_POSTER_ADDRESS);
 }
 
-pub fn open_l1_pricing_state<D: Database>(sto: Storage<D>, arbos_version: u64) -> L1PricingState<D> {
+pub fn open_l1_pricing_state<D: Database>(
+    sto: Storage<D>,
+    arbos_version: u64,
+) -> L1PricingState<D> {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
 
@@ -109,12 +115,20 @@ pub fn open_l1_pricing_state<D: Database>(sto: Storage<D>, arbos_version: u64) -
         inertia: StorageBackedUint64::new(state, base_key, INERTIA_OFFSET),
         per_unit_reward: StorageBackedUint64::new(state, base_key, PER_UNIT_REWARD_OFFSET),
         last_update_time: StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET),
-        funds_due_for_rewards: StorageBackedBigInt::new(state, base_key, FUNDS_DUE_FOR_REWARDS_OFFSET),
+        funds_due_for_rewards: StorageBackedBigInt::new(
+            state,
+            base_key,
+            FUNDS_DUE_FOR_REWARDS_OFFSET,
+        ),
         units_since_update: StorageBackedUint64::new(state, base_key, UNITS_SINCE_OFFSET),
         price_per_unit: StorageBackedBigUint::new(state, base_key, PRICE_PER_UNIT_OFFSET),
         last_surplus: StorageBackedBigInt::new(state, base_key, LAST_SURPLUS_OFFSET),
         per_batch_gas_cost: StorageBackedInt64::new(state, base_key, PER_BATCH_GAS_COST_OFFSET),
-        amortized_cost_cap_bips: StorageBackedUint64::new(state, base_key, AMORTIZED_COST_CAP_BIPS_OFFSET),
+        amortized_cost_cap_bips: StorageBackedUint64::new(
+            state,
+            base_key,
+            AMORTIZED_COST_CAP_BIPS_OFFSET,
+        ),
         l1_fees_available: StorageBackedBigUint::new(state, base_key, L1_FEES_AVAILABLE_OFFSET),
         gas_floor_per_token: StorageBackedUint64::new(state, base_key, GAS_FLOOR_PER_TOKEN_OFFSET),
         backing_storage: sto,
@@ -259,7 +273,8 @@ impl<D: Database> L1PricingState<D> {
     pub fn transfer_from_l1_fees_available(&self, amount: U256) -> Result<U256, ()> {
         let available = self.l1_fees_available.get().unwrap_or(U256::ZERO);
         let transfer = amount.min(available);
-        self.l1_fees_available.set(available.saturating_sub(transfer))?;
+        self.l1_fees_available
+            .set(available.saturating_sub(transfer))?;
         Ok(transfer)
     }
 
@@ -293,10 +308,7 @@ impl<D: Database> L1PricingState<D> {
         }
     }
 
-    pub fn get_poster_info(
-        &self,
-        poster: Address,
-    ) -> Result<(U256, Address), ()> {
+    pub fn get_poster_info(&self, poster: Address) -> Result<(U256, Address), ()> {
         let bpt = self.batch_poster_table();
         let state = bpt.open_poster(poster, false)?;
         let due = state.funds_due()?;
@@ -445,7 +457,11 @@ impl<D: Database> L1PricingState<D> {
 
         let pay_rewards_to = self.pay_rewards_to().unwrap_or(Address::ZERO);
         if payment_for_rewards > U256::ZERO {
-            let _ = transfer_fn(L1_PRICER_FUNDS_POOL_ADDRESS, pay_rewards_to, payment_for_rewards);
+            let _ = transfer_fn(
+                L1_PRICER_FUNDS_POOL_ADDRESS,
+                pay_rewards_to,
+                payment_for_rewards,
+            );
             l1_fees = l1_fees.saturating_sub(payment_for_rewards);
             let _ = self.set_l1_fees_available(l1_fees);
         }
@@ -480,15 +496,19 @@ impl<D: Database> L1PricingState<D> {
             };
 
             let inertia = self.inertia().unwrap_or(INITIAL_INERTIA);
-            let equil_units = self.equilibration_units().unwrap_or(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
+            let equil_units = self
+                .equilibration_units()
+                .unwrap_or(U256::from(INITIAL_EQUILIBRATION_UNITS_V6));
             let inertia_units = equil_units
                 .checked_div(U256::from(inertia))
                 .unwrap_or(U256::ZERO);
             let price = self.price_per_unit().unwrap_or(U256::ZERO);
 
             let alloc_plus_inert = inertia_units.saturating_add(U256::from(units_allocated));
-            let (old_surplus_mag, old_surplus_neg) =
-                self.last_surplus.get_signed().unwrap_or((U256::ZERO, false));
+            let (old_surplus_mag, old_surplus_neg) = self
+                .last_surplus
+                .get_signed()
+                .unwrap_or((U256::ZERO, false));
 
             let units_u256 = U256::from(units_allocated);
 

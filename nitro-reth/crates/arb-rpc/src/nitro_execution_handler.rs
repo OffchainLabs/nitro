@@ -13,10 +13,12 @@ use parking_lot::RwLock;
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
-use crate::block_producer::{BlockProducer, BlockProductionInput};
-use crate::nitro_execution::{
-    NitroExecutionApiServer, RpcConsensusSyncData, RpcFinalityData, RpcMaintenanceStatus,
-    RpcMessageResult, RpcMessageWithMetadata, RpcMessageWithMetadataAndBlockInfo,
+use crate::{
+    block_producer::{BlockProducer, BlockProductionInput},
+    nitro_execution::{
+        NitroExecutionApiServer, RpcConsensusSyncData, RpcFinalityData, RpcMaintenanceStatus,
+        RpcMessageResult, RpcMessageWithMetadata, RpcMessageWithMetadataAndBlockInfo,
+    },
 };
 
 /// State shared between the RPC handler and the node.
@@ -116,17 +118,14 @@ fn internal_error(msg: impl Into<String>) -> jsonrpsee::types::ErrorObjectOwned 
 /// can start with "0x" as valid base64 characters, so always decode as base64.
 fn decode_l2_msg(l2_msg: &Option<String>) -> Result<Vec<u8>, String> {
     match l2_msg {
-        Some(s) if !s.is_empty() => {
-            base64_decode(s).map_err(|e| format!("base64 decode: {e}"))
-        }
+        Some(s) if !s.is_empty() => base64_decode(s).map_err(|e| format!("base64 decode: {e}")),
         _ => Ok(vec![]),
     }
 }
 
 /// Simple base64 decoder (standard alphabet with padding).
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let input = input.trim_end_matches('=');
     let mut result = Vec::with_capacity(input.len() * 3 / 4);

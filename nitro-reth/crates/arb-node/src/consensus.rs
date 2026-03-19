@@ -4,8 +4,7 @@
 //! The consensus layer trusts the sequencer's block production
 //! and performs only basic structural validation.
 
-use std::fmt::Debug;
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, ConsensusError, FullConsensus, HeaderValidator};

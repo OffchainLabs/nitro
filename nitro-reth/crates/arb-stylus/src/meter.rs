@@ -1,6 +1,4 @@
-use crate::config::PricingParams;
-use crate::error::Escape;
-use crate::ink::Ink;
+use crate::{config::PricingParams, error::Escape, ink::Ink};
 
 /// Names of the WASM globals used for ink metering.
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";

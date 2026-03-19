@@ -5,15 +5,17 @@ use wasmer::{
     imports, Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value,
 };
 
-use crate::cache::InitCache;
-use crate::config::{CompileConfig, PricingParams, StylusConfig};
-use crate::env::{MeterData, WasmEnv};
-use crate::evm_api::EvmApi;
-use crate::host;
-use crate::ink::Ink;
-use crate::meter::{
-    DepthCheckedMachine, GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT,
-    STYLUS_INK_STATUS, STYLUS_STACK_LEFT,
+use crate::{
+    cache::InitCache,
+    config::{CompileConfig, PricingParams, StylusConfig},
+    env::{MeterData, WasmEnv},
+    evm_api::EvmApi,
+    host,
+    ink::Ink,
+    meter::{
+        DepthCheckedMachine, GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT,
+        STYLUS_INK_STATUS, STYLUS_STACK_LEFT,
+    },
 };
 
 /// A native WASM instance ready for execution.
@@ -152,11 +154,7 @@ impl<E: EvmApi> NativeInstance<E> {
         };
 
         if debug_funcs {
-            import_object.define(
-                "console",
-                "log_txt",
-                func!(host::console_log_text::<E>),
-            );
+            import_object.define("console", "log_txt", func!(host::console_log_text::<E>));
             import_object.define("console", "log_i32", func!(host::console_log::<E, u32>));
             import_object.define("console", "log_i64", func!(host::console_log::<E, u64>));
             import_object.define("console", "log_f32", func!(host::console_log::<E, f32>));
@@ -318,11 +316,7 @@ impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
 }
 
 /// Compile WASM bytes into a serialized module.
-pub fn compile_module(
-    wasm: &[u8],
-    version: u16,
-    debug: bool,
-) -> Result<Vec<u8>> {
+pub fn compile_module(wasm: &[u8], version: u16, debug: bool) -> Result<Vec<u8>> {
     let compile = CompileConfig::version(version, debug);
     let store = compile.store();
     let module = Module::new(&store, wasm)?;

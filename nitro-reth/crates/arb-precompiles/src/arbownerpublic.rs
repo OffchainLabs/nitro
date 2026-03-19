@@ -4,15 +4,15 @@ use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, Precompi
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, map_slot_b256, root_slot, subspace_slot, ARBOS_STATE_ADDRESS,
-    CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET,
-    L1_PRICING_SUBSPACE, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE,
-    ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
+    CHAIN_OWNER_SUBSPACE, FEATURES_SUBSPACE, FILTERED_FUNDS_RECIPIENT_OFFSET, L1_PRICING_SUBSPACE,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY,
+    TRANSACTION_FILTERER_SUBSPACE, TX_FILTERING_ENABLED_FROM_TIME_OFFSET,
 };
 
 /// ArbOwnerPublic precompile address (0x6b).
 pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x6b,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x6b,
 ]);
 
 // Function selectors.
@@ -64,65 +64,89 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         GET_NETWORK_FEE_ACCOUNT => read_state_field(&mut input, NETWORK_FEE_ACCOUNT_OFFSET),
         // GetInfraFeeAccount: ArbOS >= 5
         GET_INFRA_FEE_ACCOUNT => {
-            if let Some(r) = crate::check_method_version(5, 0) { return r; }
+            if let Some(r) = crate::check_method_version(5, 0) {
+                return r;
+            }
             read_state_field(&mut input, INFRA_FEE_ACCOUNT_OFFSET)
         }
         // GetBrotliCompressionLevel: ArbOS >= 20
         GET_BROTLI_COMPRESSION_LEVEL => {
-            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            if let Some(r) = crate::check_method_version(20, 0) {
+                return r;
+            }
             read_state_field(&mut input, BROTLI_COMPRESSION_LEVEL_OFFSET)
         }
         // GetScheduledUpgrade: ArbOS >= 20
         GET_SCHEDULED_UPGRADE => {
-            if let Some(r) = crate::check_method_version(20, 0) { return r; }
+            if let Some(r) = crate::check_method_version(20, 0) {
+                return r;
+            }
             handle_scheduled_upgrade(&mut input)
         }
         IS_CHAIN_OWNER => handle_is_chain_owner(&mut input),
         GET_ALL_CHAIN_OWNERS => handle_get_all_members(&mut input),
         // RectifyChainOwner: ArbOS >= 11
         RECTIFY_CHAIN_OWNER => {
-            if let Some(r) = crate::check_method_version(11, 0) { return r; }
+            if let Some(r) = crate::check_method_version(11, 0) {
+                return r;
+            }
             let gas_cost = (SLOAD_GAS + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, Vec::new().into()))
         }
         // IsNativeTokenOwner: ArbOS >= 41
         IS_NATIVE_TOKEN_OWNER => {
-            if let Some(r) = crate::check_method_version(41, 0) { return r; }
+            if let Some(r) = crate::check_method_version(41, 0) {
+                return r;
+            }
             handle_is_set_member(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
         // IsTransactionFilterer: ArbOS >= 60 (TransactionFiltering)
         IS_TRANSACTION_FILTERER => {
-            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            if let Some(r) = crate::check_method_version(60, 0) {
+                return r;
+            }
             handle_is_set_member(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         // GetAllNativeTokenOwners: ArbOS >= 41
         GET_ALL_NATIVE_TOKEN_OWNERS => {
-            if let Some(r) = crate::check_method_version(41, 0) { return r; }
+            if let Some(r) = crate::check_method_version(41, 0) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, NATIVE_TOKEN_SUBSPACE)
         }
         // GetAllTransactionFilterers: ArbOS >= 60 (TransactionFiltering)
         GET_ALL_TRANSACTION_FILTERERS => {
-            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            if let Some(r) = crate::check_method_version(60, 0) {
+                return r;
+            }
             handle_get_all_set_members(&mut input, TRANSACTION_FILTERER_SUBSPACE)
         }
         // GetNativeTokenManagementFrom: ArbOS >= 50
         GET_NATIVE_TOKEN_MANAGEMENT_FROM => {
-            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            if let Some(r) = crate::check_method_version(50, 0) {
+                return r;
+            }
             read_state_field(&mut input, NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET)
         }
         // GetTransactionFilteringFrom: ArbOS >= 60 (TransactionFiltering)
         GET_TRANSACTION_FILTERING_FROM => {
-            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            if let Some(r) = crate::check_method_version(60, 0) {
+                return r;
+            }
             read_state_field(&mut input, TX_FILTERING_ENABLED_FROM_TIME_OFFSET)
         }
         // GetFilteredFundsRecipient: ArbOS >= 60 (TransactionFiltering)
         GET_FILTERED_FUNDS_RECIPIENT => {
-            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            if let Some(r) = crate::check_method_version(60, 0) {
+                return r;
+            }
             read_state_field(&mut input, FILTERED_FUNDS_RECIPIENT_OFFSET)
         }
         // IsCalldataPriceIncreaseEnabled: ArbOS >= 40
         IS_CALLDATA_PRICE_INCREASE_ENABLED => {
-            if let Some(r) = crate::check_method_version(40, 0) { return r; }
+            if let Some(r) = crate::check_method_version(40, 0) {
+                return r;
+            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let features_key = derive_subspace_key(ROOT_STORAGE_KEY, FEATURES_SUBSPACE);
@@ -137,7 +161,9 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // GetParentGasFloorPerToken: ArbOS >= 50
         GET_PARENT_GAS_FLOOR_PER_TOKEN => {
-            if let Some(r) = crate::check_method_version(50, 0) { return r; }
+            if let Some(r) = crate::check_method_version(50, 0) {
+                return r;
+            }
             let gas_limit = input.gas;
             load_arbos(&mut input)?;
             let field_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_GAS_FLOOR_PER_TOKEN);
@@ -149,14 +175,14 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // GetMaxStylusContractFragments: ArbOS >= 60 (StylusContractLimit)
         GET_MAX_STYLUS_CONTRACT_FRAGMENTS => {
-            if let Some(r) = crate::check_method_version(60, 0) { return r; }
+            if let Some(r) = crate::check_method_version(60, 0) {
+                return r;
+            }
             // OAS(800) + Params() burn(100) + resultCost(3).
             let gas_cost = (SLOAD_GAS + 100 + COPY_GAS).min(input.gas);
             Ok(PrecompileOutput::new(gas_cost, vec![0u8; 32].into()))
         }
-        _ => Err(PrecompileError::other(
-            "unknown ArbOwnerPublic selector",
-        )),
+        _ => Err(PrecompileError::other("unknown ArbOwnerPublic selector")),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -228,7 +254,11 @@ fn handle_is_chain_owner(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let value = sload_field(input, member_slot)?;
     let is_owner = value != U256::ZERO;
 
-    let result = if is_owner { U256::from(1u64) } else { U256::ZERO };
+    let result = if is_owner {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
 
     // OAS(1) + IsMember(1) = 2 sloads + argsCost(3) + resultCost(3).
     Ok(PrecompileOutput::new(
@@ -266,10 +296,7 @@ fn handle_get_all_members(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     ))
 }
 
-fn handle_is_set_member(
-    input: &mut PrecompileInput<'_>,
-    subspace: &[u8],
-) -> PrecompileResult {
+fn handle_is_set_member(input: &mut PrecompileInput<'_>, subspace: &[u8]) -> PrecompileResult {
     let data = input.data;
     if data.len() < 36 {
         return Err(PrecompileError::other("input too short"));

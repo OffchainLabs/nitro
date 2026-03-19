@@ -35,8 +35,10 @@ impl ArbTransaction {
         tx.gas_limit = gas_limit;
 
         // Internal/Deposit txs get minimum 1M gas
-        if matches!(tx_type, ArbTxType::ArbitrumInternalTx | ArbTxType::ArbitrumDepositTx)
-            && gas_limit == 0
+        if matches!(
+            tx_type,
+            ArbTxType::ArbitrumInternalTx | ArbTxType::ArbitrumDepositTx
+        ) && gas_limit == 0
         {
             tx.gas_limit = 1_000_000;
         }
@@ -85,10 +87,14 @@ impl IntoTxEnv<ArbTransaction> for ArbTransaction {
 }
 
 impl revm::context_interface::Transaction for ArbTransaction {
-    type AccessListItem<'a> = <TxEnv as revm::context_interface::Transaction>::AccessListItem<'a>
-        where Self: 'a;
-    type Authorization<'a> = <TxEnv as revm::context_interface::Transaction>::Authorization<'a>
-        where Self: 'a;
+    type AccessListItem<'a>
+        = <TxEnv as revm::context_interface::Transaction>::AccessListItem<'a>
+    where
+        Self: 'a;
+    type Authorization<'a>
+        = <TxEnv as revm::context_interface::Transaction>::Authorization<'a>
+    where
+        Self: 'a;
 
     fn tx_type(&self) -> u8 {
         revm::context_interface::Transaction::tx_type(&self.0)
@@ -197,7 +203,10 @@ fn arb_tx_to_tx_env(tx: &ArbTransactionSigned, sender: Address) -> TxEnv {
     env.gas_limit = tx.gas_limit();
     env.nonce = tx.nonce();
     env.chain_id = tx.chain_id();
-    env.kind = tx.to().map_or(revm::primitives::TxKind::Create, revm::primitives::TxKind::Call);
+    env.kind = tx.to().map_or(
+        revm::primitives::TxKind::Create,
+        revm::primitives::TxKind::Call,
+    );
     env.data = tx.input().clone();
     env.gas_priority_fee = Some(0);
 

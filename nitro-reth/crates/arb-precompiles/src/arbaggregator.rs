@@ -9,14 +9,14 @@ use crate::storage_slot::{
 
 /// ArbAggregator precompile address (0x6d).
 pub const ARBAGGREGATOR_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x6d,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x6d,
 ]);
 
 /// Default batch poster address (the sequencer).
 const BATCH_POSTER_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75,
-    0x65, 0x6e, 0x63, 0x65, 0x72,
+    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
+    0x6e, 0x63, 0x65, 0x72,
 ]);
 
 // Function selectors.
@@ -98,9 +98,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         SET_FEE_COLLECTOR => handle_set_fee_collector(&mut input),
         GET_BATCH_POSTERS => handle_get_batch_posters(&mut input),
         ADD_BATCH_POSTER => handle_add_batch_poster(&mut input),
-        _ => Err(PrecompileError::other(
-            "unknown ArbAggregator selector",
-        )),
+        _ => Err(PrecompileError::other("unknown ArbAggregator selector")),
     };
     crate::gas_check(gas_limit, result)
 }
@@ -228,7 +226,10 @@ fn handle_set_fee_collector(input: &mut PrecompileInput<'_>) -> PrecompileResult
     if caller != poster && caller != old_collector {
         gas_used += SLOAD_GAS;
     }
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        vec![].into(),
+    ))
 }
 
 /// GetBatchPosters returns all batch poster addresses from the AddressSet.
@@ -331,5 +332,8 @@ fn handle_add_batch_poster(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     // byAddress.Set(20000) + backingStorage.Set(20000) + size.Increment Get(1)+Set(20000))]
     // + argsCost(3).
     let gas_used = 6 * SLOAD_GAS + SSTORE_ZERO_GAS + 4 * SSTORE_GAS + COPY_GAS;
-    Ok(PrecompileOutput::new(gas_used.min(gas_limit), vec![].into()))
+    Ok(PrecompileOutput::new(
+        gas_used.min(gas_limit),
+        vec![].into(),
+    ))
 }

@@ -1,8 +1,10 @@
 use alloy_primitives::{Address, B256, U256};
 use revm::Database;
 
-use crate::slot::storage_key_map;
-use crate::state_ops::{read_arbos_storage, write_arbos_storage};
+use crate::{
+    slot::storage_key_map,
+    state_ops::{read_arbos_storage, write_arbos_storage},
+};
 
 fn compute_slot(base_key: B256, offset: u64) -> U256 {
     if base_key == B256::ZERO {
@@ -59,7 +61,10 @@ impl<D: Database> StorageBackedUint64<D> {
 
 impl<D> Clone for StorageBackedUint64<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -91,7 +96,10 @@ impl<D: Database> StorageBackedBigUint<D> {
 
 impl<D> Clone for StorageBackedBigUint<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -128,7 +136,10 @@ impl<D: Database> StorageBackedAddress<D> {
 
 impl<D> Clone for StorageBackedAddress<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -164,7 +175,10 @@ impl<D: Database> StorageBackedInt64<D> {
 
 impl<D> Clone for StorageBackedInt64<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -220,7 +234,10 @@ impl<D: Database> StorageBackedBigInt<D> {
 
 impl<D> Clone for StorageBackedBigInt<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 
@@ -273,7 +290,10 @@ impl<D: Database> StorageBackedAddressOrNil<D> {
 
 impl<D> Clone for StorageBackedAddressOrNil<D> {
     fn clone(&self) -> Self {
-        Self { state: self.state, slot: self.slot }
+        Self {
+            state: self.state,
+            slot: self.slot,
+        }
     }
 }
 

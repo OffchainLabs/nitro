@@ -36,8 +36,10 @@ pub fn init_data_pricer<D: Database>(sto: &Storage<D>) {
     let state = sto.state_ptr();
     let base_key = sto.base_key();
     let _ = StorageBackedUint32::new(state, base_key, DEMAND_OFFSET).set(INITIAL_DEMAND);
-    let _ = StorageBackedUint32::new(state, base_key, BYTES_PER_SECOND_OFFSET).set(INITIAL_BYTES_PER_SECOND);
-    let _ = StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET).set(INITIAL_LAST_UPDATE_TIME);
+    let _ = StorageBackedUint32::new(state, base_key, BYTES_PER_SECOND_OFFSET)
+        .set(INITIAL_BYTES_PER_SECOND);
+    let _ = StorageBackedUint64::new(state, base_key, LAST_UPDATE_TIME_OFFSET)
+        .set(INITIAL_LAST_UPDATE_TIME);
     let _ = StorageBackedUint32::new(state, base_key, MIN_PRICE_OFFSET).set(INITIAL_MIN_PRICE);
     let _ = StorageBackedUint32::new(state, base_key, INERTIA_OFFSET).set(INITIAL_INERTIA);
 }

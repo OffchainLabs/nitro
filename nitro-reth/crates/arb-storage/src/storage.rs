@@ -1,8 +1,10 @@
-use alloy_primitives::{Address, B256, U256, keccak256};
+use alloy_primitives::{keccak256, Address, B256, U256};
 use revm::Database;
 
-use crate::slot::{storage_key_map, storage_key_map_b256};
-use crate::state_ops::{ARBOS_STATE_ADDRESS, read_storage_at, write_storage_at};
+use crate::{
+    slot::{storage_key_map, storage_key_map_b256},
+    state_ops::{read_storage_at, write_storage_at, ARBOS_STATE_ADDRESS},
+};
 
 /// Hierarchical storage abstraction over EVM account state.
 ///

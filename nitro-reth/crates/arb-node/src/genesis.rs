@@ -4,17 +4,18 @@
 //! This runs when the first message (Kind=11, Initialize) is received from
 //! the Nitro consensus sidecar.
 
-use alloy_primitives::{Address, Bytes, B256, U256, address};
-use revm::database::State;
-use revm::Database;
+use alloy_primitives::{address, Address, Bytes, B256, U256};
+use revm::{database::State, Database};
 use tracing::info;
 
-use arb_storage::{Storage, StorageBackedBigUint, StorageBackedBytes, ARBOS_STATE_ADDRESS, set_account_code, set_account_nonce};
-use arbos::arbos_state::ArbosState;
-use arbos::arbos_types::ParsedInitMessage;
-use arbos::burn::SystemBurner;
-use arbos::l1_pricing;
-use arbos::l2_pricing;
+use arb_storage::{
+    set_account_code, set_account_nonce, Storage, StorageBackedBigUint, StorageBackedBytes,
+    ARBOS_STATE_ADDRESS,
+};
+use arbos::{
+    arbos_state::ArbosState, arbos_types::ParsedInitMessage, burn::SystemBurner, l1_pricing,
+    l2_pricing,
+};
 
 /// Precompile addresses that exist at genesis (version 0).
 /// Only these get the `[0xFE]` invalid code marker at init time.

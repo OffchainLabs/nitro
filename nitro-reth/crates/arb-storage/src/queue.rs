@@ -1,8 +1,7 @@
 use alloy_primitives::B256;
 use revm::Database;
 
-use crate::backed_types::StorageBackedUint64;
-use crate::storage::Storage;
+use crate::{backed_types::StorageBackedUint64, storage::Storage};
 
 /// A FIFO queue backed by ArbOS storage.
 ///

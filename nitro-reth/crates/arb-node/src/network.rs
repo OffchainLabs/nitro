@@ -16,11 +16,13 @@ pub struct ArbNetworkBuilder;
 impl<Node, Pool> NetworkBuilder<Node, Pool> for ArbNetworkBuilder
 where
     Node: FullNodeTypes<Types: NodeTypes<ChainSpec: Hardforks>>,
-    Pool: TransactionPool<Transaction: PoolTransaction<Consensus = reth_node_types::TxTy<Node::Types>>>
-        + Unpin
+    Pool: TransactionPool<
+            Transaction: PoolTransaction<Consensus = reth_node_types::TxTy<Node::Types>>,
+        > + Unpin
         + 'static,
 {
-    type Network = NetworkHandle<BasicNetworkPrimitives<PrimitivesTy<Node::Types>, PoolPooledTx<Pool>>>;
+    type Network =
+        NetworkHandle<BasicNetworkPrimitives<PrimitivesTy<Node::Types>, PoolPooledTx<Pool>>>;
 
     async fn build_network(
         self,

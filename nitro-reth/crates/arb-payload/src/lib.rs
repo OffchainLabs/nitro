@@ -3,8 +3,7 @@
 //! Defines the payload attributes, built payload, payload types, and engine
 //! types used by the engine API and block construction pipeline.
 
-use std::marker::PhantomData;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use alloy_eips::{
     eip4895::{Withdrawal, Withdrawals},
@@ -12,11 +11,10 @@ use alloy_eips::{
 };
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_rpc_types_engine::{
-    BlobsBundleV1, BlobsBundleV2, ExecutionData,
-    ExecutionPayload as AlloyExecutionPayload, ExecutionPayloadEnvelopeV2,
-    ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4, ExecutionPayloadEnvelopeV5,
-    ExecutionPayloadEnvelopeV6, ExecutionPayloadFieldV2, ExecutionPayloadV1, ExecutionPayloadV3,
-    PayloadAttributes as AlloyPayloadAttributes, PayloadId,
+    BlobsBundleV1, BlobsBundleV2, ExecutionData, ExecutionPayload as AlloyExecutionPayload,
+    ExecutionPayloadEnvelopeV2, ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4,
+    ExecutionPayloadEnvelopeV5, ExecutionPayloadEnvelopeV6, ExecutionPayloadFieldV2,
+    ExecutionPayloadV1, ExecutionPayloadV3, PayloadAttributes as AlloyPayloadAttributes, PayloadId,
 };
 
 use arb_primitives::ArbPrimitives;
@@ -196,7 +194,12 @@ pub struct ArbBuiltPayload {
 impl ArbBuiltPayload {
     /// Create a new built payload.
     pub fn new(id: PayloadId, block: Arc<SealedBlock<ArbBlock>>, fees: U256) -> Self {
-        Self { id, block, fees, requests: None }
+        Self {
+            id,
+            block,
+            fees,
+            requests: None,
+        }
     }
 
     /// Set execution requests on this payload.
@@ -292,7 +295,12 @@ impl TryFrom<ArbBuiltPayload> for ExecutionPayloadEnvelopeV5 {
     type Error = ArbPayloadConversionError;
 
     fn try_from(value: ArbBuiltPayload) -> Result<Self, Self::Error> {
-        let ArbBuiltPayload { block, fees, requests, .. } = value;
+        let ArbBuiltPayload {
+            block,
+            fees,
+            requests,
+            ..
+        } = value;
         Ok(Self {
             execution_payload: ExecutionPayloadV3::from_block_unchecked(
                 block.hash(),

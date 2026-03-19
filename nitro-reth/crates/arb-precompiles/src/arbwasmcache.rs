@@ -9,8 +9,8 @@ use crate::storage_slot::{
 
 /// ArbWasmCache precompile address (0x72).
 pub const ARBWASMCACHE_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x72,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x72,
 ]);
 
 // Function selectors.
@@ -33,9 +33,9 @@ pub fn create_arbwasmcache_precompile() -> DynPrecompile {
 
 fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     // ArbWasmCache requires ArbOS >= 30 (Stylus).
-    if let Some(result) = crate::check_precompile_version(
-        arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS,
-    ) {
+    if let Some(result) =
+        crate::check_precompile_version(arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS)
+    {
         return result;
     }
 
@@ -125,7 +125,11 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let value = sload_field(input, slot)?;
 
     let is_member = value != U256::ZERO;
-    let result = if is_member { U256::from(1u64) } else { U256::ZERO };
+    let result = if is_member {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
     Ok(PrecompileOutput::new(
         SLOAD_GAS + COPY_GAS,
         result.to_be_bytes::<32>().to_vec().into(),
@@ -183,7 +187,11 @@ fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>) -> PrecompileResul
     let word_bytes = program_word.to_be_bytes::<32>();
     let is_cached = word_bytes[14] != 0;
 
-    let result = if is_cached { U256::from(1u64) } else { U256::ZERO };
+    let result = if is_cached {
+        U256::from(1u64)
+    } else {
+        U256::ZERO
+    };
     Ok(PrecompileOutput::new(
         SLOAD_GAS + COPY_GAS,
         result.to_be_bytes::<32>().to_vec().into(),

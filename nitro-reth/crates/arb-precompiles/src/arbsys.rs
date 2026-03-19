@@ -1,10 +1,8 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{keccak256, Address, Log, B256, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use revm::Database;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::Mutex;
+
+use std::{cell::RefCell, collections::HashMap, sync::Mutex};
 
 use crate::storage_slot::{
     derive_subspace_key, map_slot, root_slot, ARBOS_STATE_ADDRESS, NATIVE_TOKEN_SUBSPACE,
@@ -13,8 +11,8 @@ use crate::storage_slot::{
 
 /// ArbSys precompile address (0x64).
 pub const ARBSYS_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x64,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x64,
 ]);
 
 // Function selectors (keccak256 of canonical signature, first 4 bytes).
@@ -33,8 +31,8 @@ const SEND_MERKLE_TREE_STATE: [u8; 4] = [0x7a, 0xee, 0xcd, 0x2a]; // sendMerkleT
 
 // L1 alias offset: 0x1111000000000000000000000000000000001111
 const L1_ALIAS_OFFSET: Address = Address::new([
-    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x11, 0x11,
+    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x11, 0x11,
 ]);
 
 // MerkleAccumulator: size at offset 0, partials at offset (2 + level).
@@ -208,12 +206,14 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Do NOT use db.block_hash() which reads from the journal's block_hashes
     // map — that map is pre-populated with L1 hashes (for the BLOCKHASH opcode)
     // and would return wrong values for L2 block numbers.
-    let hash = crate::get_l2_block_hash(requested)
-        .unwrap_or(alloy_primitives::B256::ZERO);
+    let hash = crate::get_l2_block_hash(requested).unwrap_or(alloy_primitives::B256::ZERO);
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(32);
-    Ok(PrecompileOutput::new(STORAGE_READ_COST + args_cost + result_cost, hash.0.to_vec().into()))
+    Ok(PrecompileOutput::new(
+        STORAGE_READ_COST + args_cost + result_cost,
+        hash.0.to_vec().into(),
+    ))
 }
 
 fn handle_arb_chain_id(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -233,7 +233,8 @@ fn handle_arbos_version(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         .load_account(ARBOS_STATE_ADDRESS)
         .map_err(|e| PrecompileError::other(format!("load_account: {e:?}")))?;
 
-    // ArbOS version is at root offset 0. Add 55 because the storage value is 0-based (v56 = stored 1).
+    // ArbOS version is at root offset 0. Add 55 because the storage value is 0-based (v56 = stored
+    // 1).
     let raw_version = internals
         .sload(ARBOS_STATE_ADDRESS, root_slot(0))
         .map_err(|_| PrecompileError::other("sload failed"))?;
@@ -314,7 +315,10 @@ fn handle_caller_without_alias(input: &mut PrecompileInput<'_>) -> PrecompileRes
     let result_cost = COPY_GAS * words_for_bytes(32);
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(result_addr.as_slice());
-    Ok(PrecompileOutput::new(STORAGE_READ_COST + args_cost + result_cost, out.to_vec().into()))
+    Ok(PrecompileOutput::new(
+        STORAGE_READ_COST + args_cost + result_cost,
+        out.to_vec().into(),
+    ))
 }
 
 fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -329,7 +333,10 @@ fn handle_map_l1_sender(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let result_cost = COPY_GAS * words_for_bytes(32);
     let mut out = [0u8; 32];
     out[12..32].copy_from_slice(aliased.as_slice());
-    Ok(PrecompileOutput::new(args_cost + result_cost, out.to_vec().into()))
+    Ok(PrecompileOutput::new(
+        args_cost + result_cost,
+        out.to_vec().into(),
+    ))
 }
 
 fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
@@ -346,7 +353,9 @@ fn handle_get_storage_gas(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 fn handle_withdraw_eth(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other("cannot call withdrawEth in static context"));
+        return Err(PrecompileError::other(
+            "cannot call withdrawEth in static context",
+        ));
     }
 
     let data = input.data;
@@ -361,7 +370,9 @@ fn handle_withdraw_eth(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
 fn handle_send_tx_to_l1(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     if input.is_static {
-        return Err(PrecompileError::other("cannot call sendTxToL1 in static context"));
+        return Err(PrecompileError::other(
+            "cannot call sendTxToL1 in static context",
+        ));
     }
 
     let data = input.data;
@@ -373,16 +384,16 @@ fn handle_send_tx_to_l1(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let destination = Address::from_slice(&data[16..36]);
 
     // Decode the dynamic bytes parameter.
-    let offset =
-        U256::from_be_slice(&data[36..68]).try_into().unwrap_or(0usize);
+    let offset = U256::from_be_slice(&data[36..68])
+        .try_into()
+        .unwrap_or(0usize);
     let abs_offset = 4 + offset;
     if abs_offset + 32 > data.len() {
         return Err(PrecompileError::other("calldata offset out of bounds"));
     }
-    let length: usize =
-        U256::from_be_slice(&data[abs_offset..abs_offset + 32])
-            .try_into()
-            .unwrap_or(0);
+    let length: usize = U256::from_be_slice(&data[abs_offset..abs_offset + 32])
+        .try_into()
+        .unwrap_or(0);
     let calldata_start = abs_offset + 32;
     let calldata_end = calldata_start + length;
     if calldata_end > data.len() {
@@ -457,7 +468,8 @@ fn do_send_tx_to_l1(
     let old_size: u64 = current_size.try_into().unwrap_or(0);
 
     // Compute the send hash (arbosState.KeccakHash charges gas via burner).
-    // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) + calldata
+    // Preimage: caller(20) + dest(20) + blockNum(32) + l1BlockNum(32) + time(32) + value(32) +
+    // calldata
     let send_hash_input_len = 20 + 20 + 32 * 4 + calldata.len() as u64;
     gas_used += keccak_gas(send_hash_input_len);
     let send_hash = compute_send_hash(
@@ -471,13 +483,8 @@ fn do_send_tx_to_l1(
     );
 
     // Update Merkle accumulator: insert leaf and collect intermediate node events.
-    let (new_size, merkle_events, partials) = update_merkle_accumulator(
-        internals,
-        &merkle_key,
-        send_hash,
-        old_size,
-        &mut gas_used,
-    )?;
+    let (new_size, merkle_events, partials) =
+        update_merkle_accumulator(internals, &merkle_key, send_hash, old_size, &mut gas_used)?;
 
     // merkleAcc.Size() after Append does another storage read.
     gas_used += STORAGE_READ_COST;
@@ -499,8 +506,8 @@ fn do_send_tx_to_l1(
             vec![
                 update_topic,
                 B256::from(U256::ZERO.to_be_bytes::<32>()), // reserved = 0
-                B256::from(evt.hash.to_be_bytes::<32>()),    // hash
-                B256::from(position.to_be_bytes::<32>()),     // position
+                B256::from(evt.hash.to_be_bytes::<32>()),   // hash
+                B256::from(position.to_be_bytes::<32>()),   // position
             ],
             Default::default(), // empty data (all fields indexed)
         ));
@@ -641,7 +648,10 @@ fn handle_send_merkle_tree_state(input: &mut PrecompileInput<'_>) -> PrecompileR
 
     let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
     let result_cost = COPY_GAS * words_for_bytes(out.len() as u64);
-    Ok(PrecompileOutput::new(gas_used + args_cost + result_cost, out.into()))
+    Ok(PrecompileOutput::new(
+        gas_used + args_cost + result_cost,
+        out.into(),
+    ))
 }
 
 // ── Merkle helpers ───────────────────────────────────────────────────

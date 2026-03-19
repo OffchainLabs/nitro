@@ -11,13 +11,15 @@ use revm::Database;
 
 use arb_storage::Storage;
 
-use crate::address_set::{open_address_set, AddressSet};
-use self::data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME};
-use self::memory::MemoryModel;
-use self::params::{init_stylus_params, StylusParams};
 pub use self::types::{
-    ActivationResult, EvmData, ProgParams, RequestType, UserOutcome, evm_memory_cost, to_word_size,
+    evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, RequestType, UserOutcome,
 };
+use self::{
+    data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME},
+    memory::MemoryModel,
+    params::{init_stylus_params, StylusParams},
+};
+use crate::address_set::{open_address_set, AddressSet};
 
 const PARAMS_KEY: &[u8] = &[0];
 const PROGRAM_DATA_KEY: &[u8] = &[1];
@@ -369,9 +371,7 @@ impl<D: Database> Programs<D> {
         let (output, gas_left) = call_fn(program, params, evm_data, calldata, gas_for_program)?;
 
         // Ensure return data costs at least as much as it would in the EVM.
-        let gas_left = if !output.is_empty()
-            && self.arbos_version >= ARBOS_VERSION_STYLUS_FIXES
-        {
+        let gas_left = if !output.is_empty() && self.arbos_version >= ARBOS_VERSION_STYLUS_FIXES {
             let evm_cost = evm_memory_cost(output.len() as u64);
             if starting_gas < evm_cost {
                 // Burn all remaining gas.
@@ -401,8 +401,7 @@ impl<D: Database> Programs<D> {
             .get_program(code_hash, time)
             .map_err(|_| "failed to read program")?;
 
-        let expired =
-            program.age_seconds > days_to_seconds(params.expiry_days);
+        let expired = program.age_seconds > days_to_seconds(params.expiry_days);
 
         if program.version != params.version && cache {
             return Err("program needs upgrade".into());
@@ -442,13 +441,18 @@ pub fn attribute_wasm_computation(used_multi_gas: &mut MultiGas, starting_gas: u
     let accounted_gas = used_multi_gas.single_gas();
 
     let residual = if accounted_gas > used_gas {
-        tracing::trace!(used_gas, accounted_gas, "negative WASM computation residual");
+        tracing::trace!(
+            used_gas,
+            accounted_gas,
+            "negative WASM computation residual"
+        );
         0
     } else {
         used_gas - accounted_gas
     };
 
-    let (updated, overflow) = used_multi_gas.safe_increment(ResourceKind::WasmComputation, residual);
+    let (updated, overflow) =
+        used_multi_gas.safe_increment(ResourceKind::WasmComputation, residual);
     if overflow {
         tracing::trace!(residual, "WASM computation gas overflow");
     }

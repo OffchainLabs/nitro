@@ -163,7 +163,8 @@ impl ArbitrumExtraData {
                 ));
             }
         }
-        self.activated_wasms.insert(module_hash, ActivatedWasm { asm, module });
+        self.activated_wasms
+            .insert(module_hash, ActivatedWasm { asm, module });
         Ok(())
     }
 
@@ -172,9 +173,8 @@ impl ArbitrumExtraData {
     /// Adjusts `unexpected_balance_delta` so that post-block balance verification
     /// accounts for the burned amount (adds to delta).
     pub fn expect_balance_burn(&mut self, amount: u128) {
-        self.unexpected_balance_delta = self
-            .unexpected_balance_delta
-            .saturating_add(amount as i128);
+        self.unexpected_balance_delta =
+            self.unexpected_balance_delta.saturating_add(amount as i128);
     }
 
     /// Register a balance mint from native token minting.
@@ -182,9 +182,8 @@ impl ArbitrumExtraData {
     /// Adjusts `unexpected_balance_delta` so that post-block balance verification
     /// accounts for the minted amount (subtracts from delta).
     pub fn expect_balance_mint(&mut self, amount: u128) {
-        self.unexpected_balance_delta = self
-            .unexpected_balance_delta
-            .saturating_sub(amount as i128);
+        self.unexpected_balance_delta =
+            self.unexpected_balance_delta.saturating_sub(amount as i128);
     }
 
     /// Returns the current unexpected balance delta.

@@ -2,9 +2,11 @@ use alloy_primitives::{Address, B256, U256};
 
 use arb_chainspec::arbos_version;
 
-use crate::arbos_state::ArbosState;
-use crate::arbos_types::{BatchDataStats, legacy_cost_for_stats};
-use crate::burn::Burner;
+use crate::{
+    arbos_state::ArbosState,
+    arbos_types::{legacy_cost_for_stats, BatchDataStats},
+    burn::Burner,
+};
 
 /// Standard Ethereum base transaction gas.
 const TX_GAS: u64 = 21_000;
@@ -74,30 +76,27 @@ impl L1Info {
 
 pub const L2_TO_L1_TRANSACTION_EVENT_ID: B256 = {
     let bytes: [u8; 32] = [
-        0x5b, 0xaa, 0xa8, 0x7d, 0xb3, 0x86, 0x36, 0x5b,
-        0x5c, 0x16, 0x1b, 0xe3, 0x77, 0xbc, 0x3d, 0x8e,
-        0x31, 0x7e, 0x8d, 0x98, 0xd7, 0x1a, 0x3c, 0xa7,
-        0xed, 0x7d, 0x55, 0x53, 0x40, 0xc8, 0xf7, 0x67,
+        0x5b, 0xaa, 0xa8, 0x7d, 0xb3, 0x86, 0x36, 0x5b, 0x5c, 0x16, 0x1b, 0xe3, 0x77, 0xbc, 0x3d,
+        0x8e, 0x31, 0x7e, 0x8d, 0x98, 0xd7, 0x1a, 0x3c, 0xa7, 0xed, 0x7d, 0x55, 0x53, 0x40, 0xc8,
+        0xf7, 0x67,
     ];
     B256::new(bytes)
 };
 
 pub const L2_TO_L1_TX_EVENT_ID: B256 = {
     let bytes: [u8; 32] = [
-        0x3e, 0x7a, 0xaf, 0xa7, 0x7d, 0xbf, 0x18, 0x6b,
-        0x7f, 0xd4, 0x88, 0x00, 0x6b, 0xef, 0xf8, 0x93,
-        0x74, 0x4c, 0xaa, 0x3c, 0x4f, 0x6f, 0x29, 0x9e,
-        0x8a, 0x70, 0x9f, 0xa2, 0x08, 0x73, 0x74, 0xfc,
+        0x3e, 0x7a, 0xaf, 0xa7, 0x7d, 0xbf, 0x18, 0x6b, 0x7f, 0xd4, 0x88, 0x00, 0x6b, 0xef, 0xf8,
+        0x93, 0x74, 0x4c, 0xaa, 0x3c, 0x4f, 0x6f, 0x29, 0x9e, 0x8a, 0x70, 0x9f, 0xa2, 0x08, 0x73,
+        0x74, 0xfc,
     ];
     B256::new(bytes)
 };
 
 pub const REDEEM_SCHEDULED_EVENT_ID: B256 = {
     let bytes: [u8; 32] = [
-        0x5c, 0xcd, 0x00, 0x95, 0x02, 0x50, 0x9c, 0xf2,
-        0x87, 0x62, 0xc6, 0x78, 0x58, 0x99, 0x4d, 0x85,
-        0xb1, 0x63, 0xbb, 0x6e, 0x45, 0x1f, 0x5e, 0x9d,
-        0xf7, 0xc5, 0xe1, 0x8c, 0x9c, 0x2e, 0x12, 0x3e,
+        0x5c, 0xcd, 0x00, 0x95, 0x02, 0x50, 0x9c, 0xf2, 0x87, 0x62, 0xc6, 0x78, 0x58, 0x99, 0x4d,
+        0x85, 0xb1, 0x63, 0xbb, 0x6e, 0x45, 0x1f, 0x5e, 0x9d, 0xf7, 0xc5, 0xe1, 0x8c, 0x9c, 0x2e,
+        0x12, 0x3e,
     ];
     B256::new(bytes)
 };
@@ -106,7 +105,8 @@ pub const REDEEM_SCHEDULED_EVENT_ID: B256 = {
 // Decoded internal tx data
 // ---------------------------------------------------------------------------
 
-/// Decoded startBlock(uint256 l1BaseFee, uint64 l1BlockNumber, uint64 l2BlockNumber, uint64 timePassed)
+/// Decoded startBlock(uint256 l1BaseFee, uint64 l1BlockNumber, uint64 l2BlockNumber, uint64
+/// timePassed)
 #[derive(Debug, Clone)]
 pub struct StartBlockData {
     pub l1_base_fee: U256,
@@ -269,10 +269,9 @@ pub struct InternalTxContext {
 /// Apply an internal transaction update to ArbOS state.
 ///
 /// Dispatches on the 4-byte method selector to handle:
-/// - StartBlock: records L1 block hashes, reaps expired retryables,
-///   updates L2 pricing, and checks for ArbOS upgrades.
-/// - BatchPostingReport (v1 and v2): updates L1 pricing based on
-///   batch poster spending.
+/// - StartBlock: records L1 block hashes, reaps expired retryables, updates L2 pricing, and checks
+///   for ArbOS upgrades.
+/// - BatchPostingReport (v1 and v2): updates L1 pricing based on batch poster spending.
 pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G>(
     data: &[u8],
     state: &mut ArbosState<D, B>,
@@ -353,12 +352,16 @@ where
     }
 
     // Try to reap 2 expired retryables.
-    let _ = state
-        .retryable_state
-        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn, &mut *balance_of);
-    let _ = state
-        .retryable_state
-        .try_to_reap_one_retryable(ctx.current_time, &mut *transfer_fn, &mut *balance_of);
+    let _ = state.retryable_state.try_to_reap_one_retryable(
+        ctx.current_time,
+        &mut *transfer_fn,
+        &mut *balance_of,
+    );
+    let _ = state.retryable_state.try_to_reap_one_retryable(
+        ctx.current_time,
+        &mut *transfer_fn,
+        &mut *balance_of,
+    );
 
     // Update L2 pricing model.
     let _ = state
@@ -382,15 +385,11 @@ fn apply_batch_posting_report<D: revm::Database, B: Burner, F>(
 where
     F: FnMut(Address, Address, U256) -> Result<(), ()>,
 {
-    let per_batch_gas = state
-        .l1_pricing_state
-        .per_batch_gas_cost()
-        .unwrap_or(0);
+    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
 
     // gasSpent = SaturatingAdd(perBatchGas, SaturatingCast[int64](batchDataGas))
     // Then SaturatingUCast[uint64](gasSpent) — clamps negative result to 0.
-    let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas)
-        .unwrap_or(i64::MAX);
+    let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas).unwrap_or(i64::MAX);
     let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
     let gas_spent = gas_spent_signed.max(0) as u64;
     let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
@@ -429,10 +428,7 @@ where
     gas_spent = gas_spent.saturating_add(inputs.batch_extra_gas);
 
     // Add per-batch gas overhead.
-    let per_batch_gas = state
-        .l1_pricing_state
-        .per_batch_gas_cost()
-        .unwrap_or(0);
+    let per_batch_gas = state.l1_pricing_state.per_batch_gas_cost().unwrap_or(0);
 
     gas_spent = gas_spent.saturating_add(per_batch_gas.max(0) as u64);
 

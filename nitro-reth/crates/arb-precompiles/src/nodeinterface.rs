@@ -2,16 +2,18 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::arbsys::get_cached_l1_block_number;
-use crate::storage_slot::{
-    root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
-    L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+use crate::{
+    arbsys::get_cached_l1_block_number,
+    storage_slot::{
+        root_slot, subspace_slot, ARBOS_STATE_ADDRESS, GENESIS_BLOCK_NUM_OFFSET,
+        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
+    },
 };
 
 /// NodeInterface virtual contract address (0xc8).
 pub const NODE_INTERFACE_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0xc8,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xc8,
 ]);
 
 // Function selectors.
@@ -88,8 +90,7 @@ fn handle_gas_estimate_components(input: &mut PrecompileInput<'_>) -> Precompile
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_price =
-        sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     // Compute L1 gas cost for a simple transaction.
@@ -120,8 +121,7 @@ fn handle_gas_estimate_l1_component(input: &mut PrecompileInput<'_>) -> Precompi
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let l1_price =
-        sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+    let l1_price = sload_field(input, subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
     let basefee = sload_field(input, subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
 
     let gas_for_l1 = estimate_l1_gas(input, l1_price, basefee);
@@ -145,8 +145,7 @@ fn handle_nitro_genesis_block(input: &mut PrecompileInput<'_>) -> PrecompileResu
     let gas_limit = input.gas;
     load_arbos(input)?;
 
-    let genesis_block_num =
-        sload_field(input, root_slot(GENESIS_BLOCK_NUM_OFFSET))?;
+    let genesis_block_num = sload_field(input, root_slot(GENESIS_BLOCK_NUM_OFFSET))?;
 
     Ok(PrecompileOutput::new(
         (SLOAD_GAS + COPY_GAS).min(gas_limit),
@@ -186,9 +185,7 @@ fn estimate_l1_gas(input: &PrecompileInput<'_>, l1_price: U256, basefee: U256) -
     let calldata_len = if input.data.len() > 4 + 32 + 32 + 32 + 32 {
         let len_offset = 4 + 32 + 32 + 32;
         let len_bytes = &input.data[len_offset..len_offset + 32];
-        U256::from_be_slice(len_bytes)
-            .try_into()
-            .unwrap_or(0u64)
+        U256::from_be_slice(len_bytes).try_into().unwrap_or(0u64)
     } else {
         0u64
     };
@@ -203,8 +200,7 @@ fn estimate_l1_gas(input: &PrecompileInput<'_>, l1_price: U256, basefee: U256) -
         .saturating_mul(U256::from(calldata_len));
 
     // Apply padding (110% = 11000/10000 bips).
-    let padded = l1_fee
-        .saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING_BIPS))
+    let padded = l1_fee.saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING_BIPS))
         / U256::from(10000u64);
 
     // Convert to gas units: gasForL1 = paddedFee / basefee

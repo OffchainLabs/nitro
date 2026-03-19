@@ -1,5 +1,7 @@
-use core::fmt;
-use core::ops::{Add, Sub};
+use core::{
+    fmt,
+    ops::{Add, Sub},
+};
 use serde::{Deserialize, Serialize};
 
 /// Resource kinds for multi-dimensional gas metering.
@@ -97,10 +99,7 @@ impl MultiGas {
         let mut mg = Self::zero();
         for &(kind, amount) in pairs {
             mg.gas[kind as usize] = amount;
-            mg.total = mg
-                .total
-                .checked_add(amount)
-                .expect("multigas overflow");
+            mg.total = mg.total.checked_add(amount).expect("multigas overflow");
         }
         mg
     }

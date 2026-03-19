@@ -43,11 +43,7 @@ pub trait HostIo {
     fn get_transient_bytes32(&mut self, key: B256) -> Result<B256, Self::Error>;
 
     /// Write a transient storage slot.
-    fn set_transient_bytes32(
-        &mut self,
-        key: B256,
-        value: B256,
-    ) -> Result<ApiStatus, Self::Error>;
+    fn set_transient_bytes32(&mut self, key: B256, value: B256) -> Result<ApiStatus, Self::Error>;
 
     /// Execute a CALL-family opcode.
     fn contract_call(

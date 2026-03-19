@@ -1,4 +1,4 @@
-use alloy_primitives::{U256, keccak256};
+use alloy_primitives::{keccak256, U256};
 
 /// Computes a storage slot using the keccak256-based mapAddress algorithm.
 ///

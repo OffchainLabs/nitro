@@ -26,3 +26,6 @@ tracing = { workspace = true }
 parking_lot = { workspace = true }
 lazy_static = { workspace = true }
 eyre = { workspace = true }
+
+[lints]
+workspace = true

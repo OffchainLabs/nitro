@@ -1,5 +1,5 @@
-use alloy_primitives::{Address, B256, U256};
 use crate::ink::{Gas, Ink};
+use alloy_primitives::{Address, B256, U256};
 
 /// Status codes returned by EVM API operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,11 +50,7 @@ pub trait EvmApi: Send + 'static {
     fn get_transient_bytes32(&mut self, key: B256) -> eyre::Result<B256>;
 
     /// Write a transient storage slot.
-    fn set_transient_bytes32(
-        &mut self,
-        key: B256,
-        value: B256,
-    ) -> eyre::Result<UserOutcomeKind>;
+    fn set_transient_bytes32(&mut self, key: B256, value: B256) -> eyre::Result<UserOutcomeKind>;
 
     /// Execute a CALL. Returns return data length, gas cost, and outcome.
     fn contract_call(

@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, Bytes, U256, address, keccak256};
+use alloy_primitives::{address, keccak256, Address, Bytes, U256};
 use revm::Database;
 use std::collections::HashMap;
 
@@ -6,8 +6,7 @@ use std::collections::HashMap;
 pub const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
 
 /// Filtered transactions state address — a separate account for tracking filtered tx hashes.
-pub const FILTERED_TX_STATE_ADDRESS: Address =
-    address!("a4b0500000000000000000000000000000000001");
+pub const FILTERED_TX_STATE_ADDRESS: Address = address!("a4b0500000000000000000000000000000000001");
 
 /// Ensures the ArbOS account exists in bundle_state.
 ///
@@ -17,10 +16,7 @@ pub fn ensure_arbos_account_in_bundle<D: Database>(state: &mut revm::database::S
 }
 
 /// Ensures an arbitrary account exists in bundle_state with nonce=1.
-pub fn ensure_account_in_bundle<D: Database>(
-    state: &mut revm::database::State<D>,
-    addr: Address,
-) {
+pub fn ensure_account_in_bundle<D: Database>(state: &mut revm::database::State<D>, addr: Address) {
     use revm_database::{AccountStatus, BundleAccount};
     use revm_state::AccountInfo;
 
@@ -74,10 +70,7 @@ fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr:
 }
 
 /// Reads a storage slot from the ArbOS account, checking cache -> bundle -> database.
-pub fn read_arbos_storage<D: Database>(
-    state: &mut revm::database::State<D>,
-    slot: U256,
-) -> U256 {
+pub fn read_arbos_storage<D: Database>(state: &mut revm::database::State<D>, slot: U256) -> U256 {
     read_storage_at(state, ARBOS_STATE_ADDRESS, slot)
 }
 
@@ -104,10 +97,7 @@ pub fn read_storage_at<D: Database>(
     }
 
     // Fall back to database
-    state
-        .database
-        .storage(account, slot)
-        .unwrap_or(U256::ZERO)
+    state.database.storage(account, slot).unwrap_or(U256::ZERO)
 }
 
 /// Writes a storage slot to the ArbOS account using the transition mechanism.
@@ -152,10 +142,7 @@ pub fn write_storage_at<D: Database>(
             .map(|s| s.present_value)
     });
 
-    let original_value = state
-        .database
-        .storage(account, slot)
-        .unwrap_or(U256::ZERO);
+    let original_value = state.database.storage(account, slot).unwrap_or(U256::ZERO);
 
     // Skip no-op writes
     let prev_value = current_value.unwrap_or(original_value);
@@ -327,8 +314,7 @@ pub fn set_account_code<D: Database>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use revm_database::states::bundle_state::BundleRetention;
-    use revm_database::StateBuilder;
+    use revm_database::{states::bundle_state::BundleRetention, StateBuilder};
 
     /// In-memory database that returns empty for everything.
     #[derive(Default)]
@@ -348,17 +334,10 @@ mod tests {
         ) -> Result<revm_state::Bytecode, Self::Error> {
             Ok(revm_state::Bytecode::default())
         }
-        fn storage(
-            &mut self,
-            _address: Address,
-            _index: U256,
-        ) -> Result<U256, Self::Error> {
+        fn storage(&mut self, _address: Address, _index: U256) -> Result<U256, Self::Error> {
             Ok(U256::ZERO)
         }
-        fn block_hash(
-            &mut self,
-            _number: u64,
-        ) -> Result<alloy_primitives::B256, Self::Error> {
+        fn block_hash(&mut self, _number: u64) -> Result<alloy_primitives::B256, Self::Error> {
             Ok(alloy_primitives::B256::ZERO)
         }
     }
@@ -379,11 +358,7 @@ mod tests {
         write_storage_at(&mut state, ARBOS_STATE_ADDRESS, slot, value);
 
         // Verify value is in cache.
-        let cached = state
-            .cache
-            .accounts
-            .get(&ARBOS_STATE_ADDRESS)
-            .unwrap();
+        let cached = state.cache.accounts.get(&ARBOS_STATE_ADDRESS).unwrap();
         let stored = cached
             .account
             .as_ref()
@@ -399,11 +374,18 @@ mod tests {
         let bundle = state.take_bundle();
 
         // Verify value is in bundle.
-        let bundle_acct = bundle.state.get(&ARBOS_STATE_ADDRESS)
+        let bundle_acct = bundle
+            .state
+            .get(&ARBOS_STATE_ADDRESS)
             .expect("ArbOS account should be in bundle after merge");
-        let bundle_slot = bundle_acct.storage.get(&slot)
+        let bundle_slot = bundle_acct
+            .storage
+            .get(&slot)
             .expect("Slot should be in bundle storage");
-        assert_eq!(bundle_slot.present_value, value, "Bundle present_value should match");
+        assert_eq!(
+            bundle_slot.present_value, value,
+            "Bundle present_value should match"
+        );
     }
 
     #[test]
@@ -443,7 +425,9 @@ mod tests {
         state.merge_transitions(BundleRetention::Reverts);
         let bundle = state.take_bundle();
 
-        let acct = bundle.state.get(&ARBOS_STATE_ADDRESS)
+        let acct = bundle
+            .state
+            .get(&ARBOS_STATE_ADDRESS)
             .expect("ArbOS account should be in bundle");
         assert_eq!(
             acct.storage.get(&slot_a).unwrap().present_value,

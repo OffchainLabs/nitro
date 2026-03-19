@@ -9,8 +9,8 @@ pub mod tx_types;
 
 pub use receipt::{ArbDepositReceipt, ArbReceipt, ArbReceiptKind, SetArbReceiptFields};
 pub use signed_tx::{
-    ArbTransactionExt, ArbTransactionSigned, ArbTxTypeLocal, ArbTypedTransaction,
-    RetryTxInfo, SubmitRetryableInfo,
+    ArbTransactionExt, ArbTransactionSigned, ArbTxTypeLocal, ArbTypedTransaction, RetryTxInfo,
+    SubmitRetryableInfo,
 };
 
 /// Arbitrum node primitives for use with reth's `NodePrimitives` trait.

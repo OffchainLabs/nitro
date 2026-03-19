@@ -1,10 +1,12 @@
 use alloy_primitives::{Address, U256};
 
 use arb_primitives::multigas::MultiGas;
-use arbos::tx_processor::{
-    EndTxFeeDistribution, EndTxNormalParams, GasChargingError, GasChargingParams, TxProcessor,
+use arbos::{
+    tx_processor::{
+        EndTxFeeDistribution, EndTxNormalParams, GasChargingError, GasChargingParams, TxProcessor,
+    },
+    util::tx_type_has_poster_costs,
 };
-use arbos::util::tx_type_has_poster_costs;
 
 use crate::hooks::{
     ArbOsHooks, EndTxContext, GasChargingContext, GasChargingResult, StartTxContext,
@@ -70,16 +72,17 @@ impl DefaultArbOsHooks {
 
     /// Compute the end-of-tx fee distribution for a normal transaction.
     pub fn compute_end_tx_fees(&self, ctx: &EndTxContext) -> EndTxFeeDistribution {
-        self.tx_proc.compute_end_tx_fee_distribution(&EndTxNormalParams {
-            gas_used: ctx.gas_used,
-            gas_price: ctx.gas_price,
-            base_fee: ctx.base_fee,
-            coinbase: self.coinbase,
-            network_fee_account: self.network_fee_account,
-            infra_fee_account: self.infra_fee_account,
-            min_base_fee: self.min_base_fee,
-            arbos_version: self.arbos_version,
-        })
+        self.tx_proc
+            .compute_end_tx_fee_distribution(&EndTxNormalParams {
+                gas_used: ctx.gas_used,
+                gas_price: ctx.gas_price,
+                base_fee: ctx.base_fee,
+                coinbase: self.coinbase,
+                network_fee_account: self.network_fee_account,
+                infra_fee_account: self.infra_fee_account,
+                min_base_fee: self.min_base_fee,
+                arbos_version: self.arbos_version,
+            })
     }
 }
 
@@ -124,7 +127,8 @@ impl ArbOsHooks for DefaultArbOsHooks {
             arbos_version: self.arbos_version,
         };
 
-        self.tx_proc.gas_charging_hook(&mut gas_remaining, ctx.intrinsic_gas, &params)?;
+        self.tx_proc
+            .gas_charging_hook(&mut gas_remaining, ctx.intrinsic_gas, &params)?;
 
         // L1 calldata gas is tracked as a multi-gas dimension.
         let multi_gas = MultiGas::l1_calldata_gas(self.tx_proc.poster_gas);
@@ -161,7 +165,8 @@ impl ArbOsHooks for DefaultArbOsHooks {
     }
 
     fn gas_price_op(&self, gas_price: U256, base_fee: U256) -> U256 {
-        self.tx_proc.gas_price_op(self.arbos_version, base_fee, gas_price)
+        self.tx_proc
+            .gas_price_op(self.arbos_version, base_fee, gas_price)
     }
 
     fn msg_is_non_mutating(&self) -> bool {
@@ -172,4 +177,3 @@ impl ArbOsHooks for DefaultArbOsHooks {
         self.calldata_pricing_increase_enabled
     }
 }
-

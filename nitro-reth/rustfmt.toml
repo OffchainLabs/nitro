@@ -1,0 +1,6 @@
+style_edition = "2021"
+imports_granularity = "Crate"
+wrap_comments = true
+comment_width = 100
+format_code_in_doc_comments = true
+trailing_comma = "Vertical"
