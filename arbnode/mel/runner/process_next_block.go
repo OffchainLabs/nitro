@@ -71,7 +71,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	}
 	// Reorging of MEL states successfully completed, we can now rewind MEL validator and rebuild delayedMsgPreimages based on inbox and outbox accumulators
 	if processAction.prevStepWasReorg {
-		if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+		if err := m.rebuildDelayedMsgPreimagesWithTracker(preState); err != nil {
 			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
 		}
 		if m.reorgEventsNotifier != nil {
@@ -94,8 +94,8 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), mel.ErrDelayedMessagePreimageNotFound.Error()) {
-			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
-				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
+			if rebuildErr := m.rebuildDelayedMsgPreimagesWithTracker(preState); rebuildErr != nil {
+				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", rebuildErr)
 			}
 		}
 		return m.config.RetryInterval, err
@@ -108,4 +108,29 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		delayedMessages:  delayedMsgs,
 		batchMetas:       batchMetas,
 	})
+}
+
+// rebuildDelayedMsgPreimagesWithTracker attempts to use the outbox size tracker
+// for an O(1) pivot lookup. Falls back to O(N²) findPivot if the tracker doesn't
+// have the entry or if corruption is detected, and resets the tracker accordingly.
+func (m *MessageExtractor) rebuildDelayedMsgPreimagesWithTracker(state *mel.State) error {
+	if m.outboxTracker == nil {
+		return state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage)
+	}
+	fullRebuildAndTrackerReset := func() error {
+		if err := state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+			return err
+		}
+		m.outboxTracker.Reset(state.ParentChainBlockNumber, state.OutboxSize())
+		return nil
+	}
+	outboxSize, ok := m.outboxTracker.Lookup(state.ParentChainBlockNumber)
+	// Corruption or Tracker miss: reset tracker with fresh O(N²) rebuild
+	if outboxSize < 0 || !ok {
+		return fullRebuildAndTrackerReset()
+	}
+	if err := state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage, outboxSize); err != nil {
+		return fullRebuildAndTrackerReset()
+	}
+	return nil
 }

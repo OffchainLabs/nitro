@@ -57,6 +57,11 @@ type State struct {
 	// accumulated and read in the same block, so it may not be in the DB yet
 	// when ReadDelayedMessage is called in native mode.
 	initMsg *DelayedInboxMessage
+
+	// outboxSize tracks the number of unread messages currently in the outbox.
+	// This is transient (not RLP-serialized) and maintained during pour/pop.
+	// A negative value signals corruption in the tracker.
+	outboxSize int
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -69,6 +74,7 @@ type MessageConsumer interface {
 }
 
 func (s *State) InitMsg() *DelayedInboxMessage { return s.initMsg }
+func (s *State) OutboxSize() int               { return s.outboxSize }
 
 func (s *State) Hash() common.Hash {
 	encoded, err := rlp.EncodeToBytes(s)
@@ -115,6 +121,7 @@ func (s *State) Clone() *State {
 		delayedMsgPreimagesDest: s.delayedMsgPreimagesDest,
 		delayedMsgPreimages:     s.delayedMsgPreimages,
 		initMsg:                 s.initMsg,
+		outboxSize:              s.outboxSize,
 	}
 }
 
@@ -231,6 +238,8 @@ func (s *State) PourDelayedInboxToOutbox() error {
 	}
 	// Inbox is now empty
 	s.DelayedMessageInboxAcc = common.Hash{}
+	// #nosec G115
+	s.outboxSize += int(inboxSize)
 	return nil
 }
 
@@ -254,6 +263,7 @@ func (s *State) PopDelayedOutbox() (common.Hash, error) {
 		return common.Hash{}, fmt.Errorf("outbox preimage: %w", err)
 	}
 	s.DelayedMessageOutboxAcc = prevOutbox
+	s.outboxSize--
 	return msgHash, nil
 }
 
@@ -368,9 +378,9 @@ func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, ms
 //   - Outbox [0..pivot): messages already poured, chain built in reverse order
 //   - Inbox  [pivot..N): messages not yet poured, chain built in forward order
 //
-// The pivot is found via an O(N²) search that tries each candidate partition
-// until the recomputed inbox accumulator matches.
-func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error)) error {
+// If knownOutboxSize is provided and non-negative, it is used as the pivot
+// directly (O(1)). Otherwise, the pivot is found via an O(N²) search.
+func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*DelayedInboxMessage, error), knownOutboxSize ...int) error {
 	if s.DelayedMessagesRead == s.DelayedMessagesSeen {
 		return nil
 	}
@@ -381,10 +391,15 @@ func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*
 	if err != nil {
 		return err
 	}
-	pivot := s.findPivot(totalUnread, msgHashes)
-	if pivot < 0 {
-		return fmt.Errorf("failed to find pivot: neither outbox acc %s nor inbox acc %s matched any partition",
-			s.DelayedMessageOutboxAcc.Hex(), s.DelayedMessageInboxAcc.Hex())
+	var pivot int
+	if len(knownOutboxSize) > 0 && knownOutboxSize[0] >= 0 {
+		pivot = knownOutboxSize[0]
+	} else {
+		pivot = s.findPivot(totalUnread, msgHashes)
+		if pivot < 0 {
+			return fmt.Errorf("failed to find pivot: neither outbox acc %s nor inbox acc %s matched any partition",
+				s.DelayedMessageOutboxAcc.Hex(), s.DelayedMessageInboxAcc.Hex())
+		}
 	}
 	// Rebuild outbox chain: messages [0..pivot) in reverse order (pivot-1, pivot-2, ..., 0)
 	if pivot > 0 {
@@ -402,5 +417,6 @@ func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*
 			return fmt.Errorf("inbox accumulator mismatch after rebuild: got %s, want %s", acc.Hex(), s.DelayedMessageInboxAcc.Hex())
 		}
 	}
+	s.outboxSize = pivot
 	return nil
 }

@@ -31,6 +31,20 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		log.Error("Error saving latest state as head state to db", "err", err)
 		return m.config.RetryInterval, err
 	}
+	if m.outboxTracker != nil {
+		outboxSize := saveAction.postState.OutboxSize()
+		if outboxSize < 0 {
+			log.Warn("Negative outbox size detected, resetting tracker",
+				"block", saveAction.postState.ParentChainBlockNumber, "outboxSize", outboxSize)
+			if err := saveAction.postState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+				log.Error("Error rebuilding delayed msg preimages after negative outbox size", "err", err)
+			}
+			m.outboxTracker.Reset(saveAction.postState.ParentChainBlockNumber, saveAction.postState.OutboxSize())
+		} else {
+			m.outboxTracker.Record(saveAction.postState.ParentChainBlockNumber, outboxSize)
+		}
+		m.outboxTracker.TrimToFinalized()
+	}
 	return 0, m.fsm.Do(processNextBlock{
 		melState: saveAction.postState,
 	})

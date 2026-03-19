@@ -317,3 +317,96 @@ func TestRebuildThenPourAndPop_MatchesOriginal(t *testing.T) {
 
 	require.Equal(t, originalHashes[1:], rebuiltHashes)
 }
+
+func TestOutboxSizeTracking(t *testing.T) {
+	t.Parallel()
+	s := &State{}
+
+	// Accumulate 5 messages — outboxSize stays 0
+	msgs := createTestDelayedMessages(5)
+	accumulateN(t, s, msgs)
+	require.Equal(t, 0, s.OutboxSize())
+
+	// Pour — outboxSize becomes 5
+	require.NoError(t, s.PourDelayedInboxToOutbox())
+	require.Equal(t, 5, s.OutboxSize())
+
+	// Pop 2 — outboxSize becomes 3
+	for range 2 {
+		_, err := s.PopDelayedOutbox()
+		require.NoError(t, err)
+		s.DelayedMessagesRead++
+	}
+	require.Equal(t, 3, s.OutboxSize())
+
+	// Accumulate 2 more — outboxSize unchanged
+	extra := createTestDelayedMessages(2)
+	for i := range extra {
+		reqID := common.BigToHash(big.NewInt(int64(100 + i)))
+		extra[i].Message.Header.RequestId = &reqID
+		extra[i].Message.L2msg = []byte(fmt.Sprintf("extra-%d", i))
+	}
+	accumulateN(t, s, extra)
+	require.Equal(t, 3, s.OutboxSize())
+}
+
+func TestRebuildWithKnownOutboxSize(t *testing.T) {
+	t.Parallel()
+
+	// Build a mixed state: accumulate 3, pour, accumulate 2 more
+	s := &State{}
+	msgs := createTestDelayedMessages(3)
+	accumulateN(t, s, msgs)
+	require.NoError(t, s.PourDelayedInboxToOutbox())
+
+	extra := createTestDelayedMessages(2)
+	for i := range extra {
+		reqID := common.BigToHash(big.NewInt(int64(100 + i)))
+		extra[i].Message.Header.RequestId = &reqID
+		extra[i].Message.L2msg = []byte(fmt.Sprintf("extra-%d", i))
+	}
+	accumulateN(t, s, extra)
+
+	knownOutboxSize := s.OutboxSize()
+	require.Equal(t, 3, knownOutboxSize)
+
+	// Rebuild with known outbox size
+	var allMsgs []*DelayedInboxMessage
+	allMsgs = append(allMsgs, msgs...)
+	allMsgs = append(allMsgs, extra...)
+	rebuilt := &State{
+		DelayedMessagesRead:     s.DelayedMessagesRead,
+		DelayedMessagesSeen:     s.DelayedMessagesSeen,
+		DelayedMessageInboxAcc:  s.DelayedMessageInboxAcc,
+		DelayedMessageOutboxAcc: s.DelayedMessageOutboxAcc,
+	}
+	fetcher := makeFetcher(allMsgs[rebuilt.DelayedMessagesRead:], rebuilt.DelayedMessagesRead)
+	require.NoError(t, rebuilt.RebuildDelayedMsgPreimages(fetcher, knownOutboxSize))
+	require.Equal(t, knownOutboxSize, rebuilt.OutboxSize())
+
+	// Verify pops work correctly
+	for rebuilt.DelayedMessagesRead < rebuilt.DelayedMessagesSeen {
+		_, err := rebuilt.PopDelayedOutbox()
+		require.NoError(t, err)
+		rebuilt.DelayedMessagesRead++
+	}
+}
+
+func TestRebuildSetsOutboxSize(t *testing.T) {
+	t.Parallel()
+
+	// Build state with all messages in inbox (no pour)
+	s := &State{}
+	msgs := createTestDelayedMessages(4)
+	accumulateN(t, s, msgs)
+
+	rebuilt := &State{
+		DelayedMessagesRead:     s.DelayedMessagesRead,
+		DelayedMessagesSeen:     s.DelayedMessagesSeen,
+		DelayedMessageInboxAcc:  s.DelayedMessageInboxAcc,
+		DelayedMessageOutboxAcc: s.DelayedMessageOutboxAcc,
+	}
+	fetcher := makeFetcher(msgs, rebuilt.DelayedMessagesRead)
+	require.NoError(t, rebuilt.RebuildDelayedMsgPreimages(fetcher))
+	require.Equal(t, 0, rebuilt.OutboxSize()) // all in inbox, pivot = 0
+}

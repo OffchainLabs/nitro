@@ -117,6 +117,7 @@ type MessageExtractor struct {
 	reorgEventsNotifier      chan uint64
 	seqBatchCounter          SequencerBatchCountFetcher
 	l1Reader                 *headerreader.HeaderReader
+	outboxTracker            *OutboxSizeTracker
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -285,17 +286,17 @@ func (m *MessageExtractor) GetL1Reader() *headerreader.HeaderReader {
 	return m.l1Reader
 }
 
-// GetFinalizedDelayedMessagesRead uses MessageExtractor's context for calls to parentChainReader
-func (m *MessageExtractor) GetFinalizedDelayedMessagesRead() (uint64, error) {
+// GetFinalizedBlockNum returns the current finalized parent chain block number.
+func (m *MessageExtractor) GetFinalizedBlockNum() (uint64, error) {
 	ctx, err := m.GetContextSafe()
 	if err != nil {
 		return 0, fmt.Errorf("message extractor not running: %w", err)
 	}
-	state, err := m.getStateByRPCBlockNum(ctx, rpc.FinalizedBlockNumber)
+	blk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 	if err != nil {
 		return 0, err
 	}
-	return state.DelayedMessagesRead, nil
+	return blk.Number.Uint64(), nil
 }
 
 func (m *MessageExtractor) GetHeadState() (*mel.State, error) {
