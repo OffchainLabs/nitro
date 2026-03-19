@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -892,41 +893,34 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 		t.Error("expected enabling native token management to fail")
 	}
 
-	// About to test some very specific time-sensitive boundaries. Setting
-	// a new value for now.
-	now = time.Now()
-
-	// succeeds to shorten the time to enable the feature to just 5 seconds more
-	// than 7 days from now.
+	// Test the shortening boundary: once the stored value is within the
+	// [now, now+FeatureEnableDelay] window, the new timestamp must be >= stored.
+	// Use block timestamps and a short sleep instead of the original 15s.
+	//
+	// Set enable-at to blockTime + delay + 2, then sleep 3s so the stored value
+	// falls into the shortening window (stored <= new_blockTime + delay).
+	hdr, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+	Require(t, err)
 	// #nosec G115
-	sevenDaysFiveSecondsFromNow := uint64(now.Add(24*7*time.Hour + 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, sevenDaysFiveSecondsFromNow)
+	barelyOverDelay := hdr.Time + uint64(precompiles.FeatureEnableDelay) + 2
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, barelyOverDelay)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// Sleep for 15 seconds to ensure that that the time the feature is will be
-	// enabled is <= 7 days from now.
-	time.Sleep(15 * time.Second)
-	// Time to Enable ~ 6.23:59:50
-	// Resetting now after the sleep
-	now = time.Now()
+	// Wait for block time to advance past the 2s margin
+	time.Sleep(3 * time.Second)
 
-	// Now is should be okay to set the time to enable the feature to some time
-	// greater than 6 days, 23 hours, 59 minutes and 50 seconds from now, but
-	// less than 7 days from now. ~ 6.23:59:55
+	// Setting a new value later than stored should succeed
 	// #nosec G115
-	almostSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 5*time.Second).Unix())
-	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, almostSevenDaysFromNow)
+	shortenedForward := barelyOverDelay + 10
+	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, shortenedForward)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// It should not, however, be okay to set the time to an even earlier time.
-	// ~ 6.23:59:40
-	// #nosec G115
-	tooFarFromSevenDaysFromNow := uint64(now.Add(24*7*time.Hour - 20*time.Second).Unix())
-	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, tooFarFromSevenDaysFromNow)
+	// Going backwards (earlier than stored) should fail
+	_, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, barelyOverDelay)
 	if err == nil || err.Error() != "execution reverted" {
 		t.Error("expected enabling native token management to fail")
 	}

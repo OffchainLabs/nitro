@@ -76,11 +76,16 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 	builder.L2.ExecNode.Backend.BlockChain().SetFinalized(finalizedBlock.Header())
 	Require(t, err)
 
-	// Wait for freeze operation to be executed
-	time.Sleep(65 * time.Second)
-
-	ancients, err = builder.L2.ExecNode.ExecutionDB.Ancients()
-	Require(t, err)
+	// Poll for the background freezer to move finalized blocks to ancients.
+	// The freezer runs on a 1-minute interval; allow up to 90 seconds.
+	pollUntil(t, ctx, 90*time.Second, time.Second, "freezer to move finalized blocks to ancients", func() bool {
+		ancients, err = builder.L2.ExecNode.ExecutionDB.Ancients()
+		if err != nil {
+			t.Logf("Ancients() error (will retry): %v", err)
+			return false
+		}
+		return ancients >= finalizedBlockNumber+1
+	})
 	// ancients must be finalizedBlock+1 since only blocks in [0, finalizedBlock] must be included in ancients.
 	if ancients != finalizedBlockNumber+1 {
 		t.Fatalf("Ancients should be %d, but got %d", finalizedBlockNumber+1, ancients)
@@ -249,8 +254,23 @@ func TestFinalityDataPushedFromConsensusToExecution(t *testing.T) {
 	builder.L2Info.GenerateAccount("User2")
 	generateBlocks(t, ctx, builder, testClient2ndNode, 100)
 
-	// wait for finality data to be updated in execution side
-	time.Sleep(time.Second * 20)
+	// Poll for finality data (both finalized and safe) to be pushed from consensus to execution on the 2nd node.
+	pollUntil(t, ctx, 30*time.Second, 500*time.Millisecond, "finality data to be pushed to 2nd node", func() bool {
+		finalBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.FinalizedBlockNumber)
+		if err != nil {
+			t.Logf("BlockByNumber(Finalized) error (will retry): %v", err)
+			return false
+		}
+		if finalBlock == nil || finalBlock.NumberU64() == 0 {
+			return false
+		}
+		safeBlock, err := testClient2ndNode.ExecNode.Backend.APIBackend().BlockByNumber(ctx, rpc.SafeBlockNumber)
+		if err != nil {
+			t.Logf("BlockByNumber(Safe) error (will retry): %v", err)
+			return false
+		}
+		return safeBlock != nil && safeBlock.NumberU64() > 0
+	})
 
 	// finality data usage is disabled in first node, so finality data should not be set in first node
 	ensureFinalizedBlockDoesNotExist(t, ctx, builder.L2, "first node after generating blocks")

@@ -934,7 +934,16 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
+		// Sync the Owner nonce tracker with the actual on-chain state.
+		// This avoids nonce races when BuildL2OnL1 is called multiple times
+		// (e.g., in TestAnyTrustRekey where the L2 is rebuilt on the same L1).
+		ownerAddr := b.L2Info.GetAddress("Owner")
+		onChainNonce, err := b.L2.Client.PendingNonceAt(b.ctx, ownerAddr)
+		Require(t, err)
+		b.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(onChainNonce)
+
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
+		debugAuth.Nonce = new(big.Int).SetUint64(onChainNonce)
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
@@ -947,6 +956,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		Require(t, err)
 
 		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_MultiConstraintFix {
+			debugAuth.Nonce = nil // let the framework fill the nonce for subsequent calls
 			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
 			Require(t, err)
 			tx, err = arbowner.SetGasPricingConstraints(&debugAuth, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
@@ -1354,7 +1364,11 @@ func BridgeBalance(
 				break
 			}
 			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
-			if i > 200 {
+			// The delayed sequencer requires FinalizeDistance (20) L1 confirmations
+			// before processing a delayed message. Each loop iteration creates one
+			// L1 block, so we need 20+ iterations minimum. Under -race the L1→L2
+			// pipeline is ~3x slower, hence the generous 600-iteration (60s) budget.
+			if i > 600 {
 				Fatal(t, "bridging failed")
 			}
 			<-time.After(time.Millisecond * 100)
@@ -2087,6 +2101,49 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 			}
 		}
 	}()
+}
+
+// pollUntil calls check every interval until it returns true, ctx is cancelled, or timeout elapses.
+// The effective timeout is capped by the context's deadline if one is set.
+// On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
+func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	iterations := 0
+	for time.Now().Before(deadline) {
+		if ctx.Err() != nil {
+			t.Fatalf("context cancelled while waiting for %s after %d iterations: %v", desc, iterations, ctx.Err())
+		}
+		if check() {
+			return
+		}
+		iterations++
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out waiting for %s after %d iterations", desc, iterations)
+}
+
+// retryUntilFound retries fn until it succeeds, retrying only errors whose message
+// contains retrySubstr (e.g. "not found on L1"). Non-matching errors fail immediately.
+func retryUntilFound(t *testing.T, ctx context.Context, maxRetries int, interval time.Duration, desc string, retrySubstr string, fn func() error) {
+	t.Helper()
+	for retry := 0; retry < maxRetries; retry++ {
+		err := fn()
+		if err == nil {
+			return
+		}
+		if !strings.Contains(err.Error(), retrySubstr) {
+			t.Fatalf("%s: non-retryable error: %v", desc, err)
+		}
+		if ctx.Err() != nil || retry == maxRetries-1 {
+			t.Fatalf("%s: failed after %d retries (ctx: %v): %v", desc, retry+1, ctx.Err(), err)
+		}
+		t.Logf("%s retry %d: %v", desc, retry, err)
+		time.Sleep(interval)
+	}
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {

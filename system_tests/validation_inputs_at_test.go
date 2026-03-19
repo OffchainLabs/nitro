@@ -66,8 +66,13 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 		}
 	}
 
-	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.LocalTarget(), rawdb.TargetWasm)
-	Require(t, err)
+	// Retry ValidationInputsAt because the batch may be tracked locally but
+	// not yet confirmed on L1 ("batch not found on L1 yet").
+	var inputJson server_api.InputJSON
+	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidationInputsAt", "batch not found on L1", func() error {
+		inputJson, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.LocalTarget(), rawdb.TargetWasm)
+		return err
+	})
 	validationInput, err := server_api.ValidationInputFromJson(&inputJson)
 	Require(t, err)
 	wasmMap, ok := validationInput.UserWasms[rawdb.TargetWasm]

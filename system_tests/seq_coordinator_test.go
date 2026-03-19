@@ -44,6 +44,23 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 	redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 }
 
+// waitForChosenSequencer polls redis until CHOSENSEQ_KEY is set, indicating
+// a sequencer has been elected master.
+func waitForChosenSequencer(t *testing.T, ctx context.Context, redisClient redis.UniversalClient, pollInterval time.Duration) {
+	t.Helper()
+	pollUntil(t, ctx, 30*time.Second, pollInterval, "sequencer to become master", func() bool {
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
+		if errors.Is(err, redis.Nil) {
+			return false
+		}
+		if err != nil {
+			t.Logf("redis error (will retry): %v", err)
+			return false
+		}
+		return true
+	})
+}
+
 func TestRedisSeqCoordinatorPrioritiesFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -311,15 +328,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	defer redisClient.Close()
 
 	// wait for sequencerA to become master
-	for {
-		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
+	waitForChosenSequencer(t, ctx, redisClient, builder.nodeConfig.SeqCoordinator.UpdateInterval)
 
 	builder.L2Info.GenerateAccount("User2")
 
@@ -414,15 +423,7 @@ func TestRedisSwitchover(t *testing.T) {
 	Require(t, err)
 
 	// wait for sequencerA to become master
-	for {
-		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(builder.nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
+	waitForChosenSequencer(t, ctx, redisClient, builder.nodeConfig.SeqCoordinator.UpdateInterval)
 
 	builder.L2Info.GenerateAccount("User2")
 
