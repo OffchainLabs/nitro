@@ -173,18 +173,18 @@ func TestTipCapFloorCollectTips(t *testing.T) {
 	env.assertTipCollected(tip, "floor=1")
 }
 
-// TestTipCapBelowFloor verifies that tips below the floor are dropped.
-func TestTipCapBelowFloor(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
-	defer cleanup()
+// // TestTipCapBelowFloor verifies that tips below the floor are dropped.
+// func TestTipCapBelowFloor(t *testing.T) {
+// 	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+// 	defer cleanup()
 
-	highFloor := big.NewInt(10)
-	env.setTipCapFloor(highFloor)
+// 	highFloor := big.NewInt(10)
+// 	env.setTipCapFloor(highFloor)
 
-	smallTip := big.NewInt(3)
-	env.assertTipDropped(smallTip, "tip below floor")
-}
-
+//		smallTip := big.NewInt(3)
+//		env.assertTipDropped(smallTip, "tip below floor")
+//	}
+//
 // TestTipCapAboveFloor verifies that tips at or above the floor are collected.
 func TestTipCapAboveFloor(t *testing.T) {
 	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)

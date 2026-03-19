@@ -707,6 +707,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
+		dropTip := true
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -716,18 +717,25 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
 			}
+			tipCapFloor, err := state.TipCapFloor()
+			if err != nil {
+				newErr := fmt.Errorf("%w while opening tip cap floor. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
 			sendRoot, _ = acc.Root()
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
+			dropTip = tipCapFloor.BitLen() == 0
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
+			DropTip:            dropTip,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)
