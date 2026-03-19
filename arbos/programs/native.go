@@ -239,9 +239,13 @@ func activateProgramInternal(
 				cranelift := false
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
-				if err != nil && craneliftFallback.Load() {
-					log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
-					asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+				if err != nil {
+					if craneliftFallback.Load() {
+						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+					} else {
+						log.Error("stylus LLVM compilation failed and cranelift fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+					}
 				}
 				results <- result{target, asm, err}
 			}
