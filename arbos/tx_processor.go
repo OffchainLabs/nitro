@@ -873,18 +873,12 @@ func (p *TxProcessor) DropTip() bool {
 	if version < params.ArbosVersion_60 {
 		return true
 	}
-	// v60+: collect tips if the tip meets or exceeds the floor
-	floor, err := p.state.TipCapFloor()
-	if err != nil || floor.Sign() == 0 {
+	// v60+: collect tips if enabled
+	collectTips, err := p.state.CollectTips()
+	if err != nil {
 		return true
 	}
-
-	// proposed tip is the difference between the gas price and the base fee
-	if p.evm.GasPrice.Cmp(p.evm.Context.BaseFee) <= 0 {
-		return true // no tip to collect
-	}
-	tip := new(big.Int).Sub(p.evm.GasPrice, p.evm.Context.BaseFee)
-	return tip.Cmp(floor) < 0
+	return !collectTips
 }
 
 func (p *TxProcessor) PosterGas() uint64 {

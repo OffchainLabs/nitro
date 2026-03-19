@@ -717,9 +717,9 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
 			}
-			tipCapFloor, err := state.TipCapFloor()
+			collectTips, err := state.CollectTips()
 			if err != nil {
-				newErr := fmt.Errorf("%w while opening tip cap floor. Block: %d root: %v", err, header.Number, header.Root)
+				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
 			}
 			// Add outbox info to the header for client-side proving
@@ -728,7 +728,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
-			dropTip = tipCapFloor.BitLen() == 0
+			dropTip = !collectTips
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
