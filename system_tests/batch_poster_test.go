@@ -258,7 +258,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	addNewBatchPoster(ctx, t, builder, srv.Address)
 
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(10)), nil)})
 
 	var txs []*types.Transaction
 
@@ -412,14 +412,30 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	go func() {
 		data := make([]byte, 90000)
 		_, err := rand.Read(data)
-		Require(t, err)
-		for {
+		if err != nil {
+			t.Errorf("rand.Read failed: %v", err)
+			cancel()
+			return
+		}
+		for ctx.Err() == nil {
 			gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
 			tx := builder.L2Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
 			err = builder.L2.Client.SendTransaction(ctx, tx)
-			Require(t, err)
+			if err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("SendTransaction failed: %v", err)
+				}
+				cancel()
+				return
+			}
 			_, err := builder.L2.EnsureTxSucceeded(tx)
-			Require(t, err)
+			if err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("EnsureTxSucceeded failed: %v", err)
+				}
+				cancel()
+				return
+			}
 		}
 	}()
 
@@ -710,14 +726,24 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		select {
 		case tx := <-batchPosterTxsChan:
 			batchPosterTxs = append(batchPosterTxs, tx)
-		case <-time.After(1 * time.Second):
+		case <-time.After(10 * time.Second):
 			Fatal(t, "Timed out waiting for batch poster tx")
 		}
 	}
-	select {
-	case <-batchPosterTxsChan:
-		Fatal(t, "Unexpected batch poster transaction")
-	default:
+	// Drain any extra batch poster transactions that may arrive within a short window
+	time.Sleep(500 * time.Millisecond)
+drain:
+	for {
+		select {
+		case tx := <-batchPosterTxsChan:
+			batchPosterTxs = append(batchPosterTxs, tx)
+		default:
+			break drain
+		}
+	}
+
+	if len(batchPosterTxs) != numBatches {
+		t.Errorf("expected %d batch poster txs, got %d", numBatches, len(batchPosterTxs))
 	}
 
 	// Check that the batch poster txs didn't arrive in L1
@@ -726,7 +752,7 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 	// Disable the filter and send the batch poster transactions
 	builder.L1.ClientWrapper.DisableRawTransactionFilter()
 	builder.L1.SendWaitTestTransactions(t, batchPosterTxs)
-	CheckBatchCount(t, builder, initialBatchCount+numBatches)
+	CheckBatchCount(t, builder, initialBatchCount+uint64(len(batchPosterTxs)))
 }
 
 func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
@@ -889,8 +915,20 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
-		sequencerMessageBytes, _, err := builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
-		Require(t, err)
+		// Wait for the inbox reader to catch up with this batch
+		var sequencerMessageBytes []byte
+		for retry := 0; retry < 30; retry++ {
+			var getErr error
+			sequencerMessageBytes, _, getErr = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+			if getErr == nil {
+				break
+			}
+			if ctx.Err() != nil || retry == 29 {
+				Require(t, getErr)
+			}
+			t.Logf("GetSequencerMessageBytes retry %d for seq %d: %v", retry, sequenceNum, getErr)
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		blobVersionedHash := common.BytesToHash(sequencerMessageBytes[41:])
 

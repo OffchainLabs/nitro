@@ -33,7 +33,7 @@ jobs:
 
       - name: Detect changes
         id: changed
-        uses: tj-actions/changed-files@v46.0.5
+        uses: tj-actions/changed-files@v47
         with:
           files_yaml: |
             rust:

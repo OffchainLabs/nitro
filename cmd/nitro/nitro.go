@@ -514,7 +514,8 @@ func mainImpl() int {
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
-			log.Error("failed to create machine locator: %w", err)
+			log.Error("failed to create machine locator", "err", err)
+			return 1
 		}
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}

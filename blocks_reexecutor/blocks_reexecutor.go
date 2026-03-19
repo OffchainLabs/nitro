@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -217,6 +218,26 @@ func logState(header *types.Header, hasState bool) {
 	}
 }
 
+// handleContextOrFatal suppresses errors during shutdown (when ctx is done)
+// and sends non-context errors to fatalErrChan.
+func (s *BlocksReExecutor) handleContextOrFatal(ctx context.Context, err error, fatalMsg string) {
+	if ctx.Err() != nil {
+		log.Trace("blocksReExecutor shutting down", "ctxErr", ctx.Err(), "err", err)
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		log.Trace("blocksReExecutor context cancelled", "err", err)
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		log.Warn("blocksReExecutor timed out", "err", err)
+	} else {
+		select {
+		case s.fatalErrChan <- fmt.Errorf("%s: %w", fatalMsg, err):
+		default:
+			log.Error("fatalErrChan full, dropping error", "msg", fatalMsg, "err", err)
+		}
+	}
+}
+
 // LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.MinBlocksPerThread, currentBlock] to the last available valid state
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlock, currentBlock, minBlocksPerThread uint64) uint64 {
 	start := arbmath.SaturatingUSub(currentBlock, minBlocksPerThread)
@@ -225,19 +246,19 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	}
 	startHeader := s.blockchain.GetHeaderByNumber(start)
 	if startHeader == nil {
-		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
+		s.handleContextOrFatal(ctx, fmt.Errorf("blocksReExecutor failed to get start header at %d", start), "missing start header")
 		return startBlock
 	}
 	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
 	if err != nil {
-		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
+		s.handleContextOrFatal(ctx, err, fmt.Sprintf("blocksReExecutor failed to get last available state while searching for state at %d", start))
 		return startBlock
 	}
 	start = startHeader.Number.Uint64()
 	s.LaunchThread(func(ctx context.Context) {
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		if err := s.advanceStateUpToBlock(ctx, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader, release); err != nil {
-			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
+			s.handleContextOrFatal(ctx, err, fmt.Sprintf("blocksReExecutor errored advancing state from block %d to block %d", start, currentBlock))
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		}
@@ -354,7 +375,23 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}
 	for ctx.Err() == nil {
 		var receipts types.Receipts
-		state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		// Wrap AdvanceStateByBlock in a closure with recover to convert panics
+		// into errors, preventing abnormal process termination that could
+		// corrupt the database. The panic occurs when a concurrent goroutine
+		// dereferences a trie root (allowing its nodes to be evicted from the
+		// cache) while this goroutine is still traversing those nodes, which
+		// can manifest as: "ArbOS uninitialized", trie node decode failures,
+		// invalid node types, etc.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic during block re-execution", "block", blockToRecreate, "recover", r, "stack", string(debug.Stack()))
+					state = nil
+					err = fmt.Errorf("panic during block re-execution at block %d: %v", blockToRecreate, r)
+				}
+			}()
+			state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		}()
 		if err != nil {
 			return err
 		}

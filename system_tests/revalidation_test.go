@@ -70,14 +70,9 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 
 	// Wait for the node to start and revalidate the blocks in the specified range
 	// Once the revalidation is done, the validator will stop.
-	startTime := time.Now()
-	for {
-		if nodeC.ConsensusNode.BlockValidator.Stopped() {
-			break
-		} else if time.Since(startTime) > 5*time.Minute {
-			t.Fatalf("Revalidation took too long")
-		}
-	}
+	pollUntil(t, 5*time.Minute, 100*time.Millisecond, "revalidation to complete", func() bool {
+		return nodeC.ConsensusNode.BlockValidator.Stopped()
+	})
 }
 
 func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config {
@@ -89,11 +84,14 @@ func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config
 
 // waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
+	deadline := time.After(limit)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Millisecond):
+		case <-ticker.C:
 			headerA, err := clientA.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			headerB, err := clientB.HeaderByNumber(ctx, nil)
@@ -101,7 +99,7 @@ func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclien
 			if headerA.Number.Cmp(headerB.Number) == 0 {
 				return
 			}
-		case <-time.After(limit):
+		case <-deadline:
 			t.Fatal("waitForBlocksToCatchup didnt finish")
 		}
 	}

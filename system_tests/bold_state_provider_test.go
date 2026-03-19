@@ -88,23 +88,25 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
+		}
+		if lastInfo == nil {
+			return false
 		}
 		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
+			return true
 		}
 		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
 		if err != nil {
-			continue
+			t.Logf("GetBatchMessageCount error (will retry): %v", err)
+			return false
 		}
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
-	}
+		return batchMsgCount >= totalMessageCount
+	})
 
 	historyCommitter := state.NewHistoryCommitmentProvider(
 		stateManager,
@@ -201,16 +203,14 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	Require(t, err)
 
 	// Wait until the validator has validated the batches.
-	for {
-		time.Sleep(time.Millisecond * 100)
+	pollUntil(t, 5*time.Minute, 100*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
 		}
-		if lastInfo.GlobalState.Batch >= totalBatches {
-			break
-		}
-	}
+		return lastInfo != nil && lastInfo.GlobalState.Batch >= totalBatches
+	})
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		toBatch := uint64(3)

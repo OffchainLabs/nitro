@@ -342,15 +342,15 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 
 	// Wait for chosen sequencer to change on redis
-	for {
+	pollUntil(t, 30*time.Second, 200*time.Millisecond, "chosen sequencer to change", func() bool {
 		currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
 		Require(t, err)
-		if currentChosen == seqA.Stack.HTTPEndpoint() {
-			break
+		if currentChosen != seqA.Stack.HTTPEndpoint() {
+			t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
+			return false
 		}
-		t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
-		time.Sleep(200 * time.Millisecond)
-	}
+		return true
+	})
 
 	// Send the tx=1 that should be sequenced by the new active sequencer along with the future seq num txs=2,3 synced from redis
 	err = expressLaneClientA.SendTransactionWithSequence(ctx, txs[1], 2)
