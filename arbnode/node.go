@@ -792,7 +792,7 @@ func validateAndInitializeDBForMEL(
 			return err
 		}
 		if hasSequencerBatchCountKey {
-			return errors.New("MEL being initialized when DB already has stale keys from inbox reader")
+			return errors.New("MEL being initialized when DB already has stale SequencerBatchCountKey from inbox reader")
 		}
 		// DelayedMessageCountKey shouldn't exist
 		hasDelayedMessageCountKey, err := consensusDB.Has(schema.DelayedMessageCountKey)
@@ -800,7 +800,7 @@ func validateAndInitializeDBForMEL(
 			return err
 		}
 		if hasDelayedMessageCountKey {
-			return errors.New("MEL being initialized when DB already has stale keys from inbox reader")
+			return errors.New("MEL being initialized when DB already has stale DelayedMessageCountKey from inbox reader")
 		}
 		// MessageCountKey should be zero (since TxStreamer initializes it to zero if it doesn't exist)
 		msgCount, err := read.Value[uint64](consensusDB, schema.MessageCountKey)
@@ -842,7 +842,7 @@ func getMessageExtractor(
 			return nil, err
 		}
 		if hasHeadMelStateBlockNumKey {
-			return nil, errors.New("node alredy has MEL related database entries and is trying to start inbox reader and tracker, not allowed")
+			return nil, errors.New("node already has MEL related database entries and is trying to start inbox reader and tracker, not allowed")
 		}
 		return nil, nil
 	}
