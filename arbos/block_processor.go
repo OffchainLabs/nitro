@@ -707,7 +707,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
-		dropTip := true
+		collectTips := false
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -717,7 +717,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
 			}
-			collectTips, err := state.CollectTips()
+			collectTips, err = state.CollectTips()
 			if err != nil {
 				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
@@ -728,14 +728,13 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
-			dropTip = !collectTips
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
-			DropTip:            dropTip,
+			CollectTips:        collectTips,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)

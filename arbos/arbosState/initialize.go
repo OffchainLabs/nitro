@@ -52,7 +52,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 		SendCount:          0,
 		L1BlockNumber:      0,
 		ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
-		DropTip:            true,
+		CollectTips:        false,
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 

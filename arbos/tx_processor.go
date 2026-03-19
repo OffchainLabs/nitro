@@ -858,27 +858,27 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
-func (p *TxProcessor) DropTip() bool {
+func (p *TxProcessor) CollectTips() bool {
 	// never collect tips on delayed inbox messages
 	if p.delayedInbox {
-		return true
+		return false
 	}
 
 	version := p.state.ArbOSVersion()
 	// v9: collect all tips
 	if version == params.ArbosVersion_9 {
-		return false
+		return true
 	}
 	// up to v60: drop all tips
 	if version < params.ArbosVersion_60 {
-		return true
+		return false
 	}
 	// v60+: collect tips if enabled
 	collectTips, err := p.state.CollectTips()
 	if err != nil {
-		return true
+		return false
 	}
-	return !collectTips
+	return collectTips
 }
 
 func (p *TxProcessor) PosterGas() uint64 {
@@ -886,7 +886,7 @@ func (p *TxProcessor) PosterGas() uint64 {
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
-	if !p.DropTip() {
+	if p.CollectTips() {
 		return p.evm.GasPrice
 	}
 	// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
