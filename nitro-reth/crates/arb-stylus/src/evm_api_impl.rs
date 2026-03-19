@@ -211,7 +211,7 @@ impl StylusEvmApi {
     /// The `journal` pointer must remain valid for the lifetime of this struct.
     /// The caller must ensure exclusive mutable access through this pointer.
     /// If `ctx_ptr` is provided, it must also remain valid.
-    pub unsafe fn new<DB: Database>(
+    pub unsafe fn new<DB: Database + 'static>(
         journal: *mut revm::Journal<DB>,
         address: Address,
         caller: Address,

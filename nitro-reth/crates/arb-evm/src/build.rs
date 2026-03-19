@@ -220,6 +220,9 @@ struct PendingArbTx {
     gas_price_positive: bool,
     /// Retry tx context for end-tx retryable processing.
     retry_context: Option<PendingRetryContext>,
+    /// Temporary balance correction burned from sender before EVM to match
+    /// Nitro's BuyGas behavior. Must be minted back after EVM execution.
+    gas_charge_correction: U256,
 }
 
 /// Context for a retry tx that needs end-tx processing after EVM execution.
@@ -524,6 +527,7 @@ where
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
             });
 
             return Ok(EthTxResult {
@@ -594,6 +598,7 @@ where
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
             });
 
             return Ok(EthTxResult {
@@ -793,6 +798,7 @@ where
             },
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             retry_context: None,
+            gas_charge_correction: U256::ZERO,
         });
 
         // Construct synthetic execution result. Filtered retryables always
@@ -925,6 +931,7 @@ where
                         state_ref.block_hashes.insert(n, hash);
                     }
                 }
+
             }
         }
 
@@ -1116,6 +1123,8 @@ where
                                     state_ref.block_hashes.insert(n, hash);
                                 }
                             }
+
+
                         }
                     }
                 }
@@ -1133,6 +1142,7 @@ where
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
             });
 
             // Internal tx errors are fatal — abort block production.
@@ -1216,6 +1226,7 @@ where
                 charged_multi_gas: MultiGas::default(),
                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
             });
 
             // Filtered deposits produce a failed receipt (status=0) via
@@ -1307,6 +1318,7 @@ where
                                     charged_multi_gas: MultiGas::default(),
                                     gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                     retry_context: None,
+                gas_charge_correction: U256::ZERO,
                                 });
                                 return Ok(EthTxResult {
                                     result: revm::context::result::ResultAndState {
@@ -1365,6 +1377,7 @@ where
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
                             });
                             let err_msg = format!(
                                 "retryable ticket {} not found",
@@ -1398,6 +1411,7 @@ where
                                 charged_multi_gas: MultiGas::default(),
                                 gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                                 retry_context: None,
+                gas_charge_correction: U256::ZERO,
                             });
                             return Ok(EthTxResult {
                                 result: revm::context::result::ResultAndState {
@@ -1503,12 +1517,26 @@ where
         }
 
         // Reduce the gas the EVM sees by poster_gas and compute_hold_gas.
+        // poster_gas is subtracted here so that BuyGas charges
+        // (gas_limit - poster_gas - compute_hold_gas) * baseFee. This means the
+        // sender's mid-execution BALANCE is higher than Nitro by poster_gas * baseFee
+        // (because Nitro's BuyGas charges the full gas_limit). This difference is
+        // corrected in the BALANCE opcode handler via a thread-local poster fee
+        // adjustment.
         let mut tx_env = tx_env;
         let gas_deduction = poster_gas.saturating_add(compute_hold_gas);
         let evm_gas_limit_before = revm::context_interface::Transaction::gas_limit(&tx_env);
         if gas_deduction > 0 {
             tx_env.set_gas_limit(evm_gas_limit_before.saturating_sub(gas_deduction));
         }
+
+        // Set poster balance correction for BALANCE opcode adjustment.
+        // When BALANCE(sender) is called, the custom handler subtracts this
+        // amount to match Nitro's mid-execution sender balance.
+        arb_precompiles::set_poster_balance_correction(
+            self.arb_ctx.basefee.saturating_mul(U256::from(poster_gas)),
+        );
+        arb_precompiles::set_current_tx_sender(sender);
 
         // --- RevertedTxHook: check for pre-recorded reverted or filtered txs ---
         // Called after gas charging but before EVM execution.
@@ -1553,6 +1581,7 @@ where
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
+                            gas_charge_correction: U256::ZERO,
                         });
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
@@ -1587,6 +1616,7 @@ where
                             charged_multi_gas,
                             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
                             retry_context,
+                            gas_charge_correction: U256::ZERO,
                         });
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
@@ -1881,6 +1911,7 @@ where
             charged_multi_gas,
             gas_price_positive: self.arb_ctx.basefee > U256::ZERO,
             retry_context,
+            gas_charge_correction: U256::ZERO,
         });
 
         Ok(output)

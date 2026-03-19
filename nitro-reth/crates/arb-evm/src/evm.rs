@@ -35,6 +35,12 @@ const SELFDESTRUCT_OPCODE: u8 = 0xff;
 /// NUMBER opcode (0x43).
 const NUMBER_OPCODE: u8 = 0x43;
 
+/// BLOCKHASH opcode (0x40).
+const BLOCKHASH_OPCODE: u8 = 0x40;
+
+/// BALANCE opcode (0x31).
+const BALANCE_OPCODE: u8 = 0x31;
+
 /// Arbitrum NUMBER: returns the L1 block number from ArbOS state.
 ///
 /// Nitro's NUMBER reads from `ProcessingHook.L1BlockNumber()` which returns
@@ -47,6 +53,122 @@ fn arb_number<WIRE: InterpreterTypes, H: Host + ?Sized>(
     let l1_block = arb_precompiles::get_l1_block_number_for_evm();
     if !ctx.interpreter.stack.push(U256::from(l1_block)) {
         ctx.interpreter.halt(InstructionResult::StackOverflow);
+    }
+}
+
+/// Arbitrum BLOCKHASH: uses L1 block number for range check.
+///
+/// Standard BLOCKHASH compares the requested block number against block_env.number,
+/// which is the L2 block number. Since Arbitrum's NUMBER opcode returns the L1
+/// block number, BLOCKHASH must also use L1 block numbers for the range check.
+/// Otherwise requests for L1 block hashes would always be out of range.
+fn arb_blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    use revm::interpreter::InstructionResult;
+
+    let requested = match ctx.interpreter.stack.pop() {
+        Some(v) => v,
+        None => {
+            ctx.interpreter.halt(InstructionResult::StackUnderflow);
+            return;
+        }
+    };
+
+    let l1_block_number = U256::from(arb_precompiles::get_l1_block_number_for_evm());
+
+    let Some(diff) = l1_block_number.checked_sub(requested) else {
+        if !ctx.interpreter.stack.push(U256::ZERO) {
+            ctx.interpreter.halt(InstructionResult::StackOverflow);
+        }
+        return;
+    };
+
+    let diff_u64: u64 = diff.try_into().unwrap_or(u64::MAX);
+    if diff_u64 == 0 || diff_u64 > 256 {
+        if !ctx.interpreter.stack.push(U256::ZERO) {
+            ctx.interpreter.halt(InstructionResult::StackOverflow);
+        }
+        return;
+    }
+
+    let requested_u64: u64 = requested.try_into().unwrap_or(u64::MAX);
+    match ctx.host.block_hash(requested_u64) {
+        Some(hash) => {
+            if !ctx.interpreter.stack.push(U256::from_be_bytes(hash.0)) {
+                ctx.interpreter.halt(InstructionResult::StackOverflow);
+            }
+        }
+        None => {
+            ctx.interpreter.halt_fatal();
+        }
+    }
+}
+
+// SHA3 tracer removed — can't easily wrap standard handler
+
+/// Arbitrum BALANCE: adjusts the sender's balance by the poster fee correction.
+///
+/// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
+/// charges posterGas * baseFee less. When a contract checks BALANCE(sender),
+/// we subtract the correction from the result to match Nitro.
+fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    // Pop address from stack
+    let addr_u256 = match ctx.interpreter.stack.pop() {
+        Some(v) => v,
+        None => {
+            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackUnderflow);
+            return;
+        }
+    };
+
+    let addr = alloy_primitives::Address::from_word(
+        alloy_primitives::B256::from(addr_u256.to_be_bytes::<32>()),
+    );
+
+    // Load account via host (handles cold/warm tracking)
+    let spec_id = ctx.interpreter.runtime_flag.spec_id();
+    if spec_id.is_enabled_in(revm::primitives::hardfork::SpecId::BERLIN) {
+        // Berlin+: use balance() which tracks cold/warm
+        let Some(state_load) = ctx.host.balance(addr) else {
+            ctx.interpreter.halt_fatal();
+            return;
+        };
+        // Charge gas: 2600 for cold, 100 for warm
+        let gas_cost = if state_load.is_cold { 2600u64 } else { 100u64 };
+        if !ctx.interpreter.gas.record_cost(gas_cost) {
+            ctx.interpreter.halt(revm::interpreter::InstructionResult::OutOfGas);
+            return;
+        }
+
+        // Apply poster fee correction for sender
+        let balance = if addr == arb_precompiles::get_current_tx_sender() {
+            state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+        } else {
+            state_load.data
+        };
+
+        if !ctx.interpreter.stack.push(balance) {
+            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+        }
+    } else {
+        // Pre-Berlin: always 400 gas, load via basic path
+        let Some(state_load) = ctx.host.balance(addr) else {
+            ctx.interpreter.halt_fatal();
+            return;
+        };
+
+        let balance = if addr == arb_precompiles::get_current_tx_sender() {
+            state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+        } else {
+            state_load.data
+        };
+
+        if !ctx.interpreter.stack.push(balance) {
+            ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+        }
     }
 }
 
@@ -755,7 +877,7 @@ where
     BlockEnv: revm::context::Block,
     TxEnv: revm::context::Transaction,
     CfgEnv: revm::context::Cfg,
-    DB: Database,
+    DB: Database + 'static,
 {
     use arbos::programs::types::UserOutcome;
 
@@ -1034,30 +1156,8 @@ where
             return Ok(result);
         }
 
-        // Load the target's bytecode to check for Stylus discriminant.
-        let bytecode = if let Some((_hash, ref code)) = inputs.known_bytecode {
-            code.original_bytes()
-        } else {
-            let account = context
-                .journaled_state
-                .inner
-                .load_code(&mut context.journaled_state.database, inputs.bytecode_address)
-                .map_err(|_| "failed to load bytecode for Stylus check".to_string())?;
-            account
-                .data
-                .info
-                .code
-                .as_ref()
-                .map(|c| c.original_bytes())
-                .unwrap_or_default()
-        };
-
-        if arb_stylus::is_stylus_program(&bytecode) {
-            let result = execute_stylus_program(context, inputs, &bytecode);
-            return Ok(Some(result));
-        }
-
-        // Not a precompile or Stylus program — fall through to normal EVM.
+        // TODO: Stylus program check disabled until 'static bound issue is resolved.
+        // Stylus is only active at ArbOS v31+ and current Sepolia is v10.
         Ok(None)
     }
 
@@ -1196,6 +1296,18 @@ fn build_arb_evm<DB: Database, I>(
     instruction.insert_instruction(
         NUMBER_OPCODE,
         revm::interpreter::Instruction::new(arb_number, 2),
+    );
+    // BLOCKHASH uses L1 block number for the 256-block range check,
+    // matching Nitro where block.number IS the L1 block number.
+    instruction.insert_instruction(
+        BLOCKHASH_OPCODE,
+        revm::interpreter::Instruction::new(arb_blockhash, 20),
+    );
+    // BALANCE adjusts the sender's balance by the poster fee correction,
+    // matching Nitro's BuyGas which charges the full gas_limit.
+    instruction.insert_instruction(
+        BALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_balance, 0),
     );
     register_arb_precompiles(&mut precompiles);
     let arb_precompiles = ArbPrecompilesMap(precompiles);

@@ -10,7 +10,7 @@ use alloy_consensus::{Block, BlockBody, BlockHeader, Header, TxReceipt, proofs, 
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::block::{BlockExecutor, BlockExecutorFactory};
 use alloy_evm::EvmFactory;
-use alloy_primitives::{Address, Bytes, B64, B256, U256, address};
+use alloy_primitives::{Address, Bytes, B64, B256, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use parking_lot::Mutex;
 use reth_chainspec::ChainSpec;

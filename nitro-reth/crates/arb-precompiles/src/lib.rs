@@ -74,6 +74,14 @@ thread_local! {
     /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
     /// In Nitro, this is read from c.txProcessor.PosterFee (a memory field).
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
+    /// Poster fee balance correction for BALANCE opcode.
+    /// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
+    /// charges less by posterGas * baseFee. The BALANCE opcode handler subtracts
+    /// this amount when checking the sender's balance to match Nitro.
+    static POSTER_BALANCE_CORRECTION: Cell<u128> = const { Cell::new(0) };
+    /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
+    static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
+    static TX_SENDER_HI: Cell<u32> = const { Cell::new(0) };
 }
 
 use std::sync::Mutex as StdMutex;
@@ -135,6 +143,36 @@ pub fn set_current_tx_poster_fee(fee_wei: u128) {
 /// Get the current tx poster fee.
 pub fn get_current_tx_poster_fee() -> u128 {
     CURRENT_TX_POSTER_FEE.with(|v| v.get())
+}
+
+/// Set the poster balance correction for BALANCE opcode adjustment.
+pub fn set_poster_balance_correction(correction: alloy_primitives::U256) {
+    let val: u128 = correction.try_into().unwrap_or(u128::MAX);
+    POSTER_BALANCE_CORRECTION.with(|v| v.set(val));
+}
+
+/// Get the poster balance correction.
+pub fn get_poster_balance_correction() -> alloy_primitives::U256 {
+    alloy_primitives::U256::from(POSTER_BALANCE_CORRECTION.with(|v| v.get()))
+}
+
+/// Set the current tx sender for BALANCE correction.
+pub fn set_current_tx_sender(addr: alloy_primitives::Address) {
+    let bytes = addr.as_slice();
+    let lo = u128::from_be_bytes(bytes[4..20].try_into().unwrap_or([0u8; 16]));
+    let hi = u32::from_be_bytes(bytes[0..4].try_into().unwrap_or([0u8; 4]));
+    TX_SENDER_LO.with(|v| v.set(lo));
+    TX_SENDER_HI.with(|v| v.set(hi));
+}
+
+/// Get the current tx sender.
+pub fn get_current_tx_sender() -> alloy_primitives::Address {
+    let lo = TX_SENDER_LO.with(|v| v.get());
+    let hi = TX_SENDER_HI.with(|v| v.get());
+    let mut bytes = [0u8; 20];
+    bytes[0..4].copy_from_slice(&hi.to_be_bytes());
+    bytes[4..20].copy_from_slice(&lo.to_be_bytes());
+    alloy_primitives::Address::new(bytes)
 }
 
 /// Set the EVM call depth to a specific value.
