@@ -180,13 +180,19 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
+	// Use zero-tip transactions so tip collection doesn't affect the multi-gas refund calculations.
+	// PrepareTx sets GasTipCap = GasPrice, so we construct zero-tip txs directly.
+
 	// First transaction: spin the pricing model, should use InitialBaseFeeWei
-	tx = builder.L2Info.PrepareTx(
-		"Owner", "Owner",
-		builder.L2Info.TransferGas,
-		big.NewInt(1),
-		nil,
-	)
+	tx = builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1), nil)
+	tx = builder.L2Info.SignTxAs("Owner", &types.DynamicFeeTx{
+		To:        tx.To(),
+		Gas:       tx.Gas(),
+		GasTipCap: common.Big0,
+		GasFeeCap: tx.GasFeeCap(),
+		Value:     tx.Value(),
+		Nonce:     tx.Nonce(),
+	})
 	require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
@@ -197,12 +203,15 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 	balanceBefore, err := builder.L2.Client.BalanceAt(ctx, owner, nil)
 
 	require.NoError(t, err)
-	tx = builder.L2Info.PrepareTx(
-		"Owner", "Owner",
-		builder.L2Info.TransferGas,
-		big.NewInt(1),
-		nil,
-	)
+	tx = builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1), nil)
+	tx = builder.L2Info.SignTxAs("Owner", &types.DynamicFeeTx{
+		To:        tx.To(),
+		Gas:       tx.Gas(),
+		GasTipCap: common.Big0,
+		GasFeeCap: tx.GasFeeCap(),
+		Value:     tx.Value(),
+		Nonce:     tx.Nonce(),
+	})
 	require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
@@ -238,7 +247,7 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 
 	// Expect actualCost equal to multi-gas cost
 	actualCost := new(big.Int).Sub(balanceBefore, balanceAfter)
-	require.Less(t, actualCost, singleCost, "expected actual cost < single cost")
+	require.True(t, actualCost.Cmp(singleCost) < 0, "expected actual cost < single cost, actual: %v, single: %v", actualCost, singleCost)
 
 	require.Equal(t, mgPrice, actualCost.Uint64(), "multi-gas price mismatch")
 
