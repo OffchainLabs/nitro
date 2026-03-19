@@ -116,10 +116,9 @@ func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, er
 	return c.State.L1PricingState().ParentGasFloorPerToken()
 }
 
-// GetTipCapFloor gets the minimum tip (wei per gas) for tip collection.
-// Returns 0 if not set, meaning all tips are dropped.
-func (con ArbOwnerPublic) GetTipCapFloor(c ctx, evm mech) (huge, error) {
-	return c.State.TipCapFloor()
+// GetCollectTips returns whether tip collection is enabled.
+func (con ArbOwnerPublic) GetCollectTips(c ctx, evm mech) (bool, error) {
+	return c.State.CollectTips()
 }
 
 func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint8, error) {
