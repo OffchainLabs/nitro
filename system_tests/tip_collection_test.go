@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type tipCapFloorTestEnv struct {
+type tipCollectionTestEnv struct {
 	t              *testing.T
 	ctx            context.Context
 	builder        *NodeBuilder
@@ -28,7 +28,7 @@ type tipCapFloorTestEnv struct {
 	baseFee        *big.Int
 }
 
-func setupTipCapTest(t *testing.T, arbosVersion uint64, withL1 bool) (*tipCapFloorTestEnv, func()) {
+func setupTipCollectionTest(t *testing.T, arbosVersion uint64, withL1 bool) (*tipCollectionTestEnv, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -49,7 +49,7 @@ func setupTipCapTest(t *testing.T, arbosVersion uint64, withL1 bool) (*tipCapFlo
 		Fatal(t, "base fee should not be 0")
 	}
 
-	env := &tipCapFloorTestEnv{
+	env := &tipCollectionTestEnv{
 		t:              t,
 		ctx:            ctx,
 		builder:        builder,
@@ -66,7 +66,7 @@ func setupTipCapTest(t *testing.T, arbosVersion uint64, withL1 bool) (*tipCapFlo
 	return env, fullCleanup
 }
 
-func (env *tipCapFloorTestEnv) setCollectTips(collect bool) {
+func (env *tipCollectionTestEnv) setCollectTips(collect bool) {
 	env.t.Helper()
 	ownerAuth := env.builder.L2Info.GetDefaultTransactOpts("Owner", env.ctx)
 	tx, err := env.arbOwner.SetCollectTips(&ownerAuth, collect)
@@ -75,7 +75,7 @@ func (env *tipCapFloorTestEnv) setCollectTips(collect bool) {
 	Require(env.t, err)
 }
 
-func (env *tipCapFloorTestEnv) getCollectTips() bool {
+func (env *tipCollectionTestEnv) getCollectTips() bool {
 	env.t.Helper()
 	callOpts := env.builder.L2Info.GetDefaultCallOpts("Owner", env.ctx)
 	collect, err := env.arbOwnerPublic.GetCollectTips(callOpts)
@@ -85,7 +85,7 @@ func (env *tipCapFloorTestEnv) getCollectTips() bool {
 
 // sendTxWithTip sends a simple ETH transfer with the given tip and returns the
 // network fee account revenue delta and the receipt.
-func (env *tipCapFloorTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.Receipt) {
+func (env *tipCollectionTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.Receipt) {
 	env.t.Helper()
 	networkBefore := env.builder.L2.GetBalance(env.t, env.networkFeeAddr)
 
@@ -111,12 +111,12 @@ func (env *tipCapFloorTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.
 
 // expectedRevenue returns the expected network fee account revenue for a receipt
 // given the effective gas price: gasPrice * l2GasUsed.
-func (env *tipCapFloorTestEnv) expectedRevenue(gasPrice *big.Int, receipt *types.Receipt) *big.Int {
+func (env *tipCollectionTestEnv) expectedRevenue(gasPrice *big.Int, receipt *types.Receipt) *big.Int {
 	l2GasUsed := receipt.GasUsed - receipt.GasUsedForL1
 	return arbmath.BigMulByUint(gasPrice, l2GasUsed)
 }
 
-func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string) {
+func (env *tipCollectionTestEnv) assertTipDropped(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
 	expected := env.expectedRevenue(env.baseFee, receipt)
@@ -128,7 +128,7 @@ func (env *tipCapFloorTestEnv) assertTipDropped(tipCap *big.Int, context string)
 	}
 }
 
-func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context string) {
+func (env *tipCollectionTestEnv) assertTipCollected(tipCap *big.Int, context string) {
 	env.t.Helper()
 	revenue, receipt := env.sendTxWithTip(tipCap)
 	gasPrice := new(big.Int).Add(env.baseFee, tipCap)
@@ -141,9 +141,9 @@ func (env *tipCapFloorTestEnv) assertTipCollected(tipCap *big.Int, context strin
 	}
 }
 
-// TestTipCapFloorDefault verifies that by default (collect=false), tips are dropped on v60.
-func TestTipCapFloorDefault(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+// TestTipCollectionDefault verifies that by default (collect=false), tips are dropped on v60.
+func TestTipCollectionDefault(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	env.setCollectTips(false)
@@ -156,9 +156,9 @@ func TestTipCapFloorDefault(t *testing.T) {
 	env.assertTipDropped(tip, "collect=false")
 }
 
-// TestTipCapFloorCollectTips verifies that enabling tip collection causes tips to be collected.
-func TestTipCapFloorCollectTips(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+// TestTipCollectionEnabled verifies that enabling tip collection causes tips to be collected.
+func TestTipCollectionEnabled(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	env.setCollectTips(true)
@@ -171,9 +171,9 @@ func TestTipCapFloorCollectTips(t *testing.T) {
 	env.assertTipCollected(tip, "collect=true")
 }
 
-// TestTipCapCollectVariousTips verifies that various tip amounts are collected when enabled.
-func TestTipCapCollectVariousTips(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+// TestTipCollectionVariousTips verifies that various tip amounts are collected when enabled.
+func TestTipCollectionVariousTips(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	env.setCollectTips(true)
@@ -185,18 +185,18 @@ func TestTipCapCollectVariousTips(t *testing.T) {
 	env.assertTipCollected(largeTip, "large tip")
 }
 
-// TestTipCapPreV60 verifies that tips are always dropped on pre-v60 chains.
-func TestTipCapPreV60(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_51, false)
+// TestTipCollectionPreV60 verifies that tips are always dropped on pre-v60 chains.
+func TestTipCollectionPreV60(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_51, false)
 	defer cleanup()
 
 	tip := big.NewInt(10)
 	env.assertTipDropped(tip, "pre-v60")
 }
 
-// TestTipCapDisableAfterEnable verifies that disabling tip collection stops collecting tips.
-func TestTipCapDisableAfterEnable(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+// TestTipCollectionDisableAfterEnable verifies that disabling tip collection stops collecting tips.
+func TestTipCollectionDisableAfterEnable(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	env.setCollectTips(true)
@@ -210,29 +210,29 @@ func TestTipCapDisableAfterEnable(t *testing.T) {
 	env.assertTipDropped(tip, "collect disabled")
 }
 
-// TestTipCapV9CollectsTips verifies that tips are always collected on v9 chains.
-func TestTipCapV9CollectsTips(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_9, false)
+// TestTipCollectionV9 verifies that tips are always collected on v9 chains.
+func TestTipCollectionV9(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_9, false)
 	defer cleanup()
 
 	tip := big.NewInt(10)
 	env.assertTipCollected(tip, "v9")
 }
 
-// TestTipCapZeroTip verifies that a tx with zero tip doesn't collect anything
+// TestTipCollectionZeroTip verifies that a tx with zero tip doesn't collect anything
 // even when tip collection is enabled.
-func TestTipCapZeroTip(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+func TestTipCollectionZeroTip(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	env.setCollectTips(true)
 	env.assertTipDropped(big.NewInt(0), "zero tip with collect=true")
 }
 
-// TestTipCapDelayedInboxDropsTips verifies that delayed inbox messages always drop tips,
-// even when the floor is set to collect them.
-func TestTipCapDelayedInboxDropsTips(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, true)
+// TestTipCollectionDelayedInboxDropsTips verifies that delayed inbox messages always drop tips,
+// even when tip collection is enabled.
+func TestTipCollectionDelayedInboxDropsTips(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, true)
 	defer cleanup()
 
 	// Enable tip collection so direct txs would collect tips
@@ -274,11 +274,11 @@ func TestTipCapDelayedInboxDropsTips(t *testing.T) {
 	}
 }
 
-// TestTipCapGetPaidGasPrice verifies that the GASPRICE opcode (which calls
+// TestTipCollectionGetPaidGasPrice verifies that the GASPRICE opcode (which calls
 // GetPaidGasPrice) returns the full gas price when tips are collected and
 // only the base fee when tips are dropped.
-func TestTipCapGetPaidGasPrice(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_60, false)
+func TestTipCollectionGetPaidGasPrice(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_60, false)
 	defer cleanup()
 
 	// Deploy a contract that stores tx.gasprice in slot 0: GASPRICE PUSH1(0) SSTORE STOP
@@ -324,10 +324,10 @@ func TestTipCapGetPaidGasPrice(t *testing.T) {
 	}
 }
 
-// TestTipCapPrecompileVersionGating verifies that SetCollectTips and
+// TestTipCollectionPrecompileVersionGating verifies that SetCollectTips and
 // GetCollectTips revert on pre-v60 chains.
-func TestTipCapPrecompileVersionGating(t *testing.T) {
-	env, cleanup := setupTipCapTest(t, params.ArbosVersion_51, false)
+func TestTipCollectionPrecompileVersionGating(t *testing.T) {
+	env, cleanup := setupTipCollectionTest(t, params.ArbosVersion_51, false)
 	defer cleanup()
 
 	ownerAuth := env.builder.L2Info.GetDefaultTransactOpts("Owner", env.ctx)
