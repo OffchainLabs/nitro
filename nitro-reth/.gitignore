@@ -22,6 +22,7 @@ Thumbs.db
 
 # Environment (keep .env.example tracked)
 .env
+.env.*
 !.env.example
 
 # Test scripts and testing infrastructure
