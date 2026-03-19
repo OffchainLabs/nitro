@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -48,6 +49,19 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
+
+// craneliftFallback controls whether LLVM compilation failures fall back to Cranelift.
+// Set once at startup via SetCraneliftFallback; defaults to true (fallback enabled).
+var craneliftFallback atomic.Bool
+
+func init() {
+	craneliftFallback.Store(true)
+}
+
+// SetCraneliftFallback configures whether to fall back to Cranelift on LLVM failure.
+func SetCraneliftFallback(enabled bool) {
+	craneliftFallback.Store(enabled)
+}
 
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
@@ -225,8 +239,8 @@ func activateProgramInternal(
 				cranelift := false
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
-				if err != nil {
-					log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+				if err != nil && craneliftFallback.Load() {
+					log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 					asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
 				}
 				results <- result{target, asm, err}

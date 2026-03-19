@@ -343,6 +343,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
+	programs.SetCraneliftFallback(targetConfig.CraneliftFallback)
 	return nil
 }
 
