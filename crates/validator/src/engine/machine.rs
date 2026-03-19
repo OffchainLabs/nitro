@@ -148,7 +148,6 @@ impl JitProcessManager {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
             .iter()
-            .cloned()
             .map(|root_meta| {
                 let root_path = replay_binary(&root_meta.path);
                 let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;

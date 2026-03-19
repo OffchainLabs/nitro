@@ -74,7 +74,7 @@ func fromRelease(release *github.RepositoryRelease) (*ConsensusRelease, error) {
 	var machineWavmURL url.URL
 	var replayWasmURL url.URL
 	for _, asset := range release.Assets {
-		if asset.GetName() == "machine.wavm.br" {
+		if asset.GetName() == "machine.v2.wavm.br" {
 			wURL, err := url.Parse(asset.GetBrowserDownloadURL())
 			if err != nil {
 				return nil, err

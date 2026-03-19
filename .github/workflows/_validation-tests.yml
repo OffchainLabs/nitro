@@ -31,16 +31,16 @@ jobs:
 
       - name: Run arbitrator prover on block input json
         run: |
-          target/bin/prover target/machines/latest/machine.wavm.br -b \
+          target/bin/prover target/machines/latest/machine.v2.wavm.br -b \
           --json-inputs="${{ env.INPUT_FILE }}"
 
       - name: Run jit prover on block input json
         id: jit
         run: |
-          OUTPUT=$(target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
-            json --inputs '${{ env.INPUT_FILE }}')
-          
-          JIT_HASH=$(echo "$OUTPUT" | grep -oP 'hash \K(0x)?[a-f0-9]+')
+          target/bin/jit --binary target/machines/latest/replay.wasm --require-success --debug \
+            json --inputs '${{ env.INPUT_FILE }}' | tee /tmp/jit_output.txt
+
+          JIT_HASH=$(grep -oP 'hash \K(0x)?[a-f0-9]+' /tmp/jit_output.txt)
           echo "jit_hash=$JIT_HASH" >> $GITHUB_OUTPUT
 
       - name: Run Rust validation server (Native & Continuous)

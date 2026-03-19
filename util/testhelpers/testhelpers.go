@@ -6,7 +6,6 @@ package testhelpers
 import (
 	"context"
 	crypto "crypto/rand"
-	"io"
 	"log/slog"
 	"math/big"
 	"math/rand"
@@ -107,25 +106,30 @@ func (h *LogHandler) Handle(_ context.Context, record slog.Record) error {
 }
 
 func (h *LogHandler) WasLogged(pattern string) bool {
-	re, err := regexp.Compile(pattern)
-	RequireImpl(h.t, err)
+	return h.wasLoggedWithFilter(pattern, nil)
+}
+
+// Clear removes all recorded log entries.
+func (h *LogHandler) Clear() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	for _, record := range h.records {
-		if re.MatchString(record.Message) {
-			return true
-		}
-	}
-	return false
+	h.records = h.records[:0]
 }
 
 func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
+	return h.wasLoggedWithFilter(pattern, &lvl)
+}
+
+func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
 	re, err := regexp.Compile(pattern)
 	RequireImpl(h.t, err)
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	for _, record := range h.records {
-		if record.Level == lvl && re.MatchString(record.Message) {
+		if lvl != nil && record.Level != *lvl {
+			continue
+		}
+		if re.MatchString(record.Message) {
 			return true
 		}
 	}
@@ -135,8 +139,7 @@ func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
 		t:               t,
-		records:         make([]slog.Record, 0),
-		terminalHandler: log.NewTerminalHandler(io.Writer(os.Stderr), false),
+		terminalHandler: log.NewTerminalHandler(os.Stderr, false),
 	}
 }
 

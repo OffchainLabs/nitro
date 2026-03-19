@@ -22,10 +22,8 @@ use crate::memory_type::MemoryType;
 use {
     super::value,
     std::marker::PhantomData,
-    wasmer::{
-        ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
-    },
-    wasmer_types::{MemoryIndex, ModuleInfo},
+    wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
+    wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
 };
 
 pub mod config;
@@ -154,7 +152,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut wasmer::MiddlewareReaderState<'a>,
+        out: &mut wasmer::sys::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));

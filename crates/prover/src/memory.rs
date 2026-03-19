@@ -65,7 +65,7 @@ fn round_up_to_power_of_two(mut input: usize) -> usize {
 /// Overflow safe divide and round up
 fn div_round_up(num: usize, denom: usize) -> usize {
     let mut res = num / denom;
-    if num % denom > 0 {
+    if !num.is_multiple_of(denom) {
         res += 1;
     }
     res
@@ -256,7 +256,7 @@ impl Memory {
     /// The length of value <= 32.
     pub fn store_slice_aligned(&mut self, idx: u64, value: &[u8]) -> bool {
         assert!(value.len() <= Self::LEAF_SIZE);
-        if idx % Self::LEAF_SIZE as u64 != 0 {
+        if !idx.is_multiple_of(Self::LEAF_SIZE as u64) {
             return false;
         }
         let Some(end_idx) = idx.checked_add(value.len() as u64) else {
@@ -275,7 +275,7 @@ impl Memory {
 
     #[must_use]
     pub fn load_32_byte_aligned(&self, idx: u64) -> Option<Bytes32> {
-        if idx % Self::LEAF_SIZE as u64 != 0 {
+        if !idx.is_multiple_of(Self::LEAF_SIZE as u64) {
             return None;
         }
         let Ok(idx) = usize::try_from(idx) else {
@@ -312,15 +312,18 @@ impl Memory {
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
         if let Some(merkle) = &mut self.merkle {
-            merkle
-                .resize(new_size / Self::LEAF_SIZE)
-                .unwrap_or_else(|_| {
+            // Use the same power-of-two rounding as merkelize() so the leaf
+            // count stays consistent with what a fresh tree would have.
+            let new_leaves = round_up_to_power_of_two(div_round_up(new_size, Self::LEAF_SIZE));
+            if new_leaves != merkle.len() {
+                merkle.resize(new_leaves).unwrap_or_else(|_| {
                     panic!(
                         "Couldn't resize merkle tree from {} to {}",
                         merkle.len(),
-                        new_size
+                        new_leaves
                     )
                 });
+            }
         }
     }
 }
@@ -364,6 +367,35 @@ mod test {
             }
         }
         print!("]);");
+    }
+
+    #[test]
+    pub fn resize_after_merkelize_does_not_shrink_merkle() {
+        let page_size = Memory::PAGE_SIZE as usize;
+        // 12 pages: 24,576 leaves, rounds up to 32,768 in merkelize()
+        let mut memory = Memory::new(12 * page_size, 16);
+        memory.cache_merkle_tree();
+        let merkle_len_before = memory.merkle.as_ref().unwrap().len();
+        assert_eq!(merkle_len_before, 32_768);
+
+        // Grow by 1 page to 13 pages: 26,624 leaves (un-rounded)
+        // Memory::resize passes 26,624 to merkle.resize(), which is < 32,768
+        memory.resize(13 * page_size);
+        let merkle_len_after = memory.merkle.as_ref().unwrap().len();
+        assert_eq!(
+            merkle_len_after, merkle_len_before,
+            "Merkle tree should stay at {} leaves, but got {}",
+            merkle_len_before, merkle_len_after,
+        );
+
+        // The cached tree's root must match a freshly built tree's root.
+        let cached_root = memory.merkle.as_ref().unwrap().root();
+        let fresh_memory = Memory::new(13 * page_size, 16);
+        let fresh_root = fresh_memory.merkelize().root();
+        assert_eq!(
+            cached_root, fresh_root,
+            "Cached merkle root diverges from fresh merkle root after resize",
+        );
     }
 
     #[test]
