@@ -1,4 +1,4 @@
-name: lint
+And name: lint
 
 on:
   push:
