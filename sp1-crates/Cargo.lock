@@ -7092,7 +7092,6 @@ dependencies = [
  "gimli 0.33.0",
  "itertools 0.14.0",
  "more-asserts",
- "rayon",
  "smallvec",
  "target-lexicon",
  "tempfile",
