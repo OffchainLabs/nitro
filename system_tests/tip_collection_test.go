@@ -85,16 +85,16 @@ func (env *tipCollectionTestEnv) getCollectTips() bool {
 
 // sendTxWithTip sends a simple ETH transfer with the given tip and returns the
 // network fee account revenue delta and the receipt.
-func (env *tipCollectionTestEnv) sendTxWithTip(tipCap *big.Int) (*big.Int, *types.Receipt) {
+func (env *tipCollectionTestEnv) sendTxWithTip(tip *big.Int) (*big.Int, *types.Receipt) {
 	env.t.Helper()
 	networkBefore := env.builder.L2.GetBalance(env.t, env.networkFeeAddr)
 
 	info := env.builder.L2Info.GetInfoWithPrivKey("Faucet")
-	gasFeeCap := new(big.Int).Add(env.baseFee, tipCap)
+	gasFeeCap := new(big.Int).Add(env.baseFee, tip)
 	tx := env.builder.L2Info.SignTxAs("Faucet", &types.DynamicFeeTx{
 		To:        &info.Address,
 		Gas:       env.builder.L2Info.TransferGas,
-		GasTipCap: tipCap,
+		GasTipCap: tip,
 		GasFeeCap: gasFeeCap,
 		Value:     big.NewInt(1),
 		Nonce:     info.Nonce.Add(1) - 1,
@@ -116,9 +116,9 @@ func (env *tipCollectionTestEnv) expectedRevenue(gasPrice *big.Int, receipt *typ
 	return arbmath.BigMulByUint(gasPrice, l2GasUsed)
 }
 
-func (env *tipCollectionTestEnv) assertTipDropped(tipCap *big.Int, context string) {
+func (env *tipCollectionTestEnv) assertTipDropped(tip *big.Int, context string) {
 	env.t.Helper()
-	revenue, receipt := env.sendTxWithTip(tipCap)
+	revenue, receipt := env.sendTxWithTip(tip)
 	expected := env.expectedRevenue(env.baseFee, receipt)
 	if env.baseFee.Cmp(receipt.EffectiveGasPrice) != 0 {
 		Fatal(env.t, context+": incorrect receipt.EffectiveGasPrice", "want", env.baseFee, "got", receipt.EffectiveGasPrice)
@@ -128,10 +128,10 @@ func (env *tipCollectionTestEnv) assertTipDropped(tipCap *big.Int, context strin
 	}
 }
 
-func (env *tipCollectionTestEnv) assertTipCollected(tipCap *big.Int, context string) {
+func (env *tipCollectionTestEnv) assertTipCollected(tip *big.Int, context string) {
 	env.t.Helper()
-	revenue, receipt := env.sendTxWithTip(tipCap)
-	gasPrice := new(big.Int).Add(env.baseFee, tipCap)
+	revenue, receipt := env.sendTxWithTip(tip)
+	gasPrice := new(big.Int).Add(env.baseFee, tip)
 	expected := env.expectedRevenue(gasPrice, receipt)
 	if gasPrice.Cmp(receipt.EffectiveGasPrice) != 0 {
 		Fatal(env.t, context+": incorrect receipt.EffectiveGasPrice", "want", gasPrice, "got", receipt.EffectiveGasPrice)
