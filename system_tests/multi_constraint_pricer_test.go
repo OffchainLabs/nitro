@@ -524,8 +524,8 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		singleGasBaseFee := builder.L2.GetBaseFeeAt(t, redeemReceipt.BlockNumber)
 		tipPerGas, err := redeemTx.EffectiveGasTip(singleGasBaseFee)
 		assert.NoError(t, err)
-		tipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsed))
-		assert.Equal(t, networkFeeBalanceDiff.Int64(), tipFee.Int64())
+		computeTipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsedForL2()))
+		assert.Equal(t, computeTipFee.Int64(), networkFeeBalanceDiff.Int64())
 
 		// Compute what the user actually paid for the retryable redeem attempt.
 		constrainedGas := redeemReceipt.MultiGasUsed.Get(expensiveResourceKind) + retryReceipt.MultiGasUsed.Get(expensiveResourceKind)
@@ -534,7 +534,8 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		singleGasFee := new(big.Int).Mul(singleGasBaseFee, new(big.Int).SetUint64(singleGas))
 		remainingGas := redeemReceipt.GasUsed + retryReceipt.GasUsed - singleGas - event.DonatedGas
 		remainingGasFee := new(big.Int).Mul(minimumBaseFee, new(big.Int).SetUint64(remainingGas))
-		expectedFee := arbmath.BigAdd(arbmath.BigAdd(singleGasFee, remainingGasFee), tipFee)
+		totalTipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsed))
+		expectedFee := arbmath.BigAdd(arbmath.BigAdd(singleGasFee, remainingGasFee), totalTipFee)
 
 		assert.Equal(t, expectedFee.Uint64(), new(big.Int).Abs(userBalanceDiff).Uint64())
 		t.Logf("Sent transaction %v with cost %0.9f Ether", i, arbmath.BalancePerEther(expectedFee))
