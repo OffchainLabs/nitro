@@ -30,27 +30,26 @@ func TestMultiGasConstraint(t *testing.T) {
 	require.Equal(t, uint64(789), backlog)
 
 	weightedResources := map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation):   10,
-		uint8(multigas.ResourceKindStorageAccess): 20,
+		uint8(multigas.ResourceKindComputation):       10,
+		uint8(multigas.ResourceKindStorageAccessRead): 20,
 	}
 	require.NoError(t, c.SetResourceWeights(weightedResources))
 
 	w1, _ := c.ResourceWeight(uint8(multigas.ResourceKindComputation))
-	w2, _ := c.ResourceWeight(uint8(multigas.ResourceKindStorageAccess))
+	w2, _ := c.ResourceWeight(uint8(multigas.ResourceKindStorageAccessRead))
 	require.Equal(t, uint64(10), w1)
 	require.Equal(t, uint64(20), w2)
 
-	res, err := c.ResourcesWithWeights()
+	res, err := c.GetResourceWeights()
 	require.NoError(t, err)
-	require.Len(t, res, 2)
 	require.Equal(t, uint64(10), res[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(20), res[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(20), res[multigas.ResourceKindStorageAccessRead])
 
 	used, err := c.UsedResources()
 	require.NoError(t, err)
 	require.Len(t, used, 2)
 	require.Contains(t, used, multigas.ResourceKindComputation)
-	require.Contains(t, used, multigas.ResourceKindStorageAccess)
+	require.Contains(t, used, multigas.ResourceKindStorageAccessRead)
 
 	maxWeight, err := c.MaxWeight()
 	require.NoError(t, err)
@@ -61,8 +60,8 @@ func TestMultiGasConstraint(t *testing.T) {
 	backlog, _ = c.Backlog()
 	require.Zero(t, target)
 	require.Zero(t, backlog)
-	res, _ = c.ResourcesWithWeights()
-	require.Empty(t, res)
+	res, _ = c.GetResourceWeights()
+	require.Equal(t, [multigas.NumResourceKind]uint64{}, res)
 
 	used, err = c.UsedResources()
 	require.NoError(t, err)
@@ -85,8 +84,8 @@ func TestMultiGasConstraintResourceWeightsValidation(t *testing.T) {
 
 	// valid set
 	valid := map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation):   3,
-		uint8(multigas.ResourceKindStorageAccess): 7,
+		uint8(multigas.ResourceKindComputation):       3,
+		uint8(multigas.ResourceKindStorageAccessRead): 7,
 	}
 	require.NoError(t, c.SetResourceWeights(valid))
 
@@ -103,13 +102,13 @@ func TestMultiGasConstraintBacklogAggregation(t *testing.T) {
 	require.NoError(t, c.SetAdjustmentWindow(2))
 
 	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation):   1,
-		uint8(multigas.ResourceKindStorageAccess): 2,
+		uint8(multigas.ResourceKindComputation):       1,
+		uint8(multigas.ResourceKindStorageAccessRead): 2,
 	}))
 
 	mg := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 10},
 	)
 
 	require.NoError(t, c.GrowBacklog(mg))
@@ -123,13 +122,13 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 	require.NoError(t, c.SetAdjustmentWindow(5))
 
 	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation):   1,
-		uint8(multigas.ResourceKindStorageAccess): 2,
+		uint8(multigas.ResourceKindComputation):       1,
+		uint8(multigas.ResourceKindStorageAccessRead): 2,
 	}))
 
 	mg1 := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 10},
 	)
 
 	require.NoError(t, c.GrowBacklog(mg1))
@@ -140,7 +139,7 @@ func TestMultiGasConstraintBacklogGrowth(t *testing.T) {
 
 	mg2 := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 5},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 15},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 15},
 	)
 
 	require.NoError(t, c.GrowBacklog(mg2))
@@ -159,14 +158,14 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 	require.NoError(t, c.SetAdjustmentWindow(5))
 
 	require.NoError(t, c.SetResourceWeights(map[uint8]uint64{
-		uint8(multigas.ResourceKindComputation):   1,
-		uint8(multigas.ResourceKindStorageAccess): 2,
+		uint8(multigas.ResourceKindComputation):       1,
+		uint8(multigas.ResourceKindStorageAccessRead): 2,
 	}))
 
 	// Initial backlog: 1*10 + 2*10 = 30
 	mgGrow := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 10},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 10},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 10},
 	)
 	require.NoError(t, c.GrowBacklog(mgGrow))
 
@@ -177,7 +176,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 	// First decay: 1*3 + 2*4 = 11 → new backlog = 30 - 11 = 19
 	mgDecay1 := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 3},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 4},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 4},
 	)
 	require.NoError(t, c.ShrinkBacklog(mgDecay1))
 
@@ -188,7 +187,7 @@ func TestMultiGasConstraintBacklogDecay(t *testing.T) {
 	// Second decay underflows: 1*50 + 2*50 = 150 → should clamp to zero
 	mgDecay2 := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: 50},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: 50},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: 50},
 	)
 	require.NoError(t, c.ShrinkBacklog(mgDecay2))
 

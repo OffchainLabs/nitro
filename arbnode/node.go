@@ -94,8 +94,6 @@ type Config struct {
 	RPCServer                rpcserver.Config                 `koanf:"rpc-server"`
 	ExecutionRPCClient       rpcclient.ClientConfig           `koanf:"execution-rpc-client" reload:"hot"`
 	VersionAlerterServer     nitroversionalerter.ServerConfig `koanf:"version-alerter-server" reload:"hot"`
-	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
-	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -222,7 +220,6 @@ var ConfigDefault = Config{
 	Maintenance:              DefaultMaintenanceConfig,
 	ConsensusExecutionSyncer: DefaultConsensusExecutionSyncerConfig,
 	VersionAlerterServer:     nitroversionalerter.DefaultServerConfig,
-	SnapSyncTest:             DefaultSnapSyncConfig,
 	RPCServer:                rpcserver.DefaultConfig,
 	ExecutionRPCClient: rpcclient.ClientConfig{
 		URL:                       "",
@@ -342,24 +339,6 @@ type Node struct {
 	ctx                      context.Context
 	ConsensusExecutionSyncer *ConsensusExecutionSyncer
 	sequencerInbox           *SequencerInbox
-}
-
-type SnapSyncConfig struct {
-	Enabled                   bool
-	PrevBatchMessageCount     uint64
-	PrevDelayedRead           uint64
-	BatchCount                uint64
-	DelayedCount              uint64
-	ParentChainAssertionBlock uint64
-}
-
-var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:                   false,
-	PrevBatchMessageCount:     0,
-	PrevDelayedRead:           0,
-	BatchCount:                0,
-	DelayedCount:              0,
-	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -745,6 +724,14 @@ func getDAProviders(
 		}
 	}
 
+	// Register a fallback DACert reader to treat DACert batches as empty
+	// if no real provider was configured, matching replay behavior.
+	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
+		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
+		}
+	}
+
 	// Combine all cleanup functions
 	combinedCleanup := func() {
 		for _, cleanup := range cleanupFuncs {
@@ -757,57 +744,32 @@ func getDAProviders(
 }
 
 func getInboxTrackerAndReader(
-	ctx context.Context,
+	config *Config,
 	consensusDB ethdb.Database,
 	txStreamer *TransactionStreamer,
 	dapReaders *daprovider.DAProviderRegistry,
-	config *Config,
 	configFetcher ConfigFetcher,
 	l1client *ethclient.Client,
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
-	exec execution.ExecutionSequencer,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
 		return nil, nil, nil
 	}
-	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders)
 	if err != nil {
 		return nil, nil, err
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	if config.SnapSyncTest.Enabled {
-		if exec == nil {
-			return nil, nil, errors.New("snap sync test requires an execution sequencer")
-		}
-
-		batchCount := config.SnapSyncTest.BatchCount
-		delayedMessageNumber, err := exec.NextDelayedMessageNumber()
-		if err != nil {
-			return nil, nil, err
-		}
-		if batchCount > delayedMessageNumber {
-			batchCount = delayedMessageNumber
-		}
-		// Find the first block containing the batch count.
-		// Subtract 1 to get the block before the needed batch count,
-		// this is done to fetch previous batch metadata needed for snap sync.
-		if batchCount > 0 {
-			batchCount--
-		}
-		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
-		if err != nil {
-			return nil, nil, err
-		}
-		firstMessageBlock.SetUint64(block)
-	}
 	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, nil, err
 	}
-	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
+	if err := txStreamer.SetInboxReaders(inboxReader, delayedBridge); err != nil {
+		return nil, nil, err
+	}
 
 	return inboxTracker, inboxReader, nil
 }
@@ -867,8 +829,9 @@ func getMessageExtractor(
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	consensusDB ethdb.Database,
-	txStreamer *TransactionStreamer,
 	dapRegistry *daprovider.DAProviderRegistry,
+	sequencerInbox *SequencerInbox,
+	l1Reader *headerreader.HeaderReader,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
 		// Prevent database corruption. If HeadMelStateBlockNumKey exists,
@@ -892,14 +855,14 @@ func getMessageExtractor(
 		l2Config,
 		deployInfo,
 		melrunner.NewDatabase(consensusDB),
-		txStreamer,
 		dapRegistry,
+		sequencerInbox,
+		l1Reader,
 		nil,
 	)
 	if err != nil {
 		return nil, err
 	}
-	txStreamer.SetMsgExtractor(msgExtractor)
 	return msgExtractor, nil
 }
 
@@ -1066,7 +1029,7 @@ func getTransactionStreamer(
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -1150,8 +1113,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	batchMetaFetcher BatchMetadataFetcher,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1163,6 +1125,9 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if batchMetaFetcher == nil {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
+		}
 		if arbOSVersionGetter == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
@@ -1175,20 +1140,19 @@ func getBatchPoster(
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB:  rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
-			L1Reader:      l1Reader,
-			Inbox:         inboxTracker,
-			MsgExtractor:  msgExtractor,
-			Streamer:      txStreamer,
-			VersionGetter: arbOSVersionGetter,
-			SyncMonitor:   syncMonitor,
-			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:    deployInfo,
-			TransactOpts:  txOptsBatchPoster,
-			DAPWriters:    dapWriters,
-			ParentChainID: parentChainID,
-			DAPReaders:    dapReaders,
-			ChainConfig:   l2Config,
+			DataPosterDB:         rawdb.NewTable(consensusDB, storage.BatchPosterPrefix),
+			L1Reader:             l1Reader,
+			BatchMetadataFetcher: batchMetaFetcher,
+			Streamer:             txStreamer,
+			VersionGetter:        arbOSVersionGetter,
+			SyncMonitor:          syncMonitor,
+			Config:               func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:           deployInfo,
+			TransactOpts:         txOptsBatchPoster,
+			DAPWriters:           dapWriters,
+			ParentChainID:        parentChainID,
+			DAPReaders:           dapReaders,
+			ChainConfig:          l2Config,
 		})
 		if err != nil {
 			return nil, err
@@ -1205,26 +1169,29 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxReader *InboxReader,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, nil
-	}
 	if exec == nil {
+		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-
-	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
+	} else if msgExtractor != nil {
+		delayedMessageFetcher = msgExtractor
+	} else {
+		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
-	return delayedSequencer, nil
+	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1251,7 +1218,6 @@ func getNodeParentChainReaderDisabled(
 	consensusExecutionSyncer := NewConsensusExecutionSyncer(
 		consensusExecutionSyncerConfigFetcher,
 		nil, // inboxReader
-		nil, // msgExtractor
 		executionClient,
 		nil, // blockValidator
 		txStreamer,
@@ -1371,14 +1337,22 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(ctx, consensusDB, txStreamer, dapRegistry, config, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, executionSequencer)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox)
 	if err != nil {
 		return nil, err
 	}
 
-	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, txStreamer, dapRegistry)
+	messageExtractor, err := getMessageExtractor(ctx, config, l2Config, l1client, deployInfo, consensusDB, dapRegistry, sequencerInbox, l1Reader)
 	if err != nil {
 		return nil, err
+	}
+	if messageExtractor != nil {
+		if err := txStreamer.SetMsgExtractor(messageExtractor); err != nil {
+			return nil, err
+		}
+		if err := messageExtractor.SetMessageConsumer(txStreamer); err != nil {
+			return nil, err
+		}
 	}
 
 	statelessBlockValidator, err := getStatelessBlockValidator(config, configFetcher, inboxReader, inboxTracker, txStreamer, executionRecorder, consensusDB, dapRegistry, stack, latestWasmModuleRoot)
@@ -1396,12 +1370,18 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1409,7 +1389,13 @@ func createNodeImpl(
 	consensusExecutionSyncerConfigFetcher := func() *ConsensusExecutionSyncerConfig {
 		return &configFetcher.Get().ConsensusExecutionSyncer
 	}
-	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, inboxReader, messageExtractor, executionClient, blockValidator, txStreamer, syncMonitor)
+	var msgCountFetcher MessageCountFetcher
+	if messageExtractor != nil {
+		msgCountFetcher = messageExtractor
+	} else {
+		msgCountFetcher = inboxReader
+	}
+	consensusExecutionSyncer := NewConsensusExecutionSyncer(consensusExecutionSyncerConfigFetcher, msgCountFetcher, executionClient, blockValidator, txStreamer, syncMonitor)
 
 	return &Node{
 		ConsensusDB:              consensusDB,
@@ -1442,53 +1428,6 @@ func createNodeImpl(
 		ConsensusExecutionSyncer: consensusExecutionSyncer,
 		sequencerInbox:           sequencerInbox,
 	}, nil
-}
-
-func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client *ethclient.Client, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
-	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
-	if err != nil {
-		return 0, err
-	}
-	high := parentChainAssertionBlock
-	low := uint64(0)
-	reduceBy := uint64(100)
-	if high > reduceBy {
-		low = high - reduceBy
-	}
-	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
-	// This will give us a range (low to high) of blocks that contain the batch count.
-	for low > 0 {
-		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
-		if err != nil {
-			return 0, err
-		}
-		if lowCount.Uint64() > batchCount {
-			high = low
-			reduceBy = reduceBy * 2
-			if low > reduceBy {
-				low = low - reduceBy
-			} else {
-				low = 0
-			}
-		} else {
-			break
-		}
-	}
-	// Then binary search between low and high to find the block containing the batch count.
-	for low < high {
-		mid := low + (high-low)/2
-
-		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
-		if err != nil {
-			return 0, err
-		}
-		if midCount.Uint64() < batchCount {
-			low = mid + 1
-		} else {
-			high = mid
-		}
-	}
-	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
@@ -1751,7 +1690,13 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	// Also make sure to call initialize on the sync monitor after the inbox reader, tx streamer, and block validator are started.
 	// Else sync might call inbox reader or tx streamer before they are started, and it will lead to panic.
-	n.SyncMonitor.Initialize(n.MessageExtractor, n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.L1Reader, n.sequencerInbox)
+	var syncFetcher MessageSyncProgressFetcher
+	if n.MessageExtractor != nil {
+		syncFetcher = n.MessageExtractor
+	} else if n.InboxReader != nil {
+		syncFetcher = n.InboxReader
+	}
+	n.SyncMonitor.Initialize(syncFetcher, n.TxStreamer, n.SeqCoordinator)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)

@@ -1,14 +1,18 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 use anyhow::Result;
+use axum::routing::post;
+use axum::Router;
 use std::future::Future;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::signal;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::ServerState;
-use crate::router::create_router;
+use crate::jwt;
+use crate::spawner_endpoints;
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
@@ -19,13 +23,33 @@ async fn run_server_internal(
     state: Arc<ServerState>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, create_router().with_state(state.clone()))
+    let shutdown_state = state.clone();
+    axum::serve(listener, create_router(state))
         .with_graceful_shutdown(shutdown)
         .await?;
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.jit_manager.complete_machines().await
+    shutdown_state.shutdown().await
+}
+
+fn create_router(state: Arc<ServerState>) -> Router {
+    let router = Router::new()
+        .route("/", post(spawner_endpoints::jsonrpc_dispatch))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            jwt::auth_middleware,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    // Test-only health-check endpoint. Added after route_layer so it is NOT
+    // behind JWT auth — this is intentional: tests use it to verify the server
+    // is up without needing a valid token.
+    #[cfg(test)]
+    let router = router.route("/test", axum::routing::get(|| async { "OK" }));
+
+    router
 }
 
 // Listens for Ctrl+C or SIGTERM
@@ -72,7 +96,7 @@ mod tests {
     };
 
     use crate::{
-        config::{ServerConfig, ServerState},
+        config::{ExecutionMode, ServerConfig, ServerState},
         engine::ModuleRoot,
         server::run_server_internal,
     };
@@ -119,7 +143,7 @@ mod tests {
         // 5. Make a real request here to prove the server is up
         let client = reqwest::Client::new();
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 
@@ -138,15 +162,14 @@ mod tests {
         assert!(result.is_ok(), "Server should exit successfully");
 
         // 8. Verify jit_manager Cleanup
-        let machine_arc = {
-            let machines = test_config.state.jit_manager.machines.read().await;
-            machines.get(&module_root).cloned()
-        };
-        assert!(machine_arc.is_none());
+        if let ExecutionMode::Continuous { jit_manager } = &test_config.state.execution {
+            let machines = jit_manager.machines.read().await;
+            assert!(machines.get(&module_root).is_none());
+        }
 
-        // 9. Verify same request from above fails expectadly
+        // 9. Verify same request from above fails expectedly
         let resp = client
-            .get(format!("http://{}/validation_capacity", test_config.addr))
+            .get(format!("http://{}/test", test_config.addr))
             .send()
             .await;
 

@@ -167,8 +167,8 @@ func TestMultiGasConstraints(t *testing.T) {
 	const n uint64 = 5
 	for i := range n {
 		weights := map[uint8]uint64{
-			uint8(multigas.ResourceKindComputation):   10 + i,
-			uint8(multigas.ResourceKindStorageAccess): 20 + i,
+			uint8(multigas.ResourceKindComputation):       10 + i,
+			uint8(multigas.ResourceKindStorageAccessRead): 20 + i,
 		}
 		Require(t,
 			// #nosec G115
@@ -204,13 +204,13 @@ func TestMultiGasConstraints(t *testing.T) {
 			t.Errorf("wrong backlog: got %v, want %v", backlog, want)
 		}
 
-		weights, err := c.ResourcesWithWeights()
+		weights, err := c.GetResourceWeights()
 		Require(t, err)
 		if weights[multigas.ResourceKindComputation] != 10+i {
 			t.Errorf("wrong computation weight: got %v, want %v", weights[multigas.ResourceKindComputation], 10+i)
 		}
-		if weights[multigas.ResourceKindStorageAccess] != 20+i {
-			t.Errorf("wrong storage weight: got %v, want %v", weights[multigas.ResourceKindStorageAccess], 20+i)
+		if weights[multigas.ResourceKindStorageAccessRead] != 20+i {
+			t.Errorf("wrong storage weight: got %v, want %v", weights[multigas.ResourceKindStorageAccessRead], 20+i)
 		}
 	}
 
@@ -242,7 +242,7 @@ func TestMultiGasConstraintsExponents(t *testing.T) {
 		20,
 		200,
 		map[uint8]uint64{
-			uint8(multigas.ResourceKindStorageAccess): 2,
+			uint8(multigas.ResourceKindStorageAccessWrite): 2,
 		},
 	)
 	Require(t, err)
@@ -256,8 +256,8 @@ func TestMultiGasConstraintsExponents(t *testing.T) {
 	}
 
 	expected = arbmath.Bips(2500)
-	if exps[multigas.ResourceKindStorageAccess] != expected {
-		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindStorageAccess], expected)
+	if exps[multigas.ResourceKindStorageAccessWrite] != expected {
+		t.Fatalf("wrong exponent: got %v, want %v", exps[multigas.ResourceKindStorageAccessWrite], expected)
 	}
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2021-2025, Offchain Labs, Inc.
+// Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 package arbnode
@@ -37,24 +37,22 @@ var (
 )
 
 type InboxTracker struct {
-	db             ethdb.Database
-	txStreamer     *TransactionStreamer
-	mutex          sync.Mutex
-	validator      *staker.BlockValidator
-	dapReaders     *daprovider.DAProviderRegistry
-	snapSyncConfig SnapSyncConfig
+	db         ethdb.Database
+	txStreamer *TransactionStreamer
+	mutex      sync.Mutex
+	validator  *staker.BlockValidator
+	dapReaders *daprovider.DAProviderRegistry
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, mel.BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders *daprovider.DAProviderRegistry) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:             db,
-		txStreamer:     txStreamer,
-		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, mel.BatchMetadata](1000),
-		snapSyncConfig: snapSyncConfig,
+		db:         db,
+		txStreamer: txStreamer,
+		dapReaders: dapReaders,
+		batchMeta:  containers.NewLruCache[uint64, mel.BatchMetadata](1000),
 	}
 	return tracker, nil
 }
@@ -429,36 +427,12 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 
 func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) error {
 	var nextAcc common.Hash
-	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
 		return nil
 	}
 	pos, err := messages[0].Message.Header.SeqNum()
 	if err != nil {
 		return err
-	}
-	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
-		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
-		if firstDelayedMsgToKeep > 0 {
-			firstDelayedMsgToKeep--
-		}
-		for {
-			if len(messages) == 0 {
-				return nil
-			}
-			pos, err = messages[0].Message.Header.SeqNum()
-			if err != nil {
-				return err
-			}
-			if pos+1 == firstDelayedMsgToKeep {
-				nextAcc = messages[0].AfterInboxAcc()
-			}
-			if pos < firstDelayedMsgToKeep {
-				messages = messages[1:]
-			} else {
-				break
-			}
-		}
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -474,7 +448,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 		return err
 	}
 
-	if pos > firstDelayedMsgToKeep {
+	if pos > 0 {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -684,34 +658,8 @@ var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missi
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*mel.SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta mel.BatchMetadata
-	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
 		return nil
-	}
-	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
-		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
-		if sequenceNumberToKeep > 0 {
-			sequenceNumberToKeep--
-		}
-		for {
-			if len(batches) == 0 {
-				return nil
-			}
-			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
-				nextAcc = batches[0].AfterInboxAcc
-				prevbatchmeta = mel.BatchMetadata{
-					Accumulator:         batches[0].AfterInboxAcc,
-					DelayedMessageCount: batches[0].AfterDelayedCount,
-					MessageCount:        arbutil.MessageIndex(t.snapSyncConfig.PrevBatchMessageCount),
-					ParentChainBlock:    batches[0].ParentChainBlockNumber,
-				}
-			}
-			if batches[0].SequenceNumber < sequenceNumberToKeep {
-				batches = batches[1:]
-			} else {
-				break
-			}
-		}
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -719,7 +667,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	pos := batches[0].SequenceNumber
 	startPos := pos
 
-	if pos > sequenceNumberToKeep {
+	if pos > 0 {
 		var err error
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
@@ -961,4 +909,45 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", count)
 	return t.txStreamer.ReorgAtAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
+}
+
+// FinalizedDelayedMessageAtPosition returns the delayed message at the
+// requested position if it is finalized. Returns mel.ErrDelayedMessageNotYetFinalized
+// if the message exists but is not yet finalized based on the finalized parent chain
+// block position. Other errors indicate failures fetching the finalized position
+// or the message itself.
+func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
+	ctx context.Context,
+	finalizedBlock uint64,
+	lastDelayedAccumulator common.Hash,
+	requestedPosition uint64,
+) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
+	msg, acc, parentChainBlockNumber, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, requestedPosition)
+	if err != nil {
+		return nil, common.Hash{}, 0, err
+	}
+	if parentChainBlockNumber > finalizedBlock {
+		return nil, common.Hash{}, parentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
+	}
+	if lastDelayedAccumulator != (common.Hash{}) {
+		// Ensure that there hasn't been a reorg and this message follows the last
+		fullMsg := mel.DelayedInboxMessage{
+			BeforeInboxAcc:         lastDelayedAccumulator,
+			Message:                msg,
+			ParentChainBlockNumber: parentChainBlockNumber,
+		}
+		if fullMsg.AfterInboxAcc() != acc {
+			return nil, common.Hash{}, 0, errors.New("delayed message accumulator mismatch while sequencing")
+		}
+	}
+	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytesForParentBlock(
+			ctx, batchNum, parentChainBlockNumber,
+		)
+		return data, err
+	})
+	if err != nil {
+		return nil, common.Hash{}, 0, err
+	}
+	return msg, acc, parentChainBlockNumber, nil
 }

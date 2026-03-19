@@ -46,6 +46,8 @@ func NewDelayedMsgDatabase(db ethdb.KeyValueStore, preimages daprovider.Preimage
 // ReadDelayedMessage allows for retrieving a delayed message that has been observed by MEL but not yet consumed in a batch
 // at a specific index. Underneath the hood, delayed messages are stored in a binary Merkle tree representation to make
 // retrieval possible in WASM mode. In recording mode, reading a delayed message records its access in a preimages mapping
+// Note: index can never be 0 here because the init message is never read through this function
+// in WASM mode.
 func (r *DelayedMsgDatabase) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if !r.initialized {
 		if err := r.initialize(state); err != nil {

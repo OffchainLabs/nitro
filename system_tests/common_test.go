@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -65,7 +67,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/nitro/init"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
@@ -219,6 +221,12 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 	return arbmath.BigSub(newBalance, prevBalance), nil
 }
 
+func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
+	for range numBlocks {
+		tc.TransferBalance(t, "Faucet", "Faucet", common.Big1, lInfo)
+	}
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -246,6 +254,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	TransactionFiltering:         gethexec.DefaultSequencerConfig.TransactionFiltering,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -558,13 +567,22 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 }
 
 func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
+	t.Helper()
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
 	for {
 		count, err := tc.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		if count > 0 {
-			break
+			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatal("timed out waiting for MEL to read init message")
+		}
 	}
 }
 
@@ -1251,7 +1269,8 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 	return receipts
 }
 
-// checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers.
+// checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers. Returns the L2 block
+// number of the transaction.
 //
 // This function works quickly because TestBatchPosterConfig sets MaxDelay=0, which forces
 // the batch poster to post batches immediately rather than waiting (production uses MaxDelay=1 hour).
@@ -1263,7 +1282,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclie
 // Note: In production with MaxDelay=1h, you'd need to wait much longer or have a full batch
 // before posting occurs. This aggressive test configuration (MaxDelay=0, PollInterval=10ms)
 // is designed for fast CI/CD, not realistic production behavior.
-func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2clientB *ethclient.Client) {
+func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, l2clientB *ethclient.Client) *big.Int {
 	t.Helper()
 
 	// Prepare transfer transaction on L2
@@ -1287,7 +1306,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Ensure the second node successfully processed the batch
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
+	receipt, err := WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*30)
 	Require(t, err)
 
 	recipientBalanceAfter, err := l2clientB.BalanceAt(ctx, recipient, nil)
@@ -1297,6 +1316,8 @@ func checkBatchPosting(t *testing.T, ctx context.Context, builder *NodeBuilder, 
 	if recipientBalanceAfter.Cmp(expectedBalance) != 0 {
 		Fatal(t, "Unexpected balance:", recipientBalanceAfter)
 	}
+
+	return receipt.BlockNumber
 }
 
 func TransferBalance(
@@ -2086,6 +2107,13 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 		case <-ctx.Done():
 			return
 		case err := <-feedErrChan:
+			// During shutdown, ctx.Done() and feedErrChan may both be ready
+			// simultaneously and Go's select picks randomly. Ignore context
+			// cancellation errors that are expected during normal shutdown,
+			// but still report any other errors.
+			if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				return
+			}
 			t.Errorf("error occurred: %v", err)
 			if node != nil {
 				node.StopAndWait()
@@ -2676,7 +2704,7 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	machResp, err := http.Get(cr.MachineWavmURL.String())
 	Require(t, err)
 	defer machResp.Body.Close()
-	machineFile, err := os.Create(machineDir + "/latest/machine.wavm.br")
+	machineFile, err := os.Create(machineDir + "/latest/machine.v2.wavm.br")
 	Require(t, err)
 	_, err = io.Copy(machineFile, machResp.Body)
 	Require(t, err)
@@ -2688,4 +2716,33 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+
+func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			err := conn.Close()
+			if err != nil {
+				t.Logf("warning: failed to close connection: %v", err)
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	Fatal(t, "timed out waiting for TCP", addr)
+}
+
+func getFreePort(t testing.TB) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("failed to cast listener address to *net.TCPAddr")
+	}
+	return tcpAddr.Port
 }

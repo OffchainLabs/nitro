@@ -216,7 +216,7 @@ func TestEnableAndDisableMultiConstraints(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 7},
 			},
 			AdjustmentWindowSecs: 12,
 			TargetPerSec:         7_000_000,
@@ -258,7 +258,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 2},
 			},
 			AdjustmentWindowSecs: 1,
 			TargetPerSec:         30_000_000,
@@ -267,7 +267,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 2},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 3},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 3},
 			},
 			AdjustmentWindowSecs: 102,
 			TargetPerSec:         15_000_000,
@@ -296,10 +296,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(800_000), backlog)
 
-	resMap, err := first.ResourcesWithWeights()
+	resMap, err := first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(2), resMap[multigas.ResourceKindStorageAccessRead])
 
 	// Second constraint
 	target, err = second.Target()
@@ -312,10 +312,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1_600_000), backlog)
 
-	resMap, err = second.ResourcesWithWeights()
+	resMap, err = second.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(3), resMap[multigas.ResourceKindStorageAccessRead])
 
 	// Verify via getter precompile
 	results, err := arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
@@ -337,7 +337,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 5},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 7},
+				{Resource: uint8(multigas.ResourceKindStorageAccessRead), Weight: 7},
 			},
 			AdjustmentWindowSecs: 12,
 			TargetPerSec:         7_000_000,
@@ -363,10 +363,10 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(50_000_000), backlog)
 
-	resMap, err = first.ResourcesWithWeights()
+	resMap, err = first.GetResourceWeights()
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), resMap[multigas.ResourceKindComputation])
-	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccess])
+	require.Equal(t, uint64(7), resMap[multigas.ResourceKindStorageAccessRead])
 
 	results, err = arbGasInfo.GetMultiGasPricingConstraints(callCtx, evm)
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestMultiGasConstraintsStorage(t *testing.T) {
 		gotWeights[r.Resource] = r.Weight
 	}
 	require.Equal(t, uint64(5), gotWeights[uint8(multigas.ResourceKindComputation)])
-	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccess)])
+	require.Equal(t, uint64(7), gotWeights[uint8(multigas.ResourceKindStorageAccessRead)])
 }
 
 func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
@@ -394,7 +394,7 @@ func TestMultiGasConstraintsCantExceedLimit(t *testing.T) {
 		{
 			Resources: []WeightedResource{
 				{Resource: uint8(multigas.ResourceKindComputation), Weight: 1},
-				{Resource: uint8(multigas.ResourceKindStorageAccess), Weight: 2},
+				{Resource: uint8(multigas.ResourceKindStorageAccessWrite), Weight: 2},
 			},
 			AdjustmentWindowSecs: 1,
 			TargetPerSec:         30_000_000,

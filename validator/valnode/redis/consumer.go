@@ -25,7 +25,8 @@ import (
 // RedisValidationClient producers.
 type ValidationServer struct {
 	stopwaiter.StopWaiter
-	spawner validator.ExecutionSpawner
+	spawner     validator.ExecutionSpawner
+	boldSpawner *ExecutionSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
 	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
@@ -59,7 +60,7 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Executio
 
 func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
-	s.StartBoldSpawner(ctx_in)
+	s.startBoldSpawner()
 	// Channel that all consumers use to indicate their readiness.
 	readyStreams := make(chan struct{}, len(s.consumers))
 	type workUnit struct {
@@ -82,7 +83,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(ctx_in)
+		c.Start(s.GetContext())
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
@@ -192,12 +193,34 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	}
 }
 
-func (s *ValidationServer) StartBoldSpawner(ctx context.Context) {
-	boldSpawner, err := NewExecutionSpawner(s.config, s.spawner)
+func (s *ValidationServer) StopOnly() {
+	if s.boldSpawner != nil {
+		s.boldSpawner.StopOnly()
+	}
+	for _, c := range s.consumers {
+		c.StopOnly()
+	}
+	s.StopWaiter.StopOnly()
+}
+
+func (s *ValidationServer) StopAndWait() {
+	if s.boldSpawner != nil {
+		s.boldSpawner.StopAndWait()
+	}
+	for _, c := range s.consumers {
+		c.StopAndWait()
+	}
+	s.StopWaiter.StopAndWait()
+}
+
+func (s *ValidationServer) startBoldSpawner() {
+	var err error
+	s.boldSpawner, err = NewExecutionSpawner(s.config, s.spawner)
 	if err != nil {
 		log.Error("creating redis execution spawner", "error", err)
+		return
 	}
-	boldSpawner.Start(ctx)
+	s.boldSpawner.Start(s.GetContext())
 }
 
 type ExecutionSpawner struct {
@@ -233,6 +256,13 @@ func NewExecutionSpawner(cfg *ValidationServerConfig, spawner validator.Executio
 	}, nil
 }
 
+func (s *ExecutionSpawner) StopAndWait() {
+	for _, c := range s.consumers {
+		c.StopAndWait()
+	}
+	s.StopWaiter.StopAndWait()
+}
+
 func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	// Channel that all consumers use to indicate their readiness.
@@ -240,7 +270,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(ctx_in)
+		c.Start(s.GetContext())
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)

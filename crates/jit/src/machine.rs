@@ -2,15 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::{
-    arbcompress, arbcrypto, prepare::prepare_env_from_json, program,
-    stylus_backend::CothreadHandler, wasip1_stub, wavmio, InputMode, LocalInput, NativeInput, Opts,
+    arbcompress, arbcrypto, program, stylus_backend::CothreadHandler, wasip1_stub, wavmio,
+    InputMode, LocalInput, Opts, ValidatorOpts,
 };
 use arbutil::{Bytes32, PreimageType};
 use caller_env::GoRuntimeState;
 use eyre::{bail, ErrReport, Report, Result};
 use sha3::{Digest, Keccak256};
 use std::{
-    collections::BTreeMap,
     collections::HashMap,
     fs::File,
     io::{self, BufReader, BufWriter, ErrorKind, Read},
@@ -19,26 +18,54 @@ use std::{
     time::Instant,
 };
 use thiserror::Error;
-use validation::BatchInfo;
+use validation::local_target;
+use wasmer::sys::CompilerConfig;
 use wasmer::{
-    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store,
+    imports, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError,
+    Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
-pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
-    let mut store = match opts.validator.cranelift {
-        true => get_store_with_cranelift_compiler(),
-        false => get_store_with_llvm_compiler(),
-    };
+/// A pre-compiled WASM module bundled with the Engine that produced it.
+///
+/// Cheap to clone (both `Module` and `Engine` are Arc-based internally).
+/// Safe to share across threads (`Send + Sync`).
+///
+/// Use [`compile_module`] to create one, then [`instantiate`] to create
+/// per-request instances cheaply.
+#[derive(Clone)]
+pub struct CompiledModule {
+    module: Module,
+    engine: Engine,
+}
+
+/// Compiles a WASM binary into a reusable [`CompiledModule`].
+///
+/// This is the expensive operation that should be done once and cached.
+/// The resulting `CompiledModule` can be passed to [`instantiate`] to create
+/// per-request instances without re-compiling.
+pub fn compile_module(validator: &ValidatorOpts) -> Result<CompiledModule> {
+    let engine = make_engine(validator.cranelift);
+    let wasm = std::fs::read(&validator.binary)?;
+    let module = Module::new(&engine, wasm)?;
+    Ok(CompiledModule { module, engine })
+}
+
+/// Creates a new WASM instance from a pre-compiled module and per-request options.
+///
+/// This is the cheap, per-request operation. It creates a fresh `Store` from the
+/// compiled module's `Engine`, builds the `WasmEnv`, and instantiates the module.
+pub fn instantiate(
+    compiled: &CompiledModule,
+    opts: &Opts,
+) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
+    let mut store = Store::new(compiled.engine.clone());
 
     let env = WasmEnv::try_from(opts)?;
     let func_env = FunctionEnv::new(&mut store, env);
 
-    let wasm = std::fs::read(&opts.validator.binary)?;
-    let module = Module::new(&store, wasm)?;
     let imports = imports(&mut store, &func_env);
-    let instance = Instance::new(&mut store, &module, &imports)?;
+    let instance = Instance::new(&mut store, &compiled.module, &imports)?;
 
     let memory = instance.exports.get_memory("memory")?.clone();
     func_env.as_mut(&mut store).memory = Some(memory);
@@ -46,24 +73,42 @@ pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
     Ok((instance, func_env, store))
 }
 
-fn get_store_with_cranelift_compiler() -> Store {
+/// Creates a WASM instance by compiling the binary and instantiating it.
+///
+/// This is a convenience function that combines [`compile_module`] and [`instantiate`].
+/// For repeated executions with the same binary, prefer caching the result of
+/// `compile_module()` and calling `instantiate()` directly.
+pub fn create(opts: &Opts) -> Result<(Instance, FunctionEnv<WasmEnv>, Store)> {
+    let compiled = compile_module(&opts.validator)?;
+    instantiate(&compiled, opts)
+}
+
+fn make_engine(cranelift: bool) -> Engine {
+    match cranelift {
+        true => make_cranelift_engine(),
+        false => make_llvm_engine(),
+    }
+}
+
+fn make_cranelift_engine() -> Engine {
     let mut compiler = Cranelift::new();
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
-    Store::new(compiler)
+
+    Engine::from(compiler)
 }
 
 #[cfg(not(feature = "llvm"))]
-fn get_store_with_llvm_compiler() -> Store {
+fn make_llvm_engine() -> Engine {
     panic!("Please rebuild with the \"llvm\" feature for LLVM support");
 }
 #[cfg(feature = "llvm")]
-fn get_store_with_llvm_compiler() -> Store {
+fn make_llvm_engine() -> Engine {
     let mut compiler = wasmer_compiler_llvm::LLVM::new();
     compiler.canonicalize_nans(true);
     compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
     compiler.enable_verifier();
-    Store::new(compiler)
+    Engine::from(compiler)
 }
 
 fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Imports {
@@ -191,8 +236,6 @@ impl From<RuntimeError> for Escape {
 }
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
-pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
@@ -201,18 +244,12 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// An ordered list of the 8-byte globals
-    pub small_globals: [u64; 2],
-    /// An ordered list of the 32-byte globals
-    pub large_globals: [Bytes32; 2],
-    /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Preimages,
-    /// A collection of programs called during the course of execution
+    /// Validation input (globals, inbox, preimages). Note: module_asms is drained
+    /// into the `module_asms` field below during loading, so it will be empty at runtime.
+    pub input: validation::ValidationInput,
+    /// Arc-wrapped module assemblies, drained from `input.module_asms` to allow
+    /// cheap cloning when passing modules to stylus program threads.
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
-    /// The sequencer inbox's messages
-    pub sequencer_messages: Inbox,
-    /// The delayed inbox's messages
-    pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
     // threads
@@ -227,21 +264,32 @@ impl TryFrom<&Opts> for WasmEnv {
         env.process.debug = opts.validator.debug;
 
         match &opts.input_mode {
-            InputMode::Json { inputs } => prepare_env_from_json(inputs, opts.validator.debug),
-            InputMode::Local(local) => prepare_env_from_files(env, local),
-            InputMode::Native(native) => prepare_env_from_native(env, native),
-            InputMode::Continuous => Ok(env),
+            InputMode::Json { inputs } => {
+                let file = File::open(inputs)?;
+                let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
+                let input = validation::ValidationInput::from_request(&req, local_target())
+                    .map_err(|e| eyre::eyre!(e))?;
+                load_validation_input(&mut env, input);
+            }
+            InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,
+            InputMode::Native(vi) => load_validation_input(&mut env, vi.clone()),
+            InputMode::Continuous => {}
         }
+        Ok(env)
     }
 }
 
-fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
-    let mut native = NativeInput {
-        old_state: input.old_state.clone(),
-        inbox: vec![],
-        delayed_inbox: vec![],
-        preimages: HashMap::new(),
-        programs: HashMap::new(),
+fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
+    let mut vi = validation::ValidationInput {
+        small_globals: [
+            input.old_state.inbox_position,
+            input.old_state.position_within_message,
+        ],
+        large_globals: [
+            input.old_state.last_block_hash.0,
+            input.old_state.last_send_root.0,
+        ],
+        ..Default::default()
     };
 
     let mut inbox_position = input.old_state.inbox_position;
@@ -250,19 +298,13 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
     for path in &input.inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.inbox.push(BatchInfo {
-            number: inbox_position,
-            data: msg,
-        });
+        vi.sequencer_messages.insert(inbox_position, msg);
         inbox_position += 1;
     }
     for path in &input.delayed_inbox {
         let mut msg = vec![];
         File::open(path)?.read_to_end(&mut msg)?;
-        native.delayed_inbox.push(BatchInfo {
-            number: delayed_position,
-            data: msg,
-        });
+        vi.delayed_messages.insert(delayed_position, msg);
         delayed_position += 1;
     }
 
@@ -282,7 +324,10 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
             file.read_exact(&mut buf)?;
             preimages.push(buf);
         }
-        let keccak_preimages = native.preimages.entry(PreimageType::Keccak256).or_default();
+        let keccak_preimages = vi
+            .preimages
+            .entry(PreimageType::Keccak256 as u8)
+            .or_default();
         for preimage in preimages {
             let mut hasher = Keccak256::new();
             hasher.update(&preimage);
@@ -291,39 +336,18 @@ fn prepare_env_from_files(env: WasmEnv, input: &LocalInput) -> Result<WasmEnv> {
         }
     }
 
-    prepare_env_from_native(env, &native)
+    load_validation_input(env, vi);
+    Ok(())
 }
 
-fn prepare_env_from_native(mut env: WasmEnv, input: &NativeInput) -> Result<WasmEnv> {
+pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: validation::ValidationInput) {
     env.process.already_has_input = true;
-
-    for msg in &input.inbox {
-        env.sequencer_messages.insert(msg.number, msg.data.clone());
+    let module_asms = std::mem::take(&mut input.module_asms);
+    for (module_hash, module_asm) in module_asms {
+        env.module_asms
+            .insert(Bytes32(module_hash), module_asm.into());
     }
-    for msg in &input.delayed_inbox {
-        env.delayed_messages.insert(msg.number, msg.data.clone());
-    }
-
-    for (preimage_type, preimages_map) in &input.preimages {
-        let type_map = env.preimages.entry(*preimage_type).or_default();
-        for (hash, preimage) in preimages_map {
-            type_map.insert(*hash, preimage.clone());
-        }
-    }
-
-    for (hash, program) in &input.programs {
-        env.module_asms.insert(*hash, program.as_ref().into());
-    }
-
-    env.small_globals = [
-        input.old_state.inbox_position,
-        input.old_state.position_within_message,
-    ];
-    env.large_globals = [
-        input.old_state.last_block_hash,
-        input.old_state.last_send_root,
-    ];
-    Ok(env)
+    env.input = input;
 }
 
 pub struct ProcessEnv {

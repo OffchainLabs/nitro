@@ -26,7 +26,7 @@ type FilterService struct {
 
 // NewFilterService creates a new address-filteress service.
 // Returns nil if the service is not enabled in the configuration.
-func NewFilterService(ctx context.Context, config *Config) (*FilterService, error) {
+func NewFilterService(config *Config) (*FilterService, error) {
 	if !config.Enable {
 		return nil, nil
 	}
@@ -36,15 +36,11 @@ func NewFilterService(ctx context.Context, config *Config) (*FilterService, erro
 	}
 
 	hashStore := NewHashStore(config.CacheSize)
-	syncMgr, err := NewS3SyncManager(ctx, config, hashStore)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create S3 syncer: %w", err)
-	}
 
 	return &FilterService{
 		config:         config,
 		hashStore:      hashStore,
-		syncMgr:        syncMgr,
+		syncMgr:        NewS3SyncManager(config, hashStore),
 		addressChecker: NewHashedAddressChecker(hashStore, config.AddressCheckerWorkerCount, config.AddressCheckerQueueSize),
 	}, nil
 }
@@ -57,6 +53,11 @@ func (s *FilterService) Initialize(ctx context.Context) error {
 		"bucket", s.config.S3.Bucket,
 		"key", s.config.S3.ObjectKey,
 	)
+
+	err := s.syncMgr.Initialize(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to init S3 syncer: %w", err)
+	}
 
 	// Force download (ignore ETag check for initial load)
 	if err := s.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
@@ -83,7 +84,7 @@ func (s *FilterService) Start(ctx context.Context) {
 		return s.config.PollInterval
 	})
 
-	s.addressChecker.Start(ctx)
+	s.addressChecker.Start(s.GetContext())
 
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,

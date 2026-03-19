@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     if opts.print_wasmmoduleroot {
         match Machine::new_from_wavm(&opts.binary) {
             Ok(mach) => {
-                println!("0x{}", mach.get_modules_root());
+                println!("{}", mach.get_modules_root());
                 return Ok(());
             }
             Err(err) => {
@@ -157,10 +157,10 @@ fn main() -> Result<()> {
 
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
-        writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
+        writeln!(module_root_file, "{}", mach.get_modules_root())?;
         module_root_file.flush()?;
 
-        mach.serialize_binary(output_path.join("machine.wavm.br"))?;
+        mach.serialize_binary(output_path.join("machine.v2.wavm.br"))?;
         while !mach.next_instruction_is_host_io() {
             mach.step_n(1)?;
         }
@@ -217,8 +217,9 @@ fn main() -> Result<()> {
             *count_entry += 1;
             let count = *count_entry;
             // Apply an exponential backoff to how often to prove an instruction;
-            let prove =
-                count < 5 || (count < 25 && count % 5 == 0) || (count < 125 && count % 25 == 0);
+            let prove = count < 5
+                || (count < 25 && count.is_multiple_of(5))
+                || (count < 125 && count.is_multiple_of(25));
             if !prove {
                 mach.step_n(1)?;
                 continue;
@@ -316,9 +317,9 @@ fn main() -> Result<()> {
             let after = mach.hash();
             println!(" - done");
             proofs.push(ProofInfo {
-                before: before.to_string(),
+                before: hex::encode(before),
                 proof: hex::encode(proof),
-                after: after.to_string(),
+                after: hex::encode(after),
             });
             mach.step_n(opts.proving_interval.saturating_sub(1))?;
         }
@@ -338,9 +339,9 @@ fn main() -> Result<()> {
     if !proofs.is_empty() && mach.is_halted() {
         let hash = mach.hash();
         proofs.push(ProofInfo {
-            before: hash.to_string(),
+            before: hex::encode(hash),
             proof: hex::encode(mach.serialize_proof()),
-            after: hash.to_string(),
+            after: hex::encode(hash),
         });
     }
 

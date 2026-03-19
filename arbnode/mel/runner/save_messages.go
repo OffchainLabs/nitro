@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 package melrunner
 
 import (
@@ -27,7 +29,7 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		return m.config.RetryInterval, err
 	}
 	if err := m.melDB.SaveState(saveAction.postState); err != nil {
-		log.Error("Error saving messages from MessageExtractor to MessageConsumer", "err", err)
+		log.Error("Error saving latest state as head state to db", "err", err)
 		return m.config.RetryInterval, err
 	}
 	return 0, m.fsm.Do(processNextBlock{

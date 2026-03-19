@@ -6,63 +6,42 @@ use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
 use arbutil::Color;
-use caller_env::{GuestPtr, MemAccess};
+use caller_env::GuestPtr;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
     time::Instant,
 };
-use validation::local_target;
 use validation::transfer::receive_validation_input;
 
 /// Reads 32-bytes of global state.
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    let Some(global) = exec.large_globals.get(idx as usize) else {
-        return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32");
-    };
-    mem.write_slice(out_ptr, &global[..32]);
-    Ok(())
+    caller_env::wavmio::get_global_state_bytes32(&mut mem, exec, idx, out_ptr)
+        .map_err(Escape::HostIO)
 }
 
 /// Writes 32-bytes of global state.
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    let slice = mem.read_slice(src_ptr, 32);
-    let slice = &slice.try_into().unwrap();
-    match exec.large_globals.get_mut(idx as usize) {
-        Some(global) => *global = *slice,
-        None => return Escape::hostio("global write oob in wavmio.setGlobalStateBytes32"),
-    };
-    Ok(())
+    caller_env::wavmio::set_global_state_bytes32(&mem, exec, idx, src_ptr).map_err(Escape::HostIO)
 }
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    match exec.small_globals.get(idx as usize) {
-        Some(global) => Ok(*global),
-        None => Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
-    }
+    caller_env::wavmio::get_global_state_u64(exec, idx).map_err(Escape::HostIO)
 }
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
     let (_, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    match exec.small_globals.get_mut(idx as usize) {
-        Some(global) => *global = val,
-        None => return Escape::hostio("global write out of bounds in wavmio.setGlobalStateU64"),
-    }
-    Ok(())
+    caller_env::wavmio::set_global_state_u64(exec, idx, val).map_err(Escape::HostIO)
 }
 
 /// Reads an inbox message.
@@ -74,16 +53,8 @@ pub fn read_inbox_message(
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    let message = match exec.sequencer_messages.get(&msg_num) {
-        Some(message) => message,
-        None => return Escape::hostio(format!("missing sequencer inbox message {msg_num}")),
-    };
-    let offset = offset as usize;
-    let len = std::cmp::min(32, message.len().saturating_sub(offset));
-    let read = message.get(offset..(offset + len)).unwrap_or_default();
-    mem.write_slice(out_ptr, read);
-    Ok(read.len() as u32)
+    caller_env::wavmio::read_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
+        .map_err(Escape::HostIO)
 }
 
 /// Reads a delayed inbox message.
@@ -95,16 +66,8 @@ pub fn read_delayed_inbox_message(
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
     ready_hostio(exec)?;
-
-    let message = match exec.delayed_messages.get(&msg_num) {
-        Some(message) => message,
-        None => return Escape::hostio(format!("missing delayed inbox message {msg_num}")),
-    };
-    let offset = offset as usize;
-    let len = std::cmp::min(32, message.len().saturating_sub(offset));
-    let read = message.get(offset..(offset + len)).unwrap_or_default();
-    mem.write_slice(out_ptr, read);
-    Ok(read.len() as u32)
+    caller_env::wavmio::read_delayed_inbox_message(&mut mem, exec, msg_num, offset, out_ptr)
+        .map_err(Escape::HostIO)
 }
 
 /// Retrieves the preimage of the given hash.
@@ -144,62 +107,55 @@ pub fn resolve_preimage_impl(
     name: &str,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = env.jit_env();
-    let offset = offset as usize;
+    ready_hostio(exec)?;
 
-    let Ok(preimage_type) = preimage_type.try_into() else {
+    if TryInto::<arbutil::PreimageType>::try_into(preimage_type).is_err() {
         eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
         return Ok(0);
-    };
-
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
     }
-
-    let hash = mem.read_bytes32(hash_ptr);
-
-    let Some(preimage) = exec
-        .preimages
-        .get(&preimage_type)
-        .and_then(|m| m.get(&hash))
-    else {
-        let hash_hex = hex::encode(hash);
-        error!("Missing requested preimage for hash {hash_hex} in {name}")
-    };
 
     #[cfg(debug_assertions)]
     {
         use arbutil::PreimageType;
+        use caller_env::MemAccess;
         use sha2::Sha256;
         use sha3::{Digest, Keccak256};
 
-        // Check if preimage rehashes to the provided hash. Exclude blob preimages
-        let calculated_hash: [u8; 32] = match preimage_type {
-            PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
-            PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
-            PreimageType::EthVersionedHash => *hash,
-            PreimageType::DACertificate => *hash, // Can't verify DACertificate hash, just accept it
-        };
-        if calculated_hash != *hash {
-            error!(
-                "Calculated hash {} of preimage {} does not match provided hash {}",
-                hex::encode(calculated_hash),
-                hex::encode(preimage),
-                hex::encode(*hash)
-            );
+        let hash: [u8; 32] = mem.read_fixed(hash_ptr);
+        let pt: PreimageType = preimage_type.try_into().unwrap();
+        if let Some(preimage) = exec
+            .input
+            .preimages
+            .get(&preimage_type)
+            .and_then(|m| m.get(&hash))
+        {
+            let calculated_hash: [u8; 32] = match pt {
+                PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
+                PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
+                PreimageType::EthVersionedHash => hash,
+                PreimageType::DACertificate => hash,
+            };
+            if calculated_hash != hash {
+                return Escape::hostio(format!(
+                    "Calculated hash {} of preimage {} does not match provided hash {}",
+                    hex::encode(calculated_hash),
+                    hex::encode(preimage),
+                    hex::encode(hash)
+                ));
+            }
         }
     }
 
-    if offset % 32 != 0 {
-        error!("bad offset {offset} in {name}")
-    };
-
-    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
-    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    mem.write_slice(out_ptr, read);
-    Ok(read.len() as u32)
+    caller_env::wavmio::resolve_preimage(
+        &mut mem,
+        exec,
+        preimage_type,
+        hash_ptr,
+        offset,
+        out_ptr,
+        name,
+    )
+    .map_err(Escape::HostIO)
 }
 
 pub fn validate_certificate(
@@ -207,24 +163,13 @@ pub fn validate_certificate(
     preimage_type: u8,
     hash_ptr: GuestPtr,
 ) -> Result<u8, Escape> {
-    let (mut mem, exec) = env.jit_env();
-    let hash = mem.read_bytes32(hash_ptr);
-
-    let Ok(preimage_type) = preimage_type.try_into() else {
-        eprintln!(
-            "Go trying to validate certificate for preimage with unknown type {preimage_type}"
-        );
-        return Ok(0);
-    };
-
-    // Check if preimage exists
-    let exists = exec
-        .preimages
-        .get(&preimage_type)
-        .and_then(|m| m.get(&hash))
-        .is_some();
-
-    Ok(if exists { 1 } else { 0 })
+    let (mem, exec) = env.jit_env();
+    Ok(caller_env::wavmio::validate_certificate(
+        &mem,
+        exec,
+        preimage_type,
+        hash_ptr,
+    ))
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
@@ -284,27 +229,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
     let mut reader = BufReader::new(socket.try_clone()?);
     let input = receive_validation_input(&mut reader)?;
-
-    env.small_globals = [input.start_state.batch, input.start_state.pos_in_batch];
-    env.large_globals = [input.start_state.block_hash, input.start_state.send_root];
-
-    for batch in input.batch_info {
-        env.sequencer_messages.insert(batch.number, batch.data);
-    }
-    if input.has_delayed_msg {
-        env.delayed_messages
-            .insert(input.delayed_msg_nr, input.delayed_msg);
-    }
-    for (preimage_type, preimages) in input.preimages {
-        let preimage_map = env.preimages.entry(preimage_type).or_default();
-        for (hash, preimage) in preimages {
-            preimage_map.insert(hash, preimage);
-        }
-    }
-    for (module_hash, module_asm) in &input.user_wasms[local_target()] {
-        env.module_asms
-            .insert(*module_hash, module_asm.as_vec().into());
-    }
+    crate::machine::load_validation_input(env, input);
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));

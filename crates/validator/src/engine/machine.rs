@@ -19,6 +19,7 @@
 //!    This TCP stream is then used for data transfer of the `ValidationRequest` and
 //!    the resulting `GlobalState`.
 
+use crate::config::get_jit_path;
 use crate::engine::machine_locator::MachineLocator;
 use crate::engine::{
     replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT,
@@ -29,8 +30,7 @@ use std::net::TcpListener;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{
-    env::{self},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -45,7 +45,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 use validation::transfer::{receive_response, send_validation_input};
-use validation::{GoGlobalState, ValidationInput};
+use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -65,7 +65,7 @@ impl JitMachine {
     pub async fn feed_machine(
         &self,
         wasm_memory_usage_limit: u64,
-        request: &ValidationInput,
+        request: &ValidationRequest,
     ) -> Result<GoGlobalState> {
         // 0. Ensure process is alive
         self.ensure_alive().await?;
@@ -93,7 +93,9 @@ impl JitMachine {
             .context("failed to open listener connection")?;
 
         // 5. Send data
-        send_validation_input(&mut conn, request)?;
+        let input =
+            ValidationInput::from_request(request, local_target()).map_err(|e| anyhow!(e))?;
+        send_validation_input(&mut conn, &input)?;
 
         // 6. Read Response and return new state
         match receive_response(&mut conn)? {
@@ -135,21 +137,12 @@ pub struct JitProcessManager {
 }
 
 impl JitProcessManager {
-    pub fn new_empty() -> Self {
-        Self {
-            wasm_memory_usage_limit: DEFAULT_WASM_MEMORY_USAGE_LIMIT,
-            machines: RwLock::new(HashMap::new()),
-            shutting_down: AtomicBool::new(false),
-        }
-    }
-
     pub fn new(locator: &MachineLocator) -> Result<Self> {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
             .iter()
-            .cloned()
             .map(|root_meta| {
-                let root_path = replay_binary(root_meta.path);
+                let root_path = replay_binary(&root_meta.path);
                 let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;
                 Ok::<(ModuleRoot, Arc<JitMachine>), anyhow::Error>((
                     root_meta.module_root,
@@ -167,7 +160,7 @@ impl JitProcessManager {
 
     pub async fn feed_machine_with_root(
         &self,
-        request: &ValidationInput,
+        request: &ValidationRequest,
         module_root: ModuleRoot,
     ) -> Result<GoGlobalState> {
         // Reject new operations if we're shutting down
@@ -211,18 +204,7 @@ impl JitProcessManager {
 }
 
 fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<JitMachine> {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let root_path: PathBuf = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf()) // Convert &Path to PathBuf
-        .unwrap_or_else(|| {
-            // This runs only if the parents don't exist
-            env::current_dir().expect("Failed to get current working directory")
-        });
-
-    // TODO: use helper to get jit_path (NIT-4347)
-    let jit_path = root_path.join("target").join("bin").join("jit");
+    let jit_path = get_jit_path()?;
     let mut cmd = Command::new(jit_path);
 
     if jit_cranelift {
@@ -245,6 +227,8 @@ fn create_jit_machine(jit_cranelift: bool, prover_bin_path: &PathBuf) -> Result<
     debug!("Waiting for JIT process to come up");
     sleep(Duration::from_secs(2));
     ensure_process_is_alive(&mut child)?;
+
+    info!("Machine with bin path {prover_bin_path:?} is up");
 
     let stdin = child
         .stdin
