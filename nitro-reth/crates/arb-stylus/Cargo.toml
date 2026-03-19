@@ -16,6 +16,9 @@ alloy-primitives = { workspace = true }
 
 # Wasmer
 wasmer = { workspace = true }
+wasmer-compiler = "4.4"
+wasmer-types = "4.4"
+wasmparser = "0.121"
 
 # Revm
 revm = { workspace = true }

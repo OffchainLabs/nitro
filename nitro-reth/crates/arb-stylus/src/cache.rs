@@ -122,11 +122,22 @@ pub fn deserialize_module(
 impl CompileConfig {
     /// Create a wasmer Engine with the configured middleware.
     pub fn engine(&self) -> Engine {
-        use wasmer::{sys::EngineBuilder, Cranelift, CraneliftOptLevel};
+        use std::sync::Arc;
+        use wasmer::{sys::EngineBuilder, CompilerConfig, Cranelift, CraneliftOptLevel};
+
+        use crate::middleware;
 
         let mut cranelift = Cranelift::new();
         cranelift.opt_level(CraneliftOptLevel::Speed);
         cranelift.canonicalize_nans(true);
+
+        if self.pricing.ink_header_cost > 0 {
+            let meter = middleware::InkMeter::new(self.pricing.ink_header_cost);
+            cranelift.push_middleware(Arc::new(meter));
+
+            let depth = middleware::DepthChecker::new(self.bounds.max_frame_size);
+            cranelift.push_middleware(Arc::new(depth));
+        }
 
         EngineBuilder::new(cranelift).into()
     }

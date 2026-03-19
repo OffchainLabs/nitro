@@ -8,6 +8,7 @@ pub mod evm_api_impl;
 pub mod host;
 pub mod ink;
 pub mod meter;
+pub mod middleware;
 pub mod native;
 pub mod pages;
 pub mod pricing;
