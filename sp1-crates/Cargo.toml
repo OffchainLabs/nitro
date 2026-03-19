@@ -50,7 +50,7 @@ tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch
 
 wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false, features = ["sys", "compiler", "singlepass", "wasmparser"] }
 wasmer-types = { path = "../crates/tools/wasmer/lib/types" }
-wasmer-vm = { path = "../crates/tools/wasmer/lib/vm" }
+wasmer-vm = { path = "../crates/tools/wasmer/lib/vm", features = ["force-baremetal"] }
 
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }

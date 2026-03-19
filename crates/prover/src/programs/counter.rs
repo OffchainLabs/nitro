@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
+#[cfg(not(feature = "sp1"))]
 use crate::Machine;
 
 use arbutil::operator::{OperatorCode, OperatorInfo};

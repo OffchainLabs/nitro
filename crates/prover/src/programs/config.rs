@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use wasmer_types::{Pages, SignatureIndex, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 use {
     super::{
         counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
@@ -181,7 +181,7 @@ impl CompileConfig {
         config
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", not(feature = "sp1")))]
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
@@ -220,13 +220,13 @@ impl CompileConfig {
             .into()
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", not(feature = "sp1")))]
     // cranelift only matters for compilation and not usually needed
     pub fn engine(&self, target: Target) -> Engine {
         self.engine_type(target, true)
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", not(feature = "sp1")))]
     pub fn store(&self, target: Target, cranelift: bool) -> Store {
         Store::new(self.engine_type(target, cranelift))
     }
