@@ -1,2 +1,2 @@
 ### Added
-- Add tip cap floor ArbOS state field and precompile to allow collecting transaction tips when the tip meets or exceeds the configured floor.
+- Add tip collection ArbOS state field and precompile to allow the chain owner to enable or disable collecting transaction tips.
