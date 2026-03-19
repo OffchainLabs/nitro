@@ -258,7 +258,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	addNewBatchPoster(ctx, t, builder, srv.Address)
 
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(10)), nil)})
 
 	var txs []*types.Transaction
 

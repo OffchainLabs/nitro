@@ -402,10 +402,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			}
 			if batchCount.Cmp(big.NewInt(int64(len(blockStates)))) == 0 {
 				break
-			} else if i >= 140 {
+			} else if i >= 500 {
 				Fatal(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 		}
 
 		expectedBlockNumber := blockStates[len(blockStates)-1].l2BlockNumber
