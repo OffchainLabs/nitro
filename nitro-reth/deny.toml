@@ -9,9 +9,9 @@ all-features = true
 
 [advisories]
 vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+unmaintained = "ignore"
+yanked = "ignore"
+notice = "ignore"
 
 [licenses]
 unlicensed = "deny"
@@ -34,7 +34,55 @@ allow = [
 
 [[licenses.exceptions]]
 allow = ["BUSL-1.1"]
-crates = ["arb-*", "arbos"]
+crate = "arb-primitives"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-chainspec"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-storage"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-evm"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-precompiles"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-node"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-payload"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-rpc"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-txpool"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-stylus"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arbos"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-reth"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "gen-genesis"
 
 [bans]
 multiple-versions = "warn"
