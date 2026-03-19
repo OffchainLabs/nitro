@@ -61,6 +61,7 @@ func init() {
 // SetCraneliftFallback configures whether to fall back to Cranelift on LLVM failure.
 func SetCraneliftFallback(enabled bool) {
 	craneliftFallback.Store(enabled)
+	log.Info("Cranelift fallback for Stylus compilation configured", "enabled", enabled)
 }
 
 var (
@@ -244,7 +245,7 @@ func activateProgramInternal(
 						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
 					} else {
-						log.Error("stylus LLVM compilation failed and cranelift fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+						log.Warn("stylus LLVM compilation failed and cranelift fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
 					}
 				}
 				results <- result{target, asm, err}
@@ -272,9 +273,10 @@ func activateProgramInternal(
 			"codehash", codehash,
 			"moduleHash", info.moduleHash,
 			"targets", targets,
+			"craneliftFallback", craneliftFallback.Load(),
 			"err", err,
 		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (craneliftFallback=%v): %v", addressForLogging, craneliftFallback.Load(), err))
 	}
 	return info, asmMap, err
 }
