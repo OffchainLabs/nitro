@@ -39,7 +39,7 @@ impl ValidationInput {
         }
 
         let mut delayed_messages = Inbox::new();
-        if req.delayed_msg_nr != 0 && !req.delayed_msg.is_empty() {
+        if req.has_delayed_msg && !req.delayed_msg.is_empty() {
             delayed_messages.insert(req.delayed_msg_nr, req.delayed_msg.clone());
         }
 
