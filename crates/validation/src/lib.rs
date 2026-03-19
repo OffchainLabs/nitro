@@ -39,7 +39,7 @@ impl ValidationInput {
         }
 
         let mut delayed_messages = Inbox::new();
-        if req.has_delayed_msg && !req.delayed_msg.is_empty() {
+        if req.has_delayed_msg {
             delayed_messages.insert(req.delayed_msg_nr, req.delayed_msg.clone());
         }
 
@@ -261,15 +261,6 @@ mod tests {
     fn from_request_skips_delayed_message_when_flag_false() {
         let mut req = make_request();
         req.has_delayed_msg = false;
-        let input = ValidationInput::from_request(&req, "host");
-
-        assert!(input.delayed_messages.is_empty());
-    }
-
-    #[test]
-    fn from_request_skips_delayed_message_when_empty() {
-        let mut req = make_request();
-        req.delayed_msg = vec![];
         let input = ValidationInput::from_request(&req, "host");
 
         assert!(input.delayed_messages.is_empty());
