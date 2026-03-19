@@ -82,27 +82,22 @@ func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config
 	return &nodeConfig
 }
 
-// waitForBlocksToCatchup has a time "limit" factor to limit running this function forever in weird cases such as running with race detection in nightly CI
+// waitForBlocksToCatchup polls until both clients report the same latest block number, or the limit elapses.
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client, limit time.Duration) {
-	deadline := time.After(limit)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("waitForBlocksToCatchup: context cancelled: %v", ctx.Err())
-		case <-ticker.C:
-			headerA, err := clientA.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			headerB, err := clientB.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			if headerA.Number.Cmp(headerB.Number) == 0 {
-				return
-			}
-		case <-deadline:
-			t.Fatal("waitForBlocksToCatchup didnt finish")
+	t.Helper()
+	pollUntil(t, ctx, limit, 10*time.Millisecond, "blocks to catch up between nodes", func() bool {
+		headerA, err := clientA.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Logf("HeaderByNumber(A) error (will retry): %v", err)
+			return false
 		}
-	}
+		headerB, err := clientB.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Logf("HeaderByNumber(B) error (will retry): %v", err)
+			return false
+		}
+		return headerA.Number.Cmp(headerB.Number) == 0
+	})
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {

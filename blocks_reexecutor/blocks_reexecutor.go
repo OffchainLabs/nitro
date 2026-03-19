@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/spf13/pflag"
 
@@ -108,15 +109,16 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // lint:require-exhaustive-initialization
 type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
-	config       *Config
-	db           state.Database
-	blockchain   *core.BlockChain
-	stateFor     arbitrum.StateForHeaderFunction
-	done         chan struct{}
-	fatalErrChan chan error
-	blocks       [][3]uint64 // start, end and minBlocksPerThread of block ranges
-	mutex        sync.Mutex
-	success      chan struct{}
+	config        *Config
+	db            state.Database
+	blockchain    *core.BlockChain
+	stateFor      arbitrum.StateForHeaderFunction
+	done          chan struct{}
+	fatalErrChan  chan error
+	fatalReported atomic.Bool // set by reportFatalErr; checked by Impl and Start to stop launching work
+	blocks        [][3]uint64 // start, end and minBlocksPerThread of block ranges
+	mutex         sync.Mutex
+	success       chan struct{}
 }
 
 func New(c *Config, blockchain *core.BlockChain, ethDb ethdb.Database) (*BlocksReExecutor, error) {
@@ -217,40 +219,61 @@ func logState(header *types.Header, hasState bool) {
 	}
 }
 
-// LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.MinBlocksPerThread, currentBlock] to the last available valid state
+// reportFatalErr marks a fatal error and attempts to send it to the fatal error channel.
+// The fatalReported flag is set unconditionally so that Impl and Start stop launching
+// new work. If the channel is full, this new error is logged and dropped.
+func (s *BlocksReExecutor) reportFatalErr(err error) {
+	s.fatalReported.Store(true)
+	select {
+	case s.fatalErrChan <- err:
+	default:
+		log.Error("blocksReExecutor: fatal error channel full, error already reported", "err", err)
+	}
+}
+
+// LaunchBlocksReExecution launches a thread to re-execute blocks ending at currentBlock,
+// starting from at most minBlocksPerThread blocks before currentBlock (clamped to startBlock
+// and adjusted to the last block with available state). It returns the block number from
+// which re-execution actually starts (after state-availability adjustment), which callers
+// use as the next upper bound. Every call produces exactly one send on s.done, regardless
+// of whether a goroutine is launched or an early error occurs.
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlock, currentBlock, minBlocksPerThread uint64) uint64 {
+	launched := false
+	defer func() {
+		if !launched {
+			s.done <- struct{}{}
+		}
+	}()
 	start := arbmath.SaturatingUSub(currentBlock, minBlocksPerThread)
 	if start < startBlock {
 		start = startBlock
 	}
 	startHeader := s.blockchain.GetHeaderByNumber(start)
 	if startHeader == nil {
-		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get start header at %d", start)
-		s.done <- struct{}{}
+		s.reportFatalErr(fmt.Errorf("blocksReExecutor failed to get start header at %d", start))
 		return startBlock
 	}
 	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, startHeader, logState, -1)
 	if err != nil {
-		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
-		s.done <- struct{}{}
+		s.reportFatalErr(fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err))
 		return startBlock
 	}
 	start = startHeader.Number.Uint64()
 	targetHeader := s.blockchain.GetHeaderByNumber(currentBlock)
 	if targetHeader == nil {
 		release()
-		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get target header at %d", currentBlock)
-		s.done <- struct{}{}
+		s.reportFatalErr(fmt.Errorf("blocksReExecutor failed to get target header at %d", currentBlock))
 		return startBlock
 	}
+	launched = true
 	s.LaunchThread(func(ctx context.Context) {
+		defer func() { s.done <- struct{}{} }()
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
-			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
+			s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		}
-		s.done <- struct{}{}
 	})
 	return start
 }
@@ -259,23 +282,31 @@ func (s *BlocksReExecutor) Impl(ctx context.Context, startBlock, currentBlock, m
 	var threadsLaunched uint64
 	end := currentBlock
 	for i := 0; i < s.config.Room && currentBlock > startBlock; i++ {
+		if s.fatalReported.Load() {
+			break
+		}
 		threadsLaunched++
 		currentBlock = s.LaunchBlocksReExecution(ctx, startBlock, currentBlock, minBlocksPerThread)
 	}
-	for {
+	// Wait for all launched threads to complete, launching new work as threads
+	// finish unless a fatal error has been reported or the context is cancelled.
+	for threadsLaunched > 0 {
 		select {
 		case <-s.done:
-			if currentBlock > startBlock {
+			threadsLaunched--
+			if !s.fatalReported.Load() && currentBlock > startBlock {
+				threadsLaunched++
 				currentBlock = s.LaunchBlocksReExecution(ctx, startBlock, currentBlock, minBlocksPerThread)
-			} else {
+			}
+		case <-ctx.Done():
+		}
+		// After a fatal error or context cancellation, drain without launching new work.
+		if s.fatalReported.Load() || ctx.Err() != nil {
+			for threadsLaunched > 0 {
+				<-s.done
 				threadsLaunched--
 			}
-
-		case <-ctx.Done():
 			return 0
-		}
-		if threadsLaunched == 0 {
-			break
 		}
 	}
 	log.Info("BlocksReExecutor successfully completed re-execution of blocks against historic state", "stateAt", startBlock, "startBlock", startBlock+1, "endBlock", end)
@@ -289,13 +320,16 @@ func (s *BlocksReExecutor) Start(ctx context.Context) {
 		// lowestBlockNotReExecuted represents the block after which either all the blocks have already been reexecuted or not in scope of reexecution
 		lowestBlockNotReExecuted := s.blocks[0][1] + 1
 		for _, blocks := range s.blocks {
+			if s.fatalReported.Load() {
+				break
+			}
 			if lowestBlockNotReExecuted > blocks[0] {
 				lowestBlockNotReExecuted = s.Impl(ctx, blocks[0], min(lowestBlockNotReExecuted, blocks[1]), blocks[2])
 			} else {
 				log.Info("BlocksReExecutor successfully completed re-execution of blocks against historic state", "stateAt", blocks[0], "startBlock", blocks[0]+1, "endBlock", blocks[1])
 			}
 		}
-		if s.success != nil {
+		if s.success != nil && !s.fatalReported.Load() && ctx.Err() == nil {
 			close(s.success)
 		}
 	})
@@ -304,12 +338,17 @@ func (s *BlocksReExecutor) Start(ctx context.Context) {
 func (s *BlocksReExecutor) WaitForReExecution(ctx context.Context) error {
 	select {
 	case err := <-s.fatalErrChan:
-		log.Error("shutting BlocksReExecutor down due to fatal error", "err", err)
-		return fmt.Errorf("shutting BlocksReExecutor down due to fatal error %w", err)
+		return s.wrapFatalErr(err)
 	case <-s.success:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
+}
 
-	return nil
+func (s *BlocksReExecutor) wrapFatalErr(err error) error {
+	log.Error("shutting BlocksReExecutor down due to fatal error", "err", err)
+	return fmt.Errorf("shutting BlocksReExecutor down due to fatal error: %w", err)
 }
 
 func (s *BlocksReExecutor) StopAndWait() {

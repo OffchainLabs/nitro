@@ -742,11 +742,14 @@ drain:
 		}
 	}
 
+	if uint64(len(batchPosterTxs)) > numBatches {
+		t.Logf("WARNING: captured %d batch poster txs during drain, expected %d", len(batchPosterTxs), numBatches)
+	}
+
 	// Verify the filter actually blocked batches from landing on L1.
 	batchCountBeforeReplay := GetBatchCount(t, builder)
-	alreadyLanded := batchCountBeforeReplay - initialBatchCount
-	if alreadyLanded > 0 {
-		t.Fatalf("expected filter to block all batches, but %d landed on L1", alreadyLanded)
+	if batchCountBeforeReplay != initialBatchCount {
+		t.Fatalf("expected filter to block all batches, but %d landed on L1", batchCountBeforeReplay-initialBatchCount)
 	}
 
 	// Disable the filter and send the captured batch poster transactions.
@@ -770,11 +773,10 @@ drain:
 		_, err := EnsureTxSucceeded(ctx, builder.L1.Client, tx)
 		Require(t, err)
 	}
-	// Verify that the total number of new batches (landed + replayed) equals numBatches.
-	totalNewBatches := alreadyLanded + uint64(len(sentTxs))
-	if totalNewBatches != numBatches {
-		t.Fatalf("expected %d total new batches, got %d (already landed: %d, replayed: %d)",
-			numBatches, totalNewBatches, alreadyLanded, len(sentTxs))
+	// If any batches were skipped due to stale nonces, the test's assumptions are violated.
+	if uint64(len(sentTxs)) != numBatches {
+		t.Fatalf("expected %d replayed batches, got %d (skipped %d due to stale nonce out of %d captured)",
+			numBatches, len(sentTxs), skipped, len(batchPosterTxs))
 	}
 	CheckBatchCount(t, builder, initialBatchCount+numBatches)
 }

@@ -344,7 +344,10 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	// Wait for chosen sequencer to change on redis
 	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "chosen sequencer to change", func() bool {
 		currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
-		Require(t, err)
+		if err != nil {
+			t.Logf("CurrentChosenSequencer error (will retry): %v", err)
+			return false
+		}
 		if currentChosen != seqA.Stack.HTTPEndpoint() {
 			t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
 			return false

@@ -312,7 +312,7 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	redisBoldValidationClientConfig := redis.TestValidationClientConfig
+	redisBoldValidationClientConfig := redis.TestValidationClientConfig // copy to avoid mutating package-level var in parallel tests
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	redisBoldValidationClientConfig.RedisURL = redisUrl
 	redisBoldValidationClientConfig.CreateStreams = true

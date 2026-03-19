@@ -112,12 +112,16 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 			}
 			broadcastMsg, err := b.NewBroadcastFeedMessage(msg, i)
 			if err != nil {
-				t.Errorf("NewBroadcastFeedMessage failed: %v", err)
+				if ctx.Err() == nil {
+					t.Errorf("NewBroadcastFeedMessage failed at index %d: %v", i, err)
+				}
 				cancel()
 				return
 			}
 			if err := b.BroadcastFeedMessages([]*message.BroadcastFeedMessage{broadcastMsg}); err != nil {
-				t.Errorf("BroadcastFeedMessages failed: %v", err)
+				if ctx.Err() == nil {
+					t.Errorf("BroadcastFeedMessages failed at index %d: %v", i, err)
+				}
 				cancel()
 				return
 			}

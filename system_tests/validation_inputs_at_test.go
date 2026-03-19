@@ -70,6 +70,7 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 	// not yet confirmed on L1 ("batch not found on L1 yet").
 	var inputJson server_api.InputJSON
 	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidationInputsAt", "batch not found on L1", func() error {
+		var err error
 		inputJson, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.LocalTarget(), rawdb.TargetWasm)
 		return err
 	})

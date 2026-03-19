@@ -239,9 +239,8 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		}
 
 		if i%16 == 0 {
-			// Wait for the batch poster to post a new batch. The batch poster
-			// test config uses PollInterval=10ms and MaxDelay=0, but under
-			// -race each poll cycle is slower (~50-100ms effective).
+			// Wait for the batch poster to post a new batch. Under -race
+			// each poll cycle is significantly slower, so allow more retries.
 			for j := 50; j > 0; j-- {
 				newBatchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 				Require(t, err)

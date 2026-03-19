@@ -153,10 +153,8 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 		}
 	}
 
-	// The main (sequencer) node must process the delayed message through the
-	// full pipeline before it posts a batch; the secondary node only needs to
-	// sync the already-posted batch. Under -race both are slower, but the
-	// sequencer pipeline is the bottleneck so it gets the larger timeout.
+	// Under -race both pipelines are significantly slower; use a generous
+	// 60s timeout for each to avoid flakes.
 	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*60)
 	Require(t, err, "Failed waiting for Tx on main node")
 

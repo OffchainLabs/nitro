@@ -2828,7 +2828,7 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	// Retry ValidateResult because the batch may not yet be confirmed on L1
 	// ("batch not found on L1 yet").
 	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidateResult", "batch not found on L1", func() error {
-		_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+		_, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
 			ctx,
 			arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
 			false,

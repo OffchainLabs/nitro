@@ -1364,10 +1364,12 @@ func BridgeBalance(
 				break
 			}
 			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
-			// The delayed sequencer requires FinalizeDistance (20) L1 confirmations
-			// before processing a delayed message. Each loop iteration creates one
-			// L1 block, so we need 20+ iterations minimum. Under -race the L1→L2
-			// pipeline is ~3x slower, hence the generous 600-iteration (60s) budget.
+			if ctx.Err() != nil {
+				Fatal(t, "bridging failed: context cancelled")
+			}
+			// Each loop iteration creates one L1 block. Under -race the
+			// L1→L2 pipeline is significantly slower, hence the generous
+			// 600-iteration budget.
 			if i > 600 {
 				Fatal(t, "bridging failed")
 			}
@@ -2082,6 +2084,20 @@ func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.C
 	return ethclient.NewClient(backend.Attach())
 }
 
+// isContextError returns true if the error is a context cancellation or
+// deadline exceeded, checking both errors.Is unwrapping and string matching
+// for wrapped errors that don't properly chain context sentinel errors.
+func isContextError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded")
+}
+
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
 	go func() {
 		select {
@@ -2092,7 +2108,7 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 			// simultaneously and Go's select picks randomly. Ignore context
 			// cancellation errors that are expected during normal shutdown,
 			// but still report any other errors.
-			if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			if ctx.Err() != nil && isContextError(err) {
 				return
 			}
 			t.Errorf("error occurred: %v", err)
@@ -2106,6 +2122,7 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 // pollUntil calls check every interval until it returns true, ctx is cancelled, or timeout elapses.
 // The effective timeout is capped by the context's deadline if one is set.
 // On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
+// The check function should handle errors by logging and returning false, not by calling Fatal/Require.
 func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -2113,7 +2130,7 @@ func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interva
 		deadline = ctxDeadline
 	}
 	iterations := 0
-	for time.Now().Before(deadline) {
+	for {
 		if ctx.Err() != nil {
 			t.Fatalf("context cancelled while waiting for %s after %d iterations: %v", desc, iterations, ctx.Err())
 		}
@@ -2121,29 +2138,38 @@ func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interva
 			return
 		}
 		iterations++
+		if time.Now().After(deadline) {
+			break
+		}
 		time.Sleep(interval)
 	}
 	t.Fatalf("timed out waiting for %s after %d iterations", desc, iterations)
 }
 
 // retryUntilFound retries fn until it succeeds, retrying only errors whose message
-// contains retrySubstr (e.g. "not found on L1"). Non-matching errors fail immediately.
+// contains retrySubstr (e.g. "not found" or any substring of the expected transient error).
+// It fatals on context cancellation, retry exhaustion, or non-matching errors.
+// Like pollUntil, it calls t.Fatalf on failure, so it must be called from the test goroutine.
 func retryUntilFound(t *testing.T, ctx context.Context, maxRetries int, interval time.Duration, desc string, retrySubstr string, fn func() error) {
 	t.Helper()
+	var lastErr error
 	for retry := 0; retry < maxRetries; retry++ {
-		err := fn()
-		if err == nil {
+		lastErr = fn()
+		if lastErr == nil {
 			return
 		}
-		if !strings.Contains(err.Error(), retrySubstr) {
-			t.Fatalf("%s: non-retryable error: %v", desc, err)
+		// Check context before classifying the error: context cancellation
+		// during fn() should not be treated as a non-retryable error.
+		if ctx.Err() != nil {
+			t.Fatalf("%s: context cancelled after %d retries: %v (last error: %v)", desc, retry+1, ctx.Err(), lastErr)
 		}
-		if ctx.Err() != nil || retry == maxRetries-1 {
-			t.Fatalf("%s: failed after %d retries (ctx: %v): %v", desc, retry+1, ctx.Err(), err)
+		if !strings.Contains(lastErr.Error(), retrySubstr) {
+			t.Fatalf("%s: non-retryable error: %v", desc, lastErr)
 		}
-		t.Logf("%s retry %d: %v", desc, retry, err)
+		t.Logf("%s retry %d/%d: %v", desc, retry+1, maxRetries, lastErr)
 		time.Sleep(interval)
 	}
+	t.Fatalf("%s: exhausted %d retries: %v", desc, maxRetries, lastErr)
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {

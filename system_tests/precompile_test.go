@@ -895,7 +895,6 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 
 	// Test the shortening boundary: once the stored value is within the
 	// [now, now+FeatureEnableDelay] window, the new timestamp must be >= stored.
-	// Use block timestamps and a short sleep instead of the original 15s.
 	//
 	// Set enable-at to blockTime + delay + 2, then sleep 3s so the stored value
 	// falls into the shortening window (stored <= new_blockTime + delay).
@@ -912,8 +911,7 @@ func TestNativeTokenManagementDisabledByDefault(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// Setting a new value later than stored should succeed
-	// #nosec G115
-	shortenedForward := barelyOverDelay + 10
+	shortenedForward := barelyOverDelay + 1
 	tx, err = arbOwner.SetNativeTokenManagementFrom(&authOwner, shortenedForward)
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)

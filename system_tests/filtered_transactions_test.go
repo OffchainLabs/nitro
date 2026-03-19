@@ -77,15 +77,17 @@ func TestManageTransactionFilterers(t *testing.T) {
 	// block timestamp at which the next tx actually executes.
 	hdr, err = builder.L2.Client.HeaderByNumber(ctx, nil)
 	require.NoError(t, err)
-	// Add 120s buffer to account for drift between the header timestamp we read
-	// and the block timestamp at which the enable tx actually executes in CI.
-	enableAt := hdr.Time + precompiles.FeatureEnableDelay + 120
+	// Add a 120-second buffer to account for drift between the header
+	// timestamp we read and the block timestamp at which the enable tx
+	// actually executes in CI.
+	const enableBuffer uint64 = 120
+	enableAt := hdr.Time + precompiles.FeatureEnableDelay + enableBuffer
 	tx, err := arbOwner.SetTransactionFilteringFrom(&ownerTxOpts, enableAt)
 	require.NoError(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	warpL1Time(t, builder, ctx, hdr.Time, precompiles.FeatureEnableDelay+121)
+	warpL1Time(t, builder, ctx, hdr.Time, precompiles.FeatureEnableDelay+enableBuffer+1)
 
 	// Initially neither owner nor user can modify filtered transactions,
 	// but both can read (get) filtered status

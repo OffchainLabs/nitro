@@ -45,10 +45,10 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 }
 
 // waitForChosenSequencer polls redis until CHOSENSEQ_KEY is set, indicating
-// a sequencer has been elected master.
+// a sequencer has been elected.
 func waitForChosenSequencer(t *testing.T, ctx context.Context, redisClient redis.UniversalClient, pollInterval time.Duration) {
 	t.Helper()
-	pollUntil(t, ctx, 30*time.Second, pollInterval, "sequencer to become master", func() bool {
+	pollUntil(t, ctx, 30*time.Second, pollInterval, "sequencer to become chosen", func() bool {
 		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
 		if errors.Is(err, redis.Nil) {
 			return false

@@ -45,7 +45,9 @@ func TestSequencerParallelNonces(t *testing.T) {
 				t.Log("Submitting transaction with nonce", tx.Nonce())
 				err := builder.L2.Client.SendTransaction(ctx, tx)
 				if err != nil {
-					t.Errorf("SendTransaction failed: %v", err)
+					if ctx.Err() == nil {
+						t.Errorf("SendTransaction failed: %v", err)
+					}
 					cancel()
 					return
 				}

@@ -84,12 +84,8 @@ func TestFinalizedBlocksMovedToAncients(t *testing.T) {
 			t.Logf("Ancients() error (will retry): %v", err)
 			return false
 		}
-		return ancients >= finalizedBlockNumber+1
+		return ancients == finalizedBlockNumber+1
 	})
-	// ancients must be finalizedBlock+1 since only blocks in [0, finalizedBlock] must be included in ancients.
-	if ancients != finalizedBlockNumber+1 {
-		t.Fatalf("Ancients should be %d, but got %d", finalizedBlockNumber+1, ancients)
-	}
 
 	ancient, err := builder.L2.ExecNode.ExecutionDB.Ancient(rawdb.ChainFreezerHeaderTable, 8)
 	if err != nil || ancient == nil {
