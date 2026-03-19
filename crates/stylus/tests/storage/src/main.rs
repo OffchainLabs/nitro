@@ -6,7 +6,9 @@
 use stylus_sdk::{
     alloy_primitives::B256,
     console,
-    storage::{StorageCache, GlobalStorage},
+    host::VM,
+    prelude::*,
+    storage::{GlobalStorage, StorageCache},
     stylus_proc::entrypoint,
 };
 
@@ -17,20 +19,20 @@ extern "C" {
 }
 
 #[entrypoint]
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>, vm: VM) -> Result<Vec<u8>, Vec<u8>> {
     let slot = B256::try_from(&input[1..33]).unwrap();
 
     Ok(match input[0] {
         0 => {
             console!("read {slot}");
-            let data = StorageCache::get_word(slot.into());
+            let data = StorageCache::get_word(vm, slot.into());
             console!("value {data}");
             data.0.into()
         }
         1 => {
             console!("write {slot}");
             let data = B256::try_from(&input[33..]).unwrap();
-            unsafe { StorageCache::set_word(slot.into(), data) };
+            unsafe { StorageCache::set_word(vm, slot.into(), data) };
             console!(("value {data}"));
             vec![]
         }
@@ -38,11 +40,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             let mut data = [0; 32];
             transient_load_bytes32(slot.as_ptr(), data.as_mut_ptr());
             data.into()
-        }
+        },
         _ => unsafe {
             let data = B256::try_from(&input[33..]).unwrap();
             transient_store_bytes32(slot.as_ptr(), data.as_ptr());
             vec![]
-        }
+        },
     })
 }
