@@ -19,9 +19,10 @@ use std::{
 };
 use thiserror::Error;
 use validation::local_target;
+use wasmer::sys::CompilerConfig;
 use wasmer::{
-    imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
-    Module, RuntimeError, Store,
+    imports, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError,
+    Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -93,6 +94,7 @@ fn make_cranelift_engine() -> Engine {
     let mut compiler = Cranelift::new();
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
+
     Engine::from(compiler)
 }
 

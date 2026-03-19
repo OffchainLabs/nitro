@@ -18,10 +18,10 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-};
-#[cfg(all(feature = "native", not(feature = "sp1")))]
-use {
-    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
+    wasmer::{
+        sys::{Cranelift, CraneliftOptLevel, Target},
+        Engine, Store,
+    },
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -181,11 +181,11 @@ impl CompileConfig {
         config
     }
 
-    #[cfg(all(feature = "native", not(feature = "sp1")))]
+    #[cfg(feature = "native")]
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
-        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match cranelift {
+        let mut wasmer_config: Box<dyn wasmer::sys::CompilerConfig> = match cranelift {
             true => {
                 let mut wasmer_config = Cranelift::new();
                 wasmer_config.opt_level(CraneliftOptLevel::Speed);
@@ -220,13 +220,13 @@ impl CompileConfig {
             .into()
     }
 
-    #[cfg(all(feature = "native", not(feature = "sp1")))]
+    #[cfg(feature = "native")]
     // cranelift only matters for compilation and not usually needed
     pub fn engine(&self, target: Target) -> Engine {
         self.engine_type(target, true)
     }
 
-    #[cfg(all(feature = "native", not(feature = "sp1")))]
+    #[cfg(feature = "native")]
     pub fn store(&self, target: Target, cranelift: bool) -> Store {
         Store::new(self.engine_type(target, cranelift))
     }

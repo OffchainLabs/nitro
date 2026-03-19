@@ -19,17 +19,12 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
-#[cfg(all(feature = "native", feature = "sp1"))]
-use wasmer::sys::{FunctionMiddleware, MiddlewareError, MiddlewareReaderState, ModuleMiddleware};
-#[cfg(all(feature = "native", not(feature = "sp1")))]
-use wasmer::{FunctionMiddleware, MiddlewareError, MiddlewareReaderState, ModuleMiddleware};
-
 #[cfg(feature = "native")]
 use {
     super::value,
     std::marker::PhantomData,
-    wasmer::{ExportIndex, GlobalType, Mutability},
-    wasmer_types::{MemoryIndex, ModuleInfo},
+    wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
+    wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
 };
 
 pub mod config;
@@ -158,7 +153,7 @@ where
     fn feed(
         &mut self,
         op: Operator<'a>,
-        out: &mut MiddlewareReaderState<'a>,
+        out: &mut wasmer::sys::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{err:?}"));

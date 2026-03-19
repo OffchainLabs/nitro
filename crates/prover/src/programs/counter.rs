@@ -2,21 +2,17 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-#[cfg(not(feature = "sp1"))]
 use crate::Machine;
 
-#[cfg(feature = "sp1")]
-use crate::operator::{OperatorCode, OperatorInfo};
-#[cfg(not(feature = "sp1"))]
 use arbutil::operator::{OperatorCode, OperatorInfo};
 use eyre::{eyre, Result};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
+use wasmparser::Operator;
 use std::collections::BTreeMap;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
-use wasmparser::Operator;
 
 lazy_static! {
     /// Assigns each operator a sequential offset

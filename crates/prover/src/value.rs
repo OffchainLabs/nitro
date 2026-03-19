@@ -87,8 +87,7 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
         wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
         wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
-        #[cfg(feature = "sp1")]
-        _ => todo!(),
+        wasmer::Type::ExceptionRef => wasmer::wasmparser::ValType::Ref(RefType::EXNREF),
     }
 }
 

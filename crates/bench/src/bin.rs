@@ -24,7 +24,7 @@ struct Args {
     #[arg(short, long)]
     json_inputs: PathBuf,
 
-    /// Path to a machine.wavm.br
+    /// Path to a machine.v2.wavm.br
     #[arg(short, long)]
     binary: PathBuf,
 }
