@@ -6,7 +6,7 @@ package api
 import (
 	"context"
 	"errors"
-	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -20,35 +20,65 @@ import (
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type TransactionFiltererAPI struct {
-	apiMutex sync.Mutex // avoids concurrent transactions with the same nonce
+const filterQueueSize = 100
 
-	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
+type TransactionFiltererAPI struct {
+	stopwaiter.StopWaiter
+
+	queue chan common.Hash
+
+	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
 }
 
-// Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
-func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) (common.Hash, error) {
-	t.apiMutex.Lock()
-	defer t.apiMutex.Unlock()
+func NewTransactionFiltererAPI(
+	manager *precompilesgen.ArbFilteredTransactionsManager,
+	txOpts *bind.TransactOpts,
+) *TransactionFiltererAPI {
+	api := &TransactionFiltererAPI{
+		queue:  make(chan common.Hash, filterQueueSize),
+		txOpts: txOpts,
+	}
+	api.arbFilteredTransactionsManager.Store(manager)
+	return api
+}
 
+func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
+	t.StopWaiter.Start(ctx, t)
+	return stopwaiter.CallWhenTriggeredWith(&t.StopWaiterSafe, t.filter, t.queue)
+}
+
+// Filter adds the given transaction hash to the filtered transactions set,
+// which is managed by the ArbFilteredTransactionsManager precompile.
+// Requests are processed sequentially by a single consumer goroutine to avoid nonce collisions.
+func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+	select {
+	case t.queue <- txHashToFilter:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) {
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
 
 	log.Info("Received call to filter transaction", "txHashToFilter", txHashToFilter.Hex())
-	if t.arbFilteredTransactionsManager == nil {
-		return common.Hash{}, errors.New("sequencer client not set yet")
+	manager := t.arbFilteredTransactionsManager.Load()
+	if manager == nil {
+		log.Warn("Sequencer client not set yet")
+		return
 	}
-	tx, err := t.arbFilteredTransactionsManager.AddFilteredTransaction(&txOpts, txHashToFilter)
+	tx, err := manager.AddFilteredTransaction(&txOpts, txHashToFilter)
 	if err != nil {
 		log.Warn("Failed to filter transaction", "txHashToFilter", txHashToFilter.Hex(), "err", err)
-		return common.Hash{}, err
-	} else {
-		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
-		return tx.Hash(), nil
+		return
 	}
+	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 }
 
 // Only used for testing.
@@ -65,10 +95,7 @@ func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClien
 	if err != nil {
 		return err
 	}
-
-	t.apiMutex.Lock()
-	defer t.apiMutex.Unlock()
-	t.arbFilteredTransactionsManager = arbFilteredTransactionsManager
+	t.arbFilteredTransactionsManager.Store(arbFilteredTransactionsManager)
 	return nil
 }
 
@@ -114,10 +141,7 @@ func NewStack(
 		}
 	}
 
-	api := &TransactionFiltererAPI{
-		arbFilteredTransactionsManager: arbFilteredTransactionsManager,
-		txOpts:                         txOpts,
-	}
+	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts)
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",
