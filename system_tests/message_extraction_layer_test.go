@@ -598,7 +598,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 		for {
 			headState, err := testClientB.ConsensusNode.MessageExtractor.GetHeadState()
 			Require(t, err)
-			if headState.ParentChainBlockNumber >= currHead-reorgToBlock.NumberU64()+5 {
+			if headState.ParentChainBlockNumber >= currHead+5 {
 				break
 			}
 			select {
@@ -627,14 +627,26 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
 	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
-	time.Sleep(time.Second)
-
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
-	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+	{
+		timeout := time.NewTimer(time.Minute)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+			if err != nil {
+				t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+			}
+			if newBalance.Cmp(expectedBalance) == 0 {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				t.Fatalf("timed out waiting for balance to reflect deposit. Got: %v, want: %v", newBalance, expectedBalance)
+			}
+		}
 	}
 
 	// Verify that both MEL and TxStreamer detected the reorg
