@@ -272,7 +272,7 @@ impl TryFrom<&Opts> for WasmEnv {
                 load_validation_input(&mut env, input);
             }
             InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,
-            InputMode::Native(vi) => load_validation_input(&mut env, vi),
+            InputMode::Native(vi) => load_validation_input(&mut env, vi.clone()),
             InputMode::Continuous => {}
         }
         Ok(env)
@@ -336,13 +336,14 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
         }
     }
 
-    load_validation_input(env, &vi);
+    load_validation_input(env, vi);
     Ok(())
 }
 
 pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: validation::ValidationInput) {
     env.process.already_has_input = true;
-    for (module_hash, module_asm) in input.module_asms.drain() {
+    let module_asms = std::mem::take(&mut input.module_asms);
+    for (module_hash, module_asm) in module_asms {
         env.module_asms
             .insert(Bytes32(module_hash), module_asm.into());
     }
