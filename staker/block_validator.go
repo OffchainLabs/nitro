@@ -451,11 +451,20 @@ func (v *BlockValidator) possiblyFatal(err error) {
 	if err == nil {
 		return
 	}
+	if errors.Is(err, context.Canceled) {
+		log.Trace("Validation context cancelled", "err", err)
+		return
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		log.Warn("Validation operation timed out", "err", err)
+		return
+	}
 	log.Error("Error during validation", "err", err)
 	if v.config().FailureIsFatal {
 		select {
 		case v.fatalErr <- err:
 		default:
+			log.Error("fatalErr channel full, dropping error", "err", err)
 		}
 	}
 }
@@ -1067,13 +1076,27 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 	}
 }
 
-func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignored struct{}) time.Duration {
-	reorg, err := v.advanceValidations(ctx)
+// handleValidationResult handles the error/reorg result from advanceValidations or sendValidations.
+// If err is non-nil, reorg is not processed. ctx is the StopWaiter lifecycle context, so
+// ctx.Err() != nil means the node is shutting down.
+func (v *BlockValidator) handleValidationResult(ctx context.Context, reorg *arbutil.MessageIndex, err error, label string) time.Duration {
 	if err != nil {
-		log.Error("error trying to record for validation node", "err", err)
+		// Errors from advanceValidations/sendValidations are transient and
+		// retried on the next poll, so they are intentionally NOT sent to
+		// fatalErr. Only Reorg errors below go through possiblyFatal.
+		if errors.Is(err, context.Canceled) {
+			log.Trace("context cancelled in "+label, "err", err)
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			log.Warn("timeout in "+label, "err", err)
+		} else {
+			log.Error("error in "+label, "err", err)
+		}
 	} else if reorg != nil {
-		err := v.Reorg(ctx, *reorg)
-		if err != nil {
+		if ctx.Err() != nil {
+			log.Trace("skipping reorg during shutdown", "reorg", *reorg, "ctxErr", ctx.Err())
+			return v.config().ValidationPoll
+		}
+		if err := v.Reorg(ctx, *reorg); err != nil {
 			log.Error("error trying to reorg validation", "pos", *reorg-1, "err", err)
 			v.possiblyFatal(err)
 		}
@@ -1081,18 +1104,14 @@ func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignore
 	return v.config().ValidationPoll
 }
 
+func (v *BlockValidator) iterativeValidationProgress(ctx context.Context, ignored struct{}) time.Duration {
+	reorg, err := v.advanceValidations(ctx)
+	return v.handleValidationResult(ctx, reorg, err, "advanceValidations")
+}
+
 func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ignored struct{}) time.Duration {
 	reorg, err := v.sendValidations(ctx)
-	if err != nil {
-		log.Error("error trying to send validation node", "err", err)
-	} else if reorg != nil {
-		err := v.Reorg(ctx, *reorg)
-		if err != nil {
-			log.Error("error trying to reorg validation", "pos", *reorg-1, "err", err)
-			v.possiblyFatal(err)
-		}
-	}
-	return v.config().ValidationPoll
+	return v.handleValidationResult(ctx, reorg, err, "sendValidations")
 }
 
 var ErrValidationCanceled = errors.New("validation of block cancelled")
@@ -1238,7 +1257,9 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) error {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	if count <= 1 {
+	// count == 0 would reorg out genesis itself, which is invalid.
+	// count == 1 is valid: it reorgs to keep only genesis (message index 0).
+	if count == 0 {
 		return errors.New("cannot reorg out genesis")
 	}
 	if !v.chainCaughtUp {
