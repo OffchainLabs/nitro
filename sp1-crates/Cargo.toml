@@ -40,13 +40,17 @@ sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"
 thiserror = { version = "1.0.33" }
 tokio = { version = "1.42.0" }
 tracing = { version = "0.1.40" }
-wasmparser = { version = "0.224.0" }
+wasmparser = { version = "0.245.0" }
 
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.29.1-sp1-6.0.0", features = ["recovery", "global-context"] }
 tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.0.0", features = ["keccak"] }
-wasmer = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", default-features = false, features = ["sys", "compiler", "singlepass", "wasmparser"] }
-wasmer-types = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880" }
-wasmer-vm = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", features = ["force-baremetal"] }
+# wasmer = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", default-features = false, features = ["sys", "compiler", "singlepass", "wasmparser"] }
+# wasmer-types = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880" }
+# wasmer-vm = { git = "https://github.com/wakabat/official-wasmer", rev = "e065880", features = ["force-baremetal"] }
+
+wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false, features = ["sys", "compiler", "singlepass", "wasmparser"] }
+wasmer-types = { path = "../crates/tools/wasmer/lib/types" }
+wasmer-vm = { path = "../crates/tools/wasmer/lib/vm" }
 
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }

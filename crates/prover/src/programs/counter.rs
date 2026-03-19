@@ -9,10 +9,10 @@ use eyre::{eyre, Result};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
-use wasmparser::Operator;
 use std::collections::BTreeMap;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
+use wasmparser::Operator;
 
 lazy_static! {
     /// Assigns each operator a sequential offset
