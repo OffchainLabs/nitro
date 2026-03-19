@@ -27,7 +27,7 @@ pub struct ValidationInput {
     pub preimages: Preimages,
     pub sequencer_messages: Inbox,
     pub delayed_messages: Inbox,
-    pub module_asms: HashMap<[u8; 32], Vec<u8>>,
+    pub module_asms: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
 impl ValidationInput {
@@ -54,7 +54,7 @@ impl ValidationInput {
             }
         }
 
-        let mut module_asms = HashMap::new();
+        let mut module_asms = BTreeMap::new();
         if let Some(user_wasms) = req.user_wasms.get(target) {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
