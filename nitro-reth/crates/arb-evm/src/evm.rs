@@ -172,6 +172,33 @@ fn arb_balance<WIRE: InterpreterTypes, H: Host + ?Sized>(
     }
 }
 
+/// SELFBALANCE opcode (0x47).
+const SELFBALANCE_OPCODE: u8 = 0x47;
+
+/// Arbitrum SELFBALANCE: adjusts for poster fee correction if the executing
+/// contract IS the tx sender (edge case: sender calls own address).
+fn arb_selfbalance<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    ctx: InstructionContext<'_, H, WIRE>,
+) {
+    let target = ctx.interpreter.input.target_address();
+
+    let Some(state_load) = ctx.host.balance(target) else {
+        ctx.interpreter.halt_fatal();
+        return;
+    };
+
+    // Apply poster fee correction if the contract being executed is the tx sender
+    let balance = if target == arb_precompiles::get_current_tx_sender() {
+        state_load.data.saturating_sub(arb_precompiles::get_poster_balance_correction())
+    } else {
+        state_load.data
+    };
+
+    if !ctx.interpreter.stack.push(balance) {
+        ctx.interpreter.halt(revm::interpreter::InstructionResult::StackOverflow);
+    }
+}
+
 /// BLOBBASEFEE is not supported on Arbitrum — execution halts.
 fn arb_blob_basefee<WIRE: InterpreterTypes, H: Host + ?Sized>(
     ctx: InstructionContext<'_, H, WIRE>,
@@ -1305,9 +1332,15 @@ fn build_arb_evm<DB: Database, I>(
     );
     // BALANCE adjusts the sender's balance by the poster fee correction,
     // matching Nitro's BuyGas which charges the full gas_limit.
+    // BALANCE/SELFBALANCE adjust sender's balance by the poster fee correction
+    // to match Nitro's BuyGas which charges the full gas_limit.
     instruction.insert_instruction(
         BALANCE_OPCODE,
         revm::interpreter::Instruction::new(arb_balance, 0),
+    );
+    instruction.insert_instruction(
+        SELFBALANCE_OPCODE,
+        revm::interpreter::Instruction::new(arb_selfbalance, 5),
     );
     register_arb_precompiles(&mut precompiles);
     let arb_precompiles = ArbPrecompilesMap(precompiles);

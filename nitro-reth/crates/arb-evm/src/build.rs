@@ -984,6 +984,8 @@ where
 
         // Reset per-tx processor state.
         crate::evm::reset_stylus_pages();
+        arb_precompiles::set_poster_balance_correction(U256::ZERO);
+        arb_precompiles::set_current_tx_sender(Address::ZERO);
         if let Some(hooks) = self.arb_hooks.as_mut() {
             hooks.tx_proc.poster_fee = U256::ZERO;
             hooks.tx_proc.poster_gas = 0;
@@ -1530,13 +1532,16 @@ where
             tx_env.set_gas_limit(evm_gas_limit_before.saturating_sub(gas_deduction));
         }
 
-        // Set poster balance correction for BALANCE opcode adjustment.
-        // When BALANCE(sender) is called, the custom handler subtracts this
-        // amount to match Nitro's mid-execution sender balance.
-        arb_precompiles::set_poster_balance_correction(
-            self.arb_ctx.basefee.saturating_mul(U256::from(poster_gas)),
-        );
-        arb_precompiles::set_current_tx_sender(sender);
+        // Set balance correction for BALANCE/SELFBALANCE opcode adjustment.
+        // Nitro's BuyGas charges gas_limit * baseFee. Our reduced gas_limit
+        // charges (posterGas + computeHoldGas) * baseFee less. The custom
+        // BALANCE handler subtracts this correction when querying the sender.
+        {
+            let correction = self.arb_ctx.basefee
+                .saturating_mul(U256::from(poster_gas.saturating_add(compute_hold_gas)));
+            arb_precompiles::set_poster_balance_correction(correction);
+            arb_precompiles::set_current_tx_sender(sender);
+        }
 
         // --- RevertedTxHook: check for pre-recorded reverted or filtered txs ---
         // Called after gas charging but before EVM execution.
