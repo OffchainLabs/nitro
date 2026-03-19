@@ -6,7 +6,7 @@ ln -sfT "$2" latest
 cd "$2"
 echo "$2" > module-root.txt
 url_base="https://github.com/OffchainLabs/nitro/releases/download/$1"
-wget "$url_base/machine.wavm.br"
+wget "$url_base/machine.v2.wavm.br"
 
 status_code="$(curl -LI "$url_base/replay.wasm" -so /dev/null -w '%{http_code}')"
 if [ "$status_code" -ne 404 ]; then
