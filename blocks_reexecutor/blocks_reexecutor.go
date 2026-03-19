@@ -283,8 +283,7 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	}
 	s.LaunchThread(func(ctx context.Context) {
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release)
-		if err != nil {
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
 			s.fatalErrChan <- fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err)
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
