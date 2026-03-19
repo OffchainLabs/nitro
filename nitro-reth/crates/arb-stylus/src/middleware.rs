@@ -66,10 +66,7 @@ impl ModuleMiddleware for InkMeter {
         Ok(())
     }
 
-    fn generate_function_middleware(
-        &self,
-        _: LocalFunctionIndex,
-    ) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
         let [ink, status] = self.globals();
         let sigs = self.sigs.read().unwrap().clone();
         Box::new(InkMeterFn {
@@ -133,9 +130,13 @@ impl FunctionMiddleware for InkMeterFn {
             state.push_operator(Operator::GlobalGet { global_index: ink });
             state.push_operator(Operator::I64Const { value: cost as i64 });
             state.push_operator(Operator::I64LtU);
-            state.push_operator(Operator::If { blockty: BlockType::Empty });
+            state.push_operator(Operator::If {
+                blockty: BlockType::Empty,
+            });
             state.push_operator(Operator::I32Const { value: 1 });
-            state.push_operator(Operator::GlobalSet { global_index: status });
+            state.push_operator(Operator::GlobalSet {
+                global_index: status,
+            });
             state.push_operator(Operator::Unreachable);
             state.push_operator(Operator::End);
 
@@ -206,11 +207,12 @@ impl ModuleMiddleware for DynamicMeter {
         Ok(())
     }
 
-    fn generate_function_middleware(
-        &self,
-        _: LocalFunctionIndex,
-    ) -> Box<dyn FunctionMiddleware> {
-        let globals = self.globals.read().unwrap().expect("missing dynamic globals");
+    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
+        let globals = self
+            .globals
+            .read()
+            .unwrap()
+            .expect("missing dynamic globals");
         Box::new(DynamicMeterFn {
             memory_fill_ink: self.memory_fill_ink,
             memory_copy_ink: self.memory_copy_ink,
@@ -247,10 +249,14 @@ impl FunctionMiddleware for DynamicMeterFn {
             // Stack has [dest, val/src, size]. Save size to scratch, compute cost,
             // subtract from ink with overflow check, restore size.
             state.extend([
-                GlobalSet { global_index: scratch },
+                GlobalSet {
+                    global_index: scratch,
+                },
                 GlobalGet { global_index: ink },
                 GlobalGet { global_index: ink },
-                GlobalGet { global_index: scratch },
+                GlobalGet {
+                    global_index: scratch,
+                },
                 I64ExtendI32U,
                 I64Const { value: coeff },
                 I64Mul,
@@ -260,10 +266,14 @@ impl FunctionMiddleware for DynamicMeterFn {
                 I64LtU,
                 If { blockty },
                 I32Const { value: 1 },
-                GlobalSet { global_index: status },
+                GlobalSet {
+                    global_index: status,
+                },
                 Unreachable,
                 End,
-                GlobalGet { global_index: scratch },
+                GlobalGet {
+                    global_index: scratch,
+                },
             ]);
         }
 
@@ -303,10 +313,7 @@ impl ModuleMiddleware for DepthChecker {
         Ok(())
     }
 
-    fn generate_function_middleware(
-        &self,
-        _: LocalFunctionIndex,
-    ) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
         let g = self.global.read().unwrap().expect("missing depth global");
         Box::new(DepthCheckerFn {
             global: g,
@@ -338,7 +345,9 @@ impl FunctionMiddleware for DepthCheckerFn {
                 Operator::GlobalGet { global_index: g },
                 Operator::I32Const { value: cost },
                 Operator::I32LeU,
-                Operator::If { blockty: BlockType::Empty },
+                Operator::If {
+                    blockty: BlockType::Empty,
+                },
                 Operator::Unreachable,
                 Operator::End,
                 Operator::GlobalGet { global_index: g },
@@ -352,7 +361,9 @@ impl FunctionMiddleware for DepthCheckerFn {
             let g = self.global.as_u32();
             state.extend([
                 Operator::GlobalGet { global_index: g },
-                Operator::I32Const { value: self.frame_cost as i32 },
+                Operator::I32Const {
+                    value: self.frame_cost as i32,
+                },
                 Operator::I32Add,
                 Operator::GlobalSet { global_index: g },
             ]);
@@ -402,10 +413,7 @@ impl ModuleMiddleware for HeapBound {
         Ok(())
     }
 
-    fn generate_function_middleware(
-        &self,
-        _: LocalFunctionIndex,
-    ) -> Box<dyn FunctionMiddleware> {
+    fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
         let (scratch, pay_func) = self.globals.read().unwrap().expect("missing heap globals");
         Box::new(HeapBoundFn { scratch, pay_func })
     }

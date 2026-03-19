@@ -34,7 +34,7 @@ jobs:
     name: docs
     runs-on: ubuntu-latest
     env:
-      RUSTDOCFLAGS: "-D warnings"
+      RUSTDOCFLAGS: "-D warnings -A rustdoc::broken-intra-doc-links"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.93

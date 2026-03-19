@@ -52,7 +52,7 @@ impl ArbHeaderInfo {
 
 /// Compute the mix hash from the three u64 components.
 ///
-/// Layout: [send_count (8 bytes)][l1_block_number (8 bytes)][arbos_version (8 bytes)][0..0]
+/// Layout: ]send_count (8 bytes)\]]l1_block_number (8 bytes)\]]arbos_version (8 bytes)\]]0..0\]
 pub fn compute_nitro_mixhash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
     let mut mix = [0u8; 32];
     mix[0..8].copy_from_slice(&send_count.to_be_bytes());

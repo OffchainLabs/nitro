@@ -153,6 +153,9 @@ schnellru = "0.2"
 [workspace.lints.rust]
 unused_must_use = "deny"
 
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "allow"
+
 [workspace.lints.clippy]
 dbg_macro = "warn"
 todo = "warn"

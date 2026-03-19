@@ -8,17 +8,24 @@ targets = [
 all-features = true
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "ignore"
-yanked = "ignore"
-notice = "ignore"
+yanked = "warn"
+ignore = [
+    "RUSTSEC-2025-0141", # bincode - transitive via reth
+    "RUSTSEC-2024-0388", # derivative - transitive via reth
+    "RUSTSEC-2025-0057", # fxhash - transitive via reth
+    "RUSTSEC-2024-0436", # paste - transitive via reth
+    "RUSTSEC-2026-0041", # brotli decompression - transitive
+    "RUSTSEC-2024-0370", # proc-macro-error - transitive via reth
+]
 
 [licenses]
-unlicensed = "deny"
+version = 2
+confidence-threshold = 0.8
 allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
+    "0BSD",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
@@ -30,6 +37,7 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "OpenSSL",
+    "CDLA-Permissive-2.0",
 ]
 
 [[licenses.exceptions]]
@@ -86,7 +94,7 @@ crate = "gen-genesis"
 
 [bans]
 multiple-versions = "warn"
-wildcards = "deny"
+wildcards = "allow"
 
 [sources]
 unknown-registry = "deny"

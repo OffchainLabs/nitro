@@ -888,7 +888,7 @@ where
     BlockEnv: revm::context::Block,
     TxEnv: revm::context::Transaction,
     CfgEnv: revm::context::Cfg,
-    DB: Database + 'static,
+    DB: Database,
 {
     use arbos::programs::types::UserOutcome;
 
@@ -1178,8 +1178,27 @@ where
             return Ok(result);
         }
 
-        // TODO: Stylus program check disabled until 'static bound issue is resolved.
-        // Stylus is only active at ArbOS v31+ and current Sepolia is v10.
+        // Check for Stylus WASM programs (active at ArbOS v31+).
+        let arbos_version = arb_precompiles::get_arbos_version();
+        if arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
+            // Load code for the target address
+            let code_opt = context
+                .journaled_state
+                .inner
+                .load_code(
+                    &mut context.journaled_state.database,
+                    inputs.bytecode_address,
+                )
+                .ok()
+                .and_then(|acc| acc.data.info.code.as_ref().map(|c| c.original_bytes()));
+
+            if let Some(bytecode) = code_opt {
+                if arb_stylus::is_stylus_program(&bytecode) {
+                    return Ok(Some(execute_stylus_program(context, inputs, &bytecode)));
+                }
+            }
+        }
+
         Ok(None)
     }
 

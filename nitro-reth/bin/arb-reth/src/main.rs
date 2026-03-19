@@ -1,7 +1,6 @@
 #![allow(missing_docs)]
+#![allow(clippy::missing_safety_doc)]
 
-// Provide missing __rust_probestack symbol for wasmer on x86_64 Rust 1.93+.
-// Rust now uses inline stack probing, but wasmer 4.x still references this symbol.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn __rust_probestack() {}

@@ -6,7 +6,7 @@ use arb_storage::{Storage, StorageBackedAddress, StorageBackedUint64};
 /// A set of addresses backed by ArbOS storage.
 ///
 /// Layout: slot 0 = size, slots 1..size = addresses (as StorageBackedAddress).
-/// Sub-storage at key [0] maps address_hash → slot index.
+/// Sub-storage at key ]0\] maps address_hash → slot index.
 pub struct AddressSet<D> {
     backing_storage: Storage<D>,
     size: StorageBackedUint64<D>,

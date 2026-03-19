@@ -142,7 +142,7 @@ impl<D: Database> L2PricingState<D> {
             if divisor == 0 {
                 return self.set_base_fee_wei(min_base_fee);
             }
-            // SaturatingCast[int64](backlog - tolerance*speedLimit)
+            // SaturatingCast]int64\](backlog - tolerance*speedLimit)
             let excess = saturating_cast_to_i64(backlog.wrapping_sub(tolerance_limit));
             // NaturalToBips(excess) / SaturatingCastToBips(SaturatingUMul(inertia, speedLimit))
             let exponent_bips = natural_to_bips(excess) / divisor;
@@ -177,7 +177,7 @@ impl<D: Database> L2PricingState<D> {
                 // divisor = SaturatingCastToBips(SaturatingUMul(inertia, target))
                 let divisor = saturating_cast_to_i64(window.saturating_mul(target));
                 if divisor != 0 {
-                    // NaturalToBips(SaturatingCast[int64](backlog))
+                    // NaturalToBips(SaturatingCast]int64\](backlog))
                     let exponent = natural_to_bips(saturating_cast_to_i64(new_backlog)) / divisor;
                     total_exponent = total_exponent.saturating_add(exponent);
                 }
@@ -231,7 +231,7 @@ impl<D: Database> L2PricingState<D> {
     /// a per-resource-kind exponent array.
     ///
     /// Uses signed saturation arithmetic with Bips (int64) computation:
-    /// dividend = NaturalToBips(SaturatingCast[int64](SaturatingUMul(backlog, weight)))
+    /// dividend = NaturalToBips(SaturatingCast]int64\](SaturatingUMul(backlog, weight)))
     /// divisor  = SaturatingCastToBips(SaturatingUMul(window, SaturatingUMul(target, maxWeight)))
     /// exp      = dividend / divisor  (signed int64 division)
     pub fn calc_multi_gas_constraints_exponents(&self) -> Result<[u64; NUM_RESOURCE_KIND], ()> {
@@ -268,7 +268,8 @@ impl<D: Database> L2PricingState<D> {
                     continue;
                 }
 
-                // dividend = NaturalToBips(SaturatingCast[int64](SaturatingUMul(backlog, weight)))
+                // dividend = NaturalToBips(SaturatingCast]int64\](SaturatingUMul(backlog,
+                // weight)))
                 let product = backlog.saturating_mul(weight);
                 let cast = saturating_cast_to_i64(product);
                 let dividend = natural_to_bips(cast);

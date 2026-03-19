@@ -208,7 +208,7 @@ impl StylusEvmApi {
     /// The `journal` pointer must remain valid for the lifetime of this struct.
     /// The caller must ensure exclusive mutable access through this pointer.
     /// If `ctx_ptr` is provided, it must also remain valid.
-    pub unsafe fn new<DB: Database + 'static>(
+    pub unsafe fn new<DB: Database>(
         journal: *mut revm::Journal<DB>,
         address: Address,
         caller: Address,
@@ -220,8 +220,16 @@ impl StylusEvmApi {
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
     ) -> Self {
+        // Annotate with '_ to avoid the default 'static bound on dyn trait objects.
+        // Raw pointers carry no lifetime; this is safe as long as the pointer
+        // remains valid for the duration of StylusEvmApi's use (guaranteed by
+        // synchronous WASM execution scoped within the caller).
+        let journal: *mut dyn JournalAccess = {
+            let r: &mut (dyn JournalAccess + '_) = &mut *journal;
+            r as *mut (dyn JournalAccess + '_) as *mut dyn JournalAccess
+        };
         Self {
-            journal: journal as *mut dyn JournalAccess,
+            journal,
             address,
             caller,
             call_value,
