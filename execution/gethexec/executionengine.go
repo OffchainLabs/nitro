@@ -113,7 +113,6 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 // sender, recipient, de-aliased sender (for aliasing tx types), retryable fields,
 // and addresses extracted from event logs.
 func touchFilterAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *types.Transaction, sender common.Address) {
-
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())

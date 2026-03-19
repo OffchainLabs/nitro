@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"time"
 
@@ -43,6 +42,8 @@ const TxPreCheckerStrictnessNone uint = 0
 const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
+
+const speculativeFilterGasCap uint64 = 50_000_000
 
 type TxPreCheckerConfig struct {
 	Strictness             uint  `koanf:"strictness" reload:"hot"`
@@ -322,21 +323,21 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 // to check for filtered addresses. Returns ErrArbTxFilter if a filtered address is touched.
 func (c *TxPreChecker) speculativeFilterExec(
 	statedb *state.StateDB, evm *vm.EVM, signer types.Signer, runCtx *core.MessageRunContext,
-	header *types.Header, tx *types.Transaction, txIndex int,
+	header *types.Header, tx *types.Transaction, txIndex int, gasLimit uint64,
 	resultFilter func(*core.ExecutionResult) error,
 ) error {
 	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
 	if err != nil {
 		return err
 	}
-	msg.GasLimit = math.MaxUint64
+	msg.GasLimit = gasLimit
 	msg.GasPrice = new(big.Int)
 	msg.GasFeeCap = new(big.Int)
 	msg.GasTipCap = new(big.Int)
 	msg.SkipNonceChecks = true
 	msg.SkipTransactionChecks = true
 
-	gasPool := core.GasPool(math.MaxUint64)
+	gasPool := core.GasPool(gasLimit)
 	var usedGas uint64
 	statedb.SetTxContext(tx.Hash(), txIndex)
 	_, _, err = core.ApplyTransactionWithEVM(
@@ -378,8 +379,12 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	runCtx := core.NewMessageEthcallContext()
 	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
 
+	if tx.Gas() > speculativeFilterGasCap {
+		return fmt.Errorf("transaction gas limit %d exceeds maximum allowed %d", tx.Gas(), speculativeFilterGasCap)
+	}
+
 	var scheduledTxes types.Transactions
-	err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, tx, 0,
+	err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
 		func(result *core.ExecutionResult) error {
 			touchFilterAddresses(statedb, c.eventFilter, tx, sender)
 			touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
@@ -396,15 +401,21 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 
 	// Execute scheduled redeems in FIFO order, including cascading redeems,
 	// mirroring the block processor's redeem loop in ProduceBlockAdvanced.
+	redeemBudget := uint64(speculativeFilterGasCap)
 	txIndex := 1
 	for len(scheduledTxes) > 0 {
+		redeemGas := arbmath.MinInt(scheduledTxes[0].Gas(), redeemBudget)
+		if redeemGas < params.TxGas {
+			return fmt.Errorf("redeem gas budget exhausted: %d remaining, need at least %d", redeemGas, params.TxGas)
+		}
 		redeemTx := scheduledTxes[0]
 		scheduledTxes = scheduledTxes[1:]
 		redeemSender, err := types.Sender(signer, redeemTx)
 		if err != nil {
+			log.Warn("failed to recover redeem sender in address filter", "err", err, "txHash", redeemTx.Hash())
 			continue
 		}
-		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, txIndex,
+		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, txIndex, redeemGas,
 			func(result *core.ExecutionResult) error {
 				touchFilterAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
 				touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
@@ -415,6 +426,7 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 				return nil
 			},
 		)
+		redeemBudget = arbmath.SaturatingUSub(redeemBudget, redeemGas)
 		if err != nil {
 			return err
 		}
