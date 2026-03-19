@@ -32,7 +32,10 @@ pub struct ValidationInput {
 
 impl ValidationInput {
     /// Extract runtime data from a request for the given target architecture.
-    pub fn from_request(req: &ValidationRequest, target: &str) -> Self {
+    ///
+    /// Returns an error if the request contains user WASMs for a different
+    /// architecture but none for `target`.
+    pub fn from_request(req: &ValidationRequest, target: &str) -> Result<Self, String> {
         let mut sequencer_messages = Inbox::new();
         for batch in &req.batch_info {
             sequencer_messages.insert(batch.number, batch.data.clone());
@@ -56,16 +59,22 @@ impl ValidationInput {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
+        } else {
+            for (arch, wasms) in &req.user_wasms {
+                if !wasms.is_empty() {
+                    return Err(format!("bad stylus arch: got {arch}, expected {target}"));
+                }
+            }
         }
 
-        Self {
+        Ok(Self {
             small_globals: [req.start_state.batch, req.start_state.pos_in_batch],
             large_globals: [req.start_state.block_hash.0, req.start_state.send_root.0],
             preimages,
             sequencer_messages,
             delayed_messages,
             module_asms,
-        }
+        })
     }
 
     #[cfg(feature = "rkyv")]
@@ -231,7 +240,7 @@ mod tests {
     #[test]
     fn from_request_populates_globals() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         assert_eq!(input.small_globals, [100, 200]);
         assert_eq!(input.large_globals[0], [1u8; 32]);
@@ -241,7 +250,7 @@ mod tests {
     #[test]
     fn from_request_populates_sequencer_messages() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         assert_eq!(input.sequencer_messages.len(), 2);
         assert_eq!(input.sequencer_messages[&0], vec![1, 2, 3]);
@@ -251,7 +260,7 @@ mod tests {
     #[test]
     fn from_request_includes_delayed_message_when_present() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         assert_eq!(input.delayed_messages.len(), 1);
         assert_eq!(input.delayed_messages[&7], vec![9, 8, 7]);
@@ -261,7 +270,7 @@ mod tests {
     fn from_request_skips_delayed_message_when_flag_false() {
         let mut req = make_request();
         req.has_delayed_msg = false;
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         assert!(input.delayed_messages.is_empty());
     }
@@ -269,7 +278,7 @@ mod tests {
     #[test]
     fn from_request_populates_preimages() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         let keccak_map = input
             .preimages
@@ -282,16 +291,25 @@ mod tests {
     #[test]
     fn from_request_populates_module_asms_for_matching_target() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "host");
+        let input = ValidationInput::from_request(&req, "host").unwrap();
 
         assert_eq!(input.module_asms.len(), 1);
         assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
     }
 
     #[test]
-    fn from_request_returns_empty_module_asms_for_unknown_target() {
+    fn from_request_errors_on_wrong_target() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "nonexistent");
+        let err = ValidationInput::from_request(&req, "nonexistent").unwrap_err();
+
+        assert!(err.contains("bad stylus arch"));
+    }
+
+    #[test]
+    fn from_request_ok_with_no_user_wasms() {
+        let mut req = make_request();
+        req.user_wasms.clear();
+        let input = ValidationInput::from_request(&req, "nonexistent").unwrap();
 
         assert!(input.module_asms.is_empty());
     }

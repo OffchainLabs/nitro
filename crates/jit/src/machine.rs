@@ -267,7 +267,8 @@ impl TryFrom<&Opts> for WasmEnv {
             InputMode::Json { inputs } => {
                 let file = File::open(inputs)?;
                 let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
-                let input = validation::ValidationInput::from_request(&req, local_target());
+                let input = validation::ValidationInput::from_request(&req, local_target())
+                    .map_err(|e| eyre::eyre!(e))?;
                 load_validation_input(&mut env, &input);
             }
             InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,

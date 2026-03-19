@@ -45,7 +45,9 @@ pub async fn validate_native(
             debug: false, // JIT's debug messages are using printlns, which would clutter the server logs
             require_success: false, // Relevant for JIT binary only.
         },
-        input_mode: jit::InputMode::Native(ValidationInput::from_request(&input, local_target())),
+        input_mode: jit::InputMode::Native(
+            ValidationInput::from_request(&input, local_target()).map_err(|e| e.to_string())?,
+        ),
     };
 
     let result = match module_cache.get(&module_root) {

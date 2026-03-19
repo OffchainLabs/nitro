@@ -93,15 +93,8 @@ impl JitMachine {
             .context("failed to open listener connection")?;
 
         // 5. Send data
-        let target = local_target();
-        if request.user_wasms.get(target).is_none_or(|m| m.is_empty()) {
-            for (arch, wasms) in &request.user_wasms {
-                if !wasms.is_empty() {
-                    return Err(anyhow!("bad stylus arch: got {arch}, expected {target}"));
-                }
-            }
-        }
-        let input = ValidationInput::from_request(request, target);
+        let input =
+            ValidationInput::from_request(request, local_target()).map_err(|e| anyhow!(e))?;
         send_validation_input(&mut conn, &input)?;
 
         // 6. Read Response and return new state
