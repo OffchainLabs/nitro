@@ -1,12 +1,19 @@
-use std::sync::RwLock;
+use std::{collections::HashMap, sync::RwLock};
 
 use wasmer_compiler::{FunctionMiddleware, MiddlewareReaderState, ModuleMiddleware};
 use wasmer_types::{
-    GlobalIndex, GlobalInit, LocalFunctionIndex, MiddlewareError, ModuleInfo, Type,
+    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, MiddlewareError,
+    ModuleInfo, Type,
 };
 use wasmparser::{BlockType, Operator};
 
 use crate::meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
+
+const SCRATCH_GLOBAL: &str = "stylus_scratch_global";
+
+fn mw_err(msg: impl Into<String>) -> MiddlewareError {
+    MiddlewareError::new("stylus", msg.into())
+}
 
 // ── InkMeter ────────────────────────────────────────────────────────
 
@@ -14,6 +21,7 @@ use crate::meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
 pub struct InkMeter {
     header_cost: u64,
     globals: RwLock<Option<[GlobalIndex; 2]>>,
+    sigs: RwLock<HashMap<u32, usize>>,
 }
 
 impl InkMeter {
@@ -21,6 +29,7 @@ impl InkMeter {
         Self {
             header_cost,
             globals: RwLock::new(None),
+            sigs: RwLock::new(HashMap::new()),
         }
     }
 
@@ -36,18 +45,22 @@ impl ModuleMiddleware for InkMeter {
 
         let ink_idx = info.globals.push(ink_ty);
         let status_idx = info.globals.push(status_ty);
+        info.global_initializers.push(GlobalInit::I64Const(0));
+        info.global_initializers.push(GlobalInit::I32Const(0));
 
-        info.global_initializers
-            .push(GlobalInit::I64Const(0))
-            .as_u32();
-        info.global_initializers
-            .push(GlobalInit::I32Const(0))
-            .as_u32();
+        info.exports.insert(
+            STYLUS_INK_LEFT.to_string(),
+            wasmer_types::ExportIndex::Global(ink_idx),
+        );
+        info.exports.insert(
+            STYLUS_INK_STATUS.to_string(),
+            wasmer_types::ExportIndex::Global(status_idx),
+        );
 
-        info.exports
-            .insert(STYLUS_INK_LEFT.to_string(), wasmer_types::ExportIndex::Global(ink_idx));
-        info.exports
-            .insert(STYLUS_INK_STATUS.to_string(), wasmer_types::ExportIndex::Global(status_idx));
+        let mut sig_map = self.sigs.write().unwrap();
+        for (sig_idx, sig) in info.signatures.iter() {
+            sig_map.insert(sig_idx.as_u32(), sig.params().len());
+        }
 
         *self.globals.write().unwrap() = Some([ink_idx, status_idx]);
         Ok(())
@@ -58,12 +71,14 @@ impl ModuleMiddleware for InkMeter {
         _: LocalFunctionIndex,
     ) -> Box<dyn FunctionMiddleware> {
         let [ink, status] = self.globals();
+        let sigs = self.sigs.read().unwrap().clone();
         Box::new(InkMeterFn {
             ink_global: ink,
             status_global: status,
             block: vec![],
             block_cost: 0,
             header_cost: self.header_cost,
+            sigs,
         })
     }
 }
@@ -75,6 +90,7 @@ struct InkMeterFn {
     block: Vec<Operator<'static>>,
     block_cost: u64,
     header_cost: u64,
+    sigs: HashMap<u32, usize>,
 }
 
 fn ends_basic_block(op: &Operator) -> bool {
@@ -100,43 +116,31 @@ impl FunctionMiddleware for InkMeterFn {
         state: &mut MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
         let end = ends_basic_block(&op);
-
-        let op_cost = opcode_ink_cost(&op);
+        let op_cost = opcode_ink_cost(&op, &self.sigs);
         let mut cost = self.block_cost.saturating_add(op_cost);
         self.block_cost = cost;
 
-        // Safety: we only hold these operators until the end of the basic block,
-        // then drain them into `state` which has lifetime 'a. The operators are
-        // re-created as 'static using the same variant constructors (no borrowed data
-        // in the variants we support).
+        // SAFETY: Operator variants we support contain no borrowed data.
+        // We buffer them as 'static and transmute back when draining.
         let op_static = unsafe { std::mem::transmute::<Operator<'a>, Operator<'static>>(op) };
         self.block.push(op_static);
 
         if end {
             let ink = self.ink_global.as_u32();
             let status = self.status_global.as_u32();
-
             cost = cost.saturating_add(self.header_cost);
 
             state.push_operator(Operator::GlobalGet { global_index: ink });
-            state.push_operator(Operator::I64Const {
-                value: cost as i64,
-            });
+            state.push_operator(Operator::I64Const { value: cost as i64 });
             state.push_operator(Operator::I64LtU);
-            state.push_operator(Operator::If {
-                blockty: BlockType::Empty,
-            });
+            state.push_operator(Operator::If { blockty: BlockType::Empty });
             state.push_operator(Operator::I32Const { value: 1 });
-            state.push_operator(Operator::GlobalSet {
-                global_index: status,
-            });
+            state.push_operator(Operator::GlobalSet { global_index: status });
             state.push_operator(Operator::Unreachable);
             state.push_operator(Operator::End);
 
             state.push_operator(Operator::GlobalGet { global_index: ink });
-            state.push_operator(Operator::I64Const {
-                value: cost as i64,
-            });
+            state.push_operator(Operator::I64Const { value: cost as i64 });
             state.push_operator(Operator::I64Sub);
             state.push_operator(Operator::GlobalSet { global_index: ink });
 
@@ -151,24 +155,137 @@ impl FunctionMiddleware for InkMeterFn {
     }
 }
 
+// ── DynamicMeter ────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct DynamicMeter {
+    memory_fill_ink: u64,
+    memory_copy_ink: u64,
+    globals: RwLock<Option<[GlobalIndex; 3]>>,
+}
+
+impl DynamicMeter {
+    pub fn new(memory_fill_ink: u64, memory_copy_ink: u64) -> Self {
+        Self {
+            memory_fill_ink,
+            memory_copy_ink,
+            globals: RwLock::new(None),
+        }
+    }
+}
+
+impl ModuleMiddleware for DynamicMeter {
+    fn transform_module_info(&self, info: &mut ModuleInfo) -> Result<(), MiddlewareError> {
+        let ink_idx = info
+            .exports
+            .get(STYLUS_INK_LEFT)
+            .and_then(|e| match e {
+                wasmer_types::ExportIndex::Global(g) => Some(*g),
+                _ => None,
+            })
+            .ok_or_else(|| mw_err("ink global not found"))?;
+
+        let status_idx = info
+            .exports
+            .get(STYLUS_INK_STATUS)
+            .and_then(|e| match e {
+                wasmer_types::ExportIndex::Global(g) => Some(*g),
+                _ => None,
+            })
+            .ok_or_else(|| mw_err("ink status global not found"))?;
+
+        let scratch_ty = wasmer_types::GlobalType::new(Type::I32, wasmer_types::Mutability::Var);
+        let scratch_idx = info.globals.push(scratch_ty);
+        info.global_initializers.push(GlobalInit::I32Const(0));
+        info.exports.insert(
+            SCRATCH_GLOBAL.to_string(),
+            wasmer_types::ExportIndex::Global(scratch_idx),
+        );
+
+        *self.globals.write().unwrap() = Some([ink_idx, status_idx, scratch_idx]);
+        Ok(())
+    }
+
+    fn generate_function_middleware(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware> {
+        let globals = self.globals.read().unwrap().expect("missing dynamic globals");
+        Box::new(DynamicMeterFn {
+            memory_fill_ink: self.memory_fill_ink,
+            memory_copy_ink: self.memory_copy_ink,
+            globals,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct DynamicMeterFn {
+    memory_fill_ink: u64,
+    memory_copy_ink: u64,
+    globals: [GlobalIndex; 3],
+}
+
+impl FunctionMiddleware for DynamicMeterFn {
+    fn feed<'a>(
+        &mut self,
+        op: Operator<'a>,
+        state: &mut MiddlewareReaderState<'a>,
+    ) -> Result<(), MiddlewareError> {
+        use Operator::*;
+
+        let [ink, status, scratch] = self.globals.map(|x| x.as_u32());
+        let blockty = BlockType::Empty;
+
+        let coefficient = match &op {
+            MemoryFill { .. } => Some(self.memory_fill_ink as i64),
+            MemoryCopy { .. } => Some(self.memory_copy_ink as i64),
+            _ => None,
+        };
+
+        if let Some(coeff) = coefficient {
+            // Stack has [dest, val/src, size]. Save size to scratch, compute cost,
+            // subtract from ink with overflow check, restore size.
+            state.extend([
+                GlobalSet { global_index: scratch },
+                GlobalGet { global_index: ink },
+                GlobalGet { global_index: ink },
+                GlobalGet { global_index: scratch },
+                I64ExtendI32U,
+                I64Const { value: coeff },
+                I64Mul,
+                I64Sub,
+                GlobalSet { global_index: ink },
+                GlobalGet { global_index: ink },
+                I64LtU,
+                If { blockty },
+                I32Const { value: 1 },
+                GlobalSet { global_index: status },
+                Unreachable,
+                End,
+                GlobalGet { global_index: scratch },
+            ]);
+        }
+
+        state.push_operator(op);
+        Ok(())
+    }
+}
+
 // ── DepthChecker ────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct DepthChecker {
     max_depth: u32,
-    globals: RwLock<Option<GlobalIndex>>,
+    global: RwLock<Option<GlobalIndex>>,
 }
 
 impl DepthChecker {
     pub fn new(max_depth: u32) -> Self {
         Self {
             max_depth,
-            globals: RwLock::new(None),
+            global: RwLock::new(None),
         }
-    }
-
-    fn global(&self) -> GlobalIndex {
-        self.globals.read().unwrap().expect("missing depth global")
     }
 }
 
@@ -178,9 +295,11 @@ impl ModuleMiddleware for DepthChecker {
         let idx = info.globals.push(ty);
         info.global_initializers
             .push(GlobalInit::I32Const(self.max_depth as i32));
-        info.exports
-            .insert(STYLUS_STACK_LEFT.to_string(), wasmer_types::ExportIndex::Global(idx));
-        *self.globals.write().unwrap() = Some(idx);
+        info.exports.insert(
+            STYLUS_STACK_LEFT.to_string(),
+            wasmer_types::ExportIndex::Global(idx),
+        );
+        *self.global.write().unwrap() = Some(idx);
         Ok(())
     }
 
@@ -188,9 +307,9 @@ impl ModuleMiddleware for DepthChecker {
         &self,
         _: LocalFunctionIndex,
     ) -> Box<dyn FunctionMiddleware> {
+        let g = self.global.read().unwrap().expect("missing depth global");
         Box::new(DepthCheckerFn {
-            global: self.global(),
-            // Conservative estimate: each function uses 1 depth unit.
+            global: g,
             frame_cost: 1,
             emitted_entry: false,
         })
@@ -213,39 +332,30 @@ impl FunctionMiddleware for DepthCheckerFn {
         if !self.emitted_entry {
             self.emitted_entry = true;
             let g = self.global.as_u32();
-            let cost = self.frame_cost;
+            let cost = self.frame_cost as i32;
 
-            // if stack_left < cost: trap
-            state.push_operator(Operator::GlobalGet { global_index: g });
-            state.push_operator(Operator::I32Const {
-                value: cost as i32,
-            });
-            state.push_operator(Operator::I32LeU);
-            state.push_operator(Operator::If {
-                blockty: BlockType::Empty,
-            });
-            state.push_operator(Operator::Unreachable);
-            state.push_operator(Operator::End);
-
-            // stack_left -= cost
-            state.push_operator(Operator::GlobalGet { global_index: g });
-            state.push_operator(Operator::I32Const {
-                value: cost as i32,
-            });
-            state.push_operator(Operator::I32Sub);
-            state.push_operator(Operator::GlobalSet { global_index: g });
+            state.extend([
+                Operator::GlobalGet { global_index: g },
+                Operator::I32Const { value: cost },
+                Operator::I32LeU,
+                Operator::If { blockty: BlockType::Empty },
+                Operator::Unreachable,
+                Operator::End,
+                Operator::GlobalGet { global_index: g },
+                Operator::I32Const { value: cost },
+                Operator::I32Sub,
+                Operator::GlobalSet { global_index: g },
+            ]);
         }
 
-        // On return, re-credit the frame cost.
         if matches!(op, Operator::Return) {
             let g = self.global.as_u32();
-            let cost = self.frame_cost;
-            state.push_operator(Operator::GlobalGet { global_index: g });
-            state.push_operator(Operator::I32Const {
-                value: cost as i32,
-            });
-            state.push_operator(Operator::I32Add);
-            state.push_operator(Operator::GlobalSet { global_index: g });
+            state.extend([
+                Operator::GlobalGet { global_index: g },
+                Operator::I32Const { value: self.frame_cost as i32 },
+                Operator::I32Add,
+                Operator::GlobalSet { global_index: g },
+            ]);
         }
 
         state.push_operator(op);
@@ -253,11 +363,85 @@ impl FunctionMiddleware for DepthCheckerFn {
     }
 }
 
-// ── Opcode cost function ────────────────────────────────────────────
-// Matches Nitro's pricing_v1 exactly for consensus compatibility.
+// ── HeapBound ───────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct HeapBound {
+    globals: RwLock<Option<(GlobalIndex, Option<FunctionIndex>)>>,
+}
+
+impl HeapBound {
+    pub fn new() -> Self {
+        Self {
+            globals: RwLock::new(None),
+        }
+    }
+}
+
+impl ModuleMiddleware for HeapBound {
+    fn transform_module_info(&self, info: &mut ModuleInfo) -> Result<(), MiddlewareError> {
+        let scratch_idx = info
+            .exports
+            .get(SCRATCH_GLOBAL)
+            .and_then(|e| match e {
+                wasmer_types::ExportIndex::Global(g) => Some(*g),
+                _ => None,
+            })
+            .ok_or_else(|| mw_err("scratch global not found"))?;
+
+        let pay_func = info.imports.iter().find_map(|(key, idx)| {
+            if key.field == "pay_for_memory_grow" {
+                if let ImportIndex::Function(f) = idx {
+                    return Some(*f);
+                }
+            }
+            None
+        });
+
+        *self.globals.write().unwrap() = Some((scratch_idx, pay_func));
+        Ok(())
+    }
+
+    fn generate_function_middleware(
+        &self,
+        _: LocalFunctionIndex,
+    ) -> Box<dyn FunctionMiddleware> {
+        let (scratch, pay_func) = self.globals.read().unwrap().expect("missing heap globals");
+        Box::new(HeapBoundFn { scratch, pay_func })
+    }
+}
+
+#[derive(Debug)]
+struct HeapBoundFn {
+    scratch: GlobalIndex,
+    pay_func: Option<FunctionIndex>,
+}
+
+impl FunctionMiddleware for HeapBoundFn {
+    fn feed<'a>(
+        &mut self,
+        op: Operator<'a>,
+        state: &mut MiddlewareReaderState<'a>,
+    ) -> Result<(), MiddlewareError> {
+        if let (Operator::MemoryGrow { .. }, Some(pay)) = (&op, self.pay_func) {
+            let g = self.scratch.as_u32();
+            let f = pay.as_u32();
+            state.extend([
+                Operator::GlobalSet { global_index: g },
+                Operator::GlobalGet { global_index: g },
+                Operator::GlobalGet { global_index: g },
+                Operator::Call { function_index: f },
+            ]);
+        }
+        state.push_operator(op);
+        Ok(())
+    }
+}
+
+// ── Opcode ink costs (matches Nitro pricing_v1) ─────────────────────
 
 #[rustfmt::skip]
-fn opcode_ink_cost(op: &Operator) -> u64 {
+fn opcode_ink_cost(op: &Operator, sigs: &HashMap<u32, usize>) -> u64 {
     use Operator::*;
 
     macro_rules! op {
@@ -270,7 +454,6 @@ fn opcode_ink_cost(op: &Operator) -> u64 {
     match op {
         op!(Unreachable, Return) => 1,
         op!(Nop) | dot!(I32Const, I64Const) => 1,
-
         op!(Drop) => 9,
 
         dot!(Block, Loop) | op!(Else, End) => 1,
@@ -312,9 +495,11 @@ fn opcode_ink_cost(op: &Operator) -> u64 {
         dot!(MemoryFill) => 950,
 
         BrTable { targets } => 2400 + 325 * targets.len() as u64,
-        CallIndirect { .. } => 13610,
+        CallIndirect { type_index, .. } => {
+            let params = sigs.get(type_index).copied().unwrap_or(0);
+            13610 + 650 * params as u64
+        },
 
-        // Unsupported opcodes: infinite cost rejects them at activation.
         _ => u64::MAX,
     }
 }

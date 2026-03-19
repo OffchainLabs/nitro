@@ -132,11 +132,17 @@ impl CompileConfig {
         cranelift.canonicalize_nans(true);
 
         if self.pricing.ink_header_cost > 0 {
-            let meter = middleware::InkMeter::new(self.pricing.ink_header_cost);
-            cranelift.push_middleware(Arc::new(meter));
-
-            let depth = middleware::DepthChecker::new(self.bounds.max_frame_size);
-            cranelift.push_middleware(Arc::new(depth));
+            cranelift.push_middleware(Arc::new(middleware::InkMeter::new(
+                self.pricing.ink_header_cost,
+            )));
+            cranelift.push_middleware(Arc::new(middleware::DynamicMeter::new(
+                self.pricing.memory_fill_ink,
+                self.pricing.memory_copy_ink,
+            )));
+            cranelift.push_middleware(Arc::new(middleware::DepthChecker::new(
+                self.bounds.max_frame_size,
+            )));
+            cranelift.push_middleware(Arc::new(middleware::HeapBound::new()));
         }
 
         EngineBuilder::new(cranelift).into()
