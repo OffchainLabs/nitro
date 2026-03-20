@@ -5,11 +5,13 @@
 
 pub mod binary;
 mod host;
+pub(crate) mod internal_func;
 #[cfg(feature = "native")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 pub mod memory;
+pub(crate) mod memory_type;
 pub mod merkle;
 pub mod prepare;
 mod print;
@@ -131,14 +133,11 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     debug_chain: usize,
 ) -> *mut Machine {
     let debug_chain = debug_chain != 0;
-    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
-    {
-        Ok(mach) => mach,
-        Err(err) => {
+    arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
+        .unwrap_or_else(|err| {
             eprintln!("Error loading binary: {err:?}");
             ptr::null_mut()
-        }
-    }
+        })
 }
 
 unsafe fn arbitrator_load_machine_impl(
@@ -436,7 +435,7 @@ unsafe fn handle_preimage_resolution(
     }
 
     // Check if preimage rehashes to the provided hash
-    match crate::utils::hash_preimage(&data, ty) {
+    match utils::hash_preimage(&data, ty) {
         Ok(have_hash) if have_hash.as_slice() == *hash => {}
         Ok(got_hash) => panic!(
             "Resolved incorrect data for hash {} (rehashed to {})",

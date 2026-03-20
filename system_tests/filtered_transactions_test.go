@@ -263,11 +263,11 @@ func TestFilteredTransactionsManagerFreeOps(t *testing.T) {
 	require.NoError(t, err)
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessWrite))
 
 	tx, err = arbFilteredTxs.DeleteFilteredTransaction(&filtererTxOpts, txHash)
 	require.NoError(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccess))
+	require.Equal(t, uint64(0), receipt.MultiGasUsed.Get(multigas.ResourceKindStorageAccessWrite))
 }

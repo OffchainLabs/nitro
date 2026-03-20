@@ -150,8 +150,9 @@ func TestGetMultiGasPricingConstraintsOrder(t *testing.T) {
 	Require(t, state.L2PricingState().AddMultiGasConstraint(
 		20_000_000, 10, 100_000,
 		map[uint8]uint64{
-			uint8(multigas.ResourceKindStorageAccess): 3,
-			uint8(multigas.ResourceKindComputation):   1,
+			uint8(multigas.ResourceKindStorageAccessRead):  3,
+			uint8(multigas.ResourceKindStorageAccessWrite): 5,
+			uint8(multigas.ResourceKindComputation):        1,
 		},
 	))
 

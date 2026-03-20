@@ -30,6 +30,45 @@ func IsCertificateValidationError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "certificate validation failed")
 }
 
+// FallbackDACertReader is a DA certificate reader registered on nodes without a
+// real custom DA provider. It rejects all certificates as invalid, causing batches
+// with the DACert header byte (0x01) to be treated as empty. This matches the
+// WASM replay behavior where invalid certificates also produce empty batches.
+type FallbackDACertReader struct{}
+
+func (r *FallbackDACertReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadResult] {
+	return containers.NewReadyPromise(PayloadResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
+func (r *FallbackDACertReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	return containers.NewReadyPromise(PreimagesResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
+func (r *FallbackDACertReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.NewReadyPromise(PayloadAndPreimagesResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
 // PayloadResult contains the recovered payload data
 type PayloadResult struct {
 	Payload []byte

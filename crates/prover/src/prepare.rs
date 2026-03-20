@@ -8,13 +8,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use validation::ValidationInput;
+use validation::ValidationRequest;
 
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;
     let reader = BufReader::new(file);
 
-    let data = ValidationInput::from_reader(reader)?;
+    let data = ValidationRequest::from_reader(reader)?;
     let preimages = data
         .preimages
         .into_iter()

@@ -5,7 +5,9 @@
 pragma solidity ^0.8.0;
 
 interface IArbRetryableTx {
-    function redeem(bytes32 ticketId) external returns (bytes32);
+    function redeem(
+        bytes32 ticketId
+    ) external returns (bytes32);
 }
 
 /// @notice Test contract for exercising different call opcodes for address filtering tests
@@ -105,13 +107,18 @@ contract AddressFilterTest {
     event UnfilteredEvent(address some);
 
     /// @notice Forwards a call to target with arbitrary calldata
-    function forwardCall(address target, bytes calldata data) external returns (bool success, bytes memory result) {
+    function forwardCall(
+        address target,
+        bytes calldata data
+    ) external returns (bool success, bytes memory result) {
         (success, result) = target.call(data);
         require(success, "forwardCall failed");
     }
 
     /// @notice Increments dummy counter then chains into a redeem
-    function incrementDummyThenRedeem(bytes32 ticketId) external returns (bytes32) {
+    function incrementDummyThenRedeem(
+        bytes32 ticketId
+    ) external returns (bytes32) {
         dummy++;
         return IArbRetryableTx(address(0x6e)).redeem(ticketId);
     }

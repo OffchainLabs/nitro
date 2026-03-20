@@ -94,7 +94,7 @@ struct Opts {
     /// Options for WAVM binary generation.
     #[structopt(long, default_value = "module-root.txt")]
     module_root_filename: String,
-    #[structopt(long, default_value = "machine.wavm.br")]
+    #[structopt(long, default_value = "machine.v2.wavm.br")]
     brotli_wavm_machine_filename: String,
     #[structopt(long, default_value = "until-host-io-state.bin")]
     until_hostio_bin_filename: String,
@@ -228,8 +228,9 @@ fn main() -> Result<()> {
             *count_entry += 1;
             let count = *count_entry;
             // Apply an exponential backoff to how often to prove an instruction;
-            let prove =
-                count < 5 || (count < 25 && count % 5 == 0) || (count < 125 && count % 25 == 0);
+            let prove = count < 5
+                || (count < 25 && count.is_multiple_of(5))
+                || (count < 125 && count.is_multiple_of(25));
             if !prove {
                 mach.step_n(1)?;
                 continue;

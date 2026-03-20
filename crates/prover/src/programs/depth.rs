@@ -5,8 +5,9 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::{host::InternalFunc, value::FunctionType, Machine};
+use crate::{value::FunctionType, Machine};
 
+use crate::internal_func::InternalFunc;
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
@@ -501,6 +502,11 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
+                // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+                // include a wildcard arm even though we handle all known variants.
+                // If a new variant appears that we don't explicitly map yet, bail
+                // so that it is noticed and added with a proper opcode.
+                _ => bail!("extension {op:?} not supported"),
             };
         }
 

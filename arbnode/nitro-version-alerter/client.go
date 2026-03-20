@@ -56,7 +56,7 @@ type Client struct {
 func NewClient(ctx context.Context, cfg *ClientConfig) (*Client, error) {
 	nodeVersion, _, nodeVersionDate := confighelpers.GetVersion()
 	if !semver.IsValid(nodeVersion) {
-		log.Warn("asfdaf", "nodeVersion", nodeVersion, "nodeVersionDate", nodeVersionDate)
+		log.Warn("node version is not valid semver, skipping version alerter", "nodeVersion", nodeVersion, "nodeVersionDate", nodeVersionDate)
 		return nil, nil
 	}
 	nodeVersionTime, err := time.Parse(time.RFC3339, nodeVersionDate)

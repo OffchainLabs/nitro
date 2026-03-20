@@ -1,8 +1,8 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::internal_func::InternalFunc;
 use crate::{
-    host::InternalFunc,
     machine::Module,
     value::{FunctionType, Value},
     wavm::{self, Opcode},

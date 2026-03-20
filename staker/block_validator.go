@@ -78,13 +78,13 @@ func (t *WorkerThrottler) Release() {
 }
 
 type ThrottledValidationSpawner struct {
-	Spawner   validator.ValidationSpawner
+	Spawner   *retry_wrapper.ValidationSpawnerRetryWrapper
 	Throttler *WorkerThrottler
 }
 
 func NewThrottledValidationSpawner(spawner validator.ValidationSpawner) *ThrottledValidationSpawner {
 	return &ThrottledValidationSpawner{
-		Spawner:   spawner,
+		Spawner:   retry_wrapper.NewValidationSpawnerRetryWrapper(spawner),
 		Throttler: &WorkerThrottler{maxWorkers: spawner.Capacity()},
 	}
 }
@@ -1066,9 +1066,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 		var runs []validator.ValidationRun
 		for _, moduleRoot := range wasmRoots {
 			throttledSpawner := v.chosenValidator[moduleRoot]
-			spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(throttledSpawner.Spawner)
-			spawner.StopWaiter.Start(ctx, v)
-			input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+			input, err := validationStatus.Entry.ToInput(throttledSpawner.Spawner.StylusArchs())
 			if err != nil && ctx.Err() == nil {
 				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
 				throttledSpawner.Throttler.Release()
@@ -1081,7 +1079,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				return nil, ctx.Err()
 			}
-			run := spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
+			run := throttledSpawner.Spawner.LaunchWithNAllowedAttempts(input, moduleRoot, v.config().ValidationSpawningAllowedAttempts, v.config().ValidationSpawningAllowedTimeouts)
 			log.Trace("sendValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 			runs = append(runs, run)
 		}
@@ -1701,12 +1699,18 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 			}
 		})
 	}
+	for _, throttled := range v.chosenValidator {
+		throttled.Spawner.Start(v.GetContext())
+	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
 }
 
 func (v *BlockValidator) StopAndWait() {
+	for _, throttled := range v.chosenValidator {
+		throttled.Spawner.StopAndWait()
+	}
 	v.StopWaiter.StopAndWait()
 }
 
