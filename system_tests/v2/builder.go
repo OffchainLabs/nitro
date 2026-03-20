@@ -169,6 +169,9 @@ func buildL2Node(t *testing.T, ctx context.Context, spec *BuilderSpec) (*TestEnv
 	}
 
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	if spec.ArbOSVersion != 0 {
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = spec.ArbOSVersion
+	}
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	execCfg := defaultExecConfig(t, stateScheme)
 	stackCfg := testhelpers.CreateStackConfigForTest(t.TempDir())
