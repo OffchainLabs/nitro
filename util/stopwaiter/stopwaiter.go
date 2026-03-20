@@ -124,6 +124,13 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
+	// Take children before StopOnly so we can wait for them.
+	// StopOnly will find no children (already taken) and just stop self.
+	children := s.takeChildren()
+	// StopAndWait children in LIFO order before stopping self.
+	for i := len(children) - 1; i >= 0; i-- {
+		children[i].StopAndWait()
+	}
 	s.StopOnly()
 	if !s.Started() {
 		// No need to wait, because nothing can be started if it's already stopped.
