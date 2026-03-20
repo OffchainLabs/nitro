@@ -373,6 +373,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
 	b.chalManager.Start(b.GetContext())
+	b.TrackChild(b.chalManager)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
@@ -489,11 +490,6 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	}
 
 	return count, (*validator.GoGlobalState)(&globalState), nil
-}
-
-func (b *BOLDStaker) StopAndWait() {
-	b.chalManager.StopAndWait()
-	b.StopWaiter.StopAndWait()
 }
 
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
