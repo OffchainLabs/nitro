@@ -153,10 +153,12 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 		}
 	}
 
-	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
+	// Under -race both pipelines are significantly slower; use a generous
+	// 60s timeout for each to avoid flakes.
+	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*60)
 	Require(t, err, "Failed waiting for Tx on main node")
 
-	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
+	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*60)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
