@@ -59,7 +59,7 @@ impl ValidationInput {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
-        } else {
+        } else if !cfg!(feature = "sp1") {
             for (arch, wasms) in &req.user_wasms {
                 if !wasms.is_empty() {
                     return Err(format!("bad stylus arch: got {arch}, expected {target}"));
