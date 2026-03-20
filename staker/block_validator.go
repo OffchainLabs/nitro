@@ -1557,8 +1557,7 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
 	for _, throttled := range v.chosenValidator {
-		throttled.Spawner.Start(v.GetContext())
-		v.TrackChild(throttled.Spawner)
+		v.StartAndTrackChild(throttled.Spawner)
 	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)

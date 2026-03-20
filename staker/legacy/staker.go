@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/btree"
-	"github.com/offchainlabs/nitro/util/stopwaiter/state"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -33,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter/state"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -560,7 +560,6 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 
 	return latestStaked, count, &globalState, nil
 }
-
 
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)

@@ -281,9 +281,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
 	log.Info("Started challenge manager", "stakerAddress", m.chain.StakerAddress().Hex())
 
-	// Start the assertion manager on its own StopWaiter.
-	m.assertionManager.Start(m.GetContext())
-	m.TrackChild(m.assertionManager)
+	m.StartAndTrackChild(m.assertionManager)
 
 	// Watcher tower and resolve modes don't monitor challenges.
 	if m.mode == types.WatchTowerMode || m.mode == types.ResolveMode {
@@ -293,14 +291,10 @@ func (m *Manager) Start(ctx context.Context) {
 	// Start watching for parent chain block events in the background.
 	m.LaunchThread(m.listenForBlockEvents)
 
-	// Start watching for ongoing chain events on its own StopWaiter.
-	m.watcher.Start(m.GetContext())
-	m.TrackChild(m.watcher)
+	m.StartAndTrackChild(m.watcher)
 
 	if m.api != nil {
-		// Start the API server on its own StopWaiter.
-		m.api.Start(m.GetContext())
-		m.TrackChild(m.api)
+		m.StartAndTrackChild(m.api)
 	}
 }
 

@@ -332,6 +332,13 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 	}
 }
 
+// StartAndTrackChild starts a child with the parent's managed context
+// and registers it for automatic shutdown in LIFO order.
+func (s *StopWaiter) StartAndTrackChild(child state.StoppableChild) {
+	child.Start(s.GetContext())
+	s.TrackChild(child)
+}
+
 func (s *StopWaiter) StopAndWait() {
 	if err := s.StopWaiterSafe.StopAndWait(); err != nil {
 		panic(err)

@@ -136,8 +136,7 @@ func NewExpressLaneProxy(
 
 func (p *ExpressLaneProxy) Start(ctx context.Context) {
 	p.StopWaiter.Start(ctx, p)
-	p.expressLaneTracker.Start(p.GetContext())
-	p.TrackChild(p.expressLaneTracker)
+	p.StartAndTrackChild(p.expressLaneTracker)
 }
 
 var ErrorInternalConnectionError = errors.New("internal connection error")

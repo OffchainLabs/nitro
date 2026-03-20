@@ -40,6 +40,12 @@ type Stoppable interface {
 	StopAndWait()
 }
 
+// StoppableChild extends Stoppable with a Start method that takes a context.
+type StoppableChild interface {
+	Stoppable
+	Start(context.Context)
+}
+
 // lint:require-exhaustive-initialization
 type LockedInternalState struct {
 	Started   bool

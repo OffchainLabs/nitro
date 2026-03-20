@@ -83,8 +83,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(s.GetContext())
-		s.TrackChild(c)
+		s.StartAndTrackChild(c)
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
@@ -201,8 +200,7 @@ func (s *ValidationServer) startBoldSpawner() {
 		log.Error("creating redis execution spawner", "error", err)
 		return
 	}
-	s.boldSpawner.Start(s.GetContext())
-	s.TrackChild(s.boldSpawner)
+	s.StartAndTrackChild(s.boldSpawner)
 }
 
 type ExecutionSpawner struct {
@@ -245,8 +243,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
-		c.Start(s.GetContext())
-		s.TrackChild(c)
+		s.StartAndTrackChild(c)
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)

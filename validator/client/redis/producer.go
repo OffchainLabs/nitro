@@ -147,8 +147,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	for _, p := range c.producers {
-		p.Start(c.GetContext())
-		c.TrackChild(p)
+		c.StartAndTrackChild(p)
 	}
 	return nil
 }
@@ -236,8 +235,7 @@ func (br *BOLDRedisExecutionClient) Start(ctx_in context.Context) error {
 	}
 	br.StopWaiter.Start(ctx_in, br)
 	for _, p := range br.producers {
-		p.Start(br.GetContext())
-		br.TrackChild(p)
+		br.StartAndTrackChild(p)
 	}
 	return nil
 }

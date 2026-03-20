@@ -226,8 +226,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 	if bv.producer == nil {
 		log.Crit("Bid validator not yet initialized by calling Initialize(ctx)")
 	}
-	bv.producer.Start(bv.GetContext())
-	bv.TrackChild(bv.producer)
+	bv.StartAndTrackChild(bv.producer)
 
 	// Thread to set reserve price and clear per-round map of bid count per account.
 	bv.StopWaiter.LaunchThread(func(ctx context.Context) {

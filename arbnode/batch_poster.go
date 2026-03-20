@@ -2072,10 +2072,8 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.dataPoster.Start(b.GetContext())
-	b.TrackChild(b.dataPoster)
-	b.redisLock.Start(b.GetContext())
-	b.TrackChild(b.redisLock)
+	b.StartAndTrackChild(b.dataPoster)
+	b.StartAndTrackChild(b.redisLock)
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
