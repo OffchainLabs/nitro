@@ -45,7 +45,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 use validation::transfer::{receive_response, send_validation_input};
-use validation::{GoGlobalState, ValidationInput};
+use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
 
 #[derive(Debug)]
 pub struct JitMachine {
@@ -65,7 +65,7 @@ impl JitMachine {
     pub async fn feed_machine(
         &self,
         wasm_memory_usage_limit: u64,
-        request: &ValidationInput,
+        request: &ValidationRequest,
     ) -> Result<GoGlobalState> {
         // 0. Ensure process is alive
         self.ensure_alive().await?;
@@ -93,7 +93,9 @@ impl JitMachine {
             .context("failed to open listener connection")?;
 
         // 5. Send data
-        send_validation_input(&mut conn, request)?;
+        let input =
+            ValidationInput::from_request(request, local_target()).map_err(|e| anyhow!(e))?;
+        send_validation_input(&mut conn, &input)?;
 
         // 6. Read Response and return new state
         match receive_response(&mut conn)? {
@@ -139,7 +141,6 @@ impl JitProcessManager {
         let machines: HashMap<ModuleRoot, Arc<JitMachine>> = locator
             .module_roots()
             .iter()
-            .cloned()
             .map(|root_meta| {
                 let root_path = replay_binary(&root_meta.path);
                 let sub_machine = create_jit_machine(DEFAULT_JIT_CRANELIFT, &root_path)?;
@@ -159,7 +160,7 @@ impl JitProcessManager {
 
     pub async fn feed_machine_with_root(
         &self,
-        request: &ValidationInput,
+        request: &ValidationRequest,
         module_root: ModuleRoot,
     ) -> Result<GoGlobalState> {
         // Reject new operations if we're shutting down

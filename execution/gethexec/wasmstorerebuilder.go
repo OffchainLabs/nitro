@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
 var RebuildingPositionKey []byte = []byte("_rebuildingPosition")             // contains the codehash upto which rebuilding of wasm store was last completed. Initialized to common.Hash{} at the start
@@ -69,6 +70,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	targets := targetConfig.WasmTargets()
+	programs.SetAllowFallback(targetConfig.AllowFallback)
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion

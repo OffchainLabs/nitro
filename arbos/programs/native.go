@@ -21,6 +21,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -48,6 +49,20 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
+
+// allowFallback controls whether compilation failures fall back to an alternative compiler.
+// Set once at startup via SetAllowFallback; defaults to true (fallback enabled).
+var allowFallback atomic.Bool
+
+func init() {
+	allowFallback.Store(true)
+}
+
+// SetAllowFallback configures whether to fall back to an alternative compiler on failure.
+func SetAllowFallback(enabled bool) {
+	allowFallback.Store(enabled)
+	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
+}
 
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
@@ -226,8 +241,12 @@ func activateProgramInternal(
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					log.Warn("initial stylus compilation failed", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
-					asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+					if allowFallback.Load() {
+						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
+						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
+					} else {
+						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+					}
 				}
 				results <- result{target, asm, err}
 			}
@@ -254,9 +273,10 @@ func activateProgramInternal(
 			"codehash", codehash,
 			"moduleHash", info.moduleHash,
 			"targets", targets,
+			"allowFallback", allowFallback.Load(),
 			"err", err,
 		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding: %v", addressForLogging, err))
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (allowFallback=%v): %v", addressForLogging, allowFallback.Load(), err))
 	}
 	return info, asmMap, err
 }
