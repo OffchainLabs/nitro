@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 	"testing"
 
@@ -125,6 +126,13 @@ func NewStack(
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
+
+	stack.RegisterHandler("liveness", "/liveness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	stack.RegisterHandler("readiness", "/readiness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 
 	return stack, api, nil
 }

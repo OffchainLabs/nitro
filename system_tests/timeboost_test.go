@@ -107,7 +107,7 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 	}
 	// Send tx with seq=0 that releases all the buffered txs and wait for the block to be produced
 	Require(t, expressLaneClient.QueueTransactionWithSequence(ctx, txs[0], 0))
-	rec, err := builderSeq.L2.EnsureTxSucceeded(txs[0])
+	rec, err := builderSeq.L2.EnsureTxSucceededWithTimeout(txs[0], 30*time.Second)
 	Require(t, err)
 	firstBlockNum := rec.BlockNumber.Uint64()
 	t.Logf("tx: 0 was sequenced in block: %d", firstBlockNum)
