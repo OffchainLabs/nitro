@@ -80,6 +80,10 @@ func TestTrackChildStopAndWaitOrder(t *testing.T) {
 
 	parent := StopWaiter{}
 	parent.Start(context.Background(), &TestStruct{})
+	parent.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		order = append(order, "parent")
+	})
 
 	child1 := StopWaiter{}
 	child1.Start(parent.GetContext(), &TestStruct{})
@@ -99,8 +103,8 @@ func TestTrackChildStopAndWaitOrder(t *testing.T) {
 
 	parent.StopAndWait()
 
-	if len(order) != 2 || order[0] != "child2" || order[1] != "child1" {
-		t.Errorf("expected LIFO order [child2, child1], got %v", order)
+	if len(order) != 3 || order[0] != "child2" || order[1] != "child1" || order[2] != "parent" {
+		t.Errorf("expected LIFO order [child2, child1, parent], got %v", order)
 	}
 }
 

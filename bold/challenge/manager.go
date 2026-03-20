@@ -43,8 +43,7 @@ type Opt = func(val *Manager)
 // AssertionManager works with the challenge manager suppplying information
 // about assertions.
 type AssertionManager interface {
-	stoppable.Stoppable
-	Start(context.Context)
+	stoppable.StoppableChild
 	LatestAgreedAssertion() protocol.AssertionHash
 	SetRivalHandler(types.RivalHandler)
 }

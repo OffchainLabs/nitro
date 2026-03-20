@@ -299,7 +299,7 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
-	state.Stoppable
+	state.StoppableChild
 	Initialize(context.Context) error
 	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
@@ -313,7 +313,6 @@ type ValidatorWalletInterface interface {
 	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
-	Start(context.Context)
 	// May be nil
 	DataPoster() *dataposter.DataPoster
 }

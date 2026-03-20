@@ -70,12 +70,10 @@ func (es *ExpressLaneService) Start(ctxIn context.Context) {
 	es.StopWaiter.Start(ctxIn, es)
 
 	if es.redisCoordinator != nil {
-		es.redisCoordinator.Start(es.GetContext())
-		es.TrackChild(es.redisCoordinator)
+		es.StartAndTrackChild(es.redisCoordinator)
 	}
 	if es.tracker != nil {
-		es.tracker.Start(es.GetContext())
-		es.TrackChild(es.tracker)
+		es.StartAndTrackChild(es.tracker)
 	}
 }
 
