@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -721,6 +722,11 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			if err != nil {
 				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
+			}
+			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+			// All transactions in a block share the same Coinbase, so this is a block-level property.
+			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+				collectTips = false
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
