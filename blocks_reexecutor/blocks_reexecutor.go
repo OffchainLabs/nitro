@@ -303,10 +303,6 @@ func (s *BlocksReExecutor) WaitForReExecution(ctx context.Context) error {
 	return nil
 }
 
-func (s *BlocksReExecutor) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
