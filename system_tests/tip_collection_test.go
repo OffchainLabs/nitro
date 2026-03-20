@@ -272,6 +272,15 @@ func TestTipCollectionDelayedInboxDropsTips(t *testing.T) {
 	if revenue.Cmp(expected) != 0 {
 		Fatal(t, "delayed inbox: tip should be dropped", "revenue", revenue, "expected", expected)
 	}
+
+	// Verify the receipt's EffectiveGasPrice equals baseFee (not baseFee+tip).
+	// This confirms that the block-level CollectTips header flag is false for delayed blocks,
+	// which is needed for correct receipt re-derivation.
+	blockBaseFee := env.builder.L2.GetBaseFeeAt(t, receipt.BlockNumber)
+	if receipt.EffectiveGasPrice.Cmp(blockBaseFee) != 0 {
+		Fatal(t, "delayed inbox: EffectiveGasPrice should equal baseFee",
+			"effectiveGasPrice", receipt.EffectiveGasPrice, "baseFee", blockBaseFee)
+	}
 }
 
 // TestTipCollectionGetPaidGasPrice verifies that the GASPRICE opcode (which calls
