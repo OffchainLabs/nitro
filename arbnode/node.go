@@ -738,6 +738,14 @@ func getDAProviders(
 		}
 	}
 
+	// Register a fallback DACert reader to treat DACert batches as empty
+	// if no real provider was configured, matching replay behavior.
+	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
+		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
+		}
+	}
+
 	// Combine all cleanup functions
 	combinedCleanup := func() {
 		for _, cleanup := range cleanupFuncs {

@@ -16,5 +16,7 @@ panic = "abort"
 # uncomment to optimize for size
 #   opt-level = "z"
 
-[workspace]
+[features]
+contract-client-gen = []
 
+[workspace]
