@@ -148,14 +148,12 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	for _, p := range c.producers {
 		p.Start(c.GetContext())
+		c.TrackChild(p)
 	}
 	return nil
 }
 
 func (c *ValidationClient) Stop() {
-	for _, p := range c.producers {
-		p.StopAndWait()
-	}
 	c.StopWaiter.StopAndWait()
 }
 
@@ -239,14 +237,12 @@ func (br *BOLDRedisExecutionClient) Start(ctx_in context.Context) error {
 	br.StopWaiter.Start(ctx_in, br)
 	for _, p := range br.producers {
 		p.Start(br.GetContext())
+		br.TrackChild(p)
 	}
 	return nil
 }
 
 func (br *BOLDRedisExecutionClient) Stop() {
-	for _, p := range br.producers {
-		p.StopAndWait()
-	}
 	br.StopWaiter.StopAndWait()
 }
 
