@@ -294,7 +294,9 @@ func TestRebuildThenPourAndPop_MatchesOriginal(t *testing.T) {
 	accumulateN(t, s2, extra)
 
 	// Rebuild cache from scratch on a new state with same accumulators
-	allMsgs := append(batch1, extra...)
+	var allMsgs []*DelayedInboxMessage
+	allMsgs = append(allMsgs, batch1...)
+	allMsgs = append(allMsgs, extra...)
 	rebuilt := &State{
 		DelayedMessagesRead:     s2.DelayedMessagesRead,
 		DelayedMessagesSeen:     s2.DelayedMessagesSeen,
