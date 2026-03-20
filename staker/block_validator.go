@@ -1558,17 +1558,11 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
 	for _, throttled := range v.chosenValidator {
 		throttled.Spawner.Start(v.GetContext())
+		v.TrackChild(throttled.Spawner)
 	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	v.CallIteratively(v.iterativeValidationPrint)
 	return nil
-}
-
-func (v *BlockValidator) StopAndWait() {
-	for _, throttled := range v.chosenValidator {
-		throttled.Spawner.StopAndWait()
-	}
-	v.StopWaiter.StopAndWait()
 }
 
 // WaitForPos can only be used from One thread
