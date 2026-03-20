@@ -48,6 +48,15 @@ func (c *LruCache[K, V]) Get(key K) (V, bool) {
 	return c.inner.Get(key)
 }
 
+// Peek returns the key's value without updating the "recently used"-ness of the key.
+func (c *LruCache[K, V]) Peek(key K) (V, bool) {
+	var empty V
+	if c.inner == nil {
+		return empty, false
+	}
+	return c.inner.Peek(key)
+}
+
 func (c *LruCache[K, V]) Contains(key K) bool {
 	if c.inner == nil {
 		return false
