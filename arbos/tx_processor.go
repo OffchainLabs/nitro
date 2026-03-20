@@ -876,7 +876,7 @@ func (p *TxProcessor) CollectTips() bool {
 	// v60+: collect tips if enabled
 	collectTips, err := p.state.CollectTips()
 	if err != nil {
-		return false
+		panic(fmt.Sprintf("failed to read collect tips setting: %v", err))
 	}
 	return collectTips
 }
