@@ -408,7 +408,7 @@ func mainImpl() int {
 	if nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
 		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
+			log.Error("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -417,7 +417,7 @@ func mainImpl() int {
 	if traceConfig.TracerName != "" {
 		tracer, err = tracers.LiveDirectory.New(traceConfig.TracerName, json.RawMessage(traceConfig.JSONConfig))
 		if err != nil {
-			log.Error("custom tracer error:", "name", traceConfig.TracerName, "err", err)
+			log.Error("custom tracer error", "name", traceConfig.TracerName, "err", err)
 			return 1
 		}
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
@@ -453,6 +453,7 @@ func mainImpl() int {
 		deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 	}
 	if err != nil {
+		log.Error("error opening consensus database", "err", err)
 		return 1
 	}
 
@@ -506,8 +507,8 @@ func mainImpl() int {
 			fatalErrChan,
 		)
 		if err != nil {
-			valNode = nil
-			log.Warn("couldn't init validation node", "err", err)
+			log.Error("couldn't init validation node", "err", err)
+			return 1
 		}
 	}
 
@@ -515,7 +516,8 @@ func mainImpl() int {
 	if liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
-			log.Error("failed to create machine locator: %w", err)
+			log.Error("failed to create machine locator", "err", err)
+			return 1
 		}
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
