@@ -75,6 +75,83 @@ func TestStopWaiterStopAndWaitMultipleTimes(t *testing.T) {
 	sw.StopAndWait()
 }
 
+func TestTrackChildStopAndWaitOrder(t *testing.T) {
+	var order []string
+
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child1 := StopWaiter{}
+	child1.Start(parent.GetContext(), &TestStruct{})
+	child1.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		order = append(order, "child1")
+	})
+	parent.TrackChild(&child1)
+
+	child2 := StopWaiter{}
+	child2.Start(parent.GetContext(), &TestStruct{})
+	child2.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		order = append(order, "child2")
+	})
+	parent.TrackChild(&child2)
+
+	parent.StopAndWait()
+
+	if len(order) != 2 || order[0] != "child2" || order[1] != "child1" {
+		t.Errorf("expected LIFO order [child2, child1], got %v", order)
+	}
+}
+
+func TestTrackChildStopOnly(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	parent.TrackChild(&child)
+
+	parent.StopOnly()
+
+	if !child.Stopped() {
+		t.Error("child should be stopped after parent StopOnly")
+	}
+}
+
+func TestTrackChildStopAndWaitMultipleTimes(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	child.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+	})
+	parent.TrackChild(&child)
+
+	parent.StopAndWait()
+	parent.StopAndWait() // should not panic
+}
+
+func TestTrackChildContextCancellation(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	childCtx := child.GetContext()
+	parent.TrackChild(&child)
+
+	parent.StopOnly()
+
+	select {
+	case <-childCtx.Done():
+	default:
+		t.Error("child context should be cancelled after parent StopOnly")
+	}
+}
+
 func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
 	t.Parallel()
 	sw := StopWaiter{}
