@@ -89,18 +89,18 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
+                // Detect native stack overflow FIRST — it takes priority because
+                // the DepthChecker counter may also be at zero when SIGSEGV fires,
+                // and we need the retry loop in stylus_call to see NativeStackOverflow.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
+                }
+
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }
                 if self.ink_left() == MachineMeter::Exhausted {
                     return Ok(OutOfInk);
-                }
-
-                // Detect native stack overflow (Wasmer caught SIGSEGV on the coroutine stack).
-                // This is distinct from OutOfStack (DepthChecker limit) and can be retried
-                // with a larger native stack.
-                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
-                    return Ok(NativeStackOverflow);
                 }
 
                 let escape: Escape = match outcome.downcast() {

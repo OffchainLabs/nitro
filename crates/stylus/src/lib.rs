@@ -331,6 +331,17 @@ pub unsafe extern "C" fn stylus_call(
                 current, new_size,
             );
             wasmer_vm::set_stack_size(new_size);
+            let actual = wasmer_vm::get_stack_size();
+            if actual <= current {
+                eprintln!(
+                    "stylus: CRITICAL: failed to grow native stack \
+                     (requested {}, got {}), giving up",
+                    new_size, actual,
+                );
+                let status = write_outcome(output, UserOutcome::OutOfStack);
+                *gas = 0;
+                return status;
+            }
             *gas = original_gas;
             continue;
         }

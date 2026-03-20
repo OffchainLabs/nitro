@@ -55,6 +55,7 @@ func TestCompileArch(t *testing.T) {
 }
 
 func TestNativeStackSize(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024) // restore default even on panic
 	err := testNativeStackSize()
 	if err != nil {
 		t.Fatal(err)

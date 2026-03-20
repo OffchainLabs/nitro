@@ -333,9 +333,6 @@ func testNativeStackSize() error {
 		return err
 	}
 
-	// Reset to default
-	SetNativeStackSize(0)
-
 	return nil
 }
 
