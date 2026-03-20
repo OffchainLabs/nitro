@@ -85,6 +85,7 @@ func (s *FilterService) Start(ctx context.Context) {
 	})
 
 	s.addressChecker.Start(s.GetContext())
+	s.TrackChild(s.addressChecker)
 
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,
