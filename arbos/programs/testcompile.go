@@ -324,11 +324,30 @@ func testNativeStackSize() error {
 	if status == userSuccess {
 		return fmt.Errorf("expected recursive program to eventually fail, got success")
 	}
+	if status == userNativeStackOverflow {
+		return fmt.Errorf("got userNativeStackOverflow: Rust retry loop failed to handle stack overflow")
+	}
 	if status != userOutOfInk && status != userOutOfStack {
-		return fmt.Errorf("expected out-of-ink or out-of-stack, got status %d", status)
+		return fmt.Errorf("expected out-of-ink or out-of-stack, got unexpected status %d", status)
 	}
 
-	_, err = fmt.Printf("testNativeStackSize: passed (status=%d), stack auto-grew from 32KB\n", status)
+	// Verify the thread-local override was cleared and the process-wide
+	// default was NOT permanently modified by the retry loop (#12).
+	currentSize := GetNativeStackSize()
+	if currentSize != 32*1024 {
+		return fmt.Errorf("expected stack size to be restored to 32KB after call, got %d bytes", currentSize)
+	}
+
+	// Verify retries actually occurred: with a 32KB stack, the
+	// recursive program with multi-value loops will always overflow before
+	// the DepthChecker triggers. The only way to reach out-of-ink or
+	// out-of-stack (normal termination) is if the retry loop grew the stack.
+	// Additionally, gas should have been consumed (program actually ran).
+	if gas >= u64(0xfffffffffffffff) {
+		return fmt.Errorf("expected gas to be consumed, but gas is still at initial value")
+	}
+
+	_, err = fmt.Printf("testNativeStackSize: passed (status=%d, gas_left=%d), stack auto-grew from 32KB\n", status, gas)
 	if err != nil {
 		return err
 	}

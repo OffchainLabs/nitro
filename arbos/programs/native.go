@@ -70,6 +70,11 @@ func SetNativeStackSize(size uint64) {
 	C.stylus_set_native_stack_size(u64(size))
 }
 
+// GetNativeStackSize returns the current process-wide default Wasmer coroutine stack size in bytes.
+func GetNativeStackSize() uint64 {
+	return uint64(C.stylus_get_native_stack_size())
+}
+
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)

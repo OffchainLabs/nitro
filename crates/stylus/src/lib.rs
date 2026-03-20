@@ -223,21 +223,26 @@ pub unsafe extern "C" fn stylus_target_set(
     UserOutcomeKind::Success
 }
 
-/// Sets the default native stack size for Wasmer coroutines.
-/// If `size` is 0, the existing default (1MB) is kept.
-///
-/// # Safety
-///
-/// Must be called before any Stylus execution begins (typically at startup).
+/// Sets the process-wide default native stack size for Wasmer coroutines.
+/// If `size` is 0, the existing default (1MB) is kept. Typically called at
+/// startup, but safe to call at any time — changes take effect on the next
+/// coroutine allocation.
 #[no_mangle]
 pub extern "C" fn stylus_set_native_stack_size(size: u64) {
     if size > 0 {
         wasmer_vm::set_stack_size(size as usize);
         eprintln!(
-            "stylus: native stack size set to {} bytes",
-            wasmer_vm::get_stack_size()
+            "stylus: native_stack_size={} (configured={})",
+            wasmer_vm::get_stack_size(),
+            size,
         );
     }
+}
+
+/// Returns the current process-wide default native stack size in bytes.
+#[no_mangle]
+pub extern "C" fn stylus_get_native_stack_size() -> u64 {
+    wasmer_vm::get_stack_size() as u64
 }
 
 /// Calls an activated user program.
@@ -267,17 +272,16 @@ pub unsafe extern "C" fn stylus_call(
     let pricing = config.pricing;
     let output = &mut *output;
     let original_gas = *gas;
-    let configured_stack_size = wasmer_vm::get_stack_size();
-
-    // Restore the configured stack size when this scope exits, even on panic.
-    // This ensures retries that temporarily bump the global don't leak to other calls.
-    struct RestoreStackSize(usize);
-    impl Drop for RestoreStackSize {
+    // Clear any thread-local stack size override on scope exit (even on panic).
+    // This ensures retries that temporarily bump the thread-local don't leak to
+    // subsequent calls on the same thread.
+    struct ClearThreadOverride;
+    impl Drop for ClearThreadOverride {
         fn drop(&mut self) {
-            wasmer_vm::set_stack_size(self.0);
+            wasmer_vm::set_thread_stack_size(None);
         }
     }
-    let _guard = RestoreStackSize(configured_stack_size);
+    let _guard = ClearThreadOverride;
 
     // Native stack overflow retry loop.
     //
@@ -291,11 +295,11 @@ pub unsafe extern "C" fn stylus_call(
     // Wasmer's signal handler catches this and returns TrapCode::StackOverflow,
     // which run_main surfaces as UserOutcome::NativeStackOverflow. When we see
     // that outcome we:
-    //   1. Temporarily bump the global default stack size (capped at 100 MB) so
-    //      the next Wasmer call allocates a larger coroutine stack. The stack
-    //      pool is size-tagged, so existing smaller stacks are skipped rather
-    //      than reused. The global is restored to its configured value after
-    //      this call completes, so other calls are not permanently affected.
+    //   1. Set a thread-local stack size override (capped at MAX_STACK_SIZE =
+    //      100 MB) so the next Wasmer coroutine on THIS thread gets a larger
+    //      stack. The override is thread-local, so other threads are unaffected.
+    //      The stack pool is size-tagged: undersized cached stacks are skipped,
+    //      not reused. The override is cleared when this call completes.
     //   2. Restore gas to its pre-call value (the failed attempt may have
     //      consumed some via host calls, but the Go-side EVM reverts sub-call
     //      state on failure, so replaying is safe).
@@ -303,7 +307,7 @@ pub unsafe extern "C" fn stylus_call(
     //
     // If the stack is already at MAX_STACK_SIZE and still overflows, we give up
     // and return OutOfStack (taking all gas) instead of crashing the node.
-    let mut stack_size = configured_stack_size;
+    let mut stack_size = wasmer_vm::get_stack_size();
     let result = loop {
         let evm_api = EvmApiRequestor::new(req_handler);
         let ink = pricing.gas_to_ink(Gas(*gas));
@@ -329,9 +333,9 @@ pub unsafe extern "C" fn stylus_call(
         if matches!(&outcome, Ok(UserOutcome::NativeStackOverflow)) {
             if stack_size >= wasmer_vm::MAX_STACK_SIZE {
                 eprintln!(
-                    "stylus: native stack overflow at maximum stack size ({} bytes), \
-                     giving up",
+                    "stylus: error native_stack_overflow stack_size={} max={} action=giving_up",
                     stack_size,
+                    wasmer_vm::MAX_STACK_SIZE,
                 );
                 let status = write_outcome(output, UserOutcome::OutOfStack);
                 *gas = 0;
@@ -339,14 +343,13 @@ pub unsafe extern "C" fn stylus_call(
             }
             let new_size = stack_size.saturating_mul(2).min(wasmer_vm::MAX_STACK_SIZE);
             eprintln!(
-                "stylus: WARNING: native stack overflow detected, \
-                 growing stack size from {} to {} bytes and retrying",
+                "stylus: warn native_stack_overflow old_size={} new_size={} action=retrying",
                 stack_size, new_size,
             );
             stack_size = new_size;
-            // Temporarily set the global so the next Wasmer call picks up the
-            // larger size. Restored to configured_stack_size below.
-            wasmer_vm::set_stack_size(new_size);
+            // Set a thread-local override so the next Wasmer coroutine on this
+            // thread allocates a stack of the new size. Cleared by _guard on exit.
+            wasmer_vm::set_thread_stack_size(Some(new_size));
             *gas = original_gas;
             continue;
         }
@@ -363,7 +366,7 @@ pub unsafe extern "C" fn stylus_call(
         break status;
     };
 
-    // _guard's Drop restores configured_stack_size here (even on panic).
+    // _guard's Drop clears the thread-local override here (even on panic).
     result
 }
 
