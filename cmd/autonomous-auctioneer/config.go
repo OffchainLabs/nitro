@@ -131,7 +131,7 @@ func (c *AutonomousAuctioneerConfig) GetReloadInterval() time.Duration {
 }
 
 func (c *AutonomousAuctioneerConfig) Validate() error {
-	if err := c.AuctioneerServer.S3Storage.Validate(); err != nil {
+	if err := c.AuctioneerServer.Validate(); err != nil {
 		return err
 	}
 	return nil
