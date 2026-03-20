@@ -5,9 +5,16 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::{value::FunctionType, Machine};
+#[cfg(not(feature = "sp1"))]
+use crate::Machine;
 
+use crate::value::FunctionType;
+#[cfg(feature = "sp1")]
+use crate::value::InternalFunc;
+
+#[cfg(not(feature = "sp1"))]
 use crate::internal_func::InternalFunc;
+
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;

@@ -496,3 +496,15 @@ impl Display for ArbValueType {
         }
     }
 }
+
+#[cfg(feature = "sp1")]
+#[path = "internal_func.rs"]
+mod internal_func;
+#[cfg(feature = "sp1")]
+pub use internal_func::InternalFunc;
+
+#[cfg(feature = "sp1")]
+#[path = "memory_type.rs"]
+mod memory_type;
+#[cfg(feature = "sp1")]
+pub use memory_type::MemoryType;

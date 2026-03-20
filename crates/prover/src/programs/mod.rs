@@ -1,9 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#[cfg(feature = "sp1")]
+use crate::value::MemoryType;
+#[cfg(not(feature = "sp1"))]
+use crate::{machine::Module, memory_type::MemoryType};
+
 use crate::{
     binary::{ExportKind, WasmBinary},
-    machine::Module,
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
@@ -17,7 +21,6 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
-use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
 use {
     super::value,
