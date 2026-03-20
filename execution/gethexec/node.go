@@ -47,10 +47,11 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64      string   `koanf:"arm64"`
-	Amd64      string   `koanf:"amd64"`
-	Host       string   `koanf:"host"`
-	ExtraArchs []string `koanf:"extra-archs"`
+	Arm64         string   `koanf:"arm64"`
+	Amd64         string   `koanf:"amd64"`
+	Host          string   `koanf:"host"`
+	ExtraArchs    []string `koanf:"extra-archs"`
+	AllowFallback bool     `koanf:"allow-fallback"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -83,10 +84,11 @@ func (c *StylusTargetConfig) Validate() error {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:      programs.DefaultTargetDescriptionArm,
-	Amd64:      programs.DefaultTargetDescriptionX86,
-	Host:       "",
-	ExtraArchs: []string{string(rawdb.TargetWavm)},
+	Arm64:         programs.DefaultTargetDescriptionArm,
+	Amd64:         programs.DefaultTargetDescriptionX86,
+	Host:          "",
+	ExtraArchs:    []string{string(rawdb.TargetWavm)},
+	AllowFallback: true,
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -94,6 +96,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
+	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
 }
 
 type TxIndexerConfig struct {
