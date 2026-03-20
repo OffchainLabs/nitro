@@ -267,6 +267,17 @@ pub unsafe extern "C" fn stylus_call(
     let pricing = config.pricing;
     let output = &mut *output;
     let original_gas = *gas;
+    let configured_stack_size = wasmer_vm::get_stack_size();
+
+    // Restore the configured stack size when this scope exits, even on panic.
+    // This ensures retries that temporarily bump the global don't leak to other calls.
+    struct RestoreStackSize(usize);
+    impl Drop for RestoreStackSize {
+        fn drop(&mut self) {
+            wasmer_vm::set_stack_size(self.0);
+        }
+    }
+    let _guard = RestoreStackSize(configured_stack_size);
 
     // Native stack overflow retry loop.
     //
@@ -280,9 +291,11 @@ pub unsafe extern "C" fn stylus_call(
     // Wasmer's signal handler catches this and returns TrapCode::StackOverflow,
     // which run_main surfaces as UserOutcome::NativeStackOverflow. When we see
     // that outcome we:
-    //   1. Double the global native stack size (capped at MAX_STACK_SIZE = 100 MB).
-    //      set_stack_size drains the cached stack pool so the next call gets a
-    //      fresh, correctly-sized stack.
+    //   1. Temporarily bump the global default stack size (capped at 100 MB) so
+    //      the next Wasmer call allocates a larger coroutine stack. The stack
+    //      pool is size-tagged, so existing smaller stacks are skipped rather
+    //      than reused. The global is restored to its configured value after
+    //      this call completes, so other calls are not permanently affected.
     //   2. Restore gas to its pre-call value (the failed attempt may have
     //      consumed some via host calls, but the Go-side EVM reverts sub-call
     //      state on failure, so replaying is safe).
@@ -290,7 +303,8 @@ pub unsafe extern "C" fn stylus_call(
     //
     // If the stack is already at MAX_STACK_SIZE and still overflows, we give up
     // and return OutOfStack (taking all gas) instead of crashing the node.
-    loop {
+    let mut stack_size = configured_stack_size;
+    let result = loop {
         let evm_api = EvmApiRequestor::new(req_handler);
         let ink = pricing.gas_to_ink(Gas(*gas));
 
@@ -313,35 +327,26 @@ pub unsafe extern "C" fn stylus_call(
         let outcome = instance.run_main(&calldata, config, ink);
 
         if matches!(&outcome, Ok(UserOutcome::NativeStackOverflow)) {
-            let current = wasmer_vm::get_stack_size();
-            if current >= wasmer_vm::MAX_STACK_SIZE {
+            if stack_size >= wasmer_vm::MAX_STACK_SIZE {
                 eprintln!(
                     "stylus: native stack overflow at maximum stack size ({} bytes), \
                      giving up",
-                    current,
+                    stack_size,
                 );
                 let status = write_outcome(output, UserOutcome::OutOfStack);
                 *gas = 0;
-                return status;
+                break status;
             }
-            let new_size = current.saturating_mul(2).min(wasmer_vm::MAX_STACK_SIZE);
+            let new_size = stack_size.saturating_mul(2).min(wasmer_vm::MAX_STACK_SIZE);
             eprintln!(
                 "stylus: WARNING: native stack overflow detected, \
                  growing stack size from {} to {} bytes and retrying",
-                current, new_size,
+                stack_size, new_size,
             );
+            stack_size = new_size;
+            // Temporarily set the global so the next Wasmer call picks up the
+            // larger size. Restored to configured_stack_size below.
             wasmer_vm::set_stack_size(new_size);
-            let actual = wasmer_vm::get_stack_size();
-            if actual <= current {
-                eprintln!(
-                    "stylus: CRITICAL: failed to grow native stack \
-                     (requested {}, got {}), giving up",
-                    new_size, actual,
-                );
-                let status = write_outcome(output, UserOutcome::OutOfStack);
-                *gas = 0;
-                return status;
-            }
             *gas = original_gas;
             continue;
         }
@@ -355,8 +360,11 @@ pub unsafe extern "C" fn stylus_call(
             _ => instance.ink_left().into(),
         };
         *gas = pricing.ink_to_gas(ink_left).0;
-        return status;
-    }
+        break status;
+    };
+
+    // _guard's Drop restores configured_stack_size here (even on panic).
+    result
 }
 
 /// set lru cache capacity
