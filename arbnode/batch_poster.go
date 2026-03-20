@@ -2158,7 +2158,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	})
 }
 
-
 type BoolRing struct {
 	buffer         []bool
 	bufferPosition int
