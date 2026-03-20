@@ -50,6 +50,14 @@ func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 	return st.GetParentContext()
 }
 
+// TrackChild registers a child Stoppable to be automatically stopped
+// when this StopWaiter is stopped, in LIFO (reverse) order.
+func (s *StopWaiterSafe) TrackChild(child state.Stoppable) {
+	st := s.Lock()
+	defer s.Unlock()
+	st.Children = append(st.Children, child)
+}
+
 func getParentName(parent any) string {
 	// remove asterisk in case the type is a pointer
 	return strings.Replace(reflect.TypeOf(parent).String(), "*", "", 1)
@@ -79,6 +87,15 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 
 func (s *StopWaiterSafe) StopOnly() {
 	st := s.Lock()
+	// Take children while holding the lock.
+	children := st.Children
+	st.Children = nil
+	s.Unlock()
+	// Stop tracked children in LIFO order before stopping self.
+	for i := len(children) - 1; i >= 0; i-- {
+		children[i].StopOnly()
+	}
+	st = s.Lock()
 	defer s.Unlock()
 	if st.Started && !st.Stopped {
 		st.StopFunc()
@@ -100,6 +117,15 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
+	// Take children while holding the lock.
+	st := s.Lock()
+	children := st.Children
+	st.Children = nil
+	s.Unlock()
+	// StopAndWait tracked children in LIFO order before stopping self.
+	for i := len(children) - 1; i >= 0; i-- {
+		children[i].StopAndWait()
+	}
 	s.StopOnly()
 	if !s.Started() {
 		// No need to wait, because nothing can be started if it's already stopped.

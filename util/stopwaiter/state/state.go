@@ -32,6 +32,13 @@ func (s *InternalState) RUnlock() {
 	s.mutex.RUnlock()
 }
 
+// Stoppable is implemented by any type that can be stopped.
+// Used by TrackChild to automatically stop children in reverse order.
+type Stoppable interface {
+	StopOnly()
+	StopAndWait()
+}
+
 // lint:require-exhaustive-initialization
 type LockedInternalState struct {
 	Started   bool
@@ -41,6 +48,7 @@ type LockedInternalState struct {
 	parentCtx context.Context
 	StopFunc  func()
 	WaitChan  <-chan interface{}
+	Children  []Stoppable
 }
 
 func (s *LockedInternalState) GetContext() (context.Context, error) {
