@@ -386,6 +386,10 @@ func (b *Contract) StopAndWait() {
 	b.dataPoster.StopAndWait()
 }
 
+func (b *Contract) StopOnly() {
+	b.dataPoster.StopOnly()
+}
+
 func (b *Contract) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }

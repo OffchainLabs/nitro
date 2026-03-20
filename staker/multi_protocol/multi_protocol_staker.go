@@ -152,13 +152,16 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
-	m.wallet.Start(ctxIn)
+	m.wallet.Start(m.GetContext())
+	m.TrackChild(m.wallet)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
-		m.boldStaker.Start(ctxIn)
+		m.boldStaker.Start(m.GetContext())
+		m.TrackChild(m.boldStaker)
 	} else {
 		log.Info("Starting pre-BOLD staker")
-		m.oldStaker.Start(ctxIn)
+		m.oldStaker.Start(m.GetContext())
+		m.TrackChild(m.oldStaker)
 		stakerSwitchInterval := m.boldConfig.CheckStakerSwitchInterval
 		m.LaunchThread(func(ctx context.Context) {
 			ticker := time.NewTicker(stakerSwitchInterval)
@@ -178,16 +181,6 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 			}
 		})
 	}
-}
-
-func (m *MultiProtocolStaker) StopAndWait() {
-	if m.boldStaker != nil {
-		m.boldStaker.StopAndWait()
-	}
-	if m.oldStaker != nil {
-		m.oldStaker.StopAndWait()
-	}
-	m.StopWaiter.StopAndWait()
 }
 
 func IsBoldActive(callOpts *bind.CallOpts, bridge *bridgegen.IBridge, l1Backend *ethclient.Client) (bool, common.Address, error) {

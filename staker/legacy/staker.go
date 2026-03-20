@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
+	"github.com/offchainlabs/nitro/util/stopwaiter/state"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -298,6 +299,7 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
+	state.Stoppable
 	Initialize(context.Context) error
 	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
@@ -312,7 +314,6 @@ type ValidatorWalletInterface interface {
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
 	Start(context.Context)
-	StopAndWait()
 	// May be nil
 	DataPoster() *dataposter.DataPoster
 }
