@@ -87,6 +87,7 @@ func (r *Relay) Start(ctx context.Context) error {
 	}
 
 	r.broadcastClients.Start(r.GetContext())
+	r.TrackChild(r.broadcastClients)
 
 	r.LaunchThread(func(ctx context.Context) {
 		for {
@@ -112,7 +113,6 @@ func (r *Relay) GetListenerAddr() net.Addr {
 }
 
 func (r *Relay) StopAndWait() {
-	r.broadcastClients.StopAndWait()
 	r.broadcaster.StopAndWait()
 	r.StopWaiter.StopAndWait()
 }
