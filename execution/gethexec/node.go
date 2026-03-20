@@ -700,8 +700,9 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 			n.Sequencer.StartExpressLaneService(ctx)
 		}
-
-		expressLaneTracker.Start(ctx)
+		if !expressLaneTracker.Started() {
+			expressLaneTracker.Start(ctx)
+		}
 	}
 
 	return nil
