@@ -43,7 +43,7 @@ func init() {
 	var chainsConfig []*params.ChainConfig
 	err := json.Unmarshal(DefaultChainsConfigBytes, &chainsConfig)
 	if err != nil {
-		panic(fmt.Errorf("error marshalling default chainsConfig: %w", err))
+		panic(fmt.Errorf("error unmarshalling default chainsConfig: %w", err))
 	}
 	for _, chainConfig := range chainsConfig {
 		knownConfigs[chainConfig.ChainID.Uint64()] = chainConfig
@@ -100,9 +100,9 @@ func NewParentChainWithConfig(ctx context.Context, chainID *big.Int, l1Reader *h
 	if l1Reader != nil {
 		if err := parentChain.pollEthConfig(fetchCtx); err != nil {
 			if fetchCtx.Err() != nil {
-				log.Info("Eager eth_config fetch timed out, will retry on next poll", "timeout", "10s")
+				log.Warn("Eager eth_config fetch timed out, will use static config until next successful poll", "timeout", "10s")
 			} else {
-				log.Warn("Failed to poll parent chain eth_config from NewParentChainWithConfig", "err", err)
+				log.Warn("Failed to poll parent chain eth_config, will use static config until next successful poll", "err", err)
 			}
 		}
 	}
@@ -123,14 +123,17 @@ type ethConfigEntry struct {
 	ActivationTime uint64             `json:"activationTime"`
 }
 
+// Start begins polling the parent chain's eth_config RPC.
+// ParentChain is shared between execution and consensus nodes when co-located,
+// so it may be Start()'d twice. We use StopWaiterSafe (instead of StopWaiter)
+// to handle double-start gracefully without panicking.
 func (p *ParentChain) Start(ctxIn context.Context) {
 	if err := p.StopWaiterSafe.Start(ctxIn, p); err != nil {
 		if p.Started() {
 			log.Debug("ParentChain already started (shared between execution and consensus nodes)")
-		} else {
-			log.Error("Failed to start ParentChain poller", "err", err)
+			return
 		}
-		return
+		panic(fmt.Sprintf("Failed to start ParentChain poller: %v", err))
 	}
 	if p.L1Reader == nil {
 		return
@@ -157,7 +160,9 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 		log.Debug("eth_config returned nil BlobSchedule, skipping cache update", "chainID", p.ChainID)
 		return nil
 	}
-	if resp.Current.ChainId != nil && resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
+	if resp.Current.ChainId == nil {
+		log.Warn("eth_config response missing chainId, cannot validate against expected chain", "expectedChainID", p.ChainID)
+	} else if resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
 		return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
 	}
 
@@ -217,15 +222,20 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 			headerTime >= cached.Next.ActivationTime {
 			return cached.Next.BlobSchedule, nil
 		}
+		var currentActivationTime uint64
+		if cached.Current != nil {
+			currentActivationTime = cached.Current.ActivationTime
+		}
+
 		// Only use current if headerTime is at or past its activation;
 		// otherwise fall through to the static chain config for older forks.
 		if cached.Current != nil && cached.Current.BlobSchedule != nil &&
-			headerTime >= cached.Current.ActivationTime {
+			headerTime >= currentActivationTime {
 			return cached.Current.BlobSchedule, nil
 		}
 		log.Warn("Falling back to static blob config despite cached eth_config",
 			"headerTime", headerTime,
-			"currentActivationTime", cached.Current.ActivationTime,
+			"currentActivationTime", currentActivationTime,
 		)
 	}
 	// Fall back to the hardcoded chain config. If the parent chain is an
@@ -241,8 +251,8 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 		}
 		return nil, err
 	}
-	// We bring staticBlobConfig.LatestFork() to an earlier spot which is the equivalent of latestBlobConfig
-	// from eip4844 which is called from MaxBlobGasPerBlock and CalcBlobFee.
+	// Replicate the logic of the unexported latestBlobConfig() from eip4844
+	// by resolving the active fork for headerTime, then looking up its blob config.
 	return staticBlobConfig.BlobConfig(staticBlobConfig.LatestFork(headerTime, 0)), nil
 }
 

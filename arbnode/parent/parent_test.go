@@ -74,8 +74,7 @@ func TestBlobConfigFallsBackToStaticWhenHeaderBeforeCurrentActivation(t *testing
 		Current: &currentEthConfigEntry,
 	})
 
-	// Header from before the current config's activation but still recent
-	// enough to be within cachedBlobConfigMaxAge (12h)
+	// Header from before the current config's activation time
 	// #nosec G115
 	headerTime := uint64(now.Add(-1 * time.Hour).Unix()) // 1h ago, before currentActivation
 	got, err := pc.blobConfig(headerTime)
