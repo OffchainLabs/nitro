@@ -279,7 +279,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	// Generate unique ID for this auctioneer instance
 	myId := fmt.Sprintf("auctioneer-%s-%d",
 		uuid.New().String()[:8], // Short UUID
-		time.Now().UnixNano())   // Timestamp for uniqueness
+		time.Now().UnixNano()) // Timestamp for uniqueness
 
 	log.Info("Auctioneer coordinator initialized", "id", myId)
 
@@ -446,6 +446,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	// Start S3 storage service to persist validated bids to s3
 	if a.s3StorageService != nil {
 		a.s3StorageService.Start(a.GetContext())
+		a.TrackChild(a.s3StorageService)
 	}
 
 	// Start coordination to manage primary/secondary status
@@ -454,6 +455,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
 	a.consumer.Start(a.GetContext())
+	a.TrackChild(a.consumer)
 	// Channel for single consumer, once readiness is indicated in this,
 	// consumer will start consuming iteratively.
 	ready := make(chan struct{}, 1)
@@ -788,16 +790,4 @@ func (a *AuctioneerServer) IsPrimary() bool {
 // GetId returns the unique identifier for this auctioneer instance
 func (a *AuctioneerServer) GetId() string {
 	return a.myId
-}
-
-func (a *AuctioneerServer) StopAndWait() {
-	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
-	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
-	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
-	// messages.
-	a.consumer.StopAndWait()
-	if a.s3StorageService != nil {
-		a.s3StorageService.StopAndWait()
-	}
-	a.StopWaiter.StopAndWait()
 }
