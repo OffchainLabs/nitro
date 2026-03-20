@@ -98,8 +98,12 @@ func NewParentChainWithConfig(ctx context.Context, chainID *big.Int, l1Reader *h
 	defer cancel()
 
 	if l1Reader != nil {
-		if err := parentChain.pollEthConfig(fetchCtx); err != nil && fetchCtx.Err() == nil {
-			log.Warn("Failed to poll parent chain eth_config from NewParentChainWithConfig", "err", err)
+		if err := parentChain.pollEthConfig(fetchCtx); err != nil {
+			if fetchCtx.Err() != nil {
+				log.Info("Eager eth_config fetch timed out, will retry on next poll", "timeout", "10s")
+			} else {
+				log.Warn("Failed to poll parent chain eth_config from NewParentChainWithConfig", "err", err)
+			}
 		}
 	}
 
@@ -121,7 +125,11 @@ type ethConfigEntry struct {
 
 func (p *ParentChain) Start(ctxIn context.Context) {
 	if err := p.StopWaiterSafe.Start(ctxIn, p); err != nil {
-		log.Debug("Already started (shared between execution and consensus nodes)", "err", err)
+		if p.Started() {
+			log.Debug("ParentChain already started (shared between execution and consensus nodes)")
+		} else {
+			log.Error("Failed to start ParentChain poller", "err", err)
+		}
 		return
 	}
 	if p.L1Reader == nil {
@@ -146,6 +154,7 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 		return fmt.Errorf("eth_config returned nil current config")
 	}
 	if resp.Current.BlobSchedule == nil {
+		log.Debug("eth_config returned nil BlobSchedule, skipping cache update", "chainID", p.ChainID)
 		return nil
 	}
 	if resp.Current.ChainId != nil && resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
@@ -200,7 +209,8 @@ func (p *ParentChain) chainConfig() (*params.ChainConfig, error) {
 // Returns (nil, nil) when the parent chain does not support blobs (e.g. an
 // Arbitrum L2 acting as parent for an L3). Callers must handle a nil config.
 func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) {
-	if cached := p.cachedEthConfig.Load(); cached != nil {
+	cached := p.cachedEthConfig.Load()
+	if cached != nil {
 		// If next config exists and headerTime is at or past its activation,
 		// use the next config's blob schedule.
 		if cached.Next != nil && cached.Next.BlobSchedule != nil &&
@@ -213,6 +223,10 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 			headerTime >= cached.Current.ActivationTime {
 			return cached.Current.BlobSchedule, nil
 		}
+		log.Warn("Falling back to static blob config despite cached eth_config",
+			"headerTime", headerTime,
+			"currentActivationTime", cached.Current.ActivationTime,
+		)
 	}
 	// Fall back to the hardcoded chain config. If the parent chain is an
 	// Arbitrum chain (e.g. an L2 acting as parent for an L3), it won't
