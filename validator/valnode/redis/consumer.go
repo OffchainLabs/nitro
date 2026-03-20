@@ -84,6 +84,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		c := c
 		moduleRoot := moduleRoot
 		c.Start(s.GetContext())
+		s.TrackChild(c)
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
@@ -193,26 +194,6 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	}
 }
 
-func (s *ValidationServer) StopOnly() {
-	if s.boldSpawner != nil {
-		s.boldSpawner.StopOnly()
-	}
-	for _, c := range s.consumers {
-		c.StopOnly()
-	}
-	s.StopWaiter.StopOnly()
-}
-
-func (s *ValidationServer) StopAndWait() {
-	if s.boldSpawner != nil {
-		s.boldSpawner.StopAndWait()
-	}
-	for _, c := range s.consumers {
-		c.StopAndWait()
-	}
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *ValidationServer) startBoldSpawner() {
 	var err error
 	s.boldSpawner, err = NewExecutionSpawner(s.config, s.spawner)
@@ -221,6 +202,7 @@ func (s *ValidationServer) startBoldSpawner() {
 		return
 	}
 	s.boldSpawner.Start(s.GetContext())
+	s.TrackChild(s.boldSpawner)
 }
 
 type ExecutionSpawner struct {
@@ -256,13 +238,6 @@ func NewExecutionSpawner(cfg *ValidationServerConfig, spawner validator.Executio
 	}, nil
 }
 
-func (s *ExecutionSpawner) StopAndWait() {
-	for _, c := range s.consumers {
-		c.StopAndWait()
-	}
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	// Channel that all consumers use to indicate their readiness.
@@ -271,6 +246,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 		c := c
 		moduleRoot := moduleRoot
 		c.Start(s.GetContext())
+		s.TrackChild(c)
 		// Channel for single consumer, once readiness is indicated in this,
 		// consumer will start consuming iteratively.
 		ready := make(chan struct{}, 1)
