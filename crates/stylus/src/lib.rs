@@ -300,9 +300,12 @@ pub unsafe extern "C" fn stylus_call(
     //      stack. The override is thread-local, so other threads are unaffected.
     //      The stack pool is size-tagged: undersized cached stacks are skipped,
     //      not reused. The override is cleared when this call completes.
-    //   2. Restore gas to its pre-call value (the failed attempt may have
-    //      consumed some via host calls, but the Go-side EVM reverts sub-call
-    //      state on failure, so replaying is safe).
+    //   2. Restore gas to its pre-call value. Any host-call side effects
+    //      (storage writes, emitted logs, balance transfers, sub-calls) from
+    //      the failed attempt are reverted by the EVM's snapshot/revert
+    //      mechanism: evm.Call() takes a StateDB snapshot before Stylus
+    //      execution and calls RevertToSnapshot on any error return, so
+    //      replaying from scratch is safe.
     //   3. Re-create the instance and retry.
     //
     // If the stack is already at MAX_STACK_SIZE and still overflows, we give up

@@ -774,9 +774,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	case userNativeStackOverflow:
-		// Should not reach Go — the Rust retry loop handles this.
-		// If it does, treat as depth error.
-		log.Error("native stack overflow reached Go side (retry loop failed)")
+		// Should not reach Go — the Rust retry loop in stylus_call handles
+		// this by retrying or converting to OutOfStack when the maximum stack
+		// size is exhausted. If this status does reach Go, it indicates the
+		// retry loop was bypassed. Treat as depth error. The caller in
+		// native.go logs full context (program, module, depth) before this.
 		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
