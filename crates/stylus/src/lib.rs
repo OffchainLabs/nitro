@@ -223,7 +223,28 @@ pub unsafe extern "C" fn stylus_target_set(
     UserOutcomeKind::Success
 }
 
+/// Sets the default native stack size for Wasmer coroutines.
+/// If `size` is 0, the existing default (1MB) is kept.
+///
+/// # Safety
+///
+/// Must be called before any Stylus execution begins (typically at startup).
+#[no_mangle]
+pub extern "C" fn stylus_set_native_stack_size(size: u64) {
+    if size > 0 {
+        wasmer_vm::set_stack_size(size as usize);
+        eprintln!(
+            "stylus: native stack size set to {} bytes",
+            wasmer_vm::get_stack_size()
+        );
+    }
+}
+
 /// Calls an activated user program.
+///
+/// If the call fails due to native stack overflow, the native stack size is
+/// doubled and the call is retried. This repeats until the call succeeds,
+/// fails for another reason, or the 100 MB Wasmer stack limit is reached.
 ///
 /// # Safety
 ///
@@ -243,37 +264,88 @@ pub unsafe extern "C" fn stylus_call(
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
-    let ink = pricing.gas_to_ink(Gas(*gas));
+    let original_gas = *gas;
 
-    // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe {
-        NativeInstance::deserialize_cached(
-            module,
-            config.version,
-            evm_api,
-            evm_data,
-            long_term_tag,
-            debug_chain,
-        )
-    };
-    let mut instance = match instance {
-        Ok(instance) => instance,
-        Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
-    };
+    // Native stack overflow retry loop.
+    //
+    // The DepthChecker middleware tracks an abstract "stack depth" to enforce
+    // deterministic stack limits across compilers, but its model can undercount
+    // the real native stack usage of the Singlepass compiler (e.g. multi-value
+    // loop PHI slots are not accounted for). When the mismatch is large enough,
+    // the Wasmer coroutine stack overflows with SIGSEGV before the DepthChecker
+    // limit is reached.
+    //
+    // Wasmer's signal handler catches this and returns TrapCode::StackOverflow,
+    // which run_main surfaces as UserOutcome::NativeStackOverflow. When we see
+    // that outcome we:
+    //   1. Double the global native stack size (capped at MAX_STACK_SIZE = 100 MB).
+    //      set_stack_size drains the cached stack pool so the next call gets a
+    //      fresh, correctly-sized stack.
+    //   2. Restore gas to its pre-call value (the failed attempt may have
+    //      consumed some via host calls, but the Go-side EVM reverts sub-call
+    //      state on failure, so replaying is safe).
+    //   3. Re-create the instance and retry.
+    //
+    // If the stack is already at MAX_STACK_SIZE and still overflows, we give up
+    // and return OutOfStack (taking all gas) instead of crashing the node.
+    loop {
+        let evm_api = EvmApiRequestor::new(req_handler);
+        let ink = pricing.gas_to_ink(Gas(*gas));
 
-    let status = match instance.run_main(&calldata, config, ink) {
-        Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
-        Ok(outcome) => write_outcome(output, outcome),
-    };
-    let ink_left = match status {
-        UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
-        _ => instance.ink_left().into(),
-    };
-    *gas = pricing.ink_to_gas(ink_left).0;
-    status
+        // Safety: module came from compile_user_wasm and we've paid for memory expansion
+        let instance = unsafe {
+            NativeInstance::deserialize_cached(
+                module,
+                config.version,
+                evm_api,
+                evm_data,
+                long_term_tag,
+                debug_chain,
+            )
+        };
+        let mut instance = match instance {
+            Ok(instance) => instance,
+            Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+        };
+
+        let outcome = instance.run_main(&calldata, config, ink);
+
+        if matches!(&outcome, Ok(UserOutcome::NativeStackOverflow)) {
+            let current = wasmer_vm::get_stack_size();
+            if current >= wasmer_vm::MAX_STACK_SIZE {
+                eprintln!(
+                    "stylus: native stack overflow at maximum stack size ({} bytes), \
+                     giving up",
+                    current,
+                );
+                let status = write_outcome(output, UserOutcome::OutOfStack);
+                *gas = 0;
+                return status;
+            }
+            let new_size = current.saturating_mul(2).min(wasmer_vm::MAX_STACK_SIZE);
+            eprintln!(
+                "stylus: WARNING: native stack overflow detected, \
+                 growing stack size from {} to {} bytes and retrying",
+                current, new_size,
+            );
+            wasmer_vm::set_stack_size(new_size);
+            *gas = original_gas;
+            continue;
+        }
+
+        let status = match outcome {
+            Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
+            Ok(outcome) => write_outcome(output, outcome),
+        };
+        let ink_left = match status {
+            UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
+            _ => instance.ink_left().into(),
+        };
+        *gas = pricing.ink_to_gas(ink_left).0;
+        return status;
+    }
 }
 
 /// set lru cache capacity

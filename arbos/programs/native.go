@@ -64,6 +64,12 @@ func SetAllowFallback(enabled bool) {
 	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
 }
 
+// SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
+// If size is 0, the existing default (1 MB) is kept.
+func SetNativeStackSize(size uint64) {
+	C.stylus_set_native_stack_size(u64(size))
+}
+
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)

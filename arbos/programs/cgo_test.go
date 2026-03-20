@@ -53,3 +53,10 @@ func TestCompileArch(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeStackSize(t *testing.T) {
+	err := testNativeStackSize()
+	if err != nil {
+		t.Fatal(err)
+	}
+}

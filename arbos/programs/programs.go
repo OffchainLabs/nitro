@@ -757,6 +757,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -771,6 +772,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfInk:
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
+		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
+		// Should not reach Go — the Rust retry loop handles this.
+		// If it does, treat as depth error.
+		log.Error("native stack overflow reached Go side (retry loop failed)")
 		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)

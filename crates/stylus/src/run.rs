@@ -9,6 +9,7 @@ use arbutil::evm::user::UserOutcome;
 use eyre::{eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
+use wasmer_types::TrapCode;
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
@@ -93,6 +94,13 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                 }
                 if self.ink_left() == MachineMeter::Exhausted {
                     return Ok(OutOfInk);
+                }
+
+                // Detect native stack overflow (Wasmer caught SIGSEGV on the coroutine stack).
+                // This is distinct from OutOfStack (DepthChecker limit) and can be retried
+                // with a larger native stack.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
                 }
 
                 let escape: Escape = match outcome.downcast() {

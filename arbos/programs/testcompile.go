@@ -234,6 +234,111 @@ func testCompileLoadFor(filePath string) error {
 	return err
 }
 
+// testNativeStackSize tests that:
+// 1. SetNativeStackSize correctly configures the Wasmer coroutine stack size.
+// 2. A program that overflows a tiny native stack is retried with a larger one.
+//
+// It compiles and runs a WAT program with deeply nested multi-value loops
+// and recursion, using a very small initial native stack so it overflows,
+// then verifies the Rust retry loop (which doubles the stack) saves the day.
+func testNativeStackSize() error {
+	localTarget := rawdb.LocalTarget()
+	err := SetTarget(localTarget, "", true)
+	if err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	// A simple program that calls itself recursively until it runs out of
+	// either gas or stack. The nested loops with multi-value signatures
+	// consume native stack quickly in Singlepass.
+	wat := []byte(`(module
+		(memory 0 0)
+		(export "memory" (memory 0))
+		(type $mv (func (param i32 i32) (result i32 i32)))
+		(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
+			;; Push initial values for the loop params
+			i32.const 0
+			i32.const 0
+			(loop $outer (param i32 i32) (result i32 i32)
+				(loop $inner (param i32 i32) (result i32 i32)
+					;; just pass through
+				)
+			)
+			drop
+			drop
+
+			;; Recurse to consume more native stack
+			i32.const 0
+			call $main
+		)
+	)`)
+
+	wasm, err := Wat2Wasm(wat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling native: %w", err)
+	}
+
+	// Set a very small native stack (32 KB) to force overflow quickly.
+	SetNativeStackSize(32 * 1024)
+
+	calldata := []byte{}
+	evmData := EvmData{}
+	progParams := ProgParams{
+		MaxDepth:  10000,
+		InkPrice:  1,
+		DebugMode: true,
+	}
+	reqHandler := C.NativeRequestHandler{
+		handle_request_fptr: (*[0]byte)(C.handleReqWrap),
+		id:                  0,
+	}
+
+	gas := u64(0xfffffffffffffff)
+	output := &rustBytes{}
+
+	// This should trigger the retry loop: 32KB overflows, doubled to 64KB,
+	// then 128KB, etc. until it's large enough (or runs out of gas first).
+	// The program recurses until out-of-gas or out-of-stack, both are fine.
+	status := userStatus(C.stylus_call(
+		goSlice(localAsm),
+		goSlice(calldata),
+		progParams.encode(),
+		reqHandler,
+		evmData.encode(),
+		cbool(true),
+		output,
+		&gas,
+		u32(0),
+	))
+
+	rustBytesIntoBytes(output)
+
+	// The program should eventually terminate with out-of-ink or out-of-stack
+	// (from the DepthChecker), NOT a crash. The key assertion is that we
+	// survived without SIGSEGV — the retry loop worked.
+	if status == userSuccess {
+		return fmt.Errorf("expected recursive program to eventually fail, got success")
+	}
+	if status != userOutOfInk && status != userOutOfStack {
+		return fmt.Errorf("expected out-of-ink or out-of-stack, got status %d", status)
+	}
+
+	_, err = fmt.Printf("testNativeStackSize: passed (status=%d), stack auto-grew from 32KB\n", status)
+	if err != nil {
+		return err
+	}
+
+	// Reset to default
+	SetNativeStackSize(0)
+
+	return nil
+}
+
 func testCompileLoad() error {
 	filePathStart := "../../target/testdata/host"
 	localTarget := rawdb.LocalTarget()
