@@ -2073,7 +2073,9 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
 	b.dataPoster.Start(b.GetContext())
+	b.TrackChild(b.dataPoster)
 	b.redisLock.Start(b.GetContext())
+	b.TrackChild(b.redisLock)
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
@@ -2156,11 +2158,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	})
 }
 
-func (b *BatchPoster) StopAndWait() {
-	b.redisLock.StopAndWait()
-	b.dataPoster.StopAndWait()
-	b.StopWaiter.StopAndWait()
-}
 
 type BoolRing struct {
 	buffer         []bool
