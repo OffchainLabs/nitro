@@ -249,20 +249,18 @@ type ConfigFetcher interface {
 
 type ExecutionNode struct {
 	stopwaiter.StopWaiter
-	ExecutionDB       ethdb.Database
-	Backend           *arbitrum.Backend
-	FilterSystem      *filters.FilterSystem
-	ArbInterface      *ArbInterface
-	ExecEngine        *ExecutionEngine
-	Recorder          *BlockRecorder
-	Sequencer         *Sequencer // either nil or same as TxPublisher
-	TxPreChecker      *TxPreChecker
-	TxPublisher       TransactionPublisher
-	configFetcher     ConfigFetcher
-	SyncMonitor       *SyncMonitor
-	ParentChainReader *headerreader.HeaderReader
-	// ParentChain might be shared with the consensus node when co-located.
-	// StopWaiter is safe to Start/Stop multiple times.
+	ExecutionDB              ethdb.Database
+	Backend                  *arbitrum.Backend
+	FilterSystem             *filters.FilterSystem
+	ArbInterface             *ArbInterface
+	ExecEngine               *ExecutionEngine
+	Recorder                 *BlockRecorder
+	Sequencer                *Sequencer // either nil or same as TxPublisher
+	TxPreChecker             *TxPreChecker
+	TxPublisher              TransactionPublisher
+	configFetcher            ConfigFetcher
+	SyncMonitor              *SyncMonitor
+	ParentChainReader        *headerreader.HeaderReader
 	ParentChain              *parent.ParentChain
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool

@@ -4,6 +4,7 @@
 package parent
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"testing"
@@ -152,6 +153,20 @@ func TestBlobConfigNextWithNilBlobSchedule(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, currentBlob.Target, got.Target, "should use current when next has nil BlobSchedule")
 	require.Equal(t, currentBlob.Max, got.Max)
+}
+
+func TestDoubleStartDoesNotPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pc := NewParentChain(ctx, big.NewInt(1), nil)
+	pc.Start(ctx)
+	defer pc.StopAndWait()
+
+	// Second Start should not panic; it should be a no-op.
+	require.NotPanics(t, func() {
+		pc.Start(ctx)
+	})
 }
 
 func TestBlobConfigNoNextField(t *testing.T) {
