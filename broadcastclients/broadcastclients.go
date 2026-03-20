@@ -138,10 +138,13 @@ func clearAndResetTicker(timer *time.Ticker, interval time.Duration) {
 func (bcs *BroadcastClients) Start(ctx context.Context) {
 	bcs.StopWaiter.Start(ctx, bcs)
 	bcs.primaryRouter.StopWaiter.Start(bcs.GetContext(), bcs.primaryRouter)
+	bcs.TrackChild(bcs.primaryRouter)
 	bcs.secondaryRouter.StopWaiter.Start(bcs.GetContext(), bcs.secondaryRouter)
+	bcs.TrackChild(bcs.secondaryRouter)
 
 	for _, client := range bcs.primaryClients {
 		client.Start(bcs.GetContext())
+		bcs.TrackChild(client)
 	}
 
 	var lastConfirmed arbutil.MessageIndex
@@ -272,6 +275,7 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 		}
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
 		client.Start(ctx)
+		bcs.TrackChild(client)
 		log.Info("secondary feed started", "url", url, "startingFromSeq", latestSeqNum)
 	} else if len(bcs.secondaryURL) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")
@@ -298,14 +302,3 @@ func (bcs *BroadcastClients) stopSecondaryFeed() {
 	}
 }
 
-func (bcs *BroadcastClients) StopAndWait() {
-	for _, client := range bcs.secondaryClients {
-		client.StopAndWait()
-	}
-	for _, client := range bcs.primaryClients {
-		client.StopAndWait()
-	}
-	bcs.secondaryRouter.StopWaiter.StopAndWait()
-	bcs.primaryRouter.StopWaiter.StopAndWait()
-	bcs.StopWaiter.StopAndWait()
-}
