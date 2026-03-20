@@ -85,17 +85,24 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	return nil
 }
 
-func (s *StopWaiterSafe) StopOnly() {
+// takeChildren takes the children out of the state while holding the lock,
+// so that the caller can stop them without holding the lock.
+func (s *StopWaiterSafe) takeChildren() []state.Stoppable {
 	st := s.Lock()
-	// Take children while holding the lock.
+	defer s.Unlock()
 	children := st.Children
 	st.Children = nil
-	s.Unlock()
+	return children
+}
+
+func (s *StopWaiterSafe) StopOnly() {
+	children := s.takeChildren()
 	// Stop tracked children in LIFO order before stopping self.
 	for i := len(children) - 1; i >= 0; i-- {
 		children[i].StopOnly()
 	}
-	st = s.Lock()
+
+	st := s.Lock()
 	defer s.Unlock()
 	if st.Started && !st.Stopped {
 		st.StopFunc()
@@ -117,15 +124,6 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
-	// Take children while holding the lock.
-	st := s.Lock()
-	children := st.Children
-	st.Children = nil
-	s.Unlock()
-	// StopAndWait tracked children in LIFO order before stopping self.
-	for i := len(children) - 1; i >= 0; i-- {
-		children[i].StopAndWait()
-	}
 	s.StopOnly()
 	if !s.Started() {
 		// No need to wait, because nothing can be started if it's already stopped.
