@@ -4,7 +4,6 @@
 use crate::{
     binary::{ExportKind, WasmBinary},
     machine::Module,
-    memory::MemoryType,
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
@@ -18,6 +17,7 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
+use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
 use {
     super::value,
