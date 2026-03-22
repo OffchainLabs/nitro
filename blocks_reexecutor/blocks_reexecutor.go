@@ -272,8 +272,10 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	s.LaunchThread(func(ctx context.Context) {
 		defer func() { s.done <- struct{}{} }()
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil && ctx.Err() == nil {
-			s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
+			if ctx.Err() == nil {
+				s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
+			}
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		}
@@ -317,7 +319,7 @@ func (s *BlocksReExecutor) Start(ctx context.Context) {
 		// lowestBlockNotReExecuted represents the block after which either all the blocks have already been reexecuted or not in scope of reexecution
 		lowestBlockNotReExecuted := s.blocks[0][1] + 1
 		for _, blocks := range s.blocks {
-			if s.fatalReported.Load() {
+			if s.fatalReported.Load() || ctx.Err() != nil {
 				break
 			}
 			if lowestBlockNotReExecuted > blocks[0] {
