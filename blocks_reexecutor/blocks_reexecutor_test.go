@@ -4,92 +4,137 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// newTestReExecutor creates a minimal BlocksReExecutor for unit testing
-// handleContextOrFatal. Only fatalErrChan is needed; other fields are zero.
-func newTestReExecutor(fatalCh chan error) *BlocksReExecutor {
-	s := new(BlocksReExecutor)
-	s.fatalErrChan = fatalCh
-	return s
-}
-
-func TestHandleContextOrFatalSuppressesContextErrors(t *testing.T) {
+func TestReportFatalErrSetsFatalReported(t *testing.T) {
 	fatalCh := make(chan error, 1)
-	s := newTestReExecutor(fatalCh)
-
-	// context.Canceled should be suppressed
-	s.handleContextOrFatal(context.Background(), context.Canceled, "test")
-	select {
-	case err := <-fatalCh:
-		t.Fatalf("context.Canceled should not be fatal, got: %v", err)
-	default:
+	s := &BlocksReExecutor{
+		fatalErrChan:  fatalCh,
+		fatalReported: atomic.Bool{},
 	}
 
-	// Wrapped context.Canceled should also be suppressed
-	s.handleContextOrFatal(context.Background(), fmt.Errorf("op failed: %w", context.Canceled), "test")
-	select {
-	case err := <-fatalCh:
-		t.Fatalf("wrapped context.Canceled should not be fatal, got: %v", err)
-	default:
-	}
-
-	// context.DeadlineExceeded should be suppressed
-	s.handleContextOrFatal(context.Background(), context.DeadlineExceeded, "test")
-	select {
-	case err := <-fatalCh:
-		t.Fatalf("context.DeadlineExceeded should not be fatal, got: %v", err)
-	default:
-	}
-
-	// A real error should be sent to fatalErrChan
 	realErr := errors.New("disk corruption")
-	s.handleContextOrFatal(context.Background(), realErr, "reexecution failed")
+	s.reportFatalErr(realErr)
+
+	if !s.fatalReported.Load() {
+		t.Fatal("expected fatalReported to be set")
+	}
 	select {
 	case err := <-fatalCh:
 		if !errors.Is(err, realErr) {
-			t.Fatalf("expected realErr wrapped, got: %v", err)
+			t.Fatalf("expected realErr, got: %v", err)
 		}
 	default:
-		t.Fatal("expected real error to be sent to fatalErrChan")
+		t.Fatal("expected error in fatalErrChan")
 	}
 }
 
-func TestHandleContextOrFatalSuppressesDuringShutdown(t *testing.T) {
+func TestReportFatalErrDoesNotBlockOnFullChannel(t *testing.T) {
 	fatalCh := make(chan error, 1)
-	s := newTestReExecutor(fatalCh)
+	s := &BlocksReExecutor{
+		fatalErrChan:  fatalCh,
+		fatalReported: atomic.Bool{},
+	}
 
-	// When context is cancelled (shutdown), even non-context errors should be suppressed
+	// Fill the channel
+	s.reportFatalErr(errors.New("first"))
+	// Second call should not block (exercises the default branch)
+	s.reportFatalErr(errors.New("second"))
+
+	if !s.fatalReported.Load() {
+		t.Fatal("expected fatalReported to be set")
+	}
+	// Only the first error should be in the channel
+	err := <-fatalCh
+	if !strings.Contains(err.Error(), "first") {
+		t.Fatalf("expected first error preserved, got: %v", err)
+	}
+	select {
+	case extra := <-fatalCh:
+		t.Fatalf("expected channel to be empty after drain, got: %v", extra)
+	default:
+	}
+}
+
+func TestReportFatalErrMultipleErrorTypes(t *testing.T) {
+	fatalCh := make(chan error, 4)
+	s := &BlocksReExecutor{
+		fatalErrChan:  fatalCh,
+		fatalReported: atomic.Bool{},
+	}
+
+	for _, err := range []error{
+		errors.New("disk corruption"),
+		fmt.Errorf("wrapped: %w", errors.New("inner")),
+		errors.New("another error"),
+	} {
+		s.reportFatalErr(err)
+		select {
+		case fatal := <-fatalCh:
+			if fatal == nil {
+				t.Fatalf("expected non-nil error for input: %v", err)
+			}
+		default:
+			t.Fatalf("expected error in channel for input: %v", err)
+		}
+	}
+}
+
+func TestAdvanceStateUpToBlockCancelledContext(t *testing.T) {
+	// When the context is already cancelled, advanceStateUpToBlock should
+	// return ctx.Err() immediately without entering the loop, and still
+	// call lastRelease via defer.
+	s := &BlocksReExecutor{
+		config:     &Config{},
+		blockchain: nil,
+	}
+	targetHeader := &types.Header{Number: big.NewInt(10)}
+	lastAvailableHeader := &types.Header{Number: big.NewInt(5)}
+	released := false
+	release := func() { released = true }
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.handleContextOrFatal(ctx, errors.New("some error during shutdown"), "test")
-	select {
-	case err := <-fatalCh:
-		t.Fatalf("errors during shutdown should be suppressed, got: %v", err)
-	default:
+	err := s.advanceStateUpToBlock(ctx, nil, targetHeader, lastAvailableHeader, release)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+	if !released {
+		t.Fatal("expected lastRelease to be called even with cancelled context")
 	}
 }
 
-func TestHandleContextOrFatalDropsWhenChannelFull(t *testing.T) {
-	// Use a buffer of 1, fill it, then verify the second error is dropped (not panicking)
-	fatalCh := make(chan error, 1)
-	s := newTestReExecutor(fatalCh)
-
-	// First error fills the channel
-	s.handleContextOrFatal(context.Background(), errors.New("first error"), "test")
-	// Second error should be dropped (logged, not panic)
-	s.handleContextOrFatal(context.Background(), errors.New("second error"), "test")
-
-	// Only the first error should be in the channel
-	err := <-fatalCh
-	if err.Error() != "test: first error" {
-		t.Fatalf("expected first error, got: %v", err)
+func TestAdvanceStateUpToBlockRecoversPanic(t *testing.T) {
+	// A nil blockchain causes AdvanceStateByBlock to panic (nil pointer
+	// dereference). The panic recovery in advanceStateUpToBlock should
+	// catch it and return an error instead of crashing.
+	s := &BlocksReExecutor{
+		config:     &Config{},
+		blockchain: nil,
 	}
-	select {
-	case err := <-fatalCh:
-		t.Fatalf("second error should have been dropped, got: %v", err)
-	default:
+	targetHeader := &types.Header{Number: big.NewInt(5)}
+	lastAvailableHeader := &types.Header{Number: big.NewInt(4)}
+	released := false
+	release := func() { released = true }
+
+	err := s.advanceStateUpToBlock(context.Background(), nil, targetHeader, lastAvailableHeader, release)
+	if err == nil {
+		t.Fatal("expected error from panic recovery, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic during block re-execution") {
+		t.Fatalf("expected panic recovery error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "at block 5") {
+		t.Fatalf("expected block number in error message, got: %v", err)
+	}
+	if !released {
+		t.Fatal("expected lastRelease to be called")
 	}
 }
