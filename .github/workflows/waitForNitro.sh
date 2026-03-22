@@ -6,6 +6,7 @@ set -euo pipefail
 # Dumps testnode logs on any failure.
 timeout_time=$(($(date +%s) + 1800))
 
+# shellcheck disable=SC2317,SC2329  # Functions used in trap handlers
 dump_logs() {
   if [ -f /tmp/testnode.log ]; then
     echo "=== Last 200 lines of testnode.log ==="
@@ -30,6 +31,7 @@ if ! [[ "$TESTNODE_PID" =~ ^[0-9]+$ ]]; then
 fi
 echo "Monitoring testnode PID: $TESTNODE_PID"
 
+# shellcheck disable=SC2317,SC2329  # Function used in trap handler
 cleanup() {
   dump_logs
   if kill -0 "$TESTNODE_PID" 2>/dev/null; then
