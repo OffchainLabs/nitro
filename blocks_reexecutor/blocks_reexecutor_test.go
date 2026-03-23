@@ -202,3 +202,251 @@ func TestWaitForReExecutionSuccess(t *testing.T) {
 		t.Fatalf("expected nil, got: %v", err)
 	}
 }
+
+func TestWaitForReExecutionFatalAndSuccessBothReady(t *testing.T) {
+	// When both fatalErrChan and success are ready, select picks one
+	// non-deterministically. Both outcomes are acceptable.
+	fatalCh := make(chan error, 1)
+	s := newTestReExecutor(fatalCh)
+	s.success = make(chan struct{})
+
+	fatalCh <- errors.New("fatal")
+	close(s.success)
+
+	err := s.WaitForReExecution(context.Background())
+	// Either nil (success) or wrapped fatal error is acceptable
+	if err != nil && !strings.Contains(err.Error(), "shutting BlocksReExecutor down due to fatal error") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateValidFullConfig(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[1,10]]`,
+		Room:   4,
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+	if c.Mode != "full" {
+		t.Fatalf("expected mode 'full', got: %s", c.Mode)
+	}
+	if len(c.blocks) != 1 || c.blocks[0] != [2]uint64{1, 10} {
+		t.Fatalf("unexpected parsed blocks: %v", c.blocks)
+	}
+}
+
+func TestValidateValidRandomConfig(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "random",
+		Blocks: `[[0,0],[5,20]]`,
+		Room:   2,
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+	if len(c.blocks) != 2 {
+		t.Fatalf("expected 2 block ranges, got: %d", len(c.blocks))
+	}
+}
+
+func TestValidateModeCaseInsensitive(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "FULL",
+		Blocks: `[[1,10]]`,
+		Room:   1,
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected valid config after lowering mode, got: %v", err)
+	}
+	if c.Mode != "full" {
+		t.Fatalf("expected mode lowered to 'full', got: %s", c.Mode)
+	}
+}
+
+func TestValidateInvalidMode(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "turbo",
+		Blocks: `[[1,10]]`,
+		Room:   1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid mode")
+	}
+	if !strings.Contains(err.Error(), "invalid mode") {
+		t.Fatalf("expected 'invalid mode' error, got: %v", err)
+	}
+}
+
+func TestValidateEmptyBlocks(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: "",
+		Room:   1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty blocks")
+	}
+	if !strings.Contains(err.Error(), "cannot be empty") {
+		t.Fatalf("expected 'cannot be empty' error, got: %v", err)
+	}
+}
+
+func TestValidateMalformedBlocksJSON(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `not-json`,
+		Room:   1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !strings.Contains(err.Error(), "failed to parse") {
+		t.Fatalf("expected parse error, got: %v", err)
+	}
+}
+
+func TestValidateInvalidBlockRange(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[10,5]]`,
+		Room:   1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid block range")
+	}
+	if !strings.Contains(err.Error(), "invalid block range") {
+		t.Fatalf("expected 'invalid block range' error, got: %v", err)
+	}
+}
+
+func TestValidateRoomZero(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[1,10]]`,
+		Room:   0,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for room <= 0")
+	}
+	if !strings.Contains(err.Error(), "room") {
+		t.Fatalf("expected room error, got: %v", err)
+	}
+}
+
+func TestValidateRoomNegative(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[1,10]]`,
+		Room:   -1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for room <= 0")
+	}
+	if !strings.Contains(err.Error(), "room") {
+		t.Fatalf("expected room error, got: %v", err)
+	}
+}
+
+func TestValidateDisabledSkipsModeCheck(t *testing.T) {
+	// When Enable is false, invalid mode should not cause an error
+	c := &Config{
+		Enable: false,
+		Mode:   "invalid-mode",
+		Blocks: `[[1,10]]`,
+		Room:   1,
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected no error when disabled, got: %v", err)
+	}
+}
+
+func TestValidateMultipleBlockRanges(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[1,10],[20,30],[50,100]]`,
+		Room:   2,
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+	if len(c.blocks) != 3 {
+		t.Fatalf("expected 3 block ranges, got: %d", len(c.blocks))
+	}
+}
+
+func TestValidateSecondRangeInvalid(t *testing.T) {
+	c := &Config{
+		Enable: true,
+		Mode:   "full",
+		Blocks: `[[1,10],[20,5]]`,
+		Room:   1,
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected error for second invalid range")
+	}
+	if !strings.Contains(err.Error(), "invalid block range") {
+		t.Fatalf("expected 'invalid block range' error, got: %v", err)
+	}
+}
+
+func TestImplReturnsZeroWhenFatalPreSet(t *testing.T) {
+	fatalCh := make(chan error, 1)
+	s := newTestReExecutor(fatalCh)
+	s.config = &Config{Room: 2}
+	s.done = make(chan struct{}, 2)
+	s.fatalReported.Store(true)
+
+	result := s.Impl(context.Background(), 0, 100, 10)
+	if result != 0 {
+		t.Fatalf("expected 0 when fatalReported is pre-set, got: %d", result)
+	}
+}
+
+func TestImplReturnsStartBlockWhenNoWork(t *testing.T) {
+	// When startBlock >= currentBlock, no threads are launched and Impl
+	// returns currentBlock directly (the success path with no work).
+	fatalCh := make(chan error, 1)
+	s := newTestReExecutor(fatalCh)
+	s.config = &Config{Room: 2}
+	s.done = make(chan struct{}, 2)
+
+	result := s.Impl(context.Background(), 100, 100, 10)
+	if result != 100 {
+		t.Fatalf("expected 100 when startBlock == currentBlock, got: %d", result)
+	}
+}
+
+func TestWrapFatalErr(t *testing.T) {
+	s := newTestReExecutor(nil)
+	inner := errors.New("something broke")
+	wrapped := s.wrapFatalErr(inner)
+
+	if !errors.Is(wrapped, inner) {
+		t.Fatal("expected wrapped error to preserve inner via errors.Is")
+	}
+	if !strings.Contains(wrapped.Error(), "shutting BlocksReExecutor down due to fatal error") {
+		t.Fatalf("expected prefix in wrapped error, got: %v", wrapped)
+	}
+	if !strings.Contains(wrapped.Error(), "something broke") {
+		t.Fatalf("expected inner message preserved, got: %v", wrapped)
+	}
+}
