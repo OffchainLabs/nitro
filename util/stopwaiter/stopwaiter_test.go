@@ -138,6 +138,20 @@ func TestTrackChildStopAndWaitMultipleTimes(t *testing.T) {
 	parent.StopAndWait() // should not panic
 }
 
+func TestTrackChildAfterStop(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+	parent.StopAndWait()
+
+	child := StopWaiter{}
+	child.Start(context.Background(), &TestStruct{})
+	parent.TrackChild(&child)
+
+	if !child.Stopped() {
+		t.Error("child should be stopped immediately when tracked after parent is stopped")
+	}
+}
+
 func TestTrackChildContextCancellation(t *testing.T) {
 	parent := StopWaiter{}
 	parent.Start(context.Background(), &TestStruct{})

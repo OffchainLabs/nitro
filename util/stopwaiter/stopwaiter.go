@@ -52,10 +52,16 @@ func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 
 // TrackChild registers a child Stoppable to be automatically stopped
 // when this StopWaiter is stopped, in LIFO (reverse) order.
+// If the parent is already stopped, the child is stopped immediately.
 func (s *StopWaiterSafe) TrackChild(child state.Stoppable) {
 	st := s.Lock()
-	defer s.Unlock()
+	if st.Stopped {
+		s.Unlock()
+		child.StopAndWait()
+		return
+	}
 	st.Children = append(st.Children, child)
+	s.Unlock()
 }
 
 func getParentName(parent any) string {
