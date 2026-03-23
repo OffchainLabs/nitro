@@ -18,6 +18,14 @@ const testStopDelayWarningTimeout = 350 * time.Millisecond
 
 type TestStruct struct{}
 
+type TestChild struct {
+	StopWaiter
+}
+
+func (c *TestChild) Start(ctx context.Context) {
+	c.StopWaiter.Start(ctx, c)
+}
+
 func TestStopWaiterStopAndWaitTimeoutShouldWarn(t *testing.T) {
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
@@ -168,6 +176,94 @@ func TestTrackChildContextCancellation(t *testing.T) {
 	default:
 		t.Error("child context should be cancelled after parent StopOnly")
 	}
+}
+
+func TestStartAndTrackChild(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := TestChild{}
+	parent.StartAndTrackChild(&child)
+
+	if !child.Started() {
+		t.Error("child should be started")
+	}
+
+	parent.StopAndWait()
+
+	if !child.Stopped() {
+		t.Error("child should be stopped after parent StopAndWait")
+	}
+}
+
+func TestStopOnlyThenStopAndWaitWithChildren(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	child.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+	})
+	parent.TrackChild(&child)
+
+	parent.StopOnly()
+	if !child.Stopped() {
+		t.Error("child should be stopped after parent StopOnly")
+	}
+
+	// StopAndWait should still work and wait for child goroutines
+	parent.StopAndWait()
+}
+
+func TestGrandchildHierarchy(t *testing.T) {
+	var order []string
+
+	grandparent := StopWaiter{}
+	grandparent.Start(context.Background(), &TestStruct{})
+
+	parent := StopWaiter{}
+	parent.Start(grandparent.GetContext(), &TestStruct{})
+	parent.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		order = append(order, "parent")
+	})
+	grandparent.TrackChild(&parent)
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	child.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		order = append(order, "child")
+	})
+	parent.TrackChild(&child)
+
+	grandparent.StopAndWait()
+
+	if len(order) != 2 || order[0] != "child" || order[1] != "parent" {
+		t.Errorf("expected [child, parent], got %v", order)
+	}
+}
+
+func TestConcurrentTrackAndStop(t *testing.T) {
+	t.Parallel()
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	// Launch goroutines that track children concurrently with stop
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			child := &StopWaiter{}
+			child.Start(context.Background(), &TestStruct{})
+			parent.TrackChild(child)
+		}
+		close(done)
+	}()
+
+	parent.StopAndWait()
+	<-done
+	// All children should be stopped (either via takeChildren or TrackChild-after-stop)
 }
 
 func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
