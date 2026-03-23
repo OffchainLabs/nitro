@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -93,10 +92,11 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		m.chainConfig,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), mel.ErrDelayedMessagePreimageNotFound.Error()) {
+		if errors.Is(err, mel.ErrDelayedMessagePreimageNotFound) {
 			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
 			}
+			return 0, nil
 		}
 		return m.config.RetryInterval, err
 	}

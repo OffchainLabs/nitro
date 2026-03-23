@@ -189,7 +189,7 @@ func (s *State) resolveDelayedPreimage(hash common.Hash) ([]byte, error) {
 	}
 	preimage, ok := s.delayedMsgPreimages.Peek(hash)
 	if !ok {
-		return nil, fmt.Errorf("%w for hash: %s", ErrDelayedMessagePreimageNotFound, hash.Hex())
+		return nil, fmt.Errorf("%w: for hash: %s", ErrDelayedMessagePreimageNotFound, hash.Hex())
 	}
 	return preimage, nil
 }
@@ -278,8 +278,8 @@ func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error
 
 // RecordDelayedMsgPreimagesTo initializes the state's delayedMsgPreimagesDest to record
 // preimages related to delayed messages needed for MEL validation into the given preimages map.
-// When set, AccumulateDelayedMessage and PourDelayedInboxToOutbox will record accumulator
-// chain and message content preimages.
+// When set, AccumulateDelayedMessage will record accumulator chain and message content preimages,
+// whereas PourDelayedInboxToOutbox record only accumulator chain preimages
 func (s *State) RecordDelayedMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
 	if preimagesMap == nil {
 		return errors.New("delayed msg preimages recording destination cannot be nil")
