@@ -224,10 +224,14 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) er
 }
 
 func (m *MultiProtocolStaker) StopAndWait() {
-	// Bold staker may have been started dynamically during a protocol switch,
-	// after the original TrackChild registrations.
+	// Both stakers need explicit StopAndWait because:
+	// - boldStaker may have been started dynamically during a protocol switch
+	// - oldStaker may have been StopOnly'd (via TrackChild) but never waited on
 	if m.boldStaker != nil {
 		m.boldStaker.StopAndWait()
+	}
+	if m.oldStaker != nil {
+		m.oldStaker.StopAndWait()
 	}
 	m.StopWaiter.StopAndWait()
 	// Wallet is started with external context, so stop it last.
