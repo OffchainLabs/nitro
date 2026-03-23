@@ -55,14 +55,25 @@ func TestSimpleL3(t *testing.T) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	headState1, err := firstNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState(ctx)
-	Require(t, err)
-	headState2, err := secondNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState(ctx)
-	Require(t, err)
-	if headState1.MsgCount <= 1 {
-		t.Fatal("Expected more than 1 message in head MEL state of first L3 node")
-	}
-	if headState1.Hash() != headState2.Hash() {
-		t.Fatal("Head MEL states of both L3 nodes do not match")
+	// Wait for MEL to catch up on both nodes before checking state.
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		headState1, err := firstNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
+		Require(t, err)
+		if headState1.MsgCount > 1 {
+			headState2, err := secondNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
+			Require(t, err)
+			if headState1.Hash() == headState2.Hash() {
+				break
+			}
+		}
+		select {
+		case <-timeout.C:
+			t.Fatal("Timed out waiting for MEL head states to converge with MsgCount > 1")
+		case <-tick.C:
+		}
 	}
 }
