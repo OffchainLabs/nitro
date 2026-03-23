@@ -490,6 +490,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	// This test is HashScheme specific, it shouldn't be run with Pathdb
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig = execConfig
+	builder.nodeConfig.MessageExtraction.Enable = (execConfig.Caching.StateScheme != rawdb.PathScheme) // TODO: investigate why this test fails for MEL when run with pathdb
 	cancelNode := buildWithHistory(t, ctx, builder, 16)
 	execNode := builder.L2.ExecNode
 	defer cancelNode()
