@@ -239,7 +239,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	if err := c.preCheckAddressFilter(tx, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
@@ -275,7 +275,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	if err := c.preCheckAddressFilter(msg.Transaction, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(msg.Transaction, sender, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
@@ -299,7 +299,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	if err := c.preCheckAddressFilter(tx, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
@@ -317,9 +317,7 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 	c.eventFilter = filter
 }
 
-// speculativeFilterExec executes a transaction speculatively and runs resultFilter
-// to check for filtered addresses. Returns ErrArbTxFilter if a filtered address is touched.
-func (c *TxPreChecker) speculativeFilterExec(
+func dryRunCheckFilteredAddresses(
 	statedb *state.StateDB, evm *vm.EVM, signer types.Signer, runCtx *core.MessageRunContext,
 	header *types.Header, tx *types.Transaction, txIndex int, gasLimit uint64,
 	resultFilter func(*core.ExecutionResult) error,
@@ -329,6 +327,8 @@ func (c *TxPreChecker) speculativeFilterExec(
 		return err
 	}
 	msg.GasLimit = gasLimit
+	// Zero gas prices and skip nonce/balance checks — we only care about
+	// which addresses are touched.
 	msg.GasPrice = new(big.Int)
 	msg.GasFeeCap = new(big.Int)
 	msg.GasTipCap = new(big.Int)
@@ -346,10 +346,12 @@ func (c *TxPreChecker) speculativeFilterExec(
 		txPreCheckerAddressFilterRejectedCounter.Inc(1)
 		return err
 	}
+	// Other execution errors are ignored since the pre-check is only concerned
+	// with address filtering results, not with exact execution results.
 	return nil
 }
 
-// touchScheduledRetryableAddresses touches From/To of scheduled ArbitrumRetryTx
+// touchScheduledRetryableAddresses touches From/To of scheduled ArbitrumRetryTx.
 func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes types.Transactions) {
 	for _, scheduledTx := range scheduledTxes {
 		if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
@@ -361,8 +363,7 @@ func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes type
 	}
 }
 
-// preCheckAddressFilter speculatively executes the transaction to detect filtered addresses.
-func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender common.Address, header *types.Header) error {
+func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
 	if c.addressChecker == nil {
 		return nil
 	}
@@ -375,12 +376,13 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
 	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
 	runCtx := core.NewMessageEthcallContext()
+	// NoBaseFee skips the base fee comparison when gas fields are zeroed.
 	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
 
 	var scheduledTxes types.Transactions
-	err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
+	err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
 		func(result *core.ExecutionResult) error {
-			touchFilterAddresses(statedb, c.eventFilter, tx, sender)
+			touchAddresses(statedb, c.eventFilter, tx, sender)
 			touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
 			if statedb.IsAddressFiltered() {
 				return state.ErrArbTxFilter
@@ -393,8 +395,9 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 		return err
 	}
 
-	// Execute scheduled redeems in FIFO order, including cascading redeems,
-	// mirroring the block processor's redeem loop in ProduceBlockAdvanced.
+	// Process scheduled redeems in FIFO order including cascading redeems.
+	// We replicate the loop from ProduceBlockAdvanced because we only need
+	// EVM execution + address checking, without block-production overhead.
 	txIndex := 1
 	for len(scheduledTxes) > 0 {
 		redeemTx := scheduledTxes[0]
@@ -404,9 +407,9 @@ func (c *TxPreChecker) preCheckAddressFilter(tx *types.Transaction, sender commo
 			log.Warn("failed to recover redeem sender in address filter", "err", err, "txHash", redeemTx.Hash())
 			continue
 		}
-		err = c.speculativeFilterExec(statedb, evm, signer, runCtx, header, redeemTx, txIndex, redeemTx.Gas(),
+		err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, redeemTx, txIndex, redeemTx.Gas(),
 			func(result *core.ExecutionResult) error {
-				touchFilterAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
+				touchAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
 				touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
 				if statedb.IsAddressFiltered() {
 					return state.ErrArbTxFilter
