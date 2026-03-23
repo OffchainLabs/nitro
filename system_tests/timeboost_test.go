@@ -107,7 +107,7 @@ func TestTimeboostTxsTimeoutByBlock(t *testing.T) {
 	}
 	// Send tx with seq=0 that releases all the buffered txs and wait for the block to be produced
 	Require(t, expressLaneClient.QueueTransactionWithSequence(ctx, txs[0], 0))
-	rec, err := builderSeq.L2.EnsureTxSucceeded(txs[0])
+	rec, err := builderSeq.L2.EnsureTxSucceededWithTimeout(txs[0], 30*time.Second)
 	Require(t, err)
 	firstBlockNum := rec.BlockNumber.Uint64()
 	t.Logf("tx: 0 was sequenced in block: %d", firstBlockNum)
@@ -342,15 +342,18 @@ func testTxsHandlingDuringSequencerSwap(t *testing.T, dueToCrash bool) {
 	}
 
 	// Wait for chosen sequencer to change on redis
-	for {
+	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "chosen sequencer to change", func() bool {
 		currentChosen, err := redisCoordinatorGetter.CurrentChosenSequencer(ctx)
-		Require(t, err)
-		if currentChosen == seqA.Stack.HTTPEndpoint() {
-			break
+		if err != nil {
+			t.Logf("CurrentChosenSequencer error (will retry): %v", err)
+			return false
 		}
-		t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
-		time.Sleep(200 * time.Millisecond)
-	}
+		if currentChosen != seqA.Stack.HTTPEndpoint() {
+			t.Logf("waiting for chosen sequencer to change to: %s, currently: %s", seqA.Stack.HTTPEndpoint(), currentChosen)
+			return false
+		}
+		return true
+	})
 
 	// Send the tx=1 that should be sequenced by the new active sequencer along with the future seq num txs=2,3 synced from redis
 	err = expressLaneClientA.SendTransactionWithSequence(ctx, txs[1], 2)

@@ -50,7 +50,7 @@ pub fn prove_kzg_preimage(
         expected_hash,
     );
     ensure!(
-        offset % 32 == 0,
+        offset.is_multiple_of(32),
         "Cannot prove blob preimage at unaligned offset {}",
         offset,
     );

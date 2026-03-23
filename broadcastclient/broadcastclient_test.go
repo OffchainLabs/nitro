@@ -100,10 +100,31 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, expectedCount, chainId, &wg, &sequencerAddr)
 	}
 
+	wg.Add(1)
 	go func() {
-		for i := 0; i < messageCount; i++ {
-			err = b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(i))) // #nosec G115
-			Require(t, err)
+		defer wg.Done()
+		msgCount := arbutil.MessageIndex(messageCount) // #nosec G115
+		for i := range msgCount {
+			msg := arbostypes.MessageWithMetadataAndBlockInfo{
+				MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
+				BlockHash:       nil,
+				BlockMetadata:   nil,
+			}
+			broadcastMsg, err := b.NewBroadcastFeedMessage(msg, i)
+			if err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("NewBroadcastFeedMessage failed at index %d: %v", i, err)
+				}
+				cancel()
+				return
+			}
+			if err := b.BroadcastFeedMessages([]*message.BroadcastFeedMessage{broadcastMsg}); err != nil {
+				if ctx.Err() == nil {
+					t.Errorf("BroadcastFeedMessages failed at index %d: %v", i, err)
+				}
+				cancel()
+				return
+			}
 		}
 	}()
 
@@ -676,7 +697,10 @@ func TestInvalidSignatureMessagesAreSkipped(t *testing.T) {
 	defer broadcastClient.StopAndWait()
 
 	// Batch 1: valid messages (seq 0, 1) - should be delivered.
+	// Send seq 0 and wait for it to arrive before sending more, to ensure
+	// the client is connected and receiving messages.
 	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 0)))
+	ts.awaitCount(t, 1, 10*time.Second)
 	Require(t, trustedBroadcaster.BroadcastFeedMessages(feedMessage(t, trustedBroadcaster, 1)))
 	ts.awaitCount(t, 2, 10*time.Second)
 

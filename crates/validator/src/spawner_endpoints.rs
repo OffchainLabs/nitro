@@ -16,7 +16,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use validation::ValidationInput;
+use validation::ValidationRequest;
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]
@@ -56,12 +56,6 @@ impl<T: Serialize> JsonRpcResponse<T> {
             }),
         }
     }
-}
-
-/// Validation request that includes both ValidationInput and module_root.
-pub struct ValidationRequest {
-    pub validation_input: ValidationInput,
-    pub module_root: Option<ModuleRoot>,
 }
 
 /// JSON-RPC 2.0 dispatch request with `method` field.
@@ -109,7 +103,7 @@ fn module_roots(state: Arc<ServerState>) -> Vec<String> {
 }
 
 async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, String> {
-    let validation_input: ValidationInput = params
+    let validation_input: ValidationRequest = params
         .first()
         .ok_or_else(|| "Missing params".to_string())
         .and_then(|v| {
@@ -122,17 +116,12 @@ async fn validate(state: &Arc<ServerState>, params: &[Value]) -> Result<Value, S
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
-    let request = ValidationRequest {
-        validation_input,
-        module_root,
-    };
-
     let Json(gs) = match &state.execution {
         ExecutionMode::Native { module_cache } => {
-            validate_native(&state.locator, module_cache, request).await
+            validate_native(&state.locator, module_cache, validation_input, module_root).await
         }
         ExecutionMode::Continuous { jit_manager } => {
-            validate_continuous(&state.locator, jit_manager, request).await
+            validate_continuous(&state.locator, jit_manager, validation_input, module_root).await
         }
     }?;
 

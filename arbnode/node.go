@@ -723,6 +723,14 @@ func getDAProviders(
 		}
 	}
 
+	// Register a fallback DACert reader to treat DACert batches as empty
+	// if no real provider was configured, matching replay behavior.
+	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
+		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
+		}
+	}
+
 	// Combine all cleanup functions
 	combinedCleanup := func() {
 		for _, cleanup := range cleanupFuncs {
@@ -1074,6 +1082,9 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if batchMetaFetcher == nil {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
+		}
 		if arbOSVersionGetter == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}

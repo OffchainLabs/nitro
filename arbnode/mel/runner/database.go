@@ -3,6 +3,7 @@
 package melrunner
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -135,7 +136,11 @@ func (d *Database) SaveDelayedMessages(state *mel.State, delayedMessages []*mel.
 func (d *Database) ReadDelayedMessage(state *mel.State, index uint64) (*mel.DelayedInboxMessage, error) {
 	if index == 0 { // Init message
 		// This message cannot be found in the database as it is supposed to be seen and read in the same block, so we persist that in DelayedMessageBacklog
-		return state.GetDelayedMessageBacklog().GetInitMsg(), nil
+		backlog := state.GetDelayedMessageBacklog()
+		if backlog == nil {
+			return nil, errors.New("cannot read init message: delayed message backlog is not initialized")
+		}
+		return backlog.GetInitMsg(), nil
 	}
 	delayed, err := d.fetchDelayedMessage(index)
 	if err != nil {
