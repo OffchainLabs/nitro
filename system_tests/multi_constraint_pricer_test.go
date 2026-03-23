@@ -419,7 +419,7 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, tx)
-	builder.L2.AdvanceBlocks(t, 2, builder.L2Info) // Advance blocks so changes take effect
+	builder.L2.AdvanceBlocks(t, "Faucet", 2, builder.L2Info) // Advance blocks so changes take effect
 	baseFeeAfter := builder.L2.GetBaseFee(t)
 	t.Log("Base fee before: ", baseFeeBefore.Int64())
 	t.Log("Base fee after:  ", baseFeeAfter.Int64())

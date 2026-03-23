@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -140,7 +138,6 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
-	builder.nodeConfig.MessageExtraction.Enable = false // TODO: solve for => Error in message extractor               err="batch posting reports 0 do not match the number of batches 1"
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}
@@ -219,20 +216,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			Require(t, err)
 			blocksToPad := 65 - (currentHeader.Number.Uint64() - reorgTargetNumber)
 
-			currNonce, err := builder.L1.Client.PendingNonceAt(ctx, builder.L1Info.GetAddress("Faucet"))
-			Require(t, err)
-			builder.L1Info.GetInfoWithPrivKey("Faucet").Nonce.Store(currNonce)
-			for j := uint64(0); j < blocksToPad; j++ {
-				tx := builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
-				err = builder.L1.Client.SendTransaction(ctx, tx)
-				if err != nil {
-					if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), core.ErrNonceTooLow.Error()) {
-						t.Fatalf("error sending txs to create padding for reorg: %s", err.Error())
-					}
-				} else {
-					_, _ = builder.L1.EnsureTxSucceeded(tx)
-				}
-			}
+			builder.L1.RecalibrateNonce(t, "Faucet", builder.L1Info)
+			// #nosec G115
+			builder.L1.AdvanceBlocks(t, "Faucet", int(blocksToPad), builder.L1Info)
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			// #nosec G115
@@ -253,6 +239,11 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			err = builder.L1.Client.SendTransaction(ctx, tx)
 			Require(t, err)
 			_, _ = WaitForTx(ctx, builder.L1.Client, tx.Hash(), time.Second)
+
+			// Advance L1 to currentHeader+1 block so that MEL can detect reprg
+			builder.L1.RecalibrateNonce(t, "Faucet", builder.L1Info)
+			// #nosec G115
+			builder.L1.AdvanceBlocks(t, "Faucet", int(currentHeader.Number.Uint64()-reorgTargetNumber+1), builder.L1Info)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)

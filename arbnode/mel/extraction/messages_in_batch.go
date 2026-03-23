@@ -33,7 +33,11 @@ func messagesFromBatchSegments(
 	messages := make([]*arbostypes.MessageWithMetadata, 0)
 	timestamp := uint64(0)
 	blockNumber := uint64(0)
-	for idx, segment := range seqMsg.Segments {
+	segments := seqMsg.Segments
+	if len(segments) == 0 {
+		segments = [][]byte{{arbstate.BatchSegmentKindDelayedMessages}}
+	}
+	for idx, segment := range segments {
 		msg, newBlockNumber, newTimestamp, err := messageFromSegment(
 			ctx,
 			melState,
@@ -111,32 +115,55 @@ func messageFromSegment(
 		return nil, blockNumber, timestamp, nil
 	} else if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
 		segment = segment[1:]
+		adjustedTimestamp := timestamp
+		if adjustedTimestamp < seqMsg.MinTimestamp {
+			adjustedTimestamp = seqMsg.MinTimestamp
+		} else if adjustedTimestamp > seqMsg.MaxTimestamp {
+			adjustedTimestamp = seqMsg.MaxTimestamp
+		}
+		adjustedBlockNumber := blockNumber
+		if adjustedBlockNumber < seqMsg.MinL1Block {
+			adjustedBlockNumber = seqMsg.MinL1Block
+		} else if adjustedBlockNumber > seqMsg.MaxL1Block {
+			adjustedBlockNumber = seqMsg.MaxL1Block
+		}
 		msg := produceL2Message(
 			kind,
 			seqMsg,
 			segment,
-			blockNumber,
-			timestamp,
+			adjustedBlockNumber,
+			adjustedTimestamp,
 			melState.DelayedMessagesRead,
 		)
 		return msg, blockNumber, timestamp, nil
 	} else if kind == arbstate.BatchSegmentKindDelayedMessages {
-		msg, err := extractDelayedMessageFromSegment(
-			ctx,
-			melState,
-			seqMsg,
-			delayedMsgDB,
-		)
-		if err != nil {
-			return nil, blockNumber, timestamp, err
+		if melState.DelayedMessagesRead >= seqMsg.AfterDelayedMessages {
+			if segmentIdx < len(seqMsg.Segments) {
+				log.Warn(
+					"attempt to read past batch delayed message count",
+					"delayedMessagesRead", melState.DelayedMessagesRead,
+					"batchAfterDelayedMessages", seqMsg.AfterDelayedMessages,
+				)
+			}
+			return &arbostypes.MessageWithMetadata{
+				Message:             arbostypes.InvalidL1Message,
+				DelayedMessagesRead: seqMsg.AfterDelayedMessages,
+			}, blockNumber, timestamp, nil
+		} else {
+			msg, err := extractDelayedMessageFromSegment(
+				ctx,
+				melState,
+				seqMsg,
+				delayedMsgDB,
+			)
+			if err != nil {
+				return nil, blockNumber, timestamp, err
+			}
+			return msg, blockNumber, timestamp, nil
 		}
-		return msg, blockNumber, timestamp, nil
 	} else {
 		log.Error("Bad sequencer message segment kind", "segmentNum", segmentIdx, "kind", kind)
-		return &arbostypes.MessageWithMetadata{
-			Message:             arbostypes.InvalidL1Message,
-			DelayedMessagesRead: melState.DelayedMessagesRead,
-		}, blockNumber, timestamp, nil
+		return nil, blockNumber, timestamp, nil
 	}
 }
 
@@ -204,7 +231,7 @@ func extractDelayedMessageFromSegment(
 		return nil, err
 	}
 	if delayed == nil {
-		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead)
+		log.Error("No more delayed messages in queue", "delayedMessagesRead", melState.DelayedMessagesRead, "delayedMessagesSeen", melState.DelayedMessagesSeen)
 		return nil, fmt.Errorf("no more delayed messages in db")
 	}
 

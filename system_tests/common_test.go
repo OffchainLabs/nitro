@@ -221,10 +221,16 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 	return arbmath.BigSub(newBalance, prevBalance), nil
 }
 
-func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
+func (tc *TestClient) AdvanceBlocks(t *testing.T, account string, numBlocks int, lInfo info) {
 	for range numBlocks {
-		tc.TransferBalance(t, "Faucet", "Faucet", common.Big1, lInfo)
+		tc.TransferBalance(t, account, account, common.Big1, lInfo)
 	}
+}
+
+func (tc *TestClient) RecalibrateNonce(t *testing.T, account string, lInfo info) {
+	currNonce, err := tc.Client.PendingNonceAt(tc.ctx, lInfo.GetAddress(account))
+	Require(t, err)
+	lInfo.GetInfoWithPrivKey(account).Nonce.Store(currNonce)
 }
 
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
