@@ -117,7 +117,7 @@ fn build_input(cli: &Cli) -> Vec<u8> {
         serde_json::from_slice::<ValidationRequest>(&std::fs::read(&cli.block_file).expect("read input block"))
             .expect("parse input block");
 
-    let mut input = ValidationInput::from_request(&req, "rv64");
+    let mut input = ValidationInput::from_request(&req, "rv64").expect("request validation input");
 
     // Compile wasm modules that don't have rv64 binaries via the SP1 stylus compiler.
     if let Some(wasms) = req.user_wasms.get("wasm") {

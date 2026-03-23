@@ -87,8 +87,7 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
         wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
         wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
-        #[cfg(feature = "sp1")]
-        _ => todo!(),
+        wasmer::Type::ExceptionRef => wasmer::wasmparser::ValType::Ref(RefType::EXNREF),
     }
 }
 
@@ -498,10 +497,14 @@ impl Display for ArbValueType {
     }
 }
 
+#[cfg(feature = "sp1")]
 #[path = "internal_func.rs"]
 mod internal_func;
+#[cfg(feature = "sp1")]
 pub use internal_func::InternalFunc;
 
+#[cfg(feature = "sp1")]
 #[path = "memory_type.rs"]
 mod memory_type;
+#[cfg(feature = "sp1")]
 pub use memory_type::MemoryType;

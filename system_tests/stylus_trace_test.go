@@ -387,14 +387,16 @@ func TestStylusOpcodeTraceCall(t *testing.T) {
 	// call_contract
 	checkOpcode(t, result, 3, vm.CALL, gas, storage[:], nil, nil, argsLen, nil, nil)
 
-	// read_return_data
-	checkOpcode(t, result, 8, vm.RETURNDATACOPY, nil, nil, returnLen)
+	// read_return_data shifted from index 8 to 10 because the new SDK now calls
+	// return_data_size + read_return_data after the inner call (adding
+	// RETURNDATASIZE+POP+RETURNDATACOPY instead of just RETURNDATACOPY).
+	checkOpcode(t, result, 10, vm.RETURNDATACOPY, nil, nil, returnLen)
 
 	// delegate_call_contract
-	checkOpcode(t, result, 9, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 11, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
 
 	// static_call_contract
-	checkOpcode(t, result, 15, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 19, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
 }
 
 func TestStylusOpcodeTraceCreate(t *testing.T) {
@@ -485,8 +487,10 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	checkOpcode(t, wasmResult, 10, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 4828, vm.RETURN, offset, returnLen)
 
-	// outer return
-	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
+	// outer RETURN shifted from index 12 to 14 because the new SDK now calls
+	// return_data_size + read_return_data after the inner call (adding
+	// RETURNDATASIZE+POP+RETURNDATACOPY instead of just RETURNDATACOPY).
+	checkOpcode(t, wasmResult, 14, vm.RETURN, offset, returnLen)
 	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
 }
 

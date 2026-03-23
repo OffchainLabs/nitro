@@ -19,9 +19,10 @@ use std::{
 };
 use thiserror::Error;
 use validation::local_target;
+use wasmer::sys::CompilerConfig;
 use wasmer::{
-    imports, CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
-    Module, RuntimeError, Store,
+    imports, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError,
+    Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -93,6 +94,7 @@ fn make_cranelift_engine() -> Engine {
     let mut compiler = Cranelift::new();
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
+
     Engine::from(compiler)
 }
 
@@ -265,11 +267,12 @@ impl TryFrom<&Opts> for WasmEnv {
             InputMode::Json { inputs } => {
                 let file = File::open(inputs)?;
                 let req = validation::ValidationRequest::from_reader(BufReader::new(file))?;
-                let input = validation::ValidationInput::from_request(&req, local_target());
-                load_validation_input(&mut env, &input);
+                let input = validation::ValidationInput::from_request(&req, local_target())
+                    .map_err(|e| eyre::eyre!(e))?;
+                load_validation_input(&mut env, input);
             }
             InputMode::Local(local) => prepare_env_from_files(&mut env, local)?,
-            InputMode::Native(vi) => load_validation_input(&mut env, vi),
+            InputMode::Native(vi) => load_validation_input(&mut env, vi.clone()),
             InputMode::Continuous => {}
         }
         Ok(env)
@@ -333,21 +336,18 @@ fn prepare_env_from_files(env: &mut WasmEnv, input: &LocalInput) -> Result<()> {
         }
     }
 
-    load_validation_input(env, &vi);
+    load_validation_input(env, vi);
     Ok(())
 }
 
-pub(crate) fn load_validation_input(env: &mut WasmEnv, input: &validation::ValidationInput) {
+pub(crate) fn load_validation_input(env: &mut WasmEnv, mut input: validation::ValidationInput) {
     env.process.already_has_input = true;
-    let mut vi = input.clone();
-    // Drain module_asms into a separate Arc-based cache to avoid copying
-    // the full wasm binary on each lookup. vi.module_asms will be empty after this,
-    // but that's fine — module lookups go through env.module_asms instead.
-    for (module_hash, module_asm) in vi.module_asms.drain() {
+    let module_asms = std::mem::take(&mut input.module_asms);
+    for (module_hash, module_asm) in module_asms {
         env.module_asms
             .insert(Bytes32(module_hash), module_asm.into());
     }
-    env.input = vi;
+    env.input = input;
 }
 
 pub struct ProcessEnv {

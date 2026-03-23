@@ -7,7 +7,7 @@ edition = "2024"
 [dependencies]
 sp1-core-executor = { workspace = true }
 sp1-sdk = { workspace = true }
-validation = { workspace = true, features = ["rkyv"] }
+validation = { workspace = true, features = ["rkyv", "sp1"] }
 
 bincode = { workspace = true }
 clap = { workspace = true }

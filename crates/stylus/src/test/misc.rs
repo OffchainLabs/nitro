@@ -9,7 +9,8 @@ use crate::{
 };
 use eyre::Result;
 use prover::programs::{prelude::*, start::StartMover};
-use wasmer::{imports, Function, Target};
+use wasmer::sys::Target;
+use wasmer::{imports, Function};
 
 #[test]
 fn test_bulk_memory() -> Result<()> {

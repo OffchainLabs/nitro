@@ -4,7 +4,7 @@ use crate::transfer::primitives::{read_bytes, read_u32, read_u64, read_u8};
 use crate::transfer::{markers, IOResult};
 use crate::{GoGlobalState, Inbox, Preimages, ValidationInput};
 use io::Error;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io;
 use std::io::ErrorKind::InvalidData;
 use std::io::Read;
@@ -84,9 +84,9 @@ fn receive_preimages(reader: &mut impl Read) -> IOResult<Preimages> {
     Ok(preimages)
 }
 
-fn receive_module_asms(reader: &mut impl Read) -> IOResult<HashMap<[u8; 32], Vec<u8>>> {
+fn receive_module_asms(reader: &mut impl Read) -> IOResult<BTreeMap<[u8; 32], Vec<u8>>> {
     let count = read_u32(reader)?;
-    let mut module_asms = HashMap::with_capacity(count as usize);
+    let mut module_asms = BTreeMap::new();
     for _ in 0..count {
         let mut hash = [0u8; 32];
         reader.read_exact(&mut hash)?;

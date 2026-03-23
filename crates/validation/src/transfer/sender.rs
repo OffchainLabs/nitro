@@ -3,7 +3,7 @@
 use crate::transfer::primitives::{write_bytes, write_u32, write_u64, write_u8};
 use crate::transfer::{markers, IOResult};
 use crate::{GoGlobalState, Inbox, Preimages, ValidationInput};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Write;
 
 pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -> IOResult<()> {
@@ -69,7 +69,7 @@ fn send_preimages(writer: &mut impl Write, preimages: &Preimages) -> IOResult<()
 
 fn send_module_asms(
     writer: &mut impl Write,
-    module_asms: &HashMap<[u8; 32], Vec<u8>>,
+    module_asms: &BTreeMap<[u8; 32], Vec<u8>>,
 ) -> IOResult<()> {
     write_u32(writer, module_asms.len() as u32)?;
     for (hash, asm) in module_asms {

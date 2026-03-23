@@ -27,19 +27,22 @@ pub struct ValidationInput {
     pub preimages: Preimages,
     pub sequencer_messages: Inbox,
     pub delayed_messages: Inbox,
-    pub module_asms: HashMap<[u8; 32], Vec<u8>>,
+    pub module_asms: BTreeMap<[u8; 32], Vec<u8>>,
 }
 
 impl ValidationInput {
     /// Extract runtime data from a request for the given target architecture.
-    pub fn from_request(req: &ValidationRequest, target: &str) -> Self {
+    ///
+    /// Returns an error if the request contains user WASMs for a different
+    /// architecture but none for `target`.
+    pub fn from_request(req: &ValidationRequest, target: &str) -> Result<Self, String> {
         let mut sequencer_messages = Inbox::new();
         for batch in &req.batch_info {
             sequencer_messages.insert(batch.number, batch.data.clone());
         }
 
         let mut delayed_messages = Inbox::new();
-        if req.delayed_msg_nr != 0 && !req.delayed_msg.is_empty() {
+        if req.has_delayed_msg {
             delayed_messages.insert(req.delayed_msg_nr, req.delayed_msg.clone());
         }
 
@@ -51,21 +54,27 @@ impl ValidationInput {
             }
         }
 
-        let mut module_asms = HashMap::new();
+        let mut module_asms = BTreeMap::new();
         if let Some(user_wasms) = req.user_wasms.get(target) {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
+        } else if !cfg!(feature = "sp1") {
+            for (arch, wasms) in &req.user_wasms {
+                if !wasms.is_empty() {
+                    return Err(format!("bad stylus arch: got {arch}, expected {target}"));
+                }
+            }
         }
 
-        Self {
+        Ok(Self {
             small_globals: [req.start_state.batch, req.start_state.pos_in_batch],
             large_globals: [req.start_state.block_hash.0, req.start_state.send_root.0],
             preimages,
             sequencer_messages,
             delayed_messages,
             module_asms,
-        }
+        })
     }
 
     #[cfg(feature = "rkyv")]
@@ -177,5 +186,130 @@ impl ValidationRequest {
             number: self.delayed_msg_nr,
             data: self.delayed_msg.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_user_wasm(data: &[u8]) -> UserWasm {
+        let compressed = brotli::compress(data, 1, 22, brotli::Dictionary::Empty).unwrap();
+        UserWasm::try_from(compressed).unwrap()
+    }
+
+    fn make_request() -> ValidationRequest {
+        let block_hash = Bytes32([1u8; 32]);
+        let send_root = Bytes32([2u8; 32]);
+
+        let keccak_map = HashMap::from_iter([(Bytes32([0xAA; 32]), vec![10, 20, 30])]);
+        let preimages = HashMap::from_iter([(PreimageType::Keccak256, keccak_map)]);
+
+        let target_map = HashMap::from_iter([(Bytes32([0xBB; 32]), make_user_wasm(&[0, 1, 2, 3]))]);
+        let user_wasms = HashMap::from_iter([("host".to_string(), target_map)]);
+
+        ValidationRequest {
+            id: 42,
+            has_delayed_msg: true,
+            delayed_msg_nr: 7,
+            preimages,
+            batch_info: vec![
+                BatchInfo {
+                    number: 0,
+                    data: vec![1, 2, 3],
+                },
+                BatchInfo {
+                    number: 1,
+                    data: vec![4, 5, 6],
+                },
+            ],
+            delayed_msg: vec![9, 8, 7],
+            start_state: GoGlobalState {
+                block_hash,
+                send_root,
+                batch: 100,
+                pos_in_batch: 200,
+            },
+            user_wasms,
+            debug_chain: false,
+            max_user_wasm_size: 0,
+        }
+    }
+
+    #[test]
+    fn from_request_populates_globals() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        assert_eq!(input.small_globals, [100, 200]);
+        assert_eq!(input.large_globals[0], [1u8; 32]);
+        assert_eq!(input.large_globals[1], [2u8; 32]);
+    }
+
+    #[test]
+    fn from_request_populates_sequencer_messages() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        assert_eq!(input.sequencer_messages.len(), 2);
+        assert_eq!(input.sequencer_messages[&0], vec![1, 2, 3]);
+        assert_eq!(input.sequencer_messages[&1], vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn from_request_includes_delayed_message_when_present() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        assert_eq!(input.delayed_messages.len(), 1);
+        assert_eq!(input.delayed_messages[&7], vec![9, 8, 7]);
+    }
+
+    #[test]
+    fn from_request_skips_delayed_message_when_flag_false() {
+        let mut req = make_request();
+        req.has_delayed_msg = false;
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        assert!(input.delayed_messages.is_empty());
+    }
+
+    #[test]
+    fn from_request_populates_preimages() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        let keccak_map = input
+            .preimages
+            .get(&(PreimageType::Keccak256 as u8))
+            .unwrap();
+        assert_eq!(keccak_map.len(), 1);
+        assert_eq!(keccak_map[&[0xAA; 32]], vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn from_request_populates_module_asms_for_matching_target() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "host").unwrap();
+
+        assert_eq!(input.module_asms.len(), 1);
+        assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn from_request_errors_on_wrong_target() {
+        let req = make_request();
+        let err = ValidationInput::from_request(&req, "nonexistent").unwrap_err();
+
+        assert!(err.contains("bad stylus arch"));
+    }
+
+    #[test]
+    fn from_request_ok_with_no_user_wasms() {
+        let mut req = make_request();
+        req.user_wasms.clear();
+        let input = ValidationInput::from_request(&req, "nonexistent").unwrap();
+
+        assert!(input.module_asms.is_empty());
     }
 }

@@ -229,7 +229,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
     let mut reader = BufReader::new(socket.try_clone()?);
     let input = receive_validation_input(&mut reader)?;
-    crate::machine::load_validation_input(env, &input);
+    crate::machine::load_validation_input(env, input);
 
     let writer = BufWriter::new(socket);
     env.process.socket = Some((writer, reader));

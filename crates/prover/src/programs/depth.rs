@@ -5,10 +5,15 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::value::FunctionType;
-use crate::value::InternalFunc;
 #[cfg(not(feature = "sp1"))]
 use crate::Machine;
+
+use crate::value::FunctionType;
+#[cfg(feature = "sp1")]
+use crate::value::InternalFunc;
+
+#[cfg(not(feature = "sp1"))]
+use crate::internal_func::InternalFunc;
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -504,9 +509,11 @@ impl FuncDepthChecker<'_> {
                         I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
                 ) => bail!("SIMD extension not supported {unsupported:?}"),
-
-                #[cfg(feature = "sp1")]
-                _ => todo!("New operator not covered yet by nitro!")
+                // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+                // include a wildcard arm even though we handle all known variants.
+                // If a new variant appears that we don't explicitly map yet, bail
+                // so that it is noticed and added with a proper opcode.
+                _ => bail!("extension {op:?} not supported"),
             };
         }
 

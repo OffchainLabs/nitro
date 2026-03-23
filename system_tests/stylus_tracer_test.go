@@ -67,7 +67,11 @@ func TestStylusTracer(t *testing.T) {
 			args:     loadStoreArgs,
 			want: []gethexec.HostioTraceInfo{
 				{Name: "user_entrypoint", Args: intToBe32(len(loadStoreArgs))},
-				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
+				// The new SDK no longer uses wee_alloc, so multicall does not call
+				// memory.grow at startup and stays at 1 open page (previously 2).
+				// With footprint=1, the callee fits within the 2 free-page
+				// allowance (1 open + 1 footprint) and no extra gas is charged.
+				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 				{Name: "read_args", Outs: loadStoreArgs},
 				{Name: "storage_cache_bytes32", Args: append(key.Bytes(), value.Bytes()...)},
 				{Name: "storage_flush_cache", Args: []byte{0x00}},
@@ -84,7 +88,7 @@ func TestStylusTracer(t *testing.T) {
 			args:     callArgs,
 			want: []gethexec.HostioTraceInfo{
 				{Name: "user_entrypoint", Args: intToBe32(len(callArgs))},
-				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
+				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 				{Name: "read_args", Outs: callArgs},
 				{
 					Name:    "call_contract",
@@ -93,13 +97,14 @@ func TestStylusTracer(t *testing.T) {
 					Address: &stylusMulticall,
 					Steps: (*containers.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
 						{Name: "user_entrypoint", Args: intToBe32(1)},
-						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
+						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 						{Name: "read_args", Outs: []byte{0x00}},
 						{Name: "storage_flush_cache", Args: []byte{0x00}},
 						{Name: "write_result"},
 						{Name: "user_returned", Outs: intToBe32(0)},
 					}),
 				},
+				{Name: "return_data_size", Outs: intToBe32(0)},
 				{Name: "storage_flush_cache", Args: []byte{0x00}},
 				{Name: "write_result"},
 				{Name: "user_returned", Outs: intToBe32(0)},
@@ -112,7 +117,7 @@ func TestStylusTracer(t *testing.T) {
 			args:     evmCall,
 			want: []gethexec.HostioTraceInfo{
 				{Name: "user_entrypoint", Args: intToBe32(len(callArgs))},
-				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
+				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 				{Name: "read_args", Outs: evmCall},
 				{
 					Name:    "call_contract",
@@ -121,6 +126,7 @@ func TestStylusTracer(t *testing.T) {
 					Address: &evmMulticall,
 					Steps:   containers.NewStack[gethexec.HostioTraceInfo](),
 				},
+				{Name: "return_data_size", Outs: intToBe32(0)},
 				{Name: "storage_flush_cache", Args: []byte{0x00}},
 				{Name: "write_result"},
 				{Name: "user_returned", Outs: intToBe32(0)},
@@ -137,7 +143,7 @@ func TestStylusTracer(t *testing.T) {
 					Address: &stylusMulticall,
 					Steps: (*containers.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
 						{Name: "user_entrypoint", Args: intToBe32(1)},
-						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}},
+						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x00}},
 						{Name: "read_args", Outs: []byte{0x00}},
 						{Name: "storage_flush_cache", Args: []byte{0x00}},
 						{Name: "write_result"},
