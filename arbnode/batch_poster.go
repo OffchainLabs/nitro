@@ -1862,7 +1862,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isn't needed, but better to be safe
 	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
-		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher) // TODO: how to replace inboxTracer with msgExtractor here?
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
 		}
@@ -2071,9 +2071,9 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
-	b.dataPoster.Start(ctxIn)
-	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
+	b.dataPoster.Start(b.GetContext())
+	b.redisLock.Start(b.GetContext())
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
@@ -2157,9 +2157,9 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 }
 
 func (b *BatchPoster) StopAndWait() {
-	b.StopWaiter.StopAndWait()
-	b.dataPoster.StopAndWait()
 	b.redisLock.StopAndWait()
+	b.dataPoster.StopAndWait()
+	b.StopWaiter.StopAndWait()
 }
 
 type BoolRing struct {

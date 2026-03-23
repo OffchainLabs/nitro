@@ -723,6 +723,14 @@ func getDAProviders(
 		}
 	}
 
+	// Register a fallback DACert reader to treat DACert batches as empty
+	// if no real provider was configured, matching replay behavior.
+	if dapRegistry.GetReader(daprovider.DACertificateMessageHeaderFlag) == nil {
+		if err := dapRegistry.SetupDACertificateReader(&daprovider.FallbackDACertReader{}, nil); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to register fallback DACert reader: %w", err)
+		}
+	}
+
 	// Combine all cleanup functions
 	combinedCleanup := func() {
 		for _, cleanup := range cleanupFuncs {
@@ -780,12 +788,12 @@ func getMessageExtractor(
 		return nil, nil
 	}
 	melDB := melrunner.NewDatabase(arbDb)
-	if _, err := melDB.GetHeadMelState(ctx); err != nil {
+	if _, err := melDB.GetHeadMelState(); err != nil {
 		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
 		if err != nil {
 			return nil, err
 		}
-		if err = melDB.SaveState(ctx, initialState); err != nil {
+		if err = melDB.SaveState(initialState); err != nil {
 			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
 		}
 	}
@@ -1054,7 +1062,6 @@ func getBatchPoster(
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
 	batchMetaFetcher BatchMetadataFetcher,
-	msgExtractor *melrunner.MessageExtractor,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1066,6 +1073,9 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if batchMetaFetcher == nil {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
+		}
 		if arbOSVersionGetter == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
@@ -1107,26 +1117,29 @@ func getBatchPoster(
 
 func getDelayedSequencer(
 	l1Reader *headerreader.HeaderReader,
-	inboxReader *InboxReader,
+	inboxTracker *InboxTracker,
 	msgExtractor *melrunner.MessageExtractor,
 	delayedBridge *DelayedBridge,
 	exec execution.ExecutionSequencer,
 	configFetcher ConfigFetcher,
 	coordinator *SeqCoordinator,
 ) (*DelayedSequencer, error) {
-	if inboxReader == nil && msgExtractor == nil {
-		return nil, errors.New("delayed sequencer either an inbox reader or message extractor, but neither was provided")
-	}
 	if exec == nil {
+		// No ExecutionSequencer means delayed messages cannot be sequenced.
 		return nil, nil
 	}
-
-	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	delayedSequencer, err := NewDelayedSequencer(l1Reader, inboxReader, msgExtractor, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
+	// Convert typed nil *MessageExtractor to untyped nil so the interface parameter
+	// in NewDelayedSequencer is properly nil (Go nil-interface semantics).
+	var delayedMessageFetcher DelayedMessageFetcher
+	if inboxTracker != nil {
+		delayedMessageFetcher = inboxTracker
+	} else if msgExtractor != nil {
+		delayedMessageFetcher = msgExtractor
+	} else {
+		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
-	return delayedSequencer, nil
+	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
+	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 }
 
 func getNodeParentChainReaderDisabled(
@@ -1305,12 +1318,18 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxReader, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
+	delayedSequencer, err := getDelayedSequencer(l1Reader, inboxTracker, messageExtractor, delayedBridge, executionSequencer, configFetcher, coordinator)
 	if err != nil {
 		return nil, err
 	}
@@ -1729,7 +1748,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
@@ -1801,7 +1820,7 @@ func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) container
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}

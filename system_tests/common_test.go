@@ -10,6 +10,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -220,6 +221,12 @@ func (tc *TestClient) BalanceDifferenceAtBlock(address common.Address, blockNum 
 	return arbmath.BigSub(newBalance, prevBalance), nil
 }
 
+func (tc *TestClient) AdvanceBlocks(t *testing.T, numBlocks int, lInfo info) {
+	for range numBlocks {
+		tc.TransferBalance(t, "Faucet", "Faucet", common.Big1, lInfo)
+	}
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -394,6 +401,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
+		b.nodeConfig.MessageExtraction.Enable = true
 	} else {
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
@@ -558,6 +566,26 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
+	t.Helper()
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		count, err := tc.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		if count > 0 {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatal("timed out waiting for MEL to read init message")
+		}
+	}
+}
+
 func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
 	if b.execConfig == nil {
 		panic("execConfig must be initialised before setting event filter rules")
@@ -579,9 +607,11 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 		if b.withReferenceDAProvider {
 			b.setupReferenceDAServer(t)
 		}
-		return b.BuildL2OnL1(t)
+		cleanup := b.BuildL2OnL1(t)
+		return cleanup
 	}
-	return b.BuildL2(t)
+	cleanup := b.BuildL2(t)
+	return cleanup
 }
 
 type testCollection struct {
@@ -711,6 +741,9 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		} else {
 			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
+	}
+	if b.nodeConfig.BlockValidator.Enable {
+		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
 
@@ -925,9 +958,22 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.TrieNoAsyncFlush,
 	)
 
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
+
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
+		// Sync the Owner nonce tracker with the actual on-chain state.
+		// This avoids nonce races when BuildL2OnL1 is called multiple times
+		// (e.g., in TestAnyTrustRekey where the L2 is rebuilt on the same L1).
+		ownerAddr := b.L2Info.GetAddress("Owner")
+		onChainNonce, err := b.L2.Client.PendingNonceAt(b.ctx, ownerAddr)
+		Require(t, err)
+		b.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(onChainNonce)
+
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
+		debugAuth.Nonce = new(big.Int).SetUint64(onChainNonce)
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
@@ -940,6 +986,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		Require(t, err)
 
 		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_MultiConstraintFix {
+			debugAuth.Nonce = nil // let the framework fill the nonce for subsequent calls
 			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
 			Require(t, err)
 			tx, err = arbowner.SetGasPricingConstraints(&debugAuth, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
@@ -1032,6 +1079,9 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	b.L2.ExecNode = execNode
 	b.L2.cleanup = cleanup
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
@@ -1347,7 +1397,13 @@ func BridgeBalance(
 				break
 			}
 			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
-			if i > 200 {
+			if ctx.Err() != nil {
+				Fatal(t, "bridging failed: context cancelled")
+			}
+			// Each loop iteration creates one L1 block. Under -race the
+			// L1→L2 pipeline is significantly slower, hence the generous
+			// 600-iteration budget.
+			if i > 600 {
 				Fatal(t, "bridging failed")
 			}
 			<-time.After(time.Millisecond * 100)
@@ -2061,18 +2117,110 @@ func ClientForStack(t *testing.T, backend *node.Node, useHTTP bool) *ethclient.C
 	return ethclient.NewClient(backend.Attach())
 }
 
+// isContextError returns true if the error is a context cancellation or
+// deadline exceeded, checking both errors.Is unwrapping and string matching
+// for wrapped errors that don't properly chain context sentinel errors.
+func isContextError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded")
+}
+
 func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, node *arbnode.Node) {
 	go func() {
 		select {
 		case <-ctx.Done():
 			return
 		case err := <-feedErrChan:
+			// During shutdown, ctx.Done() and feedErrChan may both be ready
+			// simultaneously and Go's select picks randomly. Ignore context
+			// cancellation errors that are expected during normal shutdown,
+			// but still report any other errors.
+			if ctx.Err() != nil && isContextError(err) {
+				return
+			}
 			t.Errorf("error occurred: %v", err)
 			if node != nil {
 				node.StopAndWait()
 			}
 		}
 	}()
+}
+
+// pollUntil calls check every interval until it returns true, ctx is cancelled, or timeout elapses.
+// The effective timeout is capped by the context's deadline if one is set.
+// On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
+// The check function should handle errors by logging and returning false, not by calling Fatal/Require.
+func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	iterations := 0
+	for {
+		if ctx.Err() != nil {
+			t.Fatalf("context cancelled while waiting for %s after %d iterations: %v", desc, iterations, ctx.Err())
+		}
+		if check() {
+			return
+		}
+		iterations++
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out waiting for %s after %d iterations", desc, iterations)
+}
+
+// retryUntilFound retries fn until it succeeds, retrying only errors whose message
+// contains retrySubstr (e.g. "not found" or any substring of the expected transient error).
+// It fatals on context cancellation, retry exhaustion, or non-matching errors.
+// Like pollUntil, it calls t.Fatalf on failure, so it must be called from the test goroutine.
+func retryUntilFound(t *testing.T, ctx context.Context, maxRetries int, interval time.Duration, desc string, retrySubstr string, fn func() error) {
+	t.Helper()
+	var lastErr error
+	for retry := 0; retry < maxRetries; retry++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return
+		}
+		// Check context before classifying the error: context cancellation
+		// during fn() should not be treated as a non-retryable error.
+		if ctx.Err() != nil {
+			t.Fatalf("%s: context cancelled after %d retries: %v (last error: %v)", desc, retry+1, ctx.Err(), lastErr)
+		}
+		if !strings.Contains(lastErr.Error(), retrySubstr) {
+			t.Fatalf("%s: non-retryable error: %v", desc, lastErr)
+		}
+		t.Logf("%s retry %d/%d: %v", desc, retry+1, maxRetries, lastErr)
+		time.Sleep(interval)
+	}
+	t.Fatalf("%s: exhausted %d retries: %v", desc, maxRetries, lastErr)
+}
+
+// goroutineErrorf reports an error from a background goroutine in a goroutine-safe way.
+// It calls t.Errorf (safe from any goroutine, unlike t.Fatal) and cancels the context
+// to signal other goroutines to stop. Errors caused by context cancellation are suppressed
+// since they are expected consequences of another goroutine failing first.
+// Returns true if an error was reported or the context is already cancelled, signaling
+// the caller should return.
+func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFunc, err error, format string, args ...interface{}) bool {
+	t.Helper()
+	if err == nil {
+		return false
+	}
+	if ctx.Err() == nil {
+		t.Errorf(format, args...)
+	}
+	cancel()
+	return true
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
@@ -2657,7 +2805,7 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	machResp, err := http.Get(cr.MachineWavmURL.String())
 	Require(t, err)
 	defer machResp.Body.Close()
-	machineFile, err := os.Create(machineDir + "/latest/machine.wavm.br")
+	machineFile, err := os.Create(machineDir + "/latest/machine.v2.wavm.br")
 	Require(t, err)
 	_, err = io.Copy(machineFile, machResp.Body)
 	Require(t, err)

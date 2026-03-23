@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -46,10 +47,11 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64      string   `koanf:"arm64"`
-	Amd64      string   `koanf:"amd64"`
-	Host       string   `koanf:"host"`
-	ExtraArchs []string `koanf:"extra-archs"`
+	Arm64         string   `koanf:"arm64"`
+	Amd64         string   `koanf:"amd64"`
+	Host          string   `koanf:"host"`
+	ExtraArchs    []string `koanf:"extra-archs"`
+	AllowFallback bool     `koanf:"allow-fallback"`
 
 	wasmTargets []rawdb.WasmTarget
 }
@@ -82,10 +84,11 @@ func (c *StylusTargetConfig) Validate() error {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:      programs.DefaultTargetDescriptionArm,
-	Amd64:      programs.DefaultTargetDescriptionX86,
-	Host:       "",
-	ExtraArchs: []string{string(rawdb.TargetWavm)},
+	Arm64:         programs.DefaultTargetDescriptionArm,
+	Amd64:         programs.DefaultTargetDescriptionX86,
+	Host:          "",
+	ExtraArchs:    []string{string(rawdb.TargetWavm)},
+	AllowFallback: true,
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -93,6 +96,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
+	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
 }
 
 type TxIndexerConfig struct {
@@ -253,7 +257,6 @@ type ExecutionNode struct {
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
-	ExpressLaneService       *expressLaneService
 	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
@@ -613,6 +616,9 @@ func (n *ExecutionNode) TriggerMaintenance() containers.PromiseInterface[struct{
 }
 
 func (n *ExecutionNode) Synced(ctx context.Context) bool {
+	if n.Sequencer != nil && !n.Sequencer.FilteringReady() {
+		return false
+	}
 	return n.SyncMonitor.Synced(ctx)
 }
 
@@ -645,7 +651,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	if execNodeConfig.Sequencer.Timeboost.Enable {
 		auctionContractAddr := common.HexToAddress(execNodeConfig.Sequencer.Timeboost.AuctionContractAddress)
 
-		auctionContract, err := NewExpressLaneAuctionFromInternalAPI(
+		auctionContract, err := timeboost.NewExpressLaneAuctionFromInternalAPI(
 			n.Backend.APIBackend(),
 			n.FilterSystem,
 			auctionContractAddr)
@@ -653,7 +659,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			return err
 		}
 
-		roundTimingInfo, err := GetRoundTimingInfo(auctionContract)
+		roundTimingInfo, err := timeboost.GetRoundTimingInfo(auctionContract)
 		if err != nil {
 			return err
 		}
@@ -666,7 +672,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 		}
 
-		expressLaneTracker, err := NewExpressLaneTracker(
+		expressLaneTracker, err := timeboost.NewExpressLaneTracker(
 			*roundTimingInfo,
 			execNodeConfig.Sequencer.MaxBlockSpeed,
 			n.Backend.APIBackend(),

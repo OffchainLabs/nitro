@@ -57,7 +57,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	writeBytes := arbmath.WordsForBytes(byteCount)
-	if err := c.Burn(multigas.ResourceKindStorageAccess, params.SloadGas*writeBytes); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, params.SloadGas*writeBytes); err != nil {
 		return hash{}, err
 	}
 
@@ -129,8 +129,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
 	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
-	// We burn as much compute gas as we can, leaving only enough to pay for copying out the return data.
-	const donationResource = multigas.ResourceKindComputation
+	// We burn as much single-dimensional gas as we can, leaving only enough to pay for copying out the return data.
+	const donationResource = multigas.ResourceKindSingleDim
 	if err := c.Burn(donationResource, gasToDonate); err != nil {
 		return hash{}, err
 	}
@@ -151,7 +151,8 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		defer c.SetUnmeteredGasAccounting(false)
 	}
 
-	// Shrink the computation backlog because the transaction didn't use these resources.
+	// Shrink the backlog because the transaction didn't use these resources.
+	// Even though the single-dimensional gas backlog doesn't affect multi-gas prices, we still do this in case multi-gas is disabled.
 	// Later, the retryable attempt will use this gas and increase the resource-backlogs it actually uses.
 	// This ensures we don't increase the L2 base fee unnecessarily.
 	return retryTxHash, c.State.L2PricingState().ShrinkBacklog(gasToDonate, multigas.NewMultiGas(donationResource, gasToDonate))
@@ -191,7 +192,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return nil, con.oldNotFoundError(c)
 	}
 	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
-	if err := c.Burn(multigas.ResourceKindStorageAccess, updateCost); err != nil {
+	if err := c.Burn(multigas.ResourceKindStorageAccessWrite, updateCost); err != nil {
 		return big.NewInt(0), err
 	}
 

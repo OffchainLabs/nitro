@@ -144,9 +144,6 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 
-	if c.Execution.RPCServer.Enable && c.Node.RPCServer.Enable {
-		return errors.New("rpc mode supports running either execution or consensus in a single process, not both; disable either execution.rpc-server.enable or node.rpc-server.enable")
-	}
 	if err := c.Node.Validate(); err != nil {
 		return err
 	}

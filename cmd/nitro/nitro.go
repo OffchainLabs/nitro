@@ -171,9 +171,17 @@ func mainImpl() int {
 	executionNodeEnabled := true
 	consensusNodeEnabled := true
 
-	if nodeConfig.Execution.RPCServer.Enable || nodeConfig.Node.RPCServer.Enable {
-		executionNodeEnabled = nodeConfig.Execution.RPCServer.Enable && nodeConfig.Execution.ConsensusRPCClient.URL != ""
-		consensusNodeEnabled = nodeConfig.Node.RPCServer.Enable && nodeConfig.Node.ExecutionRPCClient.URL != ""
+	if !nodeConfig.Execution.RPCServer.Enable && !nodeConfig.Node.RPCServer.Enable {
+		// same process: no RPC communication
+		// TODO: There should be a validation that in this scenario no RPC URL is set.
+		executionNodeEnabled = true
+		consensusNodeEnabled = true
+	}
+	if nodeConfig.Execution.RPCServer.Enable {
+		executionNodeEnabled = true
+	}
+	if nodeConfig.Node.RPCServer.Enable {
+		consensusNodeEnabled = true
 	}
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
@@ -383,7 +391,7 @@ func mainImpl() int {
 	}
 
 	var sameProcessValidationNodeEnabled bool
-	if consensusNodeEnabled && executionNodeEnabled && nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
+	if consensusNodeEnabled && nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
 		sameProcessValidationNodeEnabled = true
 		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	}
@@ -429,7 +437,7 @@ func mainImpl() int {
 	if consensusNodeEnabled && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Validation.Wasm.EnableWasmrootsCheck {
 		err := checkWasmModuleRootCompatibility(ctx, nodeConfig.Validation.Wasm, l1Client, rollupAddrs)
 		if err != nil {
-			log.Warn("failed to check if node is compatible with on-chain WASM module root", "err", err)
+			log.Error("failed to check if node is compatible with on-chain WASM module root", "err", err)
 		}
 	}
 
@@ -438,7 +446,7 @@ func mainImpl() int {
 	if traceConfig.TracerName != "" {
 		tracer, err = tracers.LiveDirectory.New(traceConfig.TracerName, json.RawMessage(traceConfig.JSONConfig))
 		if err != nil {
-			log.Error("custom tracer error:", "name", traceConfig.TracerName, "err", err)
+			log.Error("custom tracer error", "name", traceConfig.TracerName, "err", err)
 			return 1
 		}
 		log.Info("enabling custom tracer", "name", traceConfig.TracerName)
@@ -482,6 +490,7 @@ func mainImpl() int {
 			deferFuncs = append(deferFuncs, func() { closeDb(consensusDB, "consensusDB") })
 		}
 		if err != nil {
+			log.Error("error opening consensus database", "err", err)
 			return 1
 		}
 	}
@@ -516,7 +525,14 @@ func mainImpl() int {
 		return 1
 	}
 
-	if executionNodeEnabled && l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
+	if executionNodeEnabled {
+		if err := nitroinit.ValidateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
+			log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
+			return 1
+		}
+	}
+
+	if executionNodeEnabled && consensusNodeEnabled && l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DA.AnyTrust.Enable {
 		pflag.Usage()
 		log.Error(fmt.Sprintf("AnyTrust DA usage for this chain is set to %v but --node.da.anytrust.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DA.AnyTrust.Enable))
 		return 1
@@ -532,8 +548,8 @@ func mainImpl() int {
 			fatalErrChan,
 		)
 		if err != nil {
-			valNode = nil
-			log.Warn("couldn't init validation node", "err", err)
+			log.Error("couldn't init validation node", "err", err)
+			return 1
 		}
 	}
 
@@ -541,7 +557,8 @@ func mainImpl() int {
 	if consensusNodeEnabled && liveNodeConfig.Get().Node.ValidatorRequired() {
 		locator, err := server_common.NewMachineLocator(liveNodeConfig.Get().Validation.Wasm.RootPath)
 		if err != nil {
-			log.Error("failed to create machine locator: %w", err)
+			log.Error("failed to create machine locator", "err", err)
+			return 1
 		}
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
@@ -549,7 +566,7 @@ func mainImpl() int {
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 
-	if executionNodeEnabled && (nodeConfig.Node.ExecutionRPCClient.URL == "" || nodeConfig.Node.ExecutionRPCClient.URL == "self" || nodeConfig.Node.ExecutionRPCClient.URL == "self-auth") {
+	if executionNodeEnabled {
 		execNode, err = gethexec.CreateExecutionNode(
 			ctx,
 			stack,
@@ -747,9 +764,10 @@ func mainImpl() int {
 		alerter, err := nitroversionalerter.NewClient(ctx, &nodeConfig.VersionAlerter)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error initializing nitro node version alerter: %w", err)
+		} else if alerter != nil {
+			alerter.Start(ctx)
+			defer alerter.StopAndWait()
 		}
-		alerter.Start(ctx)
-		defer alerter.StopAndWait()
 	}
 
 	sigint := make(chan os.Signal, 1)

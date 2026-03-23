@@ -79,7 +79,7 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 			if c.expectZeroMG {
 				require.Equal(t, multigas.ZeroGas(), mg, "expected ZeroGas for this case")
 			} else {
-				require.Greater(t, mg.Get(multigas.ResourceKindL1Calldata), uint64(0), "expected L1Calldata > 0")
+				require.Greater(t, mg.Get(multigas.ResourceKindSingleDim), uint64(0), "expected SingleDim > 0")
 			}
 		})
 	}
@@ -109,10 +109,10 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 
 	gasUsed := gasLimit - gasLeft
 
-	// Distribute used gas equally between computation and storage access.
+	// Distribute used gas equally between computation and storage access read.
 	usedMultiGas := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: gasUsed / 2},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: gasUsed / 2},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: gasUsed / 2},
 	)
 
 	// Set up multi-gas constraints and spin model to produce different multi-dimensional cost.
@@ -184,7 +184,7 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 	gasUsed := gasLimit - gasLeft
 	usedMultiGas := multigas.MultiGasFromPairs(
 		multigas.Pair{Kind: multigas.ResourceKindComputation, Amount: gasUsed / 2},
-		multigas.Pair{Kind: multigas.ResourceKindStorageAccess, Amount: gasUsed / 2},
+		multigas.Pair{Kind: multigas.ResourceKindStorageAccessRead, Amount: gasUsed / 2},
 	)
 
 	// Set up multi-gas constraints and spin model to produce a different multi-dimensional cost.

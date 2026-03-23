@@ -16,12 +16,14 @@ func ParseResourceKind(s string) (multigas.ResourceKind, error) {
 		return multigas.ResourceKindComputation, nil
 	case "HistoryGrowth":
 		return multigas.ResourceKindHistoryGrowth, nil
-	case "StorageAccess":
-		return multigas.ResourceKindStorageAccess, nil
+	case "StorageAccessRead":
+		return multigas.ResourceKindStorageAccessRead, nil
+	case "StorageAccessWrite":
+		return multigas.ResourceKindStorageAccessWrite, nil
 	case "StorageGrowth":
 		return multigas.ResourceKindStorageGrowth, nil
-	case "L1Calldata":
-		return multigas.ResourceKindL1Calldata, nil
+	case "SingleDim":
+		return multigas.ResourceKindSingleDim, nil
 	case "L2Calldata":
 		return multigas.ResourceKindL2Calldata, nil
 	case "WasmComputation":
@@ -91,9 +93,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -106,9 +108,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -121,9 +123,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -136,9 +138,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -151,9 +153,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	},
@@ -166,9 +168,9 @@ const DefaultMultiGasConstraints string = `[
 			"Computation": 1,
 			"WasmComputation": 1,
 			"HistoryGrowth": 1,
-			"StorageAccess": 1,
+			"StorageAccessRead": 1,
+			"StorageAccessWrite": 1,
 			"StorageGrowth": 1,
-			"L1Calldata": 1,
 			"L2Calldata": 1
 		}
 	}

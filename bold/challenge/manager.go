@@ -280,8 +280,8 @@ func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
 	log.Info("Started challenge manager", "stakerAddress", m.chain.StakerAddress().Hex())
 
-	// Start the assertion manager.
-	m.LaunchThread(m.assertionManager.Start)
+	// Start the assertion manager on its own StopWaiter.
+	m.assertionManager.Start(m.GetContext())
 
 	// Watcher tower and resolve modes don't monitor challenges.
 	if m.mode == types.WatchTowerMode || m.mode == types.ResolveMode {
@@ -291,28 +291,24 @@ func (m *Manager) Start(ctx context.Context) {
 	// Start watching for parent chain block events in the background.
 	m.LaunchThread(m.listenForBlockEvents)
 
-	// Start watching for ongoing chain events in the background.
-	m.LaunchThread(m.watcher.Start)
+	// Start watching for ongoing chain events on its own StopWaiter.
+	m.watcher.Start(m.GetContext())
 
 	if m.api != nil {
-		m.LaunchThread(func(ctx context.Context) {
-			if err := m.api.Start(ctx); err != nil {
-				log.Error("Could not start API server",
-					"address", m.api.Addr(),
-					"err", err,
-				)
-			}
-		})
+		// Start the API server on its own StopWaiter.
+		m.api.Start(m.GetContext())
 	}
 }
 
 func (m *Manager) StopAndWait() {
-	m.StopWaiter.StopAndWait()
-	m.assertionManager.StopAndWait()
-	m.watcher.StopAndWait()
+	// Stop children first so they can shut down gracefully before
+	// the parent context is cancelled.
 	if m.api != nil {
 		m.api.StopAndWait()
 	}
+	m.watcher.StopAndWait()
+	m.assertionManager.StopAndWait()
+	m.StopWaiter.StopAndWait()
 }
 
 func (m *Manager) listenForBlockEvents(ctx context.Context) {

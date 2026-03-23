@@ -42,8 +42,9 @@ lazy_static! {
     static ref RESIZE_COUNTERS: HashMap<MerkleType, AtomicUsize> = create_counters_hashmap();
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
+#[derive(Default, Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
+    #[default]
     Empty,
     Value,
     Function,
@@ -52,12 +53,6 @@ pub enum MerkleType {
     Table,
     TableElement,
     Module,
-}
-
-impl Default for MerkleType {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 #[cfg(feature = "counters")]

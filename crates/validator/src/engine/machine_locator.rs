@@ -178,8 +178,8 @@ mod tests {
         str::FromStr,
     };
 
-    fn get_temp_machines_dir() -> Result<PathBuf> {
-        Ok(tempdir::TempDir::new("machines")?.into_path())
+    fn get_temp_machines_dir() -> Result<tempfile::TempDir> {
+        Ok(tempfile::tempdir()?)
     }
 
     fn get_real_machines_dir() -> PathBuf {
@@ -301,12 +301,12 @@ mod tests {
 
     #[test]
     fn test_machine_locator_one_machine() -> Result<()> {
-        test_machine_locator(1, &Some(get_temp_machines_dir()?))
+        test_machine_locator(1, &Some(get_temp_machines_dir()?.path().to_path_buf()))
     }
 
     #[test]
     fn test_machine_locator_many_machines() -> Result<()> {
-        test_machine_locator(10, &Some(get_temp_machines_dir()?))
+        test_machine_locator(10, &Some(get_temp_machines_dir()?.path().to_path_buf()))
     }
 
     #[test]

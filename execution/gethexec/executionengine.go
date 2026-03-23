@@ -109,10 +109,14 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 	}
 }
 
-// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
-// Does not return an error - the caller checks FilteredTxHashes after block production.
+// PostTxFilter touches To/From addresses, applies event-based filtering, and
+// checks IsAddressFiltered. For user txs, collects tx hashes that touch filtered
+// addresses but are not in the onchain filter. For redeems, returns
+// ErrArbTxFilter so the block processor can trigger a group rollback.
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if tx.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
@@ -129,6 +133,11 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	applyEventFilter(f.eventFilter, db)
 
 	if db.IsAddressFiltered() {
+		// For redeems, return the filter error so the block processor can
+		// trigger a group rollback.
+		if tx.Type() == types.ArbitrumRetryTxType {
+			return state.ErrArbTxFilter
+		}
 		// If the STF already handled this tx via the onchain filter mechanism,
 		// the filter entry has been cleaned up and we're done.
 		var filteredErr *core.ErrFilteredTx
@@ -140,6 +149,19 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		f.FilteredTxHashes = append(f.FilteredTxHashes, tx.Hash())
 	}
 	return nil
+}
+
+func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
+
+// TxFailed extracts the originating tx hash from ErrFilteredCascadingRedeem
+// and appends it to FilteredTxHashes. After ProduceBlockAdvanced returns, the
+// existing check fires ErrFilteredDelayedMessage, causing the delayed sequencer
+// to halt and the transaction-filterer to add the hash to the onchain filter.
+func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
+	var cascadingErr *arbos.ErrFilteredCascadingRedeem
+	if errors.As(err, &cascadingErr) {
+		f.FilteredTxHashes = append(f.FilteredTxHashes, cascadingErr.OriginatingTxHash)
+	}
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -321,6 +343,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
+	programs.SetAllowFallback(targetConfig.AllowFallback)
 	return nil
 }
 
@@ -662,7 +685,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
 	startTime := time.Now()
-	block, receipts, err := arbos.ProduceBlockAdvanced(
+	block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		delayedMessagesRead,
 		lastBlockHeader,
@@ -889,7 +912,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		}
 		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter)
 
-		block, receipts, err := arbos.ProduceBlockAdvanced(
+		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
 			msg.DelayedMessagesRead,
 			currentHeader,
@@ -927,7 +950,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return block, statedb, receipts, nil
 	}
 
-	block, receipts, err := arbos.ProduceBlock(
+	block, statedb, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		currentHeader,

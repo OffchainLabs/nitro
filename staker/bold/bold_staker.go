@@ -372,7 +372,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.chalManager.Start(ctxIn)
+	b.chalManager.Start(b.GetContext())
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
