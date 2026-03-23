@@ -92,7 +92,8 @@ func activateProgram(
 	moduleActivationMandatory := true
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory)
+	shouldAllowFallback := allowFallback.Load() && !runCtx.IsEthcall()
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
 		burner.Burn(multigas.ResourceKindComputation, suppliedGas-gasLeft) //nolint:errcheck
@@ -195,6 +196,7 @@ func activateProgramInternal(
 	gasLeft *uint64,
 	targets []rawdb.WasmTarget,
 	moduleActivationMandatory bool,
+	useFallback bool,
 ) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
 	var wavmFound bool
 	var nativeTargets []rawdb.WasmTarget
@@ -241,7 +243,7 @@ func activateProgramInternal(
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					if allowFallback.Load() {
+					if useFallback {
 						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
 					} else {
@@ -273,10 +275,10 @@ func activateProgramInternal(
 			"codehash", codehash,
 			"moduleHash", info.moduleHash,
 			"targets", targets,
-			"allowFallback", allowFallback.Load(),
+			"useFallback", useFallback,
 			"err", err,
 		)
-		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (allowFallback=%v): %v", addressForLogging, allowFallback.Load(), err))
+		panic(fmt.Sprintf("Compilation of %v failed for one or more targets despite activation succeeding (useFallback=%v): %v", addressForLogging, useFallback, err))
 	}
 	return info, asmMap, err
 }
@@ -310,7 +312,8 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
 	// compile only missing targets
-	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory)
+	shouldAllowFallback := allowFallback.Load() && !runCtx.IsEthcall()
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
