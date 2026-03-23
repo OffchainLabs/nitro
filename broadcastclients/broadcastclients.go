@@ -275,7 +275,8 @@ func (bcs *BroadcastClients) startSecondaryFeed(ctx context.Context) {
 		}
 		bcs.secondaryClients = append(bcs.secondaryClients, client)
 		client.Start(ctx)
-		bcs.TrackChild(client)
+		// Secondary clients are not tracked — they are managed
+		// manually by startSecondaryFeed/stopSecondaryFeed.
 		log.Info("secondary feed started", "url", url, "startingFromSeq", latestSeqNum)
 	} else if len(bcs.secondaryURL) > 0 {
 		log.Warn("failed to start a new secondary feed all available secondary feeds were started")
