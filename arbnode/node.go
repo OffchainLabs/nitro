@@ -788,12 +788,12 @@ func getMessageExtractor(
 		return nil, nil
 	}
 	melDB := melrunner.NewDatabase(arbDb)
-	if _, err := melDB.GetHeadMelState(ctx); err != nil {
+	if _, err := melDB.GetHeadMelState(); err != nil {
 		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
 		if err != nil {
 			return nil, err
 		}
-		if err = melDB.SaveState(ctx, initialState); err != nil {
+		if err = melDB.SaveState(initialState); err != nil {
 			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
 		}
 	}
@@ -1061,8 +1061,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	batchMetaFetcher BatchMetadataFetcher,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1074,6 +1073,9 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if batchMetaFetcher == nil {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
+		}
 		if arbOSVersionGetter == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
@@ -1083,14 +1085,6 @@ func getBatchPoster(
 		}
 		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
-		}
-		var batchMetaFetcher BatchMetadataFetcher
-		if inboxTracker != nil {
-			batchMetaFetcher = inboxTracker
-		} else if msgExtractor != nil {
-			batchMetaFetcher = msgExtractor
-		} else {
-			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -1324,7 +1318,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1748,7 +1748,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
@@ -1820,7 +1820,7 @@ func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) container
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
