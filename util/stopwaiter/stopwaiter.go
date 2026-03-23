@@ -174,14 +174,11 @@ func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
 	if s.Stopped() {
 		return nil
 	}
-	s.wg.Go(func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Error("Thread crashed", "name", s.name)
-			}
-		}()
+	s.wg.Add(1)
+	go func() {
 		foo(ctx)
-	})
+		s.wg.Done()
+	}()
 	return nil
 }
 
