@@ -288,6 +288,9 @@ func walkBackwards(
 	startHash,
 	endHash common.Hash,
 ) []common.Hash {
+	if startHash == endHash {
+		return nil
+	}
 	headerHashes := make([]common.Hash, 0)
 	curr := endHash
 	for {
@@ -296,6 +299,9 @@ func walkBackwards(
 		curr = header.ParentHash
 		if curr == startHash {
 			break
+		}
+		if curr == (common.Hash{}) {
+			panic(fmt.Sprintf("walkBackwards reached genesis without finding startHash %s from endHash %s", startHash.Hex(), endHash.Hex()))
 		}
 	}
 	return headerHashes
