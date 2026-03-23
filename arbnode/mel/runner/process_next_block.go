@@ -100,10 +100,15 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	}
 
 	// Update metrics.
+	//#nosec G115
 	latestBlockGauge.Update(int64(postState.ParentChainBlockNumber))
+	//#nosec G115
 	latestMsgCountGauge.Update(int64(postState.MsgCount))
+	//#nosec G115
 	latestDelayedSeenCountGauge.Update(int64(postState.DelayedMessagesSeen))
+	//#nosec G115
 	latestDelayedReadCountGauge.Update(int64(postState.DelayedMessagesRead))
+	//#nosec G115
 	msgsExtractedCounter.Inc(int64(len(msgs)))
 	blockProcessTimeGauge.Update(end.Microseconds())
 
