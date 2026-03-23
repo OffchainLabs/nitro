@@ -240,7 +240,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			Require(t, err)
 			_, _ = WaitForTx(ctx, builder.L1.Client, tx.Hash(), time.Second)
 
-			// Advance L1 to currentHeader+1 block so that MEL can detect reprg
+			// Advance L1 to currentHeader+1 block so that MEL can detect reorg
 			builder.L1.RecalibrateNonce(t, "Faucet", builder.L1Info)
 			// #nosec G115
 			builder.L1.AdvanceBlocks(t, "Faucet", int(currentHeader.Number.Uint64()-reorgTargetNumber+1), builder.L1Info)

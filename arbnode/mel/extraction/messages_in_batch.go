@@ -115,24 +115,12 @@ func messageFromSegment(
 		return nil, blockNumber, timestamp, nil
 	} else if kind == arbstate.BatchSegmentKindL2Message || kind == arbstate.BatchSegmentKindL2MessageBrotli {
 		segment = segment[1:]
-		adjustedTimestamp := timestamp
-		if adjustedTimestamp < seqMsg.MinTimestamp {
-			adjustedTimestamp = seqMsg.MinTimestamp
-		} else if adjustedTimestamp > seqMsg.MaxTimestamp {
-			adjustedTimestamp = seqMsg.MaxTimestamp
-		}
-		adjustedBlockNumber := blockNumber
-		if adjustedBlockNumber < seqMsg.MinL1Block {
-			adjustedBlockNumber = seqMsg.MinL1Block
-		} else if adjustedBlockNumber > seqMsg.MaxL1Block {
-			adjustedBlockNumber = seqMsg.MaxL1Block
-		}
 		msg := produceL2Message(
 			kind,
 			seqMsg,
 			segment,
-			adjustedBlockNumber,
-			adjustedTimestamp,
+			blockNumber,
+			timestamp,
 			melState.DelayedMessagesRead,
 		)
 		return msg, blockNumber, timestamp, nil
@@ -163,7 +151,10 @@ func messageFromSegment(
 		}
 	} else {
 		log.Error("Bad sequencer message segment kind", "segmentNum", segmentIdx, "kind", kind)
-		return nil, blockNumber, timestamp, nil
+		return &arbostypes.MessageWithMetadata{
+			Message:             arbostypes.InvalidL1Message,
+			DelayedMessagesRead: melState.DelayedMessagesRead,
+		}, blockNumber, timestamp, nil
 	}
 }
 
