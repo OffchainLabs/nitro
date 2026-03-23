@@ -89,7 +89,7 @@ type MELValidator struct {
 	latestWasmModuleRoot common.Hash
 	redisValidator       *redis.ValidationClient
 	executionSpawners    []validator.ExecutionSpawner
-	chosenValidator      map[common.Hash]validator.ValidationSpawner
+	chosenValidator      map[common.Hash]*retry_wrapper.ValidationSpawnerRetryWrapper
 
 	// wasmModuleRoot
 	moduleMutex           sync.Mutex
@@ -317,15 +317,15 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 			return err
 		}
 	}
-	mv.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
+	mv.chosenValidator = make(map[common.Hash]*retry_wrapper.ValidationSpawnerRetryWrapper)
 	for _, root := range moduleRoots {
 		if mv.redisValidator != nil && validator.SpawnerSupportsModule(mv.redisValidator, root) {
-			mv.chosenValidator[root] = mv.redisValidator
+			mv.chosenValidator[root] = retry_wrapper.NewValidationSpawnerRetryWrapper(mv.redisValidator)
 			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis", "maxWorkers", mv.redisValidator.Capacity())
 		} else {
 			for _, spawner := range mv.executionSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
-					mv.chosenValidator[root] = spawner
+					mv.chosenValidator[root] = retry_wrapper.NewValidationSpawnerRetryWrapper(spawner)
 					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name(), "maxWorkers", spawner.Capacity())
 					break
 				}
@@ -340,6 +340,9 @@ func (mv *MELValidator) Initialize(ctx context.Context) error {
 
 func (mv *MELValidator) Start(ctx context.Context) {
 	mv.StopWaiter.Start(ctx, mv)
+	for _, spawner := range mv.chosenValidator {
+		spawner.Start(mv.GetContext())
+	}
 	if mv.melReorgDetector != nil {
 		mv.LaunchThread(mv.rewindOnMELReorgs)
 	}
@@ -374,6 +377,13 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		log.Info("Successfully validated Message extraction", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validatedMsgCount", endMELState.MsgCount)
 		return 0
 	})
+}
+
+func (mv *MELValidator) StopAndWait() {
+	for _, spawner := range mv.chosenValidator {
+		spawner.StopAndWait()
+	}
+	mv.StopWaiter.StopAndWait()
 }
 
 func (mv *MELValidator) UpdateValidationTarget(target arbutil.MessageIndex) {
@@ -612,9 +622,7 @@ func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validati
 	wasmRoots := mv.GetModuleRootsToValidate()
 	var runs []validator.ValidationRun
 	for _, moduleRoot := range wasmRoots {
-		chosenSpawner := mv.chosenValidator[moduleRoot]
-		spawner := retry_wrapper.NewValidationSpawnerRetryWrapper(chosenSpawner)
-		spawner.StopWaiter.Start(ctx, mv)
+		spawner := mv.chosenValidator[moduleRoot]
 		input, err := entry.ToInput(nil)
 		if err != nil && ctx.Err() == nil {
 			return nil, fmt.Errorf("error preparing validation: %w", err)
