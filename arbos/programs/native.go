@@ -92,7 +92,7 @@ func activateProgram(
 	moduleActivationMandatory := true
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
-	shouldAllowFallback := allowFallback.Load() && !runCtx.IsEthcall()
+	shouldAllowFallback := allowFallback.Load() && runCtx.IsExecutedOnChain()
 	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
@@ -312,7 +312,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
 	// compile only missing targets
-	shouldAllowFallback := allowFallback.Load() && !runCtx.IsEthcall()
+	shouldAllowFallback := allowFallback.Load() && runCtx.IsExecutedOnChain()
 	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
