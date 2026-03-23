@@ -152,7 +152,9 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
-	m.StartAndTrackChild(m.wallet)
+	// Wallet is started with the external context because it must outlive
+	// a potential old→bold staker switch (which calls m.StopOnly).
+	m.wallet.Start(ctxIn)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
 		m.StartAndTrackChild(m.boldStaker)
@@ -216,8 +218,20 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) er
 	}
 	log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
 	m.boldStaker.Start(ctx)
+	// Stop old staker (tracked child) but not the wallet or bold staker.
 	m.StopOnly()
 	return nil
+}
+
+func (m *MultiProtocolStaker) StopAndWait() {
+	// Bold staker may have been started dynamically during a protocol switch,
+	// after the original TrackChild registrations.
+	if m.boldStaker != nil {
+		m.boldStaker.StopAndWait()
+	}
+	m.StopWaiter.StopAndWait()
+	// Wallet is started with external context, so stop it last.
+	m.wallet.StopAndWait()
 }
 
 func (m *MultiProtocolStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
