@@ -216,8 +216,6 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) er
 	}
 	log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
 	m.boldStaker.Start(ctx)
-	// Ready to stop the old staker.
-	m.oldStaker.StopOnly()
 	m.StopOnly()
 	return nil
 }
