@@ -79,8 +79,57 @@ func testBlocksReExecutorModes(t *testing.T, onMultipleRanges bool) {
 	executorRandom, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
 	Require(t, err)
 	executorRandom.Start(ctx)
-	err = executorFull.WaitForReExecution(ctx)
+	err = executorRandom.WaitForReExecution(ctx)
 	Require(t, err)
+}
+
+func TestBlocksReExecutorContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.RequireScheme(t, rawdb.HashScheme)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	l2info := builder.L2Info
+	client := builder.L2.Client
+	blockchain := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+
+	// Create blocks so the reexecutor has work to do
+	l2info.GenerateAccount("User2")
+	genesis, err := client.BlockNumber(ctx)
+	Require(t, err)
+	for i := genesis; i < genesis+100; i++ {
+		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
+		err := client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
+		Require(t, err)
+	}
+
+	c := blocksreexecutor.TestConfig
+	c.MinBlocksPerThread = 5
+	c.Room = 4
+	Require(t, c.Validate())
+	executor, err := blocksreexecutor.New(&c, blockchain, builder.L2.ExecNode.ExecutionDB)
+	Require(t, err)
+
+	// Use a separate context for the reexecutor so we can cancel it independently.
+	execCtx, execCancel := context.WithCancel(ctx)
+	executor.Start(execCtx)
+
+	// Cancel immediately to exercise the drain loop under cancellation.
+	execCancel()
+
+	err = executor.WaitForReExecution(execCtx)
+	if err == nil {
+		// Cancellation raced with completion — both outcomes are acceptable.
+		t.Log("reexecution completed before cancellation took effect")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled or nil, got: %v", err)
+	}
+	executor.StopAndWait()
 }
 
 func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, offset uint64) {

@@ -18,7 +18,10 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
+    wasmer::{
+        sys::{Cranelift, CraneliftOptLevel, Target},
+        Engine, Store,
+    },
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -182,7 +185,7 @@ impl CompileConfig {
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
-        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match cranelift {
+        let mut wasmer_config: Box<dyn wasmer::sys::CompilerConfig> = match cranelift {
             true => {
                 let mut wasmer_config = Cranelift::new();
                 wasmer_config.opt_level(CraneliftOptLevel::Speed);

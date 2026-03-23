@@ -74,8 +74,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type MemoryErr;
     type A: EvmApi<DR>;
 
-    fn args(&self) -> Cow<[u8]>;
-    fn outs(&self) -> Cow<[u8]>;
+    fn args(&self) -> Cow<'_, [u8]>;
+    fn outs(&self) -> Cow<'_, [u8]>;
     fn set_outs(&mut self, outs: Vec<u8>);
 
     fn evm_api(&mut self) -> &mut Self::A;

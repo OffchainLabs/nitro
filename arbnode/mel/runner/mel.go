@@ -212,6 +212,9 @@ func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Durat
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
 	case "finalized":
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+	default:
+		log.Error("updateLastBlockToRead called with unexpected ReadMode", "mode", m.config.ReadMode)
+		return m.config.RetryInterval
 	}
 	if err != nil {
 		log.Error("Error fetching header to update last block to read in MEL", "err", err)

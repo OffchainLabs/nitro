@@ -598,7 +598,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 		for {
 			headState, err := testClientB.ConsensusNode.MessageExtractor.GetHeadState()
 			Require(t, err)
-			if headState.ParentChainBlockNumber >= currHead-reorgToBlock.NumberU64()+5 {
+			if headState.ParentChainBlockNumber >= currHead+5 {
 				break
 			}
 			select {
@@ -627,22 +627,31 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
 	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
-	time.Sleep(time.Second)
+	{
+		timeout := time.NewTimer(time.Minute)
+		defer timeout.Stop()
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			// Verify that both MEL and TxStreamer detected the reorg
+			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-timeout.C:
+				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
+			}
+		}
+	}
 
+	// Verify that after reorg handling, resulting balance in the account is correct
 	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
 	if err != nil {
 		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
 	}
 	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
 		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
-	}
-
-	// Verify that both MEL and TxStreamer detected the reorg
-	if !logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
-		t.Fatal("reorg was not detected by TransactionStreamer")
-	}
-	if !logHandler.WasLogged("MEL detected L1 reorg") {
-		t.Fatal("reorg was not detected by MEL")
 	}
 }
 

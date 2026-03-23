@@ -78,7 +78,7 @@ unsafe impl Sync for CBytes {}
 /// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
 /// This type enables serde via a 1:1 transmute.
 #[derive(Serialize, Deserialize)]
-struct RemoteRefType(pub [u8; 3]);
+struct RemoteRefType(pub [u8; 4]);
 
 impl From<RefType> for RemoteRefType {
     fn from(value: RefType) -> Self {
@@ -110,8 +110,10 @@ mod remote_convert {
 pub struct RemoteTableType {
     #[serde(with = "remote_convert")]
     pub element_type: RefType,
-    pub initial: u32,
-    pub maximum: Option<u32>,
+    pub initial: u64,
+    pub maximum: Option<u64>,
+    pub table64: bool,
+    pub shared: bool,
 }
 
 impl Drop for CBytes {
