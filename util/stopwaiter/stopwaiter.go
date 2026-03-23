@@ -26,27 +26,27 @@ type StopWaiterSafe struct {
 }
 
 func (s *StopWaiterSafe) Started() bool {
-	st := s.Lock()
-	defer s.Unlock()
+	st := s.RLock()
+	defer s.RUnlock()
 	return st.Started
 }
 
 func (s *StopWaiterSafe) Stopped() bool {
-	st := s.Lock()
-	defer s.Unlock()
+	st := s.RLock()
+	defer s.RUnlock()
 	return st.Stopped
 }
 
 func (s *StopWaiterSafe) GetContextSafe() (context.Context, error) {
-	st := s.Lock()
-	defer s.Unlock()
+	st := s.RLock()
+	defer s.RUnlock()
 	return st.GetContext()
 }
 
 // this context is not cancelled even after someone calls Stop
 func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
-	st := s.Lock()
-	defer s.Unlock()
+	st := s.RLock()
+	defer s.RUnlock()
 	return st.GetParentContext()
 }
 
@@ -118,8 +118,8 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	select {
 	case <-timer.C:
 		traces := getAllStackTraces()
-		st := s.Lock()
-		defer s.Unlock()
+		st := s.RLock()
+		defer s.RUnlock()
 		log.Warn("taking too long to stop", "name", st.Name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
