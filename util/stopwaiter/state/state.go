@@ -55,7 +55,8 @@ type LockedInternalState struct {
 	parentCtx context.Context
 	StopFunc  func()
 	WaitChan  <-chan interface{}
-	Children  []Stoppable
+	Children      []Stoppable
+	ChildrenTaken bool
 }
 
 func (s *LockedInternalState) GetContext() (context.Context, error) {
