@@ -90,6 +90,7 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 
 func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	if s.syncProgressFetcher == nil {
+		log.Warn("GetFinalizedMsgCount called but syncProgressFetcher is nil")
 		return 0, nil
 	}
 	return s.syncProgressFetcher.GetFinalizedMsgCount(ctx)
