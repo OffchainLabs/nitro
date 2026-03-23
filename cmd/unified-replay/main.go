@@ -57,8 +57,8 @@ func main() {
 		melwavmio.IncreasePositionInMEL()
 	} else {
 		targetBlockHash := melwavmio.GetEndParentChainBlockHash()
-		// TODO: Read the real chain config.
-		melState = extractMessagesUpTo(nil /* nil chain config */, melState, targetBlockHash)
+		chainConfig := readChainConfigFromLastBlock()
+		melState = extractMessagesUpTo(chainConfig, melState, targetBlockHash)
 		melwavmio.SetEndMELRoot(melState.Hash())
 	}
 
@@ -174,6 +174,58 @@ func produceBlock(msgHash common.Hash) {
 	}
 	melwavmio.SetLastBlockHash(newBlockHash)
 	melwavmio.SetSendRoot(extraInfo.SendRoot)
+}
+
+// readChainConfigFromLastBlock reads the chain config from the L2 ArbOS state
+// of the most recent block. Returns nil if no block has been produced yet.
+func readChainConfigFromLastBlock() *params.ChainConfig {
+	lastBlockHash := melwavmio.GetLastBlockHash()
+	if lastBlockHash == (common.Hash{}) {
+		return nil
+	}
+	lastBlockHeader := getHeaderByHash(lastBlockHash)
+	raw := rawdb.NewDatabase(PreimageDb{})
+	db := state.NewDatabase(triedb.NewDatabase(raw, nil), nil)
+	statedb, err := state.NewDeterministic(lastBlockHeader.Root, db)
+	if err != nil {
+		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
+	}
+	arbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		panic(fmt.Sprintf("Error opening ArbOS state: %v", err.Error()))
+	}
+	chainId, err := arbosState.ChainId()
+	if err != nil {
+		panic(fmt.Sprintf("Error getting chain ID: %v", err.Error()))
+	}
+	genesisBlockNum, err := arbosState.GenesisBlockNum()
+	if err != nil {
+		panic(fmt.Sprintf("Error getting genesis block number: %v", err.Error()))
+	}
+	chainConfigJson, err := arbosState.ChainConfig()
+	if err != nil {
+		panic(fmt.Sprintf("Error getting chain config: %v", err.Error()))
+	}
+	if len(chainConfigJson) > 0 {
+		chainConfig := &params.ChainConfig{}
+		err = json.Unmarshal(chainConfigJson, chainConfig)
+		if err != nil {
+			panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+		}
+		if chainConfig.ChainID.Cmp(chainId) != 0 {
+			panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+		}
+		if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+			panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+		}
+		return chainConfig
+	}
+	log.Info("Falling back to hardcoded chain config.")
+	chainConfig, err := chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{}, "")
+	if err != nil {
+		panic(err)
+	}
+	return chainConfig
 }
 
 // Runs a replay binary of message extraction for Arbitrum chains. Given a start and end parent chain
