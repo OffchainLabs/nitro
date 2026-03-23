@@ -697,8 +697,16 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
 
-	// Give some time for processing
-	<-time.After(time.Second)
+	// Wait for the delayed message to be processed and balance to update
+	expectedBalance := new(big.Int).Add(initialBalance, big.NewInt(1e12))
+	pollUntil(t, ctx, 30*time.Second, 200*time.Millisecond, "normal address to receive funds", func() bool {
+		bal, err := builder.L2.Client.BalanceAt(ctx, normalAddr, nil)
+		if err != nil {
+			t.Logf("BalanceAt error (will retry): %v", err)
+			return false
+		}
+		return bal.Cmp(expectedBalance) >= 0
+	})
 
 	// Verify sequencer is NOT halted
 	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
@@ -707,7 +715,6 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	// Verify balance DID change (message processed normally)
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, normalAddr, nil)
 	require.NoError(t, err)
-	expectedBalance := new(big.Int).Add(initialBalance, big.NewInt(1e12))
 	require.Equal(t, expectedBalance, finalBalance, "normal address should receive funds")
 }
 

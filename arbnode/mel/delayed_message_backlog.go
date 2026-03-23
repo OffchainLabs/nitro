@@ -122,9 +122,15 @@ func (d *DelayedMessageBacklog) reorg(newDelayedMessagedSeen uint64) error {
 	return nil
 }
 
-// clone is a shallow clone of DelayedMessageBacklog
+// clone creates a shallow copy of DelayedMessageBacklog, excluding dirty entries.
 func (d *DelayedMessageBacklog) clone() *DelayedMessageBacklog {
-	// Remove dirties from entries
-	d.entries = d.entries[:d.dirtiesStartPos]
-	return d
+	entries := make([]*DelayedMessageBacklogEntry, d.dirtiesStartPos)
+	copy(entries, d.entries[:d.dirtiesStartPos])
+	return &DelayedMessageBacklog{
+		targetBufferSize:             d.targetBufferSize,
+		entries:                      entries,
+		dirtiesStartPos:              d.dirtiesStartPos,
+		initMessage:                  d.initMessage,
+		finalizedAndReadIndexFetcher: d.finalizedAndReadIndexFetcher,
+	}
 }
