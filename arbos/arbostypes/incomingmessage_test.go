@@ -38,11 +38,11 @@ func buildBatchPostingReportMsg(t *testing.T, batchData []byte, batchNum uint64)
 	dataHash := crypto.Keccak256Hash(batchData)
 	// L2msg: 32 (timestamp) + 20 (address) + 32 (dataHash) + 32 (batchNum) + 32 (baseFee) = 148 bytes
 	var l2msg []byte
-	l2msg = append(l2msg, common.BigToHash(big.NewInt(1000)).Bytes()...)  // timestamp
-	l2msg = append(l2msg, common.Address{}.Bytes()...)                    // poster address
-	l2msg = append(l2msg, dataHash.Bytes()...)                            // data hash
+	l2msg = append(l2msg, common.BigToHash(big.NewInt(1000)).Bytes()...)                  // timestamp
+	l2msg = append(l2msg, common.Address{}.Bytes()...)                                    // poster address
+	l2msg = append(l2msg, dataHash.Bytes()...)                                            // data hash
 	l2msg = append(l2msg, common.BigToHash(big.NewInt(0).SetUint64(batchNum)).Bytes()...) // batch number
-	l2msg = append(l2msg, common.BigToHash(big.NewInt(1)).Bytes()...)     // base fee
+	l2msg = append(l2msg, common.BigToHash(big.NewInt(1)).Bytes()...)                     // base fee
 
 	msg := &L1IncomingMessage{
 		Header: &L1IncomingMessageHeader{
