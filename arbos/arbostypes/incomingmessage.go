@@ -190,14 +190,20 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
 	if batchFetcher == nil {
+		if msg.Header.Kind == L1MessageType_BatchPostingReport {
+			return errors.New("batch fetcher is nil, cannot fill in batch gas fields for batch posting report")
+		}
 		return nil
 	}
 	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
-	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport {
+	if msg.Header.Kind != L1MessageType_BatchPostingReport {
 		return nil
+	}
+	if batchFetcher == nil {
+		return errors.New("batch fetcher is nil, cannot fill in batch gas fields for batch posting report")
 	}
 	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
 		return nil
@@ -301,11 +307,9 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 		LegacyBatchGasCost: nil,
 		BatchDataStats:     nil,
 	}
-	if batchFetcher != nil {
-		err = msg.FillInBatchGasFields(batchFetcher)
-		if err != nil {
-			return nil, err
-		}
+	err = msg.FillInBatchGasFields(batchFetcher)
+	if err != nil {
+		return nil, err
 	}
 	return msg, nil
 }

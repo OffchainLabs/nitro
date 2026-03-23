@@ -338,15 +338,13 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
-	if err != nil {
-		return nil, common.Hash{}, err
-	}
-
-	err = msg.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data[32:]), func(batchNum uint64) ([]byte, error) {
 		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 		return data, err
 	})
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
 
 	return msg, acc, err
 }
