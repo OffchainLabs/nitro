@@ -40,13 +40,19 @@ func PeekFromAccumulator[T any](
 	outBox common.Hash,
 	lookbacks uint64,
 ) (*T, error) {
+	if lookbacks == 0 {
+		return nil, fmt.Errorf("lookbacks must be >= 1, got 0")
+	}
 	var msgHash common.Hash
 	curr := outBox
 	lookbacksForLogging := lookbacks
 	for lookbacks > 0 {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		result, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, curr)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to resolve preimage at lookback position %d: %w", lookbacksForLogging, err)
 		}
 		if len(result) != 2*common.HashLength {
 			return nil, fmt.Errorf("invalid preimage result length: %d, wanted %d", len(result), 2*common.HashLength)
