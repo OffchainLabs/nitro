@@ -106,6 +106,10 @@ func (s *StopWaiterSafe) takeChildren() []state.Stoppable {
 	return children
 }
 
+// StopOnly cancels the context and stops all tracked children (non-blocking).
+// Note: if StopOnly is called before StopAndWait, the subsequent StopAndWait
+// will not wait for children's goroutines — callers that use StopOnly separately
+// must handle child waiting manually if needed.
 func (s *StopWaiterSafe) StopOnly() {
 	children := s.takeChildren()
 	for i := len(children) - 1; i >= 0; i-- {

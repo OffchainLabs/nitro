@@ -302,3 +302,12 @@ func (bcs *BroadcastClients) stopSecondaryFeed() {
 		}
 	}
 }
+
+func (bcs *BroadcastClients) StopAndWait() {
+	// Secondary clients are not tracked (they're managed dynamically),
+	// so stop them explicitly for clean websocket shutdown.
+	for _, client := range bcs.secondaryClients {
+		client.StopAndWait()
+	}
+	bcs.StopWaiter.StopAndWait()
+}
