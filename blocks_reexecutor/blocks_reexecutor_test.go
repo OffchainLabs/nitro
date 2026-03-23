@@ -222,10 +222,15 @@ func TestWaitForReExecutionFatalAndSuccessBothReady(t *testing.T) {
 
 func TestValidateValidFullConfig(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[1,10]]`,
-		Room:   4,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               4,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("expected valid config, got: %v", err)
@@ -240,10 +245,15 @@ func TestValidateValidFullConfig(t *testing.T) {
 
 func TestValidateValidRandomConfig(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "random",
-		Blocks: `[[0,0],[5,20]]`,
-		Room:   2,
+		Enable:             true,
+		Mode:               "random",
+		Blocks:             `[[0,0],[5,20]]`,
+		CommitStateToDisk:  false,
+		Room:               2,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("expected valid config, got: %v", err)
@@ -255,10 +265,15 @@ func TestValidateValidRandomConfig(t *testing.T) {
 
 func TestValidateModeCaseInsensitive(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "FULL",
-		Blocks: `[[1,10]]`,
-		Room:   1,
+		Enable:             true,
+		Mode:               "FULL",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("expected valid config after lowering mode, got: %v", err)
@@ -270,10 +285,15 @@ func TestValidateModeCaseInsensitive(t *testing.T) {
 
 func TestValidateInvalidMode(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "turbo",
-		Blocks: `[[1,10]]`,
-		Room:   1,
+		Enable:             true,
+		Mode:               "turbo",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -286,10 +306,15 @@ func TestValidateInvalidMode(t *testing.T) {
 
 func TestValidateEmptyBlocks(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: "",
-		Room:   1,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             "",
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -302,10 +327,15 @@ func TestValidateEmptyBlocks(t *testing.T) {
 
 func TestValidateMalformedBlocksJSON(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `not-json`,
-		Room:   1,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `not-json`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -318,10 +348,15 @@ func TestValidateMalformedBlocksJSON(t *testing.T) {
 
 func TestValidateInvalidBlockRange(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[10,5]]`,
-		Room:   1,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[10,5]]`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -334,10 +369,15 @@ func TestValidateInvalidBlockRange(t *testing.T) {
 
 func TestValidateRoomZero(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[1,10]]`,
-		Room:   0,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               0,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -350,10 +390,15 @@ func TestValidateRoomZero(t *testing.T) {
 
 func TestValidateRoomNegative(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[1,10]]`,
-		Room:   -1,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               -1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -367,10 +412,15 @@ func TestValidateRoomNegative(t *testing.T) {
 func TestValidateDisabledSkipsModeCheck(t *testing.T) {
 	// When Enable is false, invalid mode should not cause an error
 	c := &Config{
-		Enable: false,
-		Mode:   "invalid-mode",
-		Blocks: `[[1,10]]`,
-		Room:   1,
+		Enable:             false,
+		Mode:               "invalid-mode",
+		Blocks:             `[[1,10]]`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("expected no error when disabled, got: %v", err)
@@ -379,10 +429,15 @@ func TestValidateDisabledSkipsModeCheck(t *testing.T) {
 
 func TestValidateMultipleBlockRanges(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[1,10],[20,30],[50,100]]`,
-		Room:   2,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[1,10],[20,30],[50,100]]`,
+		CommitStateToDisk:  false,
+		Room:               2,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("expected valid config, got: %v", err)
@@ -394,10 +449,15 @@ func TestValidateMultipleBlockRanges(t *testing.T) {
 
 func TestValidateSecondRangeInvalid(t *testing.T) {
 	c := &Config{
-		Enable: true,
-		Mode:   "full",
-		Blocks: `[[1,10],[20,5]]`,
-		Room:   1,
+		Enable:             true,
+		Mode:               "full",
+		Blocks:             `[[1,10],[20,5]]`,
+		CommitStateToDisk:  false,
+		Room:               1,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
 	}
 	err := c.Validate()
 	if err == nil {
@@ -411,7 +471,17 @@ func TestValidateSecondRangeInvalid(t *testing.T) {
 func TestImplReturnsZeroWhenFatalPreSet(t *testing.T) {
 	fatalCh := make(chan error, 1)
 	s := newTestReExecutor(fatalCh)
-	s.config = &Config{Room: 2}
+	s.config = &Config{
+		Enable:             false,
+		Mode:               "",
+		Blocks:             "",
+		CommitStateToDisk:  false,
+		Room:               2,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
+	}
 	s.done = make(chan struct{}, 2)
 	s.fatalReported.Store(true)
 
@@ -426,7 +496,17 @@ func TestImplReturnsStartBlockWhenNoWork(t *testing.T) {
 	// returns currentBlock directly (the success path with no work).
 	fatalCh := make(chan error, 1)
 	s := newTestReExecutor(fatalCh)
-	s.config = &Config{Room: 2}
+	s.config = &Config{
+		Enable:             false,
+		Mode:               "",
+		Blocks:             "",
+		CommitStateToDisk:  false,
+		Room:               2,
+		MinBlocksPerThread: 0,
+		TrieCleanLimit:     0,
+		ValidateMultiGas:   false,
+		blocks:             nil,
+	}
 	s.done = make(chan struct{}, 2)
 
 	result := s.Impl(context.Background(), 100, 100, 10)
