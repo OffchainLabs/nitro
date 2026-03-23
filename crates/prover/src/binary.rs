@@ -327,9 +327,6 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     features.set(WasmFeatures::CM_NESTED_NAMES, false);
     features.set(WasmFeatures::GC_TYPES, true);
 
-    #[cfg(feature = "sp1")]
-    features.set(WasmFeatures::FLOATS, true);
-
     Validator::new_with_features(features)
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
