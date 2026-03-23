@@ -48,13 +48,13 @@ type StoppableChild interface {
 
 // lint:require-exhaustive-initialization
 type LockedInternalState struct {
-	Started   bool
-	Stopped   bool
-	Name      string
-	ctx       context.Context
-	parentCtx context.Context
-	StopFunc  func()
-	WaitChan  <-chan interface{}
+	Started       bool
+	Stopped       bool
+	Name          string
+	ctx           context.Context
+	parentCtx     context.Context
+	StopFunc      func()
+	WaitChan      <-chan interface{}
 	Children      []Stoppable
 	ChildrenTaken bool
 }
