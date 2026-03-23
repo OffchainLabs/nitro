@@ -95,7 +95,7 @@ func TestPeekFromAccumulatorSingleItem(t *testing.T) {
 	acc := buildAccumulator(t, items, preimages)
 
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
-	result, err := melreplay.PeekFromAccumulator[testItem](resolver, acc, 1)
+	result, err := melreplay.PeekFromAccumulator[testItem](context.Background(), resolver, acc, 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), result.Value)
 }
@@ -114,7 +114,7 @@ func TestPeekFromAccumulatorMultipleItems(t *testing.T) {
 	// lookback=1 is the last pushed item (index n-1), lookback=n is the first (index 0).
 	for i := range uint64(n) {
 		lookback := n - i
-		result, err := melreplay.PeekFromAccumulator[testItem](resolver, acc, lookback)
+		result, err := melreplay.PeekFromAccumulator[testItem](context.Background(), resolver, acc, lookback)
 		require.NoError(t, err)
 		require.Equal(t, i*100, result.Value, "mismatch at lookback %d (item index %d)", lookback, i)
 	}
@@ -127,7 +127,7 @@ func TestPeekFromAccumulatorLastItemIsLookback1(t *testing.T) {
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
 
 	// lookback=1 should return the most recently pushed item
-	result, err := melreplay.PeekFromAccumulator[testItem](resolver, acc, 1)
+	result, err := melreplay.PeekFromAccumulator[testItem](context.Background(), resolver, acc, 1)
 	require.NoError(t, err)
 	require.Equal(t, uint64(3), result.Value)
 }
@@ -139,7 +139,7 @@ func TestPeekFromAccumulatorFirstItemIsLookbackN(t *testing.T) {
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
 
 	// lookback=3 (n) should return the first pushed item
-	result, err := melreplay.PeekFromAccumulator[testItem](resolver, acc, 3)
+	result, err := melreplay.PeekFromAccumulator[testItem](context.Background(), resolver, acc, 3)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), result.Value)
 }

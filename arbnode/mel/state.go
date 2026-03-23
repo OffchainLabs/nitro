@@ -110,6 +110,9 @@ func (s *State) Clone() *State {
 		DelayedMessagesSeen:                s.DelayedMessagesSeen,
 		DelayedMessageInboxAcc:             delayedInboxAcc,
 		DelayedMessageOutboxAcc:            delayedOutboxAcc,
+		// LocalMsgAccumulator is intentionally not copied — each cloned state
+		// starts a fresh hash chain for its own batch of accumulated messages.
+		//
 		// we pass along msgPreimagesDest to continue recording of msg preimages
 		msgPreimagesDest:        s.msgPreimagesDest,
 		delayedMsgPreimagesDest: s.delayedMsgPreimagesDest,
@@ -124,7 +127,9 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 		return err
 	}
 	msgHash := crypto.Keccak256Hash(msgBytes)
-	preimage := append(s.LocalMsgAccumulator.Bytes(), msgHash.Bytes()...)
+	preimage := make([]byte, 0, 2*common.HashLength)
+	preimage = append(preimage, s.LocalMsgAccumulator.Bytes()...)
+	preimage = append(preimage, msgHash.Bytes()...)
 	newAcc := crypto.Keccak256Hash(preimage)
 	if s.msgPreimagesDest != nil {
 		keccakMap := s.msgPreimagesDest[arbutil.Keccak256PreimageType]

@@ -5,9 +5,7 @@ edition = "2021"
 
 [dependencies]
 stylus-sdk.path = "../../../langs/rust/stylus-sdk"
-mini-alloc.path = "../../../langs/rust/mini-alloc"
 hex = "0.4.3"
-wee_alloc = "0.4.5"
 
 [profile.release]
 codegen-units = 1
@@ -15,5 +13,8 @@ strip = true
 lto = true
 panic = "abort"
 opt-level = "s"
+
+[features]
+contract-client-gen = []
 
 [workspace]

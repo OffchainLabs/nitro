@@ -244,9 +244,9 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		}
 
 		if i%16 == 0 {
-			// see that the inbox advances
-
-			for j := 16; j > 0; j-- {
+			// Wait for the batch poster to post a new batch. Under -race
+			// each poll cycle is significantly slower, so allow more retries.
+			for j := 50; j > 0; j-- {
 				var newBatchCount uint64
 				if builder.L2.ConsensusNode.MessageExtractor != nil {
 					newBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
@@ -260,7 +260,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 					break
 				}
 				if j == 1 {
-					Fatal(t, "batch count didn't update in time")
+					Fatal(t, "batch count didn't update in time; stuck at", lastBatchCount, "after tx", i)
 				}
 				time.Sleep(time.Millisecond * 100)
 			}
