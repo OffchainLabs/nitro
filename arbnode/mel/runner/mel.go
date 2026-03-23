@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -327,7 +326,10 @@ func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, seqNum ui
 	if err != nil {
 		return nil, err
 	}
-	return rlp.EncodeToBytes(msg)
+	if msg.Message == nil {
+		return nil, fmt.Errorf("message at seqNum %d has nil Message field", seqNum)
+	}
+	return msg.Message.Serialize()
 }
 
 func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
@@ -539,8 +541,9 @@ func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 	return headState.BatchCount, nil
 }
 
-func (m *MessageExtractor) GetBatchAcc(_ uint64) (common.Hash, error) {
-	return common.Hash{}, errors.New("unimplemented")
+func (m *MessageExtractor) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	metadata, err := m.GetBatchMetadata(seqNum)
+	return metadata.Accumulator, err
 }
 
 func (m *MessageExtractor) CaughtUp() chan struct{} {

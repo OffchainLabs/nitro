@@ -995,6 +995,9 @@ func getStaker(
 
 		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
+			if inboxTracker == nil {
+				return nil, nil, common.Address{}, errors.New("message pruning cannot be enabled when inbox tracker is disabled (e.g. with Message Extraction enabled)")
+			}
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
