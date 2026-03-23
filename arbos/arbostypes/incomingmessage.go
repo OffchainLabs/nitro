@@ -189,6 +189,9 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
+	if batchFetcher == nil {
+		return nil
+	}
 	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
@@ -298,9 +301,11 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 		LegacyBatchGasCost: nil,
 		BatchDataStats:     nil,
 	}
-	err = msg.FillInBatchGasFields(batchFetcher)
-	if err != nil {
-		return nil, err
+	if batchFetcher != nil {
+		err = msg.FillInBatchGasFields(batchFetcher)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return msg, nil
 }
