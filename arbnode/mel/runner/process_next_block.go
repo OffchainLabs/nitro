@@ -95,7 +95,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	}
 	end := time.Since(start)
 	// After processing every 100 parent chain blocks, print a status log
-	if postState.ParentChainBlockNumber%100 == 0 {
+	if postState.ParentChainBlockNumber%m.config.LogExtractionStatusFrequencyBlocks == 0 {
 		log.Info("Message extraction successful", "parentChainBlockNumber", postState.ParentChainBlockNumber, "msgCount", postState.MsgCount)
 	}
 

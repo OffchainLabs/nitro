@@ -952,6 +952,9 @@ func getStaker(
 		if messageExtractor != nil {
 			tracker = messageExtractor
 			reader = messageExtractor
+		} else {
+			tracker = inboxTracker
+			reader = inboxReader
 		}
 		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {

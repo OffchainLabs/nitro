@@ -1,2 +1,2 @@
 ### Added
-- Nitro testnode support for MEL and L3s
+- Nitro metrics for MEL and L3 system test
