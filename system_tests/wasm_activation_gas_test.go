@@ -52,7 +52,7 @@ func setupActivationGasTest(t *testing.T) activationGasTest {
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	return activationGasTest{auth, ctx, l2client, arbOwner, arbWasm, ensure, cleanup}
+	return activationGasTest{auth: auth, ctx: ctx, l2client: l2client, arbOwner: arbOwner, arbWasm: arbWasm, ensure: ensure, cleanup: cleanup}
 }
 
 // deployUnactivatedWasm deploys raw wasm bytecode at a new address without activating it.
