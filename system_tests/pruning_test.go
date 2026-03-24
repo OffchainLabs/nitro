@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/pruning"
@@ -131,7 +132,9 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 		}
 	}()
 
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
+	nodeConfig2 := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2.MessageExtraction.Enable = builder.nodeConfig.MessageExtraction.Enable
+	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig2, stackConfig: builder.l2StackConfig})
 	defer cleanup()
 
 	currentBlock := waitForChainToCatchUp(t, ctx, testClient, lastBlock)
