@@ -14,12 +14,11 @@ use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 use wasmer::{FunctionEnvMut, MemoryView};
 
-pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> u32 {
+pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32, Escape> {
     let data = ctx.data_mut();
-    data.buy_ink(hostio::MSG_REENTRANT_BASE_INK)
-        .expect("buy ink");
+    data.buy_ink(hostio::MSG_REENTRANT_BASE_INK)?;
 
-    data.evm_data.reentrant
+    Ok(data.evm_data.reentrant)
 }
 
 pub fn read_args(mut ctx: FunctionEnvMut<StylusCustomEnvData>, ptr: Ptr) -> MaybeEscape {

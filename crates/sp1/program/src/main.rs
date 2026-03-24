@@ -34,7 +34,8 @@ pub extern "C" fn __negsf2(_x: f32) -> f32 {
 use std::alloc::{Layout, alloc, alloc_zeroed, dealloc, realloc as rust_realloc};
 use std::ptr;
 
-// Alignment and header size (use 16 for 64-bit systems or SIMD requirements)
+// Alignment for the custom allocator header. 8 bytes is sufficient for
+// storing the size header (usize) on both 32-bit and 64-bit targets.
 const ALIGN: usize = 8;
 const HEADER_SIZE: usize = 8;
 

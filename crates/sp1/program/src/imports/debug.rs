@@ -35,9 +35,11 @@ pub fn console_tee<T: Into<Value> + Copy>(
 pub fn null_host(_ctx: FunctionEnvMut<StylusCustomEnvData>) {}
 
 pub fn start_benchmark(_ctx: FunctionEnvMut<StylusCustomEnvData>) -> MaybeEscape {
-    unimplemented!()
+    // Benchmarking is not supported in SP1 zkVM execution
+    Ok(())
 }
 
 pub fn end_benchmark(_ctx: FunctionEnvMut<StylusCustomEnvData>) -> MaybeEscape {
-    unimplemented!()
+    // Benchmarking is not supported in SP1 zkVM execution
+    Ok(())
 }

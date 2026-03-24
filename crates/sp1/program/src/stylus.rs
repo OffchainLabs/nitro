@@ -170,10 +170,16 @@ impl Cothread {
 }
 
 impl CothreadInput {
+    // SAFETY: CothreadInput stores raw pointers (as usize) to fields owned by
+    // the parent Cothread, which outlives all uses. SP1 is single-threaded,
+    // so there are no data races. The &self -> &mut pattern is required because
+    // the coroutine API doesn't allow passing &mut across yield boundaries.
+    #[allow(clippy::mut_from_ref)]
     pub fn store_mut(&self) -> &mut Store {
         unsafe { &mut *(self.store as *mut _) }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn function_env_mut(&self) -> &mut FunctionEnv<StylusCustomEnvData> {
         unsafe { &mut *(self.function_env as *mut _) }
     }
@@ -243,13 +249,14 @@ impl StylusCustomEnvData {
     }
 
     fn wait_next_message(&mut self) -> MessageToCothread {
-        for _ in 0..10 {
+        const MAX_YIELD_ITERATIONS: usize = 10;
+        for _ in 0..MAX_YIELD_ITERATIONS {
             if let Some(msg) = self.queue.lock().expect("lock").read_to_cothread() {
                 return msg;
             }
             self.yielder.as_ref().unwrap().suspend(None);
         }
-        panic!("did not receive message to cothread");
+        panic!("did not receive message to cothread after {MAX_YIELD_ITERATIONS} iterations");
     }
 
     pub fn request(

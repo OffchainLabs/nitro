@@ -67,7 +67,12 @@ async fn main() {
             }
 
             let a = SystemTime::now();
-            assert!(executor.execute_chunk().is_none());
+            if executor.execute_chunk().is_some() {
+                eprintln!(
+                    "Fast-mode execution failed: executor returned a trace chunk unexpectedly"
+                );
+                std::process::exit(2);
+            }
             let b = SystemTime::now();
             tracing::info!(
                 "Exit code: {}, cycles: {}, execution time: {:?}",
@@ -156,10 +161,19 @@ fn run_in_sp1(cli: &Cli, wasm: &[u8]) -> Vec<u8> {
     }
 
     let a = SystemTime::now();
-    assert!(executor.execute_chunk().is_none());
+    if executor.execute_chunk().is_some() {
+        eprintln!("Stylus compilation in SP1 failed: executor returned a trace chunk unexpectedly");
+        std::process::exit(2);
+    }
     let b = SystemTime::now();
 
-    assert_eq!(executor.exit_code(), 0);
+    if executor.exit_code() != 0 {
+        eprintln!(
+            "Stylus compiler exited with non-zero code: {}",
+            executor.exit_code()
+        );
+        std::process::exit(executor.exit_code() as i32);
+    }
     tracing::info!(
         "Completed stylus compilation in SP1, cycles: {}, execution time: {:?}",
         executor.global_clk(),

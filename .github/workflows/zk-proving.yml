@@ -47,6 +47,11 @@ jobs:
       - name: Build binaries and record block
         run: ./crates/sp1/build.sh
 
+      # Clippy runs after build because sp1-builder uses include_elf!(),
+      # which requires the SP1 ELF to exist at compile time.
+      - name: Clippy check (SP1)
+        run: cargo clippy -p program -p sp1-builder -p sp1-runner -p stylus-compiler-program -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
       - name: Run validation
         run: |
           # Exit if any command in a pipe fails

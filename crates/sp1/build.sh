@@ -60,7 +60,7 @@ cargo run --release -p sp1-builder -- --replay-wasm "$OUTPUT_DIR"/replay.wasm --
 # Build the SP1 runner
 cargo build --release -p sp1-runner
 
-# Copy relavant files to target folder
+# Copy relevant files to target folder
 cp target/elf-compilation/riscv64im-succinct-zkvm-elf/release/stylus-compiler-program "$OUTPUT_DIR"
 cp target/release/sp1-runner "$OUTPUT_DIR"
 

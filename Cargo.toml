@@ -132,6 +132,11 @@ sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"
 
 
 [patch.crates-io]
+# SP1 patches: these apply workspace-wide because Cargo does not support
+# target-scoped or feature-scoped patches. The SP1-patched forks add RISC-V
+# (riscv64) support while preserving identical behavior on native x86/ARM
+# targets. Non-SP1 crates (prover, JIT, stylus) are unaffected on native builds.
+# If SP1 is ever split into a separate workspace, these patches can be removed.
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
 region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1" }
 corosensei = { git = "https://github.com/OffchainLabs/corosensei", rev = "6681138454747733c6adad5037024400f0c9d4e3" } # branch: v0.3.3-sp

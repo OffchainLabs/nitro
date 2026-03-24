@@ -116,14 +116,19 @@ fn main() {
         // before reading this input.
         executor.with_input(&[]);
 
-        assert!(executor.execute_chunk().is_none());
+        // The executor will fail after bootloading completes because
+        // the empty input buffer cannot be parsed as an Arbitrum block.
+        // This is expected — we only need the bootloading side-effect (ELF dump).
+        let _ = executor.execute_chunk();
 
         if let Ok(true) = std::fs::exists(&output) {
-            println!(
-                "SP1 bootloading process completes. It's fine if you are seeing some errors, please ignore them"
-            );
+            println!("SP1 bootloading process completed successfully.");
         } else {
-            panic!("Something is wrong with SP1 bootloading process, please check the logs.");
+            panic!(
+                "SP1 bootloading failed: expected output at '{}' was not produced. \
+                 Check logs above for the root cause.",
+                output
+            );
         }
 
         println!("Bootloaded program is written to {}", output);

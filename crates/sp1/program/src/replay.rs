@@ -154,15 +154,20 @@ impl CustomEnvData {
         let queue = &cothreads().last().unwrap().queue;
         queue.lock().expect("lock").mark_read_from_cothread();
 
-        // Bound the number of loops for ease of debuging
-        for _ in 0..10 {
+        // Bound the number of loops for ease of debugging.
+        // 10 iterations should be more than enough for any single message exchange.
+        const MAX_YIELD_ITERATIONS: usize = 10;
+        for _ in 0..MAX_YIELD_ITERATIONS {
             if queue.lock().expect("lock").peek_from_cothread().is_some() {
                 return;
             }
 
             self.yielder.suspend(MainYieldMessage::RunLastChild);
         }
-        panic!("did not receive message");
+        panic!(
+            "did not receive message from cothread after {MAX_YIELD_ITERATIONS} iterations (module={module:?}, num_cothreads={})",
+            cothreads().len()
+        );
     }
 
     // For now, message id in arbitrator is hardcoded to 0x33333333,
@@ -410,13 +415,14 @@ fn align_bytes(data: &[u8]) -> Bytes {
 }
 
 pub(crate) fn handle_result(result: Result<Box<[Value]>, RuntimeError>) -> ! {
-    let message = match result {
-        Ok(value) => format!("Machine exited prematurely with: {:?}", value),
-        Err(e) => format!("Runtime error: {}", e),
-    };
-
-    if !message.is_empty() {
-        println!("{message}");
+    match result {
+        Ok(value) => {
+            println!("Machine exited prematurely with: {:?}", value);
+            exit(0);
+        }
+        Err(e) => {
+            println!("Runtime error: {}", e);
+            exit(1);
+        }
     }
-    exit(1);
 }

@@ -58,9 +58,6 @@ jobs:
       - name: Clippy check (non-SP1)
         run: cargo clippy --workspace --exclude program --exclude sp1-builder --exclude sp1-runner --exclude stylus-compiler-program -- -D warnings -A static_mut_refs
 
-      - name: Clippy check (SP1)
-        run: cargo clippy -p program -p sp1-builder -p sp1-runner -p stylus-compiler-program -- -D warnings -A static_mut_refs -A clippy::too_many_arguments -A clippy::mut_from_ref
-
       - name: Run rust tests
         id: run-rust-tests
         continue-on-error: true

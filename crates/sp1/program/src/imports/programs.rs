@@ -14,6 +14,9 @@ use arbutil::evm::{EvmData, api::Gas};
 use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
 use wasmer::{FunctionEnvMut, WasmPtr};
 
+/// Hardcoded message ID used by the Arbitrator protocol for program communication.
+const ARBITRATOR_MSG_ID: u32 = 0x33333333;
+
 pub fn new_program(
     mut ctx: FunctionEnvMut<CustomEnvData>,
     compiled_hash_ptr: Ptr,
@@ -55,7 +58,7 @@ pub fn set_response(
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
-    assert_eq!(id, 0x33333333);
+    assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let result = read_slice(result_ptr, result_len as usize, &memory)?;
     let raw_data = read_slice(raw_data_ptr, raw_data_len as usize, &memory)?;
@@ -79,7 +82,7 @@ pub fn get_request(
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
-    assert_eq!(id, 0x33333333);
+    assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
     len_ptr.write(&memory, msg.req_data.len() as u32)?;
@@ -97,7 +100,7 @@ pub fn get_request_data(
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
-    assert_eq!(id, 0x33333333);
+    assert_eq!(id, ARBITRATOR_MSG_ID);
 
     let msg = data.get_last_msg();
     memory.write(data_ptr.offset() as u64, &msg.req_data)?;
@@ -113,7 +116,7 @@ pub fn start_program(mut ctx: FunctionEnvMut<CustomEnvData>, module: u32) -> u32
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
-    0x33333333
+    ARBITRATOR_MSG_ID
 }
 
 pub fn send_response(mut ctx: FunctionEnvMut<CustomEnvData>, req_id: u32) -> u32 {
@@ -121,12 +124,12 @@ pub fn send_response(mut ctx: FunctionEnvMut<CustomEnvData>, req_id: u32) -> u32
 
     // Arbitrator for now only uses hardcoded id, we can ignore
     // ids safely.
-    assert_eq!(req_id, 0x33333333);
+    assert_eq!(req_id, ARBITRATOR_MSG_ID);
 
     data.wait_next_message(None);
     let _ = data.get_last_msg();
 
-    0x33333333
+    ARBITRATOR_MSG_ID
 }
 
 pub fn create_stylus_config(

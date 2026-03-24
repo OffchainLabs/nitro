@@ -14,7 +14,9 @@ use sha3::Keccak256;
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{RefType, TableType};
 
-/// A Vec<u8> allocated with libc::malloc
+/// A Vec<u8> with manual allocation.
+/// On native builds, uses libc malloc/free for FFI compatibility.
+/// On SP1 (no libc), uses Rust's global allocator.
 pub struct CBytes {
     ptr: *mut u8,
     len: usize,
@@ -49,6 +51,27 @@ impl fmt::Debug for CBytes {
     }
 }
 
+#[cfg(not(feature = "sp1"))]
+impl From<&[u8]> for CBytes {
+    fn from(slice: &[u8]) -> Self {
+        if slice.is_empty() {
+            return Self::default();
+        }
+        unsafe {
+            let ptr = libc::malloc(slice.len()) as *mut u8;
+            if ptr.is_null() {
+                panic!("Failed to allocate memory instantiating CBytes");
+            }
+            std::ptr::copy_nonoverlapping(slice.as_ptr(), ptr, slice.len());
+            Self {
+                ptr,
+                len: slice.len(),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sp1")]
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
         if slice.is_empty() {
@@ -117,6 +140,18 @@ pub struct RemoteTableType {
     pub shared: bool,
 }
 
+#[cfg(not(feature = "sp1"))]
+impl Drop for CBytes {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() && self.len > 0 {
+            unsafe {
+                libc::free(self.ptr as *mut _);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sp1")]
 impl Drop for CBytes {
     fn drop(&mut self) {
         if !self.ptr.is_null() && self.len > 0 {
