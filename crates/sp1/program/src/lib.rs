@@ -1,9 +1,9 @@
 pub mod imports;
+mod memory;
 pub mod platform;
 pub mod replay;
-pub mod stylus;
 mod state;
-mod memory;
+pub mod stylus;
 
 use arbutil::{
     Bytes20, Bytes32,

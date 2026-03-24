@@ -30,7 +30,7 @@ pub extern "C" fn __negsf2(_x: f32) -> f32 {
 // in C can rely on Rust for memory management.
 
 // Use `alloc::` instead of `std::` if you are in a `#![no_std]` environment.
-use std::alloc::{alloc, alloc_zeroed, dealloc, realloc as rust_realloc, Layout};
+use std::alloc::{Layout, alloc, alloc_zeroed, dealloc, realloc as rust_realloc};
 use std::ptr;
 
 // Alignment and header size (use 16 for 64-bit systems or SIMD requirements)

@@ -1,10 +1,10 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
 use arbutil::PreimageType;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::Blob;
 use digest::Digest;
 use eyre::{eyre, Result};
@@ -55,7 +55,8 @@ impl From<&[u8]> for CBytes {
             return Self::default();
         }
         unsafe {
-            let ptr = libc::malloc(slice.len()) as *mut u8;
+            let layout = std::alloc::Layout::from_size_align(slice.len(), 1).unwrap();
+            let ptr = std::alloc::alloc(layout);
             if ptr.is_null() {
                 panic!("Failed to allocate memory instantiating CBytes");
             }
@@ -118,7 +119,12 @@ pub struct RemoteTableType {
 
 impl Drop for CBytes {
     fn drop(&mut self) {
-        unsafe { libc::free(self.ptr as _) }
+        if !self.ptr.is_null() && self.len > 0 {
+            unsafe {
+                let layout = std::alloc::Layout::from_size_align(self.len, 1).unwrap();
+                std::alloc::dealloc(self.ptr, layout);
+            }
+        }
     }
 }
 
@@ -197,6 +203,7 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
         PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
         PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
+        #[cfg(feature = "kzg")]
         PreimageType::EthVersionedHash => {
             // TODO: really we should also accept what version it is,
             // but right now only one version is supported by this hash format anyways.
@@ -205,6 +212,10 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             let mut commitment_hash: [u8; 32] = Sha256::digest(*commitment.to_bytes()).into();
             commitment_hash[0] = 1;
             Ok(commitment_hash)
+        }
+        #[cfg(not(feature = "kzg"))]
+        PreimageType::EthVersionedHash => {
+            eyre::bail!("EthVersionedHash preimage hashing requires the 'kzg' feature");
         }
         PreimageType::DACertificate => {
             // There is no way for us to compute the hash of the preimage for DACertificate.

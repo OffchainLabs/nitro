@@ -11,10 +11,10 @@ use bytes::Bytes;
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
-use validation::ValidationInput;
 use rand_pcg::Pcg32;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use validation::ValidationInput;
 use wasmer::{
     Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value,
     imports, sys::NativeEngineExt,

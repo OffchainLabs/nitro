@@ -2,8 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
-#[cfg(feature = "sp1")]
-use crate::operator::OperatorInfo;
 #[cfg(not(feature = "sp1"))]
 use crate::Machine;
 use crate::{
@@ -13,7 +11,6 @@ use crate::{
     },
     value::FunctionType,
 };
-#[cfg(not(feature = "sp1"))]
 use arbutil::operator::OperatorInfo;
 use arbutil::{
     evm::{

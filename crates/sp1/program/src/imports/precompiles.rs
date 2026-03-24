@@ -15,7 +15,10 @@ pub fn ecrecover(
     output: Ptr,
 ) -> Result<u32, Escape> {
     assert_eq!(hash_len, 32, "Hash length must be 32 bytes");
-    assert_eq!(sig_len, 65, "Signature length must be 65 bytes (64 for signature + 1 for recovery id)");
+    assert_eq!(
+        sig_len, 65,
+        "Signature length must be 65 bytes (64 for signature + 1 for recovery id)"
+    );
 
     let (data, store) = ctx.data_and_store_mut();
     let memory = data.memory.clone().unwrap().view(&store);
@@ -24,7 +27,7 @@ pub fn ecrecover(
     let sig = read_slice(sig, 65, &memory)?;
 
     let message = Message::from_digest(hash.try_into().unwrap());
-    let Ok(recovery_id) = RecoveryId::from_i32(sig[64] as i32) else {
+    let Ok(recovery_id) = RecoveryId::try_from(sig[64] as i32) else {
         return Ok(1);
     };
     let Ok(signature) = RecoverableSignature::from_compact(&sig[0..64], recovery_id) else {

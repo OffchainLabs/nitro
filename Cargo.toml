@@ -18,6 +18,10 @@ members = [
     "crates/wasm-libraries/user-host-trait",
     "crates/wasm-libraries/user-test",
     "crates/wasm-libraries/wasi-stub",
+    "crates/sp1/builder",
+    "crates/sp1/program",
+    "crates/sp1/runner",
+    "crates/sp1/stylus-compiler-program",
 ]
 default-members = [
     "crates/jit",
@@ -25,7 +29,6 @@ default-members = [
 ]
 exclude = [
     "crates/langs",
-    "crates/sp1",
     "crates/stylus/tests",
     "crates/tools",
     "crates/wasm-testsuite",
@@ -48,6 +51,8 @@ axum = { version = "0.8.8" }
 axum-extra = { version = "0.10.3" }
 bincode = { version = "1.3.3" }
 bitvec = { version = "1.0.0" }
+bytes = { version = "1" }
+corosensei = { version = "0.3.0" }
 c-kzg = { version = "2.1.1" } # TODO: look into switching to rust-kzg (no crates.io release or hosted rustdoc yet)
 clap = { version = "4.4.8" }
 clru = { version = "0.6.2" }
@@ -79,6 +84,7 @@ rkyv = { version = "0.8.8" }
 reqwest = { version = "0.13.1" }
 ruint2 = { version = "1.9.0" }
 rustc-demangle = { version = "0.1.21" }
+secp256k1 = { version = "0.30.0" }
 serde = { version = "1.0.130" }
 serde_json = { version = "1.0.67" }
 serde_with = { version = "3.8.1" }
@@ -115,6 +121,15 @@ wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
 wasmer-compiler-singlepass = { path = "crates/tools/wasmer/lib/compiler-singlepass", default-features = false }
 wasmer-types = { path = "crates/tools/wasmer/lib/types" }
 wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
+
+[patch.crates-io]
+target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
+region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1" }
+corosensei = { git = "https://github.com/OffchainLabs/corosensei", rev = "6681138454747733c6adad5037024400f0c9d4e3" } # branch: v0.3.3-sp
+which = { git = "https://github.com/OffchainLabs/which-rs", rev = "f516e8a2e5453daeab38706747a9f6be8bb058e7" } # branch: v0.3.3-sp1
+secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-6.0.0" }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.0.0" }
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 
 [profile.release]
 debug = true

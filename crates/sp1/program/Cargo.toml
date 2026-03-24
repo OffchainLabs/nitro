@@ -7,12 +7,12 @@ edition = "2024"
 [dependencies]
 arbutil = { workspace = true }
 caller-env = { workspace = true, features = ["brotli"] }
-prover = { workspace = true, features = ["native"] }
-sp1-zkvm = { workspace = true }
+prover = { workspace = true, features = ["sp1", "native"] }
+sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe", features = ["untrusted_programs", "may_dump_elf"] }
 validation = { workspace = true, features = ["rkyv"] }
-wasmer = { workspace = true }
+wasmer = { workspace = true, features = ["sys", "compiler", "singlepass", "wasmparser"] }
 wasmer-types = { workspace = true }
-wasmer-vm = { workspace = true }
+wasmer-vm = { workspace = true, features = ["force-baremetal"] }
 
 bytes = { workspace = true }
 corosensei = { workspace = true }
@@ -23,7 +23,7 @@ once_cell = { workspace = true }
 rand_pcg = { workspace = true }
 rand = { workspace = true }
 ruint2 = { workspace = true }
-secp256k1 = { workspace = true }
+secp256k1 = { workspace = true, features = ["recovery", "global-context"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tiny-keccak = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }

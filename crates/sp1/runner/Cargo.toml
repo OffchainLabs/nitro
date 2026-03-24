@@ -5,13 +5,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sp1-core-executor = { workspace = true }
-sp1-sdk = { workspace = true }
+sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe", features = ["profiling"] }
 validation = { workspace = true, features = ["rkyv", "sp1"] }
 
 bincode = { workspace = true }
-clap = { workspace = true }
-rkyv = { workspace = true }
+clap = { workspace = true, features = ["cargo", "derive"] }
+rkyv = { workspace = true, features = ["indexmap-2", "bytes-1"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }

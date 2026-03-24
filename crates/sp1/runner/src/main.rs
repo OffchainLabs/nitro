@@ -113,9 +113,10 @@ async fn main() {
 // Build SP1 input from Arbitrum block. It is serialized to Vec<u8>, so
 // we can easily inject debugging code to dump stdin when needed.
 fn build_input(cli: &Cli) -> Vec<u8> {
-    let req =
-        serde_json::from_slice::<ValidationRequest>(&std::fs::read(&cli.block_file).expect("read input block"))
-            .expect("parse input block");
+    let req = serde_json::from_slice::<ValidationRequest>(
+        &std::fs::read(&cli.block_file).expect("read input block"),
+    )
+    .expect("parse input block");
 
     let mut input = ValidationInput::from_request(&req, "rv64").expect("request validation input");
 

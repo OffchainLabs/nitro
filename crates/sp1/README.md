@@ -1,6 +1,6 @@
-This folder adds a new Arbitrum block runner(like `jit` and `prover` in `arbitrator` folder), powered by [Succinct SP1](https://github.com/succinctlabs/sp1). For now we are only showcasing the executor powered by SP1, but the same code should be able to generate zero knowledge proofs for validating an Arbitrum block.
+This folder adds a new Arbitrum block runner (like `jit` and `prover`), powered by [Succinct SP1](https://github.com/succinctlabs/sp1). For now we are only showcasing the executor powered by SP1, but the same code should be able to generate zero knowledge proofs for validating an Arbitrum block.
 
-Ideally, the crates in this folder shall be merged into `arbitrator`. But for now, the differences in wasmer and Rust versions prevent us from doing this. Later when all the issues have been tackled we will likely merge both Rust workspaces.
+These crates are part of the root Cargo workspace.
 
 ## Usage
 
