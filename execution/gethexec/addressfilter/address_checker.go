@@ -6,9 +6,8 @@ package addressfilter
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -29,14 +28,16 @@ type HashedAddressChecker struct {
 // It aggregates asynchronous checks initiated by TouchAddress and blocks
 // in IsFiltered until all submitted checks complete.
 type HashedAddressCheckerState struct {
-	checker  *HashedAddressChecker
-	filtered atomic.Bool
-	pending  sync.WaitGroup
+	checker           *HashedAddressChecker
+	mu                sync.Mutex
+	filtered          bool
+	filteredAddresses []filter.FilteredAddressRecord
+	pending           sync.WaitGroup
 }
 
 type workItem struct {
-	addr  common.Address
-	state *HashedAddressCheckerState
+	record filter.FilteredAddressRecord
+	state  *HashedAddressCheckerState
 }
 
 // NewHashedAddressChecker constructs a new checker backed by a HashStore.
@@ -74,9 +75,9 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) processAddress(addr common.Address, state *HashedAddressCheckerState) {
-	restricted := c.store.IsRestricted(addr)
-	state.report(restricted)
+func (c *HashedAddressChecker) processAddress(record filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
+	restricted := c.store.IsRestricted(record.Address)
+	state.report(record, restricted)
 }
 
 // worker runs for the lifetime of the checker; workChan is never closed.
@@ -86,37 +87,40 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case item := <-c.workChan:
-			c.processAddress(item.addr, item.state)
+			c.processAddress(item.record, item.state)
 		}
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(addr common.Address) {
+func (s *HashedAddressCheckerState) TouchAddress(record filter.FilteredAddressRecord) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		s.report(true)
+		s.report(record, true)
 		return
 	}
 
 	select {
-	case s.checker.workChan <- workItem{addr: addr, state: s}:
+	case s.checker.workChan <- workItem{record: record, state: s}:
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
-		s.report(true)
+		s.report(record, true)
 	}
 }
 
-func (s *HashedAddressCheckerState) report(filtered bool) {
+func (s *HashedAddressCheckerState) report(record filter.FilteredAddressRecord, filtered bool) {
 	if filtered {
-		s.filtered.Store(true)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.filtered = true
+		s.filteredAddresses = append(s.filteredAddresses, record)
 	}
 	s.pending.Done()
 }
 
-func (s *HashedAddressCheckerState) IsFiltered() bool {
+func (s *HashedAddressCheckerState) IsFiltered() (bool, []filter.FilteredAddressRecord) {
 	s.pending.Wait()
-	return s.filtered.Load()
+	return s.filtered, s.filteredAddresses
 }

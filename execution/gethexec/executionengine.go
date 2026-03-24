@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -117,9 +118,9 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	if tx.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
-	db.TouchAddress(sender)
+	db.TouchAddress(filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	if tx.To() != nil {
-		db.TouchAddress(*tx.To())
+		db.TouchAddress(filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
 	}
 	// For tx types that alias the sender (unsigned contract txs, retryables),
 	// also check the original L1 address. The sender in the tx is already
@@ -127,12 +128,12 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	// original (non-aliased) addresses.
 	txType := tx.Type()
 	if arbosutil.DoesTxTypeAlias(&txType) {
-		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
+		db.TouchAddress(filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom}})
 	}
 	touchRetryableAddresses(db, tx)
 	applyEventFilter(f.eventFilter, db)
 
-	if db.IsAddressFiltered() {
+	if filtered, _ := db.IsAddressFiltered(); filtered {
 		// For redeems, return the filter error so the block processor can
 		// trigger a group rollback.
 		if tx.Type() == types.ArbitrumRetryTxType {
@@ -171,7 +172,10 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
 		for _, addr := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
-			db.TouchAddress(addr)
+			db.TouchAddress(filter.FilteredAddressRecord{
+				Address:      addr,
+				FilterReason: filter.FilterReason{Reason: filter.ReasonEventRule},
+			})
 		}
 	}
 }
@@ -182,13 +186,13 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 // aliased by the Inbox contract.
 func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
 	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(inner.Beneficiary)
-		db.TouchAddress(inner.FeeRefundAddr)
+		db.TouchAddress(filter.FilteredAddressRecord{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary}})
+		db.TouchAddress(filter.FilteredAddressRecord{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund}})
 		if inner.RetryTo != nil {
-			db.TouchAddress(*inner.RetryTo)
+			db.TouchAddress(filter.FilteredAddressRecord{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo}})
 		}
-		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.Beneficiary))
-		db.TouchAddress(arbosutil.InverseRemapL1Address(inner.FeeRefundAddr))
+		db.TouchAddress(filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary}})
+		db.TouchAddress(filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund}})
 	}
 }
 
