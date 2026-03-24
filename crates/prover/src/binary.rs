@@ -691,7 +691,13 @@ impl<'a> WasmBinary<'a> {
                         .get(&func_idx)
                         .map(String::as_str)
                         .unwrap_or("?");
-                    let ty = &self.types[*ty_idx as usize];
+                    let ty = self
+                        .types
+                        .get(*ty_idx as usize)
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| {
+                            format!("function with out-of-bounds type index {ty_idx}")
+                        });
                     return Err(format!(
                         "function {name} uses multi-value {kind} with type {ty_idx} ({ty})"
                     ));

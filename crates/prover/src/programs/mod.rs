@@ -7,11 +7,7 @@ use crate::{
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{
-    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES,
-    math::SaturatingSum,
-    Bytes32, Color,
-};
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -498,8 +494,8 @@ impl Module {
 #[cfg(test)]
 mod test {
     use super::*;
-    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
     use crate::binary;
+    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
     use std::path::Path;
 
     fn parse(wat: &str) -> WasmBinary<'static> {
@@ -617,7 +613,15 @@ mod test {
     fn activate_with_version(arbos_version: u64) -> Result<(Module, StylusData)> {
         let wasm = multi_value_stylus_wasm();
         let mut gas = u64::MAX;
-        Module::activate(&wasm[..], &Bytes32([0u8; 32]), 1, arbos_version, 128, false, &mut gas)
+        Module::activate(
+            &wasm[..],
+            &Bytes32([0u8; 32]),
+            1,
+            arbos_version,
+            128,
+            false,
+            &mut gas,
+        )
     }
 
     #[test]
