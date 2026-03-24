@@ -637,13 +637,13 @@ mod test {
     #[test]
     fn test_activate_allows_multi_value_below_threshold() {
         // One version below the threshold: gate must not fire, activation succeeds.
-        activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1).unwrap();
+        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1).is_ok());
     }
 
     #[test]
     fn test_activate_allows_multi_value_at_zero() {
         // Version 0 is the recompilation path for already-active contracts.
         // Multi-value must be accepted and activation must succeed.
-        activate_with_version(0).unwrap();
+        assert!(activate_with_version(0).is_ok());
     }
 }
