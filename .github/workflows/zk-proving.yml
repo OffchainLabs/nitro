@@ -45,7 +45,7 @@ jobs:
           rustc +succinct --print target-list | grep succinct
 
       - name: Build binaries and record block
-        run: ./sp1-crates/build.sh
+        run: ./crates/sp1/build.sh
 
       - name: Run validation
         run: |

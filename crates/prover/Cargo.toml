@@ -72,7 +72,7 @@ cc_brotli = ["brotli/cc_brotli"]
 
 # The "sp1" feature is never activated in this workspace. It exists only so that
 # `#[cfg(feature = "sp1")]` gates don't produce warnings. These gates are used
-# when sp1-crates/prover includes our source files via #[path] and compiles them
+# when crates/sp1/prover includes our source files via #[path] and compiles them
 # with its own "sp1" feature enabled (under wasmer 6.x / wasmparser 0.224).
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("sp1"))'] }

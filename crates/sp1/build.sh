@@ -3,7 +3,7 @@
 set -ex
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-export TOP=$SCRIPT_DIR/..
+export TOP=$SCRIPT_DIR/../..
 
 cd "$TOP"
 
@@ -18,7 +18,7 @@ if [ ! -d "$HOME/.sp1/riscv" ]; then
 fi
 
 # Build brotli for SP1
-cp sp1-crates/brotli_cmake_patch.txt brotli/CMakeLists.txt
+cp crates/sp1/brotli_cmake_patch.txt brotli/CMakeLists.txt
 rm -rf target/build-sp1/brotli target/lib-sp1
 mkdir -p target/build-sp1/brotli
 cd target/build-sp1/brotli

@@ -25,6 +25,7 @@ default-members = [
 ]
 exclude = [
     "crates/langs",
+    "crates/sp1",
     "crates/stylus/tests",
     "crates/tools",
     "crates/wasm-testsuite",

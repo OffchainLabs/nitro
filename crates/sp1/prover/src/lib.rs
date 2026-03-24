@@ -7,16 +7,16 @@
 #![allow(unexpected_cfgs)]
 
 #[cfg(feature = "native")]
-#[path = "../../../crates/prover/src/binary.rs"]
+#[path = "../../../prover/src/binary.rs"]
 pub mod binary;
 #[cfg(feature = "native")]
-#[path = "../../../crates/prover/src/programs/mod.rs"]
+#[path = "../../../prover/src/programs/mod.rs"]
 pub mod programs;
 #[cfg(feature = "native")]
-#[path = "../../../crates/prover/src/value.rs"]
+#[path = "../../../prover/src/value.rs"]
 pub mod value;
 
 #[cfg(feature = "native")]
-#[path = "../../../crates/arbutil/src/operator.rs"]
+#[path = "../../../arbutil/src/operator.rs"]
 pub mod operator;
 

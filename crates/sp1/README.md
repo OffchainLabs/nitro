@@ -30,7 +30,7 @@ Now you can start the build process:
 ```bash
 $ git clone https://github.com/OffchainLabs/nitro
 $ # Checkout current PR
-$ ./sp1-crates/build.sh
+$ ./crates/sp1/build.sh
 ```
 
 To make things easier to understand, for now we are using a simple bash script. As the code grow more mature, we would merge the bash script into the top-level makefile.
