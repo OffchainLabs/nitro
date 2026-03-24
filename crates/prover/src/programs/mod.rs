@@ -8,7 +8,7 @@ use crate::{
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::{
-    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
+    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     math::SaturatingSum,
     Bytes32, Color,
 };
@@ -19,7 +19,7 @@ use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
-use wasmparser::{BlockType, Operator, ValType};
+use wasmparser::{Operator, ValType};
 
 use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
@@ -416,59 +416,6 @@ impl StylusData {
     }
 }
 
-/// Checks that a wasm binary does not use the multi-value extension.
-///
-/// Returns `Ok(())` if no multi-value usage is found, or `Err` with a human-readable
-/// description of the first offending construct found.
-///
-/// Multi-value usage includes:
-/// - function types with more than one return value
-/// - block/loop/if instructions using a func type (which allows block parameters or
-///   multiple block results)
-fn check_no_multi_value(bin: &WasmBinary) -> Result<(), String> {
-    for (idx, ty) in bin.types.iter().enumerate() {
-        if ty.outputs.len() > 1 {
-            return Err(format!(
-                "type {idx} has {} return values ({ty})",
-                ty.outputs.len()
-            ));
-        }
-    }
-
-    for (local_idx, code) in bin.codes.iter().enumerate() {
-        for op in &code.expr {
-            let blockty = match op {
-                Operator::Block {
-                    blockty: BlockType::FuncType(ty),
-                } => Some(("block", ty)),
-                Operator::Loop {
-                    blockty: BlockType::FuncType(ty),
-                } => Some(("loop", ty)),
-                Operator::If {
-                    blockty: BlockType::FuncType(ty),
-                } => Some(("if", ty)),
-                _ => None,
-            };
-            if let Some((kind, ty_idx)) = blockty {
-                let import_count = bin.imports.len() as u32;
-                let func_idx = import_count + local_idx as u32;
-                let name = bin
-                    .names
-                    .functions
-                    .get(&func_idx)
-                    .map(String::as_str)
-                    .unwrap_or("?");
-                let ty = &bin.types[*ty_idx as usize];
-                return Err(format!(
-                    "function {name} uses multi-value {kind} with type {ty_idx} ({ty})"
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-
 impl Module {
     pub fn activate(
         wasm: &[u8],
@@ -492,12 +439,6 @@ impl Module {
             codehash,
         )
         .wrap_err("failed to parse wasm")?;
-
-        if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_NO_MULTI_VALUE {
-            if let Err(msg) = check_no_multi_value(&bin) {
-                bail!("multi-value wasm not supported: {msg}");
-            }
-        }
 
         if arbos_version_for_activation > 0 {
             // converts a number of microseconds to gas
@@ -557,6 +498,7 @@ impl Module {
 #[cfg(test)]
 mod test {
     use super::*;
+    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
     use crate::binary;
     use std::path::Path;
 
@@ -574,7 +516,7 @@ mod test {
                 )
             )"#,
         );
-        assert!(check_no_multi_value(&bin).is_ok());
+        assert!(bin.check_no_multi_value().is_ok());
     }
 
     #[test]
@@ -588,7 +530,7 @@ mod test {
                 )
             )"#,
         );
-        let err = check_no_multi_value(&bin).unwrap_err();
+        let err = bin.check_no_multi_value().unwrap_err();
         assert_eq!(err, "type 0 has 2 return values (λ() -> i32, i32)");
     }
 
@@ -604,7 +546,7 @@ mod test {
                 )
             )"#,
         );
-        let err = check_no_multi_value(&bin).unwrap_err();
+        let err = bin.check_no_multi_value().unwrap_err();
         assert_eq!(
             err,
             "function ? uses multi-value block with type 0 (λ(i32) -> i32)"
@@ -623,7 +565,7 @@ mod test {
                 )
             )"#,
         );
-        let err = check_no_multi_value(&bin).unwrap_err();
+        let err = bin.check_no_multi_value().unwrap_err();
         assert_eq!(
             err,
             "function ? uses multi-value loop with type 0 (λ(i32) -> i32)"
@@ -646,7 +588,7 @@ mod test {
                 )
             )"#,
         );
-        let err = check_no_multi_value(&bin).unwrap_err();
+        let err = bin.check_no_multi_value().unwrap_err();
         assert_eq!(
             err,
             "function ? uses multi-value if with type 1 (λ(i32) -> i32)"

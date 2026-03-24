@@ -10,7 +10,9 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::{
-    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
+    math::SaturatingSum,
+    Bytes32, Color, DebugColor,
 };
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
@@ -24,8 +26,9 @@ use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
-    Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+    BinaryReader, BlockType, Data, Element, ExternalKind, Imports, MemoryType, Name,
+    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator,
+    WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -646,6 +649,59 @@ impl<'a> WasmBinary<'a> {
         })
     }
 
+    /// Checks that a wasm binary does not use the multi-value extension.
+    ///
+    /// Returns `Ok(())` if no multi-value usage is found, or `Err` with a human-readable
+    /// description of the first offending construct found.
+    ///
+    /// Multi-value usage includes:
+    /// - function types with more than one return value
+    /// - block/loop/if instructions using a func type (which allows block parameters or
+    ///   multiple block results)
+    pub fn check_no_multi_value(&self) -> Result<(), String> {
+        for (idx, ty) in self.types.iter().enumerate() {
+            if ty.outputs.len() > 1 {
+                return Err(format!(
+                    "type {idx} has {} return values ({ty})",
+                    ty.outputs.len()
+                ));
+            }
+        }
+
+        for (local_idx, code) in self.codes.iter().enumerate() {
+            for op in &code.expr {
+                let blockty = match op {
+                    Operator::Block {
+                        blockty: BlockType::FuncType(ty),
+                    } => Some(("block", ty)),
+                    Operator::Loop {
+                        blockty: BlockType::FuncType(ty),
+                    } => Some(("loop", ty)),
+                    Operator::If {
+                        blockty: BlockType::FuncType(ty),
+                    } => Some(("if", ty)),
+                    _ => None,
+                };
+                if let Some((kind, ty_idx)) = blockty {
+                    let import_count = self.imports.len() as u32;
+                    let func_idx = import_count + local_idx as u32;
+                    let name = self
+                        .names
+                        .functions
+                        .get(&func_idx)
+                        .map(String::as_str)
+                        .unwrap_or("?");
+                    let ty = &self.types[*ty_idx as usize];
+                    return Err(format!(
+                        "function {name} uses multi-value {kind} with type {ty_idx} ({ty})"
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
@@ -655,6 +711,13 @@ impl<'a> WasmBinary<'a> {
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
         let mut bin = parse(wasm, Path::new("user"))?;
+
+        if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_NO_MULTI_VALUE {
+            if let Err(msg) = bin.check_no_multi_value() {
+                bail!("multi-value wasm not supported: {msg}");
+            }
+        }
+
         let stylus_data = bin.instrument(compile, codehash)?;
 
         let Some(memory) = bin.memories.first() else {
