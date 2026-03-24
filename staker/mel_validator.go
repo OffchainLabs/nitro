@@ -367,7 +367,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		}
 
 		// Advance validations
-		if err := mv.AdvanceValidations(ctx, doneEntry); err != nil {
+		if err := mv.AdvanceValidations(ctx, doneEntry, endMELState.ParentChainBlockNumber); err != nil {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
 			return 0
 		}
@@ -561,7 +561,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 		Start: validator.GoGlobalState{
 			BlockHash:    common.Hash{},
 			MELStateHash: initialState.Hash(),
-			MELMsgHash:   common.Hash{},
+			MELMsgHash:   common.Hash{}, // implying its the turn for mel validation
 			Batch:        0,
 			PosInBatch:   initialState.MsgCount,
 		},
@@ -570,7 +570,7 @@ func (mv *MELValidator) CreateNextValidationEntry(ctx context.Context, lastValid
 			MELStateHash: endState.Hash(),
 			MELMsgHash:   melMsgHash,
 			Batch:        0,
-			PosInBatch:   initialState.MsgCount,
+			PosInBatch:   initialState.MsgCount, // this is to be only progressed by block validator
 		},
 		EndParentChainBlockHash: endState.ParentChainBlockHash,
 	}, endState, nil
@@ -647,9 +647,9 @@ func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validati
 	}, nil
 }
 
-func (mv *MELValidator) AdvanceValidations(ctx context.Context, doneEntry *validationDoneEntry) error {
+func (mv *MELValidator) AdvanceValidations(ctx context.Context, doneEntry *validationDoneEntry, latestValidatedParentChainBlockNumber uint64) error {
 	info := MELGlobalStateValidatedInfo{
-		ParentChainBlockNumber: mv.latestValidatedParentChainBlock.Load(), // rewindMutex already held, no need to acquire
+		ParentChainBlockNumber: latestValidatedParentChainBlockNumber, // rewindMutex already held, no need to acquire
 		GlobalState:            doneEntry.End,
 		WasmRoots:              doneEntry.WasmModuleRoots,
 	}
