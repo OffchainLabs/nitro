@@ -38,6 +38,15 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	runCtx := c.txProcessor.RunContext()
 	programs := c.State.Programs()
 
+	// charge the configurable activation gas upfront (default 0; raise to deter DOS or block activations entirely)
+	params, err := programs.Params()
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := c.Burn(multigas.ResourceKindComputation, params.ActivationGas); err != nil {
+		return 0, nil, err
+	}
+
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(multigas.ResourceKindComputation, 1659168); err != nil {
 		return 0, nil, err
