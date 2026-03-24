@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -327,13 +326,8 @@ func dryRunCheckFilteredAddresses(
 		return err
 	}
 	msg.GasLimit = gasLimit
-	// Zero gas prices and skip nonce/balance checks — we only care about
-	// which addresses are touched.
-	msg.GasPrice = new(big.Int)
-	msg.GasFeeCap = new(big.Int)
-	msg.GasTipCap = new(big.Int)
+	// Skip nonce checks
 	msg.SkipNonceChecks = true
-	msg.SkipTransactionChecks = true
 
 	gasPool := core.GasPool(gasLimit)
 	var usedGas uint64
@@ -376,8 +370,7 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
 	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
 	runCtx := core.NewMessageEthcallContext()
-	// NoBaseFee skips the base fee comparison when gas fields are zeroed.
-	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{NoBaseFee: true})
+	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{})
 
 	var scheduledTxes types.Transactions
 	err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
