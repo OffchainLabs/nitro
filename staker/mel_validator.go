@@ -349,9 +349,10 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		defer mv.rewindMutex.Unlock()
 
 		// Create validation entry
-		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), mv.validateMsgExtractionTill.Load())
+		latestValidatedParentChainBlock := mv.latestValidatedParentChainBlock.Load()
+		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, latestValidatedParentChainBlock, mv.validateMsgExtractionTill.Load())
 		if err != nil {
-			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validateMsgExtractionTill", mv.validateMsgExtractionTill.Load(), "err", err)
+			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", latestValidatedParentChainBlock, "validateMsgExtractionTill", mv.validateMsgExtractionTill.Load(), "err", err)
 			return time.Second
 		}
 		if entry == nil { // nothing to create, so lets wait for parentChain or blockValidator to make progress
@@ -371,7 +372,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			return 0
 		}
 		mv.latestValidatedParentChainBlock.Store(endMELState.ParentChainBlockNumber)
-		log.Info("Successfully validated Message extraction", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validatedMsgCount", endMELState.MsgCount)
+		log.Info("Successfully validated Message extraction", "latestValidatedParentChainBlock", endMELState.ParentChainBlockNumber, "validatedMsgCount", endMELState.MsgCount)
 		return 0
 	})
 }
