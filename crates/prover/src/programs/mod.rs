@@ -417,7 +417,11 @@ impl Module {
         wasm: &[u8],
         codehash: &Bytes32,
         stylus_version: u16,
-        arbos_version_for_activation: u64, // must only be used for activation gas
+        // The current ArbOS version when activating a new contract, or zero when recompiling an
+        // already-active contract (in which case the original activation version is unknown).
+        // May be used to determine activation gas cost or to decide whether activation succeeds,
+        // but must NOT affect the compilation result (otherwise recompilation would differ).
+        arbos_version_for_activation: u64,
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
