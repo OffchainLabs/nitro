@@ -438,15 +438,26 @@ fn check_no_multi_value(bin: &WasmBinary) -> Result<(), String> {
     for (local_idx, code) in bin.codes.iter().enumerate() {
         for op in &code.expr {
             let blockty = match op {
-                Operator::Block { blockty: BlockType::FuncType(ty) } => Some(("block", ty)),
-                Operator::Loop  { blockty: BlockType::FuncType(ty) } => Some(("loop",  ty)),
-                Operator::If    { blockty: BlockType::FuncType(ty) } => Some(("if",    ty)),
+                Operator::Block {
+                    blockty: BlockType::FuncType(ty),
+                } => Some(("block", ty)),
+                Operator::Loop {
+                    blockty: BlockType::FuncType(ty),
+                } => Some(("loop", ty)),
+                Operator::If {
+                    blockty: BlockType::FuncType(ty),
+                } => Some(("if", ty)),
                 _ => None,
             };
             if let Some((kind, ty_idx)) = blockty {
                 let import_count = bin.imports.len() as u32;
                 let func_idx = import_count + local_idx as u32;
-                let name = bin.names.functions.get(&func_idx).map(String::as_str).unwrap_or("?");
+                let name = bin
+                    .names
+                    .functions
+                    .get(&func_idx)
+                    .map(String::as_str)
+                    .unwrap_or("?");
                 let ty = &bin.types[*ty_idx as usize];
                 return Err(format!(
                     "function {name} uses multi-value {kind} with type {ty_idx} ({ty})"
@@ -473,9 +484,14 @@ impl Module {
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
-        let (bin, stylus_data) =
-            WasmBinary::parse_user(wasm, arbos_version_for_activation, page_limit, &compile, codehash)
-                .wrap_err("failed to parse wasm")?;
+        let (bin, stylus_data) = WasmBinary::parse_user(
+            wasm,
+            arbos_version_for_activation,
+            page_limit,
+            &compile,
+            codehash,
+        )
+        .wrap_err("failed to parse wasm")?;
 
         if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_NO_MULTI_VALUE {
             if let Err(msg) = check_no_multi_value(&bin) {
@@ -589,7 +605,10 @@ mod test {
             )"#,
         );
         let err = check_no_multi_value(&bin).unwrap_err();
-        assert_eq!(err, "function ? uses multi-value block with type 0 (λ(i32) -> i32)");
+        assert_eq!(
+            err,
+            "function ? uses multi-value block with type 0 (λ(i32) -> i32)"
+        );
     }
 
     #[test]
@@ -605,7 +624,10 @@ mod test {
             )"#,
         );
         let err = check_no_multi_value(&bin).unwrap_err();
-        assert_eq!(err, "function ? uses multi-value loop with type 0 (λ(i32) -> i32)");
+        assert_eq!(
+            err,
+            "function ? uses multi-value loop with type 0 (λ(i32) -> i32)"
+        );
     }
 
     #[test]
@@ -625,6 +647,9 @@ mod test {
             )"#,
         );
         let err = check_no_multi_value(&bin).unwrap_err();
-        assert_eq!(err, "function ? uses multi-value if with type 1 (λ(i32) -> i32)");
+        assert_eq!(
+            err,
+            "function ? uses multi-value if with type 1 (λ(i32) -> i32)"
+        );
     }
 }
