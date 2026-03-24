@@ -62,6 +62,7 @@ type StylusParams struct {
 	BlockCacheSize   uint16
 	MaxWasmSize      uint32
 	MaxFragmentCount uint8
+	ActivationGas    uint64
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -117,6 +118,12 @@ func (p Programs) Params() (*StylusParams, error) {
 	} else {
 		stylusParams.MaxFragmentCount = 0
 	}
+	if p.ArbosVersion >= params.ArbosVersion_StylusActivationGas {
+		// Consume the 2 remaining bytes of slot 0 (alignment padding) before
+		// loading slot 1, where ActivationGas lives.
+		take(2)
+		stylusParams.ActivationGas = arbmath.BytesToUint(take(8))
+	}
 	return stylusParams, nil
 }
 
@@ -148,6 +155,12 @@ func (p *StylusParams) Save() error {
 	}
 	if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
 		data = append(data, arbmath.Uint8ToBytes(p.MaxFragmentCount)...)
+	}
+	if p.arbosVersion >= params.ArbosVersion_StylusActivationGas {
+		// 2 alignment bytes fill slot 0 to 32 bytes, then ActivationGas occupies
+		// the first 8 bytes of slot 1.
+		data = append(data, 0, 0)
+		data = append(data, arbmath.UintToBytes(p.ActivationGas)...)
 	}
 
 	slot := uint64(0)
