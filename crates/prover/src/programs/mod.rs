@@ -573,6 +573,58 @@ mod test {
             )"#,
         );
         let err = check_no_multi_value(&bin).unwrap_err();
-        assert_eq!(err, "type 0 has 2 return values (λ() -> i32, i32)", "unexpected error: {err}");
+        assert_eq!(err, "type 0 has 2 return values (λ() -> i32, i32)");
+    }
+
+    #[test]
+    fn test_reject_multi_value_block() {
+        // (block (param i32) (result i32)) passes the i32 in from the outer stack.
+        // Single-value equivalent: (block (result i32) local.get 0)
+        let bin = parse(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                    (block (param i32) (result i32))
+                )
+            )"#,
+        );
+        let err = check_no_multi_value(&bin).unwrap_err();
+        assert_eq!(err, "function ? uses multi-value block with type 0 (λ(i32) -> i32)");
+    }
+
+    #[test]
+    fn test_reject_multi_value_loop() {
+        // (loop (param i32) (result i32)) passes the i32 in as the loop's initial param.
+        // Single-value equivalent: (loop  local.get 0  ...)  with value produced inside.
+        let bin = parse(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                    (loop (param i32) (result i32))
+                )
+            )"#,
+        );
+        let err = check_no_multi_value(&bin).unwrap_err();
+        assert_eq!(err, "function ? uses multi-value loop with type 0 (λ(i32) -> i32)");
+    }
+
+    #[test]
+    fn test_reject_multi_value_if() {
+        // (if (param i32) (result i32)) sits under the condition on the stack.
+        // Single-value equivalent: (if (result i32) (then local.get 0) (else i32.const 0))
+        let bin = parse(
+            r#"(module
+                (func (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    (if (param i32) (result i32)
+                        (then)
+                        (else)
+                    )
+                )
+            )"#,
+        );
+        let err = check_no_multi_value(&bin).unwrap_err();
+        assert_eq!(err, "function ? uses multi-value if with type 1 (λ(i32) -> i32)");
     }
 }
