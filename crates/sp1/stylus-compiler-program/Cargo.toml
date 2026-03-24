@@ -5,6 +5,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe", features = ["untrusted_programs", "may_dump_elf"] }
+sp1-zkvm = { workspace = true }
 wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }
 prover = { workspace = true, features = ["sp1", "native"] }

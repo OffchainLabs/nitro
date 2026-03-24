@@ -8,7 +8,7 @@ edition = "2024"
 arbutil = { workspace = true }
 caller-env = { workspace = true, features = ["brotli"] }
 prover = { workspace = true, features = ["sp1", "native"] }
-sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe", features = ["untrusted_programs", "may_dump_elf"] }
+sp1-zkvm = { workspace = true }
 validation = { workspace = true, features = ["rkyv"] }
 wasmer = { workspace = true, features = ["sys", "compiler", "singlepass", "wasmparser"] }
 wasmer-types = { workspace = true }

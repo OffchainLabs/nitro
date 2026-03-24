@@ -115,12 +115,21 @@ prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
 validation = { path = "crates/validation" }
+
+# wasmer
 wasmer = { path = "crates/tools/wasmer/lib/api" }
 wasmer-compiler-cranelift = { path = "crates/tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "crates/tools/wasmer/lib/compiler-llvm" }
 wasmer-compiler-singlepass = { path = "crates/tools/wasmer/lib/compiler-singlepass", default-features = false }
 wasmer-types = { path = "crates/tools/wasmer/lib/types" }
 wasmer-vm = { path = "crates/tools/wasmer/lib/vm" }
+
+# sp1
+sp1-build = { version = "6.0.0", features = ["may_dump_elf"] }
+sp1-core-executor = { version = "6.0.0" }
+sp1-sdk = { version = "6.0.0", features = ["profiling"] }
+sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"] }
+
 
 [patch.crates-io]
 target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
@@ -129,6 +138,10 @@ corosensei = { git = "https://github.com/OffchainLabs/corosensei", rev = "668113
 which = { git = "https://github.com/OffchainLabs/which-rs", rev = "f516e8a2e5453daeab38706747a9f6be8bb058e7" } # branch: v0.3.3-sp1
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.30.0-sp1-6.0.0" }
 tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.0.0" }
+
+sp1-build = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
+sp1-core-executor = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 sp1-zkvm = { git = "https://github.com/succinctlabs/sp1", rev = "be6ebfe" }
 
 [profile.release]
