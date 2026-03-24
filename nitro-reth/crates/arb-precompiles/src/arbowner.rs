@@ -34,7 +34,7 @@ const REMOVE_CHAIN_OWNER: [u8; 4] = [0x87, 0x92, 0x70, 0x1a];
 // Setters — ArbOS root state
 const SET_NETWORK_FEE_ACCOUNT: [u8; 4] = [0xe1, 0xa3, 0x5b, 0x12];
 const SET_INFRA_FEE_ACCOUNT: [u8; 4] = [0x0b, 0x6c, 0xf6, 0x99];
-const SCHEDULE_ARBOS_UPGRADE: [u8; 4] = [0x1f, 0x87, 0x0b, 0xd3];
+const SCHEDULE_ARBOS_UPGRADE: [u8; 4] = [0xe3, 0x88, 0xb3, 0x81];
 const SET_BROTLI_COMPRESSION_LEVEL: [u8; 4] = [0x86, 0x47, 0x23, 0x97];
 const SET_CHAIN_CONFIG: [u8; 4] = [0xf5, 0xb7, 0x78, 0x63];
 
@@ -130,6 +130,7 @@ const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
+const LOG_GAS: u64 = 375 + 375 * 3; // base + 3 topics
 
 pub fn create_arbowner_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbowner"), handler)
@@ -613,10 +614,42 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let timestamp = U256::from_be_slice(&data[36..68]);
     sstore_field(input, root_slot(UPGRADE_VERSION_OFFSET), new_version)?;
     sstore_field(input, root_slot(UPGRADE_TIMESTAMP_OFFSET), timestamp)?;
+
+    // Emit OwnerActs(bytes4 method, address owner, bytes data)
+    emit_owner_acts(input, &SCHEDULE_ARBOS_UPGRADE, data);
+
     Ok(PrecompileOutput::new(
-        (2 * SSTORE_GAS + COPY_GAS).min(gas_limit),
+        (2 * SSTORE_GAS + COPY_GAS + LOG_GAS).min(gas_limit),
         Vec::new().into(),
     ))
+}
+
+/// Emit the OwnerActs event: OwnerActs(bytes4 method, address owner, bytes data).
+/// Matches Nitro's automatic OwnerActs emission for all owner-only calls.
+fn emit_owner_acts(input: &mut PrecompileInput<'_>, selector: &[u8; 4], calldata: &[u8]) {
+    use alloy_primitives::{keccak256, Log, B256};
+
+    // event OwnerActs(bytes4 indexed method, address indexed owner, bytes data)
+    let topic0 = keccak256("OwnerActs(bytes4,address,bytes)");
+    let mut method_topic = [0u8; 32];
+    method_topic[..4].copy_from_slice(selector);
+    let topic1 = B256::from(method_topic);
+    let topic2 = B256::left_padding_from(input.caller.as_slice());
+
+    // ABI-encode calldata as bytes: offset(32) + length(32) + data (padded)
+    let mut log_data = Vec::with_capacity(64 + ((calldata.len() + 31) / 32) * 32);
+    log_data.extend_from_slice(&U256::from(32).to_be_bytes::<32>()); // offset
+    log_data.extend_from_slice(&U256::from(calldata.len()).to_be_bytes::<32>()); // length
+    log_data.extend_from_slice(calldata);
+    // Pad to 32-byte boundary
+    let pad = (32 - (calldata.len() % 32)) % 32;
+    log_data.extend(std::iter::repeat(0u8).take(pad));
+
+    input.internals_mut().log(Log::new_unchecked(
+        ARBOWNER_ADDRESS,
+        vec![topic0, topic1, topic2],
+        log_data.into(),
+    ));
 }
 
 // ── AddressSet helpers ──────────────────────────────────────────────
