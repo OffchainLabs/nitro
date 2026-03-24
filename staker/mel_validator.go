@@ -83,8 +83,7 @@ type MELValidator struct {
 
 	melReorgDetector                chan uint64
 	rewindMutex                     sync.Mutex
-	latestValidatedGS               validator.GoGlobalState
-	latestValidatedParentChainBlock uint64
+	latestValidatedParentChainBlock atomic.Uint64
 
 	latestWasmModuleRoot common.Hash
 	redisValidator       *redis.ValidationClient
@@ -238,14 +237,13 @@ func NewMELValidator(
 		return nil, err
 	}
 	if info != nil {
-		mv.latestValidatedParentChainBlock = info.ParentChainBlockNumber
-		mv.latestValidatedGS = info.GlobalState
+		mv.latestValidatedParentChainBlock.Store(info.ParentChainBlockNumber)
 	} else {
 		if initialState == nil {
 			return nil, errors.New("initialState is nil when starting out from scratch")
 		}
 		// Cannot validate genesis message
-		mv.latestValidatedParentChainBlock = initialState.ParentChainBlockNumber
+		mv.latestValidatedParentChainBlock.Store(initialState.ParentChainBlockNumber)
 	}
 	return mv, nil
 }
@@ -351,7 +349,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 		defer mv.rewindMutex.Unlock()
 
 		// Create validation entry
-		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock, mv.validateMsgExtractionTill.Load())
+		entry, endMELState, err := mv.CreateNextValidationEntry(ctx, mv.latestValidatedParentChainBlock.Load(), mv.validateMsgExtractionTill.Load())
 		if err != nil {
 			log.Error("MEL validator: Error creating validation entry", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validateMsgExtractionTill", mv.validateMsgExtractionTill.Load(), "err", err)
 			return time.Second
@@ -372,8 +370,7 @@ func (mv *MELValidator) Start(ctx context.Context) {
 			log.Error("MEL validator: Error advancing validation status", "err", err)
 			return 0
 		}
-		mv.latestValidatedParentChainBlock = endMELState.ParentChainBlockNumber
-		mv.latestValidatedGS = doneEntry.End
+		mv.latestValidatedParentChainBlock.Store(endMELState.ParentChainBlockNumber)
 		log.Info("Successfully validated Message extraction", "latestValidatedParentChainBlock", mv.latestValidatedParentChainBlock, "validatedMsgCount", endMELState.MsgCount)
 		return 0
 	})
@@ -400,8 +397,8 @@ func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
 		case parentChainBlockNumber := <-mv.melReorgDetector:
 			log.Info("MEL Validator: receieved a reorg event from message extractor", "parentChainBlockNumber", parentChainBlockNumber)
 			mv.rewindMutex.Lock()
-			if parentChainBlockNumber < mv.latestValidatedParentChainBlock {
-				mv.latestValidatedParentChainBlock = parentChainBlockNumber
+			if parentChainBlockNumber < mv.latestValidatedParentChainBlock.Load() {
+				mv.latestValidatedParentChainBlock.Store(parentChainBlockNumber)
 				mv.UpdateValidationTarget(0) // This makes the MEL validator wait until block validator asks it to validate msg extraction
 				// Remove stale msg preimages
 				mv.msgPreimagesAndStateCacheMutex.Lock()
@@ -418,9 +415,7 @@ func (mv *MELValidator) rewindOnMELReorgs(ctx context.Context) {
 }
 
 func (mv *MELValidator) LatestValidatedMELState(ctx context.Context) (*mel.State, error) {
-	mv.rewindMutex.Lock()
-	defer mv.rewindMutex.Unlock()
-	return mv.messageExtractor.GetState(mv.latestValidatedParentChainBlock)
+	return mv.messageExtractor.GetState(mv.latestValidatedParentChainBlock.Load())
 }
 
 func (mv *MELValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -653,7 +648,7 @@ func (mv *MELValidator) SendValidationEntry(ctx context.Context, entry *validati
 
 func (mv *MELValidator) AdvanceValidations(ctx context.Context, doneEntry *validationDoneEntry) error {
 	info := MELGlobalStateValidatedInfo{
-		ParentChainBlockNumber: mv.latestValidatedParentChainBlock, // rewindMutex already held, no need to acquire
+		ParentChainBlockNumber: mv.latestValidatedParentChainBlock.Load(), // rewindMutex already held, no need to acquire
 		GlobalState:            doneEntry.End,
 		WasmRoots:              doneEntry.WasmModuleRoots,
 	}
