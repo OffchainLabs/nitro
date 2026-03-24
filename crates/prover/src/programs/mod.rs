@@ -417,17 +417,17 @@ impl Module {
         wasm: &[u8],
         codehash: &Bytes32,
         stylus_version: u16,
-        arbos_version_for_gas: u64, // must only be used for activation gas
+        arbos_version_for_activation: u64, // must only be used for activation gas
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) =
-            WasmBinary::parse_user(wasm, arbos_version_for_gas, page_limit, &compile, codehash)
+            WasmBinary::parse_user(wasm, arbos_version_for_activation, page_limit, &compile, codehash)
                 .wrap_err("failed to parse wasm")?;
 
-        if arbos_version_for_gas > 0 {
+        if arbos_version_for_activation > 0 {
             // converts a number of microseconds to gas
             // TODO: collapse to a single value after finalizing factors
             let us_to_gas = |us: u64| {
@@ -449,7 +449,7 @@ impl Module {
             }
 
             // pay for wasm
-            if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
                 let wasm_len = wasm.len() as u64;
                 pay!(wasm_len.saturating_mul(31_733) / 100_000);
             }

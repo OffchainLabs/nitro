@@ -649,7 +649,7 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
-        arbos_version_for_gas: u64,
+        arbos_version_for_activation: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
@@ -687,7 +687,7 @@ impl<'a> WasmBinary<'a> {
             limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
-        if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
             limit!(513, bin.imports.len(), "imports")
         }
 
