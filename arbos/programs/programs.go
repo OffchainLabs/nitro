@@ -389,6 +389,8 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 		if state.IsStylusFragmentPrefix(prefixedWasm) {
 			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
 		}
+	} else {
+		return nil, errors.New("specified bytecode is not a Stylus program") // Old arbOS behavior - this is not a solidity error (uses less gas)
 	}
 
 	return nil, ProgramNotWasmError()
