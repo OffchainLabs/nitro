@@ -168,6 +168,12 @@ func (con ArbWasm) BlockCacheSize(c ctx, _ mech) (uint16, error) {
 	return params.BlockCacheSize, err
 }
 
+// Gets the constant gas charge applied before each stylus contract activation.
+func (con ArbWasm) ActivationGas(c ctx, _ mech) (uint64, error) {
+	params, err := c.State.Programs().Params()
+	return params.ActivationGas, err
+}
+
 // Gets the stylus version that program with codehash was most recently compiled with
 func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
 	params, err := c.State.Programs().Params()

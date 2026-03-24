@@ -668,3 +668,15 @@ func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments 
 	params.MaxFragmentCount = maxFragments
 	return params.Save()
 }
+
+// Sets the constant gas charge applied before each stylus contract activation.
+// Defaults to zero. Can be raised to deter DOS via activations, or set to a
+// value exceeding the block gas limit to block all activations entirely.
+func (con ArbOwner) SetWasmActivationGas(c ctx, _ mech, gas uint64) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.ActivationGas = gas
+	return params.Save()
+}
