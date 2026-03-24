@@ -537,3 +537,42 @@ impl Module {
         Ok((module, stylus_data))
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::binary;
+    use std::path::Path;
+
+    fn parse(wat: &str) -> WasmBinary<'static> {
+        let wasm: &'static [u8] = Box::leak(wat::parse_str(wat).unwrap().into_boxed_slice());
+        binary::parse(wasm, Path::new("test")).unwrap()
+    }
+
+    #[test]
+    fn test_no_multi_value() {
+        let bin = parse(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                )
+            )"#,
+        );
+        assert!(check_no_multi_value(&bin).is_ok());
+    }
+
+    #[test]
+    fn test_reject_multi_value_function() {
+        // Function type with two return values — caught by the types check.
+        let bin = parse(
+            r#"(module
+                (func (result i32 i32)
+                    i32.const 1
+                    i32.const 2
+                )
+            )"#,
+        );
+        let err = check_no_multi_value(&bin).unwrap_err();
+        assert_eq!(err, "type 0 has 2 return values (λ() -> i32, i32)", "unexpected error: {err}");
+    }
+}
