@@ -594,4 +594,65 @@ mod test {
             "function ? uses multi-value if with type 1 (λ(i32) -> i32)"
         );
     }
+
+    // A minimal valid Stylus wasm that contains a multi-value function type.
+    // Has the required memory export and user_entrypoint, so parse_user succeeds
+    // and Module::activate reaches the version-gating check.
+    fn multi_value_stylus_wasm() -> Vec<u8> {
+        wat::parse_str(
+            r#"(module
+                (memory (export "memory") 1)
+                (func (result i32 i32)
+                    i32.const 1
+                    i32.const 2
+                )
+                (func (export "user_entrypoint") (param i32) (result i32)
+                    i32.const 0
+                )
+            )"#,
+        )
+        .unwrap()
+    }
+
+    fn activate_with_version(arbos_version: u64) -> Result<(Module, StylusData)> {
+        let wasm = multi_value_stylus_wasm();
+        let mut gas = u64::MAX;
+        Module::activate(&wasm[..], &Bytes32([0u8; 32]), 1, arbos_version, 128, false, &mut gas)
+    }
+
+    #[test]
+    fn test_activate_rejects_multi_value_at_threshold() {
+        // At the threshold version the gate fires and multi-value is rejected.
+        let err = activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("multi-value wasm not supported"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_activate_allows_multi_value_below_threshold() {
+        // One version below the threshold: gate must not fire.
+        // Activation may still fail for unrelated reasons; what matters is the
+        // error is not about multi-value.
+        if let Err(err) = activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1) {
+            assert!(
+                !format!("{err:?}").contains("multi-value"),
+                "unexpected multi-value error at v{}: {err:?}",
+                ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1
+            );
+        }
+    }
+
+    #[test]
+    fn test_activate_allows_multi_value_at_zero() {
+        // Version 0 is the recompilation path for already-active contracts.
+        // Multi-value must never be the rejection reason here.
+        if let Err(err) = activate_with_version(0) {
+            assert!(
+                !format!("{err:?}").contains("multi-value"),
+                "unexpected multi-value error at v0: {err:?}"
+            );
+        }
+    }
 }
