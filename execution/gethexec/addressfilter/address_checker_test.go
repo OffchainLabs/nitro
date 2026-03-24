@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -39,24 +40,35 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 
 	// Tx 1: filtered address
 	state1 := mustState(t, checker.NewTxState())
-	state1.TouchAddress(addrFiltered)
-	assert.True(t, state1.IsFiltered(), "expected transaction to be filtered")
+	state1.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	filtered1, records1 := state1.IsFiltered()
+	assert.True(t, filtered1, "expected transaction to be filtered")
+	require.Len(t, records1, 1)
+	assert.Equal(t, addrFiltered, records1[0].Address)
+	assert.Equal(t, filter.ReasonFrom, records1[0].Reason)
 
 	// Tx 2: allowed address
 	state2 := mustState(t, checker.NewTxState())
-	state2.TouchAddress(addrAllowed)
-	assert.False(t, state2.IsFiltered(), "expected transaction NOT to be filtered")
+	state2.TouchAddress(filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	filtered2, records2 := state2.IsFiltered()
+	assert.False(t, filtered2, "expected transaction NOT to be filtered")
+	assert.Empty(t, records2)
 
 	// Tx 3: mixed addresses
 	state3 := mustState(t, checker.NewTxState())
-	state3.TouchAddress(addrAllowed)
-	state3.TouchAddress(addrFiltered)
-	assert.True(t, state3.IsFiltered(), "expected transaction with mixed addresses to be filtered")
+	state3.TouchAddress(filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	state3.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
+	filtered3, records3 := state3.IsFiltered()
+	assert.True(t, filtered3, "expected transaction with mixed addresses to be filtered")
+	require.Len(t, records3, 1)
+	assert.Equal(t, addrFiltered, records3[0].Address)
+	assert.Equal(t, filter.ReasonTo, records3[0].Reason)
 
 	// Tx 4: reuse HashStore cache across txs
 	state4 := mustState(t, checker.NewTxState())
-	state4.TouchAddress(addrFiltered)
-	assert.True(t, state4.IsFiltered(), "expected cached filtered address to still be filtered")
+	state4.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	filtered4, _ := state4.IsFiltered()
+	assert.True(t, filtered4, "expected cached filtered address to still be filtered")
 
 	// Tx 5: queue overflow should not panic and must be conservative
 	overflowChecker := NewHashedAddressChecker(
@@ -68,11 +80,12 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 
 	// Tx 5: synchronous call
 	overflowState := mustState(t, overflowChecker.NewTxState())
-	overflowState.TouchAddress(addrFiltered)
+	overflowState.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 
+	filtered5, _ := overflowState.IsFiltered()
 	assert.True(
 		t,
-		overflowState.IsFiltered(),
+		filtered5,
 		"expected cached filtered address to still be filtered",
 	)
 }
@@ -113,14 +126,15 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 
 			for i := range touchesPerTx {
 				if i%10 == 0 {
-					state.TouchAddress(filteredAddrs[i%filteredCount])
+					state.TouchAddress(filter.FilteredAddressRecord{Address: filteredAddrs[i%filteredCount], FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 				} else {
 					addr := common.BytesToAddress([]byte{byte(200 + i*tx)})
-					state.TouchAddress(addr)
+					state.TouchAddress(filter.FilteredAddressRecord{Address: addr, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 				}
 			}
 
-			results <- state.IsFiltered()
+			filtered, _ := state.IsFiltered()
+			results <- filtered
 		}(tx)
 	}
 
