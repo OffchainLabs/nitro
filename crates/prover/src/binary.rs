@@ -656,8 +656,8 @@ impl<'a> WasmBinary<'a> {
     ///
     /// Multi-value usage includes:
     /// - function types with more than one return value
-    /// - block/loop/if instructions using a func type (which allows block parameters or
-    ///   multiple block results)
+    /// - block/loop/if instructions using `BlockType::FuncType`, i.e. referencing the type
+    ///   section — this is rejected unconditionally because it enables block parameters
     pub fn check_no_multi_value(&self) -> Result<(), String> {
         for (idx, ty) in self.types.iter().enumerate() {
             if ty.outputs.len() > 1 {
