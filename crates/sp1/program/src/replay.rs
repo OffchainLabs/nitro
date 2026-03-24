@@ -27,10 +27,10 @@ use wasmer_vm::install_unwinder;
 // will leave it to another time to debate which is a better option.
 static mut COTHREADS: Vec<Cothread> = Vec::new();
 fn cothreads_mut() -> &'static mut Vec<Cothread> {
-    unsafe { &mut *&raw mut COTHREADS }
+    unsafe { &mut *std::ptr::addr_of_mut!(COTHREADS) }
 }
 fn cothreads() -> &'static [Cothread] {
-    unsafe { &*&raw const COTHREADS }
+    unsafe { &*std::ptr::addr_of!(COTHREADS) }
 }
 
 /// This provides a single-threaded Send yielder since corosensei's
@@ -105,7 +105,7 @@ impl CustomEnvData {
             memory: None,
             time: 0,
             pcg,
-            input: Lazy::new(|| read_input()),
+            input: Lazy::new(read_input),
             yielder: SendYielder::new(yielder),
         }
     }
@@ -402,7 +402,7 @@ fn align_bytes(data: &[u8]) -> Bytes {
     use bytes::BytesMut;
     let mut buffer = BytesMut::zeroed(data.len() + 7);
     let p = buffer.as_ptr() as usize;
-    let aligned_p = (p + 7) / 8 * 8;
+    let aligned_p = p.div_ceil(8) * 8;
     let offset = aligned_p - p;
     buffer[offset..offset + data.len()].copy_from_slice(data);
     let bytes = buffer.freeze();

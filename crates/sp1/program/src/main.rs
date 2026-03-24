@@ -1,4 +1,5 @@
 #![cfg_attr(target_os = "zkvm", no_main)]
+#![allow(unsafe_op_in_unsafe_fn, clippy::missing_safety_doc)]
 
 #[cfg(target_os = "zkvm")]
 sp1_zkvm::entrypoint!(main);

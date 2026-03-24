@@ -95,7 +95,7 @@ impl Cothread {
                     panic!("name not found global");
                 };
                 let StoreObjects::Sys(objects) = store.objects_mut();
-                sh.get(&objects).vmglobal()
+                sh.get(objects).vmglobal()
             };
             (
                 expect_global(STYLUS_INK_LEFT),
@@ -371,10 +371,10 @@ impl StylusCustomEnvData {
         address: Bytes20,
         gas_left: Gas,
     ) -> (Vec<u8>, Gas) {
-        if let Some((stored_address, data)) = self.last_code.as_ref() {
-            if address == *stored_address {
-                return (data.clone(), Gas(0));
-            }
+        if let Some((stored_address, data)) = self.last_code.as_ref()
+            && address == *stored_address
+        {
+            return (data.clone(), Gas(0));
         }
         let mut req = Vec::with_capacity(20 + 8);
         req.extend(address);

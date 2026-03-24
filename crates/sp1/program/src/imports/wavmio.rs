@@ -180,5 +180,5 @@ fn greedy_resolve_typed_preimage_impl(
             hex::encode(hash)
         ));
     };
-    greedy_read(&preimage, &memory, offset, available, out_ptr)
+    greedy_read(preimage, &memory, offset, available, out_ptr)
 }

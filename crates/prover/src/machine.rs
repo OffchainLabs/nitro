@@ -3,6 +3,8 @@
 
 #[cfg(feature = "kzg")]
 use crate::kzg::prove_kzg_preimage;
+#[cfg(all(feature = "native", not(feature = "sp1")))]
+use crate::programs::meter::MeteredMachine;
 use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
@@ -19,8 +21,6 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-#[cfg(all(feature = "native", not(feature = "sp1")))]
-use crate::programs::meter::MeteredMachine;
 use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "kzg")]

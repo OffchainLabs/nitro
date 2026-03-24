@@ -556,7 +556,7 @@ type U256 = ruint2::Uint<256, 4>;
 
 fn read_u256(ptr: Ptr, memory: &MemoryView) -> Result<(U256, Bytes32), Escape> {
     let bytes = read_bytes32(ptr, memory)?;
-    Ok((bytes.clone().into(), bytes))
+    Ok((bytes.into(), bytes))
 }
 
 pub fn math_div(

@@ -41,14 +41,11 @@ fn main() {
                     let name_reader =
                         NameSectionReader::new(BinaryReader::new(s.data(), s.data_offset()));
                     for name in name_reader {
-                        match name.expect("name") {
-                            Name::Function(name_map) => {
-                                for naming in name_map {
-                                    let naming = naming.expect("naming");
-                                    name_mapping.insert(naming.index, naming.name.to_string());
-                                }
+                        if let Name::Function(name_map) = name.expect("name") {
+                            for naming in name_map {
+                                let naming = naming.expect("naming");
+                                name_mapping.insert(naming.index, naming.name.to_string());
                             }
-                            _ => (),
                         }
                     }
                 }
@@ -57,7 +54,7 @@ fn main() {
         }
 
         // names might be sparse, we need more processing work here.
-        let min_index = name_mapping.iter().map(|(index, _)| *index).min().unwrap();
+        let min_index = name_mapping.keys().copied().min().unwrap();
         let name_mapping: Vec<(usize, String)> = name_mapping
             .into_iter()
             .map(|(index, name)| ((index - min_index) as usize, name))

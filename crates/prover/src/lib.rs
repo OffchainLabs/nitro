@@ -26,22 +26,28 @@ mod test;
 
 pub use machine::Machine;
 
-use arbutil::{Bytes32, PreimageType};
+use arbutil::Bytes32;
+#[cfg(not(feature = "sp1"))]
+use arbutil::PreimageType;
+#[cfg(not(feature = "sp1"))]
 use eyre::{Report, Result};
 use lru::LruCache;
-use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
-    PreimageResolver,
-};
+use machine::MachineStatus;
+#[cfg(not(feature = "sp1"))]
+use machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, PreimageResolver};
 use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
+#[cfg(not(feature = "sp1"))]
 use std::{
     ffi::CStr,
-    marker::PhantomData,
-    num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
-    ptr, slice,
+    slice,
+};
+use std::{
+    marker::PhantomData,
+    num::NonZeroUsize,
+    ptr,
     sync::{
         atomic::{self, AtomicU8},
         Arc, Mutex,
