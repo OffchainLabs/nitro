@@ -460,6 +460,15 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 	return false, multigas.ZeroGas(), nil, nil
 }
 
+// GetPosterGas converts a poster's L1 calldata cost (in wei) into an equivalent
+// number of L2 gas units at the given gas price. This allows the 1-dimensional
+// gas model to account for L1 costs alongside L2 compute costs.
+//
+// During gas estimation, both the gas price and poster cost are adjusted
+// conservatively: the price is reduced to 7/8 of the current value (simulating
+// congestion) but floored at the minimum base fee, and the poster cost is padded
+// by GasEstimationL1PricePadding to guard against L1 gas price increases between
+// estimation and execution.
 func GetPosterGas(state *arbosState.ArbosState, gasPrice *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
 	if runCtx.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
