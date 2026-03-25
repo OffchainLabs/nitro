@@ -994,6 +994,15 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 			Require(t, err)
 		}
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
 	}
 
 	return func() {
@@ -1073,6 +1082,15 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
 	}
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
