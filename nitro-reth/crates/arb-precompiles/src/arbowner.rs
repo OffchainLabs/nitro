@@ -494,7 +494,23 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         _ => Err(PrecompileError::other("unknown ArbOwner selector")),
     };
     // OwnerPrecompile wrapper: all successful calls are free (gas_used = 0).
-    let result = result.map(|output| PrecompileOutput::new(0, output.bytes));
+    // Emit OwnerActs event on success. In Nitro, this is automatic for all
+    // owner-only calls. For ArbOS < 11: emit for ALL calls (read+write).
+    // For ArbOS >= 11: emit only for write calls (not read-only getters).
+    let result = result.map(|output| {
+        let arbos_version = crate::get_arbos_version();
+        let is_read_only = matches!(selector,
+            GET_NETWORK_FEE_ACCOUNT | GET_INFRA_FEE_ACCOUNT |
+            IS_CHAIN_OWNER | GET_ALL_CHAIN_OWNERS |
+            IS_TRANSACTION_FILTERER | GET_ALL_TRANSACTION_FILTERERS |
+            IS_NATIVE_TOKEN_OWNER | GET_ALL_NATIVE_TOKEN_OWNERS |
+            GET_FILTERED_FUNDS_RECIPIENT
+        );
+        if !is_read_only || arbos_version < 11 {
+            emit_owner_acts(&mut input, &selector, data);
+        }
+        PrecompileOutput::new(0, output.bytes)
+    });
     crate::gas_check(gas_limit, result)
 }
 
@@ -614,12 +630,8 @@ fn handle_schedule_upgrade(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let timestamp = U256::from_be_slice(&data[36..68]);
     sstore_field(input, root_slot(UPGRADE_VERSION_OFFSET), new_version)?;
     sstore_field(input, root_slot(UPGRADE_TIMESTAMP_OFFSET), timestamp)?;
-
-    // Emit OwnerActs(bytes4 method, address owner, bytes data)
-    emit_owner_acts(input, &SCHEDULE_ARBOS_UPGRADE, data);
-
     Ok(PrecompileOutput::new(
-        (2 * SSTORE_GAS + COPY_GAS + LOG_GAS).min(gas_limit),
+        (2 * SSTORE_GAS + COPY_GAS).min(gas_limit),
         Vec::new().into(),
     ))
 }
