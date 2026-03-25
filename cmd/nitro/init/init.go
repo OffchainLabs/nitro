@@ -776,7 +776,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
+			chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, &genesisBlockNr, config.Chain.InfoFiles, config.Chain.InfoJson)
 			if err != nil {
 				return nil, nil, nil, err
 			}

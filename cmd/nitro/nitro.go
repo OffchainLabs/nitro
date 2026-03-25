@@ -167,20 +167,16 @@ func mainImpl() int {
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
-	// By default both execution and consensus are run as part of same process
-	executionNodeEnabled := true
-	consensusNodeEnabled := true
+	executionNodeEnabled := false
+	consensusNodeEnabled := false
 
-	if !nodeConfig.Execution.RPCServer.Enable && !nodeConfig.Node.RPCServer.Enable {
+	if nodeConfig.Execution.RPCServer.Enable || nodeConfig.Node.RPCServer.Enable {
+		executionNodeEnabled = nodeConfig.Execution.RPCServer.Enable
+		consensusNodeEnabled = nodeConfig.Node.RPCServer.Enable
+	} else {
 		// same process: no RPC communication
 		// TODO: There should be a validation that in this scenario no RPC URL is set.
 		executionNodeEnabled = true
-		consensusNodeEnabled = true
-	}
-	if nodeConfig.Execution.RPCServer.Enable {
-		executionNodeEnabled = true
-	}
-	if nodeConfig.Node.RPCServer.Enable {
 		consensusNodeEnabled = true
 	}
 
@@ -588,7 +584,7 @@ func mainImpl() int {
 	if consensusNodeEnabled {
 		var chainConfig *params.ChainConfig
 		// TODO: First try to get chainConfig from consensusParsedInitMsg (needs https://github.com/OffchainLabs/nitro/pull/4395)
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, nodeConfig.Chain.GenesisBlockNum, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, nil, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
 		if err != nil {
 			log.Error("failed to get chainConfig for consensus node", "err", err)
 			return 1
@@ -743,14 +739,6 @@ func mainImpl() int {
 		}
 	}
 	if (executionNodeEnabled || consensusNodeEnabled) && err == nil {
-		if executionNodeEnabled && execNode == nil {
-			log.Error("execution node is enabled but execNode is nil")
-			return 1
-		}
-		if consensusNodeEnabled && consensusNode == nil {
-			log.Error("consensus node is enabled but consensusNode is nil")
-			return 1
-		}
 		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
 			log.Error("Error initializing and starting execution and consensus", "err", err)

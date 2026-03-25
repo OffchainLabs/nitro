@@ -37,13 +37,15 @@ type ChainInfo struct {
 	RollupAddresses        *RollupAddresses    `json:"rollup"`
 }
 
-func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
+func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum *uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
 	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, err
 	}
 	if chainInfo.ChainConfig != nil {
-		chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
+		if genesisBlockNum != nil {
+			chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = *genesisBlockNum
+		}
 		return chainInfo.ChainConfig, nil
 	}
 	if chainId.Uint64() != 0 {
