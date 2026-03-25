@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -68,7 +69,12 @@ func TestRecreateMissingStates(t *testing.T) {
 		Require(t, err)
 	}()
 
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
+	nodeConfig2 := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig2.MessageExtraction.Enable = true
+	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:  nodeConfig2,
+		stackConfig: builder.l2StackConfig,
+	})
 	defer cleanup()
 
 	currentBlock := uint64(0)

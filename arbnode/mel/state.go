@@ -52,34 +52,6 @@ type State struct {
 	msgPreimagesDest daprovider.PreimagesMap
 }
 
-// DelayedMessageDatabase can read delayed messages by their global index.
-type DelayedMessageDatabase interface {
-	ReadDelayedMessage(
-		ctx context.Context,
-		state *State,
-		index uint64,
-	) (*DelayedInboxMessage, error)
-}
-
-// Defines a basic interface for MEL, including saving states, messages,
-// and delayed messages to a database.
-type StateDatabase interface {
-	DelayedMessageDatabase
-	State(
-		ctx context.Context,
-		parentChainBlockNumber uint64,
-	) (*State, error)
-	SaveState(
-		ctx context.Context,
-		state *State,
-	) error
-	SaveDelayedMessages(
-		ctx context.Context,
-		state *State,
-		delayedMessages []*DelayedInboxMessage,
-	) error
-}
-
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
 type MessageConsumer interface {
 	PushMessages(

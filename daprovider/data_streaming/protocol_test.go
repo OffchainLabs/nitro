@@ -27,7 +27,7 @@ import (
 const (
 	maxPendingMessages      = 10
 	messageCollectionExpiry = 1 * time.Second
-	requestValidity         = 1 * time.Second
+	requestValidity         = 10 * time.Second
 	timeout                 = 10
 	serverRPCRoot           = "datastreaming"
 )
