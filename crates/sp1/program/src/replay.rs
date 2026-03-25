@@ -415,14 +415,13 @@ fn align_bytes(data: &[u8]) -> Bytes {
 }
 
 pub(crate) fn handle_result(result: Result<Box<[Value]>, RuntimeError>) -> ! {
-    match result {
-        Ok(value) => {
-            println!("Machine exited prematurely with: {:?}", value);
-            exit(0);
-        }
-        Err(e) => {
-            println!("Runtime error: {}", e);
-            exit(1);
-        }
+    let message = match result {
+        Ok(value) => format!("Machine exited prematurely with: {:?}", value),
+        Err(e) => format!("Runtime error: {}", e),
+    };
+
+    if !message.is_empty() {
+        println!("{message}");
     }
+    exit(1);
 }
