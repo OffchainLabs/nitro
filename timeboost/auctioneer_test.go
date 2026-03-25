@@ -111,7 +111,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	// We verify that the auctioneer has consumed all validated bids from the single Redis stream.
 	// We also verify the top two bids are those we expect.
 	am.bidCache.Lock()
-	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
+	require.Equal(t, 3, len(am.bidCache.bidsByBidder))
 	am.bidCache.Unlock()
 	result := am.bidCache.topTwoBids()
 	require.Equal(t, big.NewInt(7), result.firstPlace.Amount) // Best bid should be Charlie's last bid 7
@@ -204,7 +204,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 
 	// Verify first auctioneer state before restart
 	auctioneer.bidCache.Lock()
-	require.Equal(t, 3, len(auctioneer.bidCache.bidsByExpressLaneControllerAddr))
+	require.Equal(t, 3, len(auctioneer.bidCache.bidsByBidder))
 	auctioneer.bidCache.Unlock()
 
 	result := auctioneer.bidCache.topTwoBids()
@@ -239,7 +239,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 
 	// Verify new auctioneer state - Alice should still be winning with 20
 	newAuctioneer.bidCache.Lock()
-	bidCount := len(newAuctioneer.bidCache.bidsByExpressLaneControllerAddr)
+	bidCount := len(newAuctioneer.bidCache.bidsByBidder)
 	newAuctioneer.bidCache.Unlock()
 
 	// We expect either 2 or 3 bids in the cache, depending on whether the new auctioneer recovered
@@ -433,7 +433,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 
 	// Verify primary auctioneer state before failover
 	primary.bidCache.Lock()
-	require.Equal(t, 3, len(primary.bidCache.bidsByExpressLaneControllerAddr))
+	require.Equal(t, 3, len(primary.bidCache.bidsByBidder))
 	primary.bidCache.Unlock()
 
 	result := primary.bidCache.topTwoBids()
@@ -498,7 +498,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 
 	// Verify secondary auctioneer state - should have all bids including reprocessed ones
 	secondary.bidCache.Lock()
-	bidCount := len(secondary.bidCache.bidsByExpressLaneControllerAddr)
+	bidCount := len(secondary.bidCache.bidsByBidder)
 	secondary.bidCache.Unlock()
 
 	// We expect 3 bidders in the cache
@@ -517,9 +517,9 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 	// The key test: verify that the secondary processed all the messages
 	// including those that were unacked by the primary
 	secondary.bidCache.Lock()
-	aliceBids := secondary.bidCache.bidsByExpressLaneControllerAddr[aliceAddr]
-	bobBids := secondary.bidCache.bidsByExpressLaneControllerAddr[bobAddr]
-	charlieBids := secondary.bidCache.bidsByExpressLaneControllerAddr[charlieAddr]
+	aliceBids := secondary.bidCache.bidsByBidder[aliceAddr]
+	bobBids := secondary.bidCache.bidsByBidder[bobAddr]
+	charlieBids := secondary.bidCache.bidsByBidder[charlieAddr]
 	secondary.bidCache.Unlock()
 
 	require.NotNil(t, aliceBids, "Should have Alice's bids")

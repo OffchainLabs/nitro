@@ -11,20 +11,20 @@ import (
 type bidCache struct {
 	auctionContractDomainSeparator [32]byte
 	sync.RWMutex
-	bidsByExpressLaneControllerAddr map[common.Address]*ValidatedBid
+	bidsByBidder map[common.Address]*ValidatedBid
 }
 
 func newBidCache(auctionContractDomainSeparator [32]byte) *bidCache {
 	return &bidCache{
-		bidsByExpressLaneControllerAddr: make(map[common.Address]*ValidatedBid),
-		auctionContractDomainSeparator:  auctionContractDomainSeparator,
+		bidsByBidder:                   make(map[common.Address]*ValidatedBid),
+		auctionContractDomainSeparator: auctionContractDomainSeparator,
 	}
 }
 
 func (bc *bidCache) add(bid *ValidatedBid) {
 	bc.Lock()
 	defer bc.Unlock()
-	bc.bidsByExpressLaneControllerAddr[bid.ExpressLaneController] = bid
+	bc.bidsByBidder[bid.Bidder] = bid
 }
 
 // TwoTopBids returns the top two bids for the given chain ID and round
@@ -36,8 +36,7 @@ type auctionResult struct {
 func (bc *bidCache) size() int {
 	bc.RLock()
 	defer bc.RUnlock()
-	return len(bc.bidsByExpressLaneControllerAddr)
-
+	return len(bc.bidsByBidder)
 }
 
 // topTwoBids returns the top two bids in the cache.
@@ -47,7 +46,7 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 
 	result := &auctionResult{}
 
-	for _, bid := range bc.bidsByExpressLaneControllerAddr {
+	for _, bid := range bc.bidsByBidder {
 		if result.firstPlace == nil {
 			result.firstPlace = bid
 		} else if bid.Amount.Cmp(result.firstPlace.Amount) > 0 {
