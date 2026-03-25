@@ -1850,10 +1850,7 @@ func (s *Sequencer) StopAndWait() {
 	}
 }
 
-func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt []byte, hashes []common.Hash, digest string) {
+func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {
 	t.Helper()
-	if s.addressFilterService == nil {
-		t.Fatal("addressFilterService is nil")
-	}
-	s.addressFilterService.GetHashStore().Store(salt, hashes, digest)
+	s.addressFilterService = service
 }

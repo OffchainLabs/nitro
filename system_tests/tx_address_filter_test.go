@@ -543,18 +543,6 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
-	builder.execConfig.TransactionFiltering.AddressFilter = addressfilter.Config{
-		Enable: true,
-		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "test-key",
-		},
-		PollInterval:              5 * time.Minute,
-		CacheSize:                 100,
-		AddressCheckerWorkerCount: 1,
-		AddressCheckerQueueSize:   10,
-	}
 	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
 	builder.execConfig.SyncMonitor.MsgLag = time.Hour
 	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
@@ -578,6 +566,23 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 		t.Fatal("SyncMonitor.Synced should return true after pushing sync data")
 	}
 
+	// Create a filter service with enabled config but without loaded rules
+	filterCfg := &addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	Require(t, err)
+	execNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
 	// Filter service exists but rules haven't been loaded
 	if execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be false before filter rules are loaded")
@@ -588,7 +593,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	execNode.Sequencer.StoreFilterRulesForTest(t, []byte("test-salt"), nil, "test-digest")
+	filterService.GetHashStore().Store([]byte("test-salt"), nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
