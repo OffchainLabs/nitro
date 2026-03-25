@@ -58,8 +58,8 @@ func setupUnbalancedMultiGasConstraints(t *testing.T, builder *NodeBuilder) mult
 	builder.L2.AdvanceBlocks(t, 2, builder.L2Info)
 
 	baseFeeAfter := builder.L2.GetBaseFee(t)
-	t.Log("Base fee before: ", weiToGwei(baseFeeBefore))
-	t.Log("Base fee after:  ", weiToGwei(baseFeeAfter))
+	t.Log("Base fee before: ", floatmath.WeiToGwei(baseFeeBefore))
+	t.Log("Base fee after:  ", floatmath.WeiToGwei(baseFeeAfter))
 
 	return expensiveResourceKind
 }
@@ -528,10 +528,4 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	t.Logf("Final net fee balance:   %v Eth", floatmath.BalancePerEther(finalNetworkFeeBalance))
 	assert.True(t, finalUserBalance.Cmp(initialUserBalance) < 0, "user balance should decrease")
 	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) > 0, "network fee balance should increase")
-}
-
-// weiToGwei returns the gwei representation of the value.
-func weiToGwei(value *big.Int) float64 {
-	gwei, _ := new(big.Float).Quo(new(big.Float).SetInt(value), new(big.Float).SetFloat64(params.GWei)).Float64()
-	return gwei
 }

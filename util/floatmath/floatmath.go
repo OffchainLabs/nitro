@@ -25,3 +25,9 @@ func BalancePerEther(balance *big.Int) float64 {
 	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
 	return balancePerEther
 }
+
+// WeiToGwei returns the gwei representation of the value.
+func WeiToGwei(value *big.Int) float64 {
+	gwei, _ := new(big.Float).Quo(new(big.Float).SetInt(value), new(big.Float).SetFloat64(params.GWei)).Float64()
+	return gwei
+}
