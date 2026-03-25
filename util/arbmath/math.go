@@ -44,10 +44,6 @@ type Integer interface {
 	Signed | Unsigned
 }
 
-type Float interface {
-	~float32 | ~float64
-}
-
 // MinInt the minimum of two ints
 func MinInt[T Integer](value, ceiling T) T {
 	if value > ceiling {
