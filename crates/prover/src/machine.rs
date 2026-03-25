@@ -1,8 +1,10 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use crate::kzg::prove_kzg_preimage;
+#[cfg(all(feature = "native", not(feature = "sp1")))]
+use crate::programs::meter::MeteredMachine;
 use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
@@ -10,7 +12,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
+    programs::{config::CompileConfig, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -21,7 +23,7 @@ use crate::{
 };
 use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
@@ -1848,7 +1850,7 @@ impl Machine {
         self.get_final_result()
     }
 
-    #[cfg(feature = "native")]
+    #[cfg(all(feature = "native", not(feature = "sp1")))]
     pub fn call_user_func(
         &mut self,
         func: &str,
@@ -2527,6 +2529,7 @@ impl Machine {
                         self.print_backtrace(true);
                         bail!("missing requested preimage for hash {}", hash);
                     };
+                    #[cfg(feature = "kzg")]
                     if preimage_ty == PreimageType::EthVersionedHash
                         && preimage.len() != BYTES_PER_BLOB
                     {
@@ -3125,9 +3128,14 @@ impl Machine {
                                 // The proofs for these preimage types are just the raw preimages.
                                 data.extend(preimage);
                             }
+                            #[cfg(feature = "kzg")]
                             PreimageType::EthVersionedHash => {
                                 prove_kzg_preimage(hash, &preimage, offset, &mut data)
                                     .expect("Failed to generate KZG preimage proof");
+                            }
+                            #[cfg(not(feature = "kzg"))]
+                            PreimageType::EthVersionedHash => {
+                                panic!("KZG preimage proofs require the 'kzg' feature");
                             }
                             PreimageType::DACertificate => {
                                 // We do something special here; we don't create the final proof.

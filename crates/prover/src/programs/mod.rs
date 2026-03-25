@@ -4,15 +4,18 @@
 #[cfg(feature = "sp1")]
 use crate::value::MemoryType;
 #[cfg(not(feature = "sp1"))]
-use crate::{machine::Module, memory_type::MemoryType};
+use crate::{machine::Module, memory_type::MemoryType, programs::config::CompileConfig};
+#[cfg(not(feature = "sp1"))]
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
+#[cfg(not(feature = "sp1"))]
+use eyre::WrapErr;
 
 use crate::{
     binary::{ExportKind, WasmBinary},
-    programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
-use eyre::{bail, eyre, Report, Result, WrapErr};
+use arbutil::Color;
+use eyre::{bail, eyre, Report, Result};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
 use wasmer_types::{

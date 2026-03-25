@@ -10,7 +10,7 @@ fn main() {
     if target_arch.contains("wasm32") {
         println!("cargo:rustc-link-search=target/lib-wasm/");
     } else if target_arch.contains("riscv64") {
-        println!("cargo:rustc-link-search=../../target/lib-sp1/lib");
+        println!("cargo:rustc-link-search=target/lib-sp1/lib");
     } else {
         println!("cargo:rustc-link-search=target/lib/");
         println!("cargo:rustc-link-search=../../target/lib/");

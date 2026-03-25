@@ -39,7 +39,7 @@ sha2 = { workspace = true }
 sha3 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
 static_assertions = { workspace = true }
-structopt = { workspace = true }
+structopt = { workspace = true, optional = true }
 validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
@@ -63,16 +63,13 @@ name = "prover"
 crate-type = ["staticlib", "lib"]
 
 [features]
-default = ["native", "rayon", "singlepass_rayon"]
+default = ["native", "rayon", "singlepass_rayon", "kzg", "dep:structopt"]
 counters = []
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
+kzg = ["dep:c-kzg"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
 cc_brotli = ["brotli/cc_brotli"]
-
-# The "sp1" feature is never activated in this workspace. It exists only so that
-# `#[cfg(feature = "sp1")]` gates don't produce warnings. These gates are used
-# when sp1-crates/prover includes our source files via #[path] and compiles them
-# with its own "sp1" feature enabled (under wasmer 6.x / wasmparser 0.224).
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("sp1"))'] }
+# Activated by crates/sp1/program and crates/sp1/stylus-compiler-program
+# to gate SP1-specific code paths (middleware, depth checking, metering).
+sp1 = []

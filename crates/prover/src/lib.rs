@@ -6,7 +6,7 @@
 pub mod binary;
 mod host;
 pub(crate) mod internal_func;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
@@ -26,22 +26,28 @@ mod test;
 
 pub use machine::Machine;
 
-use arbutil::{Bytes32, PreimageType};
+use arbutil::Bytes32;
+#[cfg(not(feature = "sp1"))]
+use arbutil::PreimageType;
+#[cfg(not(feature = "sp1"))]
 use eyre::{Report, Result};
 use lru::LruCache;
-use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
-    PreimageResolver,
-};
+use machine::MachineStatus;
+#[cfg(not(feature = "sp1"))]
+use machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, PreimageResolver};
 use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
+#[cfg(not(feature = "sp1"))]
 use std::{
     ffi::CStr,
-    marker::PhantomData,
-    num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
-    ptr, slice,
+    slice,
+};
+use std::{
+    marker::PhantomData,
+    num::NonZeroUsize,
+    ptr,
     sync::{
         atomic::{self, AtomicU8},
         Arc, Mutex,
@@ -125,7 +131,7 @@ pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) {
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
@@ -140,6 +146,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
         })
 }
 
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
@@ -170,7 +177,7 @@ unsafe fn arbitrator_load_machine_impl(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
@@ -184,20 +191,23 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machine {
     Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
+#[cfg(not(feature = "sp1"))]
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
     CStr::from_ptr(c_str).to_string_lossy().into_owned()
 }
 
+#[cfg(not(feature = "sp1"))]
 pub fn err_to_c_string(err: Report) -> *mut libc::c_char {
     str_to_c_string(&format!("{err:?}"))
 }
 
 /// Copies the str-data into a libc free-able C string
+#[cfg(not(feature = "sp1"))]
 pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
     unsafe {
         let buf = libc::malloc(text.len() + 1); // includes null-terminating byte
@@ -211,13 +221,13 @@ pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
     drop(Box::from_raw(mach));
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine {
     let new_mach = (*mach).clone();
     Box::into_raw(Box::new(new_mach))
@@ -232,7 +242,7 @@ pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_step(
     mach: *mut Machine,
     num_steps: u64,
@@ -256,7 +266,7 @@ pub unsafe extern "C" fn arbitrator_step(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_add_inbox_message(
     mach: *mut Machine,
     inbox_identifier: u64,
@@ -276,7 +286,7 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 
 /// Adds a user program to the machine's known set of wasms.
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     module: *const u8,
@@ -290,7 +300,7 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
 /// Like arbitrator_step, but stops early if it hits a host io operation.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_step_until_host_io(
     mach: *mut Machine,
     condition: *const u8,
@@ -315,7 +325,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_serialize_state(
     mach: *const Machine,
     path: *const c_char,
@@ -334,7 +344,7 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     mach: *mut Machine,
     path: *const c_char,
@@ -353,7 +363,7 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
     (*mach).get_steps()
 }
@@ -383,19 +393,19 @@ const_assert_eq!(
 
 /// Returns one of ARBITRATOR_MACHINE_STATUS_*
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 {
     (*mach).get_status() as u8
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
     (*mach).get_global_state()
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
     (*mach).set_global_state(gs);
 }
@@ -406,7 +416,7 @@ pub struct ResolvedPreimage {
     pub len: isize, // negative if not found
 }
 
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 unsafe fn handle_preimage_resolution(
     context: u64,
     ty: PreimageType,
@@ -438,7 +448,7 @@ unsafe fn handle_preimage_resolution(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
@@ -463,25 +473,25 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
     (*mach).set_context(context);
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
     (*mach).hash()
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
     (*mach).get_modules_root()
 }
 
 #[no_mangle]
-#[cfg(feature = "native")]
+#[cfg(all(feature = "native", not(feature = "sp1")))]
 pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) {
     (*out).write((*mach).serialize_proof());
 }

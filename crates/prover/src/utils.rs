@@ -1,10 +1,10 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
 use arbutil::PreimageType;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::Blob;
 use digest::Digest;
 use eyre::{eyre, Result};
@@ -14,7 +14,9 @@ use sha3::Keccak256;
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{RefType, TableType};
 
-/// A Vec<u8> allocated with libc::malloc
+/// A Vec<u8> with manual allocation.
+/// On native builds, uses libc malloc/free for FFI compatibility.
+/// On SP1 (no libc), uses Rust's global allocator.
 pub struct CBytes {
     ptr: *mut u8,
     len: usize,
@@ -49,6 +51,7 @@ impl fmt::Debug for CBytes {
     }
 }
 
+#[cfg(not(feature = "sp1"))]
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
         if slice.is_empty() {
@@ -56,6 +59,27 @@ impl From<&[u8]> for CBytes {
         }
         unsafe {
             let ptr = libc::malloc(slice.len()) as *mut u8;
+            if ptr.is_null() {
+                panic!("Failed to allocate memory instantiating CBytes");
+            }
+            std::ptr::copy_nonoverlapping(slice.as_ptr(), ptr, slice.len());
+            Self {
+                ptr,
+                len: slice.len(),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sp1")]
+impl From<&[u8]> for CBytes {
+    fn from(slice: &[u8]) -> Self {
+        if slice.is_empty() {
+            return Self::default();
+        }
+        unsafe {
+            let layout = std::alloc::Layout::from_size_align(slice.len(), 1).unwrap();
+            let ptr = std::alloc::alloc(layout);
             if ptr.is_null() {
                 panic!("Failed to allocate memory instantiating CBytes");
             }
@@ -116,9 +140,26 @@ pub struct RemoteTableType {
     pub shared: bool,
 }
 
+#[cfg(not(feature = "sp1"))]
 impl Drop for CBytes {
     fn drop(&mut self) {
-        unsafe { libc::free(self.ptr as _) }
+        if !self.ptr.is_null() && self.len > 0 {
+            unsafe {
+                libc::free(self.ptr as *mut _);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "sp1")]
+impl Drop for CBytes {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() && self.len > 0 {
+            unsafe {
+                let layout = std::alloc::Layout::from_size_align(self.len, 1).unwrap();
+                std::alloc::dealloc(self.ptr, layout);
+            }
+        }
     }
 }
 
@@ -197,6 +238,7 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
         PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
         PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
+        #[cfg(feature = "kzg")]
         PreimageType::EthVersionedHash => {
             // TODO: really we should also accept what version it is,
             // but right now only one version is supported by this hash format anyways.
@@ -205,6 +247,10 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             let mut commitment_hash: [u8; 32] = Sha256::digest(*commitment.to_bytes()).into();
             commitment_hash[0] = 1;
             Ok(commitment_hash)
+        }
+        #[cfg(not(feature = "kzg"))]
+        PreimageType::EthVersionedHash => {
+            eyre::bail!("EthVersionedHash preimage hashing requires the 'kzg' feature");
         }
         PreimageType::DACertificate => {
             // There is no way for us to compute the hash of the preimage for DACertificate.
