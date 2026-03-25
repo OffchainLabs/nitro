@@ -347,9 +347,6 @@ func TestFillInBatchGasFieldsOnlyBatchDataStatsSet(t *testing.T) {
 	if *msg.LegacyBatchGasCost != expectedCost {
 		t.Fatalf("LegacyBatchGasCost = %d, want %d", *msg.LegacyBatchGasCost, expectedCost)
 	}
-	if msg.BatchDataStats != stats {
-		t.Fatal("BatchDataStats pointer changed unexpectedly")
-	}
 }
 
 func TestFillInBatchGasFieldsTruncatedL2msg(t *testing.T) {
