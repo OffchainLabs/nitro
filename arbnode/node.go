@@ -26,6 +26,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
@@ -773,36 +774,87 @@ func getInboxTrackerAndReader(
 	return inboxTracker, inboxReader, nil
 }
 
+func validateAndInitializeDBForMEL(
+	ctx context.Context,
+	l1client *ethclient.Client,
+	deployInfo *chaininfo.RollupAddresses,
+	consensusDB ethdb.Database,
+) error {
+	melDB := melrunner.NewDatabase(consensusDB)
+	_, err := melDB.GetHeadMelState()
+	if err != nil {
+		if !rawdb.IsDbErrNotFound(err) {
+			return err
+		}
+		// SequencerBatchCountKey shouldn't exist
+		hasSequencerBatchCountKey, err := consensusDB.Has(schema.SequencerBatchCountKey)
+		if err != nil {
+			return err
+		}
+		if hasSequencerBatchCountKey {
+			return errors.New("MEL being initialized when DB already has stale SequencerBatchCountKey from inbox reader")
+		}
+		// DelayedMessageCountKey shouldn't exist
+		hasDelayedMessageCountKey, err := consensusDB.Has(schema.DelayedMessageCountKey)
+		if err != nil {
+			return err
+		}
+		if hasDelayedMessageCountKey {
+			return errors.New("MEL being initialized when DB already has stale DelayedMessageCountKey from inbox reader")
+		}
+		// MessageCountKey should be zero (since TxStreamer initializes it to zero if it doesn't exist)
+		msgCount, err := read.Value[uint64](consensusDB, schema.MessageCountKey)
+		if err != nil {
+			return err
+		}
+		if msgCount != 0 {
+			return errors.New("MEL being initialized when DB already has stale msgs")
+		}
+		// Create Initial MEL state
+		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+		if err != nil {
+			return err
+		}
+		if err = melDB.SaveState(initialState); err != nil {
+			return fmt.Errorf("failed to save initial mel state: %w", err)
+		}
+	}
+	return nil
+}
+
 func getMessageExtractor(
 	ctx context.Context,
 	config *Config,
 	l2Config *params.ChainConfig,
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
-	arbDb ethdb.Database,
+	consensusDB ethdb.Database,
 	dapRegistry *daprovider.DAProviderRegistry,
 	sequencerInbox *SequencerInbox,
 	l1Reader *headerreader.HeaderReader,
 ) (*melrunner.MessageExtractor, error) {
 	if !config.MessageExtraction.Enable {
-		return nil, nil
-	}
-	melDB := melrunner.NewDatabase(arbDb)
-	if _, err := melDB.GetHeadMelState(ctx); err != nil {
-		initialState, err := createInitialMELState(ctx, deployInfo, l1client)
+		// Prevent database corruption. If HeadMelStateBlockNumKey exists,
+		// it indicates this node was previously run with Message Extraction (MEL) enabled.
+		// Switching back to the standard inbox reader/tracker is not allowed.
+		hasHeadMelStateBlockNumKey, err := consensusDB.Has(schema.HeadMelStateBlockNumKey)
 		if err != nil {
 			return nil, err
 		}
-		if err = melDB.SaveState(ctx, initialState); err != nil {
-			return nil, fmt.Errorf("failed to save initial mel state: %w", err)
+		if hasHeadMelStateBlockNumKey {
+			return nil, errors.New("node already has MEL related database entries and is trying to start inbox reader and tracker, not allowed")
 		}
+		return nil, nil
+	}
+	if err := validateAndInitializeDBForMEL(ctx, l1client, deployInfo, consensusDB); err != nil {
+		return nil, err
 	}
 	msgExtractor, err := melrunner.NewMessageExtractor(
 		config.MessageExtraction,
 		l1client,
 		l2Config,
 		deployInfo,
-		melDB,
+		melrunner.NewDatabase(consensusDB),
 		dapRegistry,
 		sequencerInbox,
 		l1Reader,
@@ -1061,8 +1113,7 @@ func getBatchPoster(
 	txOptsBatchPoster *bind.TransactOpts,
 	dapWriters []daprovider.Writer,
 	l1Reader *headerreader.HeaderReader,
-	inboxTracker *InboxTracker,
-	msgExtractor *melrunner.MessageExtractor,
+	batchMetaFetcher BatchMetadataFetcher,
 	txStreamer *TransactionStreamer,
 	arbOSVersionGetter execution.ArbOSVersionGetter,
 	consensusDB ethdb.Database,
@@ -1074,6 +1125,9 @@ func getBatchPoster(
 ) (*BatchPoster, error) {
 	var batchPoster *BatchPoster
 	if config.BatchPoster.Enable {
+		if batchMetaFetcher == nil {
+			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
+		}
 		if arbOSVersionGetter == nil {
 			return nil, errors.New("batch poster requires ArbOS version getter")
 		}
@@ -1083,14 +1137,6 @@ func getBatchPoster(
 		}
 		if len(dapWriters) > 0 && !config.BatchPoster.CheckBatchCorrectness {
 			return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
-		}
-		var batchMetaFetcher BatchMetadataFetcher
-		if inboxTracker != nil {
-			batchMetaFetcher = inboxTracker
-		} else if msgExtractor != nil {
-			batchMetaFetcher = msgExtractor
-		} else {
-			return nil, errors.New("batch poster requires either an inbox tracker or a message extractor")
 		}
 		var err error
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
@@ -1324,7 +1370,13 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, inboxTracker, messageExtractor, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	var batchMetaFetcher BatchMetadataFetcher
+	if inboxTracker != nil {
+		batchMetaFetcher = inboxTracker
+	} else if messageExtractor != nil {
+		batchMetaFetcher = messageExtractor
+	}
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1748,7 +1800,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}
@@ -1820,7 +1872,7 @@ func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) container
 	var found bool
 	var err error
 	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(n.ctx, msgIdx)
+		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
 	} else {
 		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
 	}

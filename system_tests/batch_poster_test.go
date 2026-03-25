@@ -144,6 +144,12 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -151,7 +157,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:         nil,
 				L1Reader:             builder.L2.ConsensusNode.L1Reader,
-				BatchMetadataFetcher: builder.L2.ConsensusNode.InboxTracker,
+				BatchMetadataFetcher: batchMetaFetcher,
 				Streamer:             builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter:        builder.L2.ExecNode,
 				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
@@ -284,7 +290,12 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-
+	var batchMetaFetcher arbnode.BatchMetadataFetcher
+	if builder.L2.ConsensusNode.InboxTracker != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
+	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
+		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
+	}
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -292,7 +303,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 			&arbnode.BatchPosterOpts{
 				DataPosterDB:         nil,
 				L1Reader:             builder.L2.ConsensusNode.L1Reader,
-				BatchMetadataFetcher: builder.L2.ConsensusNode.InboxTracker,
+				BatchMetadataFetcher: batchMetaFetcher,
 				Streamer:             builder.L2.ConsensusNode.TxStreamer,
 				VersionGetter:        builder.L2.ExecNode,
 				SyncMonitor:          builder.L2.ConsensusNode.SyncMonitor,
@@ -929,13 +940,37 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	require.NotZero(t, len(batches), "no batches found between L1 blocks %d and %d", l1HeightBeforeBatch, l1HeightAfterBatch)
 
+	// Make sure mel has read the batch that the node has posted
+	batchCount, err := seqInbox.GetBatchCount(ctx, new(big.Int).SetUint64(l1HeightAfterBatch))
+	Require(t, err)
+	var melBatchCount uint64
+	for range 10 {
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+		} else {
+			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		}
+		Require(t, err)
+		if melBatchCount == batchCount {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if melBatchCount != batchCount {
+		t.Fatalf("batch count from sequencer inbox: %d doesn't match with MEL: %d", batchCount, melBatchCount)
+	}
+
 	for _, batch := range batches {
 		sequenceNum := batch.SequenceNumber
 		// Wait for the inbox reader to catch up with this batch
 		var sequencerMessageBytes []byte
 		retryUntilFound(t, ctx, 30, 100*time.Millisecond, fmt.Sprintf("GetSequencerMessageBytes(seq %d)", sequenceNum), "not found in L1 block", func() error {
 			var getErr error
-			sequencerMessageBytes, _, getErr = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+			if builder.L2.ConsensusNode.MessageExtractor != nil {
+				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
+			} else {
+				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
+			}
 			return getErr
 		})
 

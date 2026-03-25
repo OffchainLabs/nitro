@@ -104,7 +104,7 @@ func TestMessageExtractor(t *testing.T) {
 			ParentChainBlockNumber: 1,
 			ParentChainBlockHash:   emptyblk0.Hash(),
 		}
-		require.NoError(t, melDB.SaveState(ctx, melState))
+		require.NoError(t, melDB.SaveState(melState))
 
 		parentChainReader.returnErr = errors.New("oops")
 		_, err := extractor.Act(ctx)
@@ -314,8 +314,8 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 		require.NoError(t, state.AccumulateDelayedMessage(delayedMsgs[i]))
 		state.DelayedMessagesSeen++
 	}
-	require.NoError(t, melDB.SaveState(ctx, state))
-	require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs))
+	require.NoError(t, melDB.SaveState(state))
+	require.NoError(t, melDB.SaveDelayedMessages(state, delayedMsgs))
 
 	t.Run("position below finalized count returns correct message and accumulator", func(t *testing.T) {
 		// finalizedPos at block 10 is 3, requesting position 1 (< 3) should succeed

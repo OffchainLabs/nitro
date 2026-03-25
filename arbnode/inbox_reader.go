@@ -712,7 +712,7 @@ func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 	return r.lastSeenBatchCount.Load()
 }
 
-func (r *InboxReader) GetMsgCount(_ context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetMsgCount() (arbutil.MessageIndex, error) {
 	batchProcessed := r.GetLastReadBatchCount()
 	if batchProcessed == 0 {
 		return 0, nil
