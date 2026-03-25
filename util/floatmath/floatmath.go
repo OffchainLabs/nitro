@@ -13,7 +13,7 @@ import (
 // FloatToBig casts a float to a huge
 // Returns nil when passed NaN or Infinity
 func FloatToBig(value float64) *big.Int {
-	if math.IsNaN(value) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return nil
 	}
 	result, _ := new(big.Float).SetFloat64(value).Int(nil)
