@@ -34,7 +34,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    1,
 		DelayedMessagesRead:    1,
 	}
-	require.NoError(t, melDB.SaveState(ctx, genesis))
+	require.NoError(t, melDB.SaveState(genesis))
 
 	numMelStates := 5
 	var delayedMsgs []*mel.DelayedInboxMessage
@@ -66,11 +66,11 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 			DelayedMessagesSeen:    head.DelayedMessagesSeen + 5,
 			DelayedMessagesRead:    1,
 		}
-		require.NoError(t, melDB.SaveDelayedMessages(ctx, state, delayedMsgs[(i)*5:(i+1)*5]))
-		require.NoError(t, melDB.SaveState(ctx, state))
+		require.NoError(t, melDB.SaveDelayedMessages(state, delayedMsgs[(i)*5:(i+1)*5]))
+		require.NoError(t, melDB.SaveState(state))
 		head = state
 	}
-	state, err := melDB.GetHeadMelState(ctx)
+	state, err := melDB.GetHeadMelState()
 	require.NoError(t, err)
 
 	require.True(t, state.DelayedMessagesSeen == uint64(numMelStates)*5+1) // #nosec G115
@@ -84,7 +84,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 
 	// Lets read the delayed messages and verify that they match with what we stored
 	for i, wantDelayed := range delayedMsgs {
-		haveDelayed, err := melDB.ReadDelayedMessage(ctx, state, uint64(i+1)) // #nosec G115
+		haveDelayed, err := melDB.ReadDelayedMessage(state, uint64(i+1)) // #nosec G115
 		require.NoError(t, err)
 		require.True(t, reflect.DeepEqual(haveDelayed, wantDelayed))
 	}
@@ -96,7 +96,7 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    7,
 	}
-	require.NoError(t, melDB.SaveState(ctx, state))
+	require.NoError(t, melDB.SaveState(state))
 
 	// Advance head state indicating that we have read 10 delayed messages
 	newHeadState := &mel.State{
@@ -105,10 +105,10 @@ func TestDelayedMessageBacklogInitialization(t *testing.T) {
 		DelayedMessagesSeen:    26,
 		DelayedMessagesRead:    13,
 	}
-	require.NoError(t, melDB.SaveState(ctx, newHeadState))
+	require.NoError(t, melDB.SaveState(newHeadState))
 	// We provide InitializeDelayedMessageBacklog the current finalized block as 7 and verify that the delayedMessageBacklog has
 	// delayedMessageBacklogEntry for indexes below the DelayedMessagesRead as those have not been finalized yet!
-	newState, err := melDB.GetHeadMelState(ctx)
+	newState, err := melDB.GetHeadMelState()
 	require.NoError(t, err)
 	newDelayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, func() (uint64, error) { return 0, nil })
 	require.NoError(t, err)
