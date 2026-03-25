@@ -4,6 +4,7 @@
 package programs
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -121,7 +122,10 @@ func (p Programs) Params() (*StylusParams, error) {
 	if p.ArbosVersion >= params.ArbosVersion_StylusActivationGas {
 		// Consume the 2 remaining bytes of slot 0 (alignment padding) before
 		// loading slot 1, where ActivationGas lives.
-		take(2)
+		padding := take(2)
+		if !bytes.Equal(padding, []byte{0, 0}) {
+			return nil, fmt.Errorf("expected 2 bytes of zero-padding before ActivationGas, got %x; state seems to be corrupted", padding)
+		}
 		stylusParams.ActivationGas = arbmath.BytesToUint(take(8))
 	}
 	return stylusParams, nil
