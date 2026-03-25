@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"sort"
 	"sync/atomic"
@@ -275,7 +274,6 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
-	parentChainID *big.Int,
 	syncTillBlock uint64,
 	seqParentChain *parent.ParentChain,
 ) (*ExecutionNode, error) {

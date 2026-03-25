@@ -126,11 +126,11 @@ type ethConfigEntry struct {
 // Start begins polling the parent chain's eth_config RPC.
 // ParentChain is shared between execution and consensus nodes when co-located,
 // so it may be Start()'d twice. We call StopWaiterSafe.Start() directly
-// (bypassing the panicking StopWaiter.Start()) and check for the specific
-// "start after start" error to handle double-start gracefully.
+// (bypassing the panicking StopWaiter.Start()) and check for
+// ErrAlreadyStarted to handle double-start gracefully.
 func (p *ParentChain) Start(ctxIn context.Context) {
 	if err := p.StopWaiterSafe.Start(ctxIn, p); err != nil {
-		if err.Error() == "start after start" && p.Started() {
+		if errors.Is(err, stopwaiter.ErrAlreadyStarted) && p.Started() {
 			log.Debug("ParentChain already started (shared between execution and consensus nodes)")
 			return
 		}

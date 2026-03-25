@@ -535,7 +535,6 @@ func mainImpl() int {
 			l2BlockChain,
 			l1Client,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			parentChainID,
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 			parentChain,
 		)
