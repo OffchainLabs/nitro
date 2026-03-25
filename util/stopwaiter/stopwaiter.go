@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -164,7 +165,7 @@ func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
 	s.wg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("Thread crashed", "name", name, "message", r)
+				log.Error("Thread crashed", "name", name, "message", r, "stack", string(debug.Stack()))
 			}
 		}()
 		foo(ctx)
@@ -282,13 +283,20 @@ func LaunchPromiseThread[T any](
 	innerCtx, cancel := context.WithCancel(ctx)
 	promise := containers.NewPromise[T](cancel)
 	err = s.LaunchThreadSafe(func(context.Context) { // we don't use the param's context
+		defer func() {
+			// Ensure the promise is always fulfilled even if foo panics.
+			// LaunchThreadSafe's recovery handles the panic logging.
+			if !promise.Ready() {
+				_ = promise.ProduceErrorSafe(errors.New("promise thread panicked or exited unexpectedly"))
+			}
+			cancel()
+		}()
 		val, err := foo(innerCtx)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
 			promise.Produce(val)
 		}
-		cancel()
 	})
 	if err != nil {
 		promise.ProduceError(err)

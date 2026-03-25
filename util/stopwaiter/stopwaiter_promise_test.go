@@ -100,6 +100,30 @@ func TestStopWaiterPromise(t *testing.T) {
 	}
 }
 
+func (c *ClassA) PanicFunc() containers.PromiseInterface[uint64] {
+	return LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
+		panic("intentional test panic")
+	})
+}
+
+func TestLaunchPromiseThreadPanicRecovery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	classA := &ClassA{}
+	classA.Start(ctx)
+	defer classA.StopAndWait()
+
+	promise := classA.PanicFunc()
+	_, err := promise.Await(ctx)
+	if err == nil {
+		t.Fatal("expected error from panicking promise thread")
+	}
+	if err.Error() != "promise thread panicked or exited unexpectedly" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)

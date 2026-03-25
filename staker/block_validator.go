@@ -451,12 +451,9 @@ func (v *BlockValidator) possiblyFatal(err error) {
 	if err == nil {
 		return
 	}
-	if errors.Is(err, context.Canceled) {
-		log.Trace("Validation context cancelled", "err", err)
-		return
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		log.Warn("Validation operation timed out", "err", err)
+	// Suppress context.Canceled errors during shutdown.
+	if ctx, ctxErr := v.GetContextSafe(); ctxErr == nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		log.Debug("Validation context cancelled", "err", err)
 		return
 	}
 	log.Error("Error during validation", "err", err)
@@ -746,8 +743,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
-		processed, processedErr := v.streamer.GetProcessedMessageCount()
-		log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
+		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+			log.Debug("context cancelled in createNextValidationEntry", "err", err)
+		} else {
+			processed, processedErr := v.streamer.GetProcessedMessageCount()
+			log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
+		}
 	}
 	if moreWork {
 		return 0
@@ -1081,19 +1082,17 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 // ctx.Err() != nil means the node is shutting down.
 func (v *BlockValidator) handleValidationResult(ctx context.Context, reorg *arbutil.MessageIndex, err error, label string) time.Duration {
 	if err != nil {
-		// Errors from advanceValidations/sendValidations are transient and
-		// retried on the next poll, so they are intentionally NOT sent to
-		// fatalErr. Only Reorg errors below go through possiblyFatal.
-		if errors.Is(err, context.Canceled) {
-			log.Trace("context cancelled in "+label, "err", err)
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			log.Warn("timeout in "+label, "err", err)
+		// These errors are transient and retried on the next poll.
+		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+			log.Debug("context cancelled during validation", "caller", label, "err", err)
 		} else {
-			log.Error("error in "+label, "err", err)
+			log.Error("error during validation", "caller", label, "err", err)
 		}
 	} else if reorg != nil {
-		if ctx.Err() != nil {
-			log.Trace("skipping reorg during shutdown", "reorg", *reorg, "ctxErr", ctx.Err())
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// Safe to skip: on restart the validator re-derives its position
+			// from the chain and will apply any needed reorg at that point.
+			log.Warn("skipping reorg during shutdown", "reorg", *reorg)
 			return v.config().ValidationPoll
 		}
 		if err := v.Reorg(ctx, *reorg); err != nil {
@@ -1257,10 +1256,12 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) error {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	// count == 0 would reorg out genesis itself, which is invalid.
 	// count == 1 is valid: it reorgs to keep only genesis (message index 0).
 	if count == 0 {
 		return errors.New("cannot reorg out genesis")
+	}
+	if count == 1 {
+		log.Warn("Reorg to genesis requested", "count", count)
 	}
 	if !v.chainCaughtUp {
 		return nil
