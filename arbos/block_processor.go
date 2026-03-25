@@ -22,6 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -592,9 +593,15 @@ func ProduceBlockAdvanced(
 			buildState.expectedBalanceDelta.Add(buildState.expectedBalanceDelta, txInner.DepositValue)
 		}
 
-		computeUsed := txGasUsed - dataGas
-		if txGasUsed < dataGas {
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-txGasUsed)
+		// Use the actual poster gas from the receipt (which accounts for tip collection)
+		// rather than the pre-tx estimate which always uses basefee.
+		posterGasUsed := dataGas
+		if arbosVersion >= params.ArbosVersion_60 {
+			posterGasUsed = receipt.GasUsedForL1
+		}
+		computeUsed := txGasUsed - posterGasUsed
+		if txGasUsed < posterGasUsed {
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", posterGasUsed-txGasUsed)
 			computeUsed = params.TxGas
 		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
@@ -701,6 +708,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
+		collectTips := false
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -709,6 +717,16 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			if err != nil {
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
+			}
+			collectTips, err = state.CollectTips()
+			if err != nil {
+				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+			// All transactions in a block share the same Coinbase, so this is a block-level property.
+			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+				collectTips = false
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()
@@ -722,6 +740,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
+			CollectTips:        collectTips,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)
