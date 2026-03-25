@@ -498,81 +498,74 @@ mod test {
     use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
     use std::path::Path;
 
-    fn parse(wat: &str) -> WasmBinary<'static> {
+    // Parse at the threshold version so multi-value is rejected by the validator.
+    fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
         let wasm: &'static [u8] = Box::leak(wat::parse_str(wat).unwrap().into_boxed_slice());
-        binary::parse(wasm, Path::new("test")).unwrap()
+        binary::parse_with_version(wasm, Path::new("test"), ARBOS_VERSION_STYLUS_NO_MULTI_VALUE)
     }
 
     #[test]
     fn test_no_multi_value() {
-        let bin = parse(
+        // Single-value wasm is accepted at and above the threshold.
+        assert!(parse_at_threshold(
             r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                 )
             )"#,
-        );
-        assert!(bin.check_no_multi_value().is_ok());
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_reject_multi_value_function() {
-        // Function type with two return values — caught by the types check.
-        let bin = parse(
+        // Function type with two return values.
+        assert!(parse_at_threshold(
             r#"(module
                 (func (result i32 i32)
                     i32.const 1
                     i32.const 2
                 )
             )"#,
-        );
-        let err = bin.check_no_multi_value().unwrap_err();
-        assert_eq!(err, "type 0 has 2 return values (λ() -> i32, i32)");
+        )
+        .is_err());
     }
 
     #[test]
     fn test_reject_multi_value_block() {
-        // (block (param i32) (result i32)) passes the i32 in from the outer stack.
+        // (block (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (block (result i32) local.get 0)
-        let bin = parse(
+        assert!(parse_at_threshold(
             r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (block (param i32) (result i32))
                 )
             )"#,
-        );
-        let err = bin.check_no_multi_value().unwrap_err();
-        assert_eq!(
-            err,
-            "function ? uses multi-value block with type 0 (λ(i32) -> i32)"
-        );
+        )
+        .is_err());
     }
 
     #[test]
     fn test_reject_multi_value_loop() {
-        // (loop (param i32) (result i32)) passes the i32 in as the loop's initial param.
+        // (loop (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (loop  local.get 0  ...)  with value produced inside.
-        let bin = parse(
+        assert!(parse_at_threshold(
             r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (loop (param i32) (result i32))
                 )
             )"#,
-        );
-        let err = bin.check_no_multi_value().unwrap_err();
-        assert_eq!(
-            err,
-            "function ? uses multi-value loop with type 0 (λ(i32) -> i32)"
-        );
+        )
+        .is_err());
     }
 
     #[test]
     fn test_reject_multi_value_if() {
-        // (if (param i32) (result i32)) sits under the condition on the stack.
+        // (if (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (if (result i32) (then local.get 0) (else i32.const 0))
-        let bin = parse(
+        assert!(parse_at_threshold(
             r#"(module
                 (func (param i32 i32) (result i32)
                     local.get 0
@@ -583,12 +576,8 @@ mod test {
                     )
                 )
             )"#,
-        );
-        let err = bin.check_no_multi_value().unwrap_err();
-        assert_eq!(
-            err,
-            "function ? uses multi-value if with type 1 (λ(i32) -> i32)"
-        );
+        )
+        .is_err());
     }
 
     // A minimal valid Stylus wasm that contains a multi-value function type.
@@ -626,12 +615,8 @@ mod test {
 
     #[test]
     fn test_activate_rejects_multi_value_at_threshold() {
-        // At the threshold version the gate fires and multi-value is rejected.
-        let err = activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).unwrap_err();
-        assert!(
-            format!("{err:?}").contains("multi-value wasm not supported"),
-            "unexpected error: {err:?}"
-        );
+        // At the threshold version the validator rejects multi-value wasm.
+        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).is_err());
     }
 
     #[test]

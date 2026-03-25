@@ -26,9 +26,8 @@ use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    BinaryReader, BlockType, Data, Element, ExternalKind, Imports, MemoryType, Name,
-    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator,
-    WasmFeatures,
+    BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
+    Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -307,12 +306,23 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
+    parse_with_version(input, path, 0)
+}
+
+pub fn parse_with_version<'a>(
+    input: &'a [u8],
+    path: &'_ Path,
+    arbos_version: u64,
+) -> Result<WasmBinary<'a>> {
     let mut features = WasmFeatures::empty();
     features.set(WasmFeatures::MUTABLE_GLOBAL, true);
     features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
     features.set(WasmFeatures::SIGN_EXTENSION, true);
     features.set(WasmFeatures::REFERENCE_TYPES, false);
-    features.set(WasmFeatures::MULTI_VALUE, true);
+    features.set(
+        WasmFeatures::MULTI_VALUE,
+        arbos_version < ARBOS_VERSION_STYLUS_NO_MULTI_VALUE,
+    );
     features.set(WasmFeatures::BULK_MEMORY, true); // not all ops supported yet
     features.set(WasmFeatures::SIMD, false);
     features.set(WasmFeatures::RELAXED_SIMD, false);
@@ -649,65 +659,6 @@ impl<'a> WasmBinary<'a> {
         })
     }
 
-    /// Checks that a wasm binary does not use the multi-value extension.
-    ///
-    /// Returns `Ok(())` if no multi-value usage is found, or `Err` with a human-readable
-    /// description of the first offending construct found.
-    ///
-    /// Multi-value usage includes:
-    /// - function types with more than one return value
-    /// - block/loop/if instructions using `BlockType::FuncType`, i.e. referencing the type
-    ///   section — this is rejected unconditionally because it enables block parameters
-    pub fn check_no_multi_value(&self) -> Result<(), String> {
-        for (idx, ty) in self.types.iter().enumerate() {
-            if ty.outputs.len() > 1 {
-                return Err(format!(
-                    "type {idx} has {} return values ({ty})",
-                    ty.outputs.len()
-                ));
-            }
-        }
-
-        for (local_idx, code) in self.codes.iter().enumerate() {
-            for op in &code.expr {
-                let blockty = match op {
-                    Operator::Block {
-                        blockty: BlockType::FuncType(ty),
-                    } => Some(("block", ty)),
-                    Operator::Loop {
-                        blockty: BlockType::FuncType(ty),
-                    } => Some(("loop", ty)),
-                    Operator::If {
-                        blockty: BlockType::FuncType(ty),
-                    } => Some(("if", ty)),
-                    _ => None,
-                };
-                if let Some((kind, ty_idx)) = blockty {
-                    let import_count = self.imports.len() as u32;
-                    let func_idx = import_count + local_idx as u32;
-                    let name = self
-                        .names
-                        .functions
-                        .get(&func_idx)
-                        .map(String::as_str)
-                        .unwrap_or("?");
-                    let ty = self
-                        .types
-                        .get(*ty_idx as usize)
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| {
-                            format!("function with out-of-bounds type index {ty_idx}")
-                        });
-                    return Err(format!(
-                        "function {name} uses multi-value {kind} with type {ty_idx} ({ty})"
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
@@ -716,13 +667,7 @@ impl<'a> WasmBinary<'a> {
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse(wasm, Path::new("user"))?;
-
-        if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_NO_MULTI_VALUE {
-            if let Err(msg) = bin.check_no_multi_value() {
-                bail!("multi-value wasm not supported: {msg}");
-            }
-        }
+        let mut bin = parse_with_version(wasm, Path::new("user"), arbos_version_for_activation)?;
 
         let stylus_data = bin.instrument(compile, codehash)?;
 
