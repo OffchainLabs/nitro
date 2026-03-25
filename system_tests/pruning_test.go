@@ -113,7 +113,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false)
+		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, builder.nodeConfig.MessageExtraction.Enable)
 		Require(t, err)
 
 		for _, key := range testKeys {

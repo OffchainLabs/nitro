@@ -116,6 +116,11 @@ func (con ArbOwnerPublic) GetParentGasFloorPerToken(c ctx, evm mech) (uint64, er
 	return c.State.L1PricingState().ParentGasFloorPerToken()
 }
 
+// GetCollectTips returns whether tip collection is enabled.
+func (con ArbOwnerPublic) GetCollectTips(c ctx, evm mech) (bool, error) {
+	return c.State.CollectTips()
+}
+
 func (con ArbOwnerPublic) GetMaxStylusContractFragments(c ctx, evm mech) (uint8, error) {
 	params, err := c.State.Programs().Params()
 	if err != nil {
