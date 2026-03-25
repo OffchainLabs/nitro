@@ -358,7 +358,7 @@ func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes type
 }
 
 func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
-	if c.addressChecker == nil {
+	if c.addressChecker == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
 	statedb, err := c.bc.StateAt(header.Root)

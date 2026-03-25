@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -77,6 +78,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
+	execConfigB.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessAlwaysCompatible
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
