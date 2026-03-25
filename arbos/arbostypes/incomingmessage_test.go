@@ -349,6 +349,77 @@ func TestFillInBatchGasFieldsOnlyBatchDataStatsSet(t *testing.T) {
 	}
 }
 
+func TestFillInBatchGasFieldsPopulatesFields(t *testing.T) {
+	// FillInBatchGasFields with a real fetcher must populate both
+	// BatchDataStats and LegacyBatchGasCost, and must pass
+	// msg.Header.BlockNumber as the parentChainBlockNumber to the
+	// underlying FallibleBatchFetcherWithParentBlock.
+	batchData := []byte("test batch data direct")
+	var batchNum uint64 = 3
+	var blockNumber uint64 = 42
+
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind:        L1MessageType_BatchPostingReport,
+			BlockNumber: blockNumber,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	fetcher := func(num uint64) ([]byte, error) {
+		if num != batchNum {
+			t.Fatalf("fetcher called with unexpected batch number %d, want %d", num, batchNum)
+		}
+		return batchData, nil
+	}
+	if err := msg.FillInBatchGasFields(fetcher); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg.BatchDataStats == nil {
+		t.Fatal("expected BatchDataStats to be populated")
+	}
+	if msg.LegacyBatchGasCost == nil {
+		t.Fatal("expected LegacyBatchGasCost to be populated")
+	}
+	expectedStats := GetDataStats(batchData)
+	if msg.BatchDataStats.Length != expectedStats.Length || msg.BatchDataStats.NonZeros != expectedStats.NonZeros {
+		t.Fatalf("BatchDataStats mismatch: got %+v, want %+v", msg.BatchDataStats, expectedStats)
+	}
+	expectedCost := LegacyCostForStats(expectedStats)
+	if *msg.LegacyBatchGasCost != expectedCost {
+		t.Fatalf("LegacyBatchGasCost = %d, want %d", *msg.LegacyBatchGasCost, expectedCost)
+	}
+}
+
+func TestFillInBatchGasFieldsPassesBlockNumber(t *testing.T) {
+	// FillInBatchGasFields must pass msg.Header.BlockNumber as the
+	// parentChainBlockNumber to the wrapped fetcher.
+	batchData := []byte("block number test data")
+	var batchNum uint64 = 1
+	var blockNumber uint64 = 777
+
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind:        L1MessageType_BatchPostingReport,
+			BlockNumber: blockNumber,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	// Use FillInBatchGasFieldsWithParentBlock with a wrapper that records
+	// the parentChainBlockNumber, to verify that FillInBatchGasFields
+	// passes msg.Header.BlockNumber correctly.
+	var parentBlockSeen uint64
+	wrappedFetcher := func(num uint64, parentBlock uint64) ([]byte, error) {
+		parentBlockSeen = parentBlock
+		return batchData, nil
+	}
+	if err := msg.FillInBatchGasFieldsWithParentBlock(wrappedFetcher, blockNumber); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parentBlockSeen != blockNumber {
+		t.Fatalf("fetcher received parentChainBlockNumber %d, want %d", parentBlockSeen, blockNumber)
+	}
+}
+
 func TestFillInBatchGasFieldsTruncatedL2msg(t *testing.T) {
 	// A BatchPostingReport with a truncated L2msg (too short to parse)
 	// must return a parse error, not panic.
