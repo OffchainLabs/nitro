@@ -20,38 +20,6 @@ func FloatToBig(value float64) *big.Int {
 	return result
 }
 
-// UintToBigFloat casts a uint to a big float
-func UintToBigFloat(value uint64) *big.Float {
-	return new(big.Float).SetPrec(53).SetUint64(value)
-}
-
-// UfracToBigFloat casts a rational to a big float
-func UfracToBigFloat(numerator, denominator uint64) *big.Float {
-	float := new(big.Float)
-	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
-	return float
-}
-
-// BigAddFloat add two big floats together
-func BigAddFloat(augend, addend *big.Float) *big.Float {
-	return new(big.Float).Add(augend, addend)
-}
-
-// BigMulFloat multiply a big float by another
-func BigMulFloat(multiplicand, multiplier *big.Float) *big.Float {
-	return new(big.Float).Mul(multiplicand, multiplier)
-}
-
-// BigFloatMulByUint multiply a big float by an unsigned integer
-func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
-	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
-}
-
-// SquareFloat returns square of float
-func SquareFloat(value float64) float64 {
-	return value * value
-}
-
 // BalancePerEther returns balance per ether.
 func BalancePerEther(balance *big.Int) float64 {
 	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
