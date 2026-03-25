@@ -48,12 +48,6 @@ type Float interface {
 	~float32 | ~float64
 }
 
-// Number is anything that implements operators such as `<`, `+` and `/`.
-// Unfortunately, that doesn't include big ints.
-type Number interface {
-	Integer | Float
-}
-
 // MinInt the minimum of two ints
 func MinInt[T Integer](value, ceiling T) T {
 	if value > ceiling {
