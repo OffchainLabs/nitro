@@ -660,6 +660,13 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	return nil
 }
 
+// SetCollectTips enables or disables tip collection.
+// When enabled, transaction tips are collected by the network fee account.
+// When disabled (default), tips are dropped.
+func (con ArbOwner) SetCollectTips(c ctx, evm mech, collectTips bool) error {
+	return c.State.SetCollectTips(collectTips)
+}
+
 func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint8) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
