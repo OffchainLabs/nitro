@@ -1694,6 +1694,7 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment()
+	builder.nodeConfig.MessageExtraction.Enable = false
 
 	for _, opt := range builderOpts {
 		opt(builder)
@@ -2825,11 +2826,15 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	blockNumberFailedTx := receipt.BlockNumber
 
 	wasmModuleRoot := currentRootModule(t)
-	_, _, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
-		ctx,
-		arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
-		false,
-		wasmModuleRoot,
-	)
-	Require(t, err)
+	// Retry ValidateResult because the batch may not yet be confirmed on L1
+	// ("batch not found on L1 yet").
+	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidateResult", "batch not found on L1", func() error {
+		_, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+			ctx,
+			arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
+			false,
+			wasmModuleRoot,
+		)
+		return err
+	})
 }

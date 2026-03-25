@@ -44,7 +44,9 @@ func TestSequencerParallelNonces(t *testing.T) {
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
 				t.Log("Submitting transaction with nonce", tx.Nonce())
 				err := builder.L2.Client.SendTransaction(ctx, tx)
-				Require(t, err)
+				if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
+					return
+				}
 				t.Log("Got response for transaction with nonce", tx.Nonce())
 			}
 		}()
@@ -104,7 +106,9 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 		go func() {
 			err := builder.L2.Client.SendTransaction(ctx, tx)
 			if err == nil {
-				Fatal(t, "No error when nonce was too high")
+				t.Errorf("No error when nonce was too high")
+				cancel()
+				return
 			}
 			completed.Add(1)
 		}()
