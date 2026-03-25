@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -271,8 +272,10 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	s.LaunchThread(func(ctx context.Context) {
 		defer func() { s.done <- struct{}{} }()
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil && ctx.Err() == nil {
-			s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
+			if ctx.Err() == nil {
+				s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
+			}
 		} else {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		}
@@ -316,7 +319,7 @@ func (s *BlocksReExecutor) Start(ctx context.Context) {
 		// lowestBlockNotReExecuted represents the block after which either all the blocks have already been reexecuted or not in scope of reexecution
 		lowestBlockNotReExecuted := s.blocks[0][1] + 1
 		for _, blocks := range s.blocks {
-			if s.fatalReported.Load() {
+			if s.fatalReported.Load() || ctx.Err() != nil {
 				break
 			}
 			if lowestBlockNotReExecuted > blocks[0] {
@@ -397,7 +400,20 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}
 	for ctx.Err() == nil {
 		var receipts types.Receipts
-		state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		// Recover from panics in AdvanceStateByBlock caused by trie-cache
+		// eviction races: one goroutine dereferences a root (dropping its
+		// refcount to zero and allowing eviction) while another goroutine
+		// is still traversing shared nodes under a different root.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("panic during block re-execution", "block", blockToRecreate, "recover", r, "stack", string(debug.Stack()))
+					state = nil
+					err = fmt.Errorf("panic during block re-execution at block %d: %v", blockToRecreate, r)
+				}
+			}()
+			state, block, receipts, err = arbitrum.AdvanceStateByBlock(ctx, s.blockchain, state, blockToRecreate, prevHash, nil, vmConfig)
+		}()
 		if err != nil {
 			return err
 		}
