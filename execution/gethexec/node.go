@@ -288,7 +288,7 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -312,9 +312,24 @@ func CreateExecutionNode(
 		log.Warn("sequencer enabled without l1 client")
 	}
 
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
+	if err != nil {
+		return nil, err
+	}
+	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create address filter service: %w", err)
+	}
+
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		if config.TransactionFiltering.TransactionFiltererRPCClient.URL != "" {
+			filtererConfigFetcher := func() *rpcclient.ClientConfig {
+				return &configFetcher.Get().TransactionFiltering.TransactionFiltererRPCClient
+			}
+			execEngine.SetTransactionFiltererRPCClient(NewTransactionFiltererRPCClient(filtererConfigFetcher))
+		}
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID, eventFilter, addressFilterService)
 		if err != nil {
 			return nil, err
 		}
@@ -328,15 +343,6 @@ func CreateExecutionNode(
 			targets := append([]string{config.forwardingTarget}, config.SecondaryForwardingTarget...)
 			txPublisher = NewForwarder(targets, &config.Forwarder)
 		}
-	}
-
-	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
-	if err != nil {
-		return nil, err
-	}
-	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create address filter service: %w", err)
 	}
 
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
@@ -483,8 +489,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 	if n.addressFilterService != nil {
-		err = n.addressFilterService.Initialize(ctx)
-		if err != nil {
+		if err := n.addressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing address filter service: %w", err)
 		}
 	}
@@ -524,6 +529,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	if n.addressFilterService != nil {
 		n.addressFilterService.Start(ctx)
+		n.ExecEngine.SetAddressChecker(n.addressFilterService.GetAddressChecker())
 	}
 	return nil
 }

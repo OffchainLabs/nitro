@@ -543,7 +543,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
-	builder.execConfig.Sequencer.TransactionFiltering.AddressFilter = addressfilter.Config{
+	builder.execConfig.TransactionFiltering.AddressFilter = addressfilter.Config{
 		Enable: true,
 		S3: s3syncer.Config{
 			Config:    s3client.Config{Region: "us-east-1"},

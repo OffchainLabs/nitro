@@ -143,7 +143,7 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	err = transactionFiltererStack.Start()
 	require.NoError(t, err)
 
-	builder.execConfig.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
 	return transactionFiltererStack, transactionFiltererAPI
 }
@@ -371,7 +371,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Even though the transaction will touch a filtered address,
 	// the sequencer will process the delayed msg, since this config is set to true.
-	builder.execConfig.Sequencer.TransactionFiltering.DisableDelayedSequencingFilter = true
+	builder.execConfig.TransactionFiltering.DisableDelayedSequencingFilter = true
 
 	// Create accounts
 	builder.L2Info.GenerateAccount("FilteredUser")
