@@ -214,7 +214,7 @@ func createNodeBWithSharedContracts(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), big.NewInt(1337), 0, parentChain)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
