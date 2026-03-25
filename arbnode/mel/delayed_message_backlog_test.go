@@ -3,7 +3,6 @@
 package mel
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
@@ -20,24 +19,30 @@ func TestDelayedMessageBacklog(t *testing.T) {
 	}
 	backlog.CommitDirties()
 	require.True(t, backlog.dirtiesStartPos == 2)
-	// Add dirties and verify that calling a clone would remove them
+	// Add dirties and verify that calling a clone returns a new struct without dirty entries,
+	// leaving the original unchanged.
 	for i := uint64(2); i < 5; i++ {
 		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
 	}
-	backlog.clone() // should remove all the dirties from entries list
-	require.True(t, len(backlog.entries) == 2)
+	cloneEarly := backlog.clone() // should return new struct with only committed entries
+	require.True(t, len(cloneEarly.entries) == 2)
+	require.True(t, len(backlog.entries) == 5) // original is unchanged
 	numEntries := uint64(25)
-	for i := uint64(2); i < numEntries; i++ {
+	for i := uint64(5); i < numEntries; i++ { // continue from 5 since 2,3,4 are still in backlog
 		require.NoError(t, backlog.Add(&DelayedMessageBacklogEntry{Index: i}))
 	}
 	backlog.CommitDirties()
 	// #nosec G115
 	require.True(t, uint64(backlog.dirtiesStartPos) == numEntries)
 
-	// Test that clone works
+	// Test that clone works - compare comparable fields (finalizedAndReadIndexFetcher is a func and cannot be compared with reflect.DeepEqual)
 	cloned := backlog.clone()
-	if !reflect.DeepEqual(backlog, cloned) {
-		t.Fatal("cloned doesnt match original")
+	require.Equal(t, cloned.targetBufferSize, backlog.targetBufferSize)
+	require.Equal(t, cloned.dirtiesStartPos, backlog.dirtiesStartPos)
+	require.Equal(t, cloned.initMessage, backlog.initMessage)
+	require.Equal(t, len(cloned.entries), len(backlog.entries))
+	for i, entry := range cloned.entries {
+		require.Equal(t, entry, backlog.entries[i])
 	}
 
 	// Test failures with Get

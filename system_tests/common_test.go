@@ -401,6 +401,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	if withL1 {
 		b.isSequencer = true
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
+		b.nodeConfig.MessageExtraction.Enable = true
 	} else {
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
@@ -565,6 +566,26 @@ func (b *NodeBuilder) WithTakeOwnership(takeOwnership bool) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
+	t.Helper()
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		count, err := tc.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		if count > 0 {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatal("timed out waiting for MEL to read init message")
+		}
+	}
+}
+
 func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
 	if b.execConfig == nil {
 		panic("execConfig must be initialised before setting event filter rules")
@@ -586,9 +607,11 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 		if b.withReferenceDAProvider {
 			b.setupReferenceDAServer(t)
 		}
-		return b.BuildL2OnL1(t)
+		cleanup := b.BuildL2OnL1(t)
+		return cleanup
 	}
-	return b.BuildL2(t)
+	cleanup := b.BuildL2(t)
+	return cleanup
 }
 
 type testCollection struct {
@@ -718,6 +741,9 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		} else {
 			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
+	}
+	if b.nodeConfig.BlockValidator.Enable {
+		b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
 	}
 }
 
@@ -932,6 +958,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.TrieNoAsyncFlush,
 	)
 
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
+
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
 		// Sync the Owner nonce tracker with the actual on-chain state.
@@ -960,6 +990,15 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
 			Require(t, err)
 			tx, err = arbowner.SetGasPricingConstraints(&debugAuth, [][3]uint64{{30_000_000, 102, 800_000}, {15_000_000, 600, 1_600_000}})
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
 			Require(t, err)
 			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 			Require(t, err)
@@ -1043,12 +1082,24 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
+
+		if b.chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_60 {
+			arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("70"), b.L2.Client)
+			Require(t, err)
+			tx, err = arbowner.SetCollectTips(&debugAuth, true)
+			Require(t, err)
+			_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
+			Require(t, err)
+		}
 	}
 
 	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
 
 	b.L2.ExecNode = execNode
 	b.L2.cleanup = cleanup
+	if b.nodeConfig.MessageExtraction.Enable {
+		b.waitForMelToReadInitMsg(t, b.L2)
+	}
 	return func() {
 		if b.WithPrestateTracerChecks {
 			AutomatedPrestateTracerTest(t, b.L2)
@@ -2185,6 +2236,8 @@ func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFun
 	}
 	if ctx.Err() == nil {
 		t.Errorf(format, args...)
+	} else {
+		t.Logf("[suppressed] "+format, args...)
 	}
 	cancel()
 	return true
