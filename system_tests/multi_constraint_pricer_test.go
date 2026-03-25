@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 )
 
 // Set multigas constraints where one of the resources is more expensive than the others. Set a long
@@ -515,16 +516,16 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		expectedFee := arbmath.BigAdd(arbmath.BigAdd(singleGasFee, remainingGasFee), totalTipFee)
 
 		assert.Equal(t, expectedFee.Uint64(), new(big.Int).Abs(userBalanceDiff).Uint64())
-		t.Logf("Sent transaction %v with cost %0.9f Ether", i, arbmath.BalancePerEther(expectedFee))
+		t.Logf("Sent transaction %v with cost %0.9f Ether", i, floatmath.BalancePerEther(expectedFee))
 	}
 
 	// Check final user balance
 	finalUserBalance := builder.L2.GetBalance(t, userAddr)
 	finalNetworkFeeBalance := builder.L2.GetBalance(t, networkFeeAddr)
-	t.Logf("Initial user balance:    %v Eth", arbmath.BalancePerEther(initialUserBalance))
-	t.Logf("Final user balance:      %v Eth", arbmath.BalancePerEther(finalUserBalance))
-	t.Logf("Initial net-fee balance: %v Eth", arbmath.BalancePerEther(initialNetworkFeeBalance))
-	t.Logf("Final net fee balance:   %v Eth", arbmath.BalancePerEther(finalNetworkFeeBalance))
+	t.Logf("Initial user balance:    %v Eth", floatmath.BalancePerEther(initialUserBalance))
+	t.Logf("Final user balance:      %v Eth", floatmath.BalancePerEther(finalUserBalance))
+	t.Logf("Initial net-fee balance: %v Eth", floatmath.BalancePerEther(initialNetworkFeeBalance))
+	t.Logf("Final net fee balance:   %v Eth", floatmath.BalancePerEther(finalNetworkFeeBalance))
 	assert.True(t, finalUserBalance.Cmp(initialUserBalance) < 0, "user balance should decrease")
 	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) > 0, "network fee balance should increase")
 }
