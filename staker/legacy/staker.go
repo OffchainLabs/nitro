@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -590,7 +590,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			} else {
-				validatorGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
+				validatorGasRefunderBalance.Update(floatmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		err = s.updateBlockValidatorModuleRoot(ctx)
@@ -1264,5 +1264,5 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 		log.Warn("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
-	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+	stakerBalanceGauge.Update(floatmath.BalancePerEther(balance))
 }
