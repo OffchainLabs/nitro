@@ -2911,7 +2911,7 @@ func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1I
 		default:
 			time.Sleep(delay)
 			if ctx.Err() != nil {
-				break
+				return
 			}
 			to := l1Info.GetAddress("Faucet")
 			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)

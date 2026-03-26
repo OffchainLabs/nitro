@@ -162,9 +162,24 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 		return nil
 	}
 	if resp.Current.ChainId == nil {
-		log.Warn("eth_config response missing chainId, cannot validate against expected chain", "expectedChainID", p.ChainID)
+		return fmt.Errorf("eth_config response missing chainId, cannot validate against expected chain %s", p.ChainID)
 	} else if resp.Current.ChainId.ToInt().Cmp(p.ChainID) != 0 {
 		return fmt.Errorf("chain ID mismatch: expected %s, got %s", p.ChainID, resp.Current.ChainId.ToInt())
+	}
+
+	if resp.Next != nil {
+		if resp.Next.ChainId == nil {
+			return fmt.Errorf("eth_config next entry missing chainId, cannot validate against expected chain %s", p.ChainID)
+		} else if resp.Next.ChainId.ToInt().Cmp(p.ChainID) != 0 {
+			return fmt.Errorf("next config chain ID mismatch: expected %s, got %s", p.ChainID, resp.Next.ChainId.ToInt())
+		}
+		if resp.Next.BlobSchedule == nil {
+			log.Warn("eth_config next entry has nil BlobSchedule", "chainID", p.ChainID)
+		}
+		if resp.Next.ActivationTime == 0 {
+			log.Warn("eth_config next entry has zero ActivationTime, ignoring", "chainID", p.ChainID)
+			resp.Next = nil
+		}
 	}
 
 	p.cachedEthConfig.Store(&resp)
