@@ -1,16 +1,15 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "sp1")]
-use crate::value::MemoryType;
 #[cfg(not(feature = "sp1"))]
-use crate::{machine::Module, memory_type::MemoryType, programs::config::CompileConfig};
+use crate::{machine::Module, programs::config::CompileConfig};
 #[cfg(not(feature = "sp1"))]
 use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
 #[cfg(not(feature = "sp1"))]
 use eyre::WrapErr;
 
 use crate::{
+    memory_type::MemoryType,
     binary::{ExportKind, WasmBinary},
     value::{FunctionType as ArbFunctionType, Value},
 };

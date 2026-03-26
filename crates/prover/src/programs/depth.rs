@@ -9,10 +9,6 @@ use super::{
 use crate::Machine;
 
 use crate::value::FunctionType;
-#[cfg(feature = "sp1")]
-use crate::value::InternalFunc;
-
-#[cfg(not(feature = "sp1"))]
 use crate::internal_func::InternalFunc;
 
 use arbutil::Color;
