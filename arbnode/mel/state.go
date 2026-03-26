@@ -177,7 +177,10 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	s.delayedMsgPreimages.Add(newAcc, preimage)
 	// Also record to the delayed msg validation preimage map if in recording mode
 	if s.delayedMsgPreimagesDest != nil {
-		keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+		keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+		if !ok {
+			return errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
+		}
 		keccakMap[newAcc] = preimage
 		keccakMap[msgHash] = msgBytes
 	}
@@ -232,7 +235,10 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		s.DelayedMessageOutboxAcc = newAcc
 		s.delayedMsgPreimages.Add(newAcc, preimage)
 		if s.delayedMsgPreimagesDest != nil {
-			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+			keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+			if !ok {
+				return errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
+			}
 			keccakMap[newAcc] = preimage
 		}
 		curr = prevAcc
@@ -349,20 +355,23 @@ func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 // toward end (exclusive) with the given step (+1 or -1). Each message hash is
 // accumulated onto a running hash (starting from zero). Preimages are stored in
 // the LRU cache and optionally the validation preimage map.
-func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, msgBytesArr [][]byte) common.Hash {
+func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, msgBytesArr [][]byte) (common.Hash, error) {
 	acc := common.Hash{}
 	for i := start; i != end; i += step {
 		preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
 		newAcc := crypto.Keccak256Hash(preimage)
 		s.delayedMsgPreimages.Add(newAcc, preimage)
 		if s.delayedMsgPreimagesDest != nil {
-			keccakMap := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+			keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
+			if !ok {
+				return common.Hash{}, errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
+			}
 			keccakMap[newAcc] = preimage
 			keccakMap[msgHashes[i]] = msgBytesArr[i]
 		}
 		acc = newAcc
 	}
-	return acc
+	return acc, nil
 }
 
 // RebuildDelayedMsgPreimages reconstructs the in-memory preimage cache from
@@ -396,7 +405,10 @@ func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*
 	}
 	// Rebuild outbox chain: messages [0..pivot) in reverse order (pivot-1, pivot-2, ..., 0)
 	if pivot > 0 {
-		acc := s.buildHashChain(pivot-1, -1, -1, msgHashes, msgBytesArr)
+		acc, err := s.buildHashChain(pivot-1, -1, -1, msgHashes, msgBytesArr)
+		if err != nil {
+			return fmt.Errorf("error building outbox hash chain: %w", err)
+		}
 		if acc != s.DelayedMessageOutboxAcc {
 			return fmt.Errorf("outbox accumulator mismatch after rebuild: got %s, want %s", acc.Hex(), s.DelayedMessageOutboxAcc.Hex())
 		}
@@ -405,7 +417,10 @@ func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*
 	// #nosec G115
 	if pivot < int(totalUnread) {
 		// #nosec G115
-		acc := s.buildHashChain(pivot, int(totalUnread), 1, msgHashes, msgBytesArr)
+		acc, err := s.buildHashChain(pivot, int(totalUnread), 1, msgHashes, msgBytesArr)
+		if err != nil {
+			return fmt.Errorf("error building inbox hash chain: %w", err)
+		}
 		if acc != s.DelayedMessageInboxAcc {
 			return fmt.Errorf("inbox accumulator mismatch after rebuild: got %s, want %s", acc.Hex(), s.DelayedMessageInboxAcc.Hex())
 		}
