@@ -21,6 +21,7 @@ use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
     ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
 };
+use reth_chain_state::CanonicalInMemoryState;
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
     components::{ComponentsBuilder, ConsensusBuilder, ExecutorBuilder},
@@ -36,9 +37,13 @@ use reth_storage_api::{BlockWriter, CanonChainTracker, DBProvider, EthStorage};
 use arb_evm::ArbEvmConfig;
 
 use crate::{
-    addons::ArbPayloadValidatorBuilder, args::RollupArgs, consensus::ArbConsensus,
-    network::ArbNetworkBuilder, payload::ArbPayloadServiceBuilder, pool::ArbPoolBuilder,
-    producer::ArbBlockProducer,
+    addons::ArbPayloadValidatorBuilder,
+    args::RollupArgs,
+    consensus::ArbConsensus,
+    network::ArbNetworkBuilder,
+    payload::ArbPayloadServiceBuilder,
+    pool::ArbPoolBuilder,
+    producer::{ArbBlockProducer, InMemoryStateAccess},
 };
 
 /// Arbitrum RPC add-ons type alias.
@@ -105,7 +110,8 @@ where
             > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
                             + reth_storage_api::TrieWriter
                             + DBProvider,
-        > + CanonChainTracker<Header = Header>,
+        > + CanonChainTracker<Header = Header>
+        + InMemoryStateAccess<Primitives = ArbPrimitives>,
 {
     type ComponentsBuilder = ComponentsBuilder<
         N,
@@ -166,6 +172,7 @@ where
                       + BlockReaderIdExt
                       + HeaderProvider
                       + StateProviderFactory
+                      + InMemoryStateAccess<Primitives = ArbPrimitives>
                       + DatabaseProviderFactory<
             ProviderRW: BlockWriter<
                 Block = alloy_consensus::Block<ArbTransactionSigned>,
@@ -180,51 +187,41 @@ where
     let arb_api = ArbApiHandler::new(ctx.provider().clone());
     ctx.modules.merge_configured(arb_api.into_rpc())?;
 
-    // Create the block producer with a persistence closure.
     let chain_spec: Arc<ChainSpec> = ctx.config().chain.clone();
     let evm_config = ArbEvmConfig::new(chain_spec.clone());
+
+    // Get the in-memory state handle from the provider (BlockchainProvider).
+    let in_memory_state: CanonicalInMemoryState<ArbPrimitives> =
+        ctx.provider().canonical_in_memory_state();
+
+    // Batch persist closure: writes multiple ExecutedBlocks in one DB transaction.
     let persist_provider = ctx.provider().clone();
-    let persist_fn =
-        move |sealed: &reth_primitives_traits::SealedBlock<
-            alloy_consensus::Block<ArbTransactionSigned>,
-        >,
-              receipts: Vec<arb_primitives::ArbReceipt>,
-              bundle_state: revm::database::BundleState,
-              hashed_state: reth_trie_common::HashedPostState,
-              trie_updates: reth_trie_common::updates::TrieUpdates| {
-            use alloy_consensus::BlockHeader;
-            use alloy_evm::block::BlockExecutionResult;
-            use reth_execution_types::BlockExecutionOutput;
-            use reth_primitives_traits::RecoveredBlock;
-            use reth_storage_api::{StateWriter, TrieWriter};
+    let batch_persist_fn = move |blocks: &[reth_chain_state::ExecutedBlock<ArbPrimitives>]| {
+        use alloy_consensus::BlockHeader;
+        use reth_storage_api::{StateWriter, TrieWriter, WriteStateInput};
 
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        let provider_rw = persist_provider
+            .database_provider_rw()
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+
+        for block in blocks {
+            let sealed = block.recovered_block().sealed_block();
             let block_number = sealed.header().number();
-            let recovered = RecoveredBlock::new_sealed(sealed.clone(), vec![]);
 
-            let provider_rw = persist_provider
-                .database_provider_rw()
-                .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
-
-            // Write the block (header, body, senders).
+            // Write block (header, body, senders).
             provider_rw
-                .insert_block(&recovered)
+                .insert_block(block.recovered_block())
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
-            // Write state changes and receipts to plain state tables.
-            let exec_output = BlockExecutionOutput {
-                state: bundle_state,
-                result: BlockExecutionResult {
-                    receipts,
-                    requests: Default::default(),
-                    gas_used: sealed.header().gas_used(),
-                    blob_gas_used: 0,
-                },
-            };
-
+            // Write state changes and receipts.
             provider_rw
                 .write_state(
-                    reth_storage_api::WriteStateInput::Single {
-                        outcome: &exec_output,
+                    WriteStateInput::Single {
+                        outcome: block.execution_outcome(),
                         block: block_number,
                     },
                     revm_database::OriginalValuesKnown::No,
@@ -232,28 +229,37 @@ where
                 )
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
-            // Write hashed state (HashedAccounts, HashedStorages tables).
-            // Required for state_by_block_hash() to see updated state.
+            // Write hashed state and trie updates.
+            let trie_data = block.trie_data();
             provider_rw
-                .write_hashed_state(&hashed_state.into_sorted())
-                .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
-
-            // Write trie intermediate nodes for incremental trie updates.
-            provider_rw
-                .write_trie_updates(trie_updates)
+                .write_hashed_state(&trie_data.hashed_state)
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
             provider_rw
-                .commit()
+                .write_trie_updates_sorted(&trie_data.trie_updates)
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
+        }
 
-            // Update the in-memory canonical head so header lookups find the new block.
-            let sealed_header =
-                reth_primitives_traits::SealedHeader::new(sealed.header().clone(), sealed.hash());
-            persist_provider.set_canonical_head(sealed_header);
+        // Single commit for all blocks.
+        provider_rw
+            .commit()
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
-            Ok(())
-        };
+        // Update canonical head to the last flushed block.
+        let last = blocks.last().unwrap();
+        let sealed = last.recovered_block().sealed_block();
+        let sealed_header =
+            reth_primitives_traits::SealedHeader::new(sealed.header().clone(), sealed.hash());
+        persist_provider.set_canonical_head(sealed_header);
+
+        Ok(())
+    };
+
+    // Buffer threshold from env or default.
+    let buffer_threshold = std::env::var("ARB_BLOCK_BUFFER_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(producer::DEFAULT_BUFFER_THRESHOLD);
 
     // Genesis block number: read from chain spec genesis header.
     // 0 for Arbitrum Sepolia, 22207817 for Arbitrum One.
@@ -263,11 +269,12 @@ where
         ctx.provider().clone(),
         chain_spec,
         evm_config,
-        persist_fn,
+        in_memory_state,
+        batch_persist_fn,
+        buffer_threshold,
     ));
 
     // Register the nitroexecution namespace on both the regular RPC and auth endpoints.
-    // The consensus layer connects to the auth RPC port with JWT authentication.
     let nitro_exec =
         NitroExecutionHandler::new(ctx.provider().clone(), block_producer, genesis_block_num);
     let nitro_rpc = nitro_exec.into_rpc();

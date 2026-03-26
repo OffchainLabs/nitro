@@ -3,13 +3,16 @@
 //! Produces blocks from L1 incoming messages by parsing transactions,
 //! executing them against the current state, and persisting the results.
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use alloy_consensus::{
     proofs, transaction::SignerRecoverable, Block, BlockBody, BlockHeader, Header, TxReceipt,
     EMPTY_OMMER_ROOT_HASH,
 };
-use alloy_eips::eip2718::Decodable2718;
+use alloy_eips::{eip2718::Decodable2718, BlockNumHash};
 use alloy_evm::{
     block::{BlockExecutor, BlockExecutorFactory},
     EvmFactory,
@@ -17,19 +20,20 @@ use alloy_evm::{
 use alloy_primitives::{Address, Bytes, B256, B64, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use parking_lot::Mutex;
+use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
-use reth_primitives_traits::{logs_bloom, SealedHeader};
+use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::StateProvider;
-use reth_trie_common::{updates::TrieUpdates, HashedPostState};
+use reth_trie_common::HashedPostState;
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
 
 use arb_evm::config::{arbos_version_from_mix_hash, ArbEvmConfig};
-use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
+use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
 };
@@ -42,37 +46,47 @@ use arbos::{
 
 use crate::genesis;
 
-/// Type-erased block persister.
+/// Trait to access the in-memory canonical state from a provider.
 ///
-/// Wraps the concrete persistence operations so the block producer
-/// does not need to carry `DatabaseProviderFactory` and `CanonChainTracker`
-/// trait bounds, which cannot be threaded through reth's node builder
-/// without modifying upstream traits.
-pub(crate) struct ErasedPersister {
-    /// Persist a sealed block with execution output to the database.
-    persist_fn: Box<
-        dyn Fn(
-                &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
-                Vec<arb_primitives::ArbReceipt>,
-                BundleState,
-                HashedPostState,
-                TrieUpdates,
-            ) -> Result<(), BlockProducerError>
-            + Send
-            + Sync,
+/// `BlockchainProvider` has `canonical_in_memory_state()` as an inherent method
+/// but it's not exposed via any reth trait. This trait bridges that gap so
+/// the block producer can receive the handle generically.
+pub trait InMemoryStateAccess {
+    type Primitives: NodePrimitives;
+    fn canonical_in_memory_state(&self) -> CanonicalInMemoryState<Self::Primitives>;
+}
+
+/// Type-erased batch persister.
+///
+/// Writes a batch of `ExecutedBlock`s to the database in a single transaction,
+/// amortizing fsync overhead across many blocks.
+pub(crate) struct ErasedBatchPersister {
+    batch_persist_fn: Box<
+        dyn Fn(&[ExecutedBlock<ArbPrimitives>]) -> Result<(), BlockProducerError> + Send + Sync,
     >,
 }
 
-impl ErasedPersister {
-    fn persist(
+impl ErasedBatchPersister {
+    fn batch_persist(
         &self,
-        sealed: &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
-        receipts: Vec<arb_primitives::ArbReceipt>,
-        bundle_state: BundleState,
-        hashed_state: HashedPostState,
-        trie_updates: TrieUpdates,
+        blocks: &[ExecutedBlock<ArbPrimitives>],
     ) -> Result<(), BlockProducerError> {
-        (self.persist_fn)(sealed, receipts, bundle_state, hashed_state, trie_updates)
+        (self.batch_persist_fn)(blocks)
+    }
+}
+
+/// Default number of blocks to buffer in memory before flushing to DB.
+pub const DEFAULT_BUFFER_THRESHOLD: u64 = 128;
+
+/// Implement `InMemoryStateAccess` for reth's `BlockchainProvider`.
+impl<N> InMemoryStateAccess for reth_provider::providers::BlockchainProvider<N>
+where
+    N: reth_provider::providers::ProviderNodeTypes,
+{
+    type Primitives = N::Primitives;
+    fn canonical_in_memory_state(&self) -> CanonicalInMemoryState<Self::Primitives> {
+        // Delegates to BlockchainProvider's inherent method.
+        self.canonical_in_memory_state()
     }
 }
 
@@ -81,41 +95,48 @@ pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     chain_spec: Arc<ChainSpec>,
     evm_config: ArbEvmConfig,
-    persister: ErasedPersister,
+    batch_persister: ErasedBatchPersister,
+    in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
+    /// Current head block number (updated atomically per block).
+    head_block_num: AtomicU64,
+    /// Number of blocks buffered since last flush.
+    blocks_since_flush: AtomicU64,
+    /// How many blocks to buffer before flushing.
+    buffer_threshold: u64,
     /// Mutex to serialize block production.
     produce_lock: Mutex<()>,
     /// Cached Init message params, applied during the first block's execution.
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
 
-impl<Provider> ArbBlockProducer<Provider> {
-    /// Create a new block producer.
-    ///
-    /// The `persist_fn` closure handles writing blocks and state to the database.
-    /// It captures the concrete provider type so the producer itself
-    /// does not need `DatabaseProviderFactory` bounds.
+impl<Provider> ArbBlockProducer<Provider>
+where
+    Provider: BlockNumReader,
+{
+    /// Create a new block producer with in-memory buffering.
     pub fn new(
         provider: Provider,
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
-        persist_fn: impl Fn(
-                &reth_primitives_traits::SealedBlock<Block<ArbTransactionSigned>>,
-                Vec<arb_primitives::ArbReceipt>,
-                BundleState,
-                HashedPostState,
-                TrieUpdates,
-            ) -> Result<(), BlockProducerError>
+        in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
+        batch_persist_fn: impl Fn(&[ExecutedBlock<ArbPrimitives>]) -> Result<(), BlockProducerError>
             + Send
             + Sync
             + 'static,
+        buffer_threshold: u64,
     ) -> Self {
+        let head = provider.last_block_number().unwrap_or(0);
         Self {
             provider,
             chain_spec,
             evm_config,
-            persister: ErasedPersister {
-                persist_fn: Box::new(persist_fn),
+            batch_persister: ErasedBatchPersister {
+                batch_persist_fn: Box::new(batch_persist_fn),
             },
+            in_memory_state,
+            head_block_num: AtomicU64::new(head),
+            blocks_since_flush: AtomicU64::new(0),
+            buffer_threshold,
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -132,11 +153,16 @@ where
         + Sync
         + 'static,
 {
-    /// Get the current head block number.
+    /// Get the current head block number (includes in-memory buffered blocks).
     fn head_block_number(&self) -> Result<u64, BlockProducerError> {
-        self.provider
-            .last_block_number()
-            .map_err(|e| BlockProducerError::StateAccess(e.to_string()))
+        let head = self.head_block_num.load(Ordering::SeqCst);
+        if head > 0 {
+            Ok(head)
+        } else {
+            self.provider
+                .last_block_number()
+                .map_err(|e| BlockProducerError::StateAccess(e.to_string()))
+        }
     }
 
     /// Get the parent sealed header for block production.
@@ -711,9 +737,47 @@ where
         let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
         let block_hash = sealed.hash();
 
-        // Persist block, receipts, state changes, hashed state, and trie updates.
-        self.persister
-            .persist(&sealed, receipts, bundle, hashed_state, trie_updates)?;
+        // Buffer block in memory instead of persisting immediately.
+        // This avoids a per-block fsync, batching writes for much higher throughput.
+        {
+            use alloy_evm::block::BlockExecutionResult;
+            use reth_chain_state::ComputedTrieData;
+            use reth_execution_types::BlockExecutionOutput;
+            use reth_primitives_traits::RecoveredBlock;
+
+            let recovered = Arc::new(RecoveredBlock::new_sealed(sealed.clone(), vec![]));
+            let exec_output = Arc::new(BlockExecutionOutput {
+                state: bundle,
+                result: BlockExecutionResult {
+                    receipts,
+                    requests: Default::default(),
+                    gas_used: gas_used as u64,
+                    blob_gas_used: 0,
+                },
+            });
+            let computed = ComputedTrieData {
+                hashed_state: Arc::new(hashed_state.into_sorted()),
+                trie_updates: Arc::new(trie_updates.into_sorted()),
+                anchored_trie_input: None,
+            };
+            let executed = ExecutedBlock::new(recovered, exec_output, computed);
+
+            self.in_memory_state
+                .update_chain(NewCanonicalChain::Commit {
+                    new: vec![executed],
+                });
+
+            let sealed_header = SealedHeader::new(sealed.header().clone(), sealed.hash());
+            self.in_memory_state.set_canonical_head(sealed_header);
+        }
+
+        self.head_block_num.store(l2_block_number, Ordering::SeqCst);
+        let buffered = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Flush to DB when buffer threshold is reached.
+        if buffered >= self.buffer_threshold {
+            self.flush_to_db()?;
+        }
 
         info!(
             target: "block_producer",
@@ -723,6 +787,7 @@ where
             ?state_root,
             num_txs = sealed.body().transactions.len(),
             gas_used,
+            buffered,
             "Produced block"
         );
 
@@ -730,6 +795,44 @@ where
             block_hash,
             send_root,
         })
+    }
+
+    /// Flush all in-memory buffered blocks to the database in a single transaction.
+    fn flush_to_db(&self) -> Result<(), BlockProducerError> {
+        // Collect in-memory blocks in ascending order.
+        let mut blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
+        if let Some(head_state) = self.in_memory_state.head_state() {
+            // chain() yields newest→oldest, so we reverse for ascending order.
+            for block_state in head_state.chain() {
+                blocks.push(block_state.block().clone());
+            }
+        }
+        blocks.reverse();
+
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        let count = blocks.len();
+        let last = blocks.last().unwrap();
+        let last_num_hash = BlockNumHash::new(
+            last.recovered_block().number(),
+            last.recovered_block().hash(),
+        );
+
+        self.batch_persister.batch_persist(&blocks)?;
+
+        // Remove persisted blocks from in-memory state.
+        self.in_memory_state.remove_persisted_blocks(last_num_hash);
+        self.blocks_since_flush.store(0, Ordering::SeqCst);
+
+        info!(
+            target: "block_producer",
+            flushed = count,
+            last_block = last_num_hash.number,
+            "Flushed buffered blocks to DB"
+        );
+        Ok(())
     }
 
     /// Produce a minimal block for messages with no transactions.
