@@ -87,6 +87,9 @@ func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 
 // ActivationGas returns the constant gas charge burned at the start of each Stylus activation.
 func (p Programs) ActivationGas() (uint64, error) {
+	if p.ArbosVersion < gethParams.ArbosVersion_StylusActivationGas {
+		return 0, nil
+	}
 	return p.activationGas.Get()
 }
 
