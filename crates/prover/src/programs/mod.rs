@@ -9,8 +9,8 @@ use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Byt
 use eyre::WrapErr;
 
 use crate::{
-    memory_type::MemoryType,
     binary::{ExportKind, WasmBinary},
+    memory_type::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;

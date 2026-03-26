@@ -1,17 +1,28 @@
+#![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
+
 use arbutil::{Bytes32, PreimageType};
-use eyre::{
-    Report,
-    Result
-};
+use eyre::{Report, Result};
 use lru::LruCache;
 use once_cell::sync::OnceCell;
-use prover::{machine::{get_empty_preimage_resolver, GlobalState}, utils, utils::CBytes, CByteArray, Machine, ResolvedPreimage, RustBytes};
-use std::{ffi::CStr, num::NonZeroUsize, os::raw::c_char, path::Path, ptr, slice, sync::{Arc, Mutex}};
+use prover::machine::{argument_data_to_inbox, MachineStatus, PreimageResolver};
+use prover::{
+    machine::{get_empty_preimage_resolver, GlobalState},
+    utils,
+    utils::CBytes,
+    CByteArray, Machine, ResolvedPreimage, RustBytes,
+};
+use static_assertions::const_assert_eq;
 use std::os::raw::c_int;
 use std::sync::atomic;
 use std::sync::atomic::AtomicU8;
-use static_assertions::const_assert_eq;
-use prover::machine::{argument_data_to_inbox, MachineStatus, PreimageResolver};
+use std::{
+    ffi::CStr,
+    num::NonZeroUsize,
+    os::raw::c_char,
+    path::Path,
+    ptr, slice,
+    sync::{Arc, Mutex},
+};
 
 lazy_static::lazy_static! {
     static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));

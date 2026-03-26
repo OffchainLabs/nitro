@@ -26,10 +26,7 @@ mod test;
 
 pub use machine::Machine;
 
-use std::{
-    marker::PhantomData,
-    ptr,
-};
+use std::{marker::PhantomData, ptr};
 
 #[repr(C)]
 #[derive(Clone, Copy)]

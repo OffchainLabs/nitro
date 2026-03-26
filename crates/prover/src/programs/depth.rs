@@ -8,8 +8,8 @@ use super::{
 #[cfg(not(feature = "sp1"))]
 use crate::Machine;
 
-use crate::value::FunctionType;
 use crate::internal_func::InternalFunc;
+use crate::value::FunctionType;
 
 use arbutil::Color;
 use eyre::{bail, Result};
