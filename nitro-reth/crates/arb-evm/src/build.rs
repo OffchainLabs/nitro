@@ -1726,6 +1726,7 @@ where
         };
 
         // Manual balance and nonce validation for user txs.
+        // ContractTx (0x66) and RetryTx (0x68) skip nonce checks in Nitro.
         if is_user_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let account = db
@@ -1735,12 +1736,15 @@ where
             let sender_balance = account.as_ref().map(|a| a.balance).unwrap_or(U256::ZERO);
             let sender_nonce = account.as_ref().map(|a| a.nonce).unwrap_or(0);
 
-            let tx_nonce = revm::context_interface::Transaction::nonce(&tx_env);
-            if tx_nonce != sender_nonce {
-                rollback_pre_exec_state(self, calldata_units);
-                return Err(BlockExecutionError::msg(format!(
-                    "nonce mismatch: address {sender} tx nonce {tx_nonce} != state nonce {sender_nonce}"
-                )));
+            // Nonce check: ContractTx skips (Nitro: skipNonceChecks=true).
+            if !is_contract_tx {
+                let tx_nonce = revm::context_interface::Transaction::nonce(&tx_env);
+                if tx_nonce != sender_nonce {
+                    rollback_pre_exec_state(self, calldata_units);
+                    return Err(BlockExecutionError::msg(format!(
+                        "nonce mismatch: address {sender} tx nonce {tx_nonce} != state nonce {sender_nonce}"
+                    )));
+                }
             }
 
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
