@@ -23,6 +23,8 @@ func NewMessageReader(preimageResolver PreimageResolver) *MessageReader {
 	return &MessageReader{preimageResolver}
 }
 
+// Read will be only able to fetch L2 message extracted in the given mel state and is part of the LocalMsgAccumulator, if the msgIndex
+// corresponds to an L2 message that was extracted in a previous state- then it will fail to fetch the preimage and return an appropriate error
 func (m *MessageReader) Read(
 	ctx context.Context,
 	state *mel.State,
@@ -62,7 +64,7 @@ func PeekFromAccumulator[T any](
 	}
 	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve message content preimage at lookback position %d: %w", lookbacksForLogging, err)
 	}
 	object := new(T)
 	if err = rlp.Decode(bytes.NewBuffer(objectBytes), &object); err != nil {

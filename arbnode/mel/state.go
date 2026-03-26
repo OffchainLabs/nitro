@@ -40,7 +40,7 @@ type State struct {
 	ParentChainPreviousBlockHash       common.Hash
 	BatchCount                         uint64
 	MsgCount                           uint64
-	LocalMsgAccumulator                common.Hash
+	LocalMsgAccumulator                common.Hash // starts at zero hash for each clone; updated only by AccumulateMessage; represents messages accumulated during processing of this specific parent chain block
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
 	DelayedMessageInboxAcc             common.Hash
@@ -132,7 +132,10 @@ func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	preimage = append(preimage, msgHash.Bytes()...)
 	newAcc := crypto.Keccak256Hash(preimage)
 	if s.msgPreimagesDest != nil {
-		keccakMap := s.msgPreimagesDest[arbutil.Keccak256PreimageType]
+		keccakMap, ok := s.msgPreimagesDest[arbutil.Keccak256PreimageType]
+		if !ok {
+			return errors.New("keccak256 preimage map not initialized in msgPreimagesDest")
+		}
 		keccakMap[newAcc] = preimage  // acc chain link
 		keccakMap[msgHash] = msgBytes // message content
 	}
