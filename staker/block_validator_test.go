@@ -256,7 +256,7 @@ func TestHandleValidationResultLogsButDoesNotFatal(t *testing.T) {
 
 func TestHandleValidationResultSuppressesCanceledDuringShutdown(t *testing.T) {
 	// When the lifecycle context is cancelled (shutdown) and the error is
-	// context.Canceled, handleValidationResult should take the Trace-level
+	// context.Canceled, handleValidationResult should take the Debug-level
 	// suppression path (not the Error-level path). Neither path sends to
 	// fatalErr, but the distinction matters for log noise during shutdown.
 	fatalCh := make(chan error, 1)
@@ -273,7 +273,7 @@ func TestHandleValidationResultSuppressesCanceledDuringShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // simulate shutdown
 
-	// context.Canceled with cancelled ctx hits the log.Trace suppression path.
+	// context.Canceled with cancelled ctx hits the log.Debug suppression path.
 	v.handleValidationResult(ctx, nil, context.Canceled, "test")
 	select {
 	case err := <-fatalCh:
@@ -471,6 +471,105 @@ func TestHandleValidationResultDoesNotSkipReorgOnDeadlineExceeded(t *testing.T) 
 	v.handleValidationResult(ctx, &reorgTarget, nil, "test")
 
 	// No fatal error — Reorg succeeded (no-op due to chainCaughtUp=false).
+	select {
+	case err := <-fatalCh:
+		t.Fatalf("unexpected fatal error: %v", err)
+	default:
+	}
+}
+
+func TestHandleValidationResultErrorTakesPrecedenceOverReorg(t *testing.T) {
+	// When both err and reorg are non-nil, the error path should execute
+	// and the reorg should be ignored. This guards against refactoring
+	// the if/else if into separate if blocks.
+	fatalCh := make(chan error, 1)
+	v := &BlockValidator{
+		fatalErr: fatalCh,
+	}
+	v.config = func() *BlockValidatorConfig {
+		return &BlockValidatorConfig{
+			ValidationPoll: 0,
+			FailureIsFatal: true,
+		}
+	}
+
+	reorgTarget := arbutil.MessageIndex(5)
+	realErr := errors.New("something broke")
+	v.handleValidationResult(context.Background(), &reorgTarget, realErr, "test")
+
+	// Error path only logs — no fatal. If reorg were also processed,
+	// it would call Reorg on a zero-value validator and potentially panic.
+	select {
+	case err := <-fatalCh:
+		t.Fatalf("unexpected fatal error: %v", err)
+	default:
+	}
+}
+
+func TestPossiblyFatalChannelFull(t *testing.T) {
+	// When fatalErr already has an error, the second error is dropped
+	// (with a log) rather than blocking. Verify the first error is
+	// preserved and the second doesn't panic or block.
+	fatalCh := make(chan error, 1)
+	v := &BlockValidator{
+		fatalErr: fatalCh,
+	}
+	v.config = func() *BlockValidatorConfig {
+		return &BlockValidatorConfig{FailureIsFatal: true}
+	}
+
+	first := errors.New("first error")
+	second := errors.New("second error")
+	v.possiblyFatal(first)
+	v.possiblyFatal(second) // should not block
+
+	err := <-fatalCh
+	if !errors.Is(err, first) {
+		t.Fatalf("expected first error preserved, got: %v", err)
+	}
+	// Channel should now be empty (second was dropped).
+	select {
+	case err := <-fatalCh:
+		t.Fatalf("second error should have been dropped, got: %v", err)
+	default:
+	}
+}
+
+func TestPossiblyFatalNilIsNoop(t *testing.T) {
+	fatalCh := make(chan error, 1)
+	v := &BlockValidator{
+		fatalErr: fatalCh,
+	}
+	v.config = func() *BlockValidatorConfig {
+		return &BlockValidatorConfig{FailureIsFatal: true}
+	}
+
+	v.possiblyFatal(nil)
+	select {
+	case err := <-fatalCh:
+		t.Fatalf("nil error should be a no-op, got: %v", err)
+	default:
+	}
+}
+
+func TestHandleValidationResultNoopOnNilErrNilReorg(t *testing.T) {
+	// When both err and reorg are nil, handleValidationResult should
+	// return ValidationPoll with no side effects.
+	fatalCh := make(chan error, 1)
+	v := &BlockValidator{
+		fatalErr: fatalCh,
+	}
+	v.config = func() *BlockValidatorConfig {
+		return &BlockValidatorConfig{
+			ValidationPoll: 0,
+			FailureIsFatal: true,
+		}
+	}
+
+	result := v.handleValidationResult(context.Background(), nil, nil, "test")
+	if result != 0 {
+		t.Errorf("expected ValidationPoll duration (0), got %v", result)
+	}
 	select {
 	case err := <-fatalCh:
 		t.Fatalf("unexpected fatal error: %v", err)
