@@ -62,6 +62,7 @@ func TestCloneZerosLocalMsgAccumulator(t *testing.T) {
 	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
 
 	for i := range 3 {
+		// #nosec G115
 		require.NoError(t, state.AccumulateMessage(makeTestMessage(uint64(i))))
 	}
 	require.NotEqual(t, common.Hash{}, state.LocalMsgAccumulator, "accumulator should be non-zero after messages")
@@ -82,6 +83,7 @@ func TestPreimageRecordingCounts(t *testing.T) {
 
 		n := 5
 		for i := range n {
+			// #nosec G115
 			require.NoError(t, state.AccumulateMessage(makeTestMessage(uint64(i))))
 		}
 		require.Equal(t, 2*n, len(preimages[arbutil.Keccak256PreimageType]), "expected exactly 2 preimages per message")
@@ -91,6 +93,7 @@ func TestPreimageRecordingCounts(t *testing.T) {
 		state := &State{}
 		n := 5
 		for i := range n {
+			// #nosec G115
 			require.NoError(t, state.AccumulateMessage(makeTestMessage(uint64(i))))
 		}
 		require.NotEqual(t, common.Hash{}, state.LocalMsgAccumulator, "accumulator should still work without recording")
