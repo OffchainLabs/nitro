@@ -8,7 +8,6 @@ use eyre::Result;
 use num_bigint::BigUint;
 
 #[test]
-#[ignore = "needs to update erc20 to use new SDK"]
 fn test_sdk_routes() -> Result<()> {
     let filename = "tests/erc20/target/wasm32-unknown-unknown/release/erc20.wasm";
 
