@@ -5,11 +5,16 @@ use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
 use jit::{machine::Escape, run, Opts};
+use serde::Deserialize;
+use std::fs::File;
+use std::io::BufReader;
 use validation::transfer::{send_failure_response, send_successful_response};
+use validation::GoGlobalState;
 use wasmer::FrameInfo;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
+    let expected_state = get_expected_state(&opts)?;
     let result = run(&opts)?;
 
     let runtime = format!("{}ms", result.runtime.as_millis());
@@ -45,12 +50,41 @@ fn main() -> Result<()> {
         if let Some(mut socket) = result.socket {
             send_successful_response(
                 &mut socket,
-                &result.new_state.into(),
+                &result.new_state.clone().into(),
                 result.memory_used.bytes().0 as u64,
             )?;
         }
+        if let Some(expected_state) = expected_state {
+            let actual_state = result.new_state.into();
+            if expected_state != actual_state {
+                eprintln!("Expected state does not match actual state: {expected_state:?} != {actual_state:?}");
+                std::process::exit(1);
+            } else {
+                println!("Computed state matches the expected one")
+            }
+        }
     }
     Ok(())
+}
+
+fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
+    match &opts.input_mode {
+        jit::InputMode::Json { inputs } => {
+            let file = File::open(inputs)?;
+
+            /// Use a temporary struct with the only interesting field, to avoid parsing all other data.
+            #[derive(Deserialize)]
+            #[serde(rename_all = "PascalCase")]
+            struct ExpectedState {
+                #[serde(default)]
+                pub expected_end_state: Option<GoGlobalState>,
+            }
+
+            let req: ExpectedState = serde_json::from_reader(&mut BufReader::new(file))?;
+            Ok(req.expected_end_state)
+        }
+        _ => Ok(None),
+    }
 }
 
 fn print_trace(trace: &[FrameInfo]) {
