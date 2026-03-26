@@ -175,8 +175,6 @@ pub struct ValidationRequest {
     pub debug_chain: bool,
     #[serde(rename = "max-user-wasmSize", default)]
     pub max_user_wasm_size: u64,
-    #[serde(default)]
-    pub expected_end_state: Option<GoGlobalState>,
 }
 
 impl ValidationRequest {
