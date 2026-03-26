@@ -4,7 +4,7 @@
 use eyre::Report;
 use std::{ffi::CStr, os::raw::c_char, ptr};
 
-pub unsafe fn cstr_to_string(c_str: *const c_char) -> String {
+pub unsafe fn c_string_to_string(c_str: *const c_char) -> String {
     CStr::from_ptr(c_str).to_string_lossy().into_owned()
 }
 

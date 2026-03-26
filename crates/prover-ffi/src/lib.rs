@@ -23,7 +23,7 @@ use std::{
     ptr, slice,
     sync::{Arc, Mutex},
 };
-use crate::c_strings::{cstr_to_string, err_to_c_string};
+use crate::c_strings::{c_string_to_string, err_to_c_string};
 
 pub mod c_strings;
 
@@ -64,12 +64,12 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths_size: isize,
     debug_chain: bool,
 ) -> Result<*mut Machine> {
-    let binary_path = cstr_to_string(binary_path);
+    let binary_path = c_string_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
 
     let mut libraries = vec![];
     for i in 0..library_paths_size {
-        let path = cstr_to_string(*(library_paths.offset(i)));
+        let path = c_string_to_string(*(library_paths.offset(i)));
         libraries.push(Path::new(&path).to_owned());
     }
 
@@ -89,7 +89,7 @@ unsafe fn arbitrator_load_machine_impl(
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
-    let binary_path = cstr_to_string(binary_path);
+    let binary_path = c_string_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
     match Machine::new_from_wavm(binary_path) {
         Ok(mach) => Box::into_raw(Box::new(mach)),
