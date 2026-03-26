@@ -2270,6 +2270,8 @@ func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFun
 	}
 	if ctx.Err() == nil {
 		t.Errorf(format, args...)
+	} else {
+		t.Logf("[suppressed] "+format, args...)
 	}
 	cancel()
 	return true

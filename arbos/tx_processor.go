@@ -460,7 +460,16 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 	return false, multigas.ZeroGas(), nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
+// GetPosterGas converts a poster's L1 calldata cost (in wei) into an equivalent
+// number of L2 gas units at the given gas price. This allows the 1-dimensional
+// gas model to account for L1 costs alongside L2 compute costs.
+//
+// During gas estimation, both the gas price and poster cost are adjusted
+// conservatively: the price is reduced to 7/8 of the current value (simulating
+// congestion) but floored at the minimum base fee, and the poster cost is padded
+// by GasEstimationL1PricePadding to guard against L1 gas price increases between
+// estimation and execution.
+func GetPosterGas(state *arbosState.ArbosState, gasPrice *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
 	if runCtx.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
@@ -468,17 +477,17 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 
 		minGasPrice, _ := state.L2PricingState().MinBaseFeeWei()
 
-		adjustedPrice := arbmath.BigMulByFrac(baseFee, 7, 8) // assume congestion
+		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
 			adjustedPrice = minGasPrice
 		}
-		baseFee = adjustedPrice
+		gasPrice = adjustedPrice
 
 		// Pad the L1 cost in case the L1 gas price rises
 		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
-	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
+	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, gasPrice))
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
