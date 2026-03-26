@@ -1738,7 +1738,6 @@ where
             let sender_balance = account.as_ref().map(|a| a.balance).unwrap_or(U256::ZERO);
             let sender_nonce = account.as_ref().map(|a| a.nonce).unwrap_or(0);
 
-            // Nonce check: tx nonce must match sender's current nonce.
             let tx_nonce = revm::context_interface::Transaction::nonce(&tx_env);
             if tx_nonce != sender_nonce {
                 rollback_pre_exec_state(self, calldata_units);
@@ -1747,9 +1746,6 @@ where
                 )));
             }
 
-            // Balance check: sender must cover gas * upfront_gas_price + value.
-            // Uses the original gas price (before tip drop) since the canonical
-            // state transition uses GasFeeCap for the balance check.
             let gas_cost = U256::from(tx_gas_limit) * U256::from(upfront_gas_price);
             let tx_value = revm::context_interface::Transaction::value(&tx_env);
             let total_cost = gas_cost.saturating_add(tx_value);
