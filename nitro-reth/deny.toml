@@ -18,6 +18,7 @@ ignore = [
     "RUSTSEC-2024-0370", # proc-macro-error - transitive via reth
     "RUSTSEC-2026-0049", # rustls-webpki CRL - transitive via reth
     "RUSTSEC-2026-0067", # tar unpack_in symlink - transitive via reth
+    "RUSTSEC-2026-0068", # tar PAX size headers - transitive via reth
 ]
 
 [licenses]
