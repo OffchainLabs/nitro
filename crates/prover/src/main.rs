@@ -5,8 +5,6 @@
 
 use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
-use serde::Deserialize;
-use validation::GoGlobalState;
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
@@ -14,6 +12,7 @@ use prover::{
     utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
 };
+use serde::Deserialize;
 use std::sync::Arc;
 use std::{convert::TryInto, io::BufWriter};
 use std::{
@@ -22,6 +21,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use structopt::StructOpt;
+use validation::GoGlobalState;
 
 #[derive(StructOpt)]
 #[structopt(name = "arbitrator-prover")]

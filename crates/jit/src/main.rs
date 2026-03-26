@@ -60,7 +60,7 @@ fn main() -> Result<()> {
                 eprintln!("Expected state does not match actual state: {expected_state:?} != {actual_state:?}");
                 std::process::exit(1);
             } else {
-                println!("Computed state matches the expected one")
+                println!("Computed state matches the expected one");
             }
         }
     }
@@ -72,7 +72,7 @@ fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
         jit::InputMode::Json { inputs } => {
             let file = File::open(inputs)?;
 
-            /// Use a temporary struct with the only interesting field, to avoid parsing all other data.
+            // Use a temporary struct with the only interesting field, to avoid parsing all other data.
             #[derive(Deserialize)]
             #[serde(rename_all = "PascalCase")]
             struct ExpectedState {
