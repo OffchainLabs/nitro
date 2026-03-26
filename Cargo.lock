@@ -5319,6 +5319,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "prover-ffi"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "lazy_static",
+ "libc",
+ "lru 0.16.3",
+ "once_cell",
+ "prover",
+ "static_assertions",
+]
+
+[[package]]
 name = "ptr_meta"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7810,6 +7824,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "parking_lot",
  "prover",
+ "prover-ffi",
  "rand 0.8.5",
  "thiserror 1.0.63",
  "user-host-trait",

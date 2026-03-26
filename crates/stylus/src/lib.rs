@@ -25,6 +25,7 @@ use target_cache::{target_cache_get, target_cache_set};
 
 pub use brotli;
 pub use prover;
+pub use prover_ffi;
 
 pub mod env;
 pub mod host;
