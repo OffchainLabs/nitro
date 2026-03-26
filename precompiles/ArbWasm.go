@@ -39,11 +39,11 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	programs := c.State.Programs()
 
 	// charge the configurable activation gas upfront (default 0; raise to deter DOS or block activations entirely)
-	params, err := programs.Params()
+	activationGas, err := programs.ActivationGas()
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := c.Burn(multigas.ResourceKindComputation, params.ActivationGas); err != nil {
+	if err := c.Burn(multigas.ResourceKindComputation, activationGas); err != nil {
 		return 0, nil, err
 	}
 
@@ -179,8 +179,7 @@ func (con ArbWasm) BlockCacheSize(c ctx, _ mech) (uint16, error) {
 
 // Gets the constant gas charge applied before each stylus contract activation.
 func (con ArbWasm) ActivationGas(c ctx, _ mech) (uint64, error) {
-	params, err := c.State.Programs().Params()
-	return params.ActivationGas, err
+	return c.State.Programs().ActivationGas()
 }
 
 // Gets the stylus version that program with codehash was most recently compiled with
