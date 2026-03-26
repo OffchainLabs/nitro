@@ -470,6 +470,10 @@ fn main() -> Result<()> {
     }
 
     if let Some(expected) = expected_state {
+        if mach.get_status() != MachineStatus::Finished {
+            eprintln!("Machine did not finish: {}", mach.get_status().red());
+            std::process::exit(1);
+        }
         let gs = mach.get_global_state();
         let actual = GoGlobalState {
             block_hash: gs.bytes32_vals[0],
