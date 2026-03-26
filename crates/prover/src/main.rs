@@ -5,6 +5,8 @@
 
 use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
+use serde::Deserialize;
+use validation::GoGlobalState;
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
@@ -127,6 +129,7 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 #[cfg(feature = "native")]
 fn main() -> Result<()> {
     let opts = Opts::from_args();
+    let expected_state = get_expected_state(&opts)?;
 
     if opts.print_wasmmoduleroot {
         match Machine::new_from_wavm(&opts.binary) {
@@ -465,7 +468,41 @@ fn main() -> Result<()> {
         eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
+
+    if let Some(expected) = expected_state {
+        let gs = mach.get_global_state();
+        let actual = GoGlobalState {
+            block_hash: gs.bytes32_vals[0],
+            send_root: gs.bytes32_vals[1],
+            batch: gs.u64_vals[0],
+            pos_in_batch: gs.u64_vals[1],
+        };
+        if expected != actual {
+            eprintln!("Expected state does not match actual state: {expected:?} != {actual:?}");
+            std::process::exit(1);
+        } else {
+            println!("Computed state matches the expected one");
+        }
+    }
+
     Ok(())
+}
+
+fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
+    let Some(ref path) = opts.json_inputs else {
+        return Ok(None);
+    };
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "PascalCase")]
+    struct ExpectedState {
+        #[serde(default)]
+        expected_end_state: Option<GoGlobalState>,
+    }
+
+    let file = File::open(path)?;
+    let req: ExpectedState = serde_json::from_reader(BufReader::new(file))?;
+    Ok(req.expected_end_state)
 }
 
 fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
