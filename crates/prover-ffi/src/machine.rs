@@ -5,16 +5,13 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
 use std::{ptr, slice};
 use std::path::Path;
-use std::sync::{atomic, Arc};
+use std::sync::{atomic};
 use std::sync::atomic::AtomicU8;
-use arbutil::{Bytes32, PreimageType};
+use arbutil::{Bytes32};
 use eyre::Report;
-use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
-use prover::{CByteArray, Machine, ResolvedPreimage, RustBytes};
-use prover::machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
-use prover::utils::CBytes;
-use crate::BLOBHASH_PREIMAGE_CACHE;
+use prover::{CByteArray, Machine, RustBytes};
+use prover::machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus};
 use crate::c_strings::{c_string_to_string, err_to_c_string};
 
 pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;
@@ -249,30 +246,6 @@ pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalSt
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
     (*mach).set_global_state(gs);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
-    mach: *mut Machine,
-    resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
-) {
-    (*mach).set_preimage_resolver(Arc::new(
-        move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
-            if ty == PreimageType::EthVersionedHash {
-                let cache: Arc<OnceCell<CBytes>> = {
-                    let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
-                    locked.get_or_insert(hash, Default::default).clone()
-                };
-                return cache
-                    .get_or_try_init(|| {
-                        crate::handle_preimage_resolution(context, ty, hash, resolver).ok_or(())
-                    })
-                    .ok()
-                    .cloned();
-            }
-            crate::handle_preimage_resolution(context, ty, hash, resolver)
-        },
-    ) as PreimageResolver);
 }
 
 #[no_mangle]
