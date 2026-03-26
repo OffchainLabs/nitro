@@ -16,10 +16,16 @@ import (
 )
 
 func TestValidationPostMEL(t *testing.T) {
+	t.Run("TestValidationPostMEL-in-jit-mode", func(t *testing.T) { testValidationPostMEL(t, true) })
+	t.Run("TestValidationPostMEL-in-arbitrator-mode", func(t *testing.T) { testValidationPostMEL(t, false) })
+}
+
+func testValidationPostMEL(t *testing.T, useJit bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.useJit = useJit
 	builder.L2Info.GenerateAccount("User2")
 	builder.nodeConfig.BatchPoster.Post4844Blobs = true
 	builder.nodeConfig.BatchPoster.IgnoreBlobPrice = true
@@ -64,13 +70,22 @@ func TestValidationPostMEL(t *testing.T) {
 	}
 }
 
-func TestValidationPostMELReorgHandle(t *testing.T) {
+func TestValidationPostMELReorgHandleInJitMode(t *testing.T) {
+	testValidationPostMELReorgHandle(t, true)
+}
+
+func TestValidationPostMELReorgHandleInArbitratorMode(t *testing.T) {
+	testValidationPostMELReorgHandle(t, false)
+}
+
+func testValidationPostMELReorgHandle(t *testing.T, useJit bool) {
 	logHandler := testhelpers.InitTestLog(t, log.LvlInfo)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.useJit = useJit
 	builder.nodeConfig.MessageExtraction.Enable = true
 	builder.nodeConfig.MessageExtraction.RetryInterval = 100 * time.Millisecond
 	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour     // set high max-delay so we can test the delay buffer

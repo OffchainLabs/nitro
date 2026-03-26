@@ -123,7 +123,13 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	var serverAPI *ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
-		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
+		jitConfigFetcher := func() *server_jit.JitSpawnerConfig {
+			cfg := configFetcher().Jit
+			if configFetcher().MELEnabled && cfg.ProverBinPath == "replay.wasm" {
+				cfg.ProverBinPath = "unified_replay.wasm"
+			}
+			return &cfg
+		}
 		var err error
 		jitSpawner, err = server_jit.NewJitSpawner(locator, jitConfigFetcher, fatalErrChan)
 		if err != nil {

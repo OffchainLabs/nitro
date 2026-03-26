@@ -14,6 +14,8 @@ fn transfer_successful_response() -> Result<(), Box<dyn std::error::Error>> {
     let new_state = GoGlobalState {
         block_hash: Bytes32::from([1u8; 32]),
         send_root: Bytes32::from([2u8; 32]),
+        mel_state_hash: Bytes32::from([5u8; 32]),
+        mel_msg_hash: Bytes32::from([6u8; 32]),
         batch: 42,
         pos_in_batch: 7,
     };
@@ -49,7 +51,7 @@ fn transfer_failure_response() -> Result<(), Box<dyn std::error::Error>> {
 fn transfer_validation_input() -> Result<(), Box<dyn std::error::Error>> {
     let input = ValidationInput {
         small_globals: [42, 7],
-        large_globals: [[1u8; 32], [2u8; 32]],
+        large_globals: [[1u8; 32], [2u8; 32], [5u8; 32], [6u8; 32]],
 
         sequencer_messages: BTreeMap::from([
             (10, vec![1, 2, 3]),
@@ -74,6 +76,7 @@ fn transfer_validation_input() -> Result<(), Box<dyn std::error::Error>> {
         ]),
 
         module_asms: BTreeMap::from([([3u8; 32], vec![20, 21, 22]), ([4u8; 32], vec![30, 31, 32])]),
+        end_parent_chain_block_hash: [7u8; 32],
     };
 
     let (mut reader, mut writer) = pipe()?;
