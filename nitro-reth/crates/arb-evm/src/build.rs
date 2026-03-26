@@ -1725,10 +1725,7 @@ where
             }
         };
 
-        // Manual balance and nonce validation for user txs. Revm's checks are
-        // disabled globally in arb_cfg_env (internal/deposit/retryable txs need
-        // to bypass them). User txs from the delayed inbox may have insufficient
-        // funds or wrong nonces and must be rejected here.
+        // Manual balance and nonce validation for user txs.
         if is_user_tx {
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let account = db
