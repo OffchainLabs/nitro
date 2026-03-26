@@ -119,8 +119,37 @@ func TestLaunchPromiseThreadPanicRecovery(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from panicking promise thread")
 	}
-	if err.Error() != "promise thread panicked or exited unexpectedly" {
-		t.Fatalf("unexpected error message: %v", err)
+	expected := "promise thread panicked: intentional test panic"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got: %v", expected, err)
+	}
+}
+
+func TestLaunchPromiseThreadPanicDoesNotLeakGoroutine(t *testing.T) {
+	// Verify that after a panic in a promise thread, StopAndWait completes
+	// (the goroutine doesn't leak). The re-panic is caught by LaunchThreadSafe's
+	// outer recovery, so the WaitGroup is properly decremented.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	classA := &ClassA{}
+	classA.Start(ctx)
+
+	promise := classA.PanicFunc()
+	_, err := promise.Await(ctx)
+	if err == nil {
+		t.Fatal("expected error from panicking promise thread")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		classA.StopAndWait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopAndWait did not return after promise panic — goroutine leak")
 	}
 }
 
