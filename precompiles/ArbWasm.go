@@ -43,7 +43,7 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := c.Burn(multigas.ResourceKindComputation, activationGas); err != nil {
+	if err := c.Burn(multigas.ResourceKindSingleDim, activationGas); err != nil {
 		return 0, nil, err
 	}
 
