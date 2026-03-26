@@ -813,6 +813,17 @@ pub struct GlobalState {
     pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
 }
 
+impl From<GlobalState> for validation::GoGlobalState {
+    fn from(gs: GlobalState) -> Self {
+        Self {
+            block_hash: gs.bytes32_vals[0],
+            send_root: gs.bytes32_vals[1],
+            batch: gs.u64_vals[0],
+            pos_in_batch: gs.u64_vals[1],
+        }
+    }
+}
+
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();

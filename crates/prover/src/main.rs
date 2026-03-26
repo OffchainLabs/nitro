@@ -474,13 +474,7 @@ fn main() -> Result<()> {
             eprintln!("Machine did not finish: {}", mach.get_status().red());
             std::process::exit(1);
         }
-        let gs = mach.get_global_state();
-        let actual = GoGlobalState {
-            block_hash: gs.bytes32_vals[0],
-            send_root: gs.bytes32_vals[1],
-            batch: gs.u64_vals[0],
-            pos_in_batch: gs.u64_vals[1],
-        };
+        let actual = mach.get_global_state().into();
         if expected != actual {
             eprintln!("Expected state does not match actual state: {expected:?} != {actual:?}");
             std::process::exit(1);
@@ -505,8 +499,7 @@ fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
     }
 
     let file = File::open(path)?;
-    let req: ExpectedState = serde_json::from_reader(BufReader::new(file))?;
-    Ok(req.expected_end_state)
+    Ok(serde_json::from_reader::<_, ExpectedState>(BufReader::new(file))?.expected_end_state)
 }
 
 fn initialize_machine(opts: &Opts) -> eyre::Result<Machine> {
