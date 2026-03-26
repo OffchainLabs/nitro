@@ -23,6 +23,9 @@ use std::{
     ptr, slice,
     sync::{Arc, Mutex},
 };
+use crate::c_strings::{cstr_to_string, err_to_c_string};
+
+pub mod c_strings;
 
 lazy_static::lazy_static! {
     static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
@@ -102,26 +105,6 @@ pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machin
     Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
-unsafe fn cstr_to_string(c_str: *const c_char) -> String {
-    CStr::from_ptr(c_str).to_string_lossy().into_owned()
-}
-
-pub fn err_to_c_string(err: Report) -> *mut libc::c_char {
-    str_to_c_string(&format!("{err:?}"))
-}
-
-/// Copies the str-data into a libc free-able C string
-pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
-    unsafe {
-        let buf = libc::malloc(text.len() + 1); // includes null-terminating byte
-        if buf.is_null() {
-            panic!("Failed to allocate memory for error string");
-        }
-        ptr::copy_nonoverlapping(text.as_ptr(), buf as *mut u8, text.len());
-        *(buf as *mut u8).add(text.len()) = 0;
-        buf as *mut libc::c_char
-    }
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
