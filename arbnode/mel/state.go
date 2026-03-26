@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -57,6 +58,11 @@ type State struct {
 	// accumulated and read in the same block, so it may not be in the DB yet
 	// when ReadDelayedMessage is called in native mode.
 	initMsg *DelayedInboxMessage
+
+	// PendingPricingEntries accumulates parent chain pricing data across blocks.
+	// When the epoch size (32 blocks) is reached, a single delayed message
+	// containing all entries is flushed and the slice is cleared.
+	PendingPricingEntries []arbostypes.ParentChainPricingEntry `rlp:"optional"`
 }
 
 // MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
@@ -69,6 +75,29 @@ type MessageConsumer interface {
 }
 
 func (s *State) InitMsg() *DelayedInboxMessage { return s.initMsg }
+
+func clonePricingEntries(entries []arbostypes.ParentChainPricingEntry) []arbostypes.ParentChainPricingEntry {
+	if entries == nil {
+		return nil
+	}
+	cloned := make([]arbostypes.ParentChainPricingEntry, len(entries))
+	for i, e := range entries {
+		cloned[i] = arbostypes.ParentChainPricingEntry{
+			BlockNumber:   e.BlockNumber,
+			BlockTimestamp: e.BlockTimestamp,
+			BlockHash:     e.BlockHash,
+			BlobGasUsed:   e.BlobGasUsed,
+			ExcessBlobGas: e.ExcessBlobGas,
+		}
+		if e.L1BaseFee != nil {
+			cloned[i].L1BaseFee = new(big.Int).Set(e.L1BaseFee)
+		}
+		if e.BlobBaseFee != nil {
+			cloned[i].BlobBaseFee = new(big.Int).Set(e.BlobBaseFee)
+		}
+	}
+	return cloned
+}
 
 func (s *State) Hash() common.Hash {
 	encoded, err := rlp.EncodeToBytes(s)
@@ -111,10 +140,11 @@ func (s *State) Clone() *State {
 		DelayedMessageInboxAcc:             delayedInboxAcc,
 		DelayedMessageOutboxAcc:            delayedOutboxAcc,
 		// we pass along msgPreimagesDest to continue recording of msg preimages
-		msgPreimagesDest:        s.msgPreimagesDest,
-		delayedMsgPreimagesDest: s.delayedMsgPreimagesDest,
-		delayedMsgPreimages:     s.delayedMsgPreimages,
-		initMsg:                 s.initMsg,
+		msgPreimagesDest:          s.msgPreimagesDest,
+		delayedMsgPreimagesDest:   s.delayedMsgPreimagesDest,
+		delayedMsgPreimages:       s.delayedMsgPreimages,
+		initMsg:                   s.initMsg,
+		PendingPricingEntries:     clonePricingEntries(s.PendingPricingEntries),
 	}
 }
 

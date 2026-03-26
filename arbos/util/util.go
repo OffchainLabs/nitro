@@ -30,6 +30,8 @@ var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
 var PackInternalTxDataBatchPostingReportV2 func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataBatchPostingReport func([]byte) (map[string]interface{}, error)
 var UnpackInternalTxDataBatchPostingReportV2 func([]byte) (map[string]interface{}, error)
+var PackInternalTxDataParentChainPricingReport func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataParentChainPricingReport func([]byte) (map[string]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -48,6 +50,7 @@ func init() {
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
 	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
 	PackInternalTxDataBatchPostingReportV2, UnpackInternalTxDataBatchPostingReportV2 = NewCallParser(acts, "batchPostingReportV2")
+	PackInternalTxDataParentChainPricingReport, UnpackInternalTxDataParentChainPricingReport = NewCallParser(acts, "parentChainPricingReport")
 	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 

@@ -1260,7 +1260,16 @@ func getDelayedSequencer(
 		return nil, errors.New("delayed sequencer requires either an inbox tracker or a message extractor")
 	}
 	// always create DelayedSequencer if exec is non nil, it won't do anything if it is disabled
-	return NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	ds, err := NewDelayedSequencer(l1Reader, delayedMessageFetcher, delayedBridge, exec, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	if err != nil {
+		return nil, err
+	}
+	// When using MEL, skip the on-chain bridge accumulator check because MEL's
+	// accumulator intentionally includes artificial messages the bridge doesn't know about.
+	if ds != nil && msgExtractor != nil {
+		ds.skipBridgeAccCheck = true
+	}
+	return ds, nil
 }
 
 func getNodeParentChainReaderDisabled(

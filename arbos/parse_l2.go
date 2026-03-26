@@ -79,6 +79,8 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, la
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
+	case arbostypes.L1MessageType_ParentChainPricingReport:
+		return createParentChainPricingReportTransactions(bytes.NewReader(msg.L2msg), chainId)
 	case arbostypes.L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
@@ -422,4 +424,31 @@ func createBatchPostingReportTransaction(rd io.Reader, chainId *big.Int, lastArb
 		Data:    data,
 		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
 	}), nil
+}
+
+func createParentChainPricingReportTransactions(rd io.Reader, chainId *big.Int) (types.Transactions, error) {
+	entries, err := arbostypes.ParseParentChainPricingBatchPayload(rd)
+	if err != nil {
+		return nil, err
+	}
+	txs := make(types.Transactions, 0, len(entries))
+	for _, entry := range entries {
+		data, err := util.PackInternalTxDataParentChainPricingReport(
+			entry.BlockNumber,
+			entry.BlockTimestamp,
+			entry.BlockHash,
+			entry.L1BaseFee,
+			entry.BlobBaseFee,
+			entry.BlobGasUsed,
+			entry.ExcessBlobGas,
+		)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, types.NewTx(&types.ArbitrumInternalTx{
+			ChainId: chainId,
+			Data:    data,
+		}))
+	}
+	return txs, nil
 }

@@ -45,6 +45,15 @@ type L1PricingState struct {
 	l1FeesAvailable      storage.StorageBackedBigUint
 	gasFloorPerToken     storage.StorageBackedUint64 // introduced in arbos version 50, default 0
 
+	// Parent chain pricing fields (introduced in ArbOS version 70)
+	recentParentChainBlockNumber    storage.StorageBackedUint64
+	recentParentChainBlockTimestamp storage.StorageBackedUint64
+	recentParentChainBlockHash      storage.StorageBackedBigUint // stored as uint256, convert via common.BigToHash/Hash.Big()
+	recentParentL1BaseFee           storage.StorageBackedBigUint
+	recentParentBlobBaseFee         storage.StorageBackedBigUint
+	recentParentBlobGasUsed         storage.StorageBackedUint64
+	recentParentExcessBlobGas       storage.StorageBackedUint64
+
 	ArbosVersion uint64
 }
 
@@ -70,6 +79,13 @@ const (
 	amortizedCostCapBipsOffset
 	l1FeesAvailableOffset
 	gasFloorPerTokenOffset
+	recentParentChainBlockNumberOffset
+	recentParentChainBlockTimestampOffset
+	recentParentChainBlockHashOffset
+	recentParentL1BaseFeeOffset
+	recentParentBlobBaseFeeOffset
+	recentParentBlobGasUsedOffset
+	recentParentExcessBlobGasOffset
 )
 
 const (
@@ -132,8 +148,15 @@ func OpenL1PricingState(sto *storage.Storage, arbosVersion uint64) *L1PricingSta
 		perBatchGasCost:      sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		amortizedCostCapBips: sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 		l1FeesAvailable:      sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
-		gasFloorPerToken:     sto.OpenStorageBackedUint64(gasFloorPerTokenOffset),
-		ArbosVersion:         arbosVersion,
+		gasFloorPerToken:                    sto.OpenStorageBackedUint64(gasFloorPerTokenOffset),
+		recentParentChainBlockNumber:        sto.OpenStorageBackedUint64(recentParentChainBlockNumberOffset),
+		recentParentChainBlockTimestamp:     sto.OpenStorageBackedUint64(recentParentChainBlockTimestampOffset),
+		recentParentChainBlockHash:          sto.OpenStorageBackedBigUint(recentParentChainBlockHashOffset),
+		recentParentL1BaseFee:               sto.OpenStorageBackedBigUint(recentParentL1BaseFeeOffset),
+		recentParentBlobBaseFee:             sto.OpenStorageBackedBigUint(recentParentBlobBaseFeeOffset),
+		recentParentBlobGasUsed:             sto.OpenStorageBackedUint64(recentParentBlobGasUsedOffset),
+		recentParentExcessBlobGas:           sto.OpenStorageBackedUint64(recentParentExcessBlobGasOffset),
+		ArbosVersion:                        arbosVersion,
 	}
 }
 
@@ -464,8 +487,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 
-	// adjust the price
-	if unitsAllocated > 0 {
+	// adjust the price (skipped for ArbOS v70+ where UpdateParentChainPricing handles it)
+	if unitsAllocated > 0 && arbosVersion < params.ArbosVersion_ParentChainPricing {
 		totalFundsDue, err := batchPosterTable.TotalFundsDue()
 		if err != nil {
 			return err
@@ -621,4 +644,105 @@ func byteCountAfterBrotliLevel(input []byte, level uint64) (uint64, error) {
 		return 0, err
 	}
 	return uint64(len(compressed)), nil
+}
+
+// UpdateParentChainPricing stores the latest parent chain pricing data and
+// updates pricePerUnit via an EMA of the effective L1 base fee.
+func (ps *L1PricingState) UpdateParentChainPricing(
+	blockNumber, blockTimestamp uint64,
+	blockHash common.Hash,
+	l1BaseFee, blobBaseFee *big.Int,
+	blobGasUsed, excessBlobGas uint64,
+) error {
+	if ps.ArbosVersion < params.ArbosVersion_ParentChainPricing {
+		return nil
+	}
+	if err := ps.recentParentChainBlockNumber.Set(blockNumber); err != nil {
+		return err
+	}
+	if err := ps.recentParentChainBlockTimestamp.Set(blockTimestamp); err != nil {
+		return err
+	}
+	if err := ps.recentParentChainBlockHash.SetChecked(blockHash.Big()); err != nil {
+		return err
+	}
+	if err := ps.recentParentL1BaseFee.SetChecked(l1BaseFee); err != nil {
+		return err
+	}
+	if err := ps.recentParentBlobBaseFee.SetChecked(blobBaseFee); err != nil {
+		return err
+	}
+	if err := ps.recentParentBlobGasUsed.Set(blobGasUsed); err != nil {
+		return err
+	}
+	if err := ps.recentParentExcessBlobGas.Set(excessBlobGas); err != nil {
+		return err
+	}
+	return ps.updatePriceFromParentChainData(l1BaseFee, blobBaseFee)
+}
+
+// updatePriceFromParentChainData adjusts pricePerUnit using an EMA of the
+// effective L1 base fee. Uses min(l1BaseFee, blobBaseFee/16) because batch
+// posters choose whichever posting method is cheaper.
+func (ps *L1PricingState) updatePriceFromParentChainData(l1BaseFee, blobBaseFee *big.Int) error {
+	inertia, err := ps.Inertia()
+	if err != nil {
+		return err
+	}
+	currentPrice, err := ps.PricePerUnit()
+	if err != nil {
+		return err
+	}
+
+	effectiveBaseFee := new(big.Int).Set(l1BaseFee)
+	if blobBaseFee.Sign() > 0 {
+		blobPerUnit := new(big.Int).Div(blobBaseFee, big.NewInt(int64(params.TxDataNonZeroGasEIP2028)))
+		if blobPerUnit.Cmp(effectiveBaseFee) < 0 {
+			effectiveBaseFee = blobPerUnit
+		}
+	}
+
+	if inertia <= 1 {
+		inertia = 2
+	}
+	weighted := arbmath.BigMulByUint(currentPrice, inertia-1)
+	weighted = arbmath.BigAdd(weighted, effectiveBaseFee)
+	newPrice := arbmath.BigDivByUint(weighted, inertia)
+
+	if newPrice.Sign() < 0 {
+		newPrice = common.Big0
+	}
+	return ps.SetPricePerUnit(newPrice)
+}
+
+func (ps *L1PricingState) RecentParentChainBlockNumber() (uint64, error) {
+	return ps.recentParentChainBlockNumber.Get()
+}
+
+func (ps *L1PricingState) RecentParentChainBlockTimestamp() (uint64, error) {
+	return ps.recentParentChainBlockTimestamp.Get()
+}
+
+func (ps *L1PricingState) RecentParentChainBlockHash() (common.Hash, error) {
+	val, err := ps.recentParentChainBlockHash.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return common.BigToHash(val), nil
+}
+
+func (ps *L1PricingState) RecentParentL1BaseFee() (*big.Int, error) {
+	return ps.recentParentL1BaseFee.Get()
+}
+
+func (ps *L1PricingState) RecentParentBlobBaseFee() (*big.Int, error) {
+	return ps.recentParentBlobBaseFee.Get()
+}
+
+func (ps *L1PricingState) RecentParentBlobGasUsed() (uint64, error) {
+	return ps.recentParentBlobGasUsed.Get()
+}
+
+func (ps *L1PricingState) RecentParentExcessBlobGas() (uint64, error) {
+	return ps.recentParentExcessBlobGas.Get()
 }

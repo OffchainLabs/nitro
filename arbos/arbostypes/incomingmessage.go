@@ -30,8 +30,9 @@ const (
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
-	L1MessageType_BatchPostingReport    = 13
-	L1MessageType_Invalid               = 0xFF
+	L1MessageType_BatchPostingReport        = 13
+	L1MessageType_ParentChainPricingReport = 14
+	L1MessageType_Invalid                  = 0xFF
 )
 
 const MaxL2MessageSize = 256 * 1024

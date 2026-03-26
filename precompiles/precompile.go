@@ -643,6 +643,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 	arbos.InternalTxBatchPostingReportV2MethodID = ArbosActs.GetMethodID("BatchPostingReportV2")
+	arbos.InternalTxParentChainPricingReportMethodID = ArbosActs.GetMethodID("ParentChainPricingReport")
 
 	ArbOwner.methodsByName["SetCalldataPriceIncrease"].arbosVersion = params.ArbosVersion_40
 	ArbOwnerPublic.methodsByName["IsCalldataPriceIncreaseEnabled"].arbosVersion = params.ArbosVersion_40

@@ -24,3 +24,7 @@ func (con ArbosActs) BatchPostingReport(c ctx, evm mech, batchTimestamp huge, ba
 func (con ArbosActs) BatchPostingReportV2(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchCallDataLength uint64, batchCallDataNonZeros uint64, batchExtraGas uint64, l1BaseFeeWei huge) error {
 	return con.CallerNotArbOSError()
 }
+
+func (con ArbosActs) ParentChainPricingReport(c ctx, evm mech, parentChainBlockNumber uint64, parentChainBlockTimestamp uint64, parentChainBlockHash [32]byte, l1BaseFee huge, blobBaseFee huge, blobGasUsed uint64, excessBlobGas uint64) error {
+	return con.CallerNotArbOSError()
+}
