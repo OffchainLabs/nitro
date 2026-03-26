@@ -80,8 +80,10 @@ fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
                 pub expected_end_state: Option<GoGlobalState>,
             }
 
-            let req: ExpectedState = serde_json::from_reader(&mut BufReader::new(file))?;
-            Ok(req.expected_end_state)
+            Ok(
+                serde_json::from_reader::<_, ExpectedState>(&mut BufReader::new(file))?
+                    .expected_end_state,
+            )
         }
         _ => Ok(None),
     }
