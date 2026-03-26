@@ -87,6 +87,7 @@ func TestDelayedMessageRecordingAndReplayRoundTrip(t *testing.T) {
 			replayDB := melreplay.NewDelayedMessageDatabase(resolver)
 
 			for i, expected := range msgs {
+				// #nosec G115
 				got, err := replayDB.ReadDelayedMessage(replayState, uint64(i))
 				require.NoError(t, err, "failed to read delayed message %d in replay mode", i)
 
@@ -166,7 +167,9 @@ func TestDelayedMessageReplayWithMixedInboxOutbox(t *testing.T) {
 	resolver := melreplay.NewTypeBasedPreimageResolver(arbutil.Keccak256PreimageType, preimages)
 	replayDB := melreplay.NewDelayedMessageDatabase(resolver)
 
-	allExpected := append(batch1[1:], batch2...) // batch1[0] was already read
+	var allExpected []*mel.DelayedInboxMessage
+	allExpected = append(allExpected, batch1[1:]...) // batch1[0] was already read
+	allExpected = append(allExpected, batch2...)
 	for i, expected := range allExpected {
 		msgIndex := replayState.DelayedMessagesRead
 		got, err := replayDB.ReadDelayedMessage(replayState, msgIndex)
