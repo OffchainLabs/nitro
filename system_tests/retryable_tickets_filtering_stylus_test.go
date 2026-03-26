@@ -50,7 +50,6 @@ func deployStylusStorageContract(
 	return deployWasm(t, ctx, auth, builder.L2.Client, rustFile("storage"))
 }
 
-
 // TestRetryableFilteringStylusSandwichRollback verifies that a group rollback
 // of a Stylus redeem chain does not affect neighboring transactions in the same
 // block. Three L2 transactions are forced into one block via sequencer
