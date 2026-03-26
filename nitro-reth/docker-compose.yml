@@ -28,6 +28,7 @@ services:
       - --db.exclusive=true
       - --db.growth-step=4GB
       - --db.log-level=error
+      - --db.sync-mode=safe-no-sync
     networks:
       - arb-network
     healthcheck:

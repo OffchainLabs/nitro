@@ -130,7 +130,6 @@ const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
 const COPY_GAS: u64 = 3;
-const LOG_GAS: u64 = 375 + 375 * 3; // base + 3 topics
 
 pub fn create_arbowner_precompile() -> DynPrecompile {
     DynPrecompile::new_stateful(PrecompileId::custom("arbowner"), handler)
@@ -499,12 +498,17 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     // For ArbOS >= 11: emit only for write calls (not read-only getters).
     let result = result.map(|output| {
         let arbos_version = crate::get_arbos_version();
-        let is_read_only = matches!(selector,
-            GET_NETWORK_FEE_ACCOUNT | GET_INFRA_FEE_ACCOUNT |
-            IS_CHAIN_OWNER | GET_ALL_CHAIN_OWNERS |
-            IS_TRANSACTION_FILTERER | GET_ALL_TRANSACTION_FILTERERS |
-            IS_NATIVE_TOKEN_OWNER | GET_ALL_NATIVE_TOKEN_OWNERS |
-            GET_FILTERED_FUNDS_RECIPIENT
+        let is_read_only = matches!(
+            selector,
+            GET_NETWORK_FEE_ACCOUNT
+                | GET_INFRA_FEE_ACCOUNT
+                | IS_CHAIN_OWNER
+                | GET_ALL_CHAIN_OWNERS
+                | IS_TRANSACTION_FILTERER
+                | GET_ALL_TRANSACTION_FILTERERS
+                | IS_NATIVE_TOKEN_OWNER
+                | GET_ALL_NATIVE_TOKEN_OWNERS
+                | GET_FILTERED_FUNDS_RECIPIENT
         );
         if !is_read_only || arbos_version < 11 {
             emit_owner_acts(&mut input, &selector, data);
