@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -439,7 +440,7 @@ func (b *BOLDStaker) updateStakerBalanceMetric(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("error getting balance for %v: %w", txSenderAddress, err)
 		}
-		boldStakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+		boldStakerBalanceGauge.Update(floatmath.BalancePerEther(balance))
 	} else {
 		boldStakerBalanceGauge.Update(0)
 	}
