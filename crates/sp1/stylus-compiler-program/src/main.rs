@@ -5,8 +5,7 @@ sp1_zkvm::entrypoint!(main);
 
 fn main() {
     let input = sp1_zkvm::io::read::<stylus_compiler_program::CompileInput>();
-    let rv64_binary = stylus_compiler_program::compile(&input)
-        .expect("stylus compilation failed");
+    let rv64_binary = stylus_compiler_program::compile(&input).expect("stylus compilation failed");
     sp1_zkvm::io::commit(&rv64_binary);
 }
 

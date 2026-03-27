@@ -41,8 +41,8 @@ pub fn compile(input: &CompileInput) -> Result<Vec<u8>> {
     config.push_middleware(Arc::new(depth));
     config.push_middleware(Arc::new(bound));
 
-    let triple = Triple::from_str("riscv64")
-        .map_err(|e| anyhow::anyhow!("invalid target triple: {e}"))?;
+    let triple =
+        Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("invalid target triple: {e}"))?;
     let engine = EngineBuilder::new(config)
         .set_target(Some(Target::new(triple, CpuFeature::set())))
         .engine();

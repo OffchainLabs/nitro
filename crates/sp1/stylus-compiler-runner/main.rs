@@ -1,11 +1,8 @@
 use clap::{Parser, Subcommand};
 use sp1_sdk::{
+    blocking::ProveRequest,
     blocking::{Prover, ProverClient},
-    include_elf,
-    Elf,
-    ProvingKey,
-    SP1Stdin,
-    blocking::ProveRequest
+    include_elf, Elf, ProvingKey, SP1Stdin,
 };
 use std::path::PathBuf;
 use stylus_compiler_program::{compile, CompileInput};
@@ -67,7 +64,11 @@ fn main() {
 
     let cli = Cli::parse();
     let wasm = std::fs::read(&cli.wasm).expect("failed to read wasm file");
-    let input = CompileInput { version: cli.version, debug: cli.debug, wasm };
+    let input = CompileInput {
+        version: cli.version,
+        debug: cli.debug,
+        wasm,
+    };
 
     match cli.command {
         Command::Native => {
@@ -76,7 +77,10 @@ fn main() {
         }
         Command::Execute => {
             let binary = sp1_execute(&input);
-            tracing::info!("SP1 execution completed, output size: {} bytes", binary.len());
+            tracing::info!(
+                "SP1 execution completed, output size: {} bytes",
+                binary.len()
+            );
         }
         Command::Prove => sp1_prove(&input),
         Command::Compare => {
