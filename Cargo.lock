@@ -7825,6 +7825,7 @@ dependencies = [
 name = "stylus-compiler-program"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "prover",
  "sp1-zkvm",
  "wasmer",

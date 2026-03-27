@@ -8,7 +8,8 @@ fn main() {
     let debug = sp1_zkvm::io::read::<bool>();
     let wasm = sp1_zkvm::io::read::<Vec<u8>>();
 
-    let rv64_binary = stylus_compiler_program::compile(version, debug, &wasm);
+    let rv64_binary = stylus_compiler_program::compile(version, debug, &wasm)
+        .expect("stylus compilation failed");
 
     sp1_zkvm::io::commit(&rv64_binary);
 }

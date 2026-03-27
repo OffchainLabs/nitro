@@ -11,6 +11,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
 sp1-zkvm = { workspace = true }
 wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }
 prover = { workspace = true, features = ["sp1", "native"] }

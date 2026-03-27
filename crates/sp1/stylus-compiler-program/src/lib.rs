@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use prover::programs::{
     MiddlewareWrapper, config::CompileConfig, depth::DepthChecker, dynamic::DynamicMeter,
     heap::HeapBound, meter::Meter, start::StartMover,
@@ -13,7 +14,7 @@ use wasmer::{
 ///
 /// Applies the same middleware stack used in the standard Stylus compilation pipeline:
 /// `StartMover`, `Meter`, `DynamicMeter`, `DepthChecker`, and `HeapBound`.
-pub fn compile(version: u16, debug: bool, wasm: &[u8]) -> Vec<u8> {
+pub fn compile(version: u16, debug: bool, wasm: &[u8]) -> Result<Vec<u8>> {
     let compile_config = CompileConfig::version(version, debug);
     let mut config = Singlepass::new();
     config.canonicalize_nans(true);
@@ -31,12 +32,14 @@ pub fn compile(version: u16, debug: bool, wasm: &[u8]) -> Vec<u8> {
     config.push_middleware(Arc::new(depth));
     config.push_middleware(Arc::new(bound));
 
-    let triple = Triple::from_str("riscv64").expect("target triple");
+    let triple = Triple::from_str("riscv64")
+        .map_err(|e| anyhow::anyhow!("invalid target triple: {e}"))?;
     let engine = EngineBuilder::new(config)
         .set_target(Some(Target::new(triple, CpuFeature::set())))
         .engine();
 
     let store = Store::new(engine);
-    let module = Module::new(&store, wasm).expect("compilation failed");
-    module.serialize().expect("serialize module").to_vec()
+    let module = Module::new(&store, wasm).context("wasm compilation failed")?;
+    let rv64_binary = module.serialize().context("module serialization failed")?;
+    Ok(rv64_binary.to_vec())
 }
