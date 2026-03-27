@@ -19,6 +19,7 @@ struct Cli {
     command: Command,
 
     /// Path to the Stylus WASM binary to compile.
+    #[arg(default_value = "testdata/memory.wasm")]
     wasm: PathBuf,
 
     /// Arbitrum version passed to the Stylus compiler.
