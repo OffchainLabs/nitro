@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use crate::Machine;
 use crate::{
     programs::{
@@ -334,7 +334,7 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {

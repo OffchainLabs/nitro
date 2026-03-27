@@ -68,6 +68,3 @@ native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
 cc_brotli = ["brotli/cc_brotli"]
-# Activated by crates/sp1/program and crates/sp1/stylus-compiler-program
-# to gate SP1-specific code paths (middleware, depth checking, metering).
-sp1 = []

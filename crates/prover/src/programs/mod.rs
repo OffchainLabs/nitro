@@ -1,11 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use crate::{machine::Module, programs::config::CompileConfig};
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use eyre::WrapErr;
 
 use crate::{
@@ -417,7 +417,7 @@ impl StylusData {
     }
 }
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 impl Module {
     pub fn activate(
         wasm: &[u8],
