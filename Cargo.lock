@@ -7827,6 +7827,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "prover",
+ "serde",
  "sp1-zkvm",
  "wasmer",
 ]
@@ -7837,7 +7838,9 @@ version = "0.1.0"
 dependencies = [
  "clap 4.5.53",
  "sp1-build",
+ "sp1-sdk",
  "stylus-compiler-program",
+ "tracing",
 ]
 
 [[package]]
