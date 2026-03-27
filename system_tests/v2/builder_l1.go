@@ -10,6 +10,7 @@ package v2
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"testing"
 	"time"
@@ -17,14 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -33,14 +32,12 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	boldsetup "github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
-	"github.com/offchainlabs/nitro/statetransfer"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -98,9 +95,7 @@ func buildL1L2Node(t *testing.T, ctx context.Context, spec *BuilderSpec) (*TestE
 		addr := l1Info.GetAddress(acct)
 		l1Genesis.Alloc[addr] = types.Account{Balance: new(big.Int).Set(bigBalance)}
 	}
-	for acct, info := range l1Info.GetGenesisAlloc() {
-		l1Genesis.Alloc[acct] = info
-	}
+	maps.Copy(l1Genesis.Alloc, l1Info.GetGenesisAlloc())
 	l1Genesis.BaseFee = new(big.Int).Mul(big.NewInt(50), big.NewInt(params.GWei))
 	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = faucetAddr
@@ -156,7 +151,7 @@ func buildL1L2Node(t *testing.T, ctx context.Context, spec *BuilderSpec) (*TestE
 	l2ExecCfg := defaultExecConfig(t, stateScheme)
 	l2StackCfg := testhelpers.CreateStackConfigForTest(t.TempDir())
 
-	l2Info, l2Stack, executionDB, consensusDB, blockchain := createBlockChainWithInit(
+	l2Info, l2Stack, executionDB, consensusDB, blockchain := createBlockChainCore(
 		t, l2ChainConfig, l2StackCfg, l2ExecCfg, initMessage)
 
 	seqTxOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -337,68 +332,3 @@ func deployBoldRollup(
 	return addresses, initMessage
 }
 
-// createBlockChainWithInit is like createBlockChain but uses a ParsedInitMessage
-// (from L1 deployment) instead of generating a fake one.
-func createBlockChainWithInit(
-	t *testing.T,
-	chainConfig *params.ChainConfig,
-	stackCfg *node.Config,
-	execCfg *gethexec.Config,
-	initMsg *arbostypes.ParsedInitMessage,
-) (*arbtest.BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	t.Helper()
-
-	l2Info := arbtest.NewArbTestInfo(t, chainConfig.ChainID)
-
-	stack, err := node.New(stackCfg)
-	if err != nil {
-		t.Fatalf("node.New: %v", err)
-	}
-
-	var executionDB ethdb.Database
-	if stackCfg.DBEngine == env.MemoryDB {
-		executionDB = rawdb.WrapDatabaseWithWasm(rawdb.NewMemoryDatabase(), rawdb.NewMemoryDatabase())
-	} else {
-		chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{
-			MetricsNamespace:   "l2chaindata/",
-			PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"),
-		})
-		if err != nil {
-			t.Fatalf("open l2chaindata: %v", err)
-		}
-		wasmData, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{
-			MetricsNamespace:   "wasm/",
-			PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"),
-			NoFreezer:          true,
-		})
-		if err != nil {
-			t.Fatalf("open wasm: %v", err)
-		}
-		executionDB = rawdb.WrapDatabaseWithWasm(chainData, wasmData)
-	}
-
-	var consensusDB ethdb.Database
-	if stackCfg.DBEngine == env.MemoryDB {
-		consensusDB = rawdb.NewMemoryDatabase()
-	} else {
-		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{
-			MetricsNamespace:   "arbitrumdata/",
-			PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"),
-			NoFreezer:          true,
-		})
-		if err != nil {
-			t.Fatalf("open arbitrumdata: %v", err)
-		}
-	}
-
-	initReader := statetransfer.NewMemoryInitDataReader(&l2Info.ArbInitData)
-	coreCacheConfig := gethexec.DefaultCacheConfigTrieNoFlushFor(&execCfg.Caching, false)
-	blockchain, err := gethexec.WriteOrTestBlockChain(
-		executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMsg,
-		&gethexec.ConfigDefault.TxIndexer, 0, execCfg.ExposeMultiGas)
-	if err != nil {
-		t.Fatalf("WriteOrTestBlockChain: %v", err)
-	}
-
-	return l2Info, stack, executionDB, consensusDB, blockchain
-}

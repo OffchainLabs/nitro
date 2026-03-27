@@ -216,11 +216,36 @@ func buildL2Node(t *testing.T, ctx context.Context, spec *BuilderSpec) (*TestEnv
 	}
 }
 
+// createBlockChain creates an L2 blockchain with a fake init message (for L2-only tests).
 func createBlockChain(
 	t *testing.T,
 	chainConfig *params.ChainConfig,
 	stackCfg *node.Config,
 	execCfg *gethexec.Config,
+) (*arbtest.BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
+	t.Helper()
+
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		t.Fatalf("marshal chainConfig: %v", err)
+	}
+	initMsg := &arbostypes.ParsedInitMessage{
+		ChainId:               chainConfig.ChainID,
+		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
+		ChainConfig:           chainConfig,
+		SerializedChainConfig: serializedChainConfig,
+	}
+
+	return createBlockChainCore(t, chainConfig, stackCfg, execCfg, initMsg)
+}
+
+// createBlockChainCore is the shared implementation for both L2-only and L1+L2 blockchain creation.
+func createBlockChainCore(
+	t *testing.T,
+	chainConfig *params.ChainConfig,
+	stackCfg *node.Config,
+	execCfg *gethexec.Config,
+	initMsg *arbostypes.ParsedInitMessage,
 ) (*arbtest.BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	t.Helper()
 
@@ -265,17 +290,6 @@ func createBlockChain(
 		if err != nil {
 			t.Fatalf("open arbitrumdata: %v", err)
 		}
-	}
-
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		t.Fatalf("marshal chainConfig: %v", err)
-	}
-	initMsg := &arbostypes.ParsedInitMessage{
-		ChainId:               chainConfig.ChainID,
-		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-		ChainConfig:           chainConfig,
-		SerializedChainConfig: serializedChainConfig,
 	}
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2Info.ArbInitData)

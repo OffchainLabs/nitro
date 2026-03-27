@@ -94,8 +94,9 @@ type BuilderSpec struct {
 	ValidateBlocks bool // runner validates all produced blocks via StatelessBlockValidator
 	CheckMultiNode bool // runner spins up a 2nd node, syncs, and verifies block hashes match
 
-	// --- Category (replaces build tags) ---
-	Category TestCategory // empty = default category
+	// --- Category and race compatibility (replaces build tags) ---
+	Category        TestCategory // empty = default category
+	RaceIncompatible bool        // true = skip when running under -race
 
 	// --- Resolved values (filled by the runner after matrix expansion) ---
 	// Tests should NOT set these. They are written by the runner.
@@ -339,23 +340,15 @@ func (e *TestEnv) EnsureTxSucceeded(tx *types.Transaction) *types.Receipt {
 // TestEntry ties together the name, config function, and run function for one test.
 type TestEntry struct {
 	Name   string
-	Config func(TestParams) []*BuilderSpec
+	Config func() []*BuilderSpec
 	Run    func(*TestEnv)
-}
-
-// TestParams holds external configuration overrides passed to the runner.
-// testConfigX functions can inspect these to decide what specs to return.
-// This is mostly useful for tests that need special logic beyond what
-// BuilderSpec fields can express.
-type TestParams struct {
-	Dims matrixDimensions
 }
 
 var globalRegistry []TestEntry
 
 // RegisterTest adds a test to the global registry.
 // Call from init() in each test file.
-func RegisterTest(name string, config func(TestParams) []*BuilderSpec, run func(*TestEnv)) {
+func RegisterTest(name string, config func() []*BuilderSpec, run func(*TestEnv)) {
 	globalRegistry = append(globalRegistry, TestEntry{
 		Name:   name,
 		Config: config,
@@ -399,8 +392,8 @@ func MaxWeight() int {
 
 // L2Light returns a config function that always returns a single lightweight
 // L2-only spec with no constraints. This is the most common config pattern.
-func L2Light() func(TestParams) []*BuilderSpec {
-	return func(_ TestParams) []*BuilderSpec {
+func L2Light() func() []*BuilderSpec {
+	return func() []*BuilderSpec {
 		return []*BuilderSpec{{
 			Weight:         WeightLight,
 			Parallelizable: true,
@@ -410,8 +403,8 @@ func L2Light() func(TestParams) []*BuilderSpec {
 
 // L2WithMinArbOS returns a config function for a lightweight L2-only spec
 // that requires a minimum ArbOS version.
-func L2WithMinArbOS(minVersion uint64) func(TestParams) []*BuilderSpec {
-	return func(_ TestParams) []*BuilderSpec {
+func L2WithMinArbOS(minVersion uint64) func() []*BuilderSpec {
+	return func() []*BuilderSpec {
 		return []*BuilderSpec{{
 			Weight:          WeightLight,
 			Parallelizable:  true,
@@ -421,8 +414,8 @@ func L2WithMinArbOS(minVersion uint64) func(TestParams) []*BuilderSpec {
 }
 
 // L1L2 returns a config function for a standard L1+L2 test.
-func L1L2() func(TestParams) []*BuilderSpec {
-	return func(_ TestParams) []*BuilderSpec {
+func L1L2() func() []*BuilderSpec {
+	return func() []*BuilderSpec {
 		return []*BuilderSpec{{
 			NeedsL1:        true,
 			Weight:         WeightMedium,

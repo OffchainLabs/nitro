@@ -18,13 +18,13 @@ import (
 
 func init() {
 	// Unconstrained L2 tests — support any scheme/engine/version.
-	RegisterTest("TestArbStatistics", testConfigL2Light, testRunArbStatistics)
-	RegisterTest("TestArbAggregatorGetPreferredAggregator", testConfigL2Light, testRunArbAggregatorGetPreferredAggregator)
-	RegisterTest("TestFeeAccounts", testConfigL2Light, testRunFeeAccounts)
-	RegisterTest("TestChainOwners", testConfigL2Light, testRunChainOwners)
+	RegisterTest("TestArbStatistics", L2Light(), testRunArbStatistics)
+	RegisterTest("TestArbAggregatorGetPreferredAggregator", L2Light(), testRunArbAggregatorGetPreferredAggregator)
+	RegisterTest("TestFeeAccounts", L2Light(), testRunFeeAccounts)
+	RegisterTest("TestChainOwners", L2Light(), testRunChainOwners)
 
 	// Needs minimum ArbOS version — demonstrates MinArbOSVersion filtering.
-	RegisterTest("TestGetBrotliCompressionLevel", testConfigMinArbOS20, testRunGetBrotliCompressionLevel)
+	RegisterTest("TestGetBrotliCompressionLevel", L2WithMinArbOS(params.ArbosVersion_20), testRunGetBrotliCompressionLevel)
 
 	// Pinned ArbOS version — demonstrates PinArbOSVersion.
 	RegisterTest("TestPurePrecompileMethodCalls", testConfigPinArbOS31, testRunPurePrecompileMethodCalls)
@@ -34,32 +34,11 @@ func init() {
 }
 
 // =========================================================================
-// Shared configs — demonstrate the "compatibility surface" patterns
+// Configs unique to precompile tests
 // =========================================================================
 
-// testConfigL2Light: no constraints at all. Supports everything.
-// When CLI says --v2.matrix.state-scheme=hash,path, this test runs twice.
-func testConfigL2Light(_ TestParams) []*BuilderSpec {
-	return []*BuilderSpec{{
-		Weight:         WeightLight,
-		Parallelizable: true,
-	}}
-}
-
-// testConfigMinArbOS20: supports everything, but needs ArbOS >= 20.
-// When CLI says --v2.matrix.arbos-version=11,20,31, this runs for 20 and 31 only.
-func testConfigMinArbOS20(_ TestParams) []*BuilderSpec {
-	return []*BuilderSpec{{
-		Weight:          WeightLight,
-		Parallelizable:  true,
-		MinArbOSVersion: params.ArbosVersion_20,
-	}}
-}
-
 // testConfigPinArbOS31: must use exactly ArbOS 31.
-// When CLI says --v2.matrix.arbos-version=20,31,50, this runs for 31 only.
-// When CLI says --v2.matrix.arbos-version=50, this is skipped entirely.
-func testConfigPinArbOS31(_ TestParams) []*BuilderSpec {
+func testConfigPinArbOS31() []*BuilderSpec {
 	return []*BuilderSpec{{
 		Weight:          WeightLight,
 		Parallelizable:  true,
@@ -69,7 +48,7 @@ func testConfigPinArbOS31(_ TestParams) []*BuilderSpec {
 
 // testConfigHashSchemeOnly: only supports hash scheme.
 // When CLI says --v2.matrix.state-scheme=hash,path, this runs for hash only.
-func testConfigHashSchemeOnly(_ TestParams) []*BuilderSpec {
+func testConfigHashSchemeOnly() []*BuilderSpec {
 	return []*BuilderSpec{{
 		Weight:         WeightLight,
 		Parallelizable: true,

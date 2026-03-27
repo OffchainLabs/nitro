@@ -30,7 +30,7 @@ type Scenario struct {
 // SuiteEntry ties together a name, shared config, and multiple scenarios.
 type SuiteEntry struct {
 	Name      string
-	Config    func(TestParams) []*BuilderSpec
+	Config    func() []*BuilderSpec
 	Scenarios []Scenario
 }
 

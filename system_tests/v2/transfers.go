@@ -4,7 +4,6 @@
 package v2
 
 import (
-	"fmt"
 	"math/big"
 )
 
@@ -15,7 +14,7 @@ func init() {
 // testConfigTransfer: L2-only, lightweight, works with any scheme/engine/version.
 // The empty Schemes/DBEngines/Min/Max means "I support everything" —
 // the runner will expand this across whatever the CLI matrix requests.
-func testConfigTransfer(_ TestParams) []*BuilderSpec {
+func testConfigTransfer() []*BuilderSpec {
 	return []*BuilderSpec{{
 		Weight:         WeightLight,
 		Parallelizable: true,
@@ -34,9 +33,6 @@ func testRunTransfer(env *TestEnv) {
 	env.Require(err)
 
 	env.L2.WaitForTx(env.T, env.Ctx, tx)
-
-	bal := env.L2.BalanceAt(env.Ctx, env.L2Info.GetAddress("Owner"))
-	fmt.Println("Owner balance is:", bal)
 
 	bal2 := env.L2.BalanceAt(env.Ctx, env.L2Info.GetAddress("User2"))
 	if bal2.Cmp(big.NewInt(1e12)) != 0 {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // TestRunner is the single Go test entry point for all v2-registered tests.
@@ -24,7 +25,6 @@ import (
 //	TestRunner/worker-N/TestFoo/hash/arbos50   (parallel, matrix expanded)
 func TestRunner(t *testing.T) {
 	dims := parseMatrixDimensions()
-	params := TestParams{Dims: dims}
 	enabledCats := EnabledCategories()
 
 	type workItem struct {
@@ -38,7 +38,7 @@ func TestRunner(t *testing.T) {
 
 	// Collect individual tests.
 	for _, entry := range GetRegistry() {
-		specs := entry.Config(params)
+		specs := entry.Config()
 		for _, spec := range specs {
 			// Category filtering.
 			if !categoryEnabled(spec.Category, enabledCats) {
@@ -47,6 +47,7 @@ func TestRunner(t *testing.T) {
 
 			expanded := expandSpec(spec, dims)
 			for _, es := range expanded {
+				inferWeight(es)
 				item := workItem{
 					name: TestName(entry.Name, es),
 					spec: es,
@@ -64,7 +65,7 @@ func TestRunner(t *testing.T) {
 	// Collect suite tests — each scenario becomes a workItem, but all scenarios
 	// within a suite share a single node build (handled in runSuiteItem).
 	for _, suite := range GetSuiteRegistry() {
-		specs := suite.Config(params)
+		specs := suite.Config()
 		for _, spec := range specs {
 			if !categoryEnabled(spec.Category, enabledCats) {
 				continue
@@ -151,7 +152,8 @@ func TestRunner(t *testing.T) {
 func runOne(t *testing.T, spec *BuilderSpec, run func(*TestEnv)) {
 	t.Helper()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Default 5-minute timeout per test to prevent CI hangs.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	var env *TestEnv
@@ -184,12 +186,27 @@ func runSuiteScenarios(env *TestEnv, scenarios []Scenario) {
 			subEnv := &TestEnv{
 				T:      t,
 				Ctx:    env.Ctx,
+				L1:     env.L1,
+				L1Info: env.L1Info,
 				L2:     env.L2,
 				L2Info: env.L2Info,
 				Spec:   env.Spec,
 			}
 			sc.Run(subEnv)
 		})
+	}
+}
+
+// inferWeight sets a default weight if the test didn't specify one.
+// NeedsL1 → WeightMedium, otherwise → WeightLight.
+func inferWeight(spec *BuilderSpec) {
+	if spec.Weight != 0 {
+		return
+	}
+	if spec.NeedsL1 {
+		spec.Weight = WeightMedium
+	} else {
+		spec.Weight = WeightLight
 	}
 }
 
