@@ -5293,6 +5293,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "nom",
+ "num",
  "num-derive",
  "num-traits",
  "parking_lot",

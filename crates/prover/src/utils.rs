@@ -14,7 +14,9 @@ use sha3::Keccak256;
 use std::{convert::TryInto, fs::File, io::Read, path::Path};
 use wasmparser::{RefType, TableType};
 
-pub use crate::cbytes::{CBytes, CBytesIntoIter};
+pub use crate::cbytes::CBytes;
+#[cfg(feature = "libc")]
+pub use crate::cbytes::CBytesIntoIter;
 
 /// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
 /// This type enables serde via a 1:1 transmute.
