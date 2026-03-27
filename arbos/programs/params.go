@@ -117,6 +117,10 @@ func (p Programs) Params() (*StylusParams, error) {
 	} else {
 		stylusParams.MaxFragmentCount = 0
 	}
+	// Slot 0 layout (32 bytes): 25 base bytes + 4 (MaxWasmSize) + 1 (MaxFragmentCount) = 30 bytes used.
+	// 2 bytes remain in slot 0. A new field of ≤ 2 bytes can be appended here;
+	// a larger field must start at the beginning of slot 1 with 2 bytes of explicit
+	// zero-padding appended first to stay slot-aligned.
 	return stylusParams, nil
 }
 
@@ -149,6 +153,7 @@ func (p *StylusParams) Save() error {
 	if p.arbosVersion >= params.ArbosVersion_StylusContractLimit {
 		data = append(data, arbmath.Uint8ToBytes(p.MaxFragmentCount)...)
 	}
+	// Slot 0 is 30/32 bytes full here. See the matching comment in Params() before adding fields.
 
 	slot := uint64(0)
 	for len(data) != 0 {
