@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -2072,8 +2073,8 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.dataPoster.Start(b.GetContext())
-	b.redisLock.Start(b.GetContext())
+	b.StartAndTrackChild(b.dataPoster)
+	b.StartAndTrackChild(b.redisLock)
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
@@ -2097,7 +2098,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
-				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
+				batchPosterGasRefunderBalance.Update(floatmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		if b.dataPoster.Sender() != (common.Address{}) {
@@ -2105,7 +2106,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
-				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
+				batchPosterWalletBalance.Update(floatmath.BalancePerEther(walletBalance))
 			}
 		}
 		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
@@ -2154,12 +2155,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config().PollInterval
 		}
 	})
-}
-
-func (b *BatchPoster) StopAndWait() {
-	b.redisLock.StopAndWait()
-	b.dataPoster.StopAndWait()
-	b.StopWaiter.StopAndWait()
 }
 
 type BoolRing struct {

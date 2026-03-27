@@ -23,7 +23,46 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 )
+
+// Set multigas constraints where one of the resources is more expensive than the others. Set a long
+// adjustment window with a huge backlog to keep the constrained price high for a long time. Return
+// the expensive resource kind.
+func setupUnbalancedMultiGasConstraints(t *testing.T, builder *NodeBuilder) multigas.ResourceKind {
+	// Allow transactions with expensive gas fee.
+	builder.L2Info.GasPrice = big.NewInt(100 * params.GWei)
+
+	baseFeeBefore := builder.L2.GetBaseFee(t)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	require.NoError(t, err)
+
+	const expensiveResourceKind = multigas.ResourceKindStorageGrowth
+	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", builder.ctx)
+	constraint := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
+		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
+			{Resource: uint8(expensiveResourceKind), Weight: 1},
+		},
+		AdjustmentWindowSecs: 1_000,
+		TargetPerSec:         50_000,
+		Backlog:              250_000_000,
+	}
+	tx, err := arbOwner.SetMultiGasPricingConstraints(&ownerTxOpts, []precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
+		constraint,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+
+	// Advance blocks so changes take effect.
+	builder.L2.AdvanceBlocks(t, "Faucet", 2, builder.L2Info)
+
+	baseFeeAfter := builder.L2.GetBaseFee(t)
+	t.Log("Base fee before: ", floatmath.WeiToGwei(baseFeeBefore))
+	t.Log("Base fee after:  ", floatmath.WeiToGwei(baseFeeAfter))
+
+	return expensiveResourceKind
+}
 
 func TestSetAndGetGasPricingConstraints(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,92 +198,64 @@ func TestMultiGasRefundForNormalTx(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	owner := auth.From
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	require.NoError(t, err)
-
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, builder.L2.Client)
 	require.NoError(t, err)
 
-	// Set multi-gas constraints with heavy-constrained storage growth
-	constraint := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
-		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
-			{Resource: uint8(multigas.ResourceKindStorageGrowth), Weight: 1},
-		},
-		AdjustmentWindowSecs: 10,
-		TargetPerSec:         50_000,
-		Backlog:              200_000,
-	}
-	tx, err := arbOwner.SetMultiGasPricingConstraints(&auth, []precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
-		constraint,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, tx)
+	// Enable multi-gas constraints.
+	setupUnbalancedMultiGasConstraints(t, builder)
 
-	// First transaction: spin the pricing model, should use InitialBaseFeeWei
-	tx = builder.L2Info.PrepareTx(
-		"Owner", "Owner",
-		builder.L2Info.TransferGas,
-		big.NewInt(1),
-		nil,
-	)
+	// Send transaction that does not use the constrained resource, should get a positive refund.
+	balanceBefore, err := builder.L2.Client.BalanceAt(ctx, owner, nil)
+	require.NoError(t, err)
+	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(1), nil)
 	require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
 	receipt, err := builder.L2.EnsureTxSucceeded(tx)
 	require.NoError(t, err)
 
-	require.Equal(t, uint64(l2pricing.InitialBaseFeeWei), receipt.EffectiveGasPrice.Uint64())
-
-	// Second transaction: does not use storage growth, should get a positive refund
-	balanceBefore, err := builder.L2.Client.BalanceAt(ctx, owner, nil)
-
-	require.NoError(t, err)
-	tx = builder.L2Info.PrepareTx(
-		"Owner", "Owner",
-		builder.L2Info.TransferGas,
-		big.NewInt(1),
-		nil,
-	)
-	require.NoError(t, builder.L2.Client.SendTransaction(ctx, tx))
-	receipt, err = builder.L2.EnsureTxSucceeded(tx)
-	require.NoError(t, err)
-
-	// Ensure base fee is greater than initial (due to the constrained storage growth)
-	require.Greater(t, receipt.EffectiveGasPrice.Uint64(), uint64(l2pricing.InitialBaseFeeWei))
-
+	// Ensure base fee is greater than initial (due to the constrained resource).
+	singleGasBaseFee := builder.L2.GetBaseFeeAt(t, receipt.BlockNumber)
+	require.Greater(t, singleGasBaseFee.Int64(), int64(l2pricing.InitialBaseFeeWei))
 	balanceAfter, err := builder.L2.Client.BalanceAt(ctx, owner, nil)
 	require.NoError(t, err)
 
-	// Single cost: what the user would pay without multi-gas refund
+	// Single cost: what the user would pay without multi-gas refund.
 	gasUsed := receipt.GasUsed
 	singleCost := new(big.Int).Mul(
 		new(big.Int).SetUint64(gasUsed),
 		receipt.EffectiveGasPrice,
 	)
 
-	// Multi-gas cost: calculated using multi-gas base fees
-	mgFees, err := arbGasInfo.GetMultiGasBaseFee(&bind.CallOpts{Context: ctx})
+	// Multi-gas cost: calculated using multi-gas base fees.
+	mgFees, err := arbGasInfo.GetMultiGasBaseFee(&bind.CallOpts{Context: ctx, BlockNumber: receipt.BlockNumber})
 	require.NoError(t, err)
-
-	mgPrice := uint64(0)
+	multiCost := uint64(0)
 	for i, baseFee := range mgFees {
 		// #nosec G115 safe: NumResourceKind < 2^32
 		kind := multigas.ResourceKind(i)
 		amount := receipt.MultiGasUsed.Get(kind)
-		part := new(big.Int).Mul(
-			new(big.Int).SetUint64(amount),
-			baseFee,
-		)
-		mgPrice += part.Uint64()
+		part := arbmath.BigMulByUint(baseFee, amount)
+		multiCost += part.Uint64()
 	}
+
+	// Add tips.
+	tipPerGas, err := tx.EffectiveGasTip(singleGasBaseFee)
+	require.NoError(t, err)
+	tipCost := arbmath.BigMulByUint(tipPerGas, receipt.GasUsed)
+	multiCost += tipCost.Uint64()
 
 	// Expect actualCost equal to multi-gas cost
 	actualCost := new(big.Int).Sub(balanceBefore, balanceAfter)
-	require.Less(t, actualCost.Cmp(singleCost), 0, "expected actual cost < single cost")
-
-	require.Equal(t, mgPrice, actualCost.Uint64(), "multi-gas price mismatch")
+	require.True(t, actualCost.Cmp(singleCost) < 0, "expected actual cost < single cost, actual: %v, single: %v", actualCost, singleCost)
+	require.Equal(t, multiCost, actualCost.Uint64(), "multi-gas price mismatch")
 
 	// Expect positive refund
 	refund := new(big.Int).Sub(singleCost, actualCost)
 	require.True(t, refund.Sign() > 0, "expected positive refund, got %v", refund)
+
+	t.Logf("single gas price: %018d", singleCost)
+	t.Logf("multi gas price:  %018d", multiCost)
+	t.Logf("tip:              %018d", tipCost.Uint64())
+	t.Logf("refund:           %018d", refund.Uint64())
 }
 
 func TestMultiGasRefundForRetryableTx(t *testing.T) {
@@ -386,9 +397,6 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	})
 	defer teardown()
 
-	// Allow transactions with expensive gas fee.
-	builder.L2Info.GasPrice = big.NewInt(100 * params.GWei)
-
 	// Deploy simple contract in L2.
 	ownerTxOpts := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	simpleAddr, _ := builder.L2.DeploySimple(t, ownerTxOpts)
@@ -400,36 +408,16 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 	builder.L2.TransferBalanceTo(t, "Faucet", infraFeeAddr, big.NewInt(params.Ether), builder.L2Info)
 	builder.L2.TransferBalanceTo(t, "Faucet", networkFeeAddr, big.NewInt(params.Ether), builder.L2Info)
 
-	// Enable multi-gas constraints with heavy-constrained storage growth.
-	// Set a long adjustment window with a huge backlog to keep the constrained price high for a long time.
-	const expensiveResourceKind = multigas.ResourceKindStorageGrowth
-	baseFeeBefore := builder.L2.GetBaseFee(t)
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	require.NoError(t, err)
-	constraint := precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
-		Resources: []precompilesgen.ArbMultiGasConstraintsTypesWeightedResource{
-			{Resource: uint8(expensiveResourceKind), Weight: 1},
-		},
-		AdjustmentWindowSecs: 1_000,
-		TargetPerSec:         50_000,
-		Backlog:              250_000_000,
-	}
-	tx, err := arbOwner.SetMultiGasPricingConstraints(&ownerTxOpts, []precompilesgen.ArbMultiGasConstraintsTypesResourceConstraint{
-		constraint,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, tx)
-	builder.L2.AdvanceBlocks(t, "Faucet", 2, builder.L2Info) // Advance blocks so changes take effect
-	baseFeeAfter := builder.L2.GetBaseFee(t)
-	t.Log("Base fee before: ", baseFeeBefore.Int64())
-	t.Log("Base fee after:  ", baseFeeAfter.Int64())
+	// Enable multi-gas constraints.
+	expensiveResourceKind := setupUnbalancedMultiGasConstraints(t, builder)
 
 	// Create an user to send the retryable.
 	const user = "RetryableUser"
 	builder.L1Info.GenerateAccount(user)
 	builder.L2Info.GenerateAccount(user)
-	builder.L1.TransferBalance(t, "Faucet", user, big.NewInt(params.Ether), builder.L1Info)
-	builder.L2.TransferBalance(t, "Faucet", user, big.NewInt(params.Ether), builder.L2Info)
+	balance := arbmath.BigMul(big.NewInt(params.Ether), big.NewInt(10))
+	builder.L1.TransferBalance(t, "Faucet", user, balance, builder.L1Info)
+	builder.L2.TransferBalance(t, "Faucet", user, balance, builder.L2Info)
 	userAddr := builder.L1Info.GetAddress(user)
 
 	// Create retryable ticket calling simple.pleaseRevert.
@@ -503,35 +491,41 @@ func TestMultiGasDoesntRefundRetryablesMultipleTimes(t *testing.T) {
 		expectedSingleDim := redeemReceipt.GasUsedForL1 + event.DonatedGas
 		assert.Equal(t, expectedSingleDim, redeemReceipt.MultiGasUsed.Get(multigas.ResourceKindSingleDim))
 
-		// Check user balance decreases and network fee balance keeps the same.
-		// If the user is refunded twice, their balance would increase.
+		// Check user balance decreases. If the user is refunded twice, their balance would increase.
 		userBalanceDiff, err := builder.L2.BalanceDifferenceAtBlock(userAddr, redeemReceipt.BlockNumber)
 		require.NoError(t, err)
 		networkFeeBalanceDiff, err := builder.L2.BalanceDifferenceAtBlock(networkFeeAddr, redeemReceipt.BlockNumber)
 		require.NoError(t, err)
 		assert.Negative(t, userBalanceDiff.Sign())
-		assert.Zero(t, networkFeeBalanceDiff.Sign())
+
+		// Check network balance fee increase by the amount paid in tips
+		singleGasBaseFee := builder.L2.GetBaseFeeAt(t, redeemReceipt.BlockNumber)
+		tipPerGas, err := redeemTx.EffectiveGasTip(singleGasBaseFee)
+		assert.NoError(t, err)
+		computeTipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsedForL2()))
+		assert.Equal(t, computeTipFee.Int64(), networkFeeBalanceDiff.Int64())
 
 		// Compute what the user actually paid for the retryable redeem attempt.
-		maxBaseFee := builder.L2.GetBaseFeeAt(t, redeemReceipt.BlockNumber)
 		constrainedGas := redeemReceipt.MultiGasUsed.Get(expensiveResourceKind) + retryReceipt.MultiGasUsed.Get(expensiveResourceKind)
 		l1CalldataGas := redeemReceipt.GasUsedForL1 + retryReceipt.GasUsedForL1
-		expensiveGas := constrainedGas + l1CalldataGas
-		expensiveGasFee := new(big.Int).Mul(maxBaseFee, new(big.Int).SetUint64(expensiveGas))
-		remainingGas := redeemReceipt.GasUsed + retryReceipt.GasUsed - expensiveGas - event.DonatedGas
+		singleGas := constrainedGas + l1CalldataGas
+		singleGasFee := new(big.Int).Mul(singleGasBaseFee, new(big.Int).SetUint64(singleGas))
+		remainingGas := redeemReceipt.GasUsed + retryReceipt.GasUsed - singleGas - event.DonatedGas
 		remainingGasFee := new(big.Int).Mul(minimumBaseFee, new(big.Int).SetUint64(remainingGas))
-		expectedFee := new(big.Int).Add(expensiveGasFee, remainingGasFee)
+		totalTipFee := new(big.Int).Mul(tipPerGas, new(big.Int).SetUint64(redeemReceipt.GasUsed))
+		expectedFee := arbmath.BigAdd(arbmath.BigAdd(singleGasFee, remainingGasFee), totalTipFee)
+
 		assert.Equal(t, expectedFee.Uint64(), new(big.Int).Abs(userBalanceDiff).Uint64())
-		t.Logf("Sent transaction %v with cost %0.9f Ether", i, arbmath.BalancePerEther(expectedFee))
+		t.Logf("Sent transaction %v with cost %0.9f Ether", i, floatmath.BalancePerEther(expectedFee))
 	}
 
 	// Check final user balance
 	finalUserBalance := builder.L2.GetBalance(t, userAddr)
 	finalNetworkFeeBalance := builder.L2.GetBalance(t, networkFeeAddr)
-	t.Logf("Initial user balance:    %v Eth", arbmath.BalancePerEther(initialUserBalance))
-	t.Logf("Final user balance:      %v Eth", arbmath.BalancePerEther(finalUserBalance))
-	t.Logf("Initial net-fee balance: %v Eth", arbmath.BalancePerEther(initialNetworkFeeBalance))
-	t.Logf("Final net fee balance:   %v Eth", arbmath.BalancePerEther(finalNetworkFeeBalance))
+	t.Logf("Initial user balance:    %v Eth", floatmath.BalancePerEther(initialUserBalance))
+	t.Logf("Final user balance:      %v Eth", floatmath.BalancePerEther(finalUserBalance))
+	t.Logf("Initial net-fee balance: %v Eth", floatmath.BalancePerEther(initialNetworkFeeBalance))
+	t.Logf("Final net fee balance:   %v Eth", floatmath.BalancePerEther(finalNetworkFeeBalance))
 	assert.True(t, finalUserBalance.Cmp(initialUserBalance) < 0, "user balance should decrease")
-	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) == 0, "network fee balance remain the same")
+	assert.True(t, finalNetworkFeeBalance.Cmp(initialNetworkFeeBalance) > 0, "network fee balance should increase")
 }
