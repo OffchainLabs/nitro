@@ -18,7 +18,13 @@ import (
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter/state"
+	"github.com/offchainlabs/nitro/util/stopwaiter/stoppable"
 )
+
+// Re-exported for callers' convenience: use stopwaiter.Stoppable / stopwaiter.StoppableChild
+// instead of importing the internal stoppable sub-package directly.
+type Stoppable = stoppable.Stoppable
+type StoppableChild = stoppable.StoppableChild
 
 const stopDelayWarningTimeout = 30 * time.Second
 
@@ -52,6 +58,24 @@ func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 	return st.GetParentContext()
 }
 
+// TrackChild registers a child Stoppable to be automatically stopped
+// when this StopWaiter is stopped, in LIFO (reverse) order.
+// If children have already been taken for shutdown, the child is stopped immediately.
+// A nil child is silently ignored.
+func (s *StopWaiterSafe) TrackChild(child Stoppable) {
+	if child == nil {
+		return
+	}
+	st := s.Lock()
+	if st.IsChildrenTaken() {
+		s.Unlock()
+		child.StopAndWait()
+		return
+	}
+	st.AppendChild(child)
+	s.Unlock()
+}
+
 func getParentName(parent any) string {
 	// remove asterisk in case the type is a pointer
 	return strings.Replace(reflect.TypeOf(parent).String(), "*", "", 1)
@@ -79,7 +103,27 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	return nil
 }
 
+// takeChildren atomically takes children from the state so that
+// concurrent StopOnly/StopAndWait calls don't double-stop them.
+// Returns nil on subsequent calls.
+// The children are also stored in TakenChildren so that stopAndWaitImpl
+// can call StopAndWait on them even after StopOnly has already taken them.
+func (s *StopWaiterSafe) takeChildren() []Stoppable {
+	st := s.Lock()
+	defer s.Unlock()
+	if st.IsChildrenTaken() {
+		return nil
+	}
+	return st.TakeChildren()
+}
+
+// StopOnly cancels the context and stops all tracked children (non-blocking).
+// A subsequent StopAndWait will still wait for children's goroutines to finish.
 func (s *StopWaiterSafe) StopOnly() {
+	children := s.takeChildren()
+	for i := len(children) - 1; i >= 0; i-- {
+		children[i].StopOnly()
+	}
 	st := s.Lock()
 	defer s.Unlock()
 	if st.Started && !st.Stopped {
@@ -102,6 +146,16 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
+	children := s.takeChildren()
+	if children == nil {
+		// StopOnly was already called and took the children; retrieve them for waiting.
+		st := s.RLock()
+		children = st.GetTakenChildren()
+		s.RUnlock()
+	}
+	for i := len(children) - 1; i >= 0; i-- {
+		children[i].StopAndWait()
+	}
 	s.StopOnly()
 	if !s.Started() {
 		// No need to wait, because nothing can be started if it's already stopped.
@@ -319,6 +373,17 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 	if err := s.StopWaiterSafe.Start(ctx, parent); err != nil {
 		panic(err)
 	}
+}
+
+// StartAndTrackChild starts a child with the parent's managed context
+// and registers it for automatic shutdown in LIFO order.
+// A nil child is silently ignored.
+func (s *StopWaiter) StartAndTrackChild(child StoppableChild) {
+	if child == nil {
+		return
+	}
+	child.Start(s.GetContext())
+	s.TrackChild(child)
 }
 
 func (s *StopWaiter) StopAndWait() {
