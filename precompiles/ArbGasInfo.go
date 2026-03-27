@@ -323,6 +323,21 @@ func (con ArbGasInfo) GetGasPricingConstraints(c ctx, evm mech) ([][3]uint64, er
 	return constraints, nil
 }
 
+// GetParentChainL1BaseFee returns the most recent known parent chain L1 base fee
+func (con ArbGasInfo) GetParentChainL1BaseFee(c ctx, evm mech) (huge, error) {
+	return c.State.L1PricingState().RecentParentL1BaseFee()
+}
+
+// GetParentChainBlobBaseFee returns the most recent known parent chain blob base fee
+func (con ArbGasInfo) GetParentChainBlobBaseFee(c ctx, evm mech) (huge, error) {
+	return c.State.L1PricingState().RecentParentBlobBaseFee()
+}
+
+// GetParentChainBlockHash returns the most recent known parent chain block hash
+func (con ArbGasInfo) GetParentChainBlockHash(c ctx, evm mech) (bytes32, error) {
+	return c.State.L1PricingState().RecentParentChainBlockHash()
+}
+
 // GetMultiGasPricingConstraints returns the current configuration of multi-gas pricing constraints
 func (con ArbGasInfo) GetMultiGasPricingConstraints(
 	c ctx,

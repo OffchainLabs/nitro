@@ -492,6 +492,13 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// filteredFundsRecipient defaults to zero address (falls back to networkFeeAccount).
 			// No explicit initialization needed -- uninitialized storage reads as zero.
 
+		case 61, 62, 63, 64, 65, 66, 67, 68, 69:
+			// these versions are left to Orbit chains for custom upgrades.
+
+		case params.ArbosVersion_70:
+			// Changes for ArbosVersion_ParentChainPricing.
+			// No explicit initialization needed -- zero-valued storage is correct default.
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

@@ -58,6 +58,7 @@ type DelayedSequencer struct {
 	waitingForFilteredTx     *FilteredTxWaitState
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
+	skipBridgeAccCheck       bool // true when using MEL, which manages its own accumulator
 }
 
 type DelayedSequencerConfig struct {
@@ -236,10 +237,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		if err := d.checkAccumulatorReorg(
-			ctx, lastDelayedAcc, pos, finalizedHash, finalized,
-		); err != nil {
-			return err
+		if !d.skipBridgeAccCheck {
+			if err := d.checkAccumulatorReorg(
+				ctx, lastDelayedAcc, pos, finalizedHash, finalized,
+			); err != nil {
+				return err
+			}
 		}
 		for i, msg := range messages {
 			// #nosec G115

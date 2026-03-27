@@ -422,9 +422,10 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if requestedPosition >= finalizedDelayedCount {
 		return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 	}
-	if lastDelayedAccumulator != (common.Hash{}) && msg.BeforeInboxAcc != lastDelayedAccumulator {
-		return nil, common.Hash{}, 0, fmt.Errorf("position %d (finalized block %d): BeforeInboxAcc %v != lastDelayedAccumulator %v: %w", requestedPosition, finalizedBlock, msg.BeforeInboxAcc, lastDelayedAccumulator, mel.ErrDelayedAccumulatorMismatch)
-	}
+	// Note: BeforeInboxAcc chain validation is skipped because MEL may inject
+	// artificial delayed messages (e.g., parent chain pricing reports) that the
+	// on-chain bridge doesn't know about, breaking the on-chain accumulator chain.
+	// MEL's own state accumulator validates chain integrity during extraction.
 	return msg.Message, msg.AfterInboxAcc(), msg.ParentChainBlockNumber, nil
 }
 

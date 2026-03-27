@@ -210,6 +210,24 @@ func extractMessagesImpl(
 		)
 	}
 
+	// Collect parent chain pricing data and flush at epoch boundaries.
+	if chainConfig.ArbitrumChainParams.InitialArbOSVersion >= params.ArbosVersion_ParentChainPricing {
+		entry := collectPricingEntry(parentChainHeader)
+		state.PendingPricingEntries = append(state.PendingPricingEntries, entry)
+		if shouldFlushPricingEntries(state.PendingPricingEntries) {
+			epochMsg, err := createEpochPricingMessage(
+				state.PendingPricingEntries,
+				parentChainHeader,
+				state.DelayedMessagesSeen+uint64(len(delayedMessages)),
+			)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+			delayedMessages = append(delayedMessages, epochMsg)
+			state.PendingPricingEntries = nil
+		}
+	}
+
 	// Update the delayed message inbox accumulator in the MEL state.
 	for _, delayed := range delayedMessages {
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {

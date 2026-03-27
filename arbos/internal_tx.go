@@ -194,6 +194,32 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		}
 		return nil
 
+	case InternalTxParentChainPricingReportMethodID:
+		if state.ArbOSVersion() < params.ArbosVersion_ParentChainPricing {
+			return nil
+		}
+		inputs, err := util.UnpackInternalTxDataParentChainPricingReport(tx.Data)
+		if err != nil {
+			return err
+		}
+		blockNumber := util.SafeMapGet[uint64](inputs, "parentChainBlockNumber")
+		blockTimestamp := util.SafeMapGet[uint64](inputs, "parentChainBlockTimestamp")
+		blockHash := util.SafeMapGet[[32]byte](inputs, "parentChainBlockHash")
+		l1BaseFee := util.SafeMapGet[*big.Int](inputs, "l1BaseFee")
+		blobBaseFee := util.SafeMapGet[*big.Int](inputs, "blobBaseFee")
+		blobGasUsed := util.SafeMapGet[uint64](inputs, "blobGasUsed")
+		excessBlobGas := util.SafeMapGet[uint64](inputs, "excessBlobGas")
+
+		l1p := state.L1PricingState()
+		err = l1p.UpdateParentChainPricing(
+			blockNumber, blockTimestamp, common.Hash(blockHash),
+			l1BaseFee, blobBaseFee, blobGasUsed, excessBlobGas,
+		)
+		if err != nil {
+			log.Warn("L1Pricing UpdateParentChainPricing failed", "err", err)
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("unknown internal tx method selector: %v", hex.EncodeToString(tx.Data[:4]))
 	}
