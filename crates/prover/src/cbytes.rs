@@ -25,6 +25,9 @@ mod libc_cbytes {
         }
 
         pub fn as_slice(&self) -> &[u8] {
+            if self.ptr.is_null() {
+                return &[];
+            }
             unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
         }
 
@@ -78,7 +81,7 @@ mod libc_cbytes {
 
     impl Drop for CBytes {
         fn drop(&mut self) {
-            if !self.ptr.is_null() && self.len > 0 {
+            if !self.ptr.is_null() {
                 unsafe {
                     libc::free(self.ptr as *mut _);
                 }

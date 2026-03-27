@@ -23,6 +23,7 @@ use target_cache::{target_cache_get, target_cache_set};
 
 pub use brotli;
 pub use prover;
+// This re-export is required to pull prover_ffi's #[no_mangle] FFI symbols into the staticlib output.
 pub use prover_ffi;
 
 pub mod env;

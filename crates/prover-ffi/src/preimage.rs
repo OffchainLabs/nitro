@@ -25,12 +25,20 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
         move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
             if ty == PreimageType::EthVersionedHash {
                 let cache: Arc<OnceCell<CBytes>> = {
-                    let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
+                    let mut locked = BLOBHASH_PREIMAGE_CACHE
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     locked.get_or_insert(hash, Default::default).clone()
                 };
                 return cache
                     .get_or_try_init(|| {
-                        handle_preimage_resolution(context, ty, hash, resolver).ok_or(())
+                        match handle_preimage_resolution(context, ty, hash, resolver) {
+                            Some(data) => Ok(data),
+                            None => {
+                                eprintln!("Blob preimage resolution failed for hash {hash}");
+                                Err(())
+                            }
+                        }
                     })
                     .ok()
                     .cloned();

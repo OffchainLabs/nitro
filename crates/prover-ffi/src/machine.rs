@@ -61,12 +61,12 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths_size: isize,
     debug_chain: bool,
 ) -> eyre::Result<*mut Machine> {
-    let binary_path = c_string_to_string(binary_path);
+    let binary_path = c_string_to_string(binary_path)?;
     let binary_path = Path::new(&binary_path);
 
     let mut libraries = vec![];
     for i in 0..library_paths_size {
-        let path = c_string_to_string(*(library_paths.offset(i)));
+        let path = c_string_to_string(*(library_paths.offset(i)))?;
         libraries.push(Path::new(&path).to_owned());
     }
 
@@ -86,7 +86,13 @@ unsafe fn arbitrator_load_machine_impl(
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
-    let binary_path = c_string_to_string(binary_path);
+    let binary_path = match c_string_to_string(binary_path) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("Error decoding binary path: {err}");
+            return ptr::null_mut();
+        }
+    };
     let binary_path = Path::new(&binary_path);
     match Machine::new_from_wavm(binary_path) {
         Ok(mach) => Box::into_raw(Box::new(mach)),
@@ -147,11 +153,11 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 ) -> c_int {
     let mach = &mut *mach;
     if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
-        let slice = slice::from_raw_parts(data.ptr, data.len);
-        let data = slice.to_vec();
+        let data = data.as_slice().to_vec();
         mach.add_inbox_msg(identifier, index, data);
         0
     } else {
+        eprintln!("Unknown inbox identifier: {inbox_identifier}");
         1
     }
 }

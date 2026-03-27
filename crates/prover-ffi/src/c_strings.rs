@@ -4,8 +4,11 @@
 use eyre::Report;
 use std::{ffi::CStr, os::raw::c_char, ptr};
 
-pub unsafe fn c_string_to_string(c_str: *const c_char) -> String {
-    CStr::from_ptr(c_str).to_string_lossy().into_owned()
+pub unsafe fn c_string_to_string(c_str: *const c_char) -> eyre::Result<String> {
+    CStr::from_ptr(c_str)
+        .to_str()
+        .map(str::to_owned)
+        .map_err(Report::from)
 }
 
 /// Copies the str-data into a libc free-able C string.
