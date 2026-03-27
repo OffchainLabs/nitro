@@ -3,9 +3,9 @@
 
 use std::{borrow::Borrow, fmt, ops::Deref};
 
-/// A Vec<u8> with manual allocation.
-/// On native builds, uses libc malloc/free for FFI compatibility.
-/// On SP1 (no libc), uses Rust's global allocator.
+/// A `Vec<u8>`-equivalent with manual allocation.
+/// With the `libc` feature (enabled by `native`), uses `libc::malloc/free` for FFI compatibility.
+/// Without it, uses Rust's global allocator.
 pub struct CBytes {
     ptr: *mut u8,
     len: usize,
@@ -40,7 +40,7 @@ impl fmt::Debug for CBytes {
     }
 }
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "libc")]
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
         if slice.is_empty() {
@@ -60,7 +60,7 @@ impl From<&[u8]> for CBytes {
     }
 }
 
-#[cfg(feature = "sp1")]
+#[cfg(not(feature = "libc"))]
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
         if slice.is_empty() {
@@ -82,13 +82,13 @@ impl From<&[u8]> for CBytes {
 }
 
 // There's no thread safety concerns for CBytes.
-// This type is basically a Box<[u8]> (which is Send + Sync) with libc as an allocator.
+// This type is basically a Box<[u8]> (which is Send + Sync) with a manual allocator.
 // Any data races between threads are prevented by Rust borrowing rules,
 // and the data isn't thread-local so there's no concern moving it between threads.
 unsafe impl Send for CBytes {}
 unsafe impl Sync for CBytes {}
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "libc")]
 impl Drop for CBytes {
     fn drop(&mut self) {
         if !self.ptr.is_null() && self.len > 0 {
@@ -99,7 +99,7 @@ impl Drop for CBytes {
     }
 }
 
-#[cfg(feature = "sp1")]
+#[cfg(not(feature = "libc"))]
 impl Drop for CBytes {
     fn drop(&mut self) {
         if !self.ptr.is_null() && self.len > 0 {
