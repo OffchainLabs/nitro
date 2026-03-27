@@ -985,8 +985,9 @@ dependencies = [
 
 [[package]]
 name = "arb-alloy-consensus"
-version = "0.1.1"
-source = "git+https://github.com/tiljrd/arb-alloy.git?rev=1632d7f#1632d7f35523ec1fb834241e06c940cd9a5ea9aa"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d6b781bc9242d4d38df01e1936b0c7af2f6a463200e2401e580727206040351"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -995,16 +996,18 @@ dependencies = [
 
 [[package]]
 name = "arb-alloy-predeploys"
-version = "0.1.1"
-source = "git+https://github.com/tiljrd/arb-alloy.git?rev=1632d7f#1632d7f35523ec1fb834241e06c940cd9a5ea9aa"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94abc6fbd063269c1c16ff91e63ffcb6087ae1371b816cd49520de4dacab1338"
 dependencies = [
  "alloy-primitives",
 ]
 
 [[package]]
 name = "arb-alloy-util"
-version = "0.1.1"
-source = "git+https://github.com/tiljrd/arb-alloy.git?rev=1632d7f#1632d7f35523ec1fb834241e06c940cd9a5ea9aa"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe4194538d8214b5d00881a40eda169d0414bf4c5e69c49930791f10fc8286b4"
 dependencies = [
  "alloy-primitives",
 ]
@@ -2954,7 +2957,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -3416,7 +3419,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4333,7 +4336,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "tokio",
  "tower-service",
  "tracing",
@@ -5572,7 +5575,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6478,7 +6481,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -6515,9 +6518,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9847,7 +9850,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10661,7 +10664,7 @@ dependencies = [
  "getrandom 0.4.1",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11924,7 +11927,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

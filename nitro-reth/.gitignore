@@ -14,11 +14,14 @@
 .DS_Store
 Thumbs.db
 
-# Documentation and notes (keep out of repo)
+# Documentation
 *.md
-!CLAUDE.md
 !README.md
 !LICENSE.md
+!SECURITY.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!.github/**/*.md
 
 # Environment (keep .env.example tracked)
 .env

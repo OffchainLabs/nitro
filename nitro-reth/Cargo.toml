@@ -120,9 +120,9 @@ revm-context = { version = "12.0" }
 revm-bytecode = { version = "8.0" }
 
 # Arb-alloy
-arb-alloy-consensus = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
-arb-alloy-predeploys = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
-arb-alloy-util = { git = "https://github.com/tiljrd/arb-alloy.git", rev = "1632d7f" }
+arb-alloy-consensus = "0.1.2"
+arb-alloy-predeploys = "0.1.2"
+arb-alloy-util = "0.1.2"
 
 # Common
 c-kzg = "2.1.7"
