@@ -250,12 +250,17 @@ func TestConcurrentTrackAndStop(t *testing.T) {
 	parent := StopWaiter{}
 	parent.Start(context.Background(), &TestStruct{})
 
-	// Launch goroutines that track children concurrently with stop
+	const n = 100
+	children := make([]*StopWaiter, n)
+	for i := range children {
+		children[i] = &StopWaiter{}
+		children[i].Start(context.Background(), &TestStruct{})
+	}
+
+	// Track all children concurrently with stop.
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ {
-			child := &StopWaiter{}
-			child.Start(context.Background(), &TestStruct{})
+		for _, child := range children {
 			parent.TrackChild(child)
 		}
 		close(done)
@@ -263,7 +268,14 @@ func TestConcurrentTrackAndStop(t *testing.T) {
 
 	parent.StopAndWait()
 	<-done
-	// All children should be stopped (either via takeChildren or TrackChild-after-stop)
+
+	// Every child must be stopped: either taken by takeChildren, or caught by
+	// the TrackChild-after-stop safety net (ChildrenTaken=true → immediate StopAndWait).
+	for i, child := range children {
+		if !child.Stopped() {
+			t.Errorf("child %d was not stopped", i)
+		}
+	}
 }
 
 func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
@@ -279,6 +291,51 @@ func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
 	sw.StopAndWait()
 	if !threadStopping.Load() {
 		t.Error("StopAndWait returned before background thread stopped")
+	}
+}
+
+func TestStartAndTrackChildAfterStop(t *testing.T) {
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+	parent.StopAndWait()
+
+	// StartAndTrackChild on a stopped parent: child.Start receives a cancelled context,
+	// and TrackChild's safety net (ChildrenTaken=true) immediately calls child.StopAndWait.
+	child := TestChild{}
+	parent.StartAndTrackChild(&child)
+
+	if !child.Stopped() {
+		t.Error("child should be stopped when started on an already-stopped parent")
+	}
+}
+
+// TestStopOnlyThenStopAndWaitIndependentGoroutine documents that StopAndWait does NOT
+// wait for goroutines launched via LaunchUntrackedThread — those are outside the managed
+// lifecycle and the parent shuts down without blocking on them.
+func TestStopOnlyThenStopAndWaitIndependentGoroutine(t *testing.T) {
+	t.Parallel()
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	parent.TrackChild(&child)
+
+	slowDone := make(chan struct{})
+	// This goroutine is untracked: child.StopAndWait will not wait for it.
+	child.LaunchUntrackedThread(func() {
+		time.Sleep(10 * time.Second)
+		close(slowDone)
+	})
+
+	parent.StopOnly()
+	parent.StopAndWait() // must return promptly; does not wait for the untracked goroutine
+
+	select {
+	case <-slowDone:
+		t.Error("untracked goroutine finished unexpectedly fast; test is invalid")
+	default:
+		// correct: StopAndWait returned without waiting for the untracked goroutine
 	}
 }
 
