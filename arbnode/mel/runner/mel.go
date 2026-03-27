@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -29,21 +28,19 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-var (
-	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
-)
-
 type MessageExtractionConfig struct {
-	Enable                        bool          `koanf:"enable"`
-	RetryInterval                 time.Duration `koanf:"retry-interval"`
-	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
-	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch"`
-	ReadMode                      string        `koanf:"read-mode"`
-	StallTolerance                uint64        `koanf:"stall-tolerance"`
+	Enable                             bool          `koanf:"enable"`
+	RetryInterval                      time.Duration `koanf:"retry-interval"`
+	DelayedMessageBacklogCapacity      int           `koanf:"delayed-message-backlog-capacity"`
+	BlocksToPrefetch                   uint64        `koanf:"blocks-to-prefetch"`
+	ReadMode                           string        `koanf:"read-mode"`
+	StallTolerance                     uint64        `koanf:"stall-tolerance"`
+	LogExtractionStatusFrequencyBlocks uint64        `koanf:"log-extraction-status-frequency-blocks"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -58,20 +55,22 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable: false,
 	// The retry interval for the message extractor FSM. After each tick of the FSM,
 	// the extractor service stop waiter will wait for this duration before trying to act again.
-	RetryInterval:                 time.Millisecond * 500,
-	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
-	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	RetryInterval:                      time.Millisecond * 500,
+	DelayedMessageBacklogCapacity:      100, // TODO: right default? setting to a lower value means more calls to l1reader
+	BlocksToPrefetch:                   499, // 500 is the eth_getLogs block range limit
+	ReadMode:                           "latest",
+	StallTolerance:                     10,
+	LogExtractionStatusFrequencyBlocks: 100,
 }
 
 var TestMessageExtractionConfig = MessageExtractionConfig{
-	Enable:                        false,
-	RetryInterval:                 time.Millisecond * 10,
-	DelayedMessageBacklogCapacity: 100,
-	BlocksToPrefetch:              499,
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	Enable:                             false,
+	RetryInterval:                      time.Millisecond * 10,
+	DelayedMessageBacklogCapacity:      100,
+	BlocksToPrefetch:                   499,
+	ReadMode:                           "latest",
+	StallTolerance:                     10,
+	LogExtractionStatusFrequencyBlocks: 100,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -81,6 +80,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from. Recommend using max allowed range for eth_getLogs rpc query")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
+	f.Uint64(prefix+".log-extraction-status-frequency-blocks", DefaultMessageExtractionConfig.LogExtractionStatusFrequencyBlocks, "frequency of logging message extraction status in terms of number of blocks processed")
 }
 
 // SequencerBatchCountFetcher queries the on-chain sequencer inbox batch count at a given parent chain block.
@@ -321,6 +321,17 @@ func (m *MessageExtractor) GetMsgCount() (arbutil.MessageIndex, error) {
 	return arbutil.MessageIndex(headState.MsgCount), nil
 }
 
+func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+	msg, err := m.GetDelayedMessage(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	if msg.Message == nil {
+		return nil, fmt.Errorf("message at seqNum %d has nil Message field", seqNum)
+	}
+	return msg.Message.Serialize()
+}
+
 func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMessage, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
@@ -519,12 +530,20 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(pos arbutil.MessageIn
 	}
 }
 
+func (m *MessageExtractor) SetBlockValidator(_ *staker.BlockValidator) {
+}
+
 func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return 0, err
 	}
 	return headState.BatchCount, nil
+}
+
+func (m *MessageExtractor) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	metadata, err := m.GetBatchMetadata(seqNum)
+	return metadata.Accumulator, err
 }
 
 func (m *MessageExtractor) CaughtUp() chan struct{} {
@@ -549,6 +568,7 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// from the parent chain block. The FSM will transition to the `SavingMessages`
 	// state after successfully extracting messages.
 	case ProcessingNextBlock:
+		fsmBlocksProcessedCounter.Inc(1)
 		return m.processNextBlock(ctx, current)
 	// `SavingMessages` is the state responsible for saving the extracted messages
 	// and delayed messages to the database. It stores data in the node's consensus database
@@ -556,12 +576,14 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// After data is stored, the FSM will then transition to the `ProcessingNextBlock` state
 	// yet again.
 	case SavingMessages:
+		fsmSaveMessagesCounter.Inc(1)
 		return m.saveMessages(ctx, current)
 	// `Reorging` is the state responsible for handling reorgs in the parent chain.
 	// It is triggered when a reorg occurs, and it will revert the MEL state being processed to the
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
+		fsmReorgsCounter.Inc(1)
 		return m.reorg(ctx, current)
 	default:
 		return m.config.RetryInterval, fmt.Errorf("invalid state: %s", current.State)
