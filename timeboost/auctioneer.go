@@ -443,7 +443,13 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
-	// Start S3 storage service to persist validated bids to s3
+	// Start S3 storage service to persist validated bids to s3.
+	// ORDERING MATTERS: s3StorageService must be tracked before consumer so that
+	// consumer stops first on shutdown (LIFO). The consumer holds the
+	// AUCTIONEER_CHOSEN_KEY distributed lock; stopping it first releases the lock,
+	// which expires after auctioneerLivenessTimeout. That timeout gives existing
+	// in-flight messages time to become unclaimed via IdleTimeToAutoclaim before
+	// a secondary auctioneer starts consuming them.
 	if a.s3StorageService != nil {
 		a.StartAndTrackChild(a.s3StorageService)
 	}
