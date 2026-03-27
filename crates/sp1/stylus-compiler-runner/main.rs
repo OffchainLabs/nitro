@@ -13,13 +13,13 @@ use stylus_compiler_program::{compile, CompileInput};
 const COMPILER_ELF: Elf = include_elf!("stylus-compiler-program");
 
 #[derive(Parser)]
-#[command(version, about = "Run the Stylus WASM compiler in various execution modes")]
+#[command(about = "Run the Stylus WASM compiler in various execution modes")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 
     /// Path to the Stylus WASM binary to compile.
-    #[arg(default_value = "testdata/memory.wasm")]
+    #[arg(default_value = "crates/sp1/stylus-compiler-runner/testdata/memory.wasm")]
     wasm: PathBuf,
 
     /// Arbitrum version passed to the Stylus compiler.
@@ -97,7 +97,7 @@ fn build_stdin(input: &CompileInput) -> SP1Stdin {
 fn sp1_execute(input: &CompileInput) -> Vec<u8> {
     let client = ProverClient::from_env();
     let stdin = build_stdin(input);
-    let (mut output, report) = client
+    let (output, report) = client
         .execute(COMPILER_ELF, stdin)
         .run()
         .expect("SP1 execution failed");
