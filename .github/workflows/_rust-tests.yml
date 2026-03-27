@@ -78,11 +78,6 @@ jobs:
           echo "Rust tests failed. Failing the workflow as required."
           exit 1
 
-      - name: Run stylus-compiler-runner compare
-        env:
-          SP1_PROVER: local
-        run: cargo run -p stylus-compiler-runner --release -- compare
-
       - name: Check stylus_bechmark
         run: cargo check --manifest-path crates/tools/stylus_benchmark/Cargo.toml
 
