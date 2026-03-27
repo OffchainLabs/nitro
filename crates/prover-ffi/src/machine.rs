@@ -1,18 +1,20 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::c_strings::{c_string_to_string, err_to_c_string};
+use arbutil::Bytes32;
+use eyre::Report;
+use prover::machine::{
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+};
+use prover::{CByteArray, Machine, RustBytes};
+use static_assertions::const_assert_eq;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
-use std::{ptr, slice};
 use std::path::Path;
-use std::sync::{atomic};
+use std::sync::atomic;
 use std::sync::atomic::AtomicU8;
-use arbutil::{Bytes32};
-use eyre::Report;
-use static_assertions::const_assert_eq;
-use prover::{CByteArray, Machine, RustBytes};
-use prover::machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus};
-use crate::c_strings::{c_string_to_string, err_to_c_string};
+use std::{ptr, slice};
 
 pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;
 pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
