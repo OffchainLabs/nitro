@@ -349,10 +349,6 @@ func (s *BlocksReExecutor) wrapFatalErr(err error) error {
 	return fmt.Errorf("shutting BlocksReExecutor down due to fatal error: %w", err)
 }
 
-func (s *BlocksReExecutor) StopAndWait() {
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *BlocksReExecutor) dereferenceRoot(root common.Hash) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
