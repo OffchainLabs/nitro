@@ -8,6 +8,7 @@ pub mod args;
 pub mod consensus;
 pub mod engine;
 pub mod genesis;
+pub mod launcher;
 pub mod network;
 pub mod payload;
 pub mod pool;

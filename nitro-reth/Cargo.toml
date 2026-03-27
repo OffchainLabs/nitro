@@ -85,7 +85,12 @@ reth-codecs = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d5
 reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-tasks = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-engine-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-exex = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-network-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-network-p2p = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-node-events = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-tokio-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-prune = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
