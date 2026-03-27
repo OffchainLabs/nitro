@@ -69,6 +69,7 @@ type ArbosState struct {
 	nativeTokenEnabledTime          storage.StorageBackedUint64
 	transactionFilteringEnabledTime storage.StorageBackedUint64
 	filteredFundsRecipient          storage.StorageBackedAddress
+	collectTips                     storage.StorageBackedUint64
 	backingStorage                  *storage.Storage
 	Burner                          burn.Burner
 }
@@ -110,6 +111,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		nativeTokenEnabledTime:          backingStorage.OpenStorageBackedUint64(uint64(nativeTokenEnabledFromTimeOffset)),
 		transactionFilteringEnabledTime: backingStorage.OpenStorageBackedUint64(uint64(transactionFilteringEnabledFromTimeOffset)),
 		filteredFundsRecipient:          backingStorage.OpenStorageBackedAddress(uint64(filteredFundsRecipientOffset)),
+		collectTips:                     backingStorage.OpenStorageBackedUint64(uint64(collectTipsOffset)),
 		backingStorage:                  backingStorage,
 		Burner:                          burner,
 	}, nil
@@ -190,6 +192,7 @@ const (
 	nativeTokenEnabledFromTimeOffset
 	transactionFilteringEnabledFromTimeOffset
 	filteredFundsRecipientOffset
+	collectTipsOffset
 )
 
 type SubspaceID []byte
@@ -675,6 +678,22 @@ func (state *ArbosState) FilteredFundsRecipientOrDefault() (common.Address, erro
 		return state.networkFeeAccount.Get()
 	}
 	return recipient, nil
+}
+
+func (state *ArbosState) CollectTips() (bool, error) {
+	if state.arbosVersion < params.ArbosVersion_60 {
+		return false, nil
+	}
+	val, err := state.collectTips.Get()
+	return val != 0, err
+}
+
+func (state *ArbosState) SetCollectTips(collect bool) error {
+	val := uint64(0)
+	if collect {
+		val = 1
+	}
+	return state.collectTips.Set(val)
 }
 
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {

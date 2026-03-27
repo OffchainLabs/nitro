@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -2097,7 +2098,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
-				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
+				batchPosterGasRefunderBalance.Update(floatmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		if b.dataPoster.Sender() != (common.Address{}) {
@@ -2105,7 +2106,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
-				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
+				batchPosterWalletBalance.Update(floatmath.BalancePerEther(walletBalance))
 			}
 		}
 		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
