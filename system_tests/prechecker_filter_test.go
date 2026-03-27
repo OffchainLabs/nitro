@@ -59,7 +59,7 @@ func waitForForwarderSync(t *testing.T, ctx context.Context, forwarder *TestClie
 
 // buildPrecheckerFilterNodes creates a sequencer node A and a forwarder node B
 // for prechecker filter testing. Node B forwards to A via IPC.
-func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
+func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
 	t.Helper()
 	ipcPath := tmpPath(t, "test.ipc")
 
@@ -86,6 +86,9 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	execConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
+	if len(eventRules) > 0 {
+		execConfigB.TransactionFiltering.EventFilter.Rules = eventRules
+	}
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -210,7 +213,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 		},
 	}
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false)
+	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, rules...)
 	defer cleanup()
 
 	// Deploy contract through sequencer and wait for forwarder to sync
@@ -231,10 +234,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 	cleanAddr := builder.L2Info.GetAddress("CleanAddr")
 
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	ef, err := eventfilter.NewEventFilter(rules)
-	Require(t, err)
 	forwarder.ExecNode.TxPreChecker.SetAddressChecker(filter)
-	forwarder.ExecNode.TxPreChecker.SetEventFilter(ef)
 
 	// Transfer to filtered address via forwarder should be rejected
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)

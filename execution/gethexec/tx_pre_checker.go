@@ -17,9 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -34,7 +36,6 @@ var (
 	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
 	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
 	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
-	txPreCheckerAddressFilterRejectedCounter               = metrics.NewRegisteredCounter("arb/txprechecker/addressfilter/rejected", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -316,47 +317,6 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 	c.eventFilter = filter
 }
 
-func dryRunCheckFilteredAddresses(
-	statedb *state.StateDB, evm *vm.EVM, signer types.Signer, runCtx *core.MessageRunContext,
-	header *types.Header, tx *types.Transaction, txIndex int, gasLimit uint64,
-	resultFilter func(*core.ExecutionResult) error,
-) error {
-	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
-	if err != nil {
-		return err
-	}
-	msg.GasLimit = gasLimit
-	// Skip nonce checks
-	msg.SkipNonceChecks = true
-
-	gasPool := core.GasPool(gasLimit)
-	var usedGas uint64
-	statedb.SetTxContext(tx.Hash(), txIndex)
-	_, _, err = core.ApplyTransactionWithEVM(
-		msg, &gasPool, statedb, header.Number, header.Hash(), header.Time,
-		tx, &usedGas, evm, resultFilter,
-	)
-	if errors.Is(err, state.ErrArbTxFilter) {
-		txPreCheckerAddressFilterRejectedCounter.Inc(1)
-		return err
-	}
-	// Other execution errors are ignored since the pre-check is only concerned
-	// with address filtering results, not with exact execution results.
-	return nil
-}
-
-// touchScheduledRetryableAddresses touches From/To of scheduled ArbitrumRetryTx.
-func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes types.Transactions) {
-	for _, scheduledTx := range scheduledTxes {
-		if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
-			statedb.TouchAddress(inner.From)
-			if inner.To != nil {
-				statedb.TouchAddress(*inner.To)
-			}
-		}
-	}
-}
-
 func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
 	if c.addressChecker == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
@@ -365,57 +325,56 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	if err != nil {
 		return err
 	}
-	statedb.SetAddressChecker(c.addressChecker)
+	SetupFilteringHooks(c.addressChecker, c.eventFilter)
 
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
 	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
-	runCtx := core.NewMessageEthcallContext()
-	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{})
-
-	var scheduledTxes types.Transactions
-	err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
-		func(result *core.ExecutionResult) error {
-			touchAddresses(statedb, c.eventFilter, tx, sender)
-			touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
-			if statedb.IsAddressFiltered() {
-				return state.ErrArbTxFilter
-			}
-			scheduledTxes = result.ScheduledTxes
-			return nil
-		},
-	)
+	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, core.NewMessageGasEstimationContext())
 	if err != nil {
 		return err
 	}
+	msg.SkipNonceChecks = true
 
-	// Process scheduled redeems in FIFO order including cascading redeems.
-	// We replicate the loop from ProduceBlockAdvanced because we only need
-	// EVM execution + address checking, without block-production overhead.
-	txIndex := 1
-	for len(scheduledTxes) > 0 {
-		redeemTx := scheduledTxes[0]
-		scheduledTxes = scheduledTxes[1:]
-		redeemSender, err := types.Sender(signer, redeemTx)
-		if err != nil {
-			log.Warn("failed to recover redeem sender in address filter", "err", err, "txHash", redeemTx.Hash())
-			continue
-		}
-		err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, redeemTx, txIndex, redeemTx.Gas(),
-			func(result *core.ExecutionResult) error {
-				touchAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
-				touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
-				if statedb.IsAddressFiltered() {
-					return state.ErrArbTxFilter
-				}
-				scheduledTxes = append(scheduledTxes, result.ScheduledTxes...)
-				return nil
-			},
-		)
-		if err != nil {
-			return err
-		}
-		txIndex++
+	_, err = gasestimator.Run(context.Background(), msg, &gasestimator.Options{
+		Config:  c.bc.Config(),
+		Chain:   c.bc,
+		Header:  header,
+		State:   statedb,
+		Backend: &precheckerBackend{c.bc},
+	})
+	if errors.Is(err, state.ErrArbTxFilter) {
+		return err
 	}
-
+	// Other execution errors are ignored since the pre-check is only concerned
+	// with address filtering results, not with exact execution results.
 	return nil
+}
+
+// precheckerBackend implements core.NodeInterfaceBackendAPI for the prechecker.
+type precheckerBackend struct {
+	bc *core.BlockChain
+}
+
+func (b *precheckerBackend) ChainConfig() *params.ChainConfig { return b.bc.Config() }
+func (b *precheckerBackend) CurrentBlock() *types.Header      { return b.bc.CurrentBlock() }
+func (b *precheckerBackend) BlockByNumber(_ context.Context, _ rpc.BlockNumber) (*types.Block, error) {
+	return nil, errors.New("not implemented")
+}
+func (b *precheckerBackend) HeaderByNumber(_ context.Context, _ rpc.BlockNumber) (*types.Header, error) {
+	return nil, errors.New("not implemented")
+}
+func (b *precheckerBackend) GetLogs(ctx context.Context, blockHash common.Hash, number uint64) ([][]*types.Log, error) {
+	return nil, nil
+}
+func (b *precheckerBackend) GetEVM(ctx context.Context, statedb *state.StateDB, header *types.Header, vmConfig *vm.Config, blockCtx *vm.BlockContext) *vm.EVM {
+	if vmConfig == nil {
+		vmConfig = b.bc.GetVMConfig()
+	}
+	var context vm.BlockContext
+	if blockCtx != nil {
+		context = *blockCtx
+	} else {
+		context = core.NewEVMBlockContext(header, b.bc, nil)
+	}
+	return vm.NewEVM(context, statedb, b.bc.Config(), *vmConfig)
 }
