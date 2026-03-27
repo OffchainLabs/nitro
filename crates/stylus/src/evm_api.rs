@@ -8,6 +8,7 @@ use arbutil::evm::{
 };
 use prover::RustSlice;
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct NativeRequestHandler {
     pub handle_request_fptr: unsafe extern "C" fn(

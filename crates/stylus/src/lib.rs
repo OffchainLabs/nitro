@@ -223,7 +223,33 @@ pub unsafe extern "C" fn stylus_target_set(
     UserOutcomeKind::Success
 }
 
+/// Sets the process-wide default native stack size for Wasmer coroutines.
+/// If `size` is 0, the existing default (1MB) is kept. Typically called at
+/// startup, but safe to call at any time — changes take effect on the next
+/// coroutine allocation.
+#[no_mangle]
+pub extern "C" fn stylus_set_native_stack_size(size: u64) {
+    if size > 0 {
+        wasmer_vm::set_stack_size(size as usize);
+        eprintln!(
+            "stylus: native_stack_size={} (configured={})",
+            wasmer_vm::get_stack_size(),
+            size,
+        );
+    }
+}
+
+/// Returns the current process-wide default native stack size in bytes.
+#[no_mangle]
+pub extern "C" fn stylus_get_native_stack_size() -> u64 {
+    wasmer_vm::get_stack_size() as u64
+}
+
 /// Calls an activated user program.
+///
+/// If the call fails due to native stack overflow, the native stack size is
+/// doubled and the call is retried. This repeats until the call succeeds,
+/// fails for another reason, or the 100 MB Wasmer stack limit is reached.
 ///
 /// # Safety
 ///
@@ -243,37 +269,108 @@ pub unsafe extern "C" fn stylus_call(
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
-    let ink = pricing.gas_to_ink(Gas(*gas));
+    let original_gas = *gas;
+    // Clear any thread-local stack size override on scope exit (even on panic).
+    // This ensures retries that temporarily bump the thread-local don't leak to
+    // subsequent calls on the same thread.
+    struct ClearThreadOverride;
+    impl Drop for ClearThreadOverride {
+        fn drop(&mut self) {
+            wasmer_vm::set_thread_stack_size(None);
+        }
+    }
+    let _guard = ClearThreadOverride;
 
-    // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe {
-        NativeInstance::deserialize_cached(
-            module,
-            config.version,
-            evm_api,
-            evm_data,
-            long_term_tag,
-            debug_chain,
-        )
-    };
-    let mut instance = match instance {
-        Ok(instance) => instance,
-        Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+    // Native stack overflow retry loop.
+    //
+    // The DepthChecker middleware tracks an abstract "stack depth" to enforce
+    // deterministic stack limits across compilers, but its model can undercount
+    // the real native stack usage of the Singlepass compiler (e.g. multi-value
+    // loop PHI slots are not accounted for). When the mismatch is large enough,
+    // the Wasmer coroutine stack overflows with SIGSEGV before the DepthChecker
+    // limit is reached.
+    //
+    // Wasmer's signal handler catches this and returns TrapCode::StackOverflow,
+    // which run_main surfaces as UserOutcome::NativeStackOverflow. When we see
+    // that outcome we:
+    //   1. Set a thread-local stack size override (capped at MAX_STACK_SIZE =
+    //      100 MB) so the next Wasmer coroutine on THIS thread gets a larger
+    //      stack. The override is thread-local, so other threads are unaffected.
+    //      The stack pool is size-tagged: undersized cached stacks are skipped,
+    //      not reused. The override is cleared when this call completes.
+    //   2. Restore gas to its pre-call value. Any host-call side effects
+    //      (storage writes, emitted logs, balance transfers, sub-calls) from
+    //      the failed attempt are reverted by the EVM's snapshot/revert
+    //      mechanism: evm.Call() takes a StateDB snapshot before Stylus
+    //      execution and calls RevertToSnapshot on any error return, so
+    //      replaying from scratch is safe.
+    //   3. Re-create the instance and retry.
+    //
+    // If the stack is already at MAX_STACK_SIZE and still overflows, we give up
+    // and return OutOfStack (taking all gas) instead of crashing the node.
+    let mut stack_size = wasmer_vm::get_stack_size();
+    let result = loop {
+        let evm_api = EvmApiRequestor::new(req_handler);
+        let ink = pricing.gas_to_ink(Gas(*gas));
+
+        // Safety: module came from compile_user_wasm and we've paid for memory expansion
+        let instance = unsafe {
+            NativeInstance::deserialize_cached(
+                module,
+                config.version,
+                evm_api,
+                evm_data,
+                long_term_tag,
+                debug_chain,
+            )
+        };
+        let mut instance = match instance {
+            Ok(instance) => instance,
+            Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+        };
+
+        let outcome = instance.run_main(&calldata, config, ink);
+
+        if matches!(&outcome, Ok(UserOutcome::NativeStackOverflow)) {
+            if stack_size >= wasmer_vm::MAX_STACK_SIZE {
+                eprintln!(
+                    "stylus: error native_stack_overflow stack_size={} max={} action=giving_up",
+                    stack_size,
+                    wasmer_vm::MAX_STACK_SIZE,
+                );
+                let status = write_outcome(output, UserOutcome::OutOfStack);
+                *gas = 0;
+                break status;
+            }
+            let new_size = stack_size.saturating_mul(2).min(wasmer_vm::MAX_STACK_SIZE);
+            eprintln!(
+                "stylus: warn native_stack_overflow old_size={} new_size={} action=retrying",
+                stack_size, new_size,
+            );
+            stack_size = new_size;
+            // Set a thread-local override so the next Wasmer coroutine on this
+            // thread allocates a stack of the new size. Cleared by _guard on exit.
+            wasmer_vm::set_thread_stack_size(Some(new_size));
+            *gas = original_gas;
+            continue;
+        }
+
+        let status = match outcome {
+            Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
+            Ok(outcome) => write_outcome(output, outcome),
+        };
+        let ink_left = match status {
+            UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
+            _ => instance.ink_left().into(),
+        };
+        *gas = pricing.ink_to_gas(ink_left).0;
+        break status;
     };
 
-    let status = match instance.run_main(&calldata, config, ink) {
-        Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
-        Ok(outcome) => write_outcome(output, outcome),
-    };
-    let ink_left = match status {
-        UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
-        _ => instance.ink_left().into(),
-    };
-    *gas = pricing.ink_to_gas(ink_left).0;
-    status
+    // _guard's Drop clears the thread-local override here (even on panic).
+    result
 }
 
 /// set lru cache capacity

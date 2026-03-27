@@ -9,6 +9,7 @@ use arbutil::evm::user::UserOutcome;
 use eyre::{eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
+use wasmer_types::TrapCode;
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
@@ -88,6 +89,13 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
+                // Detect native stack overflow FIRST — it takes priority because
+                // the DepthChecker counter may also be at zero when SIGSEGV fires,
+                // and we need the retry loop in stylus_call to see NativeStackOverflow.
+                if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
+                    return Ok(NativeStackOverflow);
+                }
+
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }

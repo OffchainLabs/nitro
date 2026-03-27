@@ -64,6 +64,17 @@ func SetAllowFallback(enabled bool) {
 	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
 }
 
+// SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
+// If size is 0, the existing default (1 MB) is kept.
+func SetNativeStackSize(size uint64) {
+	C.stylus_set_native_stack_size(u64(size))
+}
+
+// GetNativeStackSize returns the current process-wide default Wasmer coroutine stack size in bytes.
+func GetNativeStackSize() uint64 {
+	return uint64(C.stylus_get_native_stack_size())
+}
+
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
@@ -410,6 +421,10 @@ func callProgram(
 	))
 
 	depth := evm.Depth()
+	if status == userNativeStackOverflow {
+		log.Error("native stack overflow reached Go side (retry loop failed)",
+			"program", address, "module", moduleHash, "depth", depth)
+	}
 	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)

@@ -71,6 +71,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 	}
 	targets := targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	programs.SetNativeStackSize(targetConfig.NativeStackSize)
 
 	latestHeader := l2Blockchain.CurrentBlock()
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion

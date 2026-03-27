@@ -12,6 +12,10 @@ pub enum UserOutcome {
     Failure(ErrReport),
     OutOfInk,
     OutOfStack,
+    /// The Wasmer native coroutine stack overflowed (SIGSEGV caught by signal handler).
+    /// Unlike OutOfStack (which is the deterministic DepthChecker limit), this indicates
+    /// the physical stack was exhausted and the call should be retried with a larger stack.
+    NativeStackOverflow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -22,6 +26,7 @@ pub enum UserOutcomeKind {
     Failure,
     OutOfInk,
     OutOfStack,
+    NativeStackOverflow,
 }
 
 impl UserOutcome {
@@ -50,6 +55,7 @@ impl From<&UserOutcome> for UserOutcomeKind {
             Failure(_) => Self::Failure,
             OutOfInk => Self::OutOfInk,
             OutOfStack => Self::OutOfStack,
+            NativeStackOverflow => Self::NativeStackOverflow,
         }
     }
 }
@@ -68,6 +74,7 @@ impl Display for UserOutcome {
             Failure(err) => write!(f, "failure {err:?}"),
             OutOfInk => write!(f, "out of ink"),
             OutOfStack => write!(f, "out of stack"),
+            NativeStackOverflow => write!(f, "native stack overflow"),
             Revert(data) => {
                 let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
                 write!(f, "revert {text}")
@@ -86,6 +93,7 @@ impl Display for UserOutcomeKind {
             Failure => write!(f, "failure ({as_u8})"),
             OutOfInk => write!(f, "out of ink ({as_u8})"),
             OutOfStack => write!(f, "out of stack ({as_u8})"),
+            NativeStackOverflow => write!(f, "native stack overflow ({as_u8})"),
         }
     }
 }
