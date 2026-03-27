@@ -47,18 +47,18 @@ type MultiProtocolStaker struct {
 	statelessBlockValidator *staker.StatelessBlockValidator
 	// wallet is started externally (with the raw ctxIn so it outlives StopOnly during
 	// protocol switches) but owned and stopped by MultiProtocolStaker.StopAndWait.
-	wallet legacystaker.ValidatorWalletInterface
-	l1Reader                *headerreader.HeaderReader
-	blockValidator          *staker.BlockValidator
-	callOpts                bind.CallOpts
-	boldConfig              *bold.BoldConfig
-	stakeTokenAddress       common.Address
-	stack                   *node.Node
-	inboxTracker            staker.InboxTrackerInterface
-	inboxStreamer           staker.TransactionStreamerInterface
-	inboxReader             staker.InboxReaderInterface
-	dapRegistry             *daprovider.DAProviderRegistry
-	fatalErr                chan<- error
+	wallet            legacystaker.ValidatorWalletInterface
+	l1Reader          *headerreader.HeaderReader
+	blockValidator    *staker.BlockValidator
+	callOpts          bind.CallOpts
+	boldConfig        *bold.BoldConfig
+	stakeTokenAddress common.Address
+	stack             *node.Node
+	inboxTracker      staker.InboxTrackerInterface
+	inboxStreamer     staker.TransactionStreamerInterface
+	inboxReader       staker.InboxReaderInterface
+	dapRegistry       *daprovider.DAProviderRegistry
+	fatalErr          chan<- error
 }
 
 func NewMultiProtocolStaker(
