@@ -4,6 +4,7 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
+pub mod cbytes;
 mod host;
 pub(crate) mod internal_func;
 #[cfg(feature = "kzg")]
