@@ -835,7 +835,11 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	var batchNum uint64
 	for {
 		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		if builder.L2.ConsensusNode.MessageExtractor != nil {
+			batchNum, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		} else {
+			batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		}
 		if err == nil && found {
 			break
 		}

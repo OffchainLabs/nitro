@@ -626,32 +626,33 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
+	// Wait until mel can read the posted batch, send correct L2 messages to
+	// txStreamer and txStreamer is able to detect the reorg and handle correct
+	// execution of L2 messages.
+	// We verify the reorg happened by checking the resulting balance rather
+	// than relying on log message capture, which is unreliable when multiple
+	// parallel tests each call InitTestLog and overwrite the global logger.
 	{
 		timeout := time.NewTimer(time.Minute)
 		defer timeout.Stop()
 		tick := time.NewTicker(100 * time.Millisecond)
 		defer tick.Stop()
+		expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
 		for {
-			// Verify that both MEL and TxStreamer detected the reorg
-			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+			newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+			if err == nil && newBalance.Cmp(expectedBalance) == 0 {
 				break
 			}
 			select {
 			case <-tick.C:
 			case <-timeout.C:
-				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
+				newBalance, _ := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+				t.Fatalf("timed out waiting for reorg to complete: balance=%v, expected=%v, melReorgLogged=%v, txStreamerReorgLogged=%v",
+					newBalance, expectedBalance,
+					logHandler.WasLogged("MEL detected L1 reorg"),
+					logHandler.WasLogged("TransactionStreamer: Reorg detected!"))
 			}
 		}
-	}
-
-	// Verify that after reorg handling, resulting balance in the account is correct
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
-	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
 	}
 }
 
