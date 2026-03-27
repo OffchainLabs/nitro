@@ -64,7 +64,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 	// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 	// Therefore, we make a bunch of small blocks to prevent the code from running.
-	builder.L1.AdvanceBlocks(t, "Faucet", 70, builder.L1Info)
+	builder.L1.AdvanceBlocks(t, 70, builder.L1Info)
 
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "before reorg")
 
@@ -86,10 +86,10 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	builder.L1.RecalibrateNonce(t, "Faucet", builder.L1Info)
+	builder.L1.RecalibrateNonce(t, builder.L1Info)
 	// Produce new l1Blocks so that the batch ends up in a different l1Block than before
 	// #nosec G115
-	builder.L1.AdvanceBlocks(t, "Faucet", int(currHead-parentBlock.NumberU64()+5), builder.L1Info)
+	builder.L1.AdvanceBlocks(t, int(currHead-parentBlock.NumberU64()+5), builder.L1Info)
 
 	tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
