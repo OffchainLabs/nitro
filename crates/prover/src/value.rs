@@ -496,9 +496,3 @@ impl Display for ArbValueType {
         }
     }
 }
-
-#[cfg(feature = "sp1")]
-pub use crate::internal_func::InternalFunc;
-
-#[cfg(feature = "sp1")]
-pub use crate::memory_type::MemoryType;

@@ -22,13 +22,11 @@ eyre = { workspace = true }
 fnv = { workspace = true }
 hex = { workspace = true }
 lazy_static = { workspace = true }
-libc = { workspace = true }
-lru = { workspace = true }
+libc = { workspace = true, optional = true }
 nom = { workspace = true }
 num = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true, optional = true }
 rustc-demangle = { workspace = true }
@@ -38,7 +36,6 @@ serde_with = { workspace = true, features = ["base64"] }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
-static_assertions = { workspace = true }
 structopt = { workspace = true, optional = true }
 validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
@@ -60,16 +57,14 @@ harness = false
 
 [lib]
 name = "prover"
-crate-type = ["staticlib", "lib"]
+crate-type = ["lib"]
 
 [features]
 default = ["native", "rayon", "singlepass_rayon", "kzg", "dep:structopt"]
 counters = []
 kzg = ["dep:c-kzg"]
+libc = ["dep:libc"]
 native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
 cc_brotli = ["brotli/cc_brotli"]
-# Activated by crates/sp1/program and crates/sp1/stylus-compiler-program
-# to gate SP1-specific code paths (middleware, depth checking, metering).
-sp1 = []

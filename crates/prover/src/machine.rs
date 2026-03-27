@@ -3,7 +3,7 @@
 
 #[cfg(feature = "kzg")]
 use crate::kzg::prove_kzg_preimage;
-#[cfg(all(feature = "native", not(feature = "sp1")))]
+#[cfg(feature = "native")]
 use crate::programs::meter::MeteredMachine;
 use crate::{
     binary::{
@@ -1850,7 +1850,7 @@ impl Machine {
         self.get_final_result()
     }
 
-    #[cfg(all(feature = "native", not(feature = "sp1")))]
+    #[cfg(feature = "native")]
     pub fn call_user_func(
         &mut self,
         func: &str,

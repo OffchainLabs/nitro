@@ -5292,12 +5292,10 @@ dependencies = [
  "hex",
  "lazy_static",
  "libc",
- "lru 0.16.3",
  "nom",
  "num",
  "num-derive",
  "num-traits",
- "once_cell",
  "parking_lot",
  "rand 0.8.5",
  "rayon",
@@ -5308,7 +5306,6 @@ dependencies = [
  "sha2 0.10.9",
  "sha3",
  "smallvec",
- "static_assertions",
  "structopt",
  "validation",
  "wasmer",
@@ -5316,6 +5313,20 @@ dependencies = [
  "wasmer-types",
  "wasmparser 0.245.1",
  "wat",
+]
+
+[[package]]
+name = "prover-ffi"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "lazy_static",
+ "libc",
+ "lru 0.16.3",
+ "once_cell",
+ "prover",
+ "static_assertions",
 ]
 
 [[package]]
@@ -7810,6 +7821,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "parking_lot",
  "prover",
+ "prover-ffi",
  "rand 0.8.5",
  "thiserror 1.0.63",
  "user-host-trait",
