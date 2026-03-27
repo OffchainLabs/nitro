@@ -49,3 +49,4 @@ docs/node_modules/
 # Claude
 .claude/
 .env.alchemy
+target-install/

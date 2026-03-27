@@ -32,7 +32,7 @@ use reth_provider::{
     BlockNumReader, BlockReaderIdExt, DatabaseProviderFactory, HeaderProvider, StateProviderFactory,
 };
 use reth_rpc_eth_api::EthApiTypes;
-use reth_storage_api::{BlockWriter, CanonChainTracker, DBProvider, EthStorage};
+use reth_storage_api::{BlockWriter, CanonChainTracker, DBProvider, EthStorage, HistoryWriter};
 
 use arb_evm::ArbEvmConfig;
 
@@ -109,6 +109,7 @@ where
                 Receipt = arb_primitives::ArbReceipt,
             > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
                             + reth_storage_api::TrieWriter
+                            + HistoryWriter
                             + DBProvider,
         > + CanonChainTracker<Header = Header>
         + InMemoryStateAccess<Primitives = ArbPrimitives>,
@@ -179,6 +180,7 @@ where
                 Receipt = arb_primitives::ArbReceipt,
             > + reth_storage_api::StateWriter<Receipt = arb_primitives::ArbReceipt>
                             + reth_storage_api::TrieWriter
+                            + HistoryWriter
                             + DBProvider,
         > + CanonChainTracker<Header = Header>,
     >,
@@ -194,7 +196,8 @@ where
     let in_memory_state: CanonicalInMemoryState<ArbPrimitives> =
         ctx.provider().canonical_in_memory_state();
 
-    // Batch persist closure: writes multiple ExecutedBlocks in one DB transaction.
+    // Batch persist closure: writes multiple ExecutedBlocks in one DB transaction
+    // using reth's storage API including history indices.
     let persist_provider = ctx.provider().clone();
     let batch_persist_fn = move |blocks: &[reth_chain_state::ExecutedBlock<ArbPrimitives>]| {
         use alloy_consensus::BlockHeader;
@@ -204,20 +207,22 @@ where
             return Ok(());
         }
 
+        let first_number = blocks.first().unwrap().recovered_block().number();
+        let last_number = blocks.last().unwrap().recovered_block().number();
+
         let provider_rw = persist_provider
             .database_provider_rw()
             .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
         for block in blocks {
-            let sealed = block.recovered_block().sealed_block();
-            let block_number = sealed.header().number();
+            let block_number = block.recovered_block().sealed_block().header().number();
 
             // Write block (header, body, senders).
             provider_rw
                 .insert_block(block.recovered_block())
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
-            // Write state changes and receipts.
+            // Write state changes, receipts, and changesets.
             provider_rw
                 .write_state(
                     WriteStateInput::Single {
@@ -239,6 +244,13 @@ where
                 .write_trie_updates_sorted(&trie_data.trie_updates)
                 .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
         }
+
+        // Build history indices for all blocks in this batch.
+        // This populates AccountsHistory and StorageHistory tables,
+        // which are required for HistoricalStateProvider to work correctly.
+        provider_rw
+            .update_history_indices(first_number..=last_number)
+            .map_err(|e| arb_rpc::BlockProducerError::Storage(e.to_string()))?;
 
         // Single commit for all blocks.
         provider_rw
