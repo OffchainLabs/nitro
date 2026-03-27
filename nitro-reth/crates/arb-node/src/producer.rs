@@ -12,7 +12,7 @@ use alloy_consensus::{
     proofs, transaction::SignerRecoverable, Block, BlockBody, BlockHeader, Header, TxReceipt,
     EMPTY_OMMER_ROOT_HASH,
 };
-use alloy_eips::{eip2718::Decodable2718, BlockNumHash};
+use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
     block::{BlockExecutor, BlockExecutorFactory},
     EvmFactory,
@@ -56,28 +56,6 @@ pub trait InMemoryStateAccess {
     fn canonical_in_memory_state(&self) -> CanonicalInMemoryState<Self::Primitives>;
 }
 
-/// Type-erased batch persister.
-///
-/// Writes a batch of `ExecutedBlock`s to the database in a single transaction,
-/// amortizing fsync overhead across many blocks.
-pub(crate) struct ErasedBatchPersister {
-    batch_persist_fn: Box<
-        dyn Fn(&[ExecutedBlock<ArbPrimitives>]) -> Result<(), BlockProducerError> + Send + Sync,
-    >,
-}
-
-impl ErasedBatchPersister {
-    fn batch_persist(
-        &self,
-        blocks: &[ExecutedBlock<ArbPrimitives>],
-    ) -> Result<(), BlockProducerError> {
-        (self.batch_persist_fn)(blocks)
-    }
-}
-
-/// Default number of blocks to buffer in memory before flushing to DB.
-pub const DEFAULT_BUFFER_THRESHOLD: u64 = 128;
-
 /// Implement `InMemoryStateAccess` for reth's `BlockchainProvider`.
 impl<N> InMemoryStateAccess for reth_provider::providers::BlockchainProvider<N>
 where
@@ -85,27 +63,25 @@ where
 {
     type Primitives = N::Primitives;
     fn canonical_in_memory_state(&self) -> CanonicalInMemoryState<Self::Primitives> {
-        // Delegates to BlockchainProvider's inherent method.
         self.canonical_in_memory_state()
     }
 }
 
-/// Concrete block producer backed by reth's database.
+/// Block producer that uses reth's engine tree for persistence.
+///
+/// Execution happens on the producer thread. After execution, blocks are:
+/// 1. Added to `CanonicalInMemoryState` (immediate, for next block's state)
+/// 2. Sent to reth's engine tree via `InsertExecutedBlock` (async, for DB persistence)
+///
+/// The engine tree handles persistence via `PersistenceService::save_blocks(Full)`,
+/// which writes ALL tables including history indices.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     chain_spec: Arc<ChainSpec>,
     evm_config: ArbEvmConfig,
-    batch_persister: ErasedBatchPersister,
     in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
-    /// Current head block number (updated atomically per block).
     head_block_num: AtomicU64,
-    /// Number of blocks buffered since last flush.
-    blocks_since_flush: AtomicU64,
-    /// How many blocks to buffer before flushing.
-    buffer_threshold: u64,
-    /// Mutex to serialize block production.
     produce_lock: Mutex<()>,
-    /// Cached Init message params, applied during the first block's execution.
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
 
@@ -113,30 +89,19 @@ impl<Provider> ArbBlockProducer<Provider>
 where
     Provider: BlockNumReader,
 {
-    /// Create a new block producer with in-memory buffering.
     pub fn new(
         provider: Provider,
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
-        batch_persist_fn: impl Fn(&[ExecutedBlock<ArbPrimitives>]) -> Result<(), BlockProducerError>
-            + Send
-            + Sync
-            + 'static,
-        buffer_threshold: u64,
     ) -> Self {
         let head = provider.last_block_number().unwrap_or(0);
         Self {
             provider,
             chain_spec,
             evm_config,
-            batch_persister: ErasedBatchPersister {
-                batch_persist_fn: Box::new(batch_persist_fn),
-            },
             in_memory_state,
             head_block_num: AtomicU64::new(head),
-            blocks_since_flush: AtomicU64::new(0),
-            buffer_threshold,
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -762,22 +727,26 @@ where
             };
             let executed = ExecutedBlock::new(recovered, exec_output, computed);
 
+            // Add to in-memory state (immediate — makes block visible for next execution).
             self.in_memory_state
                 .update_chain(NewCanonicalChain::Commit {
-                    new: vec![executed],
+                    new: vec![executed.clone()],
                 });
 
             let sealed_header = SealedHeader::new(sealed.header().clone(), sealed.hash());
             self.in_memory_state.set_canonical_head(sealed_header);
+
+            // Send to reth's engine tree for persistence (async, fire-and-forget).
+            // PersistenceService will call save_blocks(Full) including history indices.
+            if let Some(sender) = crate::launcher::tree_sender() {
+                use reth_engine_tree::engine::{EngineApiRequest, FromEngine};
+                let _ = sender.send(FromEngine::Request(EngineApiRequest::InsertExecutedBlock(
+                    executed,
+                )));
+            }
         }
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
-        let buffered = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-
-        // Flush to DB when buffer threshold is reached.
-        if buffered >= self.buffer_threshold {
-            self.flush_to_db()?;
-        }
 
         info!(
             target: "block_producer",
@@ -787,7 +756,6 @@ where
             ?state_root,
             num_txs = sealed.body().transactions.len(),
             gas_used,
-            buffered,
             "Produced block"
         );
 
@@ -795,44 +763,6 @@ where
             block_hash,
             send_root,
         })
-    }
-
-    /// Flush all in-memory buffered blocks to the database in a single transaction.
-    fn flush_to_db(&self) -> Result<(), BlockProducerError> {
-        // Collect in-memory blocks in ascending order.
-        let mut blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
-        if let Some(head_state) = self.in_memory_state.head_state() {
-            // chain() yields newest→oldest, so we reverse for ascending order.
-            for block_state in head_state.chain() {
-                blocks.push(block_state.block().clone());
-            }
-        }
-        blocks.reverse();
-
-        if blocks.is_empty() {
-            return Ok(());
-        }
-
-        let count = blocks.len();
-        let last = blocks.last().unwrap();
-        let last_num_hash = BlockNumHash::new(
-            last.recovered_block().number(),
-            last.recovered_block().hash(),
-        );
-
-        self.batch_persister.batch_persist(&blocks)?;
-
-        // Remove persisted blocks from in-memory state.
-        self.in_memory_state.remove_persisted_blocks(last_num_hash);
-        self.blocks_since_flush.store(0, Ordering::SeqCst);
-
-        info!(
-            target: "block_producer",
-            flushed = count,
-            last_block = last_num_hash.number,
-            "Flushed buffered blocks to DB"
-        );
-        Ok(())
     }
 
     /// Produce a minimal block for messages with no transactions.
