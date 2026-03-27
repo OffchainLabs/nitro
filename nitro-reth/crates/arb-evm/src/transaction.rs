@@ -30,9 +30,11 @@ impl ArbTransaction {
         nonce: u64,
         chain_id: Option<u64>,
     ) -> Self {
-        let mut tx = TxEnv::default();
-        tx.caller = sender;
-        tx.gas_limit = gas_limit;
+        let mut tx = TxEnv {
+            caller: sender,
+            gas_limit,
+            ..Default::default()
+        };
 
         // Internal/Deposit txs get minimum 1M gas
         if matches!(

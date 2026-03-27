@@ -292,10 +292,10 @@ fn handle_compress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     output.extend_from_slice(&rlp_bytes);
     // Pad to 32-byte boundary.
     let pad = (32 - rlp_bytes.len() % 32) % 32;
-    output.extend(core::iter::repeat(0u8).take(pad));
+    output.extend(std::iter::repeat_n(0u8, pad));
 
     // OAS(1) + byAddress.Get(1) + argsCost(3) + resultCost(3 words for bytes encoding).
-    let result_words = (output.len() as u64 + 31) / 32;
+    let result_words = (output.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
         (2 * SLOAD_GAS + COPY_GAS + result_words * COPY_GAS).min(gas_limit),
         output.into(),
@@ -379,7 +379,7 @@ fn handle_decompress(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // Variable body sloads + argsCost(dynamic) + resultCost = 2 words × 3 = 6.
     // Body: OAS(1) + 0 (raw addr) or OAS(1) + numItems(1) + backing(1) (index).
     let body_sloads: u64 = if decoded.len() == 20 { 1 } else { 3 };
-    let arg_words = ((input.data.len() as u64).saturating_sub(4) + 31) / 32;
+    let arg_words = (input.data.len() as u64).saturating_sub(4).div_ceil(32);
     Ok(PrecompileOutput::new(
         (body_sloads * SLOAD_GAS + (arg_words + 2) * COPY_GAS).min(gas_limit),
         output.into(),

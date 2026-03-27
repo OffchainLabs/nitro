@@ -1,3 +1,8 @@
+//! Stylus WASM smart contract runtime.
+//!
+//! Provides the execution pipeline for Stylus programs: WASM compilation
+//! and caching, ink metering, host I/O functions, and EVM interop.
+
 pub mod cache;
 pub mod config;
 pub mod env;

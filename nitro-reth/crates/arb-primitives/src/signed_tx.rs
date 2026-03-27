@@ -374,7 +374,7 @@ impl Typed2718 for ArbTransactionSigned {
 impl IsTyped2718 for ArbTransactionSigned {
     fn is_type(type_id: u8) -> bool {
         // Standard Ethereum types.
-        matches!(type_id, 0x01 | 0x02 | 0x03 | 0x04) || ArbTxType::from_u8(type_id).is_ok()
+        matches!(type_id, 0x01..=0x04) || ArbTxType::from_u8(type_id).is_ok()
     }
 }
 
@@ -543,17 +543,17 @@ impl Decodable for ArbTransactionSigned {
 impl ConsensusTx for ArbTransactionSigned {
     fn chain_id(&self) -> Option<u64> {
         match &self.transaction {
-            ArbTypedTransaction::Legacy(tx) => tx.chain_id.map(|id| id as u64),
+            ArbTypedTransaction::Legacy(tx) => tx.chain_id,
             ArbTypedTransaction::Deposit(tx) => Some(tx.chain_id.to::<u64>()),
             ArbTypedTransaction::Unsigned(tx) => Some(tx.chain_id.to::<u64>()),
             ArbTypedTransaction::Contract(tx) => Some(tx.chain_id.to::<u64>()),
             ArbTypedTransaction::Retry(tx) => Some(tx.chain_id.to::<u64>()),
             ArbTypedTransaction::SubmitRetryable(tx) => Some(tx.chain_id.to::<u64>()),
             ArbTypedTransaction::Internal(tx) => Some(tx.chain_id.to::<u64>()),
-            ArbTypedTransaction::Eip2930(tx) => Some(tx.chain_id as u64),
-            ArbTypedTransaction::Eip1559(tx) => Some(tx.chain_id as u64),
-            ArbTypedTransaction::Eip4844(tx) => Some(tx.chain_id as u64),
-            ArbTypedTransaction::Eip7702(tx) => Some(tx.chain_id as u64),
+            ArbTypedTransaction::Eip2930(tx) => Some(tx.chain_id),
+            ArbTypedTransaction::Eip1559(tx) => Some(tx.chain_id),
+            ArbTypedTransaction::Eip4844(tx) => Some(tx.chain_id),
+            ArbTypedTransaction::Eip7702(tx) => Some(tx.chain_id),
         }
     }
 
@@ -591,23 +591,23 @@ impl ConsensusTx for ArbTransactionSigned {
 
     fn gas_price(&self) -> Option<u128> {
         match &self.transaction {
-            ArbTypedTransaction::Legacy(tx) => Some(tx.gas_price.into()),
-            ArbTypedTransaction::Eip2930(tx) => Some(tx.gas_price.into()),
+            ArbTypedTransaction::Legacy(tx) => Some(tx.gas_price),
+            ArbTypedTransaction::Eip2930(tx) => Some(tx.gas_price),
             _ => None,
         }
     }
 
     fn max_fee_per_gas(&self) -> u128 {
         match &self.transaction {
-            ArbTypedTransaction::Legacy(tx) => tx.gas_price.into(),
-            ArbTypedTransaction::Eip2930(tx) => tx.gas_price.into(),
+            ArbTypedTransaction::Legacy(tx) => tx.gas_price,
+            ArbTypedTransaction::Eip2930(tx) => tx.gas_price,
             ArbTypedTransaction::Unsigned(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::Contract(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::Retry(tx) => tx.gas_fee_cap.to::<u128>(),
             ArbTypedTransaction::SubmitRetryable(tx) => tx.gas_fee_cap.to::<u128>(),
-            ArbTypedTransaction::Eip1559(tx) => tx.max_fee_per_gas as u128,
-            ArbTypedTransaction::Eip4844(tx) => tx.max_fee_per_gas as u128,
-            ArbTypedTransaction::Eip7702(tx) => tx.max_fee_per_gas as u128,
+            ArbTypedTransaction::Eip1559(tx) => tx.max_fee_per_gas,
+            ArbTypedTransaction::Eip4844(tx) => tx.max_fee_per_gas,
+            ArbTypedTransaction::Eip7702(tx) => tx.max_fee_per_gas,
             _ => 0,
         }
     }
@@ -626,8 +626,8 @@ impl ConsensusTx for ArbTransactionSigned {
 
     fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
         match &self.transaction {
-            ArbTypedTransaction::Legacy(tx) => tx.gas_price.into(),
-            ArbTypedTransaction::Eip2930(tx) => tx.gas_price.into(),
+            ArbTypedTransaction::Legacy(tx) => tx.gas_price,
+            ArbTypedTransaction::Eip2930(tx) => tx.gas_price,
             // All other types: effective_gas_price = basefee (DropTip behavior).
             _ => base_fee.unwrap_or(0) as u128,
         }
@@ -699,15 +699,9 @@ impl ConsensusTx for ArbTransactionSigned {
         match &self.transaction {
             ArbTypedTransaction::Legacy(tx) => &tx.input,
             ArbTypedTransaction::Deposit(_) => self.input_cache.get_or_init(Bytes::new),
-            ArbTypedTransaction::Unsigned(tx) => self
-                .input_cache
-                .get_or_init(|| Bytes::from(tx.data.clone())),
-            ArbTypedTransaction::Contract(tx) => self
-                .input_cache
-                .get_or_init(|| Bytes::from(tx.data.clone())),
-            ArbTypedTransaction::Retry(tx) => self
-                .input_cache
-                .get_or_init(|| Bytes::from(tx.data.clone())),
+            ArbTypedTransaction::Unsigned(tx) => self.input_cache.get_or_init(|| tx.data.clone()),
+            ArbTypedTransaction::Contract(tx) => self.input_cache.get_or_init(|| tx.data.clone()),
+            ArbTypedTransaction::Retry(tx) => self.input_cache.get_or_init(|| tx.data.clone()),
             ArbTypedTransaction::SubmitRetryable(tx) => self.input_cache.get_or_init(|| {
                 let sel = arb_alloy_predeploys::selector(
                     arb_alloy_predeploys::SIG_RETRY_SUBMIT_RETRYABLE,
@@ -717,9 +711,7 @@ impl ConsensusTx for ArbTransactionSigned {
                 out.extend_from_slice(&tx.retry_data);
                 Bytes::from(out)
             }),
-            ArbTypedTransaction::Internal(tx) => self
-                .input_cache
-                .get_or_init(|| Bytes::from(tx.data.clone())),
+            ArbTypedTransaction::Internal(tx) => self.input_cache.get_or_init(|| tx.data.clone()),
             ArbTypedTransaction::Eip2930(tx) => &tx.input,
             ArbTypedTransaction::Eip1559(tx) => &tx.input,
             ArbTypedTransaction::Eip4844(tx) => &tx.input,

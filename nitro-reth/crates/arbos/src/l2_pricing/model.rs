@@ -616,7 +616,7 @@ mod tests {
 
         // The gasBacklog slot should be in the bundle storage
         // Compute the expected slot
-        let l2_base = keccak256(&[1u8]); // open_sub_storage([1]) from root
+        let l2_base = keccak256([1u8]); // open_sub_storage([1]) from root
         let gas_backlog_offset: u64 = 4;
         let slot = arb_storage::storage_key_map(l2_base.as_slice(), gas_backlog_offset);
 
@@ -649,7 +649,7 @@ mod tests {
         use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
 
         // --- Compute the real ArbOS slot addresses ---
-        let l2_base = keccak256(&[1u8]); // L2 pricing subspace key
+        let l2_base = keccak256([1u8]); // L2 pricing subspace key
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), 4);
         let speed_limit_slot = arb_storage::storage_key_map(l2_base.as_slice(), 0);
         let per_block_gas_limit_slot = arb_storage::storage_key_map(l2_base.as_slice(), 1);
@@ -763,7 +763,7 @@ mod tests {
         // Simulate retryable creation writing ~10 storage slots to ArbOS
         {
             // These are approximate retryable storage slots (different subspace)
-            let retryable_base = keccak256(&[2u8]); // retryable subspace
+            let retryable_base = keccak256([2u8]); // retryable subspace
             for i in 0u64..10 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
                 arb_storage::write_storage_at(
@@ -926,7 +926,7 @@ mod tests {
 
         // Delete retryable: clears the retryable storage slots
         {
-            let retryable_base = keccak256(&[2u8]);
+            let retryable_base = keccak256([2u8]);
             for i in 0u64..10 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
                 arb_storage::write_storage_at(unsafe { &mut *state_ptr }, arbos, slot, U256::ZERO);
@@ -1038,7 +1038,7 @@ mod tests {
         use alloy_primitives::map::HashMap;
         use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
 
-        let l2_base = keccak256(&[1u8]);
+        let l2_base = keccak256([1u8]);
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), 4);
         let speed_limit_slot = arb_storage::storage_key_map(l2_base.as_slice(), 0);
         let base_fee_slot = arb_storage::storage_key_map(l2_base.as_slice(), 2);
@@ -1135,7 +1135,7 @@ mod tests {
                 scratch_2,
                 U256::from(43),
             );
-            let retryable_base = keccak256(&[2u8]);
+            let retryable_base = keccak256([2u8]);
             for i in 0u64..5 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
                 arb_storage::write_storage_at(
@@ -1211,7 +1211,7 @@ mod tests {
 
         // Delete retryable
         {
-            let retryable_base = keccak256(&[2u8]);
+            let retryable_base = keccak256([2u8]);
             for i in 0u64..5 {
                 let slot = arb_storage::storage_key_map(retryable_base.as_slice(), i);
                 arb_storage::write_storage_at(unsafe { &mut *state_ptr }, arbos, slot, U256::ZERO);
@@ -1288,7 +1288,7 @@ mod tests {
             DatabaseCommit,
         };
 
-        let l2_base = keccak256(&[1u8]);
+        let l2_base = keccak256([1u8]);
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), 4);
         let speed_limit_slot = arb_storage::storage_key_map(l2_base.as_slice(), 0);
         let base_fee_slot = arb_storage::storage_key_map(l2_base.as_slice(), 2);
@@ -1519,7 +1519,7 @@ mod tests {
         };
 
         // Compute the actual gasBacklog slot for assertions
-        let l2_base = keccak256(&[1u8]); // open_sub_storage([1]) from root
+        let l2_base = keccak256([1u8]); // open_sub_storage([1]) from root
         let gas_backlog_offset: u64 = 4;
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), gas_backlog_offset);
 
@@ -1763,13 +1763,15 @@ mod tests {
             // reads ArbOS state — the account appears in the EVM output with
             // is_touched=true but storage unchanged.
             let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
-            let mut arbos_evm_account = revm::state::Account::default();
-            arbos_evm_account.info = revm::state::AccountInfo {
-                balance: U256::ZERO,
-                nonce: 1,
-                code_hash: keccak256([]),
-                code: None,
-                account_id: None,
+            let mut arbos_evm_account = revm::state::Account {
+                info: revm::state::AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 1,
+                    code_hash: keccak256([]),
+                    code: None,
+                    account_id: None,
+                },
+                ..Default::default()
             };
             arbos_evm_account.mark_touch();
             // No storage entries — EVM read slots but didn't write them
@@ -1942,13 +1944,15 @@ mod tests {
             // EVM commit with ArbOS account touched AND a storage slot that was
             // read but not written (EvmStorageSlot with original_value == present_value).
             let _ = state.load_cache_account(ARBOS_STATE_ADDRESS);
-            let mut arbos_evm_account = revm::state::Account::default();
-            arbos_evm_account.info = revm::state::AccountInfo {
-                balance: U256::ZERO,
-                nonce: 1,
-                code_hash: keccak256([]),
-                code: None,
-                account_id: None,
+            let mut arbos_evm_account = revm::state::Account {
+                info: revm::state::AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 1,
+                    code_hash: keccak256([]),
+                    code: None,
+                    account_id: None,
+                },
+                ..Default::default()
             };
             arbos_evm_account.mark_touch();
 

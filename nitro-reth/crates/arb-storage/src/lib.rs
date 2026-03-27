@@ -1,3 +1,8 @@
+//! Storage-backed types for ArbOS state.
+//!
+//! Provides typed wrappers over raw storage slots: integers, addresses,
+//! byte arrays, queues, and vectors that persist in the state trie.
+
 mod backed_types;
 mod bytes_storage;
 mod extra_types;

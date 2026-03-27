@@ -57,7 +57,7 @@ fn storage_write_cost(value: U256) -> u64 {
 }
 
 fn words_for_bytes(n: u64) -> u64 {
-    (n + 31) / 32
+    n.div_ceil(32)
 }
 
 /// Keccak gas from the storage burner: 30 + 6*words.
@@ -86,7 +86,7 @@ pub struct ArbSysMerkleState {
 }
 
 thread_local! {
-    static ARBSYS_STATE: RefCell<Option<ArbSysMerkleState>> = RefCell::new(None);
+    static ARBSYS_STATE: RefCell<Option<ArbSysMerkleState>> = const { RefCell::new(None) };
     /// Set to `true` when the current transaction is an aliasing type
     /// (unsigned, contract, or retryable L1→L2 message).
     static TX_IS_ALIASED: RefCell<bool> = const { RefCell::new(false) };
@@ -117,7 +117,7 @@ pub fn get_tx_is_aliased() -> bool {
 
 /// Set the cached L1 block number for a given L2 block.
 pub fn set_cached_l1_block_number(l2_block: u64, l1_block: u64) {
-    let mut cache = L1_BLOCK_CACHE.lock().unwrap();
+    let mut cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
     let map = cache.get_or_insert_with(HashMap::new);
     map.insert(l2_block, l1_block);
     if l2_block > 100 {
@@ -127,7 +127,7 @@ pub fn set_cached_l1_block_number(l2_block: u64, l1_block: u64) {
 
 /// Get the cached L1 block number for a given L2 block.
 pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
-    let cache = L1_BLOCK_CACHE.lock().unwrap();
+    let cache = L1_BLOCK_CACHE.lock().expect("L1 block cache lock poisoned");
     cache.as_ref().and_then(|m| m.get(&l2_block).copied())
 }
 
@@ -135,12 +135,12 @@ pub fn get_cached_l1_block_number(l2_block: u64) -> Option<u64> {
 /// In Arbitrum, block_env.number holds the L1 block number (for the NUMBER opcode),
 /// so precompiles that need the L2 block number read it from here.
 pub fn set_current_l2_block(l2_block: u64) {
-    *CURRENT_L2_BLOCK.lock().unwrap() = l2_block;
+    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned") = l2_block;
 }
 
 /// Get the current L2 block number.
 pub fn get_current_l2_block() -> u64 {
-    *CURRENT_L2_BLOCK.lock().unwrap()
+    *CURRENT_L2_BLOCK.lock().expect("L2 block lock poisoned")
 }
 
 pub fn create_arbsys_precompile() -> DynPrecompile {
@@ -839,16 +839,16 @@ fn compute_merkle_root(partials: &[B256], size: u64) -> B256 {
 
 fn apply_l1_alias(addr: Address) -> Address {
     let mut bytes = [0u8; 20];
-    for i in 0..20 {
-        bytes[i] = addr.0[i].wrapping_add(L1_ALIAS_OFFSET.0[i]);
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = addr.0[i].wrapping_add(L1_ALIAS_OFFSET.0[i]);
     }
     Address::new(bytes)
 }
 
 fn undo_l1_alias(addr: Address) -> Address {
     let mut bytes = [0u8; 20];
-    for i in 0..20 {
-        bytes[i] = addr.0[i].wrapping_sub(L1_ALIAS_OFFSET.0[i]);
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = addr.0[i].wrapping_sub(L1_ALIAS_OFFSET.0[i]);
     }
     Address::new(bytes)
 }

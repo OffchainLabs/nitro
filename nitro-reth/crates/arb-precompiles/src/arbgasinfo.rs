@@ -341,7 +341,7 @@ fn handle_prices_in_wei(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     out.extend_from_slice(&per_arbgas_total.to_be_bytes::<32>());
 
     // baseFee is read from evm.Context (free), only 2 body SLOADs (PricePerUnit, MinBaseFee).
-    let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
+    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (3 * SLOAD_GAS + (arg_words + 6) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
@@ -390,7 +390,7 @@ fn handle_prices_in_arbgas(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     out.extend_from_slice(&U256::from(STORAGE_WRITE_COST).to_be_bytes::<32>());
 
     // baseFee is read from evm.Context (free), only 1 body SLOAD (PricePerUnit).
-    let arg_words = ((data_len as u64).saturating_sub(4) + 31) / 32;
+    let arg_words = (data_len as u64).saturating_sub(4).div_ceil(32);
     let gas_cost = (2 * SLOAD_GAS + (arg_words + 3) * COPY_GAS).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))
 }
@@ -435,7 +435,7 @@ fn handle_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precompile
         sloads += 3;
     }
 
-    let result_words = (out.len() as u64 + 31) / 32;
+    let result_words = (out.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
         (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
@@ -535,7 +535,7 @@ fn handle_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Prec
         }
     }
 
-    let result_words = (out.len() as u64 + 31) / 32;
+    let result_words = (out.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
         (sloads * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),
@@ -560,7 +560,7 @@ fn handle_multi_gas_base_fee(input: &mut PrecompileInput<'_>) -> PrecompileResul
         out.extend_from_slice(&fee.to_be_bytes::<32>());
     }
 
-    let result_words = (out.len() as u64 + 31) / 32;
+    let result_words = (out.len() as u64).div_ceil(32);
     Ok(PrecompileOutput::new(
         ((1 + NUM_RESOURCE_KIND) * SLOAD_GAS + result_words * COPY_GAS).min(gas_limit),
         out.into(),

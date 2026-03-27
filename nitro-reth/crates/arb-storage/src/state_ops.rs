@@ -403,7 +403,7 @@ mod tests {
         // Account might or might not be in bundle, but the slot should not.
         if let Some(acct) = bundle.state.get(&ARBOS_STATE_ADDRESS) {
             assert!(
-                acct.storage.get(&slot).is_none(),
+                !acct.storage.contains_key(&slot),
                 "Slot written with zero should not appear in bundle"
             );
         }
@@ -459,8 +459,7 @@ mod tests {
     /// 2. EVM commit for internal tx (empty state)
     /// 3. EVM commit for user tx (modifies different accounts)
     /// 4. Post-commit hook writes slot B (gasBacklog) via write_storage_at
-    /// 5. Merge transitions
-    /// Both slots should survive in the bundle.
+    /// 5. Merge transitions Both slots should survive in the bundle.
     #[test]
     fn test_write_survives_evm_commit_flow() {
         let mut state = make_state();

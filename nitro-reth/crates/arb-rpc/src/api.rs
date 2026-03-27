@@ -415,6 +415,7 @@ where
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
 {
     /// Override gas estimation to add L1 posting costs.
+    #[allow(clippy::manual_async_fn)]
     fn estimate_gas_at(
         &self,
         request: RpcTxReq<<Self::RpcConvert as RpcConvert>::Network>,

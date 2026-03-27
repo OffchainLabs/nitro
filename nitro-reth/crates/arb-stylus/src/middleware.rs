@@ -34,7 +34,10 @@ impl InkMeter {
     }
 
     fn globals(&self) -> [GlobalIndex; 2] {
-        self.globals.read().unwrap().expect("missing ink globals")
+        self.globals
+            .read()
+            .expect("ink globals lock poisoned")
+            .expect("missing ink globals")
     }
 }
 
@@ -57,18 +60,18 @@ impl ModuleMiddleware for InkMeter {
             wasmer_types::ExportIndex::Global(status_idx),
         );
 
-        let mut sig_map = self.sigs.write().unwrap();
+        let mut sig_map = self.sigs.write().expect("ink sigs lock poisoned");
         for (sig_idx, sig) in info.signatures.iter() {
             sig_map.insert(sig_idx.as_u32(), sig.params().len());
         }
 
-        *self.globals.write().unwrap() = Some([ink_idx, status_idx]);
+        *self.globals.write().expect("ink globals lock poisoned") = Some([ink_idx, status_idx]);
         Ok(())
     }
 
     fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
         let [ink, status] = self.globals();
-        let sigs = self.sigs.read().unwrap().clone();
+        let sigs = self.sigs.read().expect("ink sigs lock poisoned").clone();
         Box::new(InkMeterFn {
             ink_global: ink,
             status_global: status,
@@ -203,7 +206,8 @@ impl ModuleMiddleware for DynamicMeter {
             wasmer_types::ExportIndex::Global(scratch_idx),
         );
 
-        *self.globals.write().unwrap() = Some([ink_idx, status_idx, scratch_idx]);
+        *self.globals.write().expect("dynamic meter lock poisoned") =
+            Some([ink_idx, status_idx, scratch_idx]);
         Ok(())
     }
 
@@ -211,7 +215,7 @@ impl ModuleMiddleware for DynamicMeter {
         let globals = self
             .globals
             .read()
-            .unwrap()
+            .expect("dynamic meter lock poisoned")
             .expect("missing dynamic globals");
         Box::new(DynamicMeterFn {
             memory_fill_ink: self.memory_fill_ink,
@@ -309,12 +313,16 @@ impl ModuleMiddleware for DepthChecker {
             STYLUS_STACK_LEFT.to_string(),
             wasmer_types::ExportIndex::Global(idx),
         );
-        *self.global.write().unwrap() = Some(idx);
+        *self.global.write().expect("depth checker lock poisoned") = Some(idx);
         Ok(())
     }
 
     fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
-        let g = self.global.read().unwrap().expect("missing depth global");
+        let g = self
+            .global
+            .read()
+            .expect("depth checker lock poisoned")
+            .expect("missing depth global");
         Box::new(DepthCheckerFn {
             global: g,
             frame_cost: 1,
@@ -409,12 +417,16 @@ impl ModuleMiddleware for HeapBound {
             None
         });
 
-        *self.globals.write().unwrap() = Some((scratch_idx, pay_func));
+        *self.globals.write().expect("heap bound lock poisoned") = Some((scratch_idx, pay_func));
         Ok(())
     }
 
     fn generate_function_middleware(&self, _: LocalFunctionIndex) -> Box<dyn FunctionMiddleware> {
-        let (scratch, pay_func) = self.globals.read().unwrap().expect("missing heap globals");
+        let (scratch, pay_func) = self
+            .globals
+            .read()
+            .expect("heap bound lock poisoned")
+            .expect("missing heap globals");
         Box::new(HeapBoundFn { scratch, pay_func })
     }
 }

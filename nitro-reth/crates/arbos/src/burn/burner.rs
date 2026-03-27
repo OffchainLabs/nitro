@@ -67,7 +67,7 @@ impl Burner for SystemBurner {
     }
 
     fn gas_left(&self) -> u64 {
-        panic!("SystemBurner has no notion of gas left")
+        unreachable!("SystemBurner has no notion of gas left")
     }
 
     fn burn_out(&mut self) -> Result<(), BurnError> {

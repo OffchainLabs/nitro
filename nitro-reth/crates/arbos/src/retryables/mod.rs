@@ -358,5 +358,5 @@ pub fn retryable_submission_fee(calldata_length: usize, l1_base_fee: U256) -> U2
 
 /// Rounds up byte count to number of 32-byte words.
 fn words_for_bytes(bytes: u64) -> u64 {
-    (bytes + 31) / 32
+    bytes.div_ceil(32)
 }

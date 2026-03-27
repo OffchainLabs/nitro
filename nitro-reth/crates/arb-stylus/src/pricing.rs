@@ -113,7 +113,7 @@ pub fn pow_price(exponent: &[u8; 32]) -> Ink {
 }
 
 fn evm_words(bytes: u32) -> u32 {
-    (bytes + 31) / 32
+    bytes.div_ceil(32)
 }
 
 fn sat_add_mul(base: u64, per: u64, count: u32) -> u64 {

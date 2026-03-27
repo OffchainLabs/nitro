@@ -141,7 +141,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // Program queries by codehash.
         CODEHASH_VERSION => {
-            let codehash = extract_bytes32(&input.data)?;
+            let codehash = extract_bytes32(input.data)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let program = parse_program(&program_word, &params_word);
@@ -149,7 +149,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(2 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
         }
         CODEHASH_ASM_SIZE => {
-            let codehash = extract_bytes32(&input.data)?;
+            let codehash = extract_bytes32(input.data)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
             let program = parse_program(&program_word, &params_word);
@@ -159,7 +159,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         // Program queries by address (need to get codehash from account).
         PROGRAM_VERSION => {
-            let address = extract_address(&input.data)?;
+            let address = extract_address(input.data)?;
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -168,7 +168,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.version))
         }
         PROGRAM_INIT_GAS => {
-            let address = extract_address(&input.data)?;
+            let address = extract_address(input.data)?;
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -201,7 +201,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             )
         }
         PROGRAM_MEMORY_FOOTPRINT => {
-            let address = extract_address(&input.data)?;
+            let address = extract_address(input.data)?;
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -210,7 +210,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
             ok_u256(3 * SLOAD_GAS + COPY_GAS, U256::from(program.footprint))
         }
         PROGRAM_TIME_LEFT => {
-            let address = extract_address(&input.data)?;
+            let address = extract_address(input.data)?;
             let codehash = get_account_codehash(&mut input, address)?;
             let (params_word, program_word) = load_params_and_program(&mut input, codehash)?;
             let params_version = u16::from_be_bytes([params_word[0], params_word[1]]);
@@ -303,13 +303,11 @@ fn get_account_codehash(
 }
 
 /// Parsed program entry from a storage word.
-#[allow(dead_code)]
 struct ProgramInfo {
     version: u16,
     init_cost: u16,
     cached_cost: u16,
     footprint: u16,
-    activated_at: u32,
     asm_estimate_kb: u32,
     age_seconds: u64,
 }
@@ -325,12 +323,7 @@ fn parse_program(data: &[u8; 32], params_word: &[u8; 32]) -> ProgramInfo {
     let activated_at = (data[8] as u32) << 16 | (data[9] as u32) << 8 | data[10] as u32;
     let asm_estimate_kb = (data[11] as u32) << 16 | (data[12] as u32) << 8 | data[13] as u32;
 
-    // Compute age from block timestamp. Use current block time from the
-    // params word context. We don't have direct access to block time here,
-    // so age_seconds defaults to 0 (callers that need it should use
-    // the block timestamp from the execution context).
-    // For precompile queries, the age is computed from the expiry check.
-    let _ = params_word; // params_word passed for future use
+    let _ = params_word;
     let age_seconds = hours_to_age(block_timestamp(), activated_at);
 
     ProgramInfo {
@@ -338,7 +331,6 @@ fn parse_program(data: &[u8; 32], params_word: &[u8; 32]) -> ProgramInfo {
         init_cost,
         cached_cost,
         footprint,
-        activated_at,
         asm_estimate_kb,
         age_seconds,
     }
@@ -405,5 +397,5 @@ fn ok_two_u256(gas_cost: u64, a: U256, b: U256) -> PrecompileResult {
 }
 
 fn div_ceil(a: u64, b: u64) -> u64 {
-    (a + b - 1) / b
+    a.div_ceil(b)
 }

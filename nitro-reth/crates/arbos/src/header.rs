@@ -42,7 +42,7 @@ pub struct ArbHeaderInfo {
 impl ArbHeaderInfo {
     /// Compute the mix_hash from send_count, l1_block_number, and arbos_version.
     pub fn compute_mix_hash(&self) -> B256 {
-        compute_nitro_mixhash(
+        compute_arbos_mixhash(
             self.send_count,
             self.l1_block_number,
             self.arbos_format_version,
@@ -53,7 +53,7 @@ impl ArbHeaderInfo {
 /// Compute the mix hash from the three u64 components.
 ///
 /// Layout: ]send_count (8 bytes)\]]l1_block_number (8 bytes)\]]arbos_version (8 bytes)\]]0..0\]
-pub fn compute_nitro_mixhash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
+pub fn compute_arbos_mixhash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
     let mut mix = [0u8; 32];
     mix[0..8].copy_from_slice(&send_count.to_be_bytes());
     mix[8..16].copy_from_slice(&l1_block_number.to_be_bytes());

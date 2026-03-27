@@ -44,7 +44,7 @@ where
         let evm_factory = ArbEvmFactory::new();
         Self {
             executor_factory: ArbBlockExecutorFactory::new(
-                ArbReceiptBuilder::default(),
+                ArbReceiptBuilder,
                 chain_spec.clone(),
                 evm_factory,
             ),

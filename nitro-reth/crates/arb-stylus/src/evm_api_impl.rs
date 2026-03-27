@@ -226,7 +226,10 @@ impl StylusEvmApi {
         // synchronous WASM execution scoped within the caller).
         let journal: *mut dyn JournalAccess = {
             let r: &mut (dyn JournalAccess + '_) = &mut *journal;
-            r as *mut (dyn JournalAccess + '_) as *mut dyn JournalAccess
+            #[allow(clippy::unnecessary_cast)]
+            {
+                r as *mut (dyn JournalAccess + '_) as *mut dyn JournalAccess
+            }
         };
         Self {
             journal,
@@ -587,7 +590,7 @@ impl EvmApi for StylusEvmApi {
         };
 
         // CREATE2 base cost = 32000 + keccak cost
-        let keccak_words = (code.len() as u64 + 31) / 32;
+        let keccak_words = (code.len() as u64).div_ceil(32);
         let keccak_cost = keccak_words.saturating_mul(6); // Keccak256WordGas
         let base_cost = 32000u64.saturating_add(keccak_cost);
         if gas.0 < base_cost {

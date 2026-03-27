@@ -22,21 +22,12 @@ use crate::{
 };
 
 /// State shared between the RPC handler and the node.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct NitroExecutionState {
     /// Whether the node is synced with consensus.
     pub synced: bool,
     /// Maximum message count from consensus.
     pub max_message_count: u64,
-}
-
-impl Default for NitroExecutionState {
-    fn default() -> Self {
-        Self {
-            synced: false,
-            max_message_count: 0,
-        }
-    }
 }
 
 /// Handler for the `nitroexecution` RPC namespace.

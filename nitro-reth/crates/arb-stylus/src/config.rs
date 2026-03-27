@@ -97,7 +97,7 @@ impl Default for CompileMemoryParams {
 }
 
 /// Pricing parameters for WASM compilation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CompilePricingParams {
     /// Cost of checking the amount of ink left.
     pub ink_header_cost: u64,
@@ -105,16 +105,6 @@ pub struct CompilePricingParams {
     pub memory_fill_ink: u64,
     /// Per-byte MemoryCopy cost.
     pub memory_copy_ink: u64,
-}
-
-impl Default for CompilePricingParams {
-    fn default() -> Self {
-        Self {
-            ink_header_cost: 0,
-            memory_fill_ink: 0,
-            memory_copy_ink: 0,
-        }
-    }
 }
 
 /// Debug parameters for WASM compilation.
@@ -131,10 +121,15 @@ pub struct CompileDebugParams {
 impl CompileConfig {
     /// Create a versioned compile config.
     pub fn version(version: u16, debug_chain: bool) -> Self {
-        let mut config = Self::default();
-        config.version = version;
-        config.debug.debug_funcs = debug_chain;
-        config.debug.debug_info = debug_chain;
+        let mut config = Self {
+            version,
+            debug: CompileDebugParams {
+                debug_funcs: debug_chain,
+                debug_info: debug_chain,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         match version {
             0 => {}
@@ -148,7 +143,7 @@ impl CompileConfig {
                     memory_copy_ink: 800 / 8,
                 };
             }
-            _ => panic!("no config for Stylus version {version}"),
+            _ => unreachable!("unsupported Stylus version {version}"),
         }
 
         config

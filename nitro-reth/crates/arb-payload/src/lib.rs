@@ -151,7 +151,7 @@ pub fn arb_payload_id(parent: &B256, attributes: &ArbPayloadAttributes) -> Paylo
 
     let mut hasher = sha2::Sha256::new();
     hasher.update(parent.as_slice());
-    hasher.update(&attributes.inner.timestamp.to_be_bytes());
+    hasher.update(attributes.inner.timestamp.to_be_bytes());
     hasher.update(attributes.inner.prev_randao.as_slice());
     hasher.update(attributes.inner.suggested_fee_recipient.as_slice());
     if let Some(withdrawals) = &attributes.inner.withdrawals {

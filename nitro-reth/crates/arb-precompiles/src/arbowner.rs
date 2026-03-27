@@ -220,7 +220,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         // ── L2 pricing setters ───────────────────────────────────
         SET_SPEED_LIMIT => {
             let val = U256::from_be_slice(
-                &input
+                input
                     .data
                     .get(4..36)
                     .ok_or_else(|| PrecompileError::other("input too short"))?,
@@ -254,7 +254,7 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
         }
         SET_L2_GAS_PRICING_INERTIA => {
             let val = U256::from_be_slice(
-                &input
+                input
                     .data
                     .get(4..36)
                     .ok_or_else(|| PrecompileError::other("input too short"))?,
@@ -653,13 +653,13 @@ fn emit_owner_acts(input: &mut PrecompileInput<'_>, selector: &[u8; 4], calldata
     let topic2 = B256::left_padding_from(input.caller.as_slice());
 
     // ABI-encode calldata as bytes: offset(32) + length(32) + data (padded)
-    let mut log_data = Vec::with_capacity(64 + ((calldata.len() + 31) / 32) * 32);
+    let mut log_data = Vec::with_capacity(64 + calldata.len().div_ceil(32) * 32);
     log_data.extend_from_slice(&U256::from(32).to_be_bytes::<32>()); // offset
     log_data.extend_from_slice(&U256::from(calldata.len()).to_be_bytes::<32>()); // length
     log_data.extend_from_slice(calldata);
     // Pad to 32-byte boundary
     let pad = (32 - (calldata.len() % 32)) % 32;
-    log_data.extend(std::iter::repeat(0u8).take(pad));
+    log_data.extend(std::iter::repeat_n(0u8, pad));
 
     input.internals_mut().log(Log::new_unchecked(
         ARBOWNER_ADDRESS,
@@ -1130,8 +1130,8 @@ fn handle_set_feature_time(input: &mut PrecompileInput<'_>, time_offset: u64) ->
         .unwrap_or(0u64);
 
     // Validate timing constraints.
-    if (stored == 0 && timestamp < now + FEATURE_ENABLE_DELAY)
-        || (stored > now + FEATURE_ENABLE_DELAY && timestamp < now + FEATURE_ENABLE_DELAY)
+    if (stored > now + FEATURE_ENABLE_DELAY || stored == 0)
+        && timestamp < now + FEATURE_ENABLE_DELAY
     {
         return Err(PrecompileError::other(
             "feature must be enabled at least 7 days in the future",
@@ -1340,12 +1340,11 @@ fn handle_set_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> Precom
     // Version check for max constraint count.
     let arbos_version = read_arbos_version(input)?;
     use arb_chainspec::arbos_version as arb_ver;
-    if arbos_version >= arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX
-        && arbos_version < arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS
+    if (arb_ver::ARBOS_VERSION_MULTI_CONSTRAINT_FIX..arb_ver::ARBOS_VERSION_MULTI_GAS_CONSTRAINTS)
+        .contains(&arbos_version)
+        && (count as usize) > GAS_CONSTRAINTS_MAX_NUM
     {
-        if (count as usize) > GAS_CONSTRAINTS_MAX_NUM {
-            return Err(PrecompileError::other("too many constraints"));
-        }
+        return Err(PrecompileError::other("too many constraints"));
     }
 
     // Add each constraint.
@@ -1529,11 +1528,11 @@ fn handle_set_multi_gas_pricing_constraints(input: &mut PrecompileInput<'_>) -> 
         )?;
 
         // Write resource weights.
-        for r in 0..NUM_RESOURCE_KINDS as usize {
+        for (r, &weight) in weights.iter().enumerate().take(NUM_RESOURCE_KINDS as usize) {
             sstore_field(
                 input,
                 constraint_field_slot(elem_key, MGC_WEIGHTS_BASE + r as u64),
-                U256::from(weights[r]),
+                U256::from(weight),
             )?;
         }
 
@@ -1589,7 +1588,11 @@ fn validate_multi_gas_exponents(
             .saturating_mul(max_weight as u128);
         let divisor_bips = divisor.saturating_mul(10000);
 
-        for r in 0..NUM_RESOURCE_KINDS as usize {
+        for (r, exponent) in exponents
+            .iter_mut()
+            .enumerate()
+            .take(NUM_RESOURCE_KINDS as usize)
+        {
             let weight: u64 = sload_field(
                 input,
                 constraint_field_slot(elem_key, MGC_WEIGHTS_BASE + r as u64),
@@ -1607,7 +1610,7 @@ fn validate_multi_gas_exponents(
             } else {
                 0
             };
-            exponents[r] = exponents[r].saturating_add(exp);
+            *exponent = exponent.saturating_add(exp);
         }
     }
 
@@ -1651,7 +1654,7 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     let old_len: u64 = sload_field(input, map_slot(cc_key.as_slice(), 0))?
         .try_into()
         .unwrap_or(0);
-    let old_slots = (old_len + 31) / 32;
+    let old_slots = old_len.div_ceil(32);
     for s in 1..=old_slots {
         sstore_field(input, map_slot(cc_key.as_slice(), s), U256::ZERO)?;
     }
@@ -1687,7 +1690,7 @@ fn handle_set_chain_config(input: &mut PrecompileInput<'_>) -> PrecompileResult 
         )?;
     }
 
-    let new_slots = (bytes_len as u64 + 31) / 32;
+    let new_slots = (bytes_len as u64).div_ceil(32);
     let total_stores = old_slots + 1 + new_slots; // clear + length + data
     let gas_used = total_stores * SSTORE_GAS + SLOAD_GAS + COPY_GAS;
     Ok(PrecompileOutput::new(

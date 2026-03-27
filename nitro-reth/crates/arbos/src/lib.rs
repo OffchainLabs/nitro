@@ -1,3 +1,8 @@
+//! Core ArbOS state machine.
+//!
+//! Implements the Arbitrum Operating System: L1/L2 pricing, retryable tickets,
+//! block processing, internal transactions, and all protocol-level state management.
+
 pub mod address_set;
 pub mod address_table;
 pub mod arbos_state;

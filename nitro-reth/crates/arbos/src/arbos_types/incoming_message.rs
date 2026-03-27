@@ -215,7 +215,7 @@ pub fn legacy_cost_for_stats(stats: &BatchDataStats) -> u64 {
     // Calldata gas: 4 gas per zero byte, 16 gas per non-zero byte.
     let mut gas = zeros * 4 + stats.non_zeros * 16;
     // Poster also pays to keccak the batch and write a batch posting report.
-    let keccak_words = (stats.length + 31) / 32;
+    let keccak_words = stats.length.div_ceil(32);
     gas += 30 + keccak_words * 6; // Keccak256Gas + words * Keccak256WordGas
     gas += 2 * 20_000; // 2 × SstoreSetGasEIP2200
     gas

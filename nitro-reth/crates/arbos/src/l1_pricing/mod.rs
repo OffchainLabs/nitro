@@ -653,9 +653,11 @@ const BROTLI_DEFAULT_WINDOW_SIZE: i32 = 22;
 /// exceeding that size.
 pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
     let quality = level.min(11) as i32;
-    let mut params = brotli::enc::BrotliEncoderParams::default();
-    params.quality = quality;
-    params.lgwin = BROTLI_DEFAULT_WINDOW_SIZE;
+    let params = brotli::enc::BrotliEncoderParams {
+        quality,
+        lgwin: BROTLI_DEFAULT_WINDOW_SIZE,
+        ..Default::default()
+    };
 
     let mut compressed = Vec::new();
     let mut input_buffer = data.to_vec();

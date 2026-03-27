@@ -622,8 +622,8 @@ where
     }
 
     // Transfer endowment
-    if !endowment.is_zero() {
-        if context
+    if !endowment.is_zero()
+        && context
             .journaled_state
             .inner
             .transfer(
@@ -633,14 +633,13 @@ where
                 endowment,
             )
             .is_err()
-        {
-            context.journaled_state.inner.checkpoint_revert(checkpoint);
-            return SubCreateResult {
-                address: None,
-                output: Vec::new(),
-                gas_cost: gas,
-            };
-        }
+    {
+        context.journaled_state.inner.checkpoint_revert(checkpoint);
+        return SubCreateResult {
+            address: None,
+            output: Vec::new(),
+            gas_cost: gas,
+        };
     }
 
     // Run init code as EVM

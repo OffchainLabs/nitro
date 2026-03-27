@@ -58,7 +58,7 @@ const REDEEM_SCHEDULED_EVENT_COST: u64 =
 /// Backlog update cost: read + write. Write cost depends on whether
 /// the new value is zero (StorageClearCost=5000) or non-zero (StorageWriteCost=20000).
 /// This is computed dynamically in handle_redeem based on current backlog.
-
+///
 /// TicketCreated event topic0.
 /// keccak256("TicketCreated(bytes32)")
 pub fn ticket_created_topic() -> B256 {
@@ -342,9 +342,9 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .map_err(|_| PrecompileError::other("sload failed"))?
             .data;
         let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
-        let cw = (calldata_size_u64 + 31) / 32;
+        let cw = calldata_size_u64.div_ceil(32);
         let nbytes = 6 * 32 + 32 + 32 * cw;
-        let wb = (nbytes + 31) / 32;
+        let wb = nbytes.div_ceil(32);
 
         // Read numTries
         let num_tries_slot = map_slot(ticket_key_pre.as_slice(), NUM_TRIES_OFFSET);
@@ -362,7 +362,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let mut hash_input = [0u8; 64];
     hash_input[..32].copy_from_slice(ticket_id.as_slice());
     hash_input[32..].copy_from_slice(&U256::from(nonce).to_be_bytes::<32>());
-    let retry_tx_hash = keccak256(&hash_input);
+    let retry_tx_hash = keccak256(hash_input);
 
     // Gas accounting matching Nitro's precompile framework.
     //
@@ -537,9 +537,9 @@ fn handle_keepalive(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     // + RetryableReapPrice(58000) + resultCost(3).
     // updateCost = WordsForBytes(nbytes) * SstoreSetGas/100, where
     // nbytes = 6*32 + 32 + 32*WordsForBytes(calldataSize).
-    let calldata_words = (calldata_size_u64 + 31) / 32;
+    let calldata_words = calldata_size_u64.div_ceil(32);
     let nbytes = 6 * 32 + 32 + 32 * calldata_words;
-    let update_cost = ((nbytes + 31) / 32) * (SSTORE_GAS / 100);
+    let update_cost = nbytes.div_ceil(32) * (SSTORE_GAS / 100);
     let event_cost = LOG_GAS + 2 * LOG_TOPIC_GAS + LOG_DATA_GAS * 32;
     let gas_used = 8 * SLOAD_GAS
         + 3 * SSTORE_GAS
@@ -610,7 +610,7 @@ fn handle_cancel(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     let calldata_size_slot = map_slot(calldata_sub.as_slice(), 0);
     let calldata_size = sload_field(input, calldata_size_slot)?;
     let calldata_size_u64: u64 = calldata_size.try_into().unwrap_or(0);
-    let calldata_words = (calldata_size_u64 + 31) / 32;
+    let calldata_words = calldata_size_u64.div_ceil(32);
     if calldata_size_u64 > 0 {
         for i in 0..calldata_words {
             let word_slot = map_slot(calldata_sub.as_slice(), 1 + i);

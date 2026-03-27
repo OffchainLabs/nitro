@@ -479,13 +479,13 @@ impl Decodable2718 for ArbReceipt {
         // types (0x64+), so handle standard EVM types here first.
         match ty {
             0x01 => {
-                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip2930(r));
+                return Self::decode_standard_receipt(buf, ArbReceiptKind::Eip2930);
             }
             0x02 => {
-                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip1559(r));
+                return Self::decode_standard_receipt(buf, ArbReceiptKind::Eip1559);
             }
             0x04 => {
-                return Self::decode_standard_receipt(buf, |r| ArbReceiptKind::Eip7702(r));
+                return Self::decode_standard_receipt(buf, ArbReceiptKind::Eip7702);
             }
             _ => {}
         }

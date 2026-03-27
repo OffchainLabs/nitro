@@ -1,3 +1,8 @@
+//! Arbitrum chain specification and ArbOS version constants.
+//!
+//! Defines the ArbOS version progression, hardfork timestamps, and the
+//! [`ArbitrumChainSpec`] trait for version-gated EVM spec selection.
+
 use reth_chainspec::ChainSpec;
 pub use reth_chainspec::EthChainSpec;
 use revm::primitives::hardfork::SpecId;

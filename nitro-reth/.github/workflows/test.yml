@@ -17,3 +17,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
+      - run: cargo test --doc --workspace

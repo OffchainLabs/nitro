@@ -1,3 +1,8 @@
+//! Arbitrum primitive types.
+//!
+//! Transaction types, receipts, gas accounting, and signed transaction
+//! handling for Arbitrum's extended EIP-2718 type space.
+
 extern crate alloc;
 
 pub mod arbos_versions;

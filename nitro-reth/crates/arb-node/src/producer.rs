@@ -188,7 +188,7 @@ where
         // baseFee for this block's header and EVM execution.
         let l2_base_fee = {
             let read_slot = |addr: Address, slot: B256| -> Option<U256> {
-                state_provider.storage(addr, slot.into()).ok().flatten()
+                state_provider.storage(addr, slot).ok().flatten()
             };
             arbos::header::read_l2_base_fee(&read_slot).or(parent_header.base_fee_per_gas())
         };
@@ -252,7 +252,7 @@ where
                     genesis::INITIAL_ARBOS_VERSION,
                     genesis::DEFAULT_CHAIN_OWNER,
                 )
-                .map_err(|e| BlockProducerError::Execution(e))?;
+                .map_err(BlockProducerError::Execution)?;
             } else {
                 debug!(
                     target: "block_producer",
@@ -536,7 +536,7 @@ where
         //
         // Skip accounts that were later re-created as zombies — those are
         // valid empty accounts that must persist in the trie.
-        let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+        let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
         for addr in &finalise_deleted {
             // Zombie accounts were re-created after Finalise deleted them.
             // They're back in cache and handled by augment_bundle_from_cache.
@@ -551,16 +551,15 @@ where
                     // Account was in the trie. Only mark as deleted if it's
                     // still empty — it may have been re-created with non-zero
                     // state (e.g., nonce=1) by a later tx in this block.
-                    let still_empty =
-                        bundle
-                            .state
-                            .get(addr)
-                            .and_then(|a| a.info.as_ref())
-                            .map_or(true, |info| {
-                                info.nonce == 0
-                                    && info.balance.is_zero()
-                                    && info.code_hash == keccak_empty_hash
-                            });
+                    let still_empty = bundle
+                        .state
+                        .get(addr)
+                        .and_then(|a| a.info.as_ref())
+                        .is_none_or(|info| {
+                            info.nonce == 0
+                                && info.balance.is_zero()
+                                && info.code_hash == keccak_empty_hash
+                        });
                     if still_empty {
                         if let Some(bundle_acct) = bundle.state.get_mut(addr) {
                             bundle_acct.info = None;
@@ -571,16 +570,15 @@ where
                     // emptied and then re-created (e.g., sender emptied after
                     // SubmitRetryable, then nonce incremented during RetryTx).
                     // Only remove if the account is still empty.
-                    let still_empty =
-                        bundle
-                            .state
-                            .get(addr)
-                            .and_then(|a| a.info.as_ref())
-                            .map_or(true, |info| {
-                                info.nonce == 0
-                                    && info.balance.is_zero()
-                                    && info.code_hash == keccak_empty_hash
-                            });
+                    let still_empty = bundle
+                        .state
+                        .get(addr)
+                        .and_then(|a| a.info.as_ref())
+                        .is_none_or(|info| {
+                            info.nonce == 0
+                                && info.balance.is_zero()
+                                && info.code_hash == keccak_empty_hash
+                        });
                     if still_empty {
                         bundle.state.remove(addr);
                     }
@@ -590,7 +588,7 @@ where
             if let Ok(Some(acct)) = state_provider.basic_account(addr) {
                 let was_originally_empty = acct.balance.is_zero()
                     && acct.nonce == 0
-                    && acct.bytecode_hash.map_or(true, |h| h == keccak_empty_hash);
+                    && acct.bytecode_hash.is_none_or(|h| h == keccak_empty_hash);
                 if was_originally_empty {
                     continue;
                 }
@@ -693,7 +691,7 @@ where
             number: l2_block_number,
             gas_limit: parent_header.gas_limit(),
             difficulty: U256::from(1),
-            gas_used: gas_used as u64,
+            gas_used,
             extra_data,
             parent_beacon_block_root: None,
             blob_gas_used: None,
@@ -877,7 +875,7 @@ fn delete_empty_accounts(
     zombie_accounts: &std::collections::HashSet<Address>,
     state_provider: &dyn StateProvider,
 ) {
-    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
     let mut to_remove = Vec::new();
     for (addr, account) in bundle.state.iter_mut() {
         if let Some(ref info) = account.info {
@@ -924,7 +922,7 @@ fn derive_header_info_from_state(
                 return Some(storage_slot.present_value);
             }
         }
-        state_provider.storage(addr, slot.into()).ok().flatten()
+        state_provider.storage(addr, slot).ok().flatten()
     };
 
     derive_arb_header_info(&read_slot)

@@ -156,7 +156,7 @@ fn read_base_fee_from_state(
 ) -> Option<u64> {
     // Read from committed state (pre-execution baseFee = current block's header baseFee).
     let read_slot = |addr: alloy_primitives::Address, slot: B256| -> Option<U256> {
-        state_provider.storage(addr, slot.into()).ok().flatten()
+        state_provider.storage(addr, slot).ok().flatten()
     };
     read_l2_base_fee(&read_slot)
 }
@@ -178,7 +178,7 @@ fn derive_header_info_from_state(
             }
         }
         // Fall back to the committed state provider.
-        state_provider.storage(addr, slot.into()).ok().flatten()
+        state_provider.storage(addr, slot).ok().flatten()
     };
 
     derive_arb_header_info(&read_slot)

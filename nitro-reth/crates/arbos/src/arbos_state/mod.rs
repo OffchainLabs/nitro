@@ -341,7 +341,7 @@ impl<D: Database, B: Burner> ArbosState<D, B> {
                     self.l1_pricing_state
                         .set_amortized_cost_cap_bips(u64::MAX)?;
                 }
-                4 | 5 | 6 | 7 | 8 | 9 => {
+                4..=9 => {
                     // No state changes needed
                 }
                 10 => {

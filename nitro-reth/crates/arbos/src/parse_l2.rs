@@ -126,17 +126,16 @@ pub fn parse_l2_transactions(
             let request_id = request_id.unwrap_or(B256::ZERO);
             parse_batch_posting_report(l2_msg, poster, request_id)
         }
-        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "L1 message type BatchForGasEstimation is unimplemented",
-            ));
-        }
+        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "L1 message type BatchForGasEstimation is unimplemented",
+        )),
         L1_MESSAGE_TYPE_INITIALIZE | L1_MESSAGE_TYPE_ROLLUP_EVENT => Ok(vec![]),
         _ => Ok(vec![]),
     }
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn parse_l2_message(
     data: &[u8],
     poster: Address,
@@ -153,12 +152,10 @@ fn parse_l2_message(
     let payload = &data[1..];
 
     match kind {
-        L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "L2 message kind SignedCompressedTx is unimplemented",
-            ));
-        }
+        L2_MESSAGE_KIND_SIGNED_COMPRESSED_TX => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "L2 message kind SignedCompressedTx is unimplemented",
+        )),
         L2_MESSAGE_KIND_SIGNED_TX => {
             // Decode and validate the tx type: reject Arbitrum internal types and blob txs.
             // Chain ID is NOT checked here — legacy txs with v=27/28 (no EIP-155
@@ -192,11 +189,7 @@ fn parse_l2_message(
             let mut reader = Cursor::new(payload);
             let mut txs = Vec::new();
             let mut index: u64 = 0;
-            loop {
-                let segment = match bytestring_from_reader(&mut reader) {
-                    Ok(seg) => seg,
-                    Err(_) => break, // end of batch
-                };
+            while let Ok(segment) = bytestring_from_reader(&mut reader) {
                 if segment.len() > MAX_L2_MESSAGE_SIZE {
                     break;
                 }
@@ -205,7 +198,7 @@ fn parse_l2_message(
                     let mut preimage = [0u8; 64];
                     preimage[..32].copy_from_slice(parent_id.as_slice());
                     preimage[32..].copy_from_slice(&U256::from(index).to_be_bytes::<32>());
-                    B256::from(keccak256(&preimage))
+                    B256::from(keccak256(preimage))
                 });
                 index += 1;
                 let mut sub_txs =
@@ -317,12 +310,12 @@ fn parse_l2_funded_by_l1(
     let mut deposit_preimage = [0u8; 64];
     deposit_preimage[..32].copy_from_slice(request_id.as_slice());
     // U256(0) is already zeroed
-    let deposit_request_id = B256::from(keccak256(&deposit_preimage));
+    let deposit_request_id = B256::from(keccak256(deposit_preimage));
 
     let mut unsigned_preimage = [0u8; 64];
     unsigned_preimage[..32].copy_from_slice(request_id.as_slice());
     unsigned_preimage[63] = 1; // U256(1) in big-endian
-    let unsigned_request_id = B256::from(keccak256(&unsigned_preimage));
+    let unsigned_request_id = B256::from(keccak256(unsigned_preimage));
 
     let tx = parse_unsigned_tx(&data[1..], poster, Some(unsigned_request_id), kind)?;
 

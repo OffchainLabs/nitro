@@ -216,7 +216,7 @@ where
                 result: BlockExecutionResult {
                     receipts,
                     requests: Default::default(),
-                    gas_used: sealed.header().gas_used() as u64,
+                    gas_used: sealed.header().gas_used(),
                     blob_gas_used: 0,
                 },
             };

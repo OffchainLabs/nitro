@@ -477,5 +477,5 @@ fn days_to_seconds(days: u16) -> u64 {
 }
 
 fn div_ceil(a: u64, b: u64) -> u64 {
-    (a + b - 1) / b
+    a.div_ceil(b)
 }

@@ -2344,7 +2344,7 @@ where
         // dirtied by a non-zero transfer, it's removed from zombie_accounts
         // (matching Go's dirtyCount > zombieEntries check).
         {
-            let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256(&[]));
+            let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
             let db: &mut State<DB> = self.inner.evm_mut().db_mut();
             let to_remove: Vec<Address> = self
                 .touched_accounts
@@ -2553,7 +2553,7 @@ fn create_zombie_if_deleted<DB: Database>(
         .cache
         .accounts
         .get(&addr)
-        .map_or(true, |c| c.account.is_none());
+        .is_none_or(|c| c.account.is_none());
     if account_missing && finalise_deleted.contains(&addr) {
         if let Some(cached) = state.cache.accounts.get_mut(&addr) {
             cached.account = Some(revm_database::states::plain_account::PlainAccount {
@@ -2671,7 +2671,7 @@ fn estimate_intrinsic_gas(tx: &impl Transaction, spec: revm::primitives::hardfor
         && is_create
         && !data.is_empty()
     {
-        let words = (data.len() as u64 + 31) / 32;
+        let words = (data.len() as u64).div_ceil(32);
         gas = gas.saturating_add(words.saturating_mul(INIT_CODE_WORD_GAS));
     }
 

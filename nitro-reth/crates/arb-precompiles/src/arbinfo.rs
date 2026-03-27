@@ -90,8 +90,8 @@ fn handle_get_code(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     // OpenArbosState (800) + argsCost (3) + ColdSloadCostEIP2929 (2100) +
     // CopyGas * WordsForBytes(code_len) + resultCost for ABI-encoded bytes.
-    let code_words = (code.len() as u64 + 31) / 32;
-    let result_words = (out.len() as u64 + 31) / 32;
+    let code_words = (code.len() as u64).div_ceil(32);
+    let result_words = (out.len() as u64).div_ceil(32);
     let gas_cost =
         (SLOAD_GAS + 3 + 2100 + COPY_GAS * code_words + COPY_GAS * result_words).min(gas_limit);
     Ok(PrecompileOutput::new(gas_cost, out.into()))

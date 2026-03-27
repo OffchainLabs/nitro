@@ -14,7 +14,7 @@ pub const ARBITRUM_START_TIME: u64 = 1421388000;
 
 const INITIAL_DEMAND: u32 = 0;
 /// 1TB total footprint per year, refilled each second.
-pub const INITIAL_HOURLY_BYTES: u64 = 1 * (1u64 << 40) / (365 * 24);
+pub const INITIAL_HOURLY_BYTES: u64 = (1u64 << 40) / (365 * 24);
 const INITIAL_BYTES_PER_SECOND: u32 = (INITIAL_HOURLY_BYTES / (60 * 60)) as u32;
 const INITIAL_LAST_UPDATE_TIME: u64 = ARBITRUM_START_TIME;
 const INITIAL_MIN_PRICE: u32 = 82928201; // 5Mb = $1

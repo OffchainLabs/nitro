@@ -1,3 +1,8 @@
+//! Arbitrum EVM execution layer.
+//!
+//! Block executor, custom opcode handlers, EVM configuration, and receipt
+//! building for Arbitrum's modified execution environment.
+
 extern crate alloc;
 
 pub mod assembler;

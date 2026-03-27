@@ -74,7 +74,7 @@ impl<E: EvmApi> WasmEnv<E> {
     /// Create a HostioInfo for accessing host functionality.
     pub fn program<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
         let (env, store) = env.data_and_store_mut();
-        let memory = env.memory.clone().unwrap();
+        let memory = env.memory.clone().expect("WASM memory not initialized");
         let mut info = HostioInfo {
             env,
             memory,

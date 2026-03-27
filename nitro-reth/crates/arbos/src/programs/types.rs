@@ -125,5 +125,5 @@ pub fn to_word_size(size: u64) -> u64 {
     if size > u64::MAX - 31 {
         return u64::MAX / 32 + 1;
     }
-    (size + 31) / 32
+    size.div_ceil(32)
 }

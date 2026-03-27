@@ -52,7 +52,11 @@ impl<E: EvmApi> NativeInstance<E> {
     }
 
     pub fn memory(&self) -> Memory {
-        self.env().memory.as_ref().unwrap().clone()
+        self.env()
+            .memory
+            .as_ref()
+            .expect("WASM memory not initialized")
+            .clone()
     }
 
     /// Create from a serialized module with caching.
@@ -301,7 +305,10 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
 
 impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
     fn pricing(&self) -> PricingParams {
-        self.env().config.unwrap().pricing
+        self.env()
+            .config
+            .expect("Stylus config not initialized")
+            .pricing
     }
 }
 

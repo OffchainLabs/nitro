@@ -1,3 +1,9 @@
+//! Arbitrum precompile contracts.
+//!
+//! Implements the system contracts at addresses `0x64`+ that provide
+//! on-chain access to ArbOS state, gas pricing, retryable tickets,
+//! Stylus WASM management, and node interface queries.
+
 mod arbaddresstable;
 mod arbaggregator;
 mod arbbls;
@@ -72,12 +78,11 @@ thread_local! {
     static CURRENT_GAS_BACKLOG: Cell<u64> = const { Cell::new(0) };
     /// Current tx poster fee (wei), set by executor before each tx.
     /// Used by ArbGasInfo.getCurrentTxL1GasFees to avoid storage reads.
-    /// In Nitro, this is read from c.txProcessor.PosterFee (a memory field).
     static CURRENT_TX_POSTER_FEE: Cell<u128> = const { Cell::new(0) };
     /// Poster fee balance correction for BALANCE opcode.
-    /// Nitro's BuyGas charges gas_limit * baseFee, but our reduced gas_limit
-    /// charges less by posterGas * baseFee. The BALANCE opcode handler subtracts
-    /// this amount when checking the sender's balance to match Nitro.
+    /// The canonical implementation charges gas_limit * baseFee, but our reduced
+    /// gas_limit charges less by posterGas * baseFee. The BALANCE opcode handler
+    /// subtracts this amount when checking the sender's balance.
     static POSTER_BALANCE_CORRECTION: Cell<u128> = const { Cell::new(0) };
     /// Current transaction sender address (first 20 bytes as u128 + extra Cell).
     static TX_SENDER_LO: Cell<u128> = const { Cell::new(0) };
@@ -95,14 +100,18 @@ static L2_BLOCKHASH_CACHE: StdMutex<
 
 /// Set an L2 block hash in the arbBlockHash cache.
 pub fn set_l2_block_hash(l2_block_number: u64, hash: alloy_primitives::B256) {
-    let mut cache = L2_BLOCKHASH_CACHE.lock().unwrap();
+    let mut cache = L2_BLOCKHASH_CACHE
+        .lock()
+        .expect("L2 blockhash cache lock poisoned");
     let map = cache.get_or_insert_with(std::collections::HashMap::new);
     map.insert(l2_block_number, hash);
 }
 
 /// Get an L2 block hash from the arbBlockHash cache.
 pub fn get_l2_block_hash(l2_block_number: u64) -> Option<alloy_primitives::B256> {
-    let cache = L2_BLOCKHASH_CACHE.lock().unwrap();
+    let cache = L2_BLOCKHASH_CACHE
+        .lock()
+        .expect("L2 blockhash cache lock poisoned");
     cache.as_ref()?.get(&l2_block_number).copied()
 }
 
