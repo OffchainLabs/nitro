@@ -16,12 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -32,6 +34,7 @@ var (
 	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
 	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
 	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
+	txPreCheckerAddressFilterRejectedCounter               = metrics.NewRegisteredCounter("arb/txprechecker/addressfilter/rejected", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -66,9 +69,14 @@ type TxPreChecker struct {
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *timeboost.ExpressLaneTracker
+	addressChecker     state.AddressChecker
+	eventFilter        *eventfilter.EventFilter
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+func NewTxPreChecker(
+	publisher TransactionPublisher,
+	bc *core.BlockChain,
+	config TxPreCheckerConfigFetcher) *TxPreChecker {
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
@@ -226,6 +234,13 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
+	if err != nil {
+		return err
+	}
+	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
 
@@ -255,6 +270,13 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), msg.Transaction)
+	if err != nil {
+		return err
+	}
+	if err := c.checkFilteredAddresses(msg.Transaction, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
 
@@ -272,9 +294,128 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
+	if err != nil {
+		return err
+	}
+	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
+		return err
+	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
 func (c *TxPreChecker) SetExpressLaneTracker(tracker *timeboost.ExpressLaneTracker) {
 	c.expressLaneTracker = tracker
+}
+
+func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
+	c.addressChecker = checker
+}
+
+func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
+	c.eventFilter = filter
+}
+
+func dryRunCheckFilteredAddresses(
+	statedb *state.StateDB, evm *vm.EVM, signer types.Signer, runCtx *core.MessageRunContext,
+	header *types.Header, tx *types.Transaction, txIndex int, gasLimit uint64,
+	resultFilter func(*core.ExecutionResult) error,
+) error {
+	msg, err := core.TransactionToMessage(tx, signer, header.BaseFee, runCtx)
+	if err != nil {
+		return err
+	}
+	msg.GasLimit = gasLimit
+	// Skip nonce checks
+	msg.SkipNonceChecks = true
+
+	gasPool := core.GasPool(gasLimit)
+	var usedGas uint64
+	statedb.SetTxContext(tx.Hash(), txIndex)
+	_, _, err = core.ApplyTransactionWithEVM(
+		msg, &gasPool, statedb, header.Number, header.Hash(), header.Time,
+		tx, &usedGas, evm, resultFilter,
+	)
+	if errors.Is(err, state.ErrArbTxFilter) {
+		txPreCheckerAddressFilterRejectedCounter.Inc(1)
+		return err
+	}
+	// Other execution errors are ignored since the pre-check is only concerned
+	// with address filtering results, not with exact execution results.
+	return nil
+}
+
+// touchScheduledRetryableAddresses touches From/To of scheduled ArbitrumRetryTx.
+func touchScheduledRetryableAddresses(statedb *state.StateDB, scheduledTxes types.Transactions) {
+	for _, scheduledTx := range scheduledTxes {
+		if inner, ok := scheduledTx.GetInner().(*types.ArbitrumRetryTx); ok {
+			statedb.TouchAddress(inner.From)
+			if inner.To != nil {
+				statedb.TouchAddress(*inner.To)
+			}
+		}
+	}
+}
+
+func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
+	if c.addressChecker == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
+		return nil
+	}
+	statedb, err := c.bc.StateAt(header.Root)
+	if err != nil {
+		return err
+	}
+	statedb.SetAddressChecker(c.addressChecker)
+
+	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
+	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
+	runCtx := core.NewMessageEthcallContext()
+	evm := vm.NewEVM(blockContext, statedb, c.bc.Config(), vm.Config{})
+
+	var scheduledTxes types.Transactions
+	err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, tx, 0, tx.Gas(),
+		func(result *core.ExecutionResult) error {
+			touchAddresses(statedb, c.eventFilter, tx, sender)
+			touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
+			if statedb.IsAddressFiltered() {
+				return state.ErrArbTxFilter
+			}
+			scheduledTxes = result.ScheduledTxes
+			return nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	// Process scheduled redeems in FIFO order including cascading redeems.
+	// We replicate the loop from ProduceBlockAdvanced because we only need
+	// EVM execution + address checking, without block-production overhead.
+	txIndex := 1
+	for len(scheduledTxes) > 0 {
+		redeemTx := scheduledTxes[0]
+		scheduledTxes = scheduledTxes[1:]
+		redeemSender, err := types.Sender(signer, redeemTx)
+		if err != nil {
+			log.Warn("failed to recover redeem sender in address filter", "err", err, "txHash", redeemTx.Hash())
+			continue
+		}
+		err = dryRunCheckFilteredAddresses(statedb, evm, signer, runCtx, header, redeemTx, txIndex, redeemTx.Gas(),
+			func(result *core.ExecutionResult) error {
+				touchAddresses(statedb, c.eventFilter, redeemTx, redeemSender)
+				touchScheduledRetryableAddresses(statedb, result.ScheduledTxes)
+				if statedb.IsAddressFiltered() {
+					return state.ErrArbTxFilter
+				}
+				scheduledTxes = append(scheduledTxes, result.ScheduledTxes...)
+				return nil
+			},
+		)
+		if err != nil {
+			return err
+		}
+		txIndex++
+	}
+
+	return nil
 }

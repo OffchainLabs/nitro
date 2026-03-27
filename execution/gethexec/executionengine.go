@@ -109,14 +109,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 	}
 }
 
-// PostTxFilter touches To/From addresses, applies event-based filtering, and
-// checks IsAddressFiltered. For user txs, collects tx hashes that touch filtered
-// addresses but are not in the onchain filter. For redeems, returns
-// ErrArbTxFilter so the block processor can trigger a group rollback.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	if tx.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
+func touchAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *types.Transaction, sender common.Address) {
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
@@ -130,7 +123,17 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 	touchRetryableAddresses(db, tx)
-	applyEventFilter(f.eventFilter, db)
+	applyEventFilter(ef, db)
+}
+
+// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
+// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
+// For redeems, returns ErrArbTxFilter to trigger group rollback.
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if tx.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
+	touchAddresses(db, f.eventFilter, tx, sender)
 
 	if db.IsAddressFiltered() {
 		// For redeems, return the filter error so the block processor can
