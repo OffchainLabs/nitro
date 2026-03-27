@@ -1,12 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::ResolvedPreimage;
 use arbutil::{Bytes32, PreimageType};
 use lru::LruCache;
 use once_cell::sync::OnceCell;
 use prover::machine::PreimageResolver;
 use prover::utils::{self, CBytes};
-use crate::ResolvedPreimage;
 use prover::Machine;
 use std::num::NonZeroUsize;
 use std::sync::Arc;

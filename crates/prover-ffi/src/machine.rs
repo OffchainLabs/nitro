@@ -2,12 +2,12 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use crate::c_strings::{c_string_to_string, err_to_c_string};
+use crate::{CByteArray, RustBytes};
 use arbutil::Bytes32;
 use eyre::Report;
 use prover::machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
 };
-use crate::{CByteArray, RustBytes};
 use prover::Machine;
 use static_assertions::const_assert_eq;
 use std::ffi::CStr;
