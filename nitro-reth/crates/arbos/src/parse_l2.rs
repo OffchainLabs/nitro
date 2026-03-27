@@ -333,8 +333,10 @@ fn parse_l2_funded_by_l1(
         _ => U256::ZERO,
     };
 
+    // Nitro's ArbitrumDepositTx for L2FundedByL1 has From unset (= zero)
+    // and To = header.Poster. Matches Go struct initialization default.
     let deposit = ParsedTransaction::EthDeposit {
-        from: poster,
+        from: Address::ZERO,
         to: poster,
         value: tx_value,
         request_id: deposit_request_id,
