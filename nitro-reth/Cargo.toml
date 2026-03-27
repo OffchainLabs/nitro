@@ -85,6 +85,10 @@ reth-codecs = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d5
 reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-tasks = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-network-p2p = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-prune = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
@@ -125,6 +129,8 @@ arb-alloy-predeploys = "0.1.2"
 arb-alloy-util = "0.1.2"
 
 # Common
+crossbeam-channel = "0.5"
+futures = "0.3"
 c-kzg = "2.1.7"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

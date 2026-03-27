@@ -26,6 +26,7 @@ reth-chain-state = { workspace = true }
 reth-consensus = { workspace = true }
 reth-db-api = { workspace = true }
 reth-engine-primitives = { workspace = true }
+reth-engine-tree = { workspace = true }
 reth-evm = { workspace = true }
 reth-execution-types = { workspace = true }
 reth-network = { workspace = true }
@@ -43,10 +44,17 @@ reth-revm = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-trie = { workspace = true }
 reth-trie-common = { workspace = true }
+reth-network-p2p = { workspace = true }
+reth-prune = { workspace = true }
+reth-stages-api = { workspace = true }
+reth-tasks = { workspace = true }
 reth-transaction-pool = { workspace = true }
+reth-trie-db = { workspace = true }
 async-trait = { workspace = true }
+crossbeam-channel = { workspace = true }
 eyre = { workspace = true }
 clap = { workspace = true }
+futures = { workspace = true }
 futures-util = "0.3"
 parking_lot = { workspace = true }
 revm = { workspace = true }
