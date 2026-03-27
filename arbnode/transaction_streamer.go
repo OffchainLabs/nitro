@@ -382,7 +382,11 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 					continue
 				}
 				msgBlockNum := new(big.Int).SetUint64(oldMessage.Message.Header.BlockNumber)
-				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, nil)
+				batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
+					data, _, err := s.inboxReader.GetSequencerMessageBytesForParentBlock(s.GetContext(), batchNum, parentChainBlockNumber)
+					return data, err
+				}
+				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, batchFetcher)
 				if err != nil {
 					log.Error("reorg-resequence: failed to serialize old delayed message from database", "err", err)
 					continue
@@ -516,7 +520,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 	}
 
 	if s.inboxReader != nil {
-		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			ctx, err := s.GetContextSafe()
 			if err != nil {
 				return nil, err
@@ -533,7 +537,8 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 			}
 
 			return data, err
-		})
+		}
+		err = message.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
 			return nil, err
 		}
