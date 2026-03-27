@@ -160,6 +160,12 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
+	if err := writeExact(entry.StartState.MELStateHash[:]); err != nil {
+		return state, err
+	}
+	if err := writeExact(entry.StartState.MELMsgHash[:]); err != nil {
+		return state, err
+	}
 
 	const successByte = 0x0
 	const failureByte = 0x1
@@ -253,6 +259,11 @@ func (machine *JitMachine) prove(
 		return state, err
 	}
 
+	// send end parent chain block hash (for MEL validation)
+	if err := writeExact(entry.EndParentChainBlockHash[:]); err != nil {
+		return state, err
+	}
+
 	read := func(count uint64) ([]byte, error) {
 		slice := make([]byte, count)
 		_, err := io.ReadFull(conn, slice)
@@ -304,6 +315,12 @@ func (machine *JitMachine) prove(
 				return state, err
 			}
 			if state.SendRoot, err = readHash(); err != nil {
+				return state, err
+			}
+			if state.MELStateHash, err = readHash(); err != nil {
+				return state, err
+			}
+			if state.MELMsgHash, err = readHash(); err != nil {
 				return state, err
 			}
 			memoryUsed, err := readUint64()

@@ -315,6 +315,7 @@ type NodeBuilder struct {
 	isSequencer                 bool
 	takeOwnership               bool
 	withL1                      bool
+	useJit                      bool
 	defaultStateScheme          string
 	addresses                   *chaininfo.RollupAddresses
 	l3Addresses                 *chaininfo.RollupAddresses
@@ -395,6 +396,7 @@ func NewNodeBuilder(ctxIn context.Context) *NodeBuilder {
 func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	// most used values across current tests are set here as default
 	b.withL1 = withL1
+	b.useJit = true
 	b.parallelise = true
 	b.deployBold = true
 	b.takeOwnership = true
@@ -812,6 +814,7 @@ func buildOnParentChain(
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
 	trieNoAsyncFlush bool,
+	useJit bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -844,7 +847,7 @@ func buildOnParentChain(
 		validatorTxOptsPtr = &validatorTxOpts
 	}
 
-	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, ctx, nodeConfig, useJit, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
 	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, parentChainTestClient.Client, execConfigFetcher, parentChainId, 0)
@@ -939,6 +942,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3InitMessage,
 		b.l3Addresses,
 		b.TrieNoAsyncFlush,
+		b.useJit,
 	)
 
 	return func() {
@@ -972,6 +976,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.initMessage,
 		b.addresses,
 		b.TrieNoAsyncFlush,
+		b.useJit,
 	)
 
 	if b.nodeConfig.MessageExtraction.Enable {
@@ -1054,7 +1059,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	}
 	b.L2 = NewTestClient(b.ctx)
 
-	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, b.useJit, "", b.valnodeConfig.Wasm.RootPath)
 
 	var executionDB ethdb.Database
 	var consensusDB ethdb.Database
@@ -1784,7 +1789,7 @@ func AddMELValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config
 
 func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
 	if nodeConfig.MELValidator.Enable {
-		AddMELValNode(t, ctx, nodeConfig, false, redisURL, wasmRootDir) // TODO: currently useJit is false remove this once jit validation for MEL is enabled
+		AddMELValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
 		return
 	}
 	if !nodeConfig.ValidatorRequired() || nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
