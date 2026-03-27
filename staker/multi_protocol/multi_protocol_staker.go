@@ -217,23 +217,34 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) er
 		return err
 	}
 	log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
+	// boldStaker is intentionally NOT tracked as a child: it must outlive the StopOnly call
+	// below (which cancels m's managed context and stops tracked children like oldStaker).
+	// StopAndWait will stop it explicitly after all goroutines have exited.
 	m.boldStaker.Start(ctx)
-	// Stop old staker (tracked child) but not the wallet or bold staker.
+	// Cancel m's managed context and stop tracked children (i.e. oldStaker).
+	// After this call the calling goroutine's context is also cancelled, so the
+	// goroutine must return promptly to allow wg.Wait() to complete.
 	m.StopOnly()
 	return nil
 }
 
 func (m *MultiProtocolStaker) StopAndWait() {
-	// Both stakers need explicit StopAndWait because:
-	// - boldStaker may have been started dynamically during a protocol switch
-	// - oldStaker may have been StopOnly'd (via TrackChild) but never waited on
-	if m.boldStaker != nil {
-		m.boldStaker.StopAndWait()
-	}
+	// oldStaker may have been started dynamically and stopped via StopOnly (TrackChild),
+	// but its goroutines still need waiting. Explicit StopAndWait is idempotent if it
+	// was already fully stopped.
 	if m.oldStaker != nil {
 		m.oldStaker.StopAndWait()
 	}
+	// Wait for m's own goroutines (including the potential switch goroutine) to exit.
+	// This must happen before reading m.boldStaker: the switch goroutine writes
+	// m.boldStaker and calling StopWaiter.StopAndWait() guarantees it has exited,
+	// making the subsequent read below race-free without requiring a mutex.
 	m.StopWaiter.StopAndWait()
+	// boldStaker is not tracked (see checkAndSwitchToBoldStaker), so stop it explicitly.
+	// Safe to read m.boldStaker here because the switch goroutine has already exited.
+	if m.boldStaker != nil {
+		m.boldStaker.StopAndWait()
+	}
 	// Wallet is started with external context, so stop it last.
 	m.wallet.StopAndWait()
 }
