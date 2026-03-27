@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter/stoppable"
 )
 
 // lint:require-exhaustive-initialization
@@ -33,19 +35,6 @@ func (s *InternalState) RUnlock() {
 	s.mutex.RUnlock()
 }
 
-// Stoppable is implemented by any type that can be stopped.
-// Used by TrackChild to automatically stop children in reverse order.
-type Stoppable interface {
-	StopOnly()
-	StopAndWait()
-}
-
-// StoppableChild extends Stoppable with a Start method that takes a context.
-type StoppableChild interface {
-	Stoppable
-	Start(context.Context)
-}
-
 // lint:require-exhaustive-initialization
 type LockedInternalState struct {
 	Started       bool
@@ -55,8 +44,8 @@ type LockedInternalState struct {
 	parentCtx     context.Context
 	StopFunc      func()
 	WaitChan      <-chan interface{}
-	Children      []Stoppable
-	TakenChildren []Stoppable // set once when ChildrenTaken becomes true; preserved for StopAndWait
+	Children      []stoppable.Stoppable
+	TakenChildren []stoppable.Stoppable // set once when ChildrenTaken becomes true; preserved for StopAndWait
 	ChildrenTaken bool
 }
 

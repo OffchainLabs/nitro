@@ -31,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	stoppable "github.com/offchainlabs/nitro/util/stopwaiter/state"
 )
 
 var (
@@ -43,7 +42,7 @@ type Opt = func(val *Manager)
 // AssertionManager works with the challenge manager suppplying information
 // about assertions.
 type AssertionManager interface {
-	stoppable.StoppableChild
+	stopwaiter.StoppableChild
 	LatestAgreedAssertion() protocol.AssertionHash
 	SetRivalHandler(types.RivalHandler)
 }

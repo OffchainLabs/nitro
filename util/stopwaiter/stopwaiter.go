@@ -16,7 +16,13 @@ import (
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter/state"
+	"github.com/offchainlabs/nitro/util/stopwaiter/stoppable"
 )
+
+// Re-exported for callers' convenience: use stopwaiter.Stoppable / stopwaiter.StoppableChild
+// instead of importing the internal stoppable sub-package directly.
+type Stoppable = stoppable.Stoppable
+type StoppableChild = stoppable.StoppableChild
 
 const stopDelayWarningTimeout = 30 * time.Second
 
@@ -54,7 +60,7 @@ func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 // when this StopWaiter is stopped, in LIFO (reverse) order.
 // If children have already been taken for shutdown, the child is stopped immediately.
 // A nil child is silently ignored.
-func (s *StopWaiterSafe) TrackChild(child state.Stoppable) {
+func (s *StopWaiterSafe) TrackChild(child Stoppable) {
 	if child == nil {
 		return
 	}
@@ -100,7 +106,7 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 // Returns nil on subsequent calls.
 // The children are also stored in TakenChildren so that stopAndWaitImpl
 // can call StopAndWait on them even after StopOnly has already taken them.
-func (s *StopWaiterSafe) takeChildren() []state.Stoppable {
+func (s *StopWaiterSafe) takeChildren() []Stoppable {
 	st := s.Lock()
 	defer s.Unlock()
 	if st.ChildrenTaken {
@@ -362,7 +368,7 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 // StartAndTrackChild starts a child with the parent's managed context
 // and registers it for automatic shutdown in LIFO order.
 // A nil child is silently ignored.
-func (s *StopWaiter) StartAndTrackChild(child state.StoppableChild) {
+func (s *StopWaiter) StartAndTrackChild(child StoppableChild) {
 	if child == nil {
 		return
 	}

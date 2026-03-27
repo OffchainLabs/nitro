@@ -32,7 +32,6 @@ import (
 	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/util/stopwaiter/state"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -299,7 +298,7 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
-	state.StoppableChild
+	stopwaiter.StoppableChild
 	Initialize(context.Context) error
 	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
