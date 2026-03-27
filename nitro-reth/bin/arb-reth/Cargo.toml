@@ -14,6 +14,7 @@ arb-node = { workspace = true }
 clap = { workspace = true }
 reth = { workspace = true }
 reth-cli-util = { workspace = true }
+reth-engine-tree = { workspace = true }
 reth-ethereum-cli = { workspace = true }
 tracing = { workspace = true }
 

@@ -5,9 +5,10 @@
 #[no_mangle]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use arb_node::ArbNode;
+use arb_node::{launcher::ArbEngineLauncher, ArbNode};
 use clap::Parser;
 use reth::cli::Cli;
+use reth_engine_tree::tree::TreeConfig;
 use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
 use tracing::info;
 
@@ -20,7 +21,14 @@ fn main() {
 
     if let Err(err) = Cli::<EthereumChainSpecParser>::parse().run(async move |builder, _| {
         info!(target: "reth::cli", "Launching arb-reth node");
-        let handle = builder.node(ArbNode::default()).launch().await?;
+        let node = builder.node(ArbNode::default());
+        let engine_tree_config = TreeConfig::default();
+        let launcher = ArbEngineLauncher::new(
+            node.task_executor().clone(),
+            node.config().datadir(),
+            engine_tree_config,
+        );
+        let handle = node.launch_with(launcher).await?;
         handle.wait_for_node_exit().await
     }) {
         eprintln!("Error: {err:?}");

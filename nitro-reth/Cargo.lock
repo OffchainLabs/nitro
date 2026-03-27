@@ -1195,6 +1195,7 @@ dependencies = [
  "clap",
  "reth",
  "reth-cli-util",
+ "reth-engine-tree",
  "reth-ethereum-cli",
  "tracing",
 ]
