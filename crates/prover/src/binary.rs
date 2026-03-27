@@ -9,6 +9,7 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
+use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
 use arbutil::{
     evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
 };

@@ -10,6 +10,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    programs::meter::MeteredMachine,
     programs::{config::CompileConfig, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
