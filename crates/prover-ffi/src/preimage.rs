@@ -9,7 +9,13 @@ use prover::{Machine, ResolvedPreimage};
 use std::{
     sync::{Arc},
 };
-use crate::BLOBHASH_PREIMAGE_CACHE;
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
+use lru::LruCache;
+
+lazy_static::lazy_static! {
+    static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
