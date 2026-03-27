@@ -154,6 +154,7 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	m.StopWaiter.Start(ctxIn, m)
 	// Wallet is started with the external context because it must outlive
 	// a potential old→bold staker switch (which calls m.StopOnly).
+	// It is NOT tracked via TrackChild — its lifecycle is managed explicitly in StopAndWait.
 	m.wallet.Start(ctxIn)
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
