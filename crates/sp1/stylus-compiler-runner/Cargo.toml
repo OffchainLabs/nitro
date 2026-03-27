@@ -14,3 +14,7 @@ name = "stylus-compiler-runner"
 path = "main.rs"
 
 [dependencies]
+stylus-compiler-program = { workspace = true }
+
+[build-dependencies]
+sp1-build = { workspace = true }

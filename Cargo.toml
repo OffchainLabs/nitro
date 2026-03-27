@@ -114,6 +114,7 @@ forward = { path = "crates/wasm-libraries/forward" }
 jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 stylus = { path = "crates/stylus", default-features = false }
+stylus-compiler-program = { path = "crates/sp1/stylus-compiler-program" }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
 validation = { path = "crates/validation" }
 
