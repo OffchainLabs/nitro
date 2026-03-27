@@ -5,6 +5,9 @@ use eyre::Report;
 use std::{ffi::CStr, os::raw::c_char, ptr};
 
 pub unsafe fn c_string_to_string(c_str: *const c_char) -> eyre::Result<String> {
+    if c_str.is_null() {
+        eyre::bail!("unexpected null string pointer");
+    }
     CStr::from_ptr(c_str)
         .to_str()
         .map(str::to_owned)
