@@ -1,5 +1,16 @@
 use clap::{Parser, Subcommand};
+use sp1_sdk::{
+    blocking::{Prover, ProverClient},
+    include_elf,
+    Elf,
+    ProvingKey,
+    SP1Stdin,
+    blocking::ProveRequest
+};
 use std::path::PathBuf;
+use stylus_compiler_program::{compile, CompileInput};
+
+const COMPILER_ELF: Elf = include_elf!("stylus-compiler-program");
 
 #[derive(Parser)]
 #[command(version, about = "Run the Stylus WASM compiler in various execution modes")]
@@ -9,6 +20,14 @@ struct Cli {
 
     /// Path to the Stylus WASM binary to compile.
     wasm: PathBuf,
+
+    /// Arbitrum version passed to the Stylus compiler.
+    #[arg(long, default_value_t = 2)]
+    version: u16,
+
+    /// Enable debug compilation mode.
+    #[arg(long)]
+    debug: bool,
 }
 
 #[derive(Subcommand)]
@@ -43,5 +62,58 @@ enum Command {
 }
 
 fn main() {
-    let _cli = Cli::parse();
+    sp1_sdk::utils::setup_logger();
+
+    let cli = Cli::parse();
+    let wasm = std::fs::read(&cli.wasm).expect("failed to read wasm file");
+    let input = CompileInput { version: cli.version, debug: cli.debug, wasm };
+
+    match cli.command {
+        Command::Native => {
+            let binary = compile(&input).expect("native compilation failed");
+            tracing::info!("compiled successfully, output size: {} bytes", binary.len());
+        }
+        Command::Execute => {
+            let binary = sp1_execute(&input);
+            tracing::info!("SP1 execution completed, output size: {} bytes", binary.len());
+        }
+        Command::Prove => sp1_prove(&input),
+        Command::Compare => {
+            let native = compile(&input).expect("native compilation failed");
+            let sp1 = sp1_execute(&input);
+            assert_eq!(native, sp1, "native and SP1 outputs differ");
+            tracing::info!("outputs match ({} bytes)", native.len());
+        }
+    }
+}
+
+fn build_stdin(input: &CompileInput) -> SP1Stdin {
+    let mut stdin = SP1Stdin::new();
+    stdin.write(input);
+    stdin
+}
+
+fn sp1_execute(input: &CompileInput) -> Vec<u8> {
+    let client = ProverClient::from_env();
+    let stdin = build_stdin(input);
+    let (mut output, report) = client
+        .execute(COMPILER_ELF, stdin)
+        .run()
+        .expect("SP1 execution failed");
+    tracing::info!("cycles: {}", report.total_instruction_count());
+    output.read::<Vec<u8>>()
+}
+
+fn sp1_prove(input: &CompileInput) {
+    let client = ProverClient::from_env();
+    let stdin = build_stdin(input);
+    let pk = client.setup(COMPILER_ELF).expect("failed to setup ELF");
+    let proof = client
+        .prove(&pk, stdin)
+        .run()
+        .expect("failed to generate proof");
+    client
+        .verify(&proof, pk.verifying_key(), None)
+        .expect("failed to verify proof");
+    tracing::info!("proof generated and verified successfully");
 }

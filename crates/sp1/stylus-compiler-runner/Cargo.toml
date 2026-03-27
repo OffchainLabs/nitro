@@ -15,7 +15,9 @@ path = "main.rs"
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
+sp1-sdk = { workspace = true, features = ["blocking"] }
 stylus-compiler-program = { workspace = true }
+tracing = { workspace = true }
 
 [build-dependencies]
 sp1-build = { workspace = true }
