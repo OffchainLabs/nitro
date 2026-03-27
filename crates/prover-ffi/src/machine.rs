@@ -7,7 +7,8 @@ use eyre::Report;
 use prover::machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
 };
-use prover::{CByteArray, Machine, RustBytes};
+use crate::{CByteArray, RustBytes};
+use prover::Machine;
 use static_assertions::const_assert_eq;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};

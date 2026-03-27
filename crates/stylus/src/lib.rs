@@ -15,10 +15,8 @@ use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
-use prover::{
-    programs::{prelude::*, StylusData},
-    RustBytes,
-};
+use prover::programs::{prelude::*, StylusData};
+use prover_ffi::RustBytes;
 use run::RunProgram;
 use std::ptr;
 use target_cache::{target_cache_get, target_cache_set};
