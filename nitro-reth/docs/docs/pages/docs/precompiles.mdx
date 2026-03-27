@@ -1,0 +1,86 @@
+# Precompiles
+
+Arbitrum provides system contracts at fixed addresses that expose ArbOS functionality to smart contracts. These precompiles are callable from Solidity like any other contract.
+
+## Address Map
+
+| Address | Name | Since | Purpose |
+|---------|------|-------|---------|
+| `0x64` | ArbSys | Genesis | L2-to-L1 messaging, block info, address aliasing |
+| `0x65` | ArbInfo | Genesis | Account balance and code queries |
+| `0x66` | ArbAddressTable | Genesis | Calldata compression via address lookup |
+| `0x67` | ArbBLS | Genesis | BLS signature registration (deprecated) |
+| `0x68` | ArbFunctionTable | Genesis | Function table registration (deprecated) |
+| `0x6B` | ArbOwnerPublic | Genesis | Read-only chain parameter queries |
+| `0x6C` | ArbGasInfo | Genesis | Gas price and fee telemetry |
+| `0x6D` | ArbAggregator | Genesis | Preferred aggregator settings (deprecated) |
+| `0x6E` | ArbRetryableTx | Genesis | Retryable ticket lifecycle management |
+| `0x6F` | ArbStatistics | Genesis | Chain statistics |
+| `0x70` | ArbOwner | Genesis | Chain owner configuration (permissioned) |
+| `0x71` | ArbWasm | v30 | Stylus program activation and queries |
+| `0x72` | ArbWasmCache | v30 | Stylus cache management |
+| `0x73` | ArbNativeTokenManager | v41 | Custom gas token support |
+| `0x74` | ArbFilteredTxManager | v60 | Transaction filtering configuration |
+| `0xC8` | NodeInterface | Genesis | Gas estimation and node queries |
+| `0xFF` | ArbDebug | Genesis | Debug utilities (intentionally stubbed) |
+
+## Key Precompiles
+
+### ArbSys (0x64)
+
+The most commonly used precompile. Provides:
+
+- **`arbBlockNumber()`** - returns the L2 block number (since `NUMBER` opcode returns L1 block number)
+- **`arbBlockHash(blockNumber)`** - returns L2 block hashes
+- **`sendTxToL1(destination, data)`** - sends an L2-to-L1 message (emits `L2ToL1Tx` event)
+- **`isTopLevelCall()`** - returns true if the current call is not a sub-call
+- **`wasMyCallersAddressAliased()`** - checks if the caller's address was L1 aliased
+- **`arbChainID()`** - returns the Arbitrum chain ID
+
+### ArbGasInfo (0x6C)
+
+Exposes the full gas pricing state:
+
+- **`getPricesInWei()`** - returns L2 gas price, L1 calldata price per byte, storage price, and more
+- **`getPricesInArbGas()`** - same prices denominated in L2 gas units
+- **`getCurrentTxL1GasFees()`** - L1 gas fees for the current transaction
+- **`getGasAccountingParams()`** - speed limit, pool size, and per-block gas limit
+- **`getL1BaseFeeEstimate()`** - current L1 base fee as seen by ArbOS
+
+### ArbRetryableTx (0x6E)
+
+Manages the retryable ticket lifecycle:
+
+- **`redeem(ticketId)`** - manually redeem an expired auto-redeem
+- **`getTimeout(ticketId)`** - returns the ticket's expiry timestamp
+- **`getLifetime()`** - returns the default ticket lifetime (7 days)
+- **`keepalive(ticketId)`** - extends the ticket's expiry by one lifetime period
+- **`cancel(ticketId)`** - cancels a ticket and refunds remaining deposit
+- **`getBeneficiary(ticketId)`** - returns the refund beneficiary address
+
+### ArbOwner (0x70)
+
+Permissioned configuration methods (only callable by chain owners):
+
+- **`setL2BaseFee(priceInWei)`** - set L2 base fee
+- **`setSpeedLimit(limit)`** - set the per-second gas speed limit
+- **`setNetworkFeeAccount(account)`** - set the network fee recipient
+- **`setInfraFeeAccount(account)`** - set the infrastructure fee recipient
+- **`addChainOwner(owner)`** / **`removeChainOwner(owner)`** - manage chain owners
+- **`scheduleArbOSUpgrade(version, timestamp)`** - schedule an ArbOS version upgrade
+
+### NodeInterface (0xC8)
+
+Virtual precompile for node-level queries (not accessible on-chain, only via `eth_call`):
+
+- **`estimateRetryableTicket(...)`** - estimates gas for a retryable ticket submission
+- **`gasEstimateComponents(to, contractCreation, data)`** - breaks down gas into L1 and L2 components
+- **`gasEstimateL1Component(to, contractCreation, data)`** - estimates only the L1 gas component
+- **`nitroGenesisBlock()`** - returns the genesis block number
+
+## Version Gating
+
+Precompiles are version-gated at two levels:
+
+1. **Precompile-level** - the entire precompile is inactive before its introduction version (calls return empty bytes)
+2. **Method-level** - individual methods within a precompile can have their own version gates (calls revert if the version is out of range)

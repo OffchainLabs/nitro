@@ -1,0 +1,69 @@
+# Architecture
+
+ArbReth is organized as a Cargo workspace of focused, independently consumable crates. The architecture follows a clear layering: node infrastructure at the top, execution in the middle, and core primitives at the bottom.
+
+## Crate Map
+
+```
+crates/
+├── arb-node/          Node builder - wires all components into a runnable reth node
+├── arb-rpc/           JSON-RPC - eth_, arb_, and nitroexecution_ namespaces
+├── arb-payload/       Payload building primitives for the Engine API
+├── arb-txpool/        Transaction pool validation (rejects blobs, enforces fee caps)
+│
+├── arb-evm/           Block executor, custom opcode handlers, EVM configuration
+├── arbos/             Core ArbOS state machine, pricing, retryables, block processing
+├── arb-precompiles/   System contracts at addresses 0x64+ (gas info, retryables, owner, etc.)
+├── arb-stylus/        Stylus WASM runtime - compilation, caching, ink metering, host I/O
+│
+├── arb-primitives/    Transaction types, receipts, gas accounting
+├── arb-storage/       Storage-backed types (uint64, address, bytes, queues, vectors)
+└── arb-chainspec/     Chain spec, ArbOS version constants, hardfork timestamps
+
+bin/
+├── arb-reth/          Node binary (CLI entry point)
+└── gen-genesis/       Genesis state generator
+```
+
+## Dependency Layers
+
+The crates form three layers with one-way dependencies flowing downward:
+
+### Node Layer
+`arb-node`, `arb-rpc`, `arb-payload`, `arb-txpool` - infrastructure that integrates with reth's node builder framework. These crates wire the execution layer into a runnable node with RPC endpoints and transaction pool management.
+
+### Execution Layer
+`arb-evm`, `arbos`, `arb-precompiles`, `arb-stylus` - the core state transition logic. `arb-evm` implements reth's `BlockExecutor` trait and delegates to `arbos` for protocol-level state changes. Precompiles and Stylus are called during EVM execution.
+
+### Primitives Layer
+`arb-primitives`, `arb-storage`, `arb-chainspec` - foundational types shared across all crates. Transaction types, storage abstractions, and version constants.
+
+## Key Traits
+
+ArbReth integrates with reth through its standard trait system:
+
+| reth Trait | ArbReth Implementation | Purpose |
+|------------|----------------------|---------|
+| `BlockExecutor` | `ArbBlockExecutor` | Executes transactions within a block |
+| `EvmConfig` | `ArbEvmConfig` | Configures the EVM environment per block |
+| `StateProvider` | reth's built-in | Reads/writes state from the database |
+| `NodePrimitives` | `ArbPrimitives` | Defines transaction and receipt types |
+| `Consensus` | `ArbConsensus` | Validates blocks (trust-the-sequencer model) |
+
+## Block Production Flow
+
+When the Nitro consensus node sends a message via `nitroexecution_digestMessage`:
+
+1. **Message parsing** - L1-to-L2 message is decoded into transaction segments
+2. **Internal transactions** - `StartBlock` initializes ArbOS state for the new block
+3. **User transactions** - each transaction runs through the EVM with ArbOS hooks for gas charging, poster fee deduction, and fee distribution
+4. **End-of-block** - state is committed, header fields are derived (mix_hash encodes ArbOS version, send_count, L1 block number), and the block is persisted
+
+## External Dependencies
+
+ArbReth builds on several foundational Rust projects:
+
+- [**reth**](https://github.com/paradigmxyz/reth) - node framework, database, networking, and RPC infrastructure
+- [**revm**](https://github.com/bluealloy/revm) - EVM interpreter for transaction execution
+- [**alloy**](https://github.com/alloy-rs/alloy) - Ethereum types and primitives
+- [**wasmer**](https://github.com/wasmerio/wasmer) - WASM runtime for Stylus program execution

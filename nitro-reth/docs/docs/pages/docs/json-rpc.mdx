@@ -1,0 +1,101 @@
+# JSON-RPC API
+
+ArbReth serves three RPC namespaces: the standard `eth_` namespace (with Arbitrum extensions), the `arb_` namespace for Arbitrum-specific queries, and the `nitroexecution_` namespace for consensus-layer communication.
+
+## eth_ Namespace
+
+ArbReth supports the full standard `eth_` namespace inherited from reth. The key difference is gas estimation:
+
+### Gas Estimation
+
+`eth_estimateGas` includes L1 posting costs on top of L2 execution gas. The estimation:
+
+1. Runs the standard binary search for compute gas
+2. Calculates L1 posting gas: `calldata_units * l1_price_per_unit / l2_base_fee`
+3. Applies 110% padding to the L1 component
+4. Returns `compute_gas + l1_posting_gas`
+
+This ensures transactions include enough gas to cover both execution and data availability costs.
+
+## arb_ Namespace
+
+Arbitrum-specific informational methods.
+
+### `arb_getBlockInfo`
+
+Returns Arbitrum-specific block metadata.
+
+```json
+// Request
+{"jsonrpc":"2.0","method":"arb_getBlockInfo","params":[12345],"id":1}
+
+// Response
+{
+  "l1BlockNumber": 19000000,
+  "arbosFormatVersion": 20,
+  "sendCount": 5432,
+  "sendRoot": "0xabcd..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `l1BlockNumber` | L1 block number at the time this L2 block was produced |
+| `arbosFormatVersion` | ArbOS version active for this block |
+| `sendCount` | Cumulative L2-to-L1 message count |
+| `sendRoot` | Merkle root of the L2-to-L1 send tree |
+
+### `arb_maintenanceStatus`
+
+Returns the current maintenance status of the node.
+
+### `arb_checkPublisherHealth`
+
+Health check endpoint (returns null on success).
+
+## nitroexecution_ Namespace
+
+The interface between the Nitro consensus node and ArbReth. These methods are called by the consensus layer to drive block production and are exposed on the authenticated Engine API port (8551).
+
+### `nitroexecution_digestMessage`
+
+The primary block production method. The consensus node sends an ordered L1-to-L2 message, and ArbReth produces a block from it.
+
+```
+digestMessage(msgIdx, message, messageForPrefetch?) -> MessageResult
+```
+
+**Parameters:**
+- `msgIdx` - sequential message index (starts at 1; message 0 is the genesis init message)
+- `message` - the L1 message with metadata (header, delayed flag, batch data)
+- `messageForPrefetch` - optional next message for state prefetching
+
+**Returns:** `{ blockHash, sendRoot }` for the produced block.
+
+### `nitroexecution_headMessageIndex`
+
+Returns the index of the latest processed message.
+
+### `nitroexecution_resultAtMessageIndex`
+
+Returns the block result for a previously processed message index.
+
+### `nitroexecution_setFinalityData`
+
+Updates finality markers (safe, finalized, validated block numbers) from the consensus layer.
+
+### `nitroexecution_setConsensusSyncData`
+
+Updates consensus sync state (synced status, max message count).
+
+### `nitroexecution_reorg`
+
+Handles chain reorganizations by rolling back to a message index and replaying new messages.
+
+### `nitroexecution_arbOSVersionForMessageIndex`
+
+Returns the ArbOS version active at a given message index.
+
+### `nitroexecution_triggerMaintenance`
+
+Triggers database maintenance operations (compaction, pruning).

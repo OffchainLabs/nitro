@@ -1,0 +1,93 @@
+# ArbOS State Machine
+
+ArbOS is the operating system layer that runs on top of the EVM. It manages L1/L2 pricing, retryable tickets, cross-chain messaging, and protocol-level state - all stored in the state trie under a dedicated system address.
+
+## State Layout
+
+All ArbOS state lives at `ARBOS_STATE_ADDRESS` (`0xa4b05...`), organized into subspaces:
+
+| Subspace | ID | Purpose |
+|----------|-----|---------|
+| L2 Pricing | 0 | Base fee, gas backlog, per-block gas limit |
+| L1 Pricing | 1 | L1 data costs, batch poster rewards, equilibration |
+| Retryables | 2 | Retryable ticket storage and timeout queue |
+| Address Table | 3 | Calldata compression address lookup table |
+| Send Merkle | 5 | L2-to-L1 message accumulator |
+| Blockhashes | 6 | L1 block number and hash cache |
+| Programs | 8 | Stylus program metadata and parameters |
+
+Each subspace uses a key derivation scheme: `hash(parent_key || offset[0..31]) || offset[31]`, which produces unique non-colliding storage slots.
+
+## Versioning
+
+ArbOS evolves through version upgrades stored in the block header's `mix_hash` field. Each version maps to an EVM spec:
+
+| ArbOS Version | EVM Spec | Key Features |
+|---------------|----------|--------------|
+| v11 | Shanghai | PUSH0 opcode |
+| v20 | Cancun | Transient storage, blob base fee |
+| v30 | Cancun | Stylus WASM support |
+| v40 | Prague | Prague EVM rules |
+| v50 | Prague | Dia upgrade |
+| v60 | Prague | Multi-gas constraints, transaction filtering |
+
+The `mix_hash` header field encodes three values:
+- Bytes 0-7: `send_count` (cumulative L2-to-L1 messages)
+- Bytes 8-15: `l1_block_number` (L1 block at time of production)
+- Bytes 16-23: `arbos_format_version`
+
+## Gas Pricing
+
+Arbitrum uses a two-layer gas model: L1 data posting costs and L2 execution costs.
+
+### L1 Pricing
+
+L1 costs cover data availability - the cost of posting transaction data to Ethereum L1.
+
+- Transaction calldata is measured using **Brotli compression** to approximate actual batch size
+- Units are priced at `l1_price_per_unit` (wei per compressed byte)
+- An **equilibration algorithm** adjusts the L1 price to balance collected fees against actual batch posting costs
+- Poster fees are deducted from the transaction's gas budget before EVM execution
+
+### L2 Pricing
+
+L2 costs cover computation on the Arbitrum chain.
+
+- Base fee uses an **exponential backlog model**: fees increase when demand exceeds the per-block gas limit
+- The exponential function uses a degree-4 Horner's method polynomial approximation
+- Three pricing models exist across versions:
+  - **Legacy** (pre-v50): Simple gas accounting
+  - **SingleGas** (v50): Unified gas constraint
+  - **MultiGas** (v60): Eight resource dimensions tracked independently
+
+### Fee Distribution
+
+After each transaction, collected fees are split:
+
+| Recipient | Share | Purpose |
+|-----------|-------|---------|
+| Network fee account | Configurable | Protocol revenue |
+| Infrastructure fee account | Configurable | Infrastructure costs |
+| Poster (coinbase) | L1 data cost | Reimburses L1 posting |
+
+## Block Processing
+
+Each block follows this sequence:
+
+1. **StartBlock** internal transaction - updates L1 pricing, reaps expired retryable tickets, caches L1 block hashes, computes per-block gas limit
+2. **Batch posting report** (if present) - records L1 batch costs for the pricing model
+3. **User transactions** - each goes through `start_tx` (gas charging, poster fee) → EVM execution → `end_tx` (fee distribution, refunds)
+4. **Header derivation** - `mix_hash`, `extra_data` (send root), and gas fields are computed from final state
+
+## Custom EVM Behavior
+
+ArbReth modifies several EVM opcodes from their standard Ethereum behavior:
+
+| Opcode | Standard | Arbitrum |
+|--------|----------|----------|
+| `NUMBER` | L2 block number | **L1 block number** |
+| `BLOCKHASH` | L2 block hashes | L1 block hashes (from cache) |
+| `BLOBBASEFEE` | Blob base fee | Always reverts (no blobs on L2) |
+| `PREVRANDAO` | Beacon randomness | Constant `0x...0001` |
+| `COINBASE` | Block proposer | L1 batch poster address |
+| `DIFFICULTY` | Mining difficulty | Constant `1` |

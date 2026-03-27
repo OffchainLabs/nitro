@@ -1,0 +1,116 @@
+# Installation
+
+## Docker (recommended)
+
+The simplest way to run ArbReth is with Docker Compose, which starts both the execution client and the Nitro consensus node.
+
+```bash
+git clone https://github.com/0xBloctopus/arbreth.git
+cd arbreth
+cp .env.example .env
+```
+
+Edit `.env` to set your L1 RPC endpoints:
+
+```bash
+PARENT_CHAIN_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+PARENT_CHAIN_BEACON_URL=https://eth-sepoliabeacon.g.alchemy.com/v2/YOUR_KEY
+```
+
+Start the stack:
+
+```bash
+docker compose up -d
+```
+
+ArbReth will start syncing Arbitrum Sepolia. The Nitro consensus node waits for ArbReth to pass its healthcheck before starting.
+
+### Verify sync progress
+
+```bash
+curl -s -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+```
+
+### View logs
+
+```bash
+docker compose logs -f arbreth    # execution client
+docker compose logs -f nitro      # consensus node
+```
+
+### Stop
+
+```bash
+docker compose down
+```
+
+Data is persisted in Docker named volumes (`arbreth-data`, `nitro-data`) and survives restarts.
+
+## Build from Source
+
+### Requirements
+
+- **Rust** 1.93 or later
+- **clang** and **libclang-dev** (for C dependencies)
+- **cmake** (for cryptographic library builds)
+
+### Build
+
+```bash
+git clone https://github.com/0xBloctopus/arbreth.git
+cd arbreth
+cargo build --release -p arb-reth
+```
+
+The binary is at `./target/release/arb-reth`.
+
+### Run
+
+ArbReth requires a JWT secret for the Engine API connection with the Nitro consensus node:
+
+```bash
+openssl rand -hex 32 > /path/to/jwt.hex
+```
+
+Start the node:
+
+```bash
+./target/release/arb-reth node \
+  --chain=genesis/arbitrum-sepolia.json \
+  --datadir=/path/to/data \
+  --http \
+  --http.addr=0.0.0.0 \
+  --http.api=eth,web3,net,debug \
+  --authrpc.addr=0.0.0.0 \
+  --authrpc.jwtsecret=/path/to/jwt.hex
+```
+
+### Ports
+
+| Port | Service | Auth |
+|------|---------|------|
+| 8545 | JSON-RPC (HTTP) | None |
+| 8551 | Engine API | JWT |
+
+The Nitro consensus node connects to port 8551 using the shared JWT secret.
+
+## Running the Consensus Node
+
+ArbReth is an execution client only. It needs the Nitro consensus node to receive L1 messages and drive block production. You can run Nitro separately:
+
+```bash
+docker run offchainlabs/nitro-node:v3.10.0-rc.2-746bda2 \
+  --init.empty=true \
+  --init.validate-genesis-assertion=false \
+  --parent-chain.connection.url=YOUR_L1_RPC \
+  --parent-chain.blob-client.beacon-url=YOUR_BEACON_URL \
+  --chain.id=421614 \
+  --node.execution-rpc-client.url=http://HOST:8551 \
+  --node.execution-rpc-client.jwtsecret=/path/to/jwt.hex \
+  --node.sequencer=false \
+  --node.feed.input.url=wss://sepolia-rollup.arbitrum.io/feed
+```
+
+The `docker-compose.yml` in the repository handles this setup automatically.

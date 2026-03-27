@@ -1,0 +1,93 @@
+# Stylus WASM Runtime
+
+Stylus allows smart contracts written in Rust, C, and C++ to run on Arbitrum as compiled WASM programs alongside standard EVM contracts. ArbReth implements the full Stylus execution pipeline.
+
+## How Stylus Works
+
+Stylus programs are identified by a 3-byte prefix in their deployed bytecode: `[0xEF, 0xF0, 0x00]`. When the EVM encounters a call to an address with this prefix, execution is dispatched to the WASM runtime instead of the EVM interpreter.
+
+### Execution Flow
+
+1. **Detection** - during an EVM CALL, the target's bytecode is checked for the Stylus discriminant
+2. **Cache lookup** - the compiled WASM module is loaded from cache (or compiled on-the-fly)
+3. **Ink conversion** - EVM gas is converted to "ink" (Stylus's internal gas unit) at the configured `ink_price` rate
+4. **Execution** - the WASM program runs in a wasmer sandbox with host I/O functions for EVM state access
+5. **Gas settlement** - remaining ink is converted back to EVM gas and returned to the caller
+
+## Ink Metering
+
+Stylus uses **ink** as its internal gas unit, separate from EVM gas. The conversion rate is configurable:
+
+```
+Gas * ink_price = Ink
+```
+
+Ink is deducted for:
+- WASM opcode execution (via compiler-injected metering middleware)
+- Host I/O calls (storage reads/writes, calls, memory operations)
+- Memory page allocation
+
+### Upfront Gas Costs
+
+Before a Stylus program starts executing, gas is deducted for:
+- **Memory initialization** - based on the program's memory footprint
+- **Program startup** - `init_gas` (first activation) or `cached_gas` (subsequent calls)
+
+## Program Lifecycle
+
+### Activation
+
+Programs must be activated before they can be called. Activation:
+1. Validates the WASM module structure
+2. Instruments it with ink metering middleware
+3. Compiles to native code via Cranelift
+4. Stores metadata (version, init cost, cached cost, footprint) in a packed 32-byte storage word
+5. Charges a data pricing fee based on an exponential demand curve
+
+### Caching
+
+Compiled WASM modules are cached in a two-tier system:
+- **Long-term cache** - pinned programs that are always available
+- **LRU cache** - recently-used programs evicted under memory pressure
+
+Cache management is exposed through the `ArbWasmCache` precompile (0x72).
+
+## Host I/O
+
+Stylus programs interact with EVM state through host functions:
+
+| Host Function | Purpose | Ink Cost |
+|---------------|---------|----------|
+| `storage_load_bytes32` | Read a storage slot | Cold SLOAD + access cost |
+| `storage_cache_bytes32` | Write to storage cache | SSTORE sentry + access cost |
+| `storage_flush_cache` | Flush cached writes | Per-slot SSTORE cost |
+| `call_contract` | CALL to another contract | EVM call cost + gas forwarding |
+| `delegate_call_contract` | DELEGATECALL | Same as call |
+| `static_call_contract` | STATICCALL | Same as call |
+| `create1` / `create2` | Deploy a contract | CREATE/CREATE2 gas |
+| `emit_log` | Emit an event | LOG base + topic + data costs |
+| `account_balance` | Read account balance | Account access cost |
+| `account_codehash` | Read code hash | Account access cost |
+| `tx_origin` / `msg_sender` | Transaction context | Base hostio cost |
+| `block_timestamp` / `block_number` | Block context | Base hostio cost |
+| `read_return_data` | Read return data from last call | Base hostio cost |
+| `msg_value` | Callvalue | Base hostio cost |
+
+## Sub-Calls
+
+Stylus programs can call other contracts (both EVM and Stylus):
+
+- **EVM contracts** - ink is converted back to gas, a standard EVM frame is created
+- **Stylus contracts** - gas is converted to ink in the callee's context
+- **Precompiles** - dispatched through the standard precompile routing
+
+The 63/64ths gas forwarding rule applies, matching EVM semantics. Call depth is tracked and reentrancy into the same Stylus program is detected per-address.
+
+## Precompiles
+
+| Address | Name | Purpose |
+|---------|------|---------|
+| `0x71` | ArbWasm | Activate programs, query version/gas/footprint/expiry |
+| `0x72` | ArbWasmCache | Pin/unpin programs in cache, query cache status |
+
+Both precompiles are available from ArbOS v30 onward.

@@ -4,6 +4,7 @@
 [![lint](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/lint.yml)
 [![test](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/test.yml)
 [![build](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml/badge.svg)](https://github.com/0xBloctopus/arbreth/actions/workflows/build.yml)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-0xBloctopus%2Farbreth-blue.svg?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNUEyLjUgMi41IDAgMCAxIDYuNSAxN0gyMCI+PC9wYXRoPjxwYXRoIGQ9Ik02LjUgMkgyMHYyMEg2LjVBMi41IDIuNSAwIDAgMSA0IDE5LjVWNC41QTIuNSAyLjUgMCAwIDEgNi41IDJ6Ij48L3BhdGg+PC9zdmc+)](https://deepwiki.com/0xBloctopus/arbreth)
 
 A modular, Rust-native execution client for Arbitrum, built on [reth](https://github.com/paradigmxyz/reth).
 

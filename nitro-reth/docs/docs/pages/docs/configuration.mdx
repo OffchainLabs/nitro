@@ -1,0 +1,74 @@
+# Configuration
+
+## Environment Variables
+
+When running with Docker Compose, configuration is done through the `.env` file. Copy `.env.example` and edit:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PARENT_CHAIN_RPC_URL` | Yes | - | Ethereum L1 RPC endpoint (Sepolia for testnet) |
+| `PARENT_CHAIN_BEACON_URL` | Yes | - | Ethereum Beacon API endpoint |
+| `CHAIN_ID` | No | `421614` | Arbitrum chain ID (421614 = Sepolia) |
+| `NITRO_IMAGE` | No | `offchainlabs/nitro-node:v3.10.0-rc.2-746bda2` | Consensus node Docker image |
+| `FEED_URL` | No | `wss://sepolia-rollup.arbitrum.io/feed` | Sequencer feed for faster sync |
+| `LOG_LEVEL` | No | `WARN` | Consensus node log level (TRACE/DEBUG/INFO/WARN/ERROR) |
+| `RUST_LOG` | No | `warn` | Execution client log level |
+| `DATA_DIR` | No | Docker volume | Host path for execution data |
+| `NITRO_DATA_DIR` | No | Docker volume | Host path for consensus data |
+
+## CLI Options
+
+ArbReth inherits all of reth's CLI options. The most commonly used:
+
+### Node
+
+```bash
+arb-reth node [OPTIONS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--chain <PATH>` | Path to chain genesis JSON |
+| `--datadir <PATH>` | Database directory |
+| `--http` | Enable HTTP JSON-RPC server |
+| `--http.addr <ADDR>` | HTTP listen address (default: 127.0.0.1) |
+| `--http.port <PORT>` | HTTP port (default: 8545) |
+| `--http.api <APIS>` | Comma-separated API namespaces (eth,web3,net,debug) |
+| `--authrpc.addr <ADDR>` | Engine API listen address |
+| `--authrpc.port <PORT>` | Engine API port (default: 8551) |
+| `--authrpc.jwtsecret <PATH>` | Path to JWT secret file |
+| `--disable-discovery` | Disable P2P discovery (recommended for Arbitrum) |
+| `--rollup.sequencer` | Enable sequencer mode |
+
+### Database
+
+| Flag | Description |
+|------|-------------|
+| `--db.exclusive=true` | Exclusive database access (recommended) |
+| `--db.growth-step <SIZE>` | MDBX growth step (e.g., 4GB) |
+| `--db.log-level <LEVEL>` | Database log level |
+| `--db.sync-mode <MODE>` | Sync mode (safe-no-sync for performance) |
+
+### Logging
+
+| Flag | Description |
+|------|-------------|
+| `--log.stdout.filter <FILTER>` | Log filter for stdout (e.g., warn, info, debug) |
+
+## Genesis Files
+
+ArbReth ships with genesis configurations in the `genesis/` directory:
+
+- `genesis/arbitrum-sepolia.json` - Arbitrum Sepolia testnet
+
+The genesis file contains the initial chain configuration, alloc entries for precompile contracts, and the ArbOS state initialization at the ArbOS state address (`0xa4b05...`).
+
+### Key Genesis Parameters
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `chainId` | 421614 | Arbitrum Sepolia |
+| `difficulty` | 1 | Constant (proof-of-authority) |
+| `baseFeePerGas` | 100 Gwei | Initial L2 base fee |
+| `gasLimit` | Very large | Arbitrum manages gas limits through ArbOS |
+| `mixHash` | Encodes ArbOS v10 | Initial ArbOS version embedded in header |

@@ -42,6 +42,10 @@ nitro-data/
 # MCP config
 .mcp.json
 
+# Docs build output
+docs/docs/dist/
+docs/node_modules/
+
 # Claude
 .claude/
 .env.alchemy
