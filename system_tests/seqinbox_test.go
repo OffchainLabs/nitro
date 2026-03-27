@@ -218,7 +218,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 			builder.L1.RecalibrateNonce(t, builder.L1Info)
 			// #nosec G115
-			builder.L1.AdvanceBlocks(t,  int(blocksToPad), builder.L1Info)
+			builder.L1.AdvanceBlocks(t, int(blocksToPad), builder.L1Info)
 			currentHeader, err = builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			// #nosec G115
@@ -243,7 +243,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			// Advance L1 to currentHeader+1 block so that MEL can detect reorg
 			builder.L1.RecalibrateNonce(t, builder.L1Info)
 			// #nosec G115
-			builder.L1.AdvanceBlocks(t,  int(currentHeader.Number.Uint64()-reorgTargetNumber+1), builder.L1Info)
+			builder.L1.AdvanceBlocks(t, int(currentHeader.Number.Uint64()-reorgTargetNumber+1), builder.L1Info)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)

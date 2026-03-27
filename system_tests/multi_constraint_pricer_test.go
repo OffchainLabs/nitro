@@ -55,7 +55,7 @@ func setupUnbalancedMultiGasConstraints(t *testing.T, builder *NodeBuilder) mult
 	require.NotNil(t, tx)
 
 	// Advance blocks so changes take effect.
-	builder.L2.AdvanceBlocks(t,  2, builder.L2Info)
+	builder.L2.AdvanceBlocks(t, 2, builder.L2Info)
 
 	baseFeeAfter := builder.L2.GetBaseFee(t)
 	t.Log("Base fee before: ", floatmath.WeiToGwei(baseFeeBefore))
