@@ -1,0 +1,24 @@
+[package]
+name = "prover-ffi"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "prover_ffi"
+crate-type = ["lib"]
+
+[dependencies]
+arbutil = { workspace = true }
+eyre = { workspace = true }
+lazy_static = { workspace = true }
+libc = { workspace = true }
+lru = { workspace = true }
+once_cell = { workspace = true }
+prover = { workspace = true, features = ["native", "libc", "kzg"] }
+static_assertions = { workspace = true }

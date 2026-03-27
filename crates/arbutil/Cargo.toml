@@ -21,3 +21,7 @@ serde = { workspace = true, features = ["derive", "rc"] }
 siphasher = { workspace = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 wasmparser = { workspace = true }
+
+# See comment in crates/prover/Cargo.toml about the "sp1" cfg.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("sp1"))'] }
