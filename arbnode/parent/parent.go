@@ -64,13 +64,21 @@ var TestConfig = Config{
 
 type ConfigFetcher func() *Config
 
+// nilBlobScheduleErrorThreshold is the number of consecutive eth_config polls
+// returning nil BlobSchedule before the log level escalates from Debug to Error.
+// With the default 1-hour poll interval, a threshold of 6 means operators will
+// see an error after ~6 hours of a defective endpoint, while still tolerating
+// occasional transient nil responses.
+const nilBlobScheduleErrorThreshold = 6
+
 type ParentChain struct {
 	stopwaiter.StopWaiter
 	ChainID  *big.Int
 	L1Reader *headerreader.HeaderReader
 	config   ConfigFetcher
 
-	cachedEthConfig atomic.Pointer[ethConfigResponse]
+	cachedEthConfig            atomic.Pointer[ethConfigResponse]
+	consecutiveNilBlobSchedule atomic.Int32
 }
 
 func NewParentChain(ctx context.Context, chainID *big.Int, l1Reader *headerreader.HeaderReader) *ParentChain {
@@ -158,7 +166,14 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 		return fmt.Errorf("eth_config returned nil current config")
 	}
 	if resp.Current.BlobSchedule == nil {
-		log.Debug("eth_config returned nil BlobSchedule, skipping cache update", "chainID", p.ChainID)
+		count := p.consecutiveNilBlobSchedule.Add(1)
+		if count >= nilBlobScheduleErrorThreshold {
+			log.Error("eth_config has returned nil BlobSchedule for multiple consecutive polls, cache may be stale",
+				"chainID", p.ChainID, "consecutiveNilPolls", count)
+		} else {
+			log.Debug("eth_config returned nil BlobSchedule, skipping cache update",
+				"chainID", p.ChainID, "consecutiveNilPolls", count)
+		}
 		return nil
 	}
 	if resp.Current.ChainId == nil {
@@ -182,6 +197,7 @@ func (p *ParentChain) pollEthConfig(ctx context.Context) error {
 		}
 	}
 
+	p.consecutiveNilBlobSchedule.Store(0)
 	p.cachedEthConfig.Store(&resp)
 	log.Info("Updated parent chain config from eth_config",
 		"currentTarget", resp.Current.BlobSchedule.Target,
