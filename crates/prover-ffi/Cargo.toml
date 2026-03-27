@@ -20,5 +20,5 @@ lazy_static = { workspace = true }
 libc = { workspace = true }
 lru = { workspace = true }
 once_cell = { workspace = true }
-prover = { workspace = true, features = ["native", "libc"] }
+prover = { workspace = true, features = ["native", "libc", "kzg"] }
 static_assertions = { workspace = true }
