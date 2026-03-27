@@ -53,7 +53,11 @@ func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 // TrackChild registers a child Stoppable to be automatically stopped
 // when this StopWaiter is stopped, in LIFO (reverse) order.
 // If children have already been taken for shutdown, the child is stopped immediately.
+// A nil child is silently ignored.
 func (s *StopWaiterSafe) TrackChild(child state.Stoppable) {
+	if child == nil {
+		return
+	}
 	st := s.Lock()
 	if st.ChildrenTaken {
 		s.Unlock()
@@ -357,7 +361,11 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 
 // StartAndTrackChild starts a child with the parent's managed context
 // and registers it for automatic shutdown in LIFO order.
+// A nil child is silently ignored.
 func (s *StopWaiter) StartAndTrackChild(child state.StoppableChild) {
+	if child == nil {
+		return
+	}
 	child.Start(s.GetContext())
 	s.TrackChild(child)
 }
