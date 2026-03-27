@@ -4,7 +4,6 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
@@ -14,41 +13,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/nitro/config"
 	"github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
-func TestGetConsensusParsedInitMsgNoParentChain(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, false, builder.chainConfig.ChainID, nil, &chaininfo.RollupAddresses{}, builder.chainConfig)
-	Require(t, err)
-
-	serializedChainConfig, err := json.Marshal(builder.chainConfig)
-	Require(t, err)
-
-	// We create an initMessage since builder doesn't create an initMessage without an L1
-	expectedInitMessage := &arbostypes.ParsedInitMessage{
-		ChainId:               builder.chainConfig.ChainID,
-		InitialL1BaseFee:      arbostypes.DefaultInitialL1BaseFee,
-		ChainConfig:           builder.chainConfig,
-		SerializedChainConfig: serializedChainConfig,
-	}
-
-	if success := reflect.DeepEqual(initMessage, expectedInitMessage); !success {
-		t.Fatalf("diff found in initMessage %v and builder.initMessage: %v", initMessage, builder.initMessage)
-	}
-}
-
-func TestGetConsensusParsedInitMsgWithParentChain(t *testing.T) {
+func TestGetParsedInitMsgFromParentChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -57,7 +27,7 @@ func TestGetConsensusParsedInitMsgWithParentChain(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	initMessage, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses, builder.chainConfig)
+	initMessage, err := nitroinit.GetParsedInitMsgFromParentChain(ctx, builder.chainConfig.ChainID, builder.L1.Client, builder.addresses)
 	Require(t, err)
 
 	if success := reflect.DeepEqual(initMessage, builder.initMessage); !success {
