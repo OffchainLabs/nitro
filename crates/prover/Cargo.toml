@@ -57,7 +57,7 @@ harness = false
 
 [lib]
 name = "prover"
-crate-type = ["staticlib", "lib"]
+crate-type = ["lib"]
 
 [features]
 default = ["native", "rayon", "singlepass_rayon", "kzg", "dep:structopt"]
