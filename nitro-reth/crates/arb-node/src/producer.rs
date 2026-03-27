@@ -67,25 +67,25 @@ where
     }
 }
 
-/// Block producer that uses reth's engine tree for persistence.
+/// Default number of blocks to buffer before flushing via save_blocks(Full).
+pub const DEFAULT_FLUSH_INTERVAL: u64 = 128;
+
+/// Block producer using reth's save_blocks(Full) for persistence.
 ///
 /// Execution happens on the producer thread. After execution, blocks are:
 /// 1. Added to `CanonicalInMemoryState` (immediate, for next block's state)
-/// 2. Sent to reth's engine tree via `InsertExecutedBlock` (async, for DB persistence)
+/// 2. Accumulated until flush_interval, then persisted via save_blocks(Full)
 ///
-/// The engine tree handles persistence via `PersistenceService::save_blocks(Full)`,
-/// which writes ALL tables including history indices.
-/// Default number of blocks between ForkchoiceUpdated sends to trigger persistence.
-pub const DEFAULT_FCU_INTERVAL: u64 = 128;
-
+/// save_blocks(Full) writes ALL tables including history indices — this is
+/// the same persistence path as reth's Pipeline/ExecutionStage.
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     chain_spec: Arc<ChainSpec>,
     evm_config: ArbEvmConfig,
     in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
     head_block_num: AtomicU64,
-    blocks_since_fcu: AtomicU64,
-    fcu_interval: u64,
+    blocks_since_flush: AtomicU64,
+    flush_interval: u64,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
@@ -99,7 +99,7 @@ where
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
-        fcu_interval: u64,
+        flush_interval: u64,
     ) -> Self {
         let head = provider.last_block_number().unwrap_or(0);
         Self {
@@ -108,8 +108,8 @@ where
             evm_config,
             in_memory_state,
             head_block_num: AtomicU64::new(head),
-            blocks_since_fcu: AtomicU64::new(0),
-            fcu_interval,
+            blocks_since_flush: AtomicU64::new(0),
+            flush_interval,
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -735,46 +735,21 @@ where
             };
             let executed = ExecutedBlock::new(recovered, exec_output, computed);
 
-            // Add to in-memory state (immediate — makes block visible for next execution).
             self.in_memory_state
                 .update_chain(NewCanonicalChain::Commit {
-                    new: vec![executed.clone()],
+                    new: vec![executed],
                 });
 
             let sealed_header = SealedHeader::new(sealed.header().clone(), sealed.hash());
             self.in_memory_state.set_canonical_head(sealed_header);
-
-            // Send to reth's engine tree for persistence (async, fire-and-forget).
-            // PersistenceService will call save_blocks(Full) including history indices.
-            if let Some(sender) = crate::launcher::tree_sender() {
-                use reth_engine_tree::engine::{EngineApiRequest, FromEngine};
-                let _ = sender.send(FromEngine::Request(EngineApiRequest::InsertExecutedBlock(
-                    executed,
-                )));
-            }
         }
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Send ForkchoiceUpdated every N blocks to trigger engine tree persistence.
-        let since_fcu = self.blocks_since_fcu.fetch_add(1, Ordering::SeqCst) + 1;
-        if since_fcu >= self.fcu_interval {
-            self.blocks_since_fcu.store(0, Ordering::SeqCst);
-            if let Some(handle) = crate::launcher::engine_handle() {
-                use alloy_rpc_types_engine::ForkchoiceState;
-                use reth_payload_primitives::EngineApiMessageVersion;
-                let fcu_state = ForkchoiceState {
-                    head_block_hash: block_hash,
-                    safe_block_hash: block_hash,
-                    finalized_block_hash: block_hash,
-                };
-                let handle = handle.clone();
-                tokio::spawn(async move {
-                    let _ = handle
-                        .fork_choice_updated(fcu_state, None, EngineApiMessageVersion::default())
-                        .await;
-                });
-            }
+        // Flush to DB via reth's save_blocks(Full) when buffer threshold reached.
+        let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
+        if since_flush >= self.flush_interval {
+            self.flush_to_db()?;
         }
 
         info!(
@@ -792,6 +767,42 @@ where
             block_hash,
             send_root,
         })
+    }
+
+    /// Flush buffered blocks to DB via reth's save_blocks(Full).
+    /// This writes ALL tables including history indices — same as reth's Pipeline.
+    fn flush_to_db(&self) -> Result<(), BlockProducerError> {
+        let mut blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
+        if let Some(head_state) = self.in_memory_state.head_state() {
+            for block_state in head_state.chain() {
+                blocks.push(block_state.block().clone());
+            }
+        }
+        blocks.reverse();
+
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        let count = blocks.len();
+        let last = blocks.last().unwrap();
+        let last_num_hash = alloy_eips::BlockNumHash::new(
+            last.recovered_block().number(),
+            last.recovered_block().hash(),
+        );
+
+        crate::launcher::save_blocks(blocks).map_err(|e| BlockProducerError::Storage(e))?;
+
+        self.in_memory_state.remove_persisted_blocks(last_num_hash);
+        self.blocks_since_flush.store(0, Ordering::SeqCst);
+
+        info!(
+            target: "block_producer",
+            flushed = count,
+            last_block = last_num_hash.number,
+            "Flushed via save_blocks(Full)"
+        );
+        Ok(())
     }
 
     /// Produce a minimal block for messages with no transactions.

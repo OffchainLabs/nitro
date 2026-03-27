@@ -59,6 +59,14 @@ use arb_primitives::ArbPrimitives;
 
 static TREE_SENDER: OnceLock<TreeSender<ArbEngineTypes, ArbPrimitives>> = OnceLock::new();
 static ENGINE_HANDLE: OnceLock<ConsensusEngineHandle<ArbEngineTypes>> = OnceLock::new();
+static SAVE_BLOCKS_FN: OnceLock<SaveBlocksFn> = OnceLock::new();
+
+/// Type-erased save_blocks function backed by reth's ProviderFactory.
+/// Calls `provider_factory.database_provider_rw()?.save_blocks(blocks, Full)?; commit()?`
+/// which writes ALL tables including history indices.
+type SaveBlocksFn = Box<
+    dyn Fn(Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>) -> Result<(), String> + Send + Sync,
+>;
 
 pub fn tree_sender() -> Option<&'static TreeSender<ArbEngineTypes, ArbPrimitives>> {
     TREE_SENDER.get()
@@ -66,6 +74,17 @@ pub fn tree_sender() -> Option<&'static TreeSender<ArbEngineTypes, ArbPrimitives
 
 pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>> {
     ENGINE_HANDLE.get()
+}
+
+/// Call reth's save_blocks(Full) for batch persistence.
+/// Uses ProviderFactory captured during node launch.
+pub fn save_blocks(
+    blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>,
+) -> Result<(), String> {
+    let f = SAVE_BLOCKS_FN
+        .get()
+        .ok_or_else(|| "save_blocks not initialized".to_string())?;
+    f(blocks)
 }
 
 /// Arbitrum engine node launcher.
@@ -261,10 +280,26 @@ impl ArbEngineLauncher {
             EngineApiKind::Ethereum
         };
 
-        // ====================================================================
-        // THIS IS THE KEY CHANGE: use build_arb_engine_orchestrator which
-        // returns a clone of the tree sender for block injection.
-        // ====================================================================
+        // Create the save_blocks closure using ProviderFactory.
+        // This calls reth's save_blocks(Full) which writes ALL tables
+        // including history indices — the Pipeline/ExecutionStage pattern.
+        {
+            use reth_provider::{DatabaseProviderFactory, SaveBlocksMode};
+            use reth_storage_api::DBProvider;
+            let pf = ctx.provider_factory().clone();
+            let save_fn: SaveBlocksFn = Box::new(move |blocks| {
+                let provider_rw = pf
+                    .database_provider_rw()
+                    .map_err(|e| format!("database_provider_rw: {e}"))?;
+                provider_rw
+                    .save_blocks(blocks, SaveBlocksMode::Full)
+                    .map_err(|e| format!("save_blocks: {e}"))?;
+                provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
+                Ok(())
+            });
+            let _ = SAVE_BLOCKS_FN.set(save_fn);
+        }
+
         let (mut orchestrator, arb_tree_sender) = build_arb_engine_orchestrator(
             engine_kind,
             consensus.clone(),
