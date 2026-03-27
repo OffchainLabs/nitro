@@ -75,12 +75,17 @@ where
 ///
 /// The engine tree handles persistence via `PersistenceService::save_blocks(Full)`,
 /// which writes ALL tables including history indices.
+/// Default number of blocks between ForkchoiceUpdated sends to trigger persistence.
+pub const DEFAULT_FCU_INTERVAL: u64 = 128;
+
 pub struct ArbBlockProducer<Provider> {
     provider: Provider,
     chain_spec: Arc<ChainSpec>,
     evm_config: ArbEvmConfig,
     in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
     head_block_num: AtomicU64,
+    blocks_since_fcu: AtomicU64,
+    fcu_interval: u64,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
@@ -94,6 +99,7 @@ where
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
+        fcu_interval: u64,
     ) -> Self {
         let head = provider.last_block_number().unwrap_or(0);
         Self {
@@ -102,6 +108,8 @@ where
             evm_config,
             in_memory_state,
             head_block_num: AtomicU64::new(head),
+            blocks_since_fcu: AtomicU64::new(0),
+            fcu_interval,
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -747,6 +755,27 @@ where
         }
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
+
+        // Send ForkchoiceUpdated every N blocks to trigger engine tree persistence.
+        let since_fcu = self.blocks_since_fcu.fetch_add(1, Ordering::SeqCst) + 1;
+        if since_fcu >= self.fcu_interval {
+            self.blocks_since_fcu.store(0, Ordering::SeqCst);
+            if let Some(handle) = crate::launcher::engine_handle() {
+                use alloy_rpc_types_engine::ForkchoiceState;
+                use reth_payload_primitives::EngineApiMessageVersion;
+                let fcu_state = ForkchoiceState {
+                    head_block_hash: block_hash,
+                    safe_block_hash: block_hash,
+                    finalized_block_hash: block_hash,
+                };
+                let handle = handle.clone();
+                tokio::spawn(async move {
+                    let _ = handle
+                        .fork_choice_updated(fcu_state, None, EngineApiMessageVersion::default())
+                        .await;
+                });
+            }
+        }
 
         info!(
             target: "block_producer",

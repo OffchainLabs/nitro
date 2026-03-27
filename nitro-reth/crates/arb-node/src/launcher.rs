@@ -58,9 +58,14 @@ use arb_payload::ArbEngineTypes;
 use arb_primitives::ArbPrimitives;
 
 static TREE_SENDER: OnceLock<TreeSender<ArbEngineTypes, ArbPrimitives>> = OnceLock::new();
+static ENGINE_HANDLE: OnceLock<ConsensusEngineHandle<ArbEngineTypes>> = OnceLock::new();
 
 pub fn tree_sender() -> Option<&'static TreeSender<ArbEngineTypes, ArbPrimitives>> {
     TREE_SENDER.get()
+}
+
+pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>> {
+    ENGINE_HANDLE.get()
 }
 
 /// Arbitrum engine node launcher.
@@ -278,9 +283,9 @@ impl ArbEngineLauncher {
             changeset_cache,
         );
 
-        // Store the tree sender globally for the block producer to use.
         let _ = TREE_SENDER.set(arb_tree_sender);
-        info!(target: "reth::cli", "Arbitrum engine tree sender captured");
+        let _ = ENGINE_HANDLE.set(beacon_engine_handle.clone());
+        info!(target: "reth::cli", "Arbitrum engine tree sender and handle captured");
 
         info!(target: "reth::cli", "Consensus engine initialized");
 

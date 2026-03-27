@@ -181,11 +181,17 @@ where
 
     let genesis_block_num = chain_spec.genesis_header().number;
 
+    let fcu_interval = std::env::var("ARB_FCU_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(producer::DEFAULT_FCU_INTERVAL);
+
     let block_producer = Arc::new(ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
         evm_config,
         in_memory_state,
+        fcu_interval,
     ));
 
     let nitro_exec =
