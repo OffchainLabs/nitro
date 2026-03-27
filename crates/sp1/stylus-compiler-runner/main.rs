@@ -101,7 +101,7 @@ fn sp1_execute(input: &CompileInput) -> Vec<u8> {
         .run()
         .expect("SP1 execution failed");
     tracing::info!("cycles: {}", report.total_instruction_count());
-    output.read::<Vec<u8>>()
+    bincode::deserialize(output.as_slice()).expect("deserialize output")
 }
 
 fn sp1_prove(input: &CompileInput) {

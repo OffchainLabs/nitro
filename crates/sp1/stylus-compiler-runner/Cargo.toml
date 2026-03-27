@@ -14,6 +14,7 @@ name = "stylus-compiler-runner"
 path = "main.rs"
 
 [dependencies]
+bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 sp1-sdk = { workspace = true, features = ["blocking"] }
 stylus-compiler-program = { workspace = true }
