@@ -7,7 +7,7 @@ License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 
 Parameters
 
-Licensor:             Offchain Labs
+Licensor:             Arbitrum Foundation
 
 Licensed Work:        Nitro-Reth
 
