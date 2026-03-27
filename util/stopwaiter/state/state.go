@@ -44,9 +44,9 @@ type LockedInternalState struct {
 	parentCtx     context.Context
 	StopFunc      func()
 	WaitChan      <-chan interface{}
-	Children      []stoppable.Stoppable
-	TakenChildren []stoppable.Stoppable // set once when ChildrenTaken becomes true; preserved for StopAndWait
-	ChildrenTaken bool
+	children      []stoppable.Stoppable
+	takenChildren []stoppable.Stoppable // set once when childrenTaken becomes true; preserved for StopAndWait
+	childrenTaken bool
 }
 
 func (s *LockedInternalState) GetContext() (context.Context, error) {
@@ -69,4 +69,26 @@ func (s *LockedInternalState) GetParentContext() (context.Context, error) {
 
 func (s *LockedInternalState) SetParentCtx(parentCtx context.Context) {
 	s.parentCtx = parentCtx
+}
+
+func (s *LockedInternalState) IsChildrenTaken() bool {
+	return s.childrenTaken
+}
+
+func (s *LockedInternalState) AppendChild(child stoppable.Stoppable) {
+	s.children = append(s.children, child)
+}
+
+// TakeChildren atomically claims the children list: stores it in takenChildren,
+// clears children, and marks childrenTaken. Must only be called once.
+func (s *LockedInternalState) TakeChildren() []stoppable.Stoppable {
+	children := s.children
+	s.takenChildren = children
+	s.children = nil
+	s.childrenTaken = true
+	return children
+}
+
+func (s *LockedInternalState) GetTakenChildren() []stoppable.Stoppable {
+	return s.takenChildren
 }

@@ -65,12 +65,12 @@ func (s *StopWaiterSafe) TrackChild(child Stoppable) {
 		return
 	}
 	st := s.Lock()
-	if st.ChildrenTaken {
+	if st.IsChildrenTaken() {
 		s.Unlock()
 		child.StopAndWait()
 		return
 	}
-	st.Children = append(st.Children, child)
+	st.AppendChild(child)
 	s.Unlock()
 }
 
@@ -109,14 +109,10 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 func (s *StopWaiterSafe) takeChildren() []Stoppable {
 	st := s.Lock()
 	defer s.Unlock()
-	if st.ChildrenTaken {
+	if st.IsChildrenTaken() {
 		return nil
 	}
-	children := st.Children
-	st.TakenChildren = children
-	st.Children = nil
-	st.ChildrenTaken = true
-	return children
+	return st.TakeChildren()
 }
 
 // StopOnly cancels the context and stops all tracked children (non-blocking).
@@ -152,7 +148,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	if children == nil {
 		// StopOnly was already called and took the children; retrieve them for waiting.
 		st := s.RLock()
-		children = st.TakenChildren
+		children = st.GetTakenChildren()
 		s.RUnlock()
 	}
 	for i := len(children) - 1; i >= 0; i-- {
