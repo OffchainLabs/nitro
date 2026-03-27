@@ -94,6 +94,8 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 // takeChildren atomically takes children from the state so that
 // concurrent StopOnly/StopAndWait calls don't double-stop them.
 // Returns nil on subsequent calls.
+// The children are also stored in TakenChildren so that stopAndWaitImpl
+// can call StopAndWait on them even after StopOnly has already taken them.
 func (s *StopWaiterSafe) takeChildren() []state.Stoppable {
 	st := s.Lock()
 	defer s.Unlock()
@@ -101,15 +103,14 @@ func (s *StopWaiterSafe) takeChildren() []state.Stoppable {
 		return nil
 	}
 	children := st.Children
+	st.TakenChildren = children
 	st.Children = nil
 	st.ChildrenTaken = true
 	return children
 }
 
 // StopOnly cancels the context and stops all tracked children (non-blocking).
-// Note: if StopOnly is called before StopAndWait, the subsequent StopAndWait
-// will not wait for children's goroutines — callers that use StopOnly separately
-// must handle child waiting manually if needed.
+// A subsequent StopAndWait will still wait for children's goroutines to finish.
 func (s *StopWaiterSafe) StopOnly() {
 	children := s.takeChildren()
 	for i := len(children) - 1; i >= 0; i-- {
@@ -138,6 +139,12 @@ func getAllStackTraces() string {
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	children := s.takeChildren()
+	if children == nil {
+		// StopOnly was already called and took the children; retrieve them for waiting.
+		st := s.RLock()
+		children = st.TakenChildren
+		s.RUnlock()
+	}
 	for i := len(children) - 1; i >= 0; i-- {
 		children[i].StopAndWait()
 	}

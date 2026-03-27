@@ -56,6 +56,7 @@ type LockedInternalState struct {
 	StopFunc      func()
 	WaitChan      <-chan interface{}
 	Children      []Stoppable
+	TakenChildren []Stoppable // set once when ChildrenTaken becomes true; preserved for StopAndWait
 	ChildrenTaken bool
 }
 

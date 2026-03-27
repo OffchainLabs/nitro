@@ -281,3 +281,25 @@ func TestStopWaiterStopOnlyThenStopAndWait(t *testing.T) {
 		t.Error("StopAndWait returned before background thread stopped")
 	}
 }
+
+func TestStopOnlyThenStopAndWaitWaitsForChildGoroutines(t *testing.T) {
+	t.Parallel()
+	parent := StopWaiter{}
+	parent.Start(context.Background(), &TestStruct{})
+
+	child := StopWaiter{}
+	child.Start(parent.GetContext(), &TestStruct{})
+	var childDone atomic.Bool
+	child.LaunchThread(func(ctx context.Context) {
+		<-ctx.Done()
+		time.Sleep(100 * time.Millisecond)
+		childDone.Store(true)
+	})
+	parent.TrackChild(&child)
+
+	parent.StopOnly()
+	parent.StopAndWait()
+	if !childDone.Load() {
+		t.Error("StopAndWait returned before child goroutine finished")
+	}
+}
