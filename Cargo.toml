@@ -22,6 +22,7 @@ members = [
     "crates/sp1/program",
     "crates/sp1/runner",
     "crates/sp1/stylus-compiler-program",
+    "crates/sp1/stylus-compiler-runner",
 ]
 default-members = [
     "crates/jit",
