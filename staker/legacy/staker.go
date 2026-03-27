@@ -298,6 +298,7 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
+	stopwaiter.StoppableChild
 	Initialize(context.Context) error
 	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
@@ -311,8 +312,6 @@ type ValidatorWalletInterface interface {
 	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
-	Start(context.Context)
-	StopAndWait()
 	// May be nil
 	DataPoster() *dataposter.DataPoster
 }
@@ -558,14 +557,6 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 	}
 
 	return latestStaked, count, &globalState, nil
-}
-
-func (s *Staker) StopAndWait() {
-	// wallet is started externally, but stopped here because the Staker owns it.
-	if s.Strategy() != WatchtowerStrategy {
-		s.wallet.StopAndWait()
-	}
-	s.StopWaiter.StopAndWait()
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
