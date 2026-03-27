@@ -45,7 +45,9 @@ type MultiProtocolStaker struct {
 	stakedNotifiers         []legacystaker.LatestStakedNotifier
 	confirmedNotifiers      []legacystaker.LatestConfirmedNotifier
 	statelessBlockValidator *staker.StatelessBlockValidator
-	wallet                  legacystaker.ValidatorWalletInterface
+	// wallet is started externally (with the raw ctxIn so it outlives StopOnly during
+	// protocol switches) but owned and stopped by MultiProtocolStaker.StopAndWait.
+	wallet legacystaker.ValidatorWalletInterface
 	l1Reader                *headerreader.HeaderReader
 	blockValidator          *staker.BlockValidator
 	callOpts                bind.CallOpts
