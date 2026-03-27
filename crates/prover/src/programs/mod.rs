@@ -1,14 +1,17 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use crate::{machine::Module, programs::config::CompileConfig};
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
+use eyre::WrapErr;
+
 use crate::{
     binary::{ExportKind, WasmBinary},
-    machine::Module,
-    programs::config::CompileConfig,
+    memory_type::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
-use eyre::{bail, eyre, Report, Result, WrapErr};
+use arbutil::Color;
+use eyre::{bail, eyre, Report, Result};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
 use wasmer_types::{
@@ -17,7 +20,6 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, ValType};
 
-use crate::memory_type::MemoryType;
 #[cfg(feature = "native")]
 use {
     super::value,

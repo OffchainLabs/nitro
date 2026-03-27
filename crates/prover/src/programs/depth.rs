@@ -5,9 +5,12 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-use crate::{value::FunctionType, Machine};
+#[cfg(feature = "native")]
+use crate::Machine;
 
 use crate::internal_func::InternalFunc;
+use crate::value::FunctionType;
+
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
@@ -535,6 +538,7 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();

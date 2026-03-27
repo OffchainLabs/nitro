@@ -10,9 +10,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::{
-    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
-    math::SaturatingSum,
-    Bytes32, Color, DebugColor,
+    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
 };
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};

@@ -2,20 +2,21 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
+#[cfg(feature = "native")]
+use crate::Machine;
 use crate::{
     programs::{
         config::{CompilePricingParams, PricingParams, SigMap},
         FuncMiddleware, Middleware, ModuleMod,
     },
     value::FunctionType,
-    Machine,
 };
+use arbutil::operator::OperatorInfo;
 use arbutil::{
     evm::{
         self,
         api::{Gas, Ink},
     },
-    operator::OperatorInfo,
     pricing, Bytes32,
 };
 use derivative::Derivative;
@@ -333,6 +334,7 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
