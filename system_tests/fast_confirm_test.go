@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridge_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
@@ -229,7 +230,7 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 		l2node.L1Reader,
 		&l1auth, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2node.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -424,7 +425,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeA.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -509,7 +510,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeB.L1Reader,
 		&l1authB, NewCommonConfigFetcher(cfg),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeB.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
