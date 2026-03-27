@@ -265,11 +265,12 @@ func TestValidationServerAPI(t *testing.T) {
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	valRun := client.Launch(&valInput, mockWasmModuleRoots[0])
 	res, err := valRun.Await(ctx)
@@ -370,11 +371,12 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	proof, err := client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
 	Require(t, err)
@@ -425,11 +427,12 @@ func TestThrottledValidationSpawner(t *testing.T) {
 		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
-		UserWasms:  make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:  []validator.BatchInfo{},
-		DelayedMsg: []byte{},
-		StartState: startState,
-		DebugChain: false,
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              startState,
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 
 	// Launch 4 validations without delay - they complete immediately
@@ -515,15 +518,16 @@ func TestExecutionKeepAlive(t *testing.T) {
 	Require(t, err)
 
 	valInput := validator.ValidationInput{
-		Id:            0,
-		HasDelayedMsg: false,
-		DelayedMsgNr:  0,
-		Preimages:     daprovider.PreimagesMap{},
-		UserWasms:     make(map[rawdb.WasmTarget]map[common.Hash][]byte),
-		BatchInfo:     []validator.BatchInfo{},
-		DelayedMsg:    []byte{},
-		StartState:    validator.GoGlobalState{},
-		DebugChain:    false,
+		Id:                      0,
+		HasDelayedMsg:           false,
+		DelayedMsgNr:            0,
+		Preimages:               daprovider.PreimagesMap{},
+		UserWasms:               make(map[rawdb.WasmTarget]map[common.Hash][]byte),
+		BatchInfo:               []validator.BatchInfo{},
+		DelayedMsg:              []byte{},
+		StartState:              validator.GoGlobalState{},
+		DebugChain:              false,
+		EndParentChainBlockHash: common.Hash{},
 	}
 	runDefault, err := clientDefault.CreateExecutionRun(mockWasmModuleRoots[0], &valInput, false).Await(ctx)
 	Require(t, err)

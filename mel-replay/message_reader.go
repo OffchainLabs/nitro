@@ -3,12 +3,16 @@
 package melreplay
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"math/bits"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type MessageReader struct {
@@ -27,7 +31,35 @@ func (m *MessageReader) Read(
 	if msgIndex >= state.MsgCount {
 		return nil, fmt.Errorf("index %d out of range, total messages: %d", msgIndex, state.MsgCount)
 	}
-	treeSize := NextPowerOfTwo(state.MsgCount)
-	merkleDepth := bits.TrailingZeros64(treeSize)
-	return fetchObjectFromMerkleTree[arbostypes.MessageWithMetadata](state.MsgRoot, merkleDepth, msgIndex, m.preimageResolver)
+	return PeekFromAccumulator[arbostypes.MessageWithMetadata](m.preimageResolver, state.LocalMsgAccumulator, state.MsgCount-msgIndex)
+}
+
+func PeekFromAccumulator[T any](
+	preimageResolver PreimageResolver,
+	outBox common.Hash,
+	lookbacks uint64,
+) (*T, error) {
+	var msgHash common.Hash
+	curr := outBox
+	lookbacksForLogging := lookbacks
+	for lookbacks > 0 {
+		result, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, curr)
+		if err != nil {
+			return nil, err
+		}
+		curr, msgHash, err = mel.SplitPreimage(result)
+		if err != nil {
+			return nil, fmt.Errorf("accumulator preimage at lookback %d: %w", lookbacks, err)
+		}
+		lookbacks--
+	}
+	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
+	if err != nil {
+		return nil, err
+	}
+	object := new(T)
+	if err = rlp.Decode(bytes.NewBuffer(objectBytes), &object); err != nil {
+		return nil, fmt.Errorf("failed to decode merkle object at lookback position %d: %w", lookbacksForLogging, err)
+	}
+	return object, nil
 }

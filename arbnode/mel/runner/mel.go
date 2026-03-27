@@ -38,12 +38,11 @@ var (
 )
 
 type MessageExtractionConfig struct {
-	Enable                        bool          `koanf:"enable"`
-	RetryInterval                 time.Duration `koanf:"retry-interval"`
-	DelayedMessageBacklogCapacity int           `koanf:"delayed-message-backlog-capacity"`
-	BlocksToPrefetch              uint64        `koanf:"blocks-to-prefetch"`
-	ReadMode                      string        `koanf:"read-mode"`
-	StallTolerance                uint64        `koanf:"stall-tolerance"`
+	Enable           bool          `koanf:"enable"`
+	RetryInterval    time.Duration `koanf:"retry-interval"`
+	BlocksToPrefetch uint64        `koanf:"blocks-to-prefetch"`
+	ReadMode         string        `koanf:"read-mode"`
+	StallTolerance   uint64        `koanf:"stall-tolerance"`
 }
 
 func (c *MessageExtractionConfig) Validate() error {
@@ -58,26 +57,23 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	Enable: false,
 	// The retry interval for the message extractor FSM. After each tick of the FSM,
 	// the extractor service stop waiter will wait for this duration before trying to act again.
-	RetryInterval:                 time.Millisecond * 500,
-	DelayedMessageBacklogCapacity: 100, // TODO: right default? setting to a lower value means more calls to l1reader
-	BlocksToPrefetch:              499, // 500 is the eth_getLogs block range limit
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	RetryInterval:    time.Millisecond * 500,
+	BlocksToPrefetch: 499, // 500 is the eth_getLogs block range limit
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 var TestMessageExtractionConfig = MessageExtractionConfig{
-	Enable:                        false,
-	RetryInterval:                 time.Millisecond * 10,
-	DelayedMessageBacklogCapacity: 100,
-	BlocksToPrefetch:              499,
-	ReadMode:                      "latest",
-	StallTolerance:                10,
+	Enable:           false,
+	RetryInterval:    time.Millisecond * 10,
+	BlocksToPrefetch: 499,
+	ReadMode:         "latest",
+	StallTolerance:   10,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
-	f.Int(prefix+".delayed-message-backlog-capacity", DefaultMessageExtractionConfig.DelayedMessageBacklogCapacity, "target capacity of the delayed message backlog")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from. Recommend using max allowed range for eth_getLogs rpc query")
 	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
@@ -313,6 +309,10 @@ func (m *MessageExtractor) GetState(parentchainBlocknumber uint64) (*mel.State, 
 	return m.melDB.State(parentchainBlocknumber)
 }
 
+func (m *MessageExtractor) RebuildStateDelayedMsgPreimages(state *mel.State) error {
+	return state.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage)
+}
+
 func (m *MessageExtractor) GetMsgCount() (arbutil.MessageIndex, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
@@ -329,7 +329,22 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 	if index >= headState.DelayedMessagesSeen {
 		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
 	}
-	return m.melDB.fetchDelayedMessage(index)
+	return m.melDB.FetchDelayedMessage(index)
+}
+
+func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, index uint64) ([]byte, error) {
+	headState, err := m.melDB.GetHeadMelState()
+	if err != nil {
+		return nil, err
+	}
+	if index >= headState.DelayedMessagesSeen {
+		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+	}
+	delayedMsg, err := m.melDB.FetchDelayedMessage(index)
+	if err != nil {
+		return nil, err
+	}
+	return delayedMsg.Message.Serialize()
 }
 
 func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
@@ -343,7 +358,7 @@ func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 // GetDelayedCountAtParentChainBlock uses the caller-provided ctx (not m.GetContext())
 // because it is called from FinalizedDelayedMessageAtPosition, which receives its
 // context from the DelayedSequencer — a running component that supplies a valid context.
-func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
+func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(parentChainBlockNum uint64) (uint64, error) {
 	state, err := m.melDB.State(parentChainBlockNum)
 	if err != nil {
 		return 0, err
@@ -395,7 +410,7 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if err != nil {
 		return nil, common.Hash{}, 0, fmt.Errorf("MEL: failed to get delayed message at position %d: %w", requestedPosition, err)
 	}
-	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedBlock)
+	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(finalizedBlock)
 	if err != nil {
 		if rawdb.IsDbErrNotFound(err) {
 			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)
@@ -466,6 +481,20 @@ func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageI
 func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
 	return metadata.ParentChainBlock, err
+}
+
+func (m *MessageExtractor) FindMessageOriginMELState(pos arbutil.MessageIndex) (*mel.State, error) {
+	seqNum, found, err := m.FindInboxBatchContainingMessage(pos)
+	if err != nil {
+		return nil, err
+	} else if !found {
+		return nil, errors.New("batch containing message not found")
+	}
+	metadata, err := m.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	return m.melDB.State(metadata.ParentChainBlock)
 }
 
 // err will return unexpected/internal errors
