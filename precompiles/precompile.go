@@ -575,6 +575,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	for _, method := range ArbWasm.methods {
 		method.arbosVersion = ArbWasm.arbosVersion
 	}
+	ArbWasm.methodsByName["ActivationGas"].arbosVersion = params.ArbosVersion_StylusActivationGas
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
 	ArbWasmCache := insert(MakePrecompile(precompilesgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
@@ -658,6 +659,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetParentGasFloorPerToken"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxBlockGasLimit"].arbosVersion = params.ArbosVersion_50
 	ArbOwner.methodsByName["SetMaxStylusContractFragments"].arbosVersion = params.ArbosVersion_StylusContractLimit
+	ArbOwner.methodsByName["SetWasmActivationGas"].arbosVersion = params.ArbosVersion_StylusActivationGas
 
 	ArbOwner.methodsByName["AddTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
 	ArbOwner.methodsByName["RemoveTransactionFilterer"].arbosVersion = params.ArbosVersion_TransactionFiltering
