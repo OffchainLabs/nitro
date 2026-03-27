@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use crate::Machine;
 
 use arbutil::operator::{OperatorCode, OperatorInfo};
@@ -140,7 +140,7 @@ pub trait CountingMachine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>>;
 }
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 impl CountingMachine for Machine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();

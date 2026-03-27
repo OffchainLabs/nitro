@@ -5,15 +5,11 @@ use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 use crate::Machine;
 
-use crate::value::FunctionType;
-#[cfg(feature = "sp1")]
-use crate::value::InternalFunc;
-
-#[cfg(not(feature = "sp1"))]
 use crate::internal_func::InternalFunc;
+use crate::value::FunctionType;
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -542,7 +538,7 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
-#[cfg(not(feature = "sp1"))]
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();

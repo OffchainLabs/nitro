@@ -1,17 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "sp1")]
-use crate::value::MemoryType;
-#[cfg(not(feature = "sp1"))]
-use crate::{machine::Module, memory_type::MemoryType, programs::config::CompileConfig};
-#[cfg(not(feature = "sp1"))]
+use crate::{machine::Module, programs::config::CompileConfig};
 use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
-#[cfg(not(feature = "sp1"))]
 use eyre::WrapErr;
 
 use crate::{
     binary::{ExportKind, WasmBinary},
+    memory_type::MemoryType,
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
@@ -418,7 +414,6 @@ impl StylusData {
     }
 }
 
-#[cfg(not(feature = "sp1"))]
 impl Module {
     pub fn activate(
         wasm: &[u8],
