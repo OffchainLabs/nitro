@@ -681,6 +681,9 @@ func (state *ArbosState) FilteredFundsRecipientOrDefault() (common.Address, erro
 }
 
 func (state *ArbosState) CollectTips() (bool, error) {
+	if state.arbosVersion < params.ArbosVersion_60 {
+		return false, nil
+	}
 	val, err := state.collectTips.Get()
 	return val != 0, err
 }

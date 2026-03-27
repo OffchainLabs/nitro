@@ -70,20 +70,9 @@ func (es *ExpressLaneService) Start(ctxIn context.Context) {
 	es.StopWaiter.Start(ctxIn, es)
 
 	if es.redisCoordinator != nil {
-		es.redisCoordinator.Start(es.GetContext())
+		es.StartAndTrackChild(es.redisCoordinator)
 	}
-}
-
-func (es *ExpressLaneService) StopAndWait() {
-	if es.redisCoordinator != nil {
-		es.redisCoordinator.StopAndWait()
-	}
-	// tracker is started by ExecutionNode, not by expressLaneService,
-	// but stopped here because no one else does it.
-	if es.tracker != nil {
-		es.tracker.StopAndWait()
-	}
-	es.StopWaiter.StopAndWait()
+	// tracker is started and tracked by ExecutionNode, not by ExpressLaneService.
 }
 
 // DontCareSequence is a special sequence number that indicates a transaction should bypass the
