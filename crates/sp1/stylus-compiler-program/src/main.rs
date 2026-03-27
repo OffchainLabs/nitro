@@ -17,10 +17,10 @@ fn main() {
 // Those are referenced by wasmer runtimes, but are never invoked
 #[unsafe(no_mangle)]
 pub extern "C" fn __negdf2(_x: f64) -> f64 {
-    todo!()
+    unreachable!()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __negsf2(_x: f32) -> f32 {
-    todo!()
+    unreachable!()
 }
