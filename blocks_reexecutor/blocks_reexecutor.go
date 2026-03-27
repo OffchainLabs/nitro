@@ -272,11 +272,9 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, startBlo
 	s.LaunchThread(func(ctx context.Context) {
 		defer func() { s.done <- struct{}{} }()
 		log.Info("Starting reexecution of blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
-		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil {
-			if ctx.Err() == nil {
-				s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
-			}
-		} else {
+		if err := s.advanceStateUpToBlock(ctx, startState, targetHeader, startHeader, release); err != nil && ctx.Err() == nil {
+			s.reportFatalErr(fmt.Errorf("blocksReExecutor errored advancing state from block %d to block %d, err: %w", start, currentBlock, err))
+		} else if err == nil {
 			log.Info("Successfully reexecuted blocks against historic state", "stateAt", start, "startBlock", start+1, "endBlock", currentBlock)
 		}
 	})
@@ -396,10 +394,7 @@ func (s *BlocksReExecutor) advanceStateUpToBlock(ctx context.Context, state *sta
 	}
 	for ctx.Err() == nil {
 		var receipts types.Receipts
-		// Recover from panics in AdvanceStateByBlock caused by trie-cache
-		// eviction races: one goroutine dereferences a root (dropping its
-		// refcount to zero and allowing eviction) while another goroutine
-		// is still traversing shared nodes under a different root.
+		// Recover from panics in AdvanceStateByBlock (e.g., trie-cache eviction races).
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
