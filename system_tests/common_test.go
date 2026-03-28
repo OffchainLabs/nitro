@@ -2253,6 +2253,15 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
+// findInboxBatchContainingMessage uses MessageExtractor when available (MEL-enabled),
+// otherwise falls back to InboxTracker.
+func findInboxBatchContainingMessage(node *arbnode.Node, msgIdx arbutil.MessageIndex) (uint64, bool, error) {
+	if node.MessageExtractor != nil {
+		return node.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
+	}
+	return node.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+}
+
 func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(want, got) {

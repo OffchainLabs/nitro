@@ -626,31 +626,41 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to
-	// txStreamer and txStreamer is able to detect the reorg and handle correct
-	// execution of L2 messages.
-	// We verify the reorg happened by checking the resulting balance rather
-	// than relying on log message capture, which is unreliable when multiple
-	// parallel tests each call InitTestLog and overwrite the global logger.
+	// Wait until MEL can read the posted batch, send correct L2 messages to
+	// txStreamer, and txStreamer detects the reorg and handles correct execution.
+	// We verify the reorg was handled correctly by checking the resulting balance rather
+	// than relying on log message capture, which is unreliable because
+	// InitTestLog overwrites the global logger and concurrent test execution
+	// within the package can route log messages to the wrong handler.
 	{
 		timeout := time.NewTimer(time.Minute)
 		defer timeout.Stop()
 		tick := time.NewTicker(100 * time.Millisecond)
 		defer tick.Stop()
 		expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+		var lastErr error
+		var lastBalance *big.Int
 		for {
 			newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
 			if err == nil && newBalance.Cmp(expectedBalance) == 0 {
 				break
 			}
+			if err != nil {
+				lastErr = err
+				t.Logf("waiting for reorg to complete: BalanceAt poll error: %v", err)
+			} else {
+				lastBalance = newBalance
+				t.Logf("waiting for reorg to complete: current balance=%v, expected=%v", newBalance, expectedBalance)
+			}
 			select {
 			case <-tick.C:
 			case <-timeout.C:
-				newBalance, _ := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
-				t.Fatalf("timed out waiting for reorg to complete: balance=%v, expected=%v, melReorgLogged=%v, txStreamerReorgLogged=%v",
-					newBalance, expectedBalance,
+				t.Fatalf("timed out waiting for reorg to complete: lastBalance=%v, expected=%v, lastPollErr=%v, melReorgLogged=%v, txStreamerReorgLogged=%v",
+					lastBalance, expectedBalance, lastErr,
 					logHandler.WasLogged("MEL detected L1 reorg"),
 					logHandler.WasLogged("TransactionStreamer: Reorg detected!"))
+			case <-ctx.Done():
+				t.Fatalf("context cancelled while waiting for reorg to complete: %v", ctx.Err())
 			}
 		}
 	}
