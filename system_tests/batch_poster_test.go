@@ -831,30 +831,62 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
 	Require(t, err)
 
-	// wait for this tx to be posted in a batch, and check which batch
+	// Wait for this tx to be posted in a batch.
 	var batchNum uint64
+	batchTimeout := time.NewTimer(30 * time.Second)
+	defer batchTimeout.Stop()
+	batchTick := time.NewTicker(10 * time.Millisecond)
+	defer batchTick.Stop()
 	for {
 		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		batchNum, found, err = findInboxBatchContainingMessage(builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()))
 		if err == nil && found {
 			break
 		}
-		t.Logf("waiting for tx to be posted in a batch")
-		<-time.After(time.Millisecond * 10)
+		if err != nil {
+			t.Logf("waiting for tx to be posted in a batch (err: %v)", err)
+		} else {
+			t.Logf("waiting for tx to be posted in a batch (found: %v)", found)
+		}
+		select {
+		case <-batchTick.C:
+		case <-batchTimeout.C:
+			t.Fatalf("timed out waiting for batch containing message %d: err=%v, found=%v", l2Block.NumberU64(), err, found)
+		case <-ctx.Done():
+			t.Fatalf("context cancelled waiting for batch containing message %d: %v", l2Block.NumberU64(), ctx.Err())
+		}
 	}
 
 	// find the transaction that posted this batch to parent chain
 	seqInboxContract, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
 	var batchTxHash common.Hash
+	seqTimeout := time.NewTimer(30 * time.Second)
+	defer seqTimeout.Stop()
+	seqTick := time.NewTicker(10 * time.Millisecond)
+	defer seqTick.Stop()
 	for {
 		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
-		if err == nil && it.Next() {
-			batchTxHash = it.Event.Raw.TxHash
-			break
+		if err == nil {
+			if it.Next() {
+				batchTxHash = it.Event.Raw.TxHash
+				it.Close()
+				break
+			}
+			it.Close()
 		}
-		t.Logf("waiting to find sequencer batch message")
-		<-time.After(time.Millisecond * 10)
+		if err != nil {
+			t.Logf("waiting to find sequencer batch %d delivery (err: %v)", batchNum, err)
+		} else {
+			t.Logf("waiting to find sequencer batch %d delivery (no events yet)", batchNum)
+		}
+		select {
+		case <-seqTick.C:
+		case <-seqTimeout.C:
+			t.Fatalf("timed out waiting for sequencer batch %d delivery: err=%v", batchNum, err)
+		case <-ctx.Done():
+			t.Fatalf("context cancelled waiting for sequencer batch %d delivery: %v", batchNum, ctx.Err())
+		}
 	}
 
 	// get receipt of batch tx to know gas used

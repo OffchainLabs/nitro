@@ -626,32 +626,43 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
+	// Wait until MEL can read the posted batch, send correct L2 messages to
+	// txStreamer, and txStreamer detects the reorg and handles correct execution.
+	// We verify the reorg was handled correctly by checking the resulting balance rather
+	// than relying on log message capture, which is unreliable because
+	// InitTestLog overwrites the global logger and concurrent test execution
+	// within the package can route log messages to the wrong handler.
 	{
 		timeout := time.NewTimer(time.Minute)
 		defer timeout.Stop()
 		tick := time.NewTicker(100 * time.Millisecond)
 		defer tick.Stop()
+		expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+		var lastErr error
+		var lastBalance *big.Int
 		for {
-			// Verify that both MEL and TxStreamer detected the reorg
-			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+			newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+			if err == nil && newBalance.Cmp(expectedBalance) == 0 {
 				break
+			}
+			if err != nil {
+				lastErr = err
+				t.Logf("waiting for reorg to complete: BalanceAt poll error: %v", err)
+			} else {
+				lastBalance = newBalance
+				t.Logf("waiting for reorg to complete: current balance=%v, expected=%v", newBalance, expectedBalance)
 			}
 			select {
 			case <-tick.C:
 			case <-timeout.C:
-				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
+				t.Fatalf("timed out waiting for reorg to complete: lastBalance=%v, expected=%v, lastPollErr=%v, melReorgLogged=%v, txStreamerReorgLogged=%v",
+					lastBalance, expectedBalance, lastErr,
+					logHandler.WasLogged("MEL detected L1 reorg"),
+					logHandler.WasLogged("TransactionStreamer: Reorg detected!"))
+			case <-ctx.Done():
+				t.Fatalf("context cancelled while waiting for reorg to complete: %v", ctx.Err())
 			}
 		}
-	}
-
-	// Verify that after reorg handling, resulting balance in the account is correct
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
-	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
-	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
 	}
 }
 

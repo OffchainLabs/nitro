@@ -87,18 +87,17 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	Require(t, err)
 
 	var batchNum uint64
+	var batchFound bool
 	for i := 0; i < 30; i++ {
-		var found bool
-		if builder.L2.ConsensusNode.MessageExtractor != nil {
-			batchNum, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		} else {
-			batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		}
+		batchNum, batchFound, err = findInboxBatchContainingMessage(builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()))
 		Require(t, err)
-		if found {
+		if batchFound {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	if !batchFound {
+		t.Fatalf("batch containing message %d not found after 30 attempts", l2Block.NumberU64())
 	}
 
 	// Advance L1 more for batch-posting-report finality
@@ -228,21 +227,22 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
 	// Wait for batch and advance for finality
+	var verifyBatchFound bool
 	for i := 0; i < 30; i++ {
 		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
 		if verifyReceipt != nil {
 			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
 			var found bool
-			if builder.L2.ConsensusNode.MessageExtractor != nil {
-				_, found, err = builder.L2.ConsensusNode.MessageExtractor.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
-			} else {
-				_, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
-			}
+			_, found, err = findInboxBatchContainingMessage(builder.L2.ConsensusNode, arbutil.MessageIndex(verifyBlock.NumberU64()))
 			if err == nil && found {
+				verifyBatchFound = true
 				break
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	if !verifyBatchFound {
+		t.Fatal("batch containing verify transaction not found after 30 attempts")
 	}
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
