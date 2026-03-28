@@ -733,7 +733,7 @@ where
                 result: BlockExecutionResult {
                     receipts,
                     requests: Default::default(),
-                    gas_used: gas_used as u64,
+                    gas_used,
                     blob_gas_used: 0,
                 },
             });
@@ -800,7 +800,7 @@ where
             last.recovered_block().hash(),
         );
 
-        crate::launcher::save_blocks(blocks).map_err(|e| BlockProducerError::Storage(e))?;
+        crate::launcher::save_blocks(blocks).map_err(BlockProducerError::Storage)?;
 
         self.in_memory_state.remove_persisted_blocks(last_num_hash);
         self.blocks_since_flush.store(0, Ordering::SeqCst);
