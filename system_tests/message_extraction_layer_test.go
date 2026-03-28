@@ -530,6 +530,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).
 		DefaultConfig(t, true).
+		DontParalellise().
 		WithDelayBuffer(threshold)
 
 	builder.nodeConfig.MessageExtraction.Enable = true
