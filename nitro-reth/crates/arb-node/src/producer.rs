@@ -27,7 +27,7 @@ use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::StateProvider;
-use reth_trie_common::HashedPostState;
+use reth_trie_common::{HashedPostState, TrieInput};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
@@ -86,6 +86,7 @@ pub struct ArbBlockProducer<Provider> {
     head_block_num: AtomicU64,
     blocks_since_flush: AtomicU64,
     flush_interval: u64,
+    accumulated_trie_input: Mutex<TrieInput>,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
@@ -110,6 +111,7 @@ where
             head_block_num: AtomicU64::new(head),
             blocks_since_flush: AtomicU64::new(0),
             flush_interval,
+            accumulated_trie_input: Mutex::new(TrieInput::default()),
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -616,9 +618,16 @@ where
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
 
-        let (state_root, trie_updates) = state_provider
-            .state_root_with_updates(hashed_state.clone())
-            .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+        let (state_root, trie_updates) = {
+            let mut acc = self.accumulated_trie_input.lock();
+            let mut input = acc.clone();
+            input.append(hashed_state.clone());
+            let (root, updates) = state_provider
+                .state_root_from_nodes_with_updates(input)
+                .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
+            acc.append_cached(updates.clone(), hashed_state.clone());
+            (root, updates)
+        };
 
         debug!(
             target: "block_producer",
@@ -795,6 +804,7 @@ where
 
         self.in_memory_state.remove_persisted_blocks(last_num_hash);
         self.blocks_since_flush.store(0, Ordering::SeqCst);
+        self.accumulated_trie_input.lock().clear();
 
         info!(
             target: "block_producer",
