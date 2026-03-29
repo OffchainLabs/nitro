@@ -94,6 +94,8 @@ reth-tokio-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cf
 reth-prune = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
 alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }

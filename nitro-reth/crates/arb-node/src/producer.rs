@@ -4,7 +4,7 @@
 //! executing them against the current state, and persisting the results.
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 
@@ -87,6 +87,8 @@ pub struct ArbBlockProducer<Provider> {
     blocks_since_flush: AtomicU64,
     flush_interval: u64,
     accumulated_trie_input: Mutex<TrieInput>,
+    flushing_trie_input: Mutex<Option<TrieInput>>,
+    pending_flush: AtomicBool,
     produce_lock: Mutex<()>,
     cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
 }
@@ -112,6 +114,8 @@ where
             blocks_since_flush: AtomicU64::new(0),
             flush_interval,
             accumulated_trie_input: Mutex::new(TrieInput::default()),
+            flushing_trie_input: Mutex::new(None),
+            pending_flush: AtomicBool::new(false),
             produce_lock: Mutex::new(()),
             cached_init: Mutex::new(None),
         }
@@ -156,6 +160,23 @@ where
         input: &BlockProductionInput,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
+        // Check if a background flush completed.
+        if self.pending_flush.load(Ordering::SeqCst) {
+            if let Some(result) = crate::launcher::try_flush_result() {
+                self.in_memory_state
+                    .remove_persisted_blocks(result.last_num_hash);
+                *self.flushing_trie_input.lock() = None;
+                self.pending_flush.store(false, Ordering::SeqCst);
+                info!(
+                    target: "block_producer",
+                    flushed = result.count,
+                    last_block = result.last_num_hash.number,
+                    duration_ms = result.duration.as_millis(),
+                    "Background flush completed"
+                );
+            }
+        }
+
         let head_num = self.head_block_number()?;
         let parent_header = self.parent_header(head_num)?;
         let l2_block_number = head_num + 1;
@@ -620,10 +641,24 @@ where
 
         let (state_root, trie_updates) = {
             let mut acc = self.accumulated_trie_input.lock();
-            let mut input = acc.clone();
+            let flushing = self.flushing_trie_input.lock();
+
+            // Build merged input: flushing overlay (if flush in progress) + current + this block.
+            // During a flush, the DB hasn't been updated yet, so we need BOTH the flushing
+            // overlay (blocks from before flush) and the current accumulator (blocks since flush).
+            let mut input = if let Some(ref flushing) = *flushing {
+                let mut base = flushing.clone();
+                base.nodes.extend(acc.nodes.clone());
+                base.state.extend(acc.state.clone());
+                base.prefix_sets.extend(acc.prefix_sets.clone());
+                base
+            } else {
+                acc.clone()
+            };
+            drop(flushing); // release lock before computation
+
             input.append(hashed_state.clone());
-            let (root, updates) = state_provider
-                .state_root_from_nodes_with_updates(input)
+            let (root, updates) = crate::launcher::compute_parallel_state_root(input)
                 .map_err(|e| BlockProducerError::Execution(format!("state root: {e}")))?;
             acc.append_cached(updates.clone(), hashed_state.clone());
             (root, updates)
@@ -755,10 +790,10 @@ where
 
         self.head_block_num.store(l2_block_number, Ordering::SeqCst);
 
-        // Flush to DB via reth's save_blocks(Full) when buffer threshold reached.
+        // Start async flush when buffer threshold reached (non-blocking).
         let since_flush = self.blocks_since_flush.fetch_add(1, Ordering::SeqCst) + 1;
-        if since_flush >= self.flush_interval {
-            self.flush_to_db()?;
+        if since_flush >= self.flush_interval && !self.pending_flush.load(Ordering::SeqCst) {
+            self.start_async_flush();
         }
 
         info!(
@@ -778,9 +813,9 @@ where
         })
     }
 
-    /// Flush buffered blocks to DB via reth's save_blocks(Full).
-    /// This writes ALL tables including history indices — same as reth's Pipeline.
-    fn flush_to_db(&self) -> Result<(), BlockProducerError> {
+    /// Start an async flush: send blocks to the background persistence thread.
+    /// Does NOT block — the producer continues immediately.
+    fn start_async_flush(&self) {
         let mut blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
         if let Some(head_state) = self.in_memory_state.head_state() {
             for block_state in head_state.chain() {
@@ -790,29 +825,35 @@ where
         blocks.reverse();
 
         if blocks.is_empty() {
-            return Ok(());
+            return;
         }
 
-        let count = blocks.len();
         let last = blocks.last().unwrap();
         let last_num_hash = alloy_eips::BlockNumHash::new(
             last.recovered_block().number(),
             last.recovered_block().hash(),
         );
 
-        crate::launcher::save_blocks(blocks).map_err(BlockProducerError::Storage)?;
+        // Move current accumulator to flushing slot (double-buffer).
+        // New blocks will accumulate into a fresh TrieInput.
+        let current = std::mem::take(&mut *self.accumulated_trie_input.lock());
+        *self.flushing_trie_input.lock() = Some(current);
 
-        self.in_memory_state.remove_persisted_blocks(last_num_hash);
         self.blocks_since_flush.store(0, Ordering::SeqCst);
-        self.accumulated_trie_input.lock().clear();
+        self.pending_flush.store(true, Ordering::SeqCst);
 
-        info!(
+        let count = blocks.len();
+        crate::launcher::start_flush(crate::launcher::FlushRequest {
+            blocks,
+            last_num_hash,
+        });
+
+        debug!(
             target: "block_producer",
-            flushed = count,
+            count,
             last_block = last_num_hash.number,
-            "Flushed via save_blocks(Full)"
+            "Started async flush"
         );
-        Ok(())
     }
 
     /// Produce a minimal block for messages with no transactions.

@@ -59,13 +59,35 @@ use arb_primitives::ArbPrimitives;
 
 static TREE_SENDER: OnceLock<TreeSender<ArbEngineTypes, ArbPrimitives>> = OnceLock::new();
 static ENGINE_HANDLE: OnceLock<ConsensusEngineHandle<ArbEngineTypes>> = OnceLock::new();
-static SAVE_BLOCKS_FN: OnceLock<SaveBlocksFn> = OnceLock::new();
+static FLUSH_HANDLE: OnceLock<FlushHandle> = OnceLock::new();
+static PARALLEL_STATE_ROOT_FN: OnceLock<ParallelStateRootFn> = OnceLock::new();
 
-/// Type-erased save_blocks function backed by reth's ProviderFactory.
-/// Calls `provider_factory.database_provider_rw()?.save_blocks(blocks, Full)?; commit()?`
-/// which writes ALL tables including history indices.
-type SaveBlocksFn = Box<
-    dyn Fn(Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>) -> Result<(), String> + Send + Sync,
+/// Request sent to the background persistence thread.
+pub struct FlushRequest {
+    pub blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>,
+    pub last_num_hash: alloy_eips::BlockNumHash,
+}
+
+/// Result from a completed flush.
+pub struct FlushResult {
+    pub last_num_hash: alloy_eips::BlockNumHash,
+    pub count: usize,
+    pub duration: std::time::Duration,
+}
+
+/// Handle to the background persistence thread.
+struct FlushHandle {
+    sender: std::sync::mpsc::Sender<FlushRequest>,
+    result_rx: crossbeam_channel::Receiver<FlushResult>,
+}
+
+/// Type-erased parallel state root function.
+type ParallelStateRootFn = Box<
+    dyn Fn(
+            reth_trie_common::TrieInput,
+        ) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String>
+        + Send
+        + Sync,
 >;
 
 pub fn tree_sender() -> Option<&'static TreeSender<ArbEngineTypes, ArbPrimitives>> {
@@ -76,15 +98,30 @@ pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>>
     ENGINE_HANDLE.get()
 }
 
-/// Call reth's save_blocks(Full) for batch persistence.
-/// Uses ProviderFactory captured during node launch.
-pub fn save_blocks(
-    blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>>,
-) -> Result<(), String> {
-    let f = SAVE_BLOCKS_FN
+/// Send blocks to the background persistence thread (non-blocking).
+pub fn start_flush(request: FlushRequest) {
+    if let Some(handle) = FLUSH_HANDLE.get() {
+        if let Err(e) = handle.sender.send(request) {
+            error!(target: "reth::cli", "Failed to send flush request: {e}");
+        }
+    }
+}
+
+/// Check if a background flush completed (non-blocking).
+pub fn try_flush_result() -> Option<FlushResult> {
+    FLUSH_HANDLE
         .get()
-        .ok_or_else(|| "save_blocks not initialized".to_string())?;
-    f(blocks)
+        .and_then(|handle| handle.result_rx.try_recv().ok())
+}
+
+/// Compute state root with parallel storage roots and cached trie node overlay.
+pub fn compute_parallel_state_root(
+    input: reth_trie_common::TrieInput,
+) -> Result<(alloy_primitives::B256, reth_trie::updates::TrieUpdates), String> {
+    let f = PARALLEL_STATE_ROOT_FN
+        .get()
+        .ok_or_else(|| "parallel_state_root not initialized".to_string())?;
+    f(input)
 }
 
 /// Arbitrum engine node launcher.
@@ -280,24 +317,244 @@ impl ArbEngineLauncher {
             EngineApiKind::Ethereum
         };
 
-        // Create the save_blocks closure using ProviderFactory.
-        // This calls reth's save_blocks(Full) which writes ALL tables
-        // including history indices — the Pipeline/ExecutionStage pattern.
+        // Spawn background persistence thread (like reth's PersistenceHandle).
+        // Receives flush requests via channel, calls save_blocks(Full) + commit(),
+        // sends result back. The producer continues producing while flush runs.
         {
             use reth_provider::{DatabaseProviderFactory, SaveBlocksMode};
             use reth_storage_api::DBProvider;
+
             let pf = ctx.provider_factory().clone();
-            let save_fn: SaveBlocksFn = Box::new(move |blocks| {
-                let provider_rw = pf
-                    .database_provider_rw()
-                    .map_err(|e| format!("database_provider_rw: {e}"))?;
-                provider_rw
-                    .save_blocks(blocks, SaveBlocksMode::Full)
-                    .map_err(|e| format!("save_blocks: {e}"))?;
-                provider_rw.commit().map_err(|e| format!("commit: {e}"))?;
-                Ok(())
+            let (req_tx, req_rx) = std::sync::mpsc::channel::<FlushRequest>();
+            let (res_tx, res_rx) = crossbeam_channel::bounded::<FlushResult>(1);
+
+            std::thread::Builder::new()
+                .name("arb-persistence".into())
+                .spawn(move || {
+                    while let Ok(req) = req_rx.recv() {
+                        let start = std::time::Instant::now();
+                        let count = req.blocks.len();
+                        let last = req.last_num_hash;
+
+                        let result = (|| -> Result<(), String> {
+                            let provider_rw = pf
+                                .database_provider_rw()
+                                .map_err(|e| format!("database_provider_rw: {e}"))?;
+                            provider_rw
+                                .save_blocks(req.blocks, SaveBlocksMode::Full)
+                                .map_err(|e| format!("save_blocks: {e}"))?;
+                            provider_rw
+                                .commit()
+                                .map_err(|e| format!("commit: {e}"))?;
+                            Ok(())
+                        })();
+
+                        match result {
+                            Ok(()) => {
+                                let _ = res_tx.send(FlushResult {
+                                    last_num_hash: last,
+                                    count,
+                                    duration: start.elapsed(),
+                                });
+                            }
+                            Err(e) => {
+                                error!(target: "reth::cli", "Background flush failed: {e}");
+                                // Send result anyway so producer can detect and recover
+                                let _ = res_tx.send(FlushResult {
+                                    last_num_hash: last,
+                                    count: 0, // signal failure
+                                    duration: start.elapsed(),
+                                });
+                            }
+                        }
+                    }
+                })
+                .expect("failed to spawn persistence thread");
+
+            let _ = FLUSH_HANDLE.set(FlushHandle {
+                sender: req_tx,
+                result_rx: res_rx,
             });
-            let _ = SAVE_BLOCKS_FN.set(save_fn);
+        }
+
+        // Create the parallel state root closure.
+        // Accepts a TrieInput with cached trie nodes + accumulated state.
+        // Computes storage roots in parallel (each with its own DB tx + shared overlay),
+        // then walks the account trie serially with the overlay.
+        {
+            use alloy_primitives::B256;
+            use alloy_rlp::{BufMut, Encodable};
+            use reth_provider::DatabaseProviderFactory;
+            use reth_trie::{
+                hashed_cursor::{HashedCursorFactory, HashedPostStateCursorFactory},
+                node_iter::{TrieElement, TrieNodeIter},
+                trie_cursor::{InMemoryTrieCursorFactory, TrieCursorFactory},
+                updates::TrieUpdates,
+                walker::TrieWalker,
+                HashBuilder, Nibbles, StorageRoot, TRIE_ACCOUNT_RLP_MAX_SIZE,
+            };
+            use reth_trie_common::TrieInputSorted;
+            use reth_trie_db::{
+                DatabaseTrieCursorFactory, DatabaseHashedCursorFactory,
+                PackedKeyAdapter, LegacyKeyAdapter,
+            };
+            use reth_provider::StorageSettingsCache;
+            use reth_storage_api::DBProvider;
+            use reth_trie_parallel::StorageRootTargets;
+
+            let pf = ctx.provider_factory().clone();
+            let is_v2 = pf.cached_storage_settings().is_v2();
+
+            // Helper: compute parallel state root with a specific TrieKeyAdapter.
+            fn parallel_root<PF, A>(
+                pf: &PF,
+                sorted: TrieInputSorted,
+            ) -> Result<(B256, TrieUpdates), String>
+            where
+                PF: DatabaseProviderFactory + Clone + Send + Sync + 'static,
+                PF::Provider: reth_storage_api::DBProvider,
+                A: reth_trie_db::TrieTableAdapter + Send + Sync + 'static,
+            {
+                let nodes = sorted.nodes.clone();
+                let state = sorted.state.clone();
+                let prefix_sets_frozen = sorted.prefix_sets.freeze();
+
+                let storage_root_targets = StorageRootTargets::new(
+                    prefix_sets_frozen
+                        .account_prefix_set
+                        .iter()
+                        .map(|nibbles| B256::from_slice(&nibbles.pack())),
+                    prefix_sets_frozen.storage_prefix_sets.clone(),
+                );
+
+                let mut storage_roots =
+                    std::collections::HashMap::with_capacity(storage_root_targets.len());
+                let mut targets_vec: Vec<_> = storage_root_targets.into_iter().collect();
+                targets_vec.sort_unstable_by_key(|(addr, _)| *addr);
+                for (hashed_address, prefix_set) in targets_vec {
+                    let pf2 = pf.clone();
+                    let nodes2 = nodes.clone();
+                    let state2 = state.clone();
+
+                    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                    std::thread::spawn(move || {
+                        let result = (|| -> Result<_, String> {
+                            let provider_ro = pf2
+                                .database_provider_ro()
+                                .map_err(|e| format!("db_provider_ro: {e}"))?;
+                            let db_tx = provider_ro.tx_ref();
+                            let trie_cursor = InMemoryTrieCursorFactory::new(
+                                DatabaseTrieCursorFactory::<_, A>::new(db_tx),
+                                nodes2.as_ref(),
+                            );
+                            let hashed_cursor = HashedPostStateCursorFactory::new(
+                                DatabaseHashedCursorFactory::new(db_tx),
+                                state2.as_ref(),
+                            );
+                            StorageRoot::new_hashed(
+                                trie_cursor, hashed_cursor, hashed_address, prefix_set,
+                                Default::default(),
+                            )
+                            .calculate(true)
+                            .map_err(|e| format!("storage root: {e}"))
+                        })();
+                        let _ = tx.send(result);
+                    });
+                    storage_roots.insert(hashed_address, rx);
+                }
+
+                let provider_ro = pf
+                    .database_provider_ro()
+                    .map_err(|e| format!("db_provider_ro: {e}"))?;
+                let db_tx = provider_ro.tx_ref();
+                let trie_cursor = InMemoryTrieCursorFactory::new(
+                    DatabaseTrieCursorFactory::<_, A>::new(db_tx),
+                    nodes.as_ref(),
+                );
+                let hashed_cursor = HashedPostStateCursorFactory::new(
+                    DatabaseHashedCursorFactory::new(db_tx),
+                    state.as_ref(),
+                );
+
+                let walker = TrieWalker::<_>::state_trie(
+                    trie_cursor.account_trie_cursor().map_err(|e| format!("trie cursor: {e}"))?,
+                    prefix_sets_frozen.account_prefix_set,
+                )
+                .with_deletions_retained(true);
+                let mut account_node_iter = TrieNodeIter::state_trie(
+                    walker,
+                    hashed_cursor.hashed_account_cursor().map_err(|e| format!("hashed cursor: {e}"))?,
+                );
+
+                let mut hash_builder = HashBuilder::default().with_updates(true);
+                let mut trie_updates = TrieUpdates::default();
+                let mut account_rlp = Vec::with_capacity(TRIE_ACCOUNT_RLP_MAX_SIZE);
+
+                while let Some(node) =
+                    account_node_iter.try_next().map_err(|e| format!("node iter: {e}"))?
+                {
+                    match node {
+                        TrieElement::Branch(node) => {
+                            hash_builder.add_branch(node.key, node.value, node.children_are_in_trie);
+                        }
+                        TrieElement::Leaf(hashed_address, account) => {
+                            let storage_root_result = match storage_roots.remove(&hashed_address) {
+                                Some(rx) => rx
+                                    .recv()
+                                    .map_err(|_| format!("channel closed for {hashed_address}"))??,
+                                None => {
+                                    StorageRoot::new_hashed(
+                                        trie_cursor.clone(),
+                                        hashed_cursor.clone(),
+                                        hashed_address,
+                                        Default::default(),
+                                        Default::default(),
+                                    )
+                                    .calculate(true)
+                                    .map_err(|e| format!("storage root: {e}"))?
+                                }
+                            };
+
+                            let (storage_root, _, updates) = match storage_root_result {
+                                reth_trie::StorageRootProgress::Complete(root, _, updates) => {
+                                    (root, (), updates)
+                                }
+                                reth_trie::StorageRootProgress::Progress(..) => {
+                                    return Err("StorageRoot returned Progress".to_string())
+                                }
+                            };
+
+                            trie_updates.insert_storage_updates(hashed_address, updates);
+
+                            account_rlp.clear();
+                            let account: reth_primitives_traits::Account = account;
+                            let trie_account = account.into_trie_account(storage_root);
+                            trie_account.encode(&mut account_rlp as &mut dyn BufMut);
+                            hash_builder.add_leaf(Nibbles::unpack(hashed_address), &account_rlp);
+                        }
+                    }
+                }
+
+                let root = hash_builder.root();
+                let removed_keys = account_node_iter.walker.take_removed_keys();
+                trie_updates.finalize(
+                    hash_builder,
+                    removed_keys,
+                    prefix_sets_frozen.destroyed_accounts,
+                );
+
+                Ok((root, trie_updates))
+            }
+
+            let state_root_fn: ParallelStateRootFn = Box::new(move |input| {
+                let sorted = TrieInputSorted::from_unsorted(input);
+                if is_v2 {
+                    parallel_root::<_, PackedKeyAdapter>(&pf, sorted)
+                } else {
+                    parallel_root::<_, LegacyKeyAdapter>(&pf, sorted)
+                }
+            });
+            let _ = PARALLEL_STATE_ROOT_FN.set(state_root_fn);
         }
 
         let (mut orchestrator, arb_tree_sender) = build_arb_engine_orchestrator(

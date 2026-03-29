@@ -16,6 +16,7 @@ arb-rpc = { workspace = true }
 arb-txpool = { workspace = true }
 arbos = { workspace = true }
 alloy-consensus = { workspace = true }
+alloy-rlp = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -57,6 +58,7 @@ reth-stages-api = { workspace = true }
 reth-tasks = { workspace = true }
 reth-transaction-pool = { workspace = true }
 reth-trie-db = { workspace = true }
+reth-trie-parallel = { workspace = true }
 async-trait = { workspace = true }
 crossbeam-channel = { workspace = true }
 eyre = { workspace = true }
