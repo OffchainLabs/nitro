@@ -217,11 +217,13 @@ fn check_precompile_version(min_version: u64) -> Option<PrecompileResult> {
     }
 }
 
-/// Ensure precompile gas_used does not exceed the gas limit.
-/// Returns `OutOfGas` if it does, preventing an assertion panic in alloy-evm.
+/// Cap gas usage at gas_limit and convert generic errors to reverts for ArbOS >= 11.
 fn gas_check(gas_limit: u64, result: PrecompileResult) -> PrecompileResult {
     match result {
         Ok(ref output) if output.gas_used > gas_limit => Err(PrecompileError::OutOfGas),
+        Err(PrecompileError::Other(_)) if get_arbos_version() >= 11 => {
+            Ok(PrecompileOutput::new_reverted(0, Default::default()))
+        }
         other => other,
     }
 }
@@ -270,4 +272,28 @@ pub fn register_arb_precompiles(map: &mut PrecompilesMap) {
         ),
         (NODE_INTERFACE_ADDRESS, create_nodeinterface_precompile()),
     ]);
+}
+
+
+#[cfg(test)]
+mod selector_audit {
+    #[test]
+    fn verify_selectors() {
+        fn check(sig: &str, expected: &[u8; 4]) {
+            let h = alloy_primitives::keccak256(sig.as_bytes());
+            let actual = [h[0], h[1], h[2], h[3]];
+            assert_eq!(actual, *expected, "selector mismatch for {sig}: expected 0x{:02x}{:02x}{:02x}{:02x} got 0x{:02x}{:02x}{:02x}{:02x}",
+                expected[0], expected[1], expected[2], expected[3], actual[0], actual[1], actual[2], actual[3]);
+        }
+        check("rectifyChainOwner(address)", &[0x6f,0xe8,0x63,0x73]);
+        check("addChainOwner(address)", &[0x48,0x1f,0x8d,0xbf]);
+        check("removeChainOwner(address)", &[0x87,0x92,0x70,0x1a]);
+        check("releaseL1PricerSurplusFunds(uint256)", &[0x31,0x4b,0xcf,0x05]);
+        check("withdrawEth(address)", &[0x25,0xe1,0x60,0x63]);
+        check("sendTxToL1(address,bytes)", &[0x92,0x8c,0x16,0x9a]);
+        check("arbBlockNumber()", &[0xa3,0xb1,0xb3,0x1d]);
+        check("arbBlockHash(uint256)", &[0x2b,0x40,0x7a,0x82]);
+        check("arbChainID()", &[0xd1,0x27,0xf5,0x4a]);
+        check("isTopLevelCall()", &[0x08,0xbd,0x62,0x4c]);
+    }
 }

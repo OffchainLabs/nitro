@@ -192,13 +192,25 @@ fn handle_arb_block_hash(input: &mut PrecompileInput<'_>) -> PrecompileResult {
         return Err(PrecompileError::other("input too short"));
     }
 
-    let requested: u64 = U256::from_be_slice(&data[4..36])
-        .try_into()
-        .unwrap_or(u64::MAX);
+    let requested_u256 = U256::from_be_slice(&data[4..36]);
+    let requested: u64 = requested_u256.try_into().unwrap_or(u64::MAX);
     let current = get_current_l2_block();
 
     // Must be strictly less than current and within 256 blocks.
     if requested >= current || requested + 256 < current {
+        let arbos_version = crate::get_arbos_version();
+        if arbos_version >= 11 {
+            let mut revert_data = Vec::with_capacity(4 + 64);
+            revert_data.extend_from_slice(&[0xd5, 0xdc, 0x64, 0x2d]); // InvalidBlockNumberError
+            revert_data.extend_from_slice(&requested_u256.to_be_bytes::<32>());
+            revert_data.extend_from_slice(&U256::from(current).to_be_bytes::<32>());
+            let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
+            let result_cost = COPY_GAS * words_for_bytes(revert_data.len() as u64);
+            return Ok(PrecompileOutput::new_reverted(
+                STORAGE_READ_COST + args_cost + result_cost,
+                revert_data.into(),
+            ));
+        }
         return Err(PrecompileError::other("invalid block number"));
     }
 
