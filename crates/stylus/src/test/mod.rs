@@ -1,7 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
+use std::{collections::HashMap, path::Path, sync::Arc};
+
 use arbutil::{
     evm::{
         api::{Ink, VecReader},
@@ -16,7 +17,6 @@ use prover::{
     Machine,
 };
 use rand::prelude::*;
-use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
     imports,
     sys::{CompilerConfig, EngineBuilder, Target},
@@ -24,6 +24,8 @@ use wasmer::{
     Function, FunctionEnv, Imports, Instance, Module, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 
 mod api;
 mod misc;

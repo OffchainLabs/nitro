@@ -39,12 +39,14 @@ pub(super) enum BrotliBool {
 }
 
 impl BrotliBool {
-    /// Whether the type is `True`. This function exists since the API conflates `BrotliBool` and `BrotliStatus` at times.
+    /// Whether the type is `True`. This function exists since the API conflates `BrotliBool` and
+    /// `BrotliStatus` at times.
     pub fn is_ok(&self) -> bool {
         self == &Self::True
     }
 
-    /// Whether the type is `False`. This function exists since the API conflates `BrotliBool` and `BrotliStatus` at times.
+    /// Whether the type is `False`. This function exists since the API conflates `BrotliBool` and
+    /// `BrotliStatus` at times.
     pub fn is_err(&self) -> bool {
         !self.is_ok()
     }
