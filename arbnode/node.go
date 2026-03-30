@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -315,6 +316,7 @@ type Node struct {
 	ExecutionSequencer       execution.ExecutionSequencer
 	ExecutionRecorder        execution.ExecutionRecorder
 	L1Reader                 *headerreader.HeaderReader
+	ParentChain              *parent.ParentChain
 	TxStreamer               *TransactionStreamer
 	DeployInfo               *chaininfo.RollupAddresses
 	BlobReader               daprovider.BlobReader
@@ -410,7 +412,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
 				return nil, nil
 			},
-			ParentChainID: parentChainID,
+			ParentChain: parent.NewParentChain(ctx, parentChainID, l1Reader),
 		},
 	)
 }
@@ -418,7 +420,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
-	parentChainID *big.Int,
+	parentChain *parent.ParentChain,
 ) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	if transactOpts == nil && cfg.Staker.DataPoster.ExternalSigner.URL == "" {
@@ -449,7 +451,7 @@ func StakerDataposter(
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
 			RedisKey:          sender + ".staker-data-poster.queue",
-			ParentChainID:     parentChainID,
+			ParentChain:       parentChain,
 		})
 }
 
@@ -598,14 +600,12 @@ func getDelayedBridgeAndSequencerInbox(
 func getDAProviders(
 	ctx context.Context,
 	config *Config,
-	l2Config *params.ChainConfig,
 	txStreamer *TransactionStreamer,
 	blobReader daprovider.BlobReader,
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *chaininfo.RollupAddresses,
 	dataSigner signature.DataSignerFunc,
 	l1client *ethclient.Client,
-	stack *node.Node,
 ) ([]daprovider.Writer, func(), *daprovider.DAProviderRegistry, error) {
 	var writers []daprovider.Writer
 	var cleanupFuncs []func()
@@ -928,7 +928,7 @@ func getStaker(
 	l1Reader *headerreader.HeaderReader,
 	txOptsValidator *bind.TransactOpts,
 	syncMonitor *SyncMonitor,
-	parentChainID *big.Int,
+	parentChain *parent.ParentChain,
 	l1client *ethclient.Client,
 	deployInfo *chaininfo.RollupAddresses,
 	txStreamer *TransactionStreamer,
@@ -952,7 +952,7 @@ func getStaker(
 			txOptsValidator,
 			configFetcher,
 			syncMonitor,
-			parentChainID,
+			parentChain,
 		)
 		if err != nil {
 			return nil, nil, common.Address{}, err
@@ -1117,7 +1117,7 @@ func getBatchPoster(
 	consensusDB ethdb.Database,
 	syncMonitor *SyncMonitor,
 	deployInfo *chaininfo.RollupAddresses,
-	parentChainID *big.Int,
+	parentChain *parent.ParentChain,
 	dapReaders *daprovider.DAProviderRegistry,
 	stakerAddr common.Address,
 ) (*BatchPoster, error) {
@@ -1148,7 +1148,7 @@ func getBatchPoster(
 			DeployInfo:           deployInfo,
 			TransactOpts:         txOptsBatchPoster,
 			DAPWriters:           dapWriters,
-			ParentChainID:        parentChainID,
+			ParentChain:          parentChain,
 			DAPReaders:           dapReaders,
 			ChainConfig:          l2Config,
 		})
@@ -1268,9 +1268,9 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	parentChain *parent.ParentChain,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -1330,7 +1330,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	dapWriters, providerServerCloseFn, dapRegistry, err := getDAProviders(ctx, config, l2Config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client, stack)
+	dapWriters, providerServerCloseFn, dapRegistry, err := getDAProviders(ctx, config, txStreamer, blobReader, l1Reader, deployInfo, dataSigner, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -1363,7 +1363,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChainID, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, inboxTracker, inboxReader, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -1374,7 +1374,7 @@ func createNodeImpl(
 	} else if messageExtractor != nil {
 		batchMetaFetcher = messageExtractor
 	}
-	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChainID, dapRegistry, stakerAddr)
+	batchPoster, err := getBatchPoster(ctx, config, configFetcher, l2Config, txOptsBatchPoster, dapWriters, l1Reader, batchMetaFetcher, txStreamer, arbOSVersionGetter, consensusDB, syncMonitor, deployInfo, parentChain, dapRegistry, stakerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1402,6 +1402,7 @@ func createNodeImpl(
 		ExecutionSequencer:       executionSequencer,
 		ExecutionRecorder:        executionRecorder,
 		L1Reader:                 l1Reader,
+		ParentChain:              parentChain,
 		TxStreamer:               txStreamer,
 		DeployInfo:               deployInfo,
 		BlobReader:               blobReader,
@@ -1493,9 +1494,9 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	parentChain *parent.ParentChain,
 ) (*Node, error) {
 	if configFetcher.Get().ExecutionRPCClient.URL != "" {
 		execConfigFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().ExecutionRPCClient }
@@ -1504,7 +1505,7 @@ func CreateConsensusNodeConnectedWithSimpleExecutionClient(
 	if executionClient == nil {
 		return nil, errors.New("execution client must be non-nil")
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, nil, nil, executionClient, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
 	if err != nil {
 		return nil, err
 	}
@@ -1525,9 +1526,9 @@ func CreateConsensusNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
-	parentChainID *big.Int,
 	blobReader daprovider.BlobReader,
 	latestWasmModuleRoot common.Hash,
+	parentChain *parent.ParentChain,
 ) (*Node, error) {
 	var executionClient execution.ExecutionClient
 	var executionRecorder execution.ExecutionRecorder
@@ -1546,7 +1547,7 @@ func CreateConsensusNode(
 		executionSequencer = fullExecutionClient
 		arbOSVersionGetter = fullExecutionClient
 	}
-	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader, latestWasmModuleRoot)
+	currentNode, err := createNodeImpl(ctx, stack, executionClient, executionSequencer, executionRecorder, arbOSVersionGetter, consensusDB, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, blobReader, latestWasmModuleRoot, parentChain)
 	if err != nil {
 		return nil, err
 	}
@@ -1619,6 +1620,9 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
+	}
+	if n.ParentChain != nil {
+		n.ParentChain.Start(ctx)
 	}
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
@@ -1741,6 +1745,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.StatelessBlockValidator != nil {
 		n.StatelessBlockValidator.Stop()
+	}
+	if n.ParentChain != nil && n.ParentChain.Started() {
+		n.ParentChain.StopAndWait()
 	}
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()

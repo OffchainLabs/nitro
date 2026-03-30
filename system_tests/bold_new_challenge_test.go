@@ -21,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
@@ -150,7 +151,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	})
 	defer cleanupEvilNode()
 
-	go keepChainMoving(t, ctx, builder.L1Info, builder.L1.Client)
+	go keepChainMoving(t, 3*time.Second, ctx, builder.L1Info, builder.L1.Client)
 
 	builder.L1Info.GenerateAccount("HonestAsserter")
 	fundBoldStaker(t, ctx, builder, "HonestAsserter")
@@ -332,7 +333,7 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 		&txOpts,
 		NewCommonConfigFetcher(builder.nodeConfig),
 		node.ConsensusNode.SyncMonitor,
-		builder.L1Info.Signer.ChainID(),
+		parent.NewParentChain(ctx, builder.L1Info.Signer.ChainID(), node.ConsensusNode.L1Reader),
 	)
 	Require(t, err)
 
