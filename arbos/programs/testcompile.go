@@ -331,8 +331,8 @@ func testNativeStackSize() error {
 		return fmt.Errorf("expected out-of-ink or out-of-stack, got unexpected status %d", status)
 	}
 
-	// Verify the thread-local override was cleared and the process-wide
-	// default was NOT permanently modified by the retry loop (#12).
+	// Verify the process-wide default was restored by the guard after
+	// the retry loop.
 	currentSize := GetNativeStackSize()
 	if currentSize != 32*1024 {
 		return fmt.Errorf("expected stack size to be restored to 32KB after call, got %d bytes", currentSize)

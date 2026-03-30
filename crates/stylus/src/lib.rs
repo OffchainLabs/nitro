@@ -272,16 +272,17 @@ pub unsafe extern "C" fn stylus_call(
     let pricing = config.pricing;
     let output = &mut *output;
     let original_gas = *gas;
-    // Clear any thread-local stack size override on scope exit (even on panic).
-    // This ensures retries that temporarily bump the thread-local don't leak to
-    // subsequent calls on the same thread.
-    struct ClearThreadOverride;
-    impl Drop for ClearThreadOverride {
+    // Restore the original process-wide default stack size on scope exit
+    // (even on panic). This ensures retries that temporarily bump the global
+    // default don't leak to subsequent calls on the same thread.
+    struct RestoreStackSize(usize);
+    impl Drop for RestoreStackSize {
         fn drop(&mut self) {
-            wasmer_vm::set_thread_stack_size(None);
+            wasmer_vm::set_stack_size(self.0);
+            wasmer_vm::drain_stack_pool();
         }
     }
-    let _guard = ClearThreadOverride;
+    let _guard = RestoreStackSize(wasmer_vm::get_stack_size());
 
     // Native stack overflow retry loop.
     //
@@ -295,11 +296,11 @@ pub unsafe extern "C" fn stylus_call(
     // Wasmer's signal handler catches this and returns TrapCode::StackOverflow,
     // which run_main surfaces as UserOutcome::NativeStackOverflow. When we see
     // that outcome we:
-    //   1. Set a thread-local stack size override (capped at MAX_STACK_SIZE =
-    //      100 MB) so the next Wasmer coroutine on THIS thread gets a larger
-    //      stack. The override is thread-local, so other threads are unaffected.
-    //      The stack pool is size-tagged: undersized cached stacks are skipped,
-    //      not reused. The override is cleared when this call completes.
+    //   1. Bump the process-wide default stack size (capped at MAX_STACK_SIZE =
+    //      100 MB) and drain the cached stack pool so the next Wasmer coroutine
+    //      allocates a fresh stack of the new size. This temporarily affects all
+    //      threads, but the guard restores the original size when this call
+    //      completes.
     //   2. Restore gas to its pre-call value. Any host-call side effects
     //      (storage writes, emitted logs, balance transfers, sub-calls) from
     //      the failed attempt are reverted by the EVM's snapshot/revert
@@ -350,9 +351,10 @@ pub unsafe extern "C" fn stylus_call(
                 stack_size, new_size,
             );
             stack_size = new_size;
-            // Set a thread-local override so the next Wasmer coroutine on this
-            // thread allocates a stack of the new size. Cleared by _guard on exit.
-            wasmer_vm::set_thread_stack_size(Some(new_size));
+            // Bump the global default and drain the pool so the next coroutine
+            // gets a fresh stack of the new size. Restored by _guard on exit.
+            wasmer_vm::set_stack_size(new_size);
+            wasmer_vm::drain_stack_pool();
             *gas = original_gas;
             continue;
         }
@@ -369,7 +371,7 @@ pub unsafe extern "C" fn stylus_call(
         break status;
     };
 
-    // _guard's Drop clears the thread-local override here (even on panic).
+    // _guard's Drop restores the original stack size and drains the pool here (even on panic).
     result
 }
 
