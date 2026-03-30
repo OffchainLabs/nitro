@@ -305,17 +305,20 @@ pub unsafe extern "C" fn stylus_call(
     //      allocates a fresh stack of the new size. This temporarily affects all
     //      threads, but the guard restores the original size when this call
     //      completes.
-    //   2. Restore gas to its pre-call value. Any host-call side effects
-    //      (storage writes, emitted logs, balance transfers, sub-calls) from
-    //      the failed attempt are reverted by the EVM's snapshot/revert
-    //      mechanism: evm.Call() takes a StateDB snapshot before Stylus
-    //      execution and calls RevertToSnapshot on any error return, so
-    //      replaying from scratch is safe.
+    //   2. Restore gas to its pre-call value. Host-call side effects from the
+    //      failed attempt (storage writes, emitted logs, etc.) are NOT reverted
+    //      between retries — they persist in the live StateDB. This is acceptable
+    //      because SSTORE is idempotent at the same slot, and if the final attempt
+    //      also fails, the caller's evm.Call() snapshot/revert mechanism undoes all
+    //      accumulated effects. Note: if the program emits logs before overflowing
+    //      and a later retry succeeds, those logs may appear duplicated.
     //   3. Re-create the instance and retry.
     //
     // If the stack is already at MAX_STACK_SIZE and still overflows, we give up
     // and return OutOfStack (taking all gas) instead of crashing the node.
     let mut stack_size = wasmer_vm::get_stack_size();
+    let initial_stack_size = stack_size;
+    let mut retries = 0u32; // for logging only — helps operators tune native-stack-size
     let result = loop {
         let evm_api = EvmApiRequestor::new(req_handler);
         let ink = pricing.gas_to_ink(Gas(*gas));
@@ -355,8 +358,12 @@ pub unsafe extern "C" fn stylus_call(
                 stack_size, new_size,
             );
             stack_size = new_size;
+            retries += 1;
             // Bump the global default and drain the pool so the next coroutine
             // gets a fresh stack of the new size. Restored by _guard on exit.
+            // Note: drain is best-effort — a concurrent thread may push a stale
+            // (undersized) stack back into the pool after the drain, causing one
+            // extra retry. This is benign: the retry loop will simply double again.
             wasmer_vm::set_stack_size(new_size);
             wasmer_vm::drain_stack_pool();
             *gas = original_gas;
@@ -372,6 +379,12 @@ pub unsafe extern "C" fn stylus_call(
             _ => instance.ink_left().into(),
         };
         *gas = pricing.ink_to_gas(ink_left).0;
+        if retries > 0 {
+            eprintln!(
+                "stylus: info native_stack_overflow resolved retries={} initial_size={} final_size={}",
+                retries, initial_stack_size, stack_size,
+            );
+        }
         break status;
     };
 

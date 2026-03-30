@@ -254,7 +254,6 @@ func testNativeStackSize() error {
 	wat := []byte(`(module
 		(memory 0 0)
 		(export "memory" (memory 0))
-		(type $mv (func (param i32 i32) (result i32 i32)))
 		(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
 			;; Push initial values for the loop params
 			i32.const 0
@@ -345,6 +344,14 @@ func testNativeStackSize() error {
 	// Additionally, gas should have been consumed (program actually ran).
 	if gas >= u64(0xfffffffffffffff) {
 		return fmt.Errorf("expected gas to be consumed, but gas is still at initial value")
+	}
+
+	// Verify SetNativeStackSize(0) is a no-op: the current default should
+	// remain unchanged (32 KB from earlier). If this accidentally set the
+	// stack to 0 bytes it would break all subsequent Stylus execution.
+	SetNativeStackSize(0)
+	if got := GetNativeStackSize(); got != 32*1024 {
+		return fmt.Errorf("SetNativeStackSize(0) should be a no-op, but stack size changed from 32KB to %d", got)
 	}
 
 	_, err = fmt.Printf("testNativeStackSize: passed (status=%d, gas_left=%d), stack auto-grew from 32KB\n", status, gas)
