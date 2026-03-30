@@ -181,8 +181,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Note that the actual values only get written after calls to `set_trie_slots`.
     fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<Gas>;
 
-    /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
-    /// Analogous to repeated invocations of `vm.SSTORE`.
+    /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache
+    /// entirely if requested. Analogous to repeated invocations of `vm.SSTORE`.
     fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas)
         -> Result<(Gas, UserOutcomeKind)>;
 
@@ -239,10 +239,10 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         gas: Gas,
     ) -> Result<(CreateRespone, u32, Gas)>;
 
-    /// Deploys a new contract using the init code provided, with an address determined in part by the `salt`.
-    /// Returns the new contract's address on success, or the error reason on failure.
-    /// In both cases the EVM return data's length and the overall gas cost are returned too.
-    /// Analogous to `vm.CREATE2`.
+    /// Deploys a new contract using the init code provided, with an address determined in part by
+    /// the `salt`. Returns the new contract's address on success, or the error reason on
+    /// failure. In both cases the EVM return data's length and the overall gas cost are
+    /// returned too. Analogous to `vm.CREATE2`.
     fn create2(
         &mut self,
         code: Vec<u8>,
@@ -255,8 +255,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Analogous to `vm.RETURNDATACOPY`.
     fn get_return_data(&self) -> D;
 
-    /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
-    /// Returns an error message on failure.
+    /// Emits an EVM log with the given number of topics and data, the first bytes of which should
+    /// be the topic data. Returns an error message on failure.
     /// Analogous to `vm.LOG(n)` where n ∈ [0, 4].
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
 

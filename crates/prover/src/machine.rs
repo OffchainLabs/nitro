@@ -675,7 +675,8 @@ impl Module {
     }
 
     /// Serializes the `Module` into bytes that can be stored in the db.
-    /// The format employed is forward-compatible with future brotli dictionary and caching policies.
+    /// The format employed is forward-compatible with future brotli dictionary and caching
+    /// policies.
     pub fn into_bytes(&self) -> Vec<u8> {
         let data = bincode::serialize::<ModuleSerdeAll>(&self.into()).unwrap();
         let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
@@ -1292,8 +1293,9 @@ impl Machine {
         Ok(machine)
     }
 
-    /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
-    /// Note that the module produced will need to be configured before execution via hostio calls.
+    /// Adds a user program to the machine's known set of wasms, compiling it into a link-able
+    /// module. Note that the module produced will need to be configured before execution via
+    /// hostio calls.
     pub fn add_program(
         &mut self,
         wasm: &[u8],
@@ -1405,7 +1407,8 @@ impl Machine {
             modules.push(module);
         }
 
-        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
+        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own
+        // guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             &bin,
@@ -1699,7 +1702,8 @@ impl Machine {
         Ok(())
     }
 
-    // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
+    // Requires that this is the same base machine. If this returns an error, it has not mutated
+    // `self`.
     pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let reader = BufReader::new(File::open(path)?);
         let new_state: MachineState = bincode::deserialize_from(reader)?;
@@ -3026,7 +3030,8 @@ impl Machine {
                     .checked_add(arg)
                     .and_then(|x| usize::try_from(x).ok())
                 {
-                    // Prove the leaf this index is in, and the next one, if they are within the memory's size.
+                    // Prove the leaf this index is in, and the next one, if they are within the
+                    // memory's size.
                     idx /= Memory::LEAF_SIZE;
                     out!(module.memory.get_leaf_data(idx));
                     out!(mem_merkle.prove(idx).unwrap_or_default());
@@ -3034,8 +3039,9 @@ impl Machine {
                     let next_leaf_idx = idx.saturating_add(1);
                     out!(module.memory.get_leaf_data(next_leaf_idx));
                     let second_mem_merkle = if is_store {
-                        // For stores, prove the second merkle against a state after the first leaf is set.
-                        // This state also happens to have the second leaf set, but that's irrelevant.
+                        // For stores, prove the second merkle against a state after the first leaf
+                        // is set. This state also happens to have the
+                        // second leaf set, but that's irrelevant.
                         let mut copy = self.clone();
                         copy.step_n(1)
                             .expect("Failed to step machine forward for proof");
@@ -3129,8 +3135,9 @@ impl Machine {
                             }
                             PreimageType::DACertificate => {
                                 // We do something special here; we don't create the final proof.
-                                // For DACertificate preimages, signal that this proof needs enhancement
-                                // Set the enhancement flag (0x80) on the machine status byte.
+                                // For DACertificate preimages, signal that this proof needs
+                                // enhancement Set the enhancement
+                                // flag (0x80) on the machine status byte.
                                 data[0] |= 0x80;
 
                                 // Append hash and offset for the enhancer to use
@@ -3203,7 +3210,8 @@ impl Machine {
                 prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
             }
             ValidateCertificate => {
-                // ValidateCertificate reads a hash from memory, so we need to prove that memory access
+                // ValidateCertificate reads a hash from memory, so we need to prove that memory
+                // access
                 let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in

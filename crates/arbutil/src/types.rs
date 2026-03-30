@@ -13,7 +13,8 @@ use ruint2::Uint;
 use serde::{Deserialize, Serialize};
 
 // These values must be kept in sync with `arbutil/preimage_type.go`,
-// and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").
+// and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for
+// "UNKNOWN_PREIMAGE_TYPE").
 #[derive(
     Debug,
     Clone,

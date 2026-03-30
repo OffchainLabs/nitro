@@ -363,7 +363,8 @@ pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
 pub const ARBITRATOR_MACHINE_STATUS_ERRORED: u8 = 2;
 pub const ARBITRATOR_MACHINE_STATUS_TOO_FAR: u8 = 3;
 
-// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that they're correct.
+// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that
+// they're correct.
 const_assert_eq!(
     ARBITRATOR_MACHINE_STATUS_RUNNING,
     MachineStatus::Running as u8,

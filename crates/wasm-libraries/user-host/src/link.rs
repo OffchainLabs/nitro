@@ -276,7 +276,6 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-///
 #[no_mangle]
 pub unsafe extern "C" fn programs__create_evm_data_v2(
     arbos_version: u64,

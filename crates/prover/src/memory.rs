@@ -111,7 +111,8 @@ impl Memory {
             }
             return Cow::Borrowed(m);
         }
-        // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
+        // Round the size up to 8 byte long leaves, then round up to the next power of two number of
+        // leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
 
         #[cfg(feature = "rayon")]

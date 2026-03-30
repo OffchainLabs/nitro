@@ -129,7 +129,8 @@ pub struct BatchInfo {
 
 /// `UserWasm` is a wrapper around `Vec<u8>`. It contains `brotli`-decompressed wasm module.
 ///
-/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by `serde`.
+/// Note: The wrapped `Vec<u8>` is already `Base64` decoded before `from(Vec<u8>)` is called by
+/// `serde`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserWasm(Vec<u8>);
 

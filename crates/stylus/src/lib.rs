@@ -51,7 +51,8 @@ pub struct GoSliceData {
     len: usize,
 }
 
-/// The data we're pointing to is owned by Go and has a lifetime no shorter than the current program.
+/// The data we're pointing to is owned by Go and has a lifetime no shorter than the current
+/// program.
 unsafe impl Send for GoSliceData {}
 
 impl GoSliceData {

@@ -119,7 +119,8 @@ pub struct RunResult {
     /// Total runtime of the Wasm instance (measured from the first wavmio instruction to finish).
     pub runtime: Duration,
 
-    /// New global state after running the Wasm instance. May be invalid, if `self.error` is `Some`.
+    /// New global state after running the Wasm instance. May be invalid, if `self.error` is
+    /// `Some`.
     pub new_state: GlobalState,
 
     /// Error encountered during execution, if any.
@@ -170,13 +171,15 @@ fn run_instance(
         },
         error: None,
         trace: vec![],
-        // It is okay to take the socket ownership here because `env` will be dropped after this function returns.
+        // It is okay to take the socket ownership here because `env` will be dropped after this
+        // function returns.
         socket: env.process.socket.take().map(|(w, _)| w),
     };
 
     match outcome {
         Ok(value) => {
-            // The proper way `_start` returns successfully is by trapping with an exit code `0`, not by returning a value.
+            // The proper way `_start` returns successfully is by trapping with an exit code `0`,
+            // not by returning a value.
             result.error = Some(Escape::UnexpectedReturn(value.to_vec()));
         }
         Err(err) => {

@@ -74,7 +74,8 @@ impl From<ArbValueType> for ValType {
             V::F64 => Self::F64,
             V::RefNull => Self::Ref(RefType::NULLREF),
             V::FuncRef => Self::Ref(RefType::FUNCREF),
-            V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
+            V::InternalRef => Self::Ref(RefType::FUNCREF), /* not analogous, but essentially a
+                                                            * func pointer */
         }
     }
 }

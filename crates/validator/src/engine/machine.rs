@@ -13,11 +13,11 @@
 //! exchange of validation inputs (batches, preimages, WASM binaries) and outputs
 //! (new state) via a hybrid IPC mechanism:
 //!
-//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its
-//!    address to the subprocess's Standard Input.
-//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address.
-//!    This TCP stream is then used for data transfer of the `ValidationRequest` and
-//!    the resulting `GlobalState`.
+//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its address to
+//!    the subprocess's Standard Input.
+//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address. This TCP
+//!    stream is then used for data transfer of the `ValidationRequest` and the resulting
+//!    `GlobalState`.
 
 use std::{
     collections::HashMap,

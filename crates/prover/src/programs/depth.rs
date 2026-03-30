@@ -20,12 +20,12 @@ use crate::{internal_func::InternalFunc, value::FunctionType, Machine};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
-/// This middleware ensures stack overflows are deterministic across different compilers and targets.
-/// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
-/// the real stack space consumed on any target platform and is formed by inspecting the contents of each
-/// function's frame.
-/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the same,
-/// logical effect rather than actually exhausting the space provided by the OS.
+/// This middleware ensures stack overflows are deterministic across different compilers and
+/// targets. The internal notion of "stack space left" that makes this possible is strictly smaller
+/// than that of the real stack space consumed on any target platform and is formed by inspecting
+/// the contents of each function's frame.
+/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the
+/// same, logical effect rather than actually exhausting the space provided by the OS.
 #[derive(Debug)]
 pub struct DepthChecker {
     /// The amount of stack space left
