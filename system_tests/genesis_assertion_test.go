@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -37,10 +38,12 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -202,7 +205,7 @@ func setupL1WithRollupAddresses(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	withoutClientWrapper := false
-	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""))
+	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""), nil)
 
 	var err error
 	if useExternalSigner {
@@ -217,6 +220,7 @@ func setupL1WithRollupAddresses(
 		tmpOpts := l1info.GetDefaultTransactOpts("Asserter", ctx)
 		asserterOpts = &tmpOpts
 	}
+
 	l1info.GenerateAccount("EvilAsserter")
 
 	startingBal := big.NewInt(params.Ether)
@@ -312,17 +316,22 @@ func createL2NodeWithRollupAddresses(
 
 	parentChainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), parentChainId, 0)
+
+	// Create parent chain reader
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
+	Require(t, err)
+	parentChain := parent.NewParentChain(ctx, parentChainId, l1Reader)
+	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, l1client, NewCommonConfigFetcher(execConfig), 0, parentChain)
 	Require(t, err)
 
-	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	currentNode, err = arbnode.CreateConsensusNode(
 		ctx, l2stack, execNode, l2consensusDB, NewCommonConfigFetcher(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 		nil, // Blob reader.
-		locator.LatestWasmModuleRoot(),
+		locator.LatestWasmModuleRoot(), parentChain,
 	)
 	Require(t, err)
 
@@ -349,7 +358,7 @@ func createL2NodeWithRollupAddresses(
 		dpOpts,
 		NewCommonConfigFetcher(nodeConfig),
 		currentNode.SyncMonitor,
-		parentChainId,
+		parentChain,
 	)
 	Require(t, err)
 	assertionChainBindings, err := sol.NewAssertionChain(
