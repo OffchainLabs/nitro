@@ -1,9 +1,10 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::fmt::Display;
+
 use eyre::ErrReport;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum UserOutcome {

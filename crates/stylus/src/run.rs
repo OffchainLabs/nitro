@@ -4,8 +4,10 @@
 #![allow(clippy::redundant_closure_call)]
 
 use crate::{env::Escape, native::NativeInstance};
-use arbutil::evm::api::{DataReader, EvmApi, Ink};
-use arbutil::evm::user::UserOutcome;
+use arbutil::evm::{
+    api::{DataReader, EvmApi, Ink},
+    user::UserOutcome,
+};
 use eyre::{eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};

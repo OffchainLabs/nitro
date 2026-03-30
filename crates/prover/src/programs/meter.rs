@@ -2,14 +2,11 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
-use crate::{
-    programs::{
-        config::{CompilePricingParams, PricingParams, SigMap},
-        FuncMiddleware, Middleware, ModuleMod,
-    },
-    value::FunctionType,
-    Machine,
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
 };
+
 use arbutil::{
     evm::{
         self,
@@ -22,14 +19,18 @@ use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
-use std::{
-    fmt::{Debug, Display},
-    sync::Arc,
-};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
 use wasmparser::{BlockType, Operator};
 
 use super::config::OpCosts;
+use crate::{
+    programs::{
+        config::{CompilePricingParams, PricingParams, SigMap},
+        FuncMiddleware, Middleware, ModuleMod,
+    },
+    value::FunctionType,
+    Machine,
+};
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";

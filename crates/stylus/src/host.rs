@@ -3,7 +3,12 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
+use std::{
+    borrow::Cow,
+    fmt::Display,
+    mem::{self, MaybeUninit},
+};
+
 use arbutil::{
     benchmark::Benchmark,
     evm::{
@@ -15,13 +20,10 @@ use arbutil::{
 use caller_env::GuestPtr;
 use eyre::Result;
 use prover::value::Value;
-use std::borrow::Cow;
-use std::{
-    fmt::Display,
-    mem::{self, MaybeUninit},
-};
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
+
+use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 
 impl<DR, A> UserHost<DR> for HostioInfo<'_, DR, A>
 where
