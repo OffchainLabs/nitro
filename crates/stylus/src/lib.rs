@@ -273,13 +273,17 @@ pub unsafe extern "C" fn stylus_call(
     let output = &mut *output;
     let original_gas = *gas;
     // Restore the original process-wide default stack size on scope exit
-    // (even on panic). This ensures retries that temporarily bump the global
-    // default don't leak to subsequent calls on the same thread.
+    // (even on panic). If a retry bumped the global stack size, this restores
+    // the original and drains the pool so subsequent coroutines use the
+    // correct size. The stack size is process-wide, so during the retry
+    // window other threads may allocate coroutines with the inflated size.
     struct RestoreStackSize(usize);
     impl Drop for RestoreStackSize {
         fn drop(&mut self) {
-            wasmer_vm::set_stack_size(self.0);
-            wasmer_vm::drain_stack_pool();
+            if wasmer_vm::get_stack_size() != self.0 {
+                wasmer_vm::set_stack_size(self.0);
+                wasmer_vm::drain_stack_pool();
+            }
         }
     }
     let _guard = RestoreStackSize(wasmer_vm::get_stack_size());
