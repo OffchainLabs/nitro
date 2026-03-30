@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -529,34 +528,12 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	var checker state.AddressChecker
 	if n.addressFilterService != nil {
 		n.addressFilterService.Start(ctx)
-		checker = n.addressFilterService.GetAddressChecker()
+		checker := n.addressFilterService.GetAddressChecker()
 		n.ExecEngine.SetAddressChecker(checker)
 	}
-	SetupFilteringHooks(checker, n.eventFilter)
 	return nil
-}
-
-// SetupFilteringHooks configures the global filtering hooks for gas estimation and prechecker.
-func SetupFilteringHooks(checker state.AddressChecker, ef *eventfilter.EventFilter) {
-	core.SetupTxFiltering = func(statedb *state.StateDB) bool {
-		if checker == nil {
-			return false
-		}
-		statedb.SetAddressChecker(checker)
-		return true
-	}
-	core.TouchTxAddresses = func(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
-		touchAddresses(statedb, nil, tx, sender)
-	}
-	if ef != nil {
-		core.CheckTxFiltering = func(statedb *state.StateDB) error {
-			applyEventFilter(ef, statedb)
-			return nil
-		}
-	}
 }
 
 func (n *ExecutionNode) StopAndWait() {

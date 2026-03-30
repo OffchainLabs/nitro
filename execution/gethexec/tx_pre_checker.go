@@ -328,7 +328,6 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	if err != nil {
 		return err
 	}
-	SetupFilteringHooks(c.addressChecker, c.eventFilter)
 
 	blockContext := core.NewEVMBlockContext(header, c.bc, &header.Coinbase)
 	signer := types.MakeSigner(c.bc.Config(), header.Number, header.Time, blockContext.ArbOSVersion)
@@ -339,11 +338,12 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	msg.SkipNonceChecks = true
 
 	_, err = gasestimator.Run(context.Background(), msg, &gasestimator.Options{
-		Config:  c.bc.Config(),
-		Chain:   c.bc,
-		Header:  header,
-		State:   statedb,
-		Backend: c.backend,
+		Config:   c.bc.Config(),
+		Chain:    c.bc,
+		Header:   header,
+		State:    statedb,
+		Backend:  c.backend,
+		TxFilter: &txFilterer{checker: c.addressChecker, eventFilter: c.eventFilter},
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
 		return err
@@ -352,4 +352,3 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	// with address filtering results, not with exact execution results.
 	return nil
 }
-
