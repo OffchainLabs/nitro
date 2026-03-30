@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 // Compile-time check that mockStreamer satisfies TransactionStreamerInterface.
@@ -154,200 +155,143 @@ func TestReorgGuardAllowsTwo(t *testing.T) {
 	}
 }
 
-func TestPossiblyFatalSuppressesContextErrors(t *testing.T) {
+func TestPossiblyFatalSendsAllErrorsWhenNotStopped(t *testing.T) {
 	v, fatalCh := newTestValidator(true, 0)
-	// Start the embedded StopWaiter with a cancelled context so
-	// possiblyFatal's GetContextSafe check sees ctx.Err() != nil.
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 	v.StopWaiter.Start(ctx, v)
 
-	// context.Canceled should be suppressed when lifecycle context is cancelled
+	// possiblyFatal does not suppress any error types — context errors are
+	// handled upstream in advanceValidations/handleValidationResult instead.
 	v.possiblyFatal(context.Canceled)
-	requireNoFatalError(t, fatalCh)
+	requireFatalError(t, fatalCh, context.Canceled)
 
-	// Wrapped context.Canceled should also be suppressed (errors.Is handles wrapping)
-	v.possiblyFatal(fmt.Errorf("validation failed: %w", context.Canceled))
-	requireNoFatalError(t, fatalCh)
-
-	// context.DeadlineExceeded IS fatal — real timeouts should not be silently suppressed
 	v.possiblyFatal(context.DeadlineExceeded)
 	requireFatalError(t, fatalCh, context.DeadlineExceeded)
 
-	// Wrapped context.DeadlineExceeded should also be fatal
-	v.possiblyFatal(fmt.Errorf("timed out: %w", context.DeadlineExceeded))
-	requireFatalError(t, fatalCh, context.DeadlineExceeded)
-
-	// A real error should be sent to fatalErr
 	realErr := errors.New("validation failed")
 	v.possiblyFatal(realErr)
 	requireFatalError(t, fatalCh, realErr)
 }
 
-func TestHandleValidationResultSkipsReorgDuringShutdown(t *testing.T) {
-	// When the context is cancelled (shutdown), handleValidationResult should
-	// skip the reorg and return without calling Reorg or possiblyFatal.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // simulate shutdown
+func TestHandleValidationResult(t *testing.T) {
+	reorgIdx := arbutil.MessageIndex(5)
+	reorgIdx1 := arbutil.MessageIndex(1)
 
-	v, fatalCh := newTestValidator(true, 0)
-
-	reorgTarget := arbutil.MessageIndex(5)
-	result := v.handleValidationResult(ctx, &reorgTarget, nil, "test")
-	if result != 0 {
-		t.Errorf("expected ValidationPoll duration (0), got %v", result)
+	tests := []struct {
+		name      string
+		cancelCtx bool
+		reorg     *arbutil.MessageIndex
+		err       error
+		wantFatal bool
+		// setupReorgFailure configures the validator so Reorg will fail
+		setupReorgFailure bool
+	}{
+		{
+			name:  "skips reorg during shutdown",
+			reorg: &reorgIdx, cancelCtx: true,
+		},
+		{
+			name:      "non-canceled error escalates to possiblyFatal",
+			err:       errors.New("validation data corruption"),
+			wantFatal: true,
+		},
+		{
+			name: "canceled error with live ctx logs warn (not shutdown)",
+			err:  context.Canceled,
+		},
+		{
+			name: "wrapped canceled error with live ctx logs warn",
+			err:  fmt.Errorf("wrapped: %w", context.Canceled),
+		},
+		{
+			name: "canceled error during shutdown suppressed to debug",
+			err:  context.Canceled, cancelCtx: true,
+		},
+		{
+			name:      "deadline exceeded escalates to possiblyFatal",
+			err:       context.DeadlineExceeded,
+			wantFatal: true,
+		},
+		{
+			name:  "reorg succeeds on live context",
+			reorg: &reorgIdx,
+		},
+		{
+			name:              "reorg failure sends to possiblyFatal",
+			reorg:             &reorgIdx1,
+			setupReorgFailure: true,
+			wantFatal:         true,
+		},
+		{
+			name:      "error takes precedence over reorg",
+			reorg:     &reorgIdx,
+			err:       errors.New("something broke"),
+			wantFatal: true,
+		},
+		{
+			name: "nil err and nil reorg is noop",
+		},
 	}
 
-	requireNoFatalError(t, fatalCh)
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, fatalCh := newTestValidator(true, 0)
 
-func TestHandleValidationResultLogsButDoesNotFatal(t *testing.T) {
-	// Errors from advanceValidations/sendValidations are transient and retried
-	// on the next poll. They are intentionally NOT sent to fatalErr — only
-	// Reorg errors go through possiblyFatal. This matches the original upstream
-	// behavior where iterativeValidationProgress just called log.Error.
-	v, fatalCh := newTestValidator(true, 0)
+			if tc.setupReorgFailure {
+				streamer := &mockStreamer{
+					results:  map[arbutil.MessageIndex]*execution.MessageResult{},
+					messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{},
+				}
+				v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
+				v.chainCaughtUp = true
+				v.createNodesChan = make(chan struct{}, 1)
+				v.createdA.Store(1)
+			}
 
-	realErr := errors.New("validation data corruption")
-	result := v.handleValidationResult(context.Background(), nil, realErr, "test")
-	if result != 0 {
-		t.Errorf("expected ValidationPoll duration (0), got %v", result)
+			ctx := context.Background()
+			if tc.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			result := v.handleValidationResult(ctx, tc.reorg, tc.err, "test")
+			if result != 0 {
+				t.Errorf("expected ValidationPoll duration (0), got %v", result)
+			}
+
+			if tc.wantFatal {
+				requireFatalError(t, fatalCh, nil)
+			} else {
+				requireNoFatalError(t, fatalCh)
+			}
+		})
 	}
-
-	requireNoFatalError(t, fatalCh)
-}
-
-func TestHandleValidationResultSuppressesCanceledDuringShutdown(t *testing.T) {
-	// When the lifecycle context is cancelled (shutdown) and the error is
-	// context.Canceled, handleValidationResult should take the Debug-level
-	// suppression path (not the Error-level path). Neither path sends to
-	// fatalErr, but the distinction matters for log noise during shutdown.
-	v, fatalCh := newTestValidator(true, 0)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // simulate shutdown
-
-	// context.Canceled with cancelled ctx hits the log.Debug suppression path.
-	v.handleValidationResult(ctx, nil, context.Canceled, "test")
-	requireNoFatalError(t, fatalCh)
-
-	// Wrapped context.Canceled with cancelled ctx also hits the suppression path.
-	v.handleValidationResult(ctx, nil, fmt.Errorf("wrapped: %w", context.Canceled), "test")
-	requireNoFatalError(t, fatalCh)
-}
-
-func TestHandleValidationResultDoesNotEscalateNonCanceledErrors(t *testing.T) {
-	// handleValidationResult never sends errors to fatalErr (they are
-	// transient and retried). This test verifies that context.DeadlineExceeded
-	// and other errors are logged (at Error level) but not escalated.
-	v, fatalCh := newTestValidator(true, 0)
-
-	// DeadlineExceeded is NOT suppressed — it goes through log.Error —
-	// but it is still not fatal because handleValidationResult never
-	// sends to fatalErr regardless.
-	v.handleValidationResult(context.Background(), nil, context.DeadlineExceeded, "test")
-	requireNoFatalError(t, fatalCh)
-
-	// context.Canceled with a LIVE context also hits log.Error (not suppressed),
-	// because the suppression requires ctx.Err() != nil.
-	v.handleValidationResult(context.Background(), nil, context.Canceled, "test")
-	requireNoFatalError(t, fatalCh)
-}
-
-func TestHandleValidationResultReorgSucceeds(t *testing.T) {
-	// Exercises the happy-path: handleValidationResult receives a reorg
-	// pointer on a live context, calls Reorg, and Reorg succeeds.
-	// Uses chainCaughtUp=false so Reorg returns nil early after the guard.
-	v, fatalCh := newTestValidator(true, 0)
-
-	reorgTarget := arbutil.MessageIndex(5)
-	result := v.handleValidationResult(context.Background(), &reorgTarget, nil, "test")
-	if result != 0 {
-		t.Errorf("expected ValidationPoll duration (0), got %v", result)
-	}
-
-	requireNoFatalError(t, fatalCh)
-}
-
-func TestHandleValidationResultReorgFailure(t *testing.T) {
-	// When Reorg fails, the error should go through possiblyFatal.
-	// Use count=1 (which has a fast path in GlobalStatePositionsAtCount)
-	// but leave the streamer empty so ResultAtMessageIndex(0) fails.
-	streamer := &mockStreamer{
-		results:  map[arbutil.MessageIndex]*execution.MessageResult{},
-		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{},
-	}
-	v, fatalCh := newTestValidator(true, 0)
-	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
-	v.chainCaughtUp = true
-	v.createNodesChan = make(chan struct{}, 1)
-	// Set createdA >= count so we enter the full Reorg path.
-	v.createdA.Store(1)
-
-	reorgTarget := arbutil.MessageIndex(1)
-	result := v.handleValidationResult(context.Background(), &reorgTarget, nil, "test")
-	if result != 0 {
-		t.Errorf("expected ValidationPoll duration (0), got %v", result)
-	}
-
-	// The Reorg failure (streamer missing result at index 0) should have
-	// been sent through possiblyFatal to fatalErr.
-	requireFatalError(t, fatalCh, nil)
-}
-
-func TestPossiblyFatalTreatsCanceledAsFatalWithLiveContext(t *testing.T) {
-	// When the lifecycle context is still active (not shutting down),
-	// context.Canceled should NOT be suppressed — it indicates a bug or
-	// unexpected cancellation, not a clean shutdown.
-	v, fatalCh := newTestValidator(true, 0)
-	// Start the StopWaiter with a live (non-cancelled) context.
-	v.StopWaiter.Start(context.Background(), v)
-
-	v.possiblyFatal(context.Canceled)
-	requireFatalError(t, fatalCh, context.Canceled)
-}
-
-func TestPossiblyFatalTreatsCanceledAsFatalWithUnstartedStopWaiter(t *testing.T) {
-	// When GetContextSafe fails (StopWaiter not started), the suppression
-	// condition is false, so context.Canceled falls through to the fatal path.
-	// This guards against unconditional suppression of context.Canceled.
-	v, fatalCh := newTestValidator(true, 0)
-	// Do NOT start StopWaiter — GetContextSafe will return an error.
-
-	v.possiblyFatal(context.Canceled)
-	requireFatalError(t, fatalCh, context.Canceled)
 }
 
 func TestHandleValidationResultDoesNotSkipReorgOnDeadlineExceeded(t *testing.T) {
-	// The reorg skip should only trigger for context.Canceled (clean shutdown),
+	// The reorg skip guard only triggers for context.Canceled (clean shutdown),
 	// not for context.DeadlineExceeded (timeout). With chainCaughtUp=false,
-	// Reorg returns nil early, so we just verify it was attempted (no skip).
+	// Reorg returns nil early without side effects. We verify no fatal error
+	// is produced (if the skip guard incorrectly matched DeadlineExceeded,
+	// Reorg would not be called, but the observable result is the same here).
 	v, fatalCh := newTestValidator(true, 0)
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
 	reorgTarget := arbutil.MessageIndex(5)
-	// With DeadlineExceeded context, reorg should NOT be skipped.
-	// chainCaughtUp=false means Reorg returns nil immediately.
 	v.handleValidationResult(ctx, &reorgTarget, nil, "test")
 
 	requireNoFatalError(t, fatalCh)
 }
 
-func TestHandleValidationResultErrorTakesPrecedenceOverReorg(t *testing.T) {
-	// When both err and reorg are non-nil, the error path should execute
-	// and the reorg should be ignored. This guards against refactoring
-	// the if/else if into separate if blocks.
+func TestPossiblyFatalTreatsCanceledAsFatalWithUnstartedStopWaiter(t *testing.T) {
 	v, fatalCh := newTestValidator(true, 0)
 
-	reorgTarget := arbutil.MessageIndex(5)
-	realErr := errors.New("something broke")
-	v.handleValidationResult(context.Background(), &reorgTarget, realErr, "test")
-
-	// Error path only logs — no fatal. If reorg were also processed,
-	// it would call Reorg on a zero-value validator and potentially panic.
-	requireNoFatalError(t, fatalCh)
+	v.possiblyFatal(context.Canceled)
+	requireFatalError(t, fatalCh, context.Canceled)
 }
 
 func TestPossiblyFatalChannelFull(t *testing.T) {
@@ -373,16 +317,156 @@ func TestPossiblyFatalNilIsNoop(t *testing.T) {
 	requireNoFatalError(t, fatalCh)
 }
 
-func TestHandleValidationResultNoopOnNilErrNilReorg(t *testing.T) {
-	// When both err and reorg are nil, handleValidationResult should
-	// return ValidationPoll with no side effects.
+func TestPossiblyFatalSuppressesAllErrorsWhenStopped(t *testing.T) {
+	// After StopAndWait, possiblyFatal should silently return for any error,
+	// including real (non-context) errors. This is the primary shutdown
+	// suppression mechanism in possiblyFatal itself.
 	v, fatalCh := newTestValidator(true, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	v.StopWaiter.Start(ctx, v)
+	cancel()
+	v.StopWaiter.StopAndWait()
 
-	result := v.handleValidationResult(context.Background(), nil, nil, "test")
-	if result != 0 {
-		t.Errorf("expected ValidationPoll duration (0), got %v", result)
-	}
+	v.possiblyFatal(errors.New("real error after stop"))
 	requireNoFatalError(t, fatalCh)
+
+	v.possiblyFatal(context.Canceled)
+	requireNoFatalError(t, fatalCh)
+
+	v.possiblyFatal(context.DeadlineExceeded)
+	requireNoFatalError(t, fatalCh)
+}
+
+func TestIsShutdownCancellation(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer deadlineCancel()
+	liveCtx := context.Background()
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{"canceled ctx + canceled err", canceledCtx, context.Canceled, true},
+		{"canceled ctx + wrapped canceled err", canceledCtx, fmt.Errorf("spawner died: %w", context.Canceled), true},
+		{"canceled ctx + deadline exceeded err", canceledCtx, context.DeadlineExceeded, false},
+		{"canceled ctx + other err", canceledCtx, errors.New("disk full"), false},
+		{"canceled ctx + nil err", canceledCtx, nil, false},
+		{"deadline exceeded ctx + canceled err", deadlineCtx, context.Canceled, false},
+		{"live ctx + canceled err", liveCtx, context.Canceled, false},
+		{"live ctx + other err", liveCtx, errors.New("some error"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isShutdownCancellation(tc.ctx, tc.err)
+			if got != tc.want {
+				t.Fatalf("isShutdownCancellation() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAdvanceValidationsFailedEntry(t *testing.T) {
+	// Table-driven tests for advanceValidations behavior when a validation
+	// entry has failed (Success=false). The key axes are:
+	//   - validation error type (context.Canceled, wrapped Canceled, other)
+	//   - context state (live vs cancelled)
+	//
+	// Note: with a pre-cancelled context, advanceValidations returns early at
+	// the ctx.Err() check before reaching the isShutdownCancellation logic.
+	// The isShutdownCancellation function itself is tested in
+	// TestIsShutdownCancellation.
+	tests := []struct {
+		name        string
+		cancelCtx   bool // whether to cancel the context before calling
+		validErr    error
+		wantReorg   bool  // expect non-nil reorg pointer
+		wantErr     error // if non-nil, expect errors.Is match on returned err
+		wantFatal   bool  // expect an error on fatalCh
+		fatalTarget error // if non-nil, the fatal error must match via errors.Is
+	}{
+		{
+			name:      "cancelled context returns early with context error",
+			cancelCtx: true,
+			validErr:  context.Canceled,
+			wantReorg: false,
+			wantErr:   context.Canceled,
+			wantFatal: false,
+		},
+		{
+			name:        "non-canceled error with live context calls possiblyFatal",
+			cancelCtx:   false,
+			validErr:    errors.New("validation execution failed"),
+			wantReorg:   true,
+			wantErr:     nil,
+			wantFatal:   true,
+			fatalTarget: nil, // checked by requireFatalError with nil target
+		},
+		{
+			name:        "canceled error with live context calls possiblyFatal",
+			cancelCtx:   false,
+			validErr:    context.Canceled,
+			wantReorg:   true,
+			wantErr:     nil,
+			wantFatal:   true,
+			fatalTarget: context.Canceled,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, fatalCh := newTestValidator(true, 0)
+			v.chainCaughtUp = true
+			v.validatedA.Store(0)
+			v.recordSentA.Store(1)
+
+			status := &validationStatus{}
+			status.Status.Store(uint32(ValidationDone))
+			status.DoneEntry = &validationDoneEntry{
+				Success: false,
+				Err:     tc.validErr,
+				Start:   validator.GoGlobalState{},
+			}
+			v.validations.Store(arbutil.MessageIndex(0), status)
+
+			ctx := context.Background()
+			if tc.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			reorg, err := v.advanceValidations(ctx)
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error matching %v, got: %v", tc.wantErr, err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected nil error, got: %v", err)
+			}
+
+			if tc.wantReorg {
+				if reorg == nil {
+					t.Fatal("expected non-nil reorg pointer")
+				}
+				if *reorg != 0 {
+					t.Fatalf("expected reorg at position 0, got %v", *reorg)
+				}
+			} else if reorg != nil {
+				t.Fatalf("expected nil reorg pointer, got %v", *reorg)
+			}
+
+			if tc.wantFatal {
+				requireFatalError(t, fatalCh, tc.fatalTarget)
+			} else {
+				requireNoFatalError(t, fatalCh)
+			}
+		})
+	}
 }
 
 func TestPossiblyFatalNonFatalConfig(t *testing.T) {

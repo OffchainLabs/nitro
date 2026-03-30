@@ -6,10 +6,8 @@ package stopwaiter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -220,7 +218,7 @@ func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
 	s.wg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("Thread crashed", "name", name, "message", r, "stack", string(debug.Stack()))
+				log.Error("Thread crashed", "name", name, "message", r)
 			}
 		}()
 		foo(ctx)
@@ -338,25 +336,13 @@ func LaunchPromiseThread[T any](
 	innerCtx, cancel := context.WithCancel(ctx)
 	promise := containers.NewPromise[T](cancel)
 	err = s.LaunchThreadSafe(func(context.Context) { // we don't use the param's context
-		defer func() {
-			if r := recover(); r != nil {
-				// Fulfill the promise with the panic details before re-panicking.
-				// LaunchThreadSafe's outer recovery handles logging with stack trace.
-				_ = promise.ProduceErrorSafe(fmt.Errorf("promise thread panicked: %v", r))
-				cancel()
-				panic(r)
-			}
-			if !promise.Ready() {
-				_ = promise.ProduceErrorSafe(errors.New("promise thread exited without producing a value"))
-			}
-			cancel()
-		}()
 		val, err := foo(innerCtx)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
 			promise.Produce(val)
 		}
+		cancel()
 	})
 	if err != nil {
 		promise.ProduceError(err)

@@ -451,19 +451,44 @@ func (v *BlockValidator) possiblyFatal(err error) {
 	if err == nil {
 		return
 	}
-	// Suppress context.Canceled errors during shutdown.
-	if ctx, ctxErr := v.GetContextSafe(); ctxErr == nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
-		log.Debug("Validation context cancelled", "err", err)
-		return
-	}
 	log.Error("Error during validation", "err", err)
 	if v.config().FailureIsFatal {
 		select {
 		case v.fatalErr <- err:
 		default:
-			log.Error("fatalErr channel full, dropping error", "err", err)
+			log.Error("Fatal error channel full, dropping additional error", "err", err)
 		}
 	}
+}
+
+// isShutdownCancellation reports whether err is a context.Canceled error that
+// occurred while the block validator's context (ctx) is done — i.e., the error
+// is an expected side-effect of shutdown rather than a real validation failure.
+func isShutdownCancellation(ctx context.Context, err error) bool {
+	return errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled)
+}
+
+type validationErrorSeverity int
+
+const (
+	validationShutdown  validationErrorSeverity = iota // expected shutdown cancellation
+	validationTransient                                // unexpected cancellation, warn but don't escalate
+	validationFatal                                    // real error, escalate via possiblyFatal
+)
+
+// classifyValidationError logs err at the appropriate level based on whether
+// it's a shutdown cancellation, unexpected cancellation, or real failure.
+func classifyValidationError(ctx context.Context, err error, label string) validationErrorSeverity {
+	if isShutdownCancellation(ctx, err) {
+		log.Debug("context cancelled during validation", "caller", label, "err", err)
+		return validationShutdown
+	}
+	if errors.Is(err, context.Canceled) {
+		log.Warn("unexpected context cancellation during validation (not shutting down)", "caller", label, "err", err)
+		return validationTransient
+	}
+	log.Error("error during validation", "caller", label, "err", err)
+	return validationFatal
 }
 
 func nonBlockingTrigger(channel chan struct{}) {
@@ -743,12 +768,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
-		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			log.Debug("context cancelled in createNextValidationEntry", "err", err)
-		} else {
-			processed, processedErr := v.streamer.GetProcessedMessageCount()
-			log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
-		}
+		return v.handleValidationResult(ctx, nil, err, "createNextValidationEntry")
 	}
 	if moreWork {
 		return 0
@@ -841,7 +861,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 func (v *BlockValidator) iterativeValidationEntryRecorder(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.sendNextRecordRequests(ctx)
 	if err != nil {
-		log.Error("error trying to record for validation node", "err", err)
+		return v.handleValidationResult(ctx, nil, err, "sendNextRecordRequests")
 	}
 	if moreWork {
 		return 0
@@ -921,12 +941,21 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
+			// During shutdown, validation spawners are stopped before the
+			// block validator itself, causing in-flight validations to fail
+			// with context.Canceled.  Return the error without calling
+			// possiblyFatal or requesting a reorg — this avoids the cascade
+			// of "cannot reorg out genesis" errors.  The CallIterativelyWith
+			// loop will exit once the block validator's context is done.
+			if isShutdownCancellation(ctx, validationStatus.DoneEntry.Err) {
+				return nil, validationStatus.DoneEntry.Err
+			}
 			v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
 			return &pos, nil // if not fatal - retry
 		}
 		err := v.writeLastValidated(validationStatus.DoneEntry.End, validationStatus.DoneEntry.WasmModuleRoots)
 		if err != nil {
-			log.Error("failed writing new validated to database", "pos", pos, "err", err)
+			return nil, fmt.Errorf("failed writing new validated to database pos %d: %w", pos, err)
 		}
 		atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 		v.validations.Delete(pos)
@@ -1055,10 +1084,11 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 					err = fmt.Errorf("validation failed: got %v", runEnd)
 				}
 				if err != nil {
-					validatorFailedValidationsCounter.Inc(1)
 					markSuccess = false
 					validationStatus.DoneEntry.Err = err
-					log.Error("error while validating", "err", err, "start", validationStatus.DoneEntry.Start, "end", validationStatus.DoneEntry.End)
+					if classifyValidationError(ctx, err, "sendValidations") != validationShutdown {
+						validatorFailedValidationsCounter.Inc(1)
+					}
 					break
 				}
 				validatorValidValidationsCounter.Inc(1)
@@ -1078,15 +1108,13 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 }
 
 // handleValidationResult handles the error/reorg result from advanceValidations or sendValidations.
-// If err is non-nil, reorg is not processed. ctx is the StopWaiter lifecycle context, so
-// ctx.Err() != nil means the node is shutting down.
+// If err is non-nil, reorg is not processed. ctx is the block validator's lifecycle context
+// (from CallIterativelyWith); ctx.Err() != nil means the block validator's own context has been
+// canceled, which occurs after tracked children (spawners) have already been stopped.
 func (v *BlockValidator) handleValidationResult(ctx context.Context, reorg *arbutil.MessageIndex, err error, label string) time.Duration {
 	if err != nil {
-		// These errors are transient and retried on the next poll.
-		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			log.Debug("context cancelled during validation", "caller", label, "err", err)
-		} else {
-			log.Error("error during validation", "caller", label, "err", err)
+		if classifyValidationError(ctx, err, label) == validationFatal {
+			v.possiblyFatal(err)
 		}
 	} else if reorg != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -1096,8 +1124,8 @@ func (v *BlockValidator) handleValidationResult(ctx context.Context, reorg *arbu
 			return v.config().ValidationPoll
 		}
 		if err := v.Reorg(ctx, *reorg); err != nil {
+			// Reorg already calls possiblyFatal on each error path before returning.
 			log.Error("error trying to reorg validation", "pos", *reorg-1, "err", err)
-			v.possiblyFatal(err)
 		}
 	}
 	return v.config().ValidationPoll
@@ -1116,7 +1144,6 @@ func (v *BlockValidator) iterativeValidationSentProgress(ctx context.Context, ig
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
 func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoots []common.Hash) error {
-	v.lastValidGS = gs
 	info := GlobalStateValidatedInfo{
 		GlobalState: gs,
 		WasmRoots:   wasmRoots,
@@ -1129,6 +1156,7 @@ func (v *BlockValidator) writeLastValidated(gs validator.GoGlobalState, wasmRoot
 	if err != nil {
 		return err
 	}
+	v.lastValidGS = gs
 	return nil
 }
 
