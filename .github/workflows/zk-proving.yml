@@ -53,8 +53,7 @@ jobs:
         run: cargo clippy -p program -p sp1-builder -p sp1-runner -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
 
       - name: Run stylus-compiler-runner compare
-        env:
-          SP1_PROVER: cpu
+        # Compare compilation consistency between running it natively and in the SP1 execution mode.
         run: cargo run -p stylus-compiler-runner --release -- compare
 
       - name: Run validation
