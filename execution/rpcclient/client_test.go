@@ -110,8 +110,8 @@ func TestClientErrorHandling(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error from server, got nil")
 			}
-			switch tc.expectedErr {
-			case gethexec.ResultNotFound, execution.ErrRetrySequencer:
+			switch {
+			case errors.Is(tc.expectedErr, gethexec.ResultNotFound), errors.Is(tc.expectedErr, execution.ErrRetrySequencer):
 				if !errors.Is(err, tc.expectedErr) {
 					t.Errorf("expected sentinel error %v, got %v", tc.expectedErr, err)
 				}
