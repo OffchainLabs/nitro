@@ -255,7 +255,7 @@ func waitForMessageIndex(t *testing.T, ctx context.Context, builder *NodeBuilder
 	t.Helper()
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 	doUntil(t, 250*time.Millisecond, 20, func() bool {
-		_, found, err := builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(pos)
+		_, found, err := findInboxBatchContainingMessage(t, builder.L2.ConsensusNode, pos)
 		Require(t, err)
 		return found
 	})

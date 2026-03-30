@@ -594,8 +594,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if delayedMismatch {
 					reorgingDelayed = true
-				}
-				if len(sequencerBatches) > 0 {
+					log.Debug("Skipping batch count update due to delayed message mismatch", "numBatches", len(sequencerBatches))
+				// else-if: when a mismatch occurs the batches were not committed,
+				// so we must not advance lastReadBatchCount.
+				} else if len(sequencerBatches) > 0 {
 					readAnyBatches = true
 					r.lastReadBatchCount.Store(sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1)
 					storeSeenBatchCount()
@@ -632,15 +634,30 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*mel.SequencerInboxBatch, delayedMessages []*mel.DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	prevDelayedCount, err := r.tracker.GetDelayedCount()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("getting delayed message count before adding messages: %w", err)
+	}
+	err = r.tracker.AddDelayedMessages(delayedMessages)
+	if err != nil {
+		return false, fmt.Errorf("adding delayed messages: %w", err)
 	}
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
+		// Roll back the delayed messages that were just committed so they don't
+		// remain as orphans in the DB without corresponding batches.
+		if rollbackErr := r.tracker.ReorgDelayedTo(prevDelayedCount); rollbackErr != nil {
+			return false, fmt.Errorf("failed to rollback delayed messages after sequencer batch mismatch (prevDelayedCount=%d): rollback: %w; original mismatch: %w", prevDelayedCount, rollbackErr, err)
+		}
+		log.Info("Rolled back delayed messages after sequencer batch mismatch",
+			"prevDelayedCount", prevDelayedCount,
+			"attemptedDelayedCount", prevDelayedCount+uint64(len(delayedMessages)),
+			"numBatches", len(sequencerBatches),
+			"mismatchErr", err,
+		)
 		return true, nil
 	} else if err != nil {
-		return false, err
+		return false, fmt.Errorf("adding sequencer batches: %w", err)
 	}
 	return false, nil
 }

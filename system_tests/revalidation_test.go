@@ -110,7 +110,7 @@ func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder 
 		Require(t, err)
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		count, err := getBatchCount(t, builder.L2.ConsensusNode)
 		Require(t, err)
 		if count > finalCount {
 			return

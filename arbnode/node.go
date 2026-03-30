@@ -341,6 +341,37 @@ type Node struct {
 	sequencerInbox           *SequencerInbox
 }
 
+var ErrNoBatchDataReader = errors.New("node has no batch data reader")
+
+// BatchDataReader extends BatchMetadataFetcher with read-only access to message
+// counts and batch/message lookups, abstracting over MessageExtractor (MEL) vs
+// InboxTracker. Both satisfy this interface.
+type BatchDataReader interface {
+	BatchMetadataFetcher
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+	GetDelayedCount() (uint64, error)
+	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
+	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
+}
+
+// Compile-time interface satisfaction checks.
+var (
+	_ BatchDataReader = (*InboxTracker)(nil)
+	_ BatchDataReader = (*melrunner.MessageExtractor)(nil)
+)
+
+// BatchDataSource returns the node's active BatchDataReader, preferring
+// MessageExtractor over InboxTracker.
+func (n *Node) BatchDataSource() (BatchDataReader, error) {
+	if n.MessageExtractor != nil {
+		return n.MessageExtractor, nil
+	}
+	if n.InboxTracker != nil {
+		return n.InboxTracker, nil
+	}
+	return nil, ErrNoBatchDataReader
+}
+
 type ConfigFetcher interface {
 	Get() *Config
 	Start(context.Context)
@@ -1795,27 +1826,19 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
 
-	// batches not yet posted have 0 confirmations but no error
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
-	}
+	reader, err := n.BatchDataSource()
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
+	batchNum, found, err := reader.FindInboxBatchContainingMessage(msgIdx)
+	if err != nil {
+		return containers.NewReadyPromise(uint64(0), err)
+	}
+	// batches not yet posted have 0 confirmations but no error
 	if !found {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
-	var parentChainBlockNum uint64
-	if n.MessageExtractor != nil {
-		parentChainBlockNum, err = n.MessageExtractor.GetBatchParentChainBlock(batchNum)
-	} else {
-		parentChainBlockNum, err = n.InboxTracker.GetBatchParentChainBlock(batchNum)
-	}
+	parentChainBlockNum, err := reader.GetBatchParentChainBlock(batchNum)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
@@ -1868,14 +1891,11 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 }
 
 func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
+	reader, err := n.BatchDataSource()
+	if err != nil {
+		return containers.NewReadyPromise(uint64(0), err)
 	}
+	batchNum, found, err := reader.FindInboxBatchContainingMessage(msgIdx)
 	if err == nil && !found {
 		return containers.NewReadyPromise(uint64(0), errors.New("block not yet found on any batch"))
 	}
