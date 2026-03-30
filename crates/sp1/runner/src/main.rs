@@ -148,9 +148,12 @@ fn build_input(cli: &Cli) -> Vec<u8> {
 
 fn run_in_sp1(cli: &Cli, wasm: &[u8]) -> Vec<u8> {
     let mut stdin = SP1Stdin::new();
-    stdin.write(&cli.version);
-    stdin.write(&cli.debug);
-    stdin.write(&wasm);
+    let compile_input = stylus_compiler_program::CompileInput {
+        version: cli.version,
+        debug: cli.debug,
+        wasm: wasm.to_vec(),
+    };
+    stdin.write(&compile_input);
 
     let compiler_elf = std::fs::read(&cli.stylus_compiler_program).expect("read stylus program");
     let program = Arc::new(Program::from(&compiler_elf).expect("parse elf"));

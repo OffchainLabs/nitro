@@ -7621,6 +7621,7 @@ dependencies = [
  "serde_json",
  "sp1-core-executor",
  "sp1-sdk",
+ "stylus-compiler-program",
  "tokio",
  "tracing",
  "validation",
