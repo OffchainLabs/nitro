@@ -201,7 +201,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 		return nil
 	}
 	if batchFetcher == nil {
-		return errors.New("batch fetcher is nil, cannot fill in batch gas fields for batch posting report")
+		return fmt.Errorf("batch fetcher is nil, cannot fill in batch gas fields for batch posting report (parentChainBlockNumber %d)", parentChainBlockNumber)
 	}
 	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
 		return nil
@@ -227,7 +227,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 			// missing BatchDataStats and fail there, since it does know the arbos
 			// version. In practice, any node that supports arbos50 populates both
 			// fields together, so this fallback path should not be reached.
-			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty")
+			log.Warn("Failed reading batch data for filling message - leaving BatchDataStats empty", "batchNum", batchNum, "err", err)
 			return nil
 		} else {
 			gotHash := crypto.Keccak256Hash(batchData)

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,8 +52,12 @@ func TestFillInBatchGasFieldsWithParentBlockNilFetcherBatchPostingReport(t *test
 		},
 		L2msg: make([]byte, 148),
 	}
-	if err := msg.FillInBatchGasFieldsWithParentBlock(nil, 0); err == nil {
+	err := msg.FillInBatchGasFieldsWithParentBlock(nil, 42)
+	if err == nil {
 		t.Fatal("expected error when batchFetcher is nil for BatchPostingReport")
+	}
+	if !strings.Contains(err.Error(), "parentChainBlockNumber 42") {
+		t.Fatalf("error should contain parentChainBlockNumber context, got: %v", err)
 	}
 }
 
@@ -297,6 +302,39 @@ func TestFillInBatchGasFieldsFetcherErrorWithLegacyCost(t *testing.T) {
 	}
 }
 
+func TestFillInBatchGasFieldsFetcherSuccessWithLegacyCost(t *testing.T) {
+	// When LegacyBatchGasCost is already set but BatchDataStats is nil, and
+	// the fetcher succeeds, both fields should be populated from the fetched
+	// data (overwriting the pre-existing LegacyBatchGasCost).
+	batchData := []byte("some batch")
+	var batchNum uint64 = 2
+	legacyCost := uint64(999)
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind: L1MessageType_BatchPostingReport,
+		},
+		L2msg:              buildBatchPostingReportL2msg(t, batchData, batchNum),
+		LegacyBatchGasCost: &legacyCost,
+	}
+	fetcher := func(num uint64) ([]byte, error) {
+		return batchData, nil
+	}
+	if err := msg.FillInBatchGasFields(fetcher); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg.BatchDataStats == nil {
+		t.Fatal("expected BatchDataStats to be populated")
+	}
+	expectedStats := GetDataStats(batchData)
+	if msg.BatchDataStats.Length != expectedStats.Length || msg.BatchDataStats.NonZeros != expectedStats.NonZeros {
+		t.Fatalf("BatchDataStats mismatch: got %+v, want %+v", msg.BatchDataStats, expectedStats)
+	}
+	expectedCost := LegacyCostForStats(expectedStats)
+	if *msg.LegacyBatchGasCost != expectedCost {
+		t.Fatalf("LegacyBatchGasCost = %d, want %d", *msg.LegacyBatchGasCost, expectedCost)
+	}
+}
+
 func TestFillInBatchGasFieldsFetcherErrorWithoutLegacyCost(t *testing.T) {
 	// When neither LegacyBatchGasCost nor BatchDataStats is set and the
 	// fetcher returns an error, the function must propagate that error.
@@ -390,9 +428,9 @@ func TestFillInBatchGasFieldsPopulatesFields(t *testing.T) {
 	}
 }
 
-func TestFillInBatchGasFieldsPassesBlockNumber(t *testing.T) {
-	// FillInBatchGasFields must pass msg.Header.BlockNumber as the
-	// parentChainBlockNumber to the wrapped fetcher.
+func TestFillInBatchGasFieldsWithParentBlockPassesBlockNumber(t *testing.T) {
+	// FillInBatchGasFieldsWithParentBlock must forward the
+	// parentChainBlockNumber argument to the fetcher.
 	batchData := []byte("block number test data")
 	var batchNum uint64 = 1
 	var blockNumber uint64 = 777
@@ -404,9 +442,6 @@ func TestFillInBatchGasFieldsPassesBlockNumber(t *testing.T) {
 		},
 		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
 	}
-	// Use FillInBatchGasFieldsWithParentBlock with a wrapper that records
-	// the parentChainBlockNumber, to verify that FillInBatchGasFields
-	// passes msg.Header.BlockNumber correctly.
 	var parentBlockSeen uint64
 	wrappedFetcher := func(num uint64, parentBlock uint64) ([]byte, error) {
 		parentBlockSeen = parentBlock
