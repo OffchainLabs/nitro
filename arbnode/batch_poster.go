@@ -381,7 +381,7 @@ type BatchPosterOpts struct {
 	DeployInfo           *chaininfo.RollupAddresses
 	TransactOpts         *bind.TransactOpts
 	DAPWriters           []daprovider.Writer
-	ParentChainID        *big.Int
+	ParentChain          *parent.ParentChain
 	DAPReaders           *daprovider.DAProviderRegistry
 	ChainConfig          *params.ChainConfig
 }
@@ -441,7 +441,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriters:         opts.DAPWriters,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
-		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		parentChain:        opts.ParentChain,
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
 	}
@@ -464,7 +464,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
-			ParentChainID:     opts.ParentChainID,
+			ParentChain:       opts.ParentChain,
 		})
 	if err != nil {
 		return nil, err
