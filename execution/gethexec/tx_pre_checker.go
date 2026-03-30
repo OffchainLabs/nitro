@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum/retryables"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -238,11 +239,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
-	if err != nil {
-		return err
-	}
-	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(tx, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
@@ -274,11 +271,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), msg.Transaction)
-	if err != nil {
-		return err
-	}
-	if err := c.checkFilteredAddresses(msg.Transaction, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(msg.Transaction, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
@@ -298,11 +291,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	sender, err := types.Sender(types.MakeSigner(c.bc.Config(), block.Number, block.Time, arbos.ArbOSVersion()), tx)
-	if err != nil {
-		return err
-	}
-	if err := c.checkFilteredAddresses(tx, sender, block); err != nil {
+	if err := c.checkFilteredAddresses(tx, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
@@ -320,7 +309,7 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 	c.eventFilter = filter
 }
 
-func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
+func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, header *types.Header) error {
 	if c.addressChecker == nil || c.backend == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -338,12 +327,13 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	msg.SkipNonceChecks = true
 
 	_, err = gasestimator.Run(context.Background(), msg, &gasestimator.Options{
-		Config:   c.bc.Config(),
-		Chain:    c.bc,
-		Header:   header,
-		State:    statedb,
-		Backend:  c.backend,
-		TxFilter: &txFilterer{checker: c.addressChecker, eventFilter: c.eventFilter},
+		Config:           c.bc.Config(),
+		Chain:            c.bc,
+		Header:           header,
+		State:            statedb,
+		Backend:          c.backend,
+		TxFilter:         &txFilterer{checker: c.addressChecker, eventFilter: c.eventFilter},
+		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
 		return err

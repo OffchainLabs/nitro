@@ -1,2 +1,2 @@
 ### Internal
-- Tx pre-checker speculatively executes the transaction to detect filtered addresses.
+- Tx pre-checker uses gas estimation dry-run to detect filtered addresses before forwarding.
