@@ -1,11 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::caller_env::{JitEnv, JitExecEnv};
-use crate::machine::Escape;
-use crate::machine::WasmEnvMut;
 use brotli::{BrotliStatus, Dictionary};
 use caller_env::{self, GuestPtr};
+
+use crate::{
+    caller_env::{JitEnv, JitExecEnv},
+    machine::{Escape, WasmEnvMut},
+};
 
 macro_rules! wrap {
     ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {

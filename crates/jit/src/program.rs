@@ -3,20 +3,28 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::caller_env::JitEnv;
-use crate::machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
-use crate::stylus_backend::{exec_wasm, MessageFromCothread};
-use arbutil::evm::api::Gas;
-use arbutil::Bytes32;
-use arbutil::{evm::EvmData, format::DebugBytes, heapify};
+use std::sync::Arc;
+
+use arbutil::{
+    evm::{api::Gas, EvmData},
+    format::DebugBytes,
+    heapify, Bytes32,
+};
 use caller_env::{GuestPtr, MemAccess};
 use eyre::eyre;
-use prover::programs::prelude::StylusConfig;
 use prover::{
     machine::Module,
-    programs::{config::PricingParams, prelude::*},
+    programs::{
+        config::PricingParams,
+        prelude::{StylusConfig, *},
+    },
 };
-use std::sync::Arc;
+
+use crate::{
+    caller_env::JitEnv,
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    stylus_backend::{exec_wasm, MessageFromCothread},
+};
 
 const DEFAULT_STYLUS_ARBOS_VERSION: u64 = 31;
 
