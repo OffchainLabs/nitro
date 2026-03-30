@@ -81,6 +81,9 @@ jobs:
       - name: Check stylus_bechmark
         run: cargo check --manifest-path crates/tools/stylus_benchmark/Cargo.toml
 
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --component rustfmt --profile minimal
+
       - name: Rustfmt
         run: cargo +nightly fmt -- --check
 
