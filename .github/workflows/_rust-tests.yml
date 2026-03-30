@@ -88,7 +88,7 @@ jobs:
         run: cargo +nightly fmt -- --check
 
       - name: Rustfmt - tools/stylus_benchmark
-        run: cargo +nightly fmt --all --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
+        run: cargo +nightly fmt --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
