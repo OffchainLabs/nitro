@@ -13,5 +13,6 @@ bincode = { workspace = true }
 clap = { workspace = true, features = ["cargo", "derive"] }
 rkyv = { workspace = true, features = ["indexmap-2", "bytes-1"] }
 serde_json = { workspace = true }
+stylus-compiler-program = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }

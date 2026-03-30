@@ -7621,6 +7621,7 @@ dependencies = [
  "serde_json",
  "sp1-core-executor",
  "sp1-sdk",
+ "stylus-compiler-program",
  "tokio",
  "tracing",
  "validation",
@@ -7837,9 +7838,23 @@ dependencies = [
 name = "stylus-compiler-program"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "prover",
+ "serde",
  "sp1-zkvm",
  "wasmer",
+]
+
+[[package]]
+name = "stylus-compiler-runner"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "clap 4.5.53",
+ "sp1-build",
+ "sp1-sdk",
+ "stylus-compiler-program",
+ "tracing",
 ]
 
 [[package]]
