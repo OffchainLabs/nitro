@@ -366,6 +366,7 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, err
 	}
+	txPreChecker.SetBackend(backend.APIBackend())
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 

@@ -16,12 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -72,6 +70,7 @@ type TxPreChecker struct {
 	expressLaneTracker *timeboost.ExpressLaneTracker
 	addressChecker     state.AddressChecker
 	eventFilter        *eventfilter.EventFilter
+	backend            core.NodeInterfaceBackendAPI
 }
 
 func NewTxPreChecker(
@@ -83,6 +82,10 @@ func NewTxPreChecker(
 		bc:                   bc,
 		config:               config,
 	}
+}
+
+func (c *TxPreChecker) SetBackend(backend core.NodeInterfaceBackendAPI) {
+	c.backend = backend
 }
 
 type NonceError struct {
@@ -318,7 +321,7 @@ func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
 }
 
 func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender common.Address, header *types.Header) error {
-	if c.addressChecker == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
+	if c.addressChecker == nil || c.backend == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
 	statedb, err := c.bc.StateAt(header.Root)
@@ -340,7 +343,7 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 		Chain:   c.bc,
 		Header:  header,
 		State:   statedb,
-		Backend: &precheckerBackend{c.bc},
+		Backend: c.backend,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
 		return err
@@ -350,31 +353,3 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, sender comm
 	return nil
 }
 
-// precheckerBackend implements core.NodeInterfaceBackendAPI for the prechecker.
-type precheckerBackend struct {
-	bc *core.BlockChain
-}
-
-func (b *precheckerBackend) ChainConfig() *params.ChainConfig { return b.bc.Config() }
-func (b *precheckerBackend) CurrentBlock() *types.Header      { return b.bc.CurrentBlock() }
-func (b *precheckerBackend) BlockByNumber(_ context.Context, _ rpc.BlockNumber) (*types.Block, error) {
-	return nil, errors.New("not implemented")
-}
-func (b *precheckerBackend) HeaderByNumber(_ context.Context, _ rpc.BlockNumber) (*types.Header, error) {
-	return nil, errors.New("not implemented")
-}
-func (b *precheckerBackend) GetLogs(ctx context.Context, blockHash common.Hash, number uint64) ([][]*types.Log, error) {
-	return nil, nil
-}
-func (b *precheckerBackend) GetEVM(ctx context.Context, statedb *state.StateDB, header *types.Header, vmConfig *vm.Config, blockCtx *vm.BlockContext) *vm.EVM {
-	if vmConfig == nil {
-		vmConfig = b.bc.GetVMConfig()
-	}
-	var context vm.BlockContext
-	if blockCtx != nil {
-		context = *blockCtx
-	} else {
-		context = core.NewEVMBlockContext(header, b.bc, nil)
-	}
-	return vm.NewEVM(context, statedb, b.bc.Config(), *vmConfig)
-}
