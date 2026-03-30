@@ -1,14 +1,13 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::machine::Escape;
+use std::{io::BufWriter, net::TcpStream, path::PathBuf, time::Duration};
+
 use arbutil::Bytes32;
 use clap::{Args, Parser, Subcommand};
-use std::io::BufWriter;
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::time::Duration;
 use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
+
+use crate::machine::Escape;
 
 mod arbcompress;
 mod arbcrypto;

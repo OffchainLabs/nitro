@@ -1,6 +1,11 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::collections::hash_map::Entry;
+
+use eyre::{bail, eyre, Result};
+
+use super::api::{Gas, Ink};
 use crate::{
     evm::{
         api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
@@ -9,10 +14,6 @@ use crate::{
     },
     Bytes20, Bytes32,
 };
-use eyre::{bail, eyre, Result};
-use std::collections::hash_map::Entry;
-
-use super::api::{Gas, Ink};
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {
     fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, Gas);

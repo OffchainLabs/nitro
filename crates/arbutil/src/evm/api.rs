@@ -1,10 +1,12 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
+use std::sync::Arc;
+
 use eyre::{eyre, Result};
 use num_enum::IntoPrimitive;
-use std::sync::Arc;
+
+use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, IntoPrimitive)]
 #[repr(u8)]

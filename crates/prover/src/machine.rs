@@ -1,6 +1,39 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+#[cfg(feature = "counters")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    borrow::Cow,
+    convert::{TryFrom, TryInto},
+    fmt::{self, Display},
+    fs::File,
+    hash::Hash,
+    io::{BufReader, BufWriter, Write},
+    num::Wrapping,
+    ops::Add,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
+use brotli::Dictionary;
+#[cfg(feature = "native")]
+use c_kzg::BYTES_PER_BLOB;
+use digest::Digest;
+use eyre::{bail, ensure, eyre, Result, WrapErr};
+use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
+use num::{traits::PrimInt, Zero};
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use sha3::Keccak256;
+use smallvec::SmallVec;
+use wasmer_types::FunctionIndex;
+use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
+
 #[cfg(feature = "native")]
 use crate::kzg::prove_kzg_preimage;
 use crate::{
@@ -19,41 +52,6 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
-use brotli::Dictionary;
-#[cfg(feature = "native")]
-use c_kzg::BYTES_PER_BLOB;
-use digest::Digest;
-use eyre::{bail, ensure, eyre, Result, WrapErr};
-use fnv::FnvHashMap as HashMap;
-use lazy_static::lazy_static;
-use num::{traits::PrimInt, Zero};
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use sha3::Keccak256;
-use smallvec::SmallVec;
-
-#[cfg(feature = "counters")]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use std::{
-    borrow::Cow,
-    convert::{TryFrom, TryInto},
-    fmt::{self, Display},
-    fs::File,
-    hash::Hash,
-    io::{BufReader, BufWriter, Write},
-    num::Wrapping,
-    ops::Add,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-use wasmer_types::FunctionIndex;
-use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
-
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
 
 #[cfg(feature = "counters")]
 static GET_MODULES_MERKLE_COUNTER: AtomicUsize = AtomicUsize::new(0);

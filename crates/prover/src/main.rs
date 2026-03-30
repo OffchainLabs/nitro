@@ -3,6 +3,14 @@
 
 #![cfg(feature = "native")]
 
+use std::{
+    convert::TryInto,
+    fs::File,
+    io::{BufReader, BufWriter, ErrorKind, Read, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
@@ -11,13 +19,6 @@ use prover::{
     prepare::prepare_machine,
     utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
-};
-use std::sync::Arc;
-use std::{convert::TryInto, io::BufWriter};
-use std::{
-    fs::File,
-    io::{BufReader, ErrorKind, Read, Write},
-    path::{Path, PathBuf},
 };
 use structopt::StructOpt;
 

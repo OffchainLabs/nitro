@@ -1,22 +1,22 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use super::{
-    config::{CompileMemoryParams, SigMap},
-    FuncMiddleware, Middleware, ModuleMod,
-};
-use crate::{value::FunctionType, Machine};
+use std::sync::Arc;
 
-use crate::internal_func::InternalFunc;
 use arbutil::Color;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
 };
 use wasmparser::{BlockType, Operator, ValType};
+
+use super::{
+    config::{CompileMemoryParams, SigMap},
+    FuncMiddleware, Middleware, ModuleMod,
+};
+use crate::{internal_func::InternalFunc, value::FunctionType, Machine};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 

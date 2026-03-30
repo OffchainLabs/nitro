@@ -1,12 +1,14 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::machine::{WasmEnv, WasmEnvMut};
+use std::mem::{self, MaybeUninit};
+
 use arbutil::{Bytes20, Bytes32};
 use caller_env::{wavmio::WavmIo, ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
-use std::mem::{self, MaybeUninit};
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
+
+use crate::machine::{WasmEnv, WasmEnvMut};
 
 pub struct JitMemAccess<'s> {
     pub memory: Memory,

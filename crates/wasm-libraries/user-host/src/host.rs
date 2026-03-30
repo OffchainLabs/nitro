@@ -1,10 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::program::Program;
 use arbutil::evm::{api::Gas, user::UserOutcomeKind};
 use caller_env::GuestPtr;
 use user_host_trait::UserHost;
+
+use crate::program::Program;
 
 #[link(wasm_import_module = "forward")]
 extern "C" {

@@ -1,6 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{borrow::Cow, fmt::Display, time::Instant};
+
 use arbutil::{
     benchmark::Benchmark,
     crypto,
@@ -21,9 +23,6 @@ use prover::{
     value::Value,
 };
 use ruint2::Uint;
-use std::borrow::Cow;
-use std::fmt::Display;
-use std::time::Instant;
 
 macro_rules! be {
     ($int:expr) => {

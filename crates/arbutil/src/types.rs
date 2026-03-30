@@ -1,15 +1,16 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use ruint2::Uint;
-use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
     ops::{Deref, DerefMut},
     str::FromStr,
 };
+
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use ruint2::Uint;
+use serde::{Deserialize, Serialize};
 
 // These values must be kept in sync with `arbutil/preimage_type.go`,
 // and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").

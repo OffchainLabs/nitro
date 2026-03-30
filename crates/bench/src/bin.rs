@@ -4,18 +4,13 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
 use eyre::bail;
-
-#[cfg(feature = "cpuprof")]
-use gperftools::profiler::PROFILER;
-
 #[cfg(feature = "heapprof")]
 use gperftools::heap_profiler::HEAP_PROFILER;
-
+#[cfg(feature = "cpuprof")]
+use gperftools::profiler::PROFILER;
 #[cfg(feature = "counters")]
 use prover::{machine, memory, merkle};
-
-use prover::machine::MachineStatus;
-use prover::prepare::prepare_machine;
+use prover::{machine::MachineStatus, prepare::prepare_machine};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

@@ -1,12 +1,13 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use arbutil::{Bytes32, PreimageType};
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, As, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap},
     io::{self, BufRead},
 };
+
+use arbutil::{Bytes32, PreimageType};
+use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, As, DisplayFromStr};
 
 pub mod transfer;
 

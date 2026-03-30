@@ -1,19 +1,21 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::binary::FloatType;
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+    ops::Add,
+};
+
 use arbutil::{Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Display,
-    ops::Add,
-};
 use wasmparser::{FuncType, RefType, ValType};
+
+use crate::binary::FloatType;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]

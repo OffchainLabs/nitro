@@ -3,8 +3,11 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use caller_env::static_caller::{StaticExecEnv, StaticMem};
-use caller_env::{self, GuestPtr};
+use caller_env::{
+    self,
+    static_caller::{StaticExecEnv, StaticMem},
+    GuestPtr,
+};
 
 #[no_mangle]
 pub unsafe extern "C" fn arbcrypto__ecrecovery(

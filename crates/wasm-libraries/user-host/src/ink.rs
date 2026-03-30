@@ -1,12 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::program::Program;
 use arbutil::evm::api::Ink;
 use prover::programs::{
     config::PricingParams,
     prelude::{GasMeteredMachine, MachineMeter, MeteredMachine},
 };
+
+use crate::program::Program;
 
 #[link(wasm_import_module = "hostio")]
 extern "C" {

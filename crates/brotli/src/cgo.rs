@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
 use core::{mem::MaybeUninit, slice};
+
+use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
 
 /// Mechanism for passing data between Go and Rust where Rust can specify the initialized length.
 #[derive(Clone, Copy)]

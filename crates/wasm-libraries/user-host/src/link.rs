@@ -1,7 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::program::Program;
 use arbutil::{
     evm::{
         api::{Gas, Ink},
@@ -13,6 +12,8 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use prover::{machine::Module, programs::config::StylusConfig};
+
+use crate::program::Program;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]

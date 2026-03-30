@@ -24,17 +24,6 @@ pub mod wavm;
 #[cfg(test)]
 mod test;
 
-pub use machine::Machine;
-
-use arbutil::{Bytes32, PreimageType};
-use eyre::{Report, Result};
-use lru::LruCache;
-use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
-    PreimageResolver,
-};
-use once_cell::sync::OnceCell;
-use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
     marker::PhantomData,
@@ -47,6 +36,17 @@ use std::{
         Arc, Mutex,
     },
 };
+
+use arbutil::{Bytes32, PreimageType};
+use eyre::{Report, Result};
+use lru::LruCache;
+pub use machine::Machine;
+use machine::{
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+    PreimageResolver,
+};
+use once_cell::sync::OnceCell;
+use static_assertions::const_assert_eq;
 use utils::CBytes;
 
 lazy_static::lazy_static! {
