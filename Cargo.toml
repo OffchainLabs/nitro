@@ -23,6 +23,7 @@ members = [
     "crates/sp1/program",
     "crates/sp1/runner",
     "crates/sp1/stylus-compiler-program",
+    "crates/sp1/stylus-compiler-runner",
 ]
 default-members = [
     "crates/jit",
@@ -115,6 +116,7 @@ jit = { path = "crates/jit" }
 prover = { path = "crates/prover", default-features = false }
 prover-ffi = { path = "crates/prover-ffi" }
 stylus = { path = "crates/stylus", default-features = false }
+stylus-compiler-program = { path = "crates/sp1/stylus-compiler-program" }
 user-host-trait = { path = "crates/wasm-libraries/user-host-trait" }
 validation = { path = "crates/validation" }
 
