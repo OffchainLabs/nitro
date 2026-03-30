@@ -29,6 +29,30 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 )
 
+// A simple program that calls itself recursively until it runs out of either
+// gas or stack. The nested loops with multi-value signatures consume native
+// stack quickly in Singlepass.
+var recursiveStackOverflowWat = []byte(`(module
+	(memory 0 0)
+	(export "memory" (memory 0))
+	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
+		;; Push initial values for the loop params
+		i32.const 0
+		i32.const 0
+		(loop $outer (param i32 i32) (result i32 i32)
+			(loop $inner (param i32 i32) (result i32 i32)
+				;; just pass through
+			)
+		)
+		drop
+		drop
+
+		;; Recurse to consume more native stack
+		i32.const 0
+		call $main
+	)
+)`)
+
 func Wat2Wasm(wat []byte) ([]byte, error) {
 	output := &rustBytes{}
 
@@ -248,31 +272,7 @@ func testNativeStackSize() error {
 		return fmt.Errorf("failed setting target: %w", err)
 	}
 
-	// A simple program that calls itself recursively until it runs out of
-	// either gas or stack. The nested loops with multi-value signatures
-	// consume native stack quickly in Singlepass.
-	wat := []byte(`(module
-		(memory 0 0)
-		(export "memory" (memory 0))
-		(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
-			;; Push initial values for the loop params
-			i32.const 0
-			i32.const 0
-			(loop $outer (param i32 i32) (result i32 i32)
-				(loop $inner (param i32 i32) (result i32 i32)
-					;; just pass through
-				)
-			)
-			drop
-			drop
-
-			;; Recurse to consume more native stack
-			i32.const 0
-			call $main
-		)
-	)`)
-
-	wasm, err := Wat2Wasm(wat)
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
 	if err != nil {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
@@ -355,6 +355,82 @@ func testNativeStackSize() error {
 	}
 
 	_, err = fmt.Printf("testNativeStackSize: passed (status=%d, gas_left=%d), stack auto-grew from 32KB\n", status, gas)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// testNativeStackSizeMaxCap tests the give-up path: when the stack is already
+// at MAX_STACK_SIZE (100 MB) and the program still overflows, the retry loop
+// gives up and returns OutOfStack with gas set to 0.
+func testNativeStackSizeMaxCap() error {
+	localTarget := rawdb.LocalTarget()
+	err := SetTarget(localTarget, "", true)
+	if err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling native: %w", err)
+	}
+
+	// Set the stack to MAX_STACK_SIZE (100 MB). set_stack_size clamps to this,
+	// so the retry loop's first check (stack_size >= MAX_STACK_SIZE) fires
+	// immediately, giving up without any retries.
+	SetNativeStackSize(100 * 1024 * 1024)
+
+	calldata := []byte{}
+	evmData := EvmData{}
+	progParams := ProgParams{
+		MaxDepth:  10000,
+		InkPrice:  1,
+		DebugMode: true,
+	}
+	reqHandler := C.NativeRequestHandler{
+		handle_request_fptr: (*[0]byte)(C.handleReqWrap),
+		id:                  0,
+	}
+
+	gas := u64(0xfffffffffffffff)
+	output := &rustBytes{}
+
+	status := userStatus(C.stylus_call(
+		goSlice(localAsm),
+		goSlice(calldata),
+		progParams.encode(),
+		reqHandler,
+		evmData.encode(),
+		cbool(true),
+		output,
+		&gas,
+		u32(0),
+	))
+
+	rustBytesIntoBytes(output)
+
+	if status != userOutOfStack {
+		return fmt.Errorf("expected userOutOfStack at max cap, got status %d", status)
+	}
+	if gas != 0 {
+		return fmt.Errorf("expected gas=0 when giving up at max cap, got %d", gas)
+	}
+
+	// Verify the guard restored the stack size to 100 MB (unchanged since
+	// no retry occurred).
+	currentSize := GetNativeStackSize()
+	if currentSize != 100*1024*1024 {
+		return fmt.Errorf("expected stack size to remain at 100MB, got %d bytes", currentSize)
+	}
+
+	_, err = fmt.Printf("testNativeStackSizeMaxCap: passed (status=%d, gas=0), gave up at max cap\n", status)
 	if err != nil {
 		return err
 	}

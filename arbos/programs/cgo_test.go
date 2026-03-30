@@ -61,3 +61,11 @@ func TestNativeStackSize(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNativeStackSizeMaxCap(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024) // restore default even on panic
+	err := testNativeStackSizeMaxCap()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
