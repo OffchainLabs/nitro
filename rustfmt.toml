@@ -2,6 +2,13 @@ edition = "2021"
 use_field_init_shorthand = true
 reorder_modules = true
 
+# Imports
 imports_granularity = "Crate"
 group_imports = "StdExternalCrate"
 reorder_imports = true
+
+# Comments
+comment_width = 100
+format_code_in_doc_comments = true
+normalize_comments = true
+wrap_comments = true
