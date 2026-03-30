@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"errors"
 	"math/big"
-	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,8 +23,12 @@ func TestFillInBatchGasFieldsNilFetcherBatchPostingReport(t *testing.T) {
 		},
 		L2msg: make([]byte, 148),
 	}
-	if err := msg.FillInBatchGasFields(nil); err == nil {
+	err := msg.FillInBatchGasFields(nil)
+	if err == nil {
 		t.Fatal("expected error when batchFetcher is nil for BatchPostingReport")
+	}
+	if !errors.Is(err, ErrNilBatchFetcher) {
+		t.Fatalf("expected ErrNilBatchFetcher, got: %v", err)
 	}
 }
 
@@ -56,8 +59,8 @@ func TestFillInBatchGasFieldsWithParentBlockNilFetcherBatchPostingReport(t *test
 	if err == nil {
 		t.Fatal("expected error when batchFetcher is nil for BatchPostingReport")
 	}
-	if !strings.Contains(err.Error(), "parentChainBlockNumber 42") {
-		t.Fatalf("error should contain parentChainBlockNumber context, got: %v", err)
+	if !errors.Is(err, ErrNilBatchFetcher) {
+		t.Fatalf("expected ErrNilBatchFetcher, got: %v", err)
 	}
 }
 
@@ -104,7 +107,9 @@ func TestParseIncomingL1MessageNilFetcherNonBatchPostingReport(t *testing.T) {
 }
 
 // buildBatchPostingReportL2msg constructs an L2msg payload for a
-// BatchPostingReport that references batchData with the given batchNum.
+// BatchPostingReport that embeds the Keccak256 hash of batchData along with
+// the given batchNum, matching the format expected by
+// ParseBatchPostingReportMessageFields.
 func buildBatchPostingReportL2msg(t *testing.T, batchData []byte, batchNum uint64) []byte {
 	t.Helper()
 	dataHash := crypto.Keccak256Hash(batchData)
@@ -119,7 +124,7 @@ func buildBatchPostingReportL2msg(t *testing.T, batchData []byte, batchNum uint6
 }
 
 // buildBatchPostingReportMsg constructs a serialized BatchPostingReport message
-// whose L2msg references batchData with the given batchNum.
+// whose L2msg embeds the Keccak256 hash of batchData along with the given batchNum.
 func buildBatchPostingReportMsg(t *testing.T, batchData []byte, batchNum uint64) []byte {
 	t.Helper()
 	msg := &L1IncomingMessage{
@@ -148,6 +153,9 @@ func TestParseIncomingL1MessageNilFetcherBatchPostingReport(t *testing.T) {
 	_, err := ParseIncomingL1Message(bytes.NewReader(serialized), nil)
 	if err == nil {
 		t.Fatal("expected error when batchFetcher is nil for BatchPostingReport")
+	}
+	if !errors.Is(err, ErrNilBatchFetcher) {
+		t.Fatalf("expected ErrNilBatchFetcher, got: %v", err)
 	}
 }
 
@@ -217,9 +225,10 @@ func TestFillInBatchGasFieldsSkipsWhenAlreadyPopulated(t *testing.T) {
 	}
 }
 
-func TestFillInBatchGasFieldsHashMismatch(t *testing.T) {
-	// If the fetcher returns data whose hash doesn't match the batch
-	// posting report, an error must be returned.
+func TestParseIncomingL1MessageHashMismatch(t *testing.T) {
+	// ParseIncomingL1Message must return ErrBatchHashMismatch when the
+	// fetcher returns data whose Keccak256 hash doesn't match the hash
+	// embedded in the BatchPostingReport's L2msg.
 	batchData := []byte("correct batch data")
 	var batchNum uint64 = 3
 	serialized := buildBatchPostingReportMsg(t, batchData, batchNum)
@@ -229,6 +238,9 @@ func TestFillInBatchGasFieldsHashMismatch(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for hash mismatch")
+	}
+	if !errors.Is(err, ErrBatchHashMismatch) {
+		t.Fatalf("expected ErrBatchHashMismatch, got: %v", err)
 	}
 	if msg != nil {
 		t.Fatal("expected nil message on error")
@@ -388,10 +400,8 @@ func TestFillInBatchGasFieldsOnlyBatchDataStatsSet(t *testing.T) {
 }
 
 func TestFillInBatchGasFieldsPopulatesFields(t *testing.T) {
-	// FillInBatchGasFields with a real fetcher must populate both
-	// BatchDataStats and LegacyBatchGasCost, and must pass
-	// msg.Header.BlockNumber as the parentChainBlockNumber to the
-	// underlying FallibleBatchFetcherWithParentBlock.
+	// FillInBatchGasFields with a working fetcher must populate both
+	// BatchDataStats and LegacyBatchGasCost.
 	batchData := []byte("test batch data direct")
 	var batchNum uint64 = 3
 	var blockNumber uint64 = 42
@@ -471,5 +481,159 @@ func TestFillInBatchGasFieldsTruncatedL2msg(t *testing.T) {
 	err := msg.FillInBatchGasFields(fetcher)
 	if err == nil {
 		t.Fatal("expected error for truncated L2msg")
+	}
+	if !errors.Is(err, ErrParseBatchPostingReport) {
+		t.Fatalf("expected ErrParseBatchPostingReport, got: %v", err)
+	}
+}
+
+func TestFillInBatchGasFieldsFetcherReturnsNilData(t *testing.T) {
+	// When the fetcher returns (nil, nil) — no error but nil data — the
+	// Keccak256 hash of an empty input won't match the expected hash, so
+	// the function must return ErrBatchHashMismatch.
+	batchData := []byte("real batch data")
+	var batchNum uint64 = 4
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind: L1MessageType_BatchPostingReport,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	fetcher := func(num uint64) ([]byte, error) {
+		return nil, nil
+	}
+	err := msg.FillInBatchGasFields(fetcher)
+	if err == nil {
+		t.Fatal("expected error when fetcher returns nil data")
+	}
+	if !errors.Is(err, ErrBatchHashMismatch) {
+		t.Fatalf("expected ErrBatchHashMismatch, got: %v", err)
+	}
+}
+
+func TestFillInBatchGasFieldsEmptyBatchData(t *testing.T) {
+	// When the fetcher returns empty (non-nil) batch data whose hash
+	// matches the L2msg, both fields should be populated correctly.
+	batchData := []byte{}
+	var batchNum uint64 = 8
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind:        L1MessageType_BatchPostingReport,
+			BlockNumber: 50,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	fetcher := func(num uint64) ([]byte, error) {
+		if num != batchNum {
+			t.Fatalf("fetcher called with unexpected batch number %d, want %d", num, batchNum)
+		}
+		return batchData, nil
+	}
+	if err := msg.FillInBatchGasFields(fetcher); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg.BatchDataStats == nil {
+		t.Fatal("expected BatchDataStats to be populated")
+	}
+	expectedStats := GetDataStats(batchData)
+	if msg.BatchDataStats.Length != expectedStats.Length {
+		t.Fatalf("BatchDataStats.Length = %d, want %d", msg.BatchDataStats.Length, expectedStats.Length)
+	}
+	if msg.BatchDataStats.NonZeros != expectedStats.NonZeros {
+		t.Fatalf("BatchDataStats.NonZeros = %d, want %d", msg.BatchDataStats.NonZeros, expectedStats.NonZeros)
+	}
+	if msg.LegacyBatchGasCost == nil {
+		t.Fatal("expected LegacyBatchGasCost to be populated")
+	}
+}
+
+func TestFillInBatchGasFieldsWithParentBlockFetcherReturnsNilData(t *testing.T) {
+	// Same as TestFillInBatchGasFieldsFetcherReturnsNilData but exercises
+	// the WithParentBlock variant directly.
+	batchData := []byte("real batch data")
+	var batchNum uint64 = 4
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind:        L1MessageType_BatchPostingReport,
+			BlockNumber: 10,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	fetcher := func(num uint64, parentBlock uint64) ([]byte, error) {
+		return nil, nil
+	}
+	err := msg.FillInBatchGasFieldsWithParentBlock(fetcher, 10)
+	if err == nil {
+		t.Fatal("expected error when fetcher returns nil data")
+	}
+	if !errors.Is(err, ErrBatchHashMismatch) {
+		t.Fatalf("expected ErrBatchHashMismatch, got: %v", err)
+	}
+}
+
+func TestFillInBatchGasFieldsIdempotent(t *testing.T) {
+	// Calling FillInBatchGasFields twice must be idempotent — the second
+	// call should be a no-op since both fields are already populated.
+	batchData := []byte("idempotent batch data")
+	var batchNum uint64 = 6
+	msg := &L1IncomingMessage{
+		Header: &L1IncomingMessageHeader{
+			Kind:        L1MessageType_BatchPostingReport,
+			BlockNumber: 20,
+		},
+		L2msg: buildBatchPostingReportL2msg(t, batchData, batchNum),
+	}
+	callCount := 0
+	fetcher := func(num uint64) ([]byte, error) {
+		callCount++
+		return batchData, nil
+	}
+	if err := msg.FillInBatchGasFields(fetcher); err != nil {
+		t.Fatalf("first call: unexpected error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected fetcher to be called once, got %d", callCount)
+	}
+	firstStats := *msg.BatchDataStats
+	firstCost := *msg.LegacyBatchGasCost
+
+	if err := msg.FillInBatchGasFields(fetcher); err != nil {
+		t.Fatalf("second call: unexpected error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected fetcher not to be called again, got %d calls", callCount)
+	}
+	if msg.BatchDataStats.Length != firstStats.Length || msg.BatchDataStats.NonZeros != firstStats.NonZeros {
+		t.Fatal("BatchDataStats changed on second call")
+	}
+	if *msg.LegacyBatchGasCost != firstCost {
+		t.Fatalf("LegacyBatchGasCost changed on second call: got %d, want %d", *msg.LegacyBatchGasCost, firstCost)
+	}
+}
+
+func TestFillInBatchGasFieldsAllMessageKindsWithNilFetcher(t *testing.T) {
+	// All non-BatchPostingReport message kinds must succeed with a nil
+	// fetcher, since there are no batch gas fields to fill.
+	kinds := []uint8{
+		L1MessageType_L2Message,
+		L1MessageType_EndOfBlock,
+		L1MessageType_L2FundedByL1,
+		L1MessageType_RollupEvent,
+		L1MessageType_SubmitRetryable,
+		L1MessageType_BatchForGasEstimation,
+		L1MessageType_Initialize,
+		L1MessageType_EthDeposit,
+		L1MessageType_Invalid,
+	}
+	for _, kind := range kinds {
+		msg := &L1IncomingMessage{
+			Header: &L1IncomingMessageHeader{
+				Kind: kind,
+			},
+			L2msg: make([]byte, 32),
+		}
+		if err := msg.FillInBatchGasFields(nil); err != nil {
+			t.Fatalf("kind %d: unexpected error with nil fetcher: %v", kind, err)
+		}
 	}
 }

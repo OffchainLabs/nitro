@@ -356,6 +356,7 @@ func main() {
 
 		err = message.Message.FillInBatchGasFields(batchFetcher)
 		if err != nil {
+			log.Error("Failed to fill in batch gas fields, treating as invalid message", "err", err)
 			message.Message = arbostypes.InvalidL1Message
 		}
 		return message

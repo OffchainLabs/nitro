@@ -36,6 +36,12 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
+var (
+	ErrNilBatchFetcher         = errors.New("batch fetcher is nil")
+	ErrBatchHashMismatch       = errors.New("batch data hash mismatch")
+	ErrParseBatchPostingReport = errors.New("failed to parse batch posting report")
+)
+
 func ValidateMaxTxDataSize(maxTxDataSize uint64) error {
 	// tighter limit https://github.com/OffchainLabs/nitro/commit/ed015e752d7d24e59ec9e6f894fe1a26ffa19036
 	// The default block gas limit can fit 1523 txs
@@ -201,7 +207,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 		return nil
 	}
 	if batchFetcher == nil {
-		return fmt.Errorf("batch fetcher is nil, cannot fill in batch gas fields for batch posting report (parentChainBlockNumber %d)", parentChainBlockNumber)
+		return fmt.Errorf("%w: cannot fill in batch gas fields for batch posting report (parentChainBlockNumber %d)", ErrNilBatchFetcher, parentChainBlockNumber)
 	}
 	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
 		return nil
@@ -209,7 +215,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 	if msg.BatchDataStats == nil {
 		_, _, batchHash, batchNum, _, _, err := ParseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
 		if err != nil {
-			return fmt.Errorf("failed to parse batch posting report: %w", err)
+			return fmt.Errorf("%w: %w", ErrParseBatchPostingReport, err)
 		}
 		batchData, err := batchFetcher(batchNum, parentChainBlockNumber)
 		if err != nil {
@@ -232,7 +238,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 		} else {
 			gotHash := crypto.Keccak256Hash(batchData)
 			if gotHash != batchHash {
-				return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+				return fmt.Errorf("%w: got %v, wanted %v for batch %v", ErrBatchHashMismatch, gotHash, batchHash, batchNum)
 			}
 			msg.BatchDataStats = GetDataStats(batchData)
 		}

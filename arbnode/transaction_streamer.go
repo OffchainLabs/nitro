@@ -388,7 +388,7 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 				}
 				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, batchFetcher)
 				if err != nil {
-					log.Error("reorg-resequence: failed to serialize old delayed message from database", "err", err)
+					log.Error("reorg-resequence: failed to look up old delayed message from L1", "err", err)
 					continue
 				}
 				messageFound := false
@@ -542,6 +542,8 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		if err != nil {
 			return nil, err
 		}
+	} else if message.Message.Header.Kind == arbostypes.L1MessageType_BatchPostingReport {
+		log.Warn("GetMessage: cannot fill in batch gas fields for BatchPostingReport without inboxReader", "msgIdx", msgIdx)
 	}
 	return &message, nil
 }
