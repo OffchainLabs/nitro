@@ -595,8 +595,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if delayedMismatch {
 					reorgingDelayed = true
 					log.Debug("Skipping batch count update due to delayed message mismatch", "numBatches", len(sequencerBatches))
-				// else-if: when a mismatch occurs the batches were not committed,
-				// so we must not advance lastReadBatchCount.
 				} else if len(sequencerBatches) > 0 {
 					readAnyBatches = true
 					r.lastReadBatchCount.Store(sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1)

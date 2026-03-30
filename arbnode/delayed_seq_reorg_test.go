@@ -658,9 +658,9 @@ func TestAddMessages_ReorgDelayedToError(t *testing.T) {
 	// First batch.Write (AddDelayedMessages) succeeds normally.
 	injectedErr := errors.New("injected write failure")
 	f.tracker.db = &failingBatchDB{
-		Database:          f.tracker.db,
-		writesBeforeFail:  1, // allow 1 successful Write, then fail
-		writeErr:          injectedErr,
+		Database:         f.tracker.db,
+		writesBeforeFail: 1, // allow 1 successful Write, then fail
+		writeErr:         injectedErr,
 	}
 
 	reader := &InboxReader{tracker: f.tracker}
