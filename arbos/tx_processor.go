@@ -460,7 +460,16 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 	return false, multigas.ZeroGas(), nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
+// GetPosterGas converts a poster's L1 calldata cost (in wei) into an equivalent
+// number of L2 gas units at the given gas price. This allows the 1-dimensional
+// gas model to account for L1 costs alongside L2 compute costs.
+//
+// During gas estimation, both the gas price and poster cost are adjusted
+// conservatively: the price is reduced to 7/8 of the current value (simulating
+// congestion) but floored at the minimum base fee, and the poster cost is padded
+// by GasEstimationL1PricePadding to guard against L1 gas price increases between
+// estimation and execution.
+func GetPosterGas(state *arbosState.ArbosState, gasPrice *big.Int, runCtx *core.MessageRunContext, posterCost *big.Int) uint64 {
 	if runCtx.IsGasEstimation() {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
@@ -468,17 +477,17 @@ func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runCtx *core.M
 
 		minGasPrice, _ := state.L2PricingState().MinBaseFeeWei()
 
-		adjustedPrice := arbmath.BigMulByFrac(baseFee, 7, 8) // assume congestion
+		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
 			adjustedPrice = minGasPrice
 		}
-		baseFee = adjustedPrice
+		gasPrice = adjustedPrice
 
 		// Pad the L1 cost in case the L1 gas price rises
 		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
-	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
+	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, gasPrice))
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) (common.Address, multigas.MultiGas, error) {
@@ -506,8 +515,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
-		// Since tips go to the network, and not to the poster, we use the basefee.
-		// Note, this only determines the amount of gas bought, not the price per gas.
+		// When tips are collected, use the full gas price to convert poster L1 costs into gas
+		// units. This avoids overcharging the user for the tip on the poster's data gas, since
+		// each gas unit is worth more when tips are collected.
+		actualGasPrice := p.GetPaidGasPrice()
+		if actualGasPrice.Sign() == 0 { // fall back to basefee, in case of no paid gas price
+			actualGasPrice = basefee
+		}
 
 		brotliCompressionLevel, err := p.state.BrotliCompressionLevel()
 		if err != nil {
@@ -517,8 +531,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
-		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunContext, posterCost)
-		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
+		p.posterGas = GetPosterGas(p.state, actualGasPrice, p.msg.TxRunContext, posterCost)
+		p.PosterFee = arbmath.BigMulByUint(actualGasPrice, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
 
@@ -712,16 +726,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 	} else {
 		basefee = p.evm.Context.BaseFee
 	}
-	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
-	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
-	if computeCost.Sign() < 0 {
-		// Uh oh, there's a bug in our charging code.
-		// Give all funds to the network account and continue.
-
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "basefee", basefee, "posterFee", p.PosterFee)
-		p.PosterFee = big.NewInt(0)
-		computeCost = totalCost
+	if gasUsed < p.posterGas {
+		log.Error("gas used < poster gas", "gasUsed", gasUsed, "posterGas", p.posterGas)
 	}
+	computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
+	computeCost := arbmath.BigMulByUint(basefee, computeGas) // network gets baseFee * computeGas
 
 	if p.state.ArbOSVersion() > params.ArbosVersion_4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
@@ -730,7 +739,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			minBaseFee, err := p.state.L2PricingState().MinBaseFeeWei()
 			p.state.Restrict(err)
 			infraFee := arbmath.BigMin(minBaseFee, basefee)
-			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
 			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, tracing.BalanceIncreaseInfraFee)
 			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
@@ -752,6 +760,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 
 	// Multi-dimensional refund (normal tx path)
 	if multiDimensionalCost != nil {
+		totalCost := arbmath.BigMulByUint(basefee, gasUsed) // baseFee * gasUsed for multi-gas refund calc
 		amount := new(big.Int).Sub(totalCost, multiDimensionalCost)
 		if amount.Sign() > 0 {
 			err := util.TransferBalance(
@@ -858,19 +867,39 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
-func (p *TxProcessor) DropTip() bool {
+func (p *TxProcessor) CollectTips() bool {
+	// never collect tips on delayed inbox messages
+	if p.delayedInbox {
+		return false
+	}
+
 	version := p.state.ArbOSVersion()
-	return version != params.ArbosVersion_9 || p.delayedInbox
+	// v9: collect all tips
+	if version == params.ArbosVersion_9 {
+		return true
+	}
+	// up to v60: drop all tips
+	if version < params.ArbosVersion_60 {
+		return false
+	}
+	// v60+: collect tips if enabled
+	collectTips, err := p.state.CollectTips()
+	if err != nil {
+		panic(fmt.Sprintf("failed to read collect tips setting: %v", err))
+	}
+	return collectTips
+}
+
+func (p *TxProcessor) PosterGas() uint64 {
+	return p.posterGas
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
-	gasPrice := p.evm.GasPrice
-	version := p.state.ArbOSVersion()
-	if version != params.ArbosVersion_9 {
-		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
-		gasPrice = p.evm.Context.BaseFee
+	if p.CollectTips() {
+		return p.evm.GasPrice
 	}
-	return gasPrice
+	// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
+	return p.evm.Context.BaseFee
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
