@@ -1,5 +1,6 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
 package rpcclient
 
 import (
@@ -8,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -46,6 +48,8 @@ func convertError(err error) error {
 	errStr := err.Error()
 	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
 		return execution.ErrRetrySequencer
+	} else if strings.Contains(errStr, gethexec.ResultNotFound.Error()) {
+		return gethexec.ResultNotFound
 	}
 	return err
 }
