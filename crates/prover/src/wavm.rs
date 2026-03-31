@@ -483,40 +483,40 @@ pub fn wasm_to_wavm(
         };
     }
     macro_rules! opcode {
-        ($opcode:ident ($($inside:expr),*)) => {{
+        ($opcode:ident ($($inside:expr_2021),*)) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
         }};
-        ($opcode:ident ($($inside:expr),*), @push $delta:expr) => {{
+        ($opcode:ident ($($inside:expr_2021),*), @push $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack += $delta;
         }};
-        ($opcode:ident ($($inside:expr),*), @pop $delta:expr) => {{
+        ($opcode:ident ($($inside:expr_2021),*), @pop $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack -= $delta;
         }};
         ($opcode:ident) => {{
             out.push(Instruction::simple(Opcode::$opcode));
         }};
-        ($opcode:ident, @push $delta:expr) => {{
+        ($opcode:ident, @push $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode));
             stack += $delta;
         }};
-        ($opcode:ident, @pop $delta:expr) => {{
+        ($opcode:ident, @pop $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode));
             stack -= $delta;
         }};
-        ($opcode:ident, $value:expr) => {{
+        ($opcode:ident, $value:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
         }};
-        ($opcode:ident, $value:expr, @push $delta:expr) => {{
+        ($opcode:ident, $value:expr_2021, @push $delta:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
             stack += $delta;
         }};
-        ($opcode:ident, $value:expr, @pop $delta:expr) => {{
+        ($opcode:ident, $value:expr_2021, @pop $delta:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
             stack -= $delta;
         }};
-        (@cross, $module:expr, $func:expr) => {
+        (@cross, $module:expr_2021, $func:expr_2021) => {
             out.push(Instruction::with_data(
                 Opcode::CrossModuleCall,
                 pack_cross_module_call($module, $func),
@@ -524,7 +524,7 @@ pub fn wasm_to_wavm(
         };
     }
     macro_rules! load {
-        ($type:ident, $memory:expr, $bytes:expr, $signed:ident) => {{
+        ($type:ident, $memory:expr_2021, $bytes:expr_2021, $signed:ident) => {{
             ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryLoad {
                 ty: ArbValueType::$type,
@@ -535,7 +535,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! store {
-        ($type:ident, $memory:expr, $bytes:expr) => {{
+        ($type:ident, $memory:expr_2021, $bytes:expr_2021) => {{
             ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryStore {
                 ty: ArbValueType::$type,
@@ -546,7 +546,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! compare {
-        ($type:ident, $rel:ident, $signed:expr) => {{
+        ($type:ident, $rel:ident, $signed:expr_2021) => {{
             let op = Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed);
             out.push(Instruction::simple(op));
             stack -= 1;
@@ -572,7 +572,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! call {
-        ($func:expr) => {{
+        ($func:expr_2021) => {{
             let ty = &func_types[($func) as usize];
             let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
             opcode!(Call, ($func).into(), @push delta)
@@ -585,7 +585,7 @@ pub fn wasm_to_wavm(
         ($func:ident $(,$data:ident)+) => {
             float!(@impl $func($($data),+))
         };
-        (@impl $func:expr) => {{
+        (@impl $func:expr_2021) => {{
             #[allow(unused_imports)]
             use crate::{
                 binary::{FloatInstruction::*, FloatType::*, FloatUnOp::*, FloatBinOp::*, FloatRelOp::*},
@@ -660,7 +660,7 @@ pub fn wasm_to_wavm(
     };
 
     macro_rules! branch {
-        ($kind:ident, $depth:expr) => {{
+        ($kind:ident, $depth:expr_2021) => {{
             use Scope::*;
             let mut dest = 0;
             let scope = scopes.len() - $depth as usize - 1;
@@ -718,7 +718,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! height_after_block {
-        ($ty:expr) => {{
+        ($ty:expr_2021) => {{
             let ty = $ty;
             stack + block_type_results(*ty) as isize - block_type_params(*ty) as isize
         }};

@@ -22,7 +22,7 @@ use wasmer_types::{Pages, WASM_PAGE_SIZE};
 
 // allows introspection into user modules
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_memory_size(module: u32) -> u32;
 }
 
@@ -96,12 +96,12 @@ pub(crate) struct Program {
 }
 
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_request(status: u32) -> u32;
 }
 
 impl UserHostRequester {
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub unsafe fn set_response(
         &mut self,
         req_id: u32,
@@ -116,14 +116,14 @@ impl UserHostRequester {
         compiler_fence(Ordering::SeqCst);
     }
 
-    pub unsafe fn set_request(&mut self, req_type: u32, data: &[u8]) -> u32 {
+    pub unsafe fn set_request(&mut self, req_type: u32, data: &[u8]) -> u32 { unsafe {
         *LAST_REQUEST_ID.0.get() += 1;
         self.id = *LAST_REQUEST_ID.0.get();
         self.req_type = req_type;
         self.data = Some(data.to_vec());
         self.answer = None;
         self.id
-    }
+    }}
 
     pub unsafe fn get_request_meta(&self, id: u32) -> (u32, usize) {
         if self.id != id {
@@ -141,8 +141,8 @@ impl UserHostRequester {
         (self.req_type, data)
     }
 
-    #[no_mangle]
-    unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas) {
+    #[unsafe(no_mangle)]
+    unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, Gas) { unsafe {
         let req_id = self.set_request(req_type, &data);
         compiler_fence(Ordering::SeqCst);
 
@@ -153,7 +153,7 @@ impl UserHostRequester {
             panic!("bad req id returning from send_request")
         }
         self.answer.take().unwrap()
-    }
+    }}
 }
 
 impl RequestHandler<VecReader> for UserHostRequester {

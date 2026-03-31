@@ -85,14 +85,14 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
             };
         }
         macro_rules! get {
-            ($global:expr) => {
+            ($global:expr_2021) => {
                 GlobalGet {
                     global_index: $global,
                 }
             };
         }
         macro_rules! set {
-            ($global:expr) => {
+            ($global:expr_2021) => {
                 GlobalSet {
                     global_index: $global,
                 }

@@ -337,7 +337,7 @@ pub trait GasMeteredMachine: MeteredMachine {
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
-            ($global:expr) => {{
+            ($global:expr_2021) => {{
                 $global.unwrap().try_into().expect("type mismatch")
             }};
         }

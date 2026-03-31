@@ -12,11 +12,11 @@ pub enum DataType {
 }
 
 pub trait Rand {
-    fn gen(&self) -> usize;
+    fn r#gen(&self) -> usize;
 }
 
 impl Rand for DataType {
-    fn gen(&self) -> usize {
+    fn r#gen(&self) -> usize {
         let mut rng = rand::thread_rng();
         match self {
             DataType::I32 => rng.gen_range(0..i32::MAX).try_into().unwrap(),

@@ -25,13 +25,13 @@ use prover::{
 use ruint2::Uint;
 
 macro_rules! be {
-    ($int:expr) => {
+    ($int:expr_2021) => {
         $int.to_be_bytes()
     };
 }
 
 macro_rules! trace {
-    ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], [$($outs:expr_2021),+], $ret:expr_2021) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
             let mut args = vec![];
@@ -42,16 +42,16 @@ macro_rules! trace {
         }
         Ok($ret)
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021) => {{
         trace!($name, $env, [$($args),+], $outs, ())
     }};
-    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021) => {{
         trace!($name, $env, $args, $outs, ())
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$($args),+], [$outs], $ret)
     };
-    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$args], [$outs], $ret)
     };
 }

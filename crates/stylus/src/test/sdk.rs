@@ -14,7 +14,7 @@ fn test_sdk_routes() -> Result<()> {
     let filename = "tests/erc20/target/wasm32-unknown-unknown/release/erc20.wasm";
 
     macro_rules! hex {
-        ($($hex:expr),+) => {
+        ($($hex:expr_2021),+) => {
             hex::decode(&format!($($hex),+))?
         };
     }
@@ -37,7 +37,7 @@ fn test_sdk_routes() -> Result<()> {
     assert!(output.is_empty());
 
     macro_rules! big {
-        ($int:expr) => {
+        ($int:expr_2021) => {
             &format!("{:0>64}", $int.to_str_radix(16))
         };
     }

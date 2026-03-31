@@ -41,7 +41,7 @@ macro_rules! wrap {
     ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
         paste! {
             $(
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::wasip1_stub::$func_name(
                         &mut StaticMem,

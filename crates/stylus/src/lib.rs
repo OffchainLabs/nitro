@@ -80,16 +80,16 @@ impl DataReader for GoSliceData {
     }
 }
 
-unsafe fn write_err(output: &mut RustBytes, err: ErrReport) -> UserOutcomeKind {
+unsafe fn write_err(output: &mut RustBytes, err: ErrReport) -> UserOutcomeKind { unsafe {
     output.write(err.debug_bytes());
     UserOutcomeKind::Failure
-}
+}}
 
-unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOutcomeKind {
+unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOutcomeKind { unsafe {
     let (status, outs) = outcome.into_data();
     output.write(outs);
     status
-}
+}}
 
 /// "activates" a user wasm.
 ///
@@ -102,7 +102,7 @@ unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOut
 /// # Safety
 ///
 /// `output`, `asm_len`, `module_hash`, `footprint`, and `gas` must not be null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
@@ -114,7 +114,7 @@ pub unsafe extern "C" fn stylus_activate(
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
     gas: *mut u64,
-) -> UserOutcomeKind {
+) -> UserOutcomeKind { unsafe {
     let wasm = wasm.slice();
     let output = &mut *output;
     let module_hash = &mut *module_hash;
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn stylus_activate(
 
     output.write(module.into_bytes());
     UserOutcomeKind::Success
-}
+}}
 
 /// "compiles" a user wasm.
 ///
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn stylus_activate(
 /// # Safety
 ///
 /// `output` must not be null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u16,
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn stylus_compile(
     target: GoSliceData,
     cranelift: bool,
     output: *mut RustBytes,
-) -> UserOutcomeKind {
+) -> UserOutcomeKind { unsafe {
     let wasm = wasm.slice();
     let output = &mut *output;
     let target = match String::from_utf8(target.slice().to_vec()) {
@@ -176,13 +176,13 @@ pub unsafe extern "C" fn stylus_compile(
 
     output.write(asm);
     UserOutcomeKind::Success
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 ///
 /// `output` must not be null.
-pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind {
+pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind { unsafe {
     let output = &mut *output;
     let wasm = match wasmer::wat2wasm(wat.slice()) {
         Ok(val) => val,
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -
     };
     output.write(wasm.into_owned());
     UserOutcomeKind::Success
-}
+}}
 
 /// sets target index to a string
 ///
@@ -199,13 +199,13 @@ pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -
 /// # Safety
 ///
 /// `output` must not be null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn stylus_target_set(
     name: GoSliceData,
     description: GoSliceData,
     output: *mut RustBytes,
     native: bool,
-) -> UserOutcomeKind {
+) -> UserOutcomeKind { unsafe {
     let output = &mut *output;
     let name = match String::from_utf8(name.slice().to_vec()) {
         Ok(val) => val,
@@ -222,7 +222,7 @@ pub unsafe extern "C" fn stylus_target_set(
     };
 
     UserOutcomeKind::Success
-}
+}}
 
 /// Calls an activated user program.
 ///
@@ -230,7 +230,7 @@ pub unsafe extern "C" fn stylus_target_set(
 ///
 /// `module` must represent a valid module produced from `stylus_activate`.
 /// `output` and `gas` must not be null.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn stylus_call(
     output: *mut RustBytes,
     gas: *mut u64,
     long_term_tag: u32,
-) -> UserOutcomeKind {
+) -> UserOutcomeKind { unsafe {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
     let evm_api = EvmApiRequestor::new(req_handler);
@@ -275,10 +275,10 @@ pub unsafe extern "C" fn stylus_call(
     };
     *gas = pricing.ink_to_gas(ink_left).0;
     status
-}
+}}
 
 /// set lru cache capacity
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_set_cache_lru_capacity(capacity_bytes: u64) {
     InitCache::set_lru_capacity(capacity_bytes);
 }
@@ -290,7 +290,7 @@ pub extern "C" fn stylus_set_cache_lru_capacity(capacity_bytes: u64) {
 /// `module` must represent a valid module produced from `stylus_activate`.
 /// arbos_tag: a tag for arbos cache. 0 won't affect real caching
 /// currently only if tag==1 caching will be affected
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn stylus_cache_module(
     module: GoSliceData,
     module_hash: Bytes32,
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn stylus_cache_module(
 }
 
 /// Evicts an activated user program from the init cache.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_evict_module(
     module_hash: Bytes32,
     version: u16,
@@ -315,7 +315,7 @@ pub extern "C" fn stylus_evict_module(
 }
 
 /// Reorgs the init cache. This will likely never happen.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
     InitCache::clear_long_term(arbos_tag);
 }
@@ -325,29 +325,29 @@ pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
 /// # Safety
 ///
 /// `output` must not be null.
-#[no_mangle]
-pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) { unsafe {
     let output = &mut *output;
     InitCache::get_metrics(output);
-}
+}}
 
 /// Clears lru cache.
 /// Only used for testing purposes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_clear_lru_cache() {
     InitCache::clear_lru_cache()
 }
 
 /// Clears long term cache (for arbos_tag = 1)
 /// Only used for testing purposes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_clear_long_term_cache() {
     InitCache::clear_long_term(1);
 }
 
 /// Gets entry size in bytes.
 /// Only used for testing purposes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_get_entry_size_estimate_bytes(
     module: GoSliceData,
     version: u16,

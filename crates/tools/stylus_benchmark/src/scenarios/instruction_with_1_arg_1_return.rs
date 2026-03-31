@@ -12,7 +12,7 @@ pub fn write_wat_ops(
     instruction: &str,
 ) {
     for _ in 0..number_of_ops_per_loop_iteration {
-        wat.write_all(format!("            {}.const {}\n", data_type, data_type.gen()).as_bytes())
+        wat.write_all(format!("            {}.const {}\n", data_type, data_type.r#gen()).as_bytes())
             .unwrap();
         wat.write_all(format!("            {}.{}\n", data_type, instruction).as_bytes())
             .unwrap();

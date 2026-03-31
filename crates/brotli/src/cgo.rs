@@ -37,7 +37,7 @@ impl BrotliBuffer {
 }
 
 /// Brotli compresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_compress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,
@@ -54,7 +54,7 @@ pub extern "C" fn brotli_compress(
 }
 
 /// Brotli decompresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_decompress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,

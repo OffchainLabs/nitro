@@ -17,14 +17,14 @@ use crate::program::Program;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn wavm_link_module(hash: *const MemoryLeaf) -> u32;
     fn wavm_unlink_module();
 }
 
 // these dynamic hostio methods allow introspection into user modules
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_set_ink(module: u32, ink: u64);
     fn program_set_stack(module: u32, stack: u32);
     fn program_ink_left(module: u32) -> u64;
@@ -41,7 +41,7 @@ struct MemoryLeaf([u8; 32]);
 /// The amount left is written back at the end of the call.
 ///
 /// pages_ptr: starts pointing to max allowed pages, returns number of pages used
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__activate_v2(
     wasm_ptr: GuestPtr,
     wasm_size: usize,
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn programs__activate_v2(
     gas_ptr: GuestPtr,
     err_buf: GuestPtr,
     err_buf_len: usize,
-) -> usize {
+) -> usize { unsafe {
     let wasm = StaticMem.read_slice(wasm_ptr, wasm_size);
     let codehash = &read_bytes32(codehash);
     let debug = debug != 0;
@@ -95,7 +95,7 @@ pub unsafe extern "C" fn programs__activate_v2(
             err_bytes.len()
         }
     }
-}
+}}
 
 unsafe fn read_bytes32(ptr: GuestPtr) -> Bytes32 {
     StaticMem.read_fixed(ptr).into()
@@ -109,7 +109,7 @@ unsafe fn read_bytes20(ptr: GuestPtr) -> Bytes20 {
 /// consumes both evm_data_handler and config_handler
 /// returns module number
 /// see program-exec for starting the user program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__new_program(
     module_hash_ptr: GuestPtr,
     calldata_ptr: GuestPtr,
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn programs__new_program(
     config_box: u64,
     evm_data_box: u64,
     gas: u64,
-) -> u32 {
+) -> u32 { unsafe {
     let module_hash = read_bytes32(module_hash_ptr);
     let calldata = StaticMem.read_slice(calldata_ptr, calldata_size);
     let config: StylusConfig = *Box::from_raw(config_box as _);
@@ -135,18 +135,18 @@ pub unsafe extern "C" fn programs__new_program(
     // provide arguments
     Program::push_new(calldata, evm_data, module, config);
     module
-}
+}}
 
 /// consumes module hash
 /// returns true if we should call into program_prepare, false otherwise
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__program_requires_prepare(_module_hash_ptr: GuestPtr) -> u32 {
     0
 }
 
 /// prepares program by recompiling wasm for all targets if not already compiled
 /// consumes activated program module hash and wasm code
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__program_prepare(
     _wasm_ptr: GuestPtr,
     _wasm_size: u64,
@@ -164,14 +164,14 @@ pub unsafe extern "C" fn programs__program_prepare(
 /// # Safety
 ///
 /// `request_id` MUST be last request id returned from start_program or send_response.
-#[no_mangle]
-pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 { unsafe {
     let (req_type, len) = Program::current().request_handler().get_request_meta(id);
     if len_ptr != GuestPtr(0) {
         StaticMem.write_u32(len_ptr, len as u32);
     }
     req_type
-}
+}}
 
 /// Gets data associated with last request.
 ///
@@ -179,16 +179,16 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 ///
 /// `request_id` MUST be last request receieved
 /// `data_ptr` MUST point to a buffer of at least the length returned by `get_request`
-#[no_mangle]
-pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) { unsafe {
     let (_, data) = Program::current().request_handler().take_request(id);
     StaticMem.write_slice(data_ptr, &data);
-}
+}}
 
 /// sets response for the next request made
 /// id MUST be the id of last request made
 /// see `program-exec::send_response` for sending this response to the program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__set_response(
     id: u32,
     gas: u64,
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn programs__set_response(
     result_len: usize,
     raw_data_ptr: GuestPtr,
     raw_data_len: usize,
-) {
+) { unsafe {
     let program = Program::current();
     program.request_handler().set_response(
         id,
@@ -204,19 +204,19 @@ pub unsafe extern "C" fn programs__set_response(
         StaticMem.read_slice(raw_data_ptr, raw_data_len),
         Gas(gas),
     );
-}
+}}
 
 // removes the last created program
-#[no_mangle]
-pub unsafe extern "C" fn programs__pop() {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn programs__pop() { unsafe {
     Program::pop();
     wavm_unlink_module();
-}
+}}
 
 // used by program-exec
 // returns arguments_len
 // module MUST be the last one returned from new_program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
     let program = Program::current();
     if program.module != module {
@@ -227,8 +227,8 @@ pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
 
 /// used by program-exec
 /// sets status of the last program and sends a program_done request
-#[no_mangle]
-pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind) -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind) -> u32 { unsafe {
     use UserOutcomeKind::*;
 
     let program = Program::current();
@@ -261,10 +261,10 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     program
         .request_handler()
         .set_request(status as u32, &output)
-}
+}}
 
 /// Creates a `StylusConfig` from its component parts.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__create_stylus_config(
     version: u16,
     max_depth: u32,
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__create_evm_data_v2(
     arbos_version: u64,
     block_basefee_ptr: GuestPtr,
@@ -293,7 +293,7 @@ pub unsafe extern "C" fn programs__create_evm_data_v2(
     tx_origin_ptr: GuestPtr,
     cached: u32,
     reentrant: u32,
-) -> u64 {
+) -> u64 { unsafe {
     let evm_data = EvmData {
         arbos_version,
         block_basefee: read_bytes32(block_basefee_ptr),
@@ -314,4 +314,4 @@ pub unsafe extern "C" fn programs__create_evm_data_v2(
         tracing: false,
     };
     heapify(evm_data) as u64
-}
+}}

@@ -395,7 +395,7 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
+            } else { match host::get_impl(import.module, import_name) { Ok((hostio, debug)) => {
                 ensure!(
                     (debug && debug_funcs) || (!debug && allow_hostapi),
                     "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
@@ -403,14 +403,14 @@ impl Module {
                     import.module.red(),
                 );
                 hostio
-            } else {
+            } _ => {
                 bail!(
                     "No such import {} in {} for {}",
                     import_name.red(),
                     import.module.red(),
                     bin_name.red()
                 )
-            };
+            }}};
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
@@ -1425,13 +1425,13 @@ impl Machine {
             ($opcode:ident) => {
                 entrypoint.push(Instruction::simple(Opcode::$opcode));
             };
-            ($opcode:ident, $value:expr) => {
+            ($opcode:ident, $value:expr_2021) => {
                 entrypoint.push(Instruction::with_data(Opcode::$opcode, $value));
             };
-            ($opcode:ident ($inside:expr)) => {
+            ($opcode:ident ($inside:expr_2021)) => {
                 entrypoint.push(Instruction::simple(Opcode::$opcode($inside)));
             };
-            (@cross, $module:expr, $func:expr) => {
+            (@cross, $module:expr_2021, $func:expr_2021) => {
                 entrypoint.push(Instruction::with_data(
                     Opcode::CrossModuleCall,
                     pack_cross_module_call($module, $func),
@@ -1973,7 +1973,7 @@ impl Machine {
             () => {
                 error!("")
             };
-            ($format:expr $(, $message:expr)*) => {{
+            ($format:expr_2021 $(, $message:expr_2021)*) => {{
                 if self.debug_info {
                     println!("\n{} {}", "error on line".grey(), line!().pink());
                     println!($format, $($message.pink()),*);
@@ -2662,7 +2662,7 @@ impl Machine {
         name: &str,
     ) -> Result<()> {
         macro_rules! pull_arg {
-            ($offset:expr, $t:ident) => {
+            ($offset:expr_2021, $t:ident) => {
                 value_stack
                     .get(value_stack.len().wrapping_sub($offset + 1))
                     .and_then(|v| match v {
@@ -2673,7 +2673,7 @@ impl Machine {
             };
         }
         macro_rules! read_u32_ptr {
-            ($ptr:expr) => {
+            ($ptr:expr_2021) => {
                 module
                     .memory
                     .get_u32($ptr.into())
@@ -2681,7 +2681,7 @@ impl Machine {
             };
         }
         macro_rules! read_bytes_segment {
-            ($ptr:expr, $size:expr) => {
+            ($ptr:expr_2021, $size:expr_2021) => {
                 module
                     .memory
                     .get_range($ptr as usize, $size as usize)
@@ -2789,7 +2789,7 @@ impl Machine {
 
     fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
         macro_rules! compute {
-            ($stack:expr, $prefix:expr) => {{
+            ($stack:expr_2021, $prefix:expr_2021) => {{
                 let frames = $stack.iter().map(|v| v.hash());
                 hash_stack(frames, concat!($prefix, " stack:"))
             }};
@@ -2802,7 +2802,7 @@ impl Machine {
         //      + Keccak("cothread:" + 2nd_stack+Keccak("cothread:" + 3drd_stack + ...)
         // )
         macro_rules! compute_multistack {
-            ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
+            ($field:expr_2021, $stacks:expr_2021, $prefix:expr_2021, $hasher: expr_2021) => {{
                 let first_elem = *$stacks.first().unwrap();
                 let first_hash = hash_stack(
                     first_elem.iter().map(|v| v.hash()),
@@ -2894,12 +2894,12 @@ impl Machine {
         let mut data = vec![self.status as u8];
 
         macro_rules! out {
-            ($bytes:expr) => {
+            ($bytes:expr_2021) => {
                 data.extend($bytes);
             };
         }
         macro_rules! fail {
-            ($format:expr $(,$message:expr)*) => {{
+            ($format:expr_2021 $(,$message:expr_2021)*) => {{
                 let text = format!($format, $($message.red()),*);
                 panic!("WASM validation failed: {text}");
             }};
@@ -3192,7 +3192,7 @@ impl Machine {
             }
             PopCoThread => {
                 macro_rules! prove_pop {
-                    ($multistack:expr, $hasher:expr) => {
+                    ($multistack:expr_2021, $hasher:expr_2021) => {
                         let len = $multistack.len();
                         if (len > 2) {
                             out!($hasher($multistack[len - 2]));

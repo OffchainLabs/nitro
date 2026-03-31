@@ -448,7 +448,7 @@ impl Module {
             };
 
             macro_rules! pay {
-                ($us:expr) => {
+                ($us:expr_2021) => {
                     let amount = us_to_gas($us);
                     if *gas < amount {
                         *gas = 0;

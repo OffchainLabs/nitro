@@ -8,7 +8,7 @@ use user_host_trait::UserHost;
 use crate::program::Program;
 
 #[link(wasm_import_module = "forward")]
-extern "C" {
+unsafe extern "C" {
     fn set_trap();
 }
 
@@ -24,52 +24,52 @@ macro_rules! hostio {
     };
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) { unsafe {
     hostio!(read_args(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__exit_early(status: u32) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__exit_early(status: u32) { unsafe {
     hostio!(exit_early(status));
     Program::current().early_exit = Some(match status {
         0 => UserOutcomeKind::Success,
         _ => UserOutcomeKind::Revert,
     });
     set_trap();
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__write_result(ptr: GuestPtr, len: u32) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__write_result(ptr: GuestPtr, len: u32) { unsafe {
     hostio!(write_result(ptr, len))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__storage_load_bytes32(key: GuestPtr, dest: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__storage_load_bytes32(key: GuestPtr, dest: GuestPtr) { unsafe {
     hostio!(storage_load_bytes32(key, dest))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__storage_cache_bytes32(key: GuestPtr, value: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__storage_cache_bytes32(key: GuestPtr, value: GuestPtr) { unsafe {
     hostio!(storage_cache_bytes32(key, value))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) { unsafe {
     hostio!(storage_flush_cache(clear != 0))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__transient_load_bytes32(key: GuestPtr, dest: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__transient_load_bytes32(key: GuestPtr, dest: GuestPtr) { unsafe {
     hostio!(transient_load_bytes32(key, dest))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__transient_store_bytes32(key: GuestPtr, value: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__transient_store_bytes32(key: GuestPtr, value: GuestPtr) { unsafe {
     hostio!(transient_store_bytes32(key, value))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__call_contract(
     contract: GuestPtr,
     data: GuestPtr,
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn user_host__call_contract(
     value: GuestPtr,
     gas: u64,
     ret_len: GuestPtr,
-) -> u8 {
+) -> u8 { unsafe {
     hostio!(call_contract(
         contract,
         data,
@@ -86,16 +86,16 @@ pub unsafe extern "C" fn user_host__call_contract(
         Gas(gas),
         ret_len
     ))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__delegate_call_contract(
     contract: GuestPtr,
     data: GuestPtr,
     data_len: u32,
     gas: u64,
     ret_len: GuestPtr,
-) -> u8 {
+) -> u8 { unsafe {
     hostio!(delegate_call_contract(
         contract,
         data,
@@ -103,16 +103,16 @@ pub unsafe extern "C" fn user_host__delegate_call_contract(
         Gas(gas),
         ret_len
     ))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__static_call_contract(
     contract: GuestPtr,
     data: GuestPtr,
     data_len: u32,
     gas: u64,
     ret_len: GuestPtr,
-) -> u8 {
+) -> u8 { unsafe {
     hostio!(static_call_contract(
         contract,
         data,
@@ -120,20 +120,20 @@ pub unsafe extern "C" fn user_host__static_call_contract(
         Gas(gas),
         ret_len
     ))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__create1(
     code: GuestPtr,
     code_len: u32,
     value: GuestPtr,
     contract: GuestPtr,
     revert_len: GuestPtr,
-) {
+) { unsafe {
     hostio!(create1(code, code_len, value, contract, revert_len))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__create2(
     code: GuestPtr,
     code_len: u32,
@@ -141,167 +141,167 @@ pub unsafe extern "C" fn user_host__create2(
     salt: GuestPtr,
     contract: GuestPtr,
     revert_len: GuestPtr,
-) {
+) { unsafe {
     hostio!(create2(code, code_len, value, salt, contract, revert_len))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__read_return_data(
     dest: GuestPtr,
     offset: u32,
     size: u32,
-) -> u32 {
+) -> u32 { unsafe {
     hostio!(read_return_data(dest, offset, size))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__return_data_size() -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__return_data_size() -> u32 { unsafe {
     hostio!(return_data_size())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__emit_log(data: GuestPtr, len: u32, topics: u32) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__emit_log(data: GuestPtr, len: u32, topics: u32) { unsafe {
     hostio!(emit_log(data, len, topics))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__account_balance(address: GuestPtr, ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__account_balance(address: GuestPtr, ptr: GuestPtr) { unsafe {
     hostio!(account_balance(address, ptr))
-}
-#[no_mangle]
+}}
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__account_code(
     address: GuestPtr,
     offset: u32,
     size: u32,
     dest: GuestPtr,
-) -> u32 {
+) -> u32 { unsafe {
     hostio!(account_code(address, offset, size, dest))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__account_code_size(address: GuestPtr) -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__account_code_size(address: GuestPtr) -> u32 { unsafe {
     hostio!(account_code_size(address))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__account_codehash(address: GuestPtr, ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__account_codehash(address: GuestPtr, ptr: GuestPtr) { unsafe {
     hostio!(account_codehash(address, ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_basefee(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__block_basefee(ptr: GuestPtr) { unsafe {
     hostio!(block_basefee(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_coinbase(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__block_coinbase(ptr: GuestPtr) { unsafe {
     hostio!(block_coinbase(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_gas_limit() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__block_gas_limit() -> u64 { unsafe {
     hostio!(block_gas_limit())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_number() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__block_number() -> u64 { unsafe {
     hostio!(block_number())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__block_timestamp() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__block_timestamp() -> u64 { unsafe {
     hostio!(block_timestamp())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__chainid() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__chainid() -> u64 { unsafe {
     hostio!(chainid())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__contract_address(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__contract_address(ptr: GuestPtr) { unsafe {
     hostio!(contract_address(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 { unsafe {
     hostio!(evm_gas_left()).0
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 { unsafe {
     hostio!(evm_ink_left()).0
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__math_div(value: GuestPtr, divisor: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__math_div(value: GuestPtr, divisor: GuestPtr) { unsafe {
     hostio!(math_div(value, divisor))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__math_mod(value: GuestPtr, modulus: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__math_mod(value: GuestPtr, modulus: GuestPtr) { unsafe {
     hostio!(math_mod(value, modulus))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__math_pow(value: GuestPtr, exponent: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__math_pow(value: GuestPtr, exponent: GuestPtr) { unsafe {
     hostio!(math_pow(value, exponent))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__math_add_mod(
     value: GuestPtr,
     addend: GuestPtr,
     modulus: GuestPtr,
-) {
+) { unsafe {
     hostio!(math_add_mod(value, addend, modulus))
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn user_host__math_mul_mod(
     value: GuestPtr,
     multiplier: GuestPtr,
     modulus: GuestPtr,
-) {
+) { unsafe {
     hostio!(math_mul_mod(value, multiplier, modulus))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 { unsafe {
     hostio!(msg_reentrant())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__msg_sender(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__msg_sender(ptr: GuestPtr) { unsafe {
     hostio!(msg_sender(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__msg_value(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__msg_value(ptr: GuestPtr) { unsafe {
     hostio!(msg_value(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__native_keccak256(input: GuestPtr, len: u32, output: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__native_keccak256(input: GuestPtr, len: u32, output: GuestPtr) { unsafe {
     hostio!(native_keccak256(input, len, output))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__tx_gas_price(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__tx_gas_price(ptr: GuestPtr) { unsafe {
     hostio!(tx_gas_price(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__tx_ink_price() -> u32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__tx_ink_price() -> u32 { unsafe {
     hostio!(tx_ink_price())
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__tx_origin(ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__tx_origin(ptr: GuestPtr) { unsafe {
     hostio!(tx_origin(ptr))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn user_host__pay_for_memory_grow(pages: u16) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn user_host__pay_for_memory_grow(pages: u16) { unsafe {
     hostio!(pay_for_memory_grow(pages))
-}
+}}

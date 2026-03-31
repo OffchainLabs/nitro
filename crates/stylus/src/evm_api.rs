@@ -23,7 +23,7 @@ pub struct NativeRequestHandler {
 }
 
 macro_rules! ptr {
-    ($expr:expr) => {
+    ($expr:expr_2021) => {
         &mut $expr as *mut _
     };
 }

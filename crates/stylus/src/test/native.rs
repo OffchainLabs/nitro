@@ -52,7 +52,7 @@ fn test_ink() -> Result<()> {
     let add_one = exports.get_typed_function::<i32, i32>(&native.store, "add_one")?;
 
     macro_rules! exhaust {
-        ($ink:expr) => {
+        ($ink:expr_2021) => {
             native.set_ink(Ink($ink));
             assert_eq!(native.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(add_one.call(&mut native.store, 32).is_err());

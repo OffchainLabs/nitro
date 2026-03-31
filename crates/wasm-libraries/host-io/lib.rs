@@ -11,7 +11,7 @@ use core::{
 use arbutil::PreimageType;
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 
-extern "C" {
+unsafe extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);
     pub fn wavm_set_globalstate_bytes32(idx: u32, ptr: *const u8);
     pub fn wavm_get_globalstate_u64(idx: u32) -> u64;
@@ -50,18 +50,18 @@ impl Index<RangeTo<usize>> for MemoryLeaf {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn wavmio__getGlobalStateBytes32(idx: u32, out_ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wavmio__getGlobalStateBytes32(idx: u32, out_ptr: GuestPtr) { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_get_globalstate_bytes32(idx, our_ptr);
     StaticMem.write_slice(out_ptr, &our_buf[..32]);
-}
+}}
 
 /// Writes 32-bytes of global state
-#[no_mangle]
-pub unsafe extern "C" fn wavmio__setGlobalStateBytes32(idx: u32, src_ptr: GuestPtr) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wavmio__setGlobalStateBytes32(idx: u32, src_ptr: GuestPtr) { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let value = StaticMem.read_slice(src_ptr, 32);
     our_buf.copy_from_slice(&value);
@@ -69,27 +69,27 @@ pub unsafe extern "C" fn wavmio__setGlobalStateBytes32(idx: u32, src_ptr: GuestP
     let our_ptr = our_buf.as_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_set_globalstate_bytes32(idx, our_ptr);
-}
+}}
 
 /// Reads 8-bytes of global state
-#[no_mangle]
-pub unsafe extern "C" fn wavmio__getGlobalStateU64(idx: u32) -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wavmio__getGlobalStateU64(idx: u32) -> u64 { unsafe {
     wavm_get_globalstate_u64(idx)
-}
+}}
 
 /// Writes 8-bytes of global state
-#[no_mangle]
-pub unsafe extern "C" fn wavmio__setGlobalStateU64(idx: u32, val: u64) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wavmio__setGlobalStateU64(idx: u32, val: u64) { unsafe {
     wavm_set_globalstate_u64(idx, val);
-}
+}}
 
 /// Reads an inbox message
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wavmio__readInboxMessage(
     msg_num: u64,
     offset: usize,
     out_ptr: GuestPtr,
-) -> usize {
+) -> usize { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
@@ -98,15 +98,15 @@ pub unsafe extern "C" fn wavmio__readInboxMessage(
     assert!(read <= 32);
     StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
-}
+}}
 
 /// Reads a delayed inbox message
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
     msg_num: u64,
     offset: usize,
     out_ptr: GuestPtr,
-) -> usize {
+) -> usize { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
@@ -115,16 +115,16 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
     assert!(read <= 32);
     StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
-}
+}}
 
 /// Retrieves the preimage of the given hash.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     preimage_type: u8,
     hash_ptr: GuestPtr,
     offset: usize,
     out_ptr: GuestPtr,
-) -> usize {
+) -> usize { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let hash = StaticMem.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
@@ -148,11 +148,11 @@ pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     assert!(read <= 32);
     StaticMem.write_slice(out_ptr, &our_buf[..read]);
     read
-}
+}}
 
 /// Validates a DACertificate certificate, other preimage types are always valid.
-#[no_mangle]
-pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u8 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr: GuestPtr) -> u8 { unsafe {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let hash = StaticMem.read_slice(hash_ptr, 32);
     our_buf.copy_from_slice(&hash);
@@ -161,8 +161,8 @@ pub unsafe extern "C" fn wavmio__validateCertificate(preimage_type: u8, hash_ptr
     assert_eq!(our_ptr as usize % 32, 0);
 
     wavm_validate_certificate(our_ptr, preimage_type)
-}
+}}
 
 /// A hook called just before the first IO operation.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn hooks__beforeFirstIO() {}

@@ -289,12 +289,12 @@ impl Display for Value {
         let rparem = ")".grey();
 
         macro_rules! single {
-            ($ty:expr, $value:expr) => {{
+            ($ty:expr_2021, $value:expr_2021) => {{
                 write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
-            ($ty:expr, $left:expr, $right:expr) => {{
+            ($ty:expr_2021, $left:expr_2021, $right:expr_2021) => {{
                 let eq = "=".grey();
                 write!(
                     f,

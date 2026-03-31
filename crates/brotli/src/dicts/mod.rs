@@ -11,7 +11,7 @@ use crate::{
     HeapItem,
 };
 
-extern "C" {
+unsafe extern "C" {
     /// Prepares an LZ77 dictionary for use during compression.
     fn BrotliEncoderPrepareDictionary(
         dict_type: BrotliSharedDictionaryType,

@@ -355,7 +355,7 @@ pub fn parse_with_version<'a>(
         use Payload::*;
 
         macro_rules! process {
-            ($dest:expr, $source:expr) => {{
+            ($dest:expr_2021, $source:expr_2021) => {{
                 for item in $source.into_iter() {
                     $dest.push(item?.into())
                 }
@@ -572,7 +572,7 @@ impl<'a> WasmBinary<'a> {
 
             /// this macro exists since middlewares aren't sized (can't use a vec without boxes)
             macro_rules! apply {
-                ($middleware:expr) => {
+                ($middleware:expr_2021) => {
                     let mut mid = Middleware::<WasmBinary>::instrument(&$middleware, index)?;
                     mid.locals_info(&locals);
 
@@ -686,7 +686,7 @@ impl<'a> WasmBinary<'a> {
 
         // not strictly necessary, but anti-DoS limits and extra checks in case of bugs
         macro_rules! limit {
-            ($limit:expr, $count:expr, $name:expr) => {
+            ($limit:expr_2021, $count:expr_2021, $name:expr_2021) => {
                 if $count > $limit {
                     bail!("too many wasm {}: {} > {}", $name, $count, $limit);
                 }
@@ -715,7 +715,7 @@ impl<'a> WasmBinary<'a> {
 
         let max_len = 512;
         macro_rules! too_long {
-            ($name:expr, $len:expr) => {
+            ($name:expr_2021, $len:expr_2021) => {
                 bail!(
                     "wasm {} too long: {} > {}",
                     $name.red(),
