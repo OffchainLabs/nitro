@@ -1,8 +1,8 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "native")]
-use crate::kzg::ETHEREUM_KZG_SETTINGS;
+use std::{convert::TryInto, fs::File, io::Read, path::Path};
+
 use arbutil::PreimageType;
 #[cfg(feature = "native")]
 use c_kzg::Blob;
@@ -11,12 +11,13 @@ use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::Keccak256;
-use std::{convert::TryInto, fs::File, io::Read, path::Path};
 use wasmparser::{RefType, TableType};
 
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]
 pub use crate::cbytes::CBytesIntoIter;
+#[cfg(feature = "native")]
+use crate::kzg::ETHEREUM_KZG_SETTINGS;
 
 /// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
 /// This type enables serde via a 1:1 transmute.
@@ -36,8 +37,9 @@ impl From<RemoteRefType> for RefType {
 }
 
 mod remote_convert {
-    use super::{RefType, RemoteRefType};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::{RefType, RemoteRefType};
 
     pub fn serialize<S: Serializer>(value: &RefType, serializer: S) -> Result<S::Ok, S::Error> {
         RemoteRefType::from(*value).serialize(serializer)

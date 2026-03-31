@@ -1,34 +1,33 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::sync::Arc;
+
+use arbutil::Color;
+use eyre::{bail, Result};
+use fnv::FnvHashMap as HashMap;
+use parking_lot::RwLock;
+use wasmer_types::{
+    FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
+};
+use wasmparser::{BlockType, Operator, ValType};
+
 use super::{
     config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
 };
 #[cfg(feature = "native")]
 use crate::Machine;
-
-use crate::internal_func::InternalFunc;
-use crate::value::FunctionType;
-
-use arbutil::Color;
-use eyre::{bail, Result};
-use fnv::FnvHashMap as HashMap;
-use parking_lot::RwLock;
-use std::sync::Arc;
-use wasmer_types::{
-    FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
-};
-use wasmparser::{BlockType, Operator, ValType};
+use crate::{internal_func::InternalFunc, value::FunctionType};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
-/// This middleware ensures stack overflows are deterministic across different compilers and targets.
-/// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
-/// the real stack space consumed on any target platform and is formed by inspecting the contents of each
-/// function's frame.
-/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the same,
-/// logical effect rather than actually exhausting the space provided by the OS.
+/// This middleware ensures stack overflows are deterministic across different compilers and
+/// targets. The internal notion of "stack space left" that makes this possible is strictly smaller
+/// than that of the real stack space consumed on any target platform and is formed by inspecting
+/// the contents of each function's frame.
+/// Setting a limit smaller than that of any native platform's ensures stack overflows will have the
+/// same, logical effect rather than actually exhausting the space provided by the OS.
 #[derive(Debug)]
 pub struct DepthChecker {
     /// The amount of stack space left

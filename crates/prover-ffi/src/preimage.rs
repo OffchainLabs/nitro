@@ -1,16 +1,21 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::ResolvedPreimage;
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+};
+
 use arbutil::{Bytes32, PreimageType};
 use lru::LruCache;
 use once_cell::sync::OnceCell;
-use prover::machine::PreimageResolver;
-use prover::utils::{self, CBytes};
-use prover::Machine;
-use std::num::NonZeroUsize;
-use std::sync::Arc;
-use std::sync::Mutex;
+use prover::{
+    machine::PreimageResolver,
+    utils::{self, CBytes},
+    Machine,
+};
+
+use crate::ResolvedPreimage;
 
 lazy_static::lazy_static! {
     static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));

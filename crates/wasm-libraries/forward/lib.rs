@@ -1,8 +1,9 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::Result;
 use std::io::Write;
+
+use eyre::Result;
 
 /// order matters!
 const HOSTIOS: [[&str; 3]; 42] = [

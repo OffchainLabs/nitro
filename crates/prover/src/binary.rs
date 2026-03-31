@@ -1,17 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    programs::{
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
-    },
-    value::{ArbValueType, FunctionType, IntegerValType, Value},
-};
-use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
+use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
+
 use arbutil::{
-    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
+    math::SaturatingSum,
+    Bytes32, Color, DebugColor,
 };
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
@@ -22,11 +17,19 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
     BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
     Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+};
+
+use crate::{
+    programs::{
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
+        StylusData, STYLUS_ENTRY_POINT,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

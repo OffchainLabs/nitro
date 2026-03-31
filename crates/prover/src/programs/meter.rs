@@ -2,6 +2,27 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
+
+use arbutil::{
+    evm::{
+        self,
+        api::{Gas, Ink},
+    },
+    operator::OperatorInfo,
+    pricing, Bytes32,
+};
+use derivative::Derivative;
+use eyre::Result;
+use fnv::FnvHashMap as HashMap;
+use parking_lot::RwLock;
+use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
+use wasmparser::{BlockType, Operator};
+
+use super::config::OpCosts;
 #[cfg(feature = "native")]
 use crate::Machine;
 use crate::{
@@ -11,26 +32,6 @@ use crate::{
     },
     value::FunctionType,
 };
-use arbutil::operator::OperatorInfo;
-use arbutil::{
-    evm::{
-        self,
-        api::{Gas, Ink},
-    },
-    pricing, Bytes32,
-};
-use derivative::Derivative;
-use eyre::Result;
-use fnv::FnvHashMap as HashMap;
-use parking_lot::RwLock;
-use std::{
-    fmt::{Debug, Display},
-    sync::Arc,
-};
-use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
-use wasmparser::{BlockType, Operator};
-
-use super::config::OpCosts;
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";

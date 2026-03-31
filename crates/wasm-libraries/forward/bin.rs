@@ -1,9 +1,10 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{fs::File, path::PathBuf};
+
 use eyre::Result;
 use forward::{forward, forward_stub};
-use std::{fs::File, path::PathBuf};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]

@@ -1,28 +1,34 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::c_strings::{c_string_to_string, err_to_c_string};
-use crate::{CByteArray, RustBytes};
+use std::{
+    ffi::CStr,
+    os::raw::{c_char, c_int},
+    path::Path,
+    ptr, slice,
+    sync::{atomic, atomic::AtomicU8},
+};
+
 use arbutil::Bytes32;
 use eyre::Report;
-use prover::machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+use prover::{
+    machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus},
+    Machine,
 };
-use prover::Machine;
 use static_assertions::const_assert_eq;
-use std::ffi::CStr;
-use std::os::raw::{c_char, c_int};
-use std::path::Path;
-use std::sync::atomic;
-use std::sync::atomic::AtomicU8;
-use std::{ptr, slice};
+
+use crate::{
+    c_strings::{c_string_to_string, err_to_c_string},
+    CByteArray, RustBytes,
+};
 
 pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;
 pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
 pub const ARBITRATOR_MACHINE_STATUS_ERRORED: u8 = 2;
 pub const ARBITRATOR_MACHINE_STATUS_TOO_FAR: u8 = 3;
 
-// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that they're correct.
+// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that
+// they're correct.
 const_assert_eq!(
     ARBITRATOR_MACHINE_STATUS_RUNNING,
     MachineStatus::Running as u8,

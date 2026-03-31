@@ -1,31 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{machine::Module, programs::config::CompileConfig};
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
-use eyre::WrapErr;
-
-use crate::{
-    binary::{ExportKind, WasmBinary},
-    memory_type::MemoryType,
-    value::{FunctionType as ArbFunctionType, Value},
-};
-use arbutil::Color;
-use eyre::{bail, eyre, Report, Result};
-use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
+
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
+use eyre::{bail, eyre, Report, Result, WrapErr};
+use fnv::FnvHashMap as HashMap;
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
 use wasmparser::{Operator, ValType};
-
 #[cfg(feature = "native")]
 use {
     super::value,
     std::marker::PhantomData,
     wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
     wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
+};
+
+use crate::{
+    binary::{ExportKind, WasmBinary},
+    machine::Module,
+    memory_type::MemoryType,
+    programs::config::CompileConfig,
+    value::{FunctionType as ArbFunctionType, Value},
 };
 
 pub mod config;
@@ -495,10 +494,12 @@ impl Module {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
+    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
+
     use super::*;
     use crate::binary;
-    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
-    use std::path::Path;
 
     // Parse at the threshold version so multi-value is rejected by the validator.
     fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
