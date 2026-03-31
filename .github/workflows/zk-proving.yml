@@ -1,0 +1,52 @@
+name: ZK CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zk-proving:
+    name: Run tests for ZK-related components and pipelines
+    runs-on: arbitrator-ci
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Install protobuf-compiler
+        run: sudo apt install -y protobuf-compiler
+
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 21
+
+      - name: Install SP1 toolchain
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
+          $HOME/.sp1/bin/sp1up -v v6.0.0-beta.1
+
+      - name: Print versions
+        run: |
+          rustc +succinct --version
+          rustc +succinct --print target-list | grep succinct
+
+      # Clippy runs after build because sp1-builder uses include_elf!(),
+      # which requires the SP1 ELF to exist at compile time.
+      - name: Clippy check (SP1 crates)
+        run: cargo clippy -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
+      - name: Run stylus-compiler-runner compare
+        # Compare compilation consistency between running it natively and in the SP1 execution mode.
+        run: cargo run -p stylus-compiler-runner --release -- compare
