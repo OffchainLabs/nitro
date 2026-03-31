@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 )
@@ -16,7 +18,7 @@ import (
 // Once created, this struct is never modified, making it safe for concurrent reads.
 // The cache is included here so it gets swapped atomically with the hash data.
 type hashData struct {
-	salt     []byte
+	salt     uuid.UUID
 	hashes   map[common.Hash]struct{}
 	digest   string
 	loadedAt time.Time
@@ -30,6 +32,12 @@ type hashData struct {
 type HashStore struct {
 	data      atomic.Pointer[hashData]
 	cacheSize int
+}
+
+func HashWithSalt(salt uuid.UUID, address common.Address) common.Hash {
+	hashInput := salt.String() + "::0x" + common.Bytes2Hex(address.Bytes())
+	saltedHash := sha256.Sum256([]byte(hashInput))
+	return saltedHash
 }
 
 func NewHashStore(cacheSize int) *HashStore {
@@ -46,7 +54,7 @@ func NewHashStore(cacheSize int) *HashStore {
 // Store atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
 // A new LRU cache is created for the new data, ensuring atomic consistency.
-func (h *HashStore) Store(salt []byte, hashes []common.Hash, digest string) {
+func (h *HashStore) Store(salt uuid.UUID, hashes []common.Hash, digest string) {
 	newData := &hashData{
 		salt:     salt,
 		hashes:   make(map[common.Hash]struct{}, len(hashes)),
@@ -65,7 +73,7 @@ func (h *HashStore) Store(salt []byte, hashes []common.Hash, digest string) {
 // This method is safe to call concurrently.
 func (h *HashStore) IsRestricted(addr common.Address) bool {
 	data := h.data.Load() // Atomic load - no lock needed
-	if len(data.salt) == 0 {
+	if data.salt == uuid.Nil {
 		return false // Not initialized
 	}
 
@@ -73,14 +81,7 @@ func (h *HashStore) IsRestricted(addr common.Address) bool {
 	if restricted, ok := data.cache.Get(addr); ok {
 		return restricted
 	}
-
-	saltedAddr := make([]byte, len(data.salt)+common.AddressLength)
-	copy(saltedAddr, data.salt)
-	copy(saltedAddr[len(data.salt):], addr.Bytes())
-	saltedHash := sha256.Sum256(saltedAddr)
-
-	_, restricted := data.hashes[saltedHash]
-
+	_, restricted := data.hashes[HashWithSalt(data.salt, addr)]
 	// Cache the result
 	data.cache.Add(addr, restricted)
 	return restricted
@@ -100,14 +101,12 @@ func (h *HashStore) LoadedAt() time.Time {
 }
 
 // Salt returns a copy of the current salt.
-func (h *HashStore) Salt() []byte {
+func (h *HashStore) Salt() uuid.UUID {
 	data := h.data.Load()
-	if len(data.salt) == 0 {
-		return nil
+	if data.salt == uuid.Nil {
+		return uuid.Nil
 	}
-	salt := make([]byte, len(data.salt))
-	copy(salt, data.salt)
-	return salt
+	return data.salt
 }
 
 // CacheLen returns the current number of entries in the LRU cache.
