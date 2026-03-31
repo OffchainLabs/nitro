@@ -263,15 +263,14 @@ pub unsafe extern "C" fn stylus_call(
         let ink = pricing.gas_to_ink(Gas(*gas));
 
         // Safety: module came from compile_user_wasm and we've paid for memory expansion
-        let instance =
-            NativeInstance::deserialize_cached(
-                module,
-                config.version,
-                evm_api,
-                evm_data,
-                long_term_tag,
-                debug_chain,
-            );
+        let instance = NativeInstance::deserialize_cached(
+            module,
+            config.version,
+            evm_api,
+            evm_data,
+            long_term_tag,
+            debug_chain,
+        );
         let mut instance = match instance {
             Ok(instance) => instance,
             Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),

@@ -55,9 +55,10 @@ impl MachineLocator {
 
             // Check relative to the executable
             if let Ok(exec_path) = env::current_exe()
-                && let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent()) {
-                    dirs.push(grandparent_of_exec.join("machines"));
-                }
+                && let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent())
+            {
+                dirs.push(grandparent_of_exec.join("machines"));
+            }
         }
 
         for dir in dirs {

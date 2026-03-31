@@ -481,10 +481,11 @@ pub fn parse_with_version<'a>(
 
         let key = (module, name);
         if let Some(prior) = imports.insert(key, offset)
-            && prior != offset {
-                let name = name.debug_red();
-                bail!("inconsistent imports for {} {name}", module.red());
-            }
+            && prior != offset
+        {
+            let name = name.debug_red();
+            bail!("inconsistent imports for {} {name}", module.red());
+        }
     }
 
     // reject the module if it re-exports an import with the same name

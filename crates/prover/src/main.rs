@@ -196,9 +196,10 @@ fn main() -> Result<()> {
     let mut skipping_profiling = opts.skip_until_host_io;
     while !mach.is_halted() {
         if let Some(max_steps) = opts.max_steps
-            && mach.get_steps() >= max_steps {
-                break;
-            }
+            && mach.get_steps() >= max_steps
+        {
+            break;
+        }
 
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
