@@ -82,6 +82,13 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 }
 
+func (t *TransactionFiltererAPI) ReportFilteredTransactions(_ context.Context, reports []gethexec.FilteredTxReport) error {
+	for _, report := range reports {
+		log.Info("Received filtered transaction report", "txHash", report.TxHash.Hex())
+	}
+	return nil
+}
+
 // Only used for testing.
 // Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.

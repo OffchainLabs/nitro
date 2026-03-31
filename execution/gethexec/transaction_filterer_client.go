@@ -7,11 +7,17 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+// FilteredTxReport is a dummy struct for now, to be extended with full report fields later.
+type FilteredTxReport struct {
+	TxHash common.Hash `json:"txHash"`
+}
 
 const TransactionFiltererNamespace = "transactionfilterer"
 
@@ -49,6 +55,14 @@ func (c *TransactionFiltererRPCClient) StopAndWait() {
 func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, TransactionFiltererNamespace+"_filter", txHashToFilter)
+		return struct{}{}, err
+	})
+}
+
+func (c *TransactionFiltererRPCClient) ReportFilteredTransactions(reports []FilteredTxReport) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		log.Info("Sending filtered transaction reports", "count", len(reports))
+		err := c.client.CallContext(ctx, nil, TransactionFiltererNamespace+"_reportFilteredTransactions", reports)
 		return struct{}{}, err
 	})
 }
