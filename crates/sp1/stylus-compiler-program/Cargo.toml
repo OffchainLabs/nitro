@@ -12,7 +12,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+prover = { workspace = true, features = ["native"] }
 serde = { workspace = true, features = ["derive"] }
 sp1-zkvm = { workspace = true }
 wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }
-prover = { workspace = true, features = ["native"] }
