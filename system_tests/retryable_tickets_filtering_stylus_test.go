@@ -16,26 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func setupStylusForFilterTest(t *testing.T, ctx context.Context, builder *NodeBuilder) {
-	t.Helper()
-	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
-
-	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
-	require.NoError(t, err)
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
-	require.NoError(t, err)
-
-	tx, err := arbDebug.BecomeChainOwner(&auth)
-	require.NoError(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
-	require.NoError(t, err)
-
-	tx, err = arbOwner.SetInkPrice(&auth, 10000)
-	require.NoError(t, err)
-	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
-	require.NoError(t, err)
-}
-
 // deployStylusStorageContract deploys and activates the Stylus storage test
 // contract. Returns the deployed address.
 func deployStylusStorageContract(
@@ -64,8 +44,6 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	defer cleanup()
 
 	builder := p.builder
-	setupStylusForFilterTest(t, ctx, builder)
-
 	builder.L2Info.GenerateAccount("CleanBeneficiary")
 	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
 
@@ -195,8 +173,6 @@ func TestRetryableFilteringStylusDelayedSandwichRollback(t *testing.T) {
 	defer cleanup()
 
 	builder := p.builder
-	setupStylusForFilterTest(t, ctx, builder)
-
 	builder.L2Info.GenerateAccount("CleanBeneficiary")
 	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
 
