@@ -46,7 +46,6 @@ const L1_GAS_FLOOR_PER_TOKEN: u64 = 12;
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;
-const EVENT_GAS: u64 = 3_000;
 const COPY_GAS: u64 = 3;
 
 pub fn create_arbownerpublic_precompile() -> DynPrecompile {

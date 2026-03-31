@@ -1,0 +1,67 @@
+[package]
+name = "alloy-consensus-any"
+description = "Consensus interface for any network"
+
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+exclude.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+  "-Zunstable-options",
+  "--generate-link-to-definition",
+  "--show-type-layout",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["serde"] }
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+alloy-rlp.workspace = true
+alloy-serde = { workspace = true, optional = true }
+
+# arbitrary
+arbitrary = { workspace = true, features = ["derive"], optional = true }
+
+# serde
+serde = { workspace = true, features = ["derive"], optional = true }
+
+[dev-dependencies]
+arbitrary = { workspace = true, features = ["derive"] }
+alloy-consensus = { workspace = true, features = ["arbitrary"] }
+serde_json.workspace = true
+
+[features]
+default = ["std"]
+std = [
+	"alloy-eips/std",
+	"alloy-consensus/std",
+	"alloy-serde?/std",
+	"alloy-primitives/std",
+	"alloy-rlp/std",
+	"serde?/std"
+]
+arbitrary = [
+	"std",
+	"dep:arbitrary",
+	"alloy-eips/arbitrary",
+	"alloy-consensus/arbitrary",
+	"alloy-primitives/arbitrary",
+	"alloy-serde?/arbitrary"
+]
+serde = [
+	"dep:serde",
+	"alloy-primitives/serde",
+	"dep:alloy-serde",
+	"alloy-eips/serde",
+	"alloy-consensus/serde"
+]

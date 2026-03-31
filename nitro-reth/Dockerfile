@@ -14,6 +14,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY bin/ bin/
+COPY vendor/ vendor/
 
 # Build release binary
 RUN cargo build --release -p arb-reth

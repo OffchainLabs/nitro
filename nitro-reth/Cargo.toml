@@ -155,7 +155,7 @@ parking_lot = "0.12"
 lazy_static = "1"
 num = "0.4"
 hex = "0.4"
-brotli = "8"
+cc = "1"
 sha2 = "0.10"
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
 jsonrpsee-types = "0.26.0"

@@ -1304,7 +1304,7 @@ dependencies = [
  "arb-chainspec",
  "arb-primitives",
  "arb-storage",
- "brotli",
+ "cc",
  "revm",
  "thiserror 2.0.18",
  "tracing",

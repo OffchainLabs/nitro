@@ -395,28 +395,18 @@ where
             let signed_tx = match parsed_tx_to_signed(parsed, chain_id) {
                 Some(tx) => tx,
                 None => {
-                    debug!(
-                        target: "block_producer",
-                        ?parsed,
-                        "Skipping unparseable transaction"
-                    );
+                    debug!(target: "block_producer", ?parsed, "Skipping unparseable transaction");
                     continue;
                 }
             };
 
-            // Recover the signer to get a Recovered<ArbTransactionSigned>.
             let recovered = match signed_tx.clone().try_into_recovered() {
                 Ok(r) => r,
                 Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Failed to recover tx sender, skipping"
-                    );
+                    warn!(target: "block_producer", error = %e, "Failed to recover tx sender, skipping");
                     continue;
                 }
             };
-
             match executor.execute_transaction_without_commit(recovered) {
                 Ok(result) => {
                     match executor.commit_transaction(result) {
@@ -485,27 +475,15 @@ where
                             }
                         }
                         Err(e) => {
-                            warn!(
-                                target: "block_producer",
-                                error = %e,
-                                "Failed to commit transaction"
-                            );
+                            warn!(target: "block_producer", error = %e, "Failed to commit transaction");
                         }
                     }
                 }
                 Err(ref e) if e.to_string().contains("block gas limit reached") => {
-                    debug!(
-                        target: "block_producer",
-                        "Block gas limit reached, stopping execution"
-                    );
                     break;
                 }
                 Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Transaction execution failed, skipping"
-                    );
+                    warn!(target: "block_producer", error = %e, "Transaction execution failed, skipping");
                 }
             }
         }
@@ -868,7 +846,6 @@ where
             chain_id,
         )
         .unwrap_or_else(|e| {
-            // If ParseL2Transactions returns an error, treat as empty.
             warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
             vec![]
         });
