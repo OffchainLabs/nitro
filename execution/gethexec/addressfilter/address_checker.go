@@ -36,7 +36,7 @@ type HashedAddressCheckerState struct {
 }
 
 type workItem struct {
-	record filter.FilteredAddressRecord
+	record *filter.FilteredAddressRecord
 	state  *HashedAddressCheckerState
 }
 
@@ -75,7 +75,7 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) processAddress(record filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
+func (c *HashedAddressChecker) processAddress(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
 	restricted := c.store.IsRestricted(record.Address)
 	state.report(record, restricted)
 }
@@ -92,12 +92,12 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 	}
 }
 
-func (s *HashedAddressCheckerState) TouchAddress(record filter.FilteredAddressRecord) {
+func (s *HashedAddressCheckerState) TouchAddress(record *filter.FilteredAddressRecord) {
 	s.pending.Add(1)
 
 	// If the checker is stopped, conservatively mark filtered
 	if s.checker.Stopped() {
-		s.report(record, true)
+		s.report(nil, true)
 		return
 	}
 
@@ -106,16 +106,18 @@ func (s *HashedAddressCheckerState) TouchAddress(record filter.FilteredAddressRe
 		// ok
 	case <-s.checker.GetContext().Done():
 		// shutting down, conservatively mark filtered
-		s.report(record, true)
+		s.report(nil, true)
 	}
 }
 
-func (s *HashedAddressCheckerState) report(record filter.FilteredAddressRecord, filtered bool) {
+func (s *HashedAddressCheckerState) report(record *filter.FilteredAddressRecord, filtered bool) {
 	if filtered {
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		s.filtered = true
-		s.filteredAddresses = append(s.filteredAddresses, record)
+		if record != nil {
+			s.filteredAddresses = append(s.filteredAddresses, *record)
+		}
+		s.mu.Unlock()
 	}
 	s.pending.Done()
 }

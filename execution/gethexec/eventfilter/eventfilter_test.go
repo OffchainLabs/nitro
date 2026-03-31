@@ -306,8 +306,8 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 			}
 
 			resultSet := make(map[common.Address]struct{})
-			for _, a := range result {
-				resultSet[a] = struct{}{}
+			for _, r := range result {
+				resultSet[r.Address] = struct{}{}
 			}
 			for _, want := range tt.wantAddrs {
 				if _, ok := resultSet[want]; !ok {

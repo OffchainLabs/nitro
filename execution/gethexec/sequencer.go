@@ -778,9 +778,9 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		}
 		conditionalTxAcceptedBySequencerCounter.Inc(1)
 	}
-	statedb.TouchAddress(filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	statedb.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	if tx.To() != nil {
-		statedb.TouchAddress(filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
+		statedb.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
 	}
 	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
 		return state.ErrArbTxFilter
@@ -792,11 +792,8 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(filter.FilteredAddressRecord{
-					Address:      addr,
-					FilterReason: filter.FilterReason{Reason: filter.ReasonEventRule},
-				})
+			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
+				statedb.TouchAddress(record)
 			}
 		}
 	}

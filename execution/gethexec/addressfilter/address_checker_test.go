@@ -27,20 +27,22 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	salt := []byte("test-salt")
 
 	addrFiltered := common.HexToAddress("0x000000000000000000000000000000000000dead")
+	addrFiltered2 := common.HexToAddress("0x000000000000000000000000000000000000bad1")
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 
 	const cacheSize = 100
 	store := NewHashStore(cacheSize)
 
 	hash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
-	store.Store(salt, []common.Hash{hash}, "test")
+	hash2 := sha256.Sum256(append(salt, addrFiltered2.Bytes()...))
+	store.Store(salt, []common.Hash{hash, hash2}, "test")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
 
 	// Tx 1: filtered address
 	state1 := mustState(t, checker.NewTxState())
-	state1.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	state1.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	filtered1, records1 := state1.IsFiltered()
 	assert.True(t, filtered1, "expected transaction to be filtered")
 	require.Len(t, records1, 1)
@@ -49,28 +51,43 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 
 	// Tx 2: allowed address
 	state2 := mustState(t, checker.NewTxState())
-	state2.TouchAddress(filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	state2.TouchAddress(&filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	filtered2, records2 := state2.IsFiltered()
 	assert.False(t, filtered2, "expected transaction NOT to be filtered")
 	assert.Empty(t, records2)
 
 	// Tx 3: mixed addresses
 	state3 := mustState(t, checker.NewTxState())
-	state3.TouchAddress(filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
-	state3.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
+	state3.TouchAddress(&filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	state3.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
 	filtered3, records3 := state3.IsFiltered()
 	assert.True(t, filtered3, "expected transaction with mixed addresses to be filtered")
 	require.Len(t, records3, 1)
 	assert.Equal(t, addrFiltered, records3[0].Address)
 	assert.Equal(t, filter.ReasonTo, records3[0].Reason)
 
-	// Tx 4: reuse HashStore cache across txs
+	// Tx 4: multiple filtered addresses
 	state4 := mustState(t, checker.NewTxState())
-	state4.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
-	filtered4, _ := state4.IsFiltered()
-	assert.True(t, filtered4, "expected cached filtered address to still be filtered")
+	state4.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	state4.TouchAddress(&filter.FilteredAddressRecord{Address: addrAllowed, FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
+	state4.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered2, FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress}})
+	filtered4, records4 := state4.IsFiltered()
+	assert.True(t, filtered4, "expected transaction with multiple filtered addresses to be filtered")
+	require.Len(t, records4, 2)
+	recordsByAddr := make(map[common.Address]filter.FilteredAddressRecord)
+	for _, r := range records4 {
+		recordsByAddr[r.Address] = r
+	}
+	assert.Equal(t, filter.ReasonFrom, recordsByAddr[addrFiltered].Reason)
+	assert.Equal(t, filter.ReasonContractAddress, recordsByAddr[addrFiltered2].Reason)
 
-	// Tx 5: queue overflow should not panic and must be conservative
+	// Tx 5: reuse HashStore cache across txs
+	state5 := mustState(t, checker.NewTxState())
+	state5.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	filtered5, _ := state5.IsFiltered()
+	assert.True(t, filtered5, "expected cached filtered address to still be filtered")
+
+	// Tx 6: queue overflow should not panic and must be conservative
 	overflowChecker := NewHashedAddressChecker(
 		store,
 		/* workerCount */ 1,
@@ -78,14 +95,14 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	)
 	overflowChecker.Start(context.Background())
 
-	// Tx 5: synchronous call
+	// Tx 6: synchronous call
 	overflowState := mustState(t, overflowChecker.NewTxState())
-	overflowState.TouchAddress(filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	overflowState.TouchAddress(&filter.FilteredAddressRecord{Address: addrFiltered, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 
-	filtered5, _ := overflowState.IsFiltered()
+	filtered6, _ := overflowState.IsFiltered()
 	assert.True(
 		t,
-		filtered5,
+		filtered6,
 		"expected cached filtered address to still be filtered",
 	)
 }
@@ -126,10 +143,10 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 
 			for i := range touchesPerTx {
 				if i%10 == 0 {
-					state.TouchAddress(filter.FilteredAddressRecord{Address: filteredAddrs[i%filteredCount], FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+					state.TouchAddress(&filter.FilteredAddressRecord{Address: filteredAddrs[i%filteredCount], FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 				} else {
 					addr := common.BytesToAddress([]byte{byte(200 + i*tx)})
-					state.TouchAddress(filter.FilteredAddressRecord{Address: addr, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+					state.TouchAddress(&filter.FilteredAddressRecord{Address: addr, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 				}
 			}
 
