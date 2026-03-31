@@ -381,7 +381,7 @@ type BatchPosterOpts struct {
 	DeployInfo           *chaininfo.RollupAddresses
 	TransactOpts         *bind.TransactOpts
 	DAPWriters           []daprovider.Writer
-	ParentChainID        *big.Int
+	ParentChain          *parent.ParentChain
 	DAPReaders           *daprovider.DAProviderRegistry
 	ChainConfig          *params.ChainConfig
 }
@@ -441,7 +441,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriters:         opts.DAPWriters,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
-		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		parentChain:        opts.ParentChain,
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
 	}
@@ -464,7 +464,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
-			ParentChainID:     opts.ParentChainID,
+			ParentChain:       opts.ParentChain,
 		})
 	if err != nil {
 		return nil, err
@@ -2073,8 +2073,8 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.dataPoster.Start(b.GetContext())
-	b.redisLock.Start(b.GetContext())
+	b.StartAndTrackChild(b.dataPoster)
+	b.StartAndTrackChild(b.redisLock)
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
@@ -2155,12 +2155,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config().PollInterval
 		}
 	})
-}
-
-func (b *BatchPoster) StopAndWait() {
-	b.redisLock.StopAndWait()
-	b.dataPoster.StopAndWait()
-	b.StopWaiter.StopAndWait()
 }
 
 type BoolRing struct {

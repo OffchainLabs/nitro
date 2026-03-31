@@ -1,8 +1,9 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{Errno, GuestPtr};
 use wasmer::{FromToNativeWasmType, WasmPtr};
+
+use crate::{Errno, GuestPtr};
 
 unsafe impl FromToNativeWasmType for GuestPtr {
     type Native = i32;

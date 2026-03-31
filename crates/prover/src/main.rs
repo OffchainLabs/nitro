@@ -3,6 +3,14 @@
 
 #![cfg(feature = "native")]
 
+use std::{
+    convert::TryInto,
+    fs::File,
+    io::{BufReader, BufWriter, ErrorKind, Read, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
