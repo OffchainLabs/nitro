@@ -10,6 +10,14 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "stylus_compiler_program"
+path = "lib.rs"
+
+[[bin]]
+name = "stylus-compiler-program"
+path = "main.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 prover = { workspace = true, features = ["native"] }
