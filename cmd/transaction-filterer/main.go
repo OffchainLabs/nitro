@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 type TransactionFiltererConfig struct {
@@ -46,6 +47,7 @@ type TransactionFiltererConfig struct {
 	ChainId   int64                    `koanf:"chain-id"`
 	Wallet    genericconf.WalletConfig `koanf:"wallet"`
 	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
+	SQS       sqsclient.Config         `koanf:"sqs"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -85,6 +87,7 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	Auth:          genericconf.AuthRPCConfigDefault,
 	ChainId:       412346, // nitro-testnode chainid
 	Sequencer:     rpcclient.DefaultClientConfig,
+	SQS:           sqsclient.DefaultConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -108,6 +111,7 @@ func addFlags(f *pflag.FlagSet) {
 	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
+	sqsclient.ConfigAddOptions("sqs", f)
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -128,6 +132,8 @@ func parseConfig(args []string) (*TransactionFiltererConfig, error) {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"wallet.password":    "",
 			"wallet.private-key": "",
+			"sqs.access-key":     "",
+			"sqs.secret-key":     "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -204,7 +210,16 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	var sqsClient sqsclient.Client
+	if config.SQS.Enable {
+		sqsClient, err = sqsclient.NewClient(ctx, &config.SQS)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
+			return 1
+		}
+	}
+
+	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient, sqsClient, config.SQS.QueueURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

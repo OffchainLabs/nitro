@@ -5,11 +5,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync/atomic"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -33,15 +36,22 @@ type TransactionFiltererAPI struct {
 
 	arbFilteredTransactionsManager atomic.Pointer[precompilesgen.ArbFilteredTransactionsManager]
 	txOpts                         *bind.TransactOpts
+
+	sqsClient   sqsclient.Client
+	sqsQueueURL string
 }
 
 func NewTransactionFiltererAPI(
 	manager *precompilesgen.ArbFilteredTransactionsManager,
 	txOpts *bind.TransactOpts,
+	sqsClient sqsclient.Client,
+	sqsQueueURL string,
 ) *TransactionFiltererAPI {
 	api := &TransactionFiltererAPI{
-		queue:  make(chan common.Hash, filterQueueSize),
-		txOpts: txOpts,
+		queue:       make(chan common.Hash, filterQueueSize),
+		txOpts:      txOpts,
+		sqsClient:   sqsClient,
+		sqsQueueURL: sqsQueueURL,
 	}
 	api.arbFilteredTransactionsManager.Store(manager)
 	return api
@@ -82,9 +92,25 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 	log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 }
 
-func (t *TransactionFiltererAPI) ReportFilteredTransactions(_ context.Context, reports []gethexec.FilteredTxReport) error {
+func (t *TransactionFiltererAPI) ReportFilteredTransactions(ctx context.Context, reports []gethexec.FilteredTxReport) error {
+	if t.sqsClient == nil {
+		return errors.New("SQS client not configured")
+	}
 	for _, report := range reports {
-		log.Info("Received filtered transaction report", "txHash", report.TxHash.Hex())
+		body, err := json.Marshal(report)
+		if err != nil {
+			return err
+		}
+		bodyStr := string(body)
+		_, err = t.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+			QueueUrl:    &t.sqsQueueURL,
+			MessageBody: &bodyStr,
+		})
+		if err != nil {
+			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
+			return err
+		}
+		log.Info("Sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
 	}
 	return nil
 }
@@ -132,6 +158,8 @@ func NewStack(
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,
+	sqsClient sqsclient.Client,
+	sqsQueueURL string,
 ) (*node.Node, *TransactionFiltererAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
@@ -149,7 +177,8 @@ func NewStack(
 		}
 	}
 
-	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts)
+	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts, sqsClient, sqsQueueURL)
+
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",

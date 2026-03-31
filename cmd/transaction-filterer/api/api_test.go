@@ -80,7 +80,7 @@ func newTestStack(t *testing.T) (*node.Node, *TransactionFiltererAPI) {
 	stackConfig := DefaultStackConfig
 	stackConfig.HTTPHost = "127.0.0.1"
 	stackConfig.HTTPPort = 0
-	stack, api, err := NewStack(&stackConfig, txOpts, nil)
+	stack, api, err := NewStack(&stackConfig, txOpts, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
