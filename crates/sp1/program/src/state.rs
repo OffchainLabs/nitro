@@ -1,13 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use caller_env::wavmio::WavmIo;
-use caller_env::{ExecEnv, GuestPtr};
+use caller_env::{ExecEnv, GuestPtr, wavmio::WavmIo};
 use rand::RngCore;
 use wasmer::FunctionEnvMut;
 
-use crate::memory::Sp1MemAccess;
-use crate::replay::CustomEnvData;
+use crate::{memory::Sp1MemAccess, replay::CustomEnvData};
 
 impl ExecEnv for CustomEnvData {
     fn advance_time(&mut self, ns: u64) {

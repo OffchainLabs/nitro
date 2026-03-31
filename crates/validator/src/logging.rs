@@ -1,10 +1,12 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::config::LoggingFormat;
-use anyhow::anyhow;
 use std::{env, io};
+
+use anyhow::anyhow;
 use tracing_subscriber::EnvFilter;
+
+use crate::config::LoggingFormat;
 
 /// Initialize `tracing` logging based on the specified format. By default, the logging level is set
 /// to "info" unless overridden by the `RUST_LOG` environment variable.

@@ -1,7 +1,3 @@
-use crate::{
-    CallInputs, Escape, MaybeEscape, Ptr, keccak, read_bytes20, read_bytes32, read_slice,
-    stylus::StylusCustomEnvData,
-};
 use arbutil::{
     Bytes32,
     evm::{
@@ -13,6 +9,11 @@ use arbutil::{
 use eyre::eyre;
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 use wasmer::{FunctionEnvMut, MemoryView};
+
+use crate::{
+    CallInputs, Escape, MaybeEscape, Ptr, keccak, read_bytes20, read_bytes32, read_slice,
+    stylus::StylusCustomEnvData,
+};
 
 pub fn msg_reentrant(mut ctx: FunctionEnvMut<StylusCustomEnvData>) -> Result<u32, Escape> {
     let data = ctx.data_mut();

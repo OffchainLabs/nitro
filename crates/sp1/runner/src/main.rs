@@ -1,9 +1,8 @@
+use std::{ops::Deref, sync::Arc, time::SystemTime};
+
 use clap::{ArgAction, Parser, ValueEnum};
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
-use std::ops::Deref;
-use std::sync::Arc;
-use std::time::SystemTime;
 use validation::{ValidationInput, ValidationRequest};
 
 #[derive(Debug, Parser)]

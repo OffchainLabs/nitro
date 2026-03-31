@@ -7,19 +7,25 @@
 //! for the validation server. It utilizes `clap` to parse arguments and environment variables
 //! into strongly-typed configuration objects used throughout the application.
 
+use std::{
+    collections::HashMap,
+    env,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
+
 use alloy_rpc_types_engine::JwtSecret;
 use anyhow::{anyhow, Context as _, Result};
 use clap::{Parser, ValueEnum};
-use std::collections::HashMap;
-use std::env;
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::engine::machine::JitProcessManager;
-use crate::engine::machine_locator::MachineLocator;
-use crate::engine::{replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT};
-use crate::jwt;
+use crate::{
+    engine::{
+        machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
+        DEFAULT_JIT_CRANELIFT,
+    },
+    jwt,
+};
 
 /// Mode-specific execution state, built at startup.
 pub enum ExecutionMode {
@@ -176,7 +182,8 @@ pub fn get_jit_path() -> Result<PathBuf> {
     let is_test_env = current_exe.to_string_lossy().contains("deps");
 
     let candidate = if is_test_env {
-        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the grandparent
+        // CARGO_MANIFEST_DIR points to crates/validator, therefore we need to look for the
+        // grandparent
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         if let Some(grandparent) = manifest_dir.parent().and_then(|p| p.parent()) {
             grandparent.join("target").join("bin").join("jit")

@@ -1,13 +1,16 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::transfer::{
-    receive_response, receive_validation_input, send_failure_response, send_successful_response,
-    send_validation_input,
-};
-use crate::{GoGlobalState, ValidationInput};
+use std::{collections::BTreeMap, io::pipe};
+
 use arbutil::Bytes32;
-use std::collections::BTreeMap;
-use std::io::pipe;
+
+use crate::{
+    transfer::{
+        receive_response, receive_validation_input, send_failure_response,
+        send_successful_response, send_validation_input,
+    },
+    GoGlobalState, ValidationInput,
+};
 
 #[test]
 fn transfer_successful_response() -> Result<(), Box<dyn std::error::Error>> {

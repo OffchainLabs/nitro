@@ -2,12 +2,12 @@
 //! required to interface with wasmer. Nitro's definitions are mostly
 //! kept in `nitro` sub-module.
 
-use crate::{
-    CallInputs, Escape, JitConfig, MeterData, Ptr, STACK_SIZE,
-    imports::{debug, vm_hooks},
-    read_bytes20, read_bytes32, read_slice,
-    replay::SendYielder,
+use std::{
+    collections::{VecDeque, hash_map::Entry},
+    ops::DerefMut,
+    sync::{Arc, Mutex},
 };
+
 use arbutil::{
     Bytes20, Bytes32,
     evm::{
@@ -26,14 +26,18 @@ use prover::programs::{
     depth::STYLUS_STACK_LEFT,
     meter::{GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS},
 };
-use std::collections::{VecDeque, hash_map::Entry};
-use std::ops::DerefMut;
-use std::sync::{Arc, Mutex};
 use wasmer::{
     AsStoreMut, Engine, Function, FunctionEnv, Imports, Instance, Memory, MemoryView, Module,
     RuntimeError, Store, StoreObjects, imports, sys::NativeEngineExt,
 };
 use wasmer_vm::{UnwindReason, VMExtern, install_unwinder};
+
+use crate::{
+    CallInputs, Escape, JitConfig, MeterData, Ptr, STACK_SIZE,
+    imports::{debug, vm_hooks},
+    read_bytes20, read_bytes32, read_slice,
+    replay::SendYielder,
+};
 
 /// A cothread wraps a stylus program. Actually we run the stylus
 /// program via a coroutine, it is just so named following existing

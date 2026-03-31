@@ -5,14 +5,17 @@ pub mod replay;
 mod state;
 pub mod stylus;
 
+use std::{
+    io,
+    mem::{self, MaybeUninit},
+    ptr::NonNull,
+};
+
 use arbutil::{
     Bytes20, Bytes32,
     evm::api::{Gas, Ink},
 };
 use prover::programs::config::{CompileConfig, StylusConfig};
-use std::io;
-use std::mem::{self, MaybeUninit};
-use std::ptr::NonNull;
 use thiserror::Error;
 use wasmer::{MemoryAccessError, MemoryView, WasmPtr};
 use wasmer_types::RawValue;
@@ -45,6 +48,7 @@ pub(crate) fn read_bytes32(ptr: Ptr, memory: &MemoryView) -> Result<Bytes32, Esc
 
 fn keccak<T: AsRef<[u8]>>(preimage: T) -> [u8; 32] {
     use std::mem::MaybeUninit;
+
     use tiny_keccak::{Hasher, Keccak};
 
     let mut output = MaybeUninit::<[u8; 32]>::uninit();

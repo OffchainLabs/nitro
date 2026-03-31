@@ -6,13 +6,14 @@
 //! They are expected to follow implementations in:
 //! https://github.com/OffchainLabs/nitro/blob/d2dba175c037c47e68cf3038f0d4b06b54983644/arbitrator/jit/src/program.rs
 
+use arbutil::evm::{EvmData, api::Gas};
+use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
+use wasmer::{FunctionEnvMut, WasmPtr};
+
 use crate::{
     Escape, JitConfig, MaybeEscape, Ptr, read_bytes20, read_bytes32, read_slice,
     replay::CustomEnvData, stylus::MessageToCothread,
 };
-use arbutil::evm::{EvmData, api::Gas};
-use prover::programs::config::{CompileConfig, PricingParams, StylusConfig};
-use wasmer::{FunctionEnvMut, WasmPtr};
 
 /// Hardcoded message ID used by the Arbitrator protocol for program communication.
 const ARBITRATOR_MSG_ID: u32 = 0x33333333;
@@ -40,7 +41,8 @@ pub fn new_program(
 pub fn pop(mut ctx: FunctionEnvMut<CustomEnvData>) {
     let data = ctx.data_mut();
 
-    // FIXME: this is wrong, when poping, we should yield from replay.wasm coroutine, and keep running the poped program till it sends the last message and terminates.
+    // FIXME: this is wrong, when poping, we should yield from replay.wasm coroutine, and keep
+    // running the poped program till it sends the last message and terminates.
     data.pop_last_program();
 }
 

@@ -1,25 +1,29 @@
 //! Runtime code for replay.wasm
 
-use crate::{
-    Escape, JitConfig, STACK_SIZE,
-    imports::{arbcompress, precompiles, programs, wasi_stub, wavmio},
-    platform::{exit, read_input},
-    stylus::{Cothread, MessageFromCothread, MessageToCothread},
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
 };
+
 use arbutil::{Bytes32, evm::EvmData};
 use bytes::Bytes;
 use corosensei::{Coroutine, CoroutineResult, Yielder, stack::DefaultStack};
 use once_cell::unsync::Lazy;
 use prover::programs::meter::MeteredMachine;
 use rand_pcg::Pcg32;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 use validation::ValidationInput;
 use wasmer::{
     Engine, Function, FunctionEnv, Imports, Instance, Memory, Module, RuntimeError, Store, Value,
     imports, sys::NativeEngineExt,
 };
 use wasmer_vm::install_unwinder;
+
+use crate::{
+    Escape, JitConfig, STACK_SIZE,
+    imports::{arbcompress, precompiles, programs, wasi_stub, wavmio},
+    platform::{exit, read_input},
+    stylus::{Cothread, MessageFromCothread, MessageToCothread},
+};
 
 // Coroutine is not Send, so we cannot keep it in CustomEnvData.
 // As SP1 is single-threaded, it won't hurt if we use a few static variables.
