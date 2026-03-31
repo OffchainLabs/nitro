@@ -82,11 +82,9 @@ func (c *StylusTargetConfig) Validate() error {
 		})
 	c.wasmTargets = targets
 	if c.NativeStackSize != 0 {
-		const minNativeStack = 8 * 1024          // 8 KB — Wasmer minimum
-		const maxNativeStack = 100 * 1024 * 1024 // 100 MB — Wasmer MAX_STACK_SIZE
-		if c.NativeStackSize < uint64(minNativeStack) || c.NativeStackSize > uint64(maxNativeStack) {
+		if c.NativeStackSize < programs.MinNativeStackSize || c.NativeStackSize > programs.MaxNativeStackSize {
 			return fmt.Errorf("native-stack-size must be between %d and %d bytes (or 0 for default), got %d",
-				minNativeStack, maxNativeStack, c.NativeStackSize)
+				programs.MinNativeStackSize, programs.MaxNativeStackSize, c.NativeStackSize)
 		}
 	}
 	return nil

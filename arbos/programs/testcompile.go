@@ -26,6 +26,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -33,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/holiman/uint256"
 )
 
 // A simple program that calls itself recursively until it runs out of either
@@ -634,7 +635,7 @@ func testCraneliftCompilationAndCache() error {
 }
 
 // testStackDoublingGivesUp verifies the give-up path: when the stack is
-// already at maxNativeStackSize, the single doubling attempt cannot grow
+// already at MaxNativeStackSize, the single doubling attempt cannot grow
 // and retryOnStackOverflow returns NativeStackOverflow.
 //
 // To force cranelift to also overflow at max stack size we use a trick:
@@ -669,8 +670,8 @@ func testStackDoublingGivesUp() error {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
 
-	// Set the stack to exactly maxNativeStackSize.
-	SetInitialNativeStackSize(maxNativeStackSize)
+	// Set the stack to exactly MaxNativeStackSize.
+	SetInitialNativeStackSize(MaxNativeStackSize)
 	DrainStackPool()
 
 	gas := uint64(0xfffffffffffffff)
@@ -707,9 +708,9 @@ func testStackDoublingGivesUp() error {
 		fmt.Printf("testStackDoublingGivesUp: cranelift overflowed at max (give-up path exercised)\n")
 	}
 
-	// Key invariant: stack size is restored to maxNativeStackSize.
-	if got := GetNativeStackSize(); got != maxNativeStackSize {
-		return fmt.Errorf("expected stack size to remain at %d, got %d", maxNativeStackSize, got)
+	// Key invariant: stack size is restored to MaxNativeStackSize.
+	if got := GetNativeStackSize(); got != MaxNativeStackSize {
+		return fmt.Errorf("expected stack size to remain at %d, got %d", MaxNativeStackSize, got)
 	}
 
 	fmt.Printf("testStackDoublingGivesUp: passed (status=%d, stack size preserved at max)\n", retryStatus)

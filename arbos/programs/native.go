@@ -74,9 +74,10 @@ var configuredNativeStackSize atomic.Uint64
 // records it as the baseline for retry recovery. Call once at node startup.
 func SetInitialNativeStackSize(size uint64) {
 	SetNativeStackSize(size)
-	if size > 0 {
-		configuredNativeStackSize.Store(size)
-	}
+	// Always capture the true Wasmer stack size (whether newly set or the
+	// existing default when size == 0) so retryOnStackOverflow can double
+	// from a real baseline.
+	configuredNativeStackSize.Store(GetNativeStackSize())
 }
 
 // SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
@@ -97,8 +98,11 @@ func DrainStackPool() {
 	C.stylus_drain_stack_pool()
 }
 
-// maxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
-const maxNativeStackSize = 100 * 1024 * 1024
+// MinNativeStackSize is the floor enforced by Wasmer's set_stack_size (must match wasmer_vm clamping).
+const MinNativeStackSize = 8 * 1024 // 8 KB
+
+// MaxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
+const MaxNativeStackSize = 100 * 1024 * 1024 // 100 MB
 
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
@@ -545,8 +549,11 @@ func retryOnStackOverflow(
 
 	// Retry with cranelift ASM. Revert any partial state changes the crashed
 	// singlepass attempt may have made via host I/O before the SIGSEGV.
+	// After reverting, take a fresh snapshot so we can revert again if cranelift
+	// also overflows — a snapshot ID can only be reverted once.
 	db.RevertToSnapshot(snapshot)
 	scope.Contract.Gas = savedGas
+	snapshot = db.Snapshot()
 	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 	if status != userNativeStackOverflow {
 		return status, output
@@ -555,6 +562,15 @@ func retryOnStackOverflow(
 	// Cranelift also overflowed — double the stack size once and retry with cranelift.
 	// Use the startup-configured value as the base so that concurrent goroutines
 	// always double from and restore to the same known-good value.
+	//
+	// Note: the Set/Drain/Call/Restore sequence is intentionally not serialized
+	// with a mutex. The race window is narrow and benign: if thread A's defer
+	// restores the base size and drains the pool just before thread B's
+	// doStylusCall allocates a coroutine, thread B's catch_traps will read the
+	// smaller (base) stack size. That is equivalent to thread B never having
+	// seen the doubled value — thread B will overflow again and the retry will
+	// give up, which is the same outcome as if it had never entered the
+	// doubling path. No corruption or crash results.
 	baseStackSize := configuredNativeStackSize.Load()
 	defer func() {
 		SetNativeStackSize(baseStackSize)
@@ -562,8 +578,8 @@ func retryOnStackOverflow(
 	}()
 
 	newStackSize := baseStackSize * 2
-	if newStackSize > maxNativeStackSize {
-		newStackSize = maxNativeStackSize
+	if newStackSize > MaxNativeStackSize {
+		newStackSize = MaxNativeStackSize
 	}
 	if newStackSize <= baseStackSize {
 		log.Error("native stack overflow at max stack size, giving up",
