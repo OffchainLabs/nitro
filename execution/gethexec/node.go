@@ -272,8 +272,8 @@ type ExecutionNode struct {
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
 	consensusRPCClient       *consensusrpcclient.ConsensusRPCClient
-	addressFilterService     *addressfilter.FilterService
-	eventFilter              *eventfilter.EventFilter
+	AddressFilterService     *addressfilter.FilterService
+	EventFilter              *eventfilter.EventFilter
 }
 
 func CreateExecutionNode(
@@ -348,10 +348,6 @@ func CreateExecutionNode(
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 
 	txPreChecker := NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
-	if addressFilterService != nil {
-		txPreChecker.SetAddressChecker(addressFilterService.GetAddressChecker())
-	}
-	txPreChecker.SetEventFilter(eventFilter)
 	txPublisher = txPreChecker
 	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
@@ -361,7 +357,8 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme)
+	txFilter := &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, txFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -396,8 +393,8 @@ func CreateExecutionNode(
 		ParentChainReader:        parentChainReader,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
-		addressFilterService:     addressFilterService,
-		eventFilter:              eventFilter,
+		AddressFilterService:     addressFilterService,
+		EventFilter:              eventFilter,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -489,8 +486,8 @@ func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
-	if n.addressFilterService != nil {
-		if err := n.addressFilterService.Initialize(ctx); err != nil {
+	if n.AddressFilterService != nil {
+		if err := n.AddressFilterService.Initialize(ctx); err != nil {
 			return fmt.Errorf("error initializing address filter service: %w", err)
 		}
 	}
@@ -528,9 +525,9 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChainReader.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	if n.addressFilterService != nil {
-		n.addressFilterService.Start(ctx)
-		checker := n.addressFilterService.GetAddressChecker()
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.Start(ctx)
+		checker := n.AddressFilterService.GetAddressChecker()
 		n.ExecEngine.SetAddressChecker(checker)
 	}
 	return nil
@@ -540,8 +537,8 @@ func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
 	}
-	if n.addressFilterService != nil {
-		n.addressFilterService.StopAndWait()
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.StopAndWait()
 	}
 
 	n.bulkBlockMetadataFetcher.StopAndWait()

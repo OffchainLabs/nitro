@@ -12,15 +12,17 @@ import (
 )
 
 // txFilterer implements core.TxFilterer for address-based transaction filtering
-// in gas estimation dry-runs. It bridges nitro's filtering logic (address checking,
-// event filtering, L1 alias handling) into go-ethereum's gasestimator.
+// in gas estimation dry-runs. It wraps ExecutionEngine to resolve the address
+// checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
 type txFilterer struct {
-	checker     state.AddressChecker
+	execEngine  *ExecutionEngine
 	eventFilter *eventfilter.EventFilter
 }
 
 func (f *txFilterer) Setup(statedb *state.StateDB) {
-	statedb.SetAddressChecker(f.checker)
+	if f.execEngine.addressChecker != nil {
+		statedb.SetAddressChecker(f.execEngine.addressChecker)
+	}
 }
 
 func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {

@@ -24,7 +24,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -69,8 +68,6 @@ type TxPreChecker struct {
 	bc                 *core.BlockChain
 	config             TxPreCheckerConfigFetcher
 	expressLaneTracker *timeboost.ExpressLaneTracker
-	addressChecker     state.AddressChecker
-	eventFilter        *eventfilter.EventFilter
 	backend            core.NodeInterfaceBackendAPI
 }
 
@@ -301,16 +298,8 @@ func (c *TxPreChecker) SetExpressLaneTracker(tracker *timeboost.ExpressLaneTrack
 	c.expressLaneTracker = tracker
 }
 
-func (c *TxPreChecker) SetAddressChecker(checker state.AddressChecker) {
-	c.addressChecker = checker
-}
-
-func (c *TxPreChecker) SetEventFilter(filter *eventfilter.EventFilter) {
-	c.eventFilter = filter
-}
-
 func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, header *types.Header) error {
-	if c.addressChecker == nil || c.backend == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
+	if c.backend == nil || c.backend.TxFilter() == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
 	statedb, err := c.bc.StateAt(header.Root)
@@ -332,7 +321,6 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, header *typ
 		Header:           header,
 		State:            statedb,
 		Backend:          c.backend,
-		TxFilter:         &txFilterer{checker: c.addressChecker, eventFilter: c.eventFilter},
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
