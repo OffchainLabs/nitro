@@ -79,12 +79,14 @@ func getParentName(parent any) string {
 	return strings.Replace(reflect.TypeOf(parent).String(), "*", "", 1)
 }
 
+var ErrAlreadyStarted = errors.New("start after start")
+
 // start-after-start will error, start-after-stop will immediately cancel
 func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	st := s.Lock()
 	defer s.Unlock()
 	if st.Started {
-		return errors.New("start after start")
+		return ErrAlreadyStarted
 	}
 	st.Started = true
 	st.Name = getParentName(parent)
