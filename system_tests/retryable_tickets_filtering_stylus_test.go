@@ -13,13 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-// setupStylusForFilterTest enables Stylus on a node that was already built
-// by setupRetryableFilterTest. It calls BecomeChainOwner and SetInkPrice
-// so that Stylus programs can be deployed and activated.
 func setupStylusForFilterTest(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	t.Helper()
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -103,11 +99,7 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
 
-	// Get sequencer for Pause/Activate
-	prechecker, ok := builder.L2.ExecNode.TxPublisher.(*gethexec.TxPreChecker)
-	require.True(t, ok, "prechecker not found")
-	sequencer, ok := prechecker.TransactionPublisher.(*gethexec.Sequencer)
-	require.True(t, ok, "sequencer not found")
+	sequencer := builder.L2.ExecNode.Sequencer
 
 	// Prepare TX1: write keyBefore=valueBefore to multicall M
 	tx1Args := multicallEmptyArgs()
@@ -137,12 +129,12 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	sequencer.Pause()
 
 	var wg sync.WaitGroup
-	var tx2Err error
+	var tx1Err, tx2Err, tx3Err error
 	wg.Add(3)
+
 	go func() {
 		defer wg.Done()
-		err := sequencer.PublishTransaction(ctx, tx1, nil)
-		require.NoError(t, err)
+		tx1Err = sequencer.PublishTransaction(ctx, tx1, nil)
 	}()
 	go func() {
 		defer wg.Done()
@@ -150,12 +142,14 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		err := sequencer.PublishTransaction(ctx, tx3, nil)
-		require.NoError(t, err)
+		tx3Err = sequencer.PublishTransaction(ctx, tx3, nil)
 	}()
 
 	sequencer.Activate()
 	wg.Wait()
+
+	require.NoError(t, tx1Err, "TX1 should have been published successfully")
+	require.NoError(t, tx3Err, "TX3 should have been published successfully")
 
 	// TX2 should have failed (cascading redeem filtered)
 	require.Error(t, tx2Err, "redeem should have been rejected by filter")
