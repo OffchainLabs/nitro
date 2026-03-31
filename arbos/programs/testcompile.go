@@ -485,7 +485,7 @@ func testRetryOnStackOverflow() error {
 		return fmt.Errorf("failed setting target: %w", err)
 	}
 
-	SetNativeStackSize(32 * 1024)
+	SetInitialNativeStackSize(32 * 1024)
 	DrainStackPool()
 
 	gas := uint64(0xfffffffffffffff)
@@ -505,11 +505,12 @@ func testRetryOnStackOverflow() error {
 	allowFallback.Store(false)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
+	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
-		db, nil, nil, Program{version: 1},
+		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("allowFallback=false: expected NativeStackOverflow, got %d", status)
@@ -524,7 +525,7 @@ func testRetryOnStackOverflow() error {
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, offChainCtx, gas, true,
-		db, nil, nil, Program{version: 1},
+		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("off-chain: expected NativeStackOverflow, got %d", status)
@@ -669,7 +670,7 @@ func testStackDoublingGivesUp() error {
 	}
 
 	// Set the stack to exactly maxNativeStackSize.
-	SetNativeStackSize(maxNativeStackSize)
+	SetInitialNativeStackSize(maxNativeStackSize)
 	DrainStackPool()
 
 	gas := uint64(0xfffffffffffffff)
@@ -690,11 +691,12 @@ func testStackDoublingGivesUp() error {
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
 
+	snapshot := db.Snapshot()
 	retryStatus, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
-		db, nil, nil, Program{version: 1},
+		db, snapshot, nil, nil, Program{version: 1},
 	)
 
 	// Cranelift at 100MB should succeed (out-of-ink or out-of-stack), not overflow.
@@ -736,7 +738,7 @@ func testCraneliftFallbackInRetry() error {
 	}
 
 	// Use a tiny stack so singlepass overflows.
-	SetNativeStackSize(32 * 1024)
+	SetInitialNativeStackSize(32 * 1024)
 	DrainStackPool()
 
 	gas := uint64(0xfffffffffffffff)
@@ -758,11 +760,12 @@ func testCraneliftFallbackInRetry() error {
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
 
+	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
-		db, nil, nil, Program{version: 1},
+		db, snapshot, nil, nil, Program{version: 1},
 	)
 
 	// Cranelift should have succeeded (out-of-ink or out-of-stack, not overflow).

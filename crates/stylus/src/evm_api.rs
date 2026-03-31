@@ -1,12 +1,13 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::GoSliceData;
 use arbutil::evm::{
     api::{EvmApiMethod, Gas, EVM_API_METHOD_REQ_OFFSET},
     req::RequestHandler,
 };
 use prover::RustSlice;
+
+use crate::GoSliceData;
 
 #[derive(Clone, Copy)]
 #[repr(C)]

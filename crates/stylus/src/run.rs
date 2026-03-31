@@ -3,15 +3,18 @@
 
 #![allow(clippy::redundant_closure_call)]
 
-use crate::{env::Escape, native::NativeInstance};
 use arbutil::evm::{
     api::{DataReader, EvmApi, Ink},
     user::UserOutcome,
 };
 use eyre::{eyre, Result};
-use prover::machine::Machine;
-use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
+use prover::{
+    machine::Machine,
+    programs::{prelude::*, STYLUS_ENTRY_POINT},
+};
 use wasmer_types::TrapCode;
+
+use crate::{env::Escape, native::NativeInstance};
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: Ink) -> Result<UserOutcome>;
