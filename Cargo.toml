@@ -88,10 +88,10 @@ sha2 = { version = "0.10.9" }
 sha3 = { version = "0.10.8" }
 siphasher = { version = "0.3.10" }
 smallvec = { version = "1.10.0" }
-sp1-build = { version = "6.0.0", features = ["may_dump_elf"] }
+sp1-build = { version = "6.0.0" }
 sp1-core-executor = { version = "6.0.0" }
-sp1-sdk = { version = "6.0.0", features = ["profiling"] }
-sp1-zkvm = { version = "6.0.0", features = ["untrusted_programs", "may_dump_elf"] }
+sp1-sdk = { version = "6.0.0" }
+sp1-zkvm = { version = "6.0.0" }
 spin = { version = "0.10.0" }
 static_assertions = { version = "1.1.0" }
 structopt = { version = "0.3.26" }
