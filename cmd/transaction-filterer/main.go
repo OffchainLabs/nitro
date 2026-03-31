@@ -47,7 +47,9 @@ type TransactionFiltererConfig struct {
 	ChainId   int64                    `koanf:"chain-id"`
 	Wallet    genericconf.WalletConfig `koanf:"wallet"`
 	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
-	SQS       sqsclient.Config         `koanf:"sqs"`
+
+	SQS             sqsclient.Config      `koanf:"sqs"`
+	ReportForwarder ReportForwarderConfig `koanf:"report-forwarder"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -74,20 +76,21 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	LogLevel:      "INFO",
-	LogType:       "plaintext",
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
-	PProf:         false,
-	PprofCfg:      genericconf.PProfDefault,
-	HTTP:          HTTPConfigDefault,
-	WS:            WSConfigDefault,
-	IPC:           IPCConfigDefault,
-	Auth:          genericconf.AuthRPCConfigDefault,
-	ChainId:       412346, // nitro-testnode chainid
-	Sequencer:     rpcclient.DefaultClientConfig,
-	SQS:           sqsclient.DefaultConfig,
+	Conf:            genericconf.ConfConfigDefault,
+	LogLevel:        "INFO",
+	LogType:         "plaintext",
+	Metrics:         false,
+	MetricsServer:   genericconf.MetricsServerConfigDefault,
+	PProf:           false,
+	PprofCfg:        genericconf.PProfDefault,
+	HTTP:            HTTPConfigDefault,
+	WS:              WSConfigDefault,
+	IPC:             IPCConfigDefault,
+	Auth:            genericconf.AuthRPCConfigDefault,
+	ChainId:         412346, // nitro-testnode chainid
+	Sequencer:       rpcclient.DefaultClientConfig,
+	SQS:             sqsclient.DefaultConfig,
+	ReportForwarder: DefaultReportForwarderConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -112,6 +115,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
 	sqsclient.ConfigAddOptions("sqs", f)
+	ReportForwarderConfigAddOptions("report-forwarder", f)
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -217,6 +221,16 @@ func mainImpl() int {
 			fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
 			return 1
 		}
+	}
+
+	if config.ReportForwarder.Enable {
+		if sqsClient == nil {
+			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
+			return 1
+		}
+		forwarder := NewReportForwarder(&config.ReportForwarder, sqsClient, config.SQS.QueueURL)
+		forwarder.Start(ctx)
+		defer forwarder.StopAndWait()
 	}
 
 	stack, api, err := api.NewStack(&stackConf, txOpts, sequencerClient, sqsClient, config.SQS.QueueURL)
