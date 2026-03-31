@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::Report;
 use std::{ffi::CStr, os::raw::c_char, ptr};
+
+use eyre::Report;
 
 pub unsafe fn c_string_to_string(c_str: *const c_char) -> eyre::Result<String> {
     if c_str.is_null() {

@@ -1,8 +1,12 @@
 //! This module implements arbcompression functions required by Arbitrum.
 
-use crate::state::{gp, sp1_env};
-use crate::{Escape, Ptr, replay::CustomEnvData};
 use wasmer::FunctionEnvMut;
+
+use crate::{
+    Escape, Ptr,
+    replay::CustomEnvData,
+    state::{gp, sp1_env},
+};
 
 pub fn brotli_compress(
     mut ctx: FunctionEnvMut<CustomEnvData>,

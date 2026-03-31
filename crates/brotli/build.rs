@@ -22,8 +22,7 @@ fn main() {
 
 #[cfg(feature = "cc_brotli")]
 fn main() {
-    use std::env;
-    use std::path::PathBuf;
+    use std::{env, path::PathBuf};
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let include_dir = manifest_dir.join("../../brotli/c/include");
     cc::Build::new()

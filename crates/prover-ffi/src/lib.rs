@@ -3,8 +3,7 @@
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
-use std::sync::atomic;
-use std::sync::atomic::AtomicU8;
+use std::sync::{atomic, atomic::AtomicU8};
 
 pub mod c_strings;
 pub mod machine;

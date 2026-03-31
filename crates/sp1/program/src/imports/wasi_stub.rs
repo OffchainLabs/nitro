@@ -1,11 +1,12 @@
 //! WASI stubs — thin wrappers delegating to caller_env::wasip1_stub.
 
+use wasmer::FunctionEnvMut;
+
 use crate::{
     Ptr, platform,
     replay::CustomEnvData,
     state::{gp, sp1_env},
 };
-use wasmer::FunctionEnvMut;
 
 pub fn proc_exit(mut ctx: FunctionEnvMut<CustomEnvData>, code: u32) {
     let (data, _store) = ctx.data_and_store_mut();

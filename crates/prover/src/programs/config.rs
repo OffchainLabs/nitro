@@ -3,14 +3,13 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crate::{programs::meter, value::FunctionType};
+use std::fmt::Debug;
+
 use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
-use std::fmt::Debug;
 use wasmer_types::{Pages, SignatureIndex, WASM_PAGE_SIZE};
 use wasmparser::Operator;
-
 #[cfg(feature = "native")]
 use {
     super::{
@@ -24,6 +23,8 @@ use {
     },
     wasmer_compiler_singlepass::Singlepass,
 };
+
+use crate::{programs::meter, value::FunctionType};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]

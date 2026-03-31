@@ -1,10 +1,10 @@
-use crate::{Escape, MaybeEscape, Ptr, keccak, platform, read_slice, replay::CustomEnvData};
-use wasmer::FunctionEnvMut;
-
 use secp256k1::{
     Message,
     ecdsa::{RecoverableSignature, RecoveryId},
 };
+use wasmer::FunctionEnvMut;
+
+use crate::{Escape, MaybeEscape, Ptr, keccak, platform, read_slice, replay::CustomEnvData};
 
 pub fn ecrecover(
     mut ctx: FunctionEnvMut<CustomEnvData>,

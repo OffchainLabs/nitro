@@ -1,11 +1,11 @@
+use std::{str::FromStr, sync::Arc};
+
 use anyhow::{Context, Result};
 use prover::programs::{
     MiddlewareWrapper, config::CompileConfig, depth::DepthChecker, dynamic::DynamicMeter,
     heap::HeapBound, meter::Meter, start::StartMover,
 };
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
-use std::sync::Arc;
 use wasmer::{
     Module, Store,
     sys::{CompilerConfig, CpuFeature, EngineBuilder, Singlepass, Target, Triple},

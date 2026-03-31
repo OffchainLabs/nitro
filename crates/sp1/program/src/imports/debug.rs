@@ -1,6 +1,7 @@
-use crate::{Escape, MaybeEscape, Ptr, read_slice, stylus::StylusCustomEnvData};
 use prover::value::Value;
 use wasmer::FunctionEnvMut;
+
+use crate::{Escape, MaybeEscape, Ptr, read_slice, stylus::StylusCustomEnvData};
 
 pub fn console_log_text(
     mut ctx: FunctionEnvMut<StylusCustomEnvData>,

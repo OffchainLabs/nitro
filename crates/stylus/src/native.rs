@@ -1,11 +1,12 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    cache::InitCache,
-    env::{MeterData, WasmEnv},
-    host,
+use std::{
+    collections::BTreeMap,
+    fmt::Debug,
+    ops::{Deref, DerefMut},
 };
+
 use arbutil::{
     evm::{
         api::{DataReader, EvmApi, Ink},
@@ -27,18 +28,18 @@ use prover::{
         StylusData,
     },
 };
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
 use wasmer::{
     imports, sys::Target, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages,
     Store, TypedFunction, Value, WasmTypeList,
 };
 use wasmer_vm::VMExtern;
 
-use crate::target_cache::target_native;
+use crate::{
+    cache::InitCache,
+    env::{MeterData, WasmEnv},
+    host,
+    target_cache::target_native,
+};
 
 #[derive(Debug)]
 pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
@@ -460,7 +461,7 @@ pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
     stylus_version: u16,
-    arbos_version_for_gas: u64,
+    arbos_version_for_activation: u64,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
@@ -469,7 +470,7 @@ pub fn activate(
         wasm,
         codehash,
         stylus_version,
-        arbos_version_for_gas,
+        arbos_version_for_activation,
         page_limit,
         debug,
         gas,

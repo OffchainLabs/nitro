@@ -1,31 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{machine::Module, programs::config::CompileConfig};
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32};
-use eyre::WrapErr;
-
-use crate::{
-    binary::{ExportKind, WasmBinary},
-    memory_type::MemoryType,
-    value::{FunctionType as ArbFunctionType, Value},
-};
-use arbutil::Color;
-use eyre::{bail, eyre, Report, Result};
-use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
+
+use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
+use eyre::{bail, eyre, Report, Result, WrapErr};
+use fnv::FnvHashMap as HashMap;
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
     SignatureIndex, Type,
 };
 use wasmparser::{Operator, ValType};
-
 #[cfg(feature = "native")]
 use {
     super::value,
     std::marker::PhantomData,
     wasmer::sys::{FunctionMiddleware, MiddlewareError, ModuleMiddleware},
     wasmer_types::{ExportIndex, GlobalType, MemoryIndex, ModuleInfo, Mutability},
+};
+
+use crate::{
+    binary::{ExportKind, WasmBinary},
+    machine::Module,
+    memory_type::MemoryType,
+    programs::config::CompileConfig,
+    value::{FunctionType as ArbFunctionType, Value},
 };
 
 pub mod config;
@@ -419,17 +418,26 @@ impl Module {
         wasm: &[u8],
         codehash: &Bytes32,
         stylus_version: u16,
-        arbos_version_for_gas: u64, // must only be used for activation gas
+        // The current ArbOS version when activating a new contract, or zero when recompiling an
+        // already-active contract (in which case the original activation version is unknown).
+        // May be used to determine activation gas cost or to decide whether activation succeeds,
+        // but must NOT affect the compilation result (otherwise recompilation would differ).
+        arbos_version_for_activation: u64,
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
-        let (bin, stylus_data) =
-            WasmBinary::parse_user(wasm, arbos_version_for_gas, page_limit, &compile, codehash)
-                .wrap_err("failed to parse wasm")?;
+        let (bin, stylus_data) = WasmBinary::parse_user(
+            wasm,
+            arbos_version_for_activation,
+            page_limit,
+            &compile,
+            codehash,
+        )
+        .wrap_err("failed to parse wasm")?;
 
-        if arbos_version_for_gas > 0 {
+        if arbos_version_for_activation > 0 {
             // converts a number of microseconds to gas
             // TODO: collapse to a single value after finalizing factors
             let us_to_gas = |us: u64| {
@@ -451,7 +459,7 @@ impl Module {
             }
 
             // pay for wasm
-            if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+            if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
                 let wasm_len = wasm.len() as u64;
                 pay!(wasm_len.saturating_mul(31_733) / 100_000);
             }
@@ -481,5 +489,149 @@ impl Module {
             .wrap_err("failed to build user module")?;
 
         Ok((module, stylus_data))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::Path;
+
+    use arbutil::evm::ARBOS_VERSION_STYLUS_NO_MULTI_VALUE;
+
+    use super::*;
+    use crate::binary;
+
+    // Parse at the threshold version so multi-value is rejected by the validator.
+    fn parse_at_threshold(wat: &str) -> Result<WasmBinary<'static>> {
+        let wasm: &'static [u8] = Box::leak(wat::parse_str(wat).unwrap().into_boxed_slice());
+        binary::parse_with_version(wasm, Path::new("test"), ARBOS_VERSION_STYLUS_NO_MULTI_VALUE)
+    }
+
+    #[test]
+    fn test_no_multi_value() {
+        // Single-value wasm is accepted at and above the threshold.
+        assert!(parse_at_threshold(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                )
+            )"#,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_reject_multi_value_function() {
+        // Function type with two return values.
+        assert!(parse_at_threshold(
+            r#"(module
+                (func (result i32 i32)
+                    i32.const 1
+                    i32.const 2
+                )
+            )"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_reject_multi_value_block() {
+        // (block (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
+        // Single-value equivalent: (block (result i32) local.get 0)
+        assert!(parse_at_threshold(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                    (block (param i32) (result i32))
+                )
+            )"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_reject_multi_value_loop() {
+        // (loop (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
+        // Single-value equivalent: (loop  local.get 0  ...)  with value produced inside.
+        assert!(parse_at_threshold(
+            r#"(module
+                (func (param i32) (result i32)
+                    local.get 0
+                    (loop (param i32) (result i32))
+                )
+            )"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_reject_multi_value_if() {
+        // (if (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
+        // Single-value equivalent: (if (result i32) (then local.get 0) (else i32.const 0))
+        assert!(parse_at_threshold(
+            r#"(module
+                (func (param i32 i32) (result i32)
+                    local.get 0
+                    local.get 1
+                    (if (param i32) (result i32)
+                        (then)
+                        (else)
+                    )
+                )
+            )"#,
+        )
+        .is_err());
+    }
+
+    // A minimal valid Stylus wasm that contains a multi-value function type.
+    // Fixed-size memory (1 1) avoids the pay_for_memory_grow import requirement,
+    // so activation can succeed at versions below the multi-value threshold.
+    fn multi_value_stylus_wasm() -> Vec<u8> {
+        wat::parse_str(
+            r#"(module
+                (memory (export "memory") 1 1)
+                (func (result i32 i32)
+                    i32.const 1
+                    i32.const 2
+                )
+                (func (export "user_entrypoint") (param i32) (result i32)
+                    i32.const 0
+                )
+            )"#,
+        )
+        .unwrap()
+    }
+
+    fn activate_with_version(arbos_version: u64) -> Result<(Module, StylusData)> {
+        let wasm = multi_value_stylus_wasm();
+        let mut gas = u64::MAX;
+        Module::activate(
+            &wasm[..],
+            &Bytes32([0u8; 32]),
+            1,
+            arbos_version,
+            128,
+            false,
+            &mut gas,
+        )
+    }
+
+    #[test]
+    fn test_activate_rejects_multi_value_at_threshold() {
+        // At the threshold version the validator rejects multi-value wasm.
+        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE).is_err());
+    }
+
+    #[test]
+    fn test_activate_allows_multi_value_below_threshold() {
+        // One version below the threshold: gate must not fire, activation succeeds.
+        assert!(activate_with_version(ARBOS_VERSION_STYLUS_NO_MULTI_VALUE - 1).is_ok());
+    }
+
+    #[test]
+    fn test_activate_allows_multi_value_at_zero() {
+        // Version 0 is the recompilation path for already-active contracts.
+        // Multi-value must be accepted and activation must succeed.
+        assert!(activate_with_version(0).is_ok());
     }
 }

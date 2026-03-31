@@ -1,10 +1,8 @@
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
+
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program};
 use sp1_sdk::{Elf, include_elf};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
 use wasmer::{
     Module, Store,
     sys::{CpuFeature, EngineBuilder, LLVM, Target, Triple},

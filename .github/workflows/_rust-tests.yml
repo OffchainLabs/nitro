@@ -81,11 +81,14 @@ jobs:
       - name: Check stylus_bechmark
         run: cargo check --manifest-path crates/tools/stylus_benchmark/Cargo.toml
 
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --component rustfmt --profile minimal
+
       - name: Rustfmt
-        run: cargo fmt -p arbutil -p prover -p jit -p stylus -p validator -- --check
+        run: cargo +nightly fmt -- --check
 
       - name: Rustfmt - tools/stylus_benchmark
-        run: cargo fmt --all --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
+        run: cargo +nightly fmt --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs

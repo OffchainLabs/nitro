@@ -13,39 +13,45 @@
 //! exchange of validation inputs (batches, preimages, WASM binaries) and outputs
 //! (new state) via a hybrid IPC mechanism:
 //!
-//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its
-//!    address to the subprocess's Standard Input.
-//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address.
-//!    This TCP stream is then used for data transfer of the `ValidationRequest` and
-//!    the resulting `GlobalState`.
+//! 1. **Handshake (Stdin):** The server opens an ephemeral TCP listener and writes its address to
+//!    the subprocess's Standard Input.
+//! 2. **Data Transport (TCP):** The subprocess connects back to the provided address. This TCP
+//!    stream is then used for data transfer of the `ValidationRequest` and the resulting
+//!    `GlobalState`.
 
-use crate::config::get_jit_path;
-use crate::engine::machine_locator::MachineLocator;
-use crate::engine::{
-    replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT,
-};
-use anyhow::{anyhow, Context, Result};
-use std::collections::HashMap;
-use std::net::TcpListener;
-use std::thread::sleep;
-use std::time::Duration;
 use std::{
+    collections::HashMap,
+    net::TcpListener,
     path::PathBuf,
     process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    thread::sleep,
+    time::Duration,
 };
-use tokio::io::AsyncWriteExt;
-use tokio::sync::RwLock;
+
+use anyhow::{anyhow, Context, Result};
 use tokio::{
+    io::AsyncWriteExt,
     process::{Child, ChildStdin, Command},
-    sync::Mutex,
+    sync::{Mutex, RwLock},
 };
 use tracing::{debug, error, info, warn};
-use validation::transfer::{receive_response, send_validation_input};
-use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
+use validation::{
+    local_target,
+    transfer::{receive_response, send_validation_input},
+    GoGlobalState, ValidationInput, ValidationRequest,
+};
+
+use crate::{
+    config::get_jit_path,
+    engine::{
+        machine_locator::MachineLocator, replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT,
+        DEFAULT_WASM_MEMORY_USAGE_LIMIT,
+    },
+};
 
 #[derive(Debug)]
 pub struct JitMachine {
