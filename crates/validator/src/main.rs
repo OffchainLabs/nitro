@@ -1,16 +1,16 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use clap::Parser;
 use config::ServerConfig;
 use logging::init_logging;
-use std::sync::Arc;
 use tokio::{net::TcpListener, runtime::Builder};
 use tracing::info;
 
-use crate::config::ServerState;
-use crate::server::run_server;
+use crate::{config::ServerState, server::run_server};
 
 mod config;
 mod engine;

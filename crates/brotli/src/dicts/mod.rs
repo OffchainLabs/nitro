@@ -1,13 +1,15 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use core::{ffi::c_int, ptr};
+
+use lazy_static::lazy_static;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+
 use crate::{
     types::BrotliSharedDictionaryType, BrotliStatus, CustomAllocator, EncoderPreparedDictionary,
     HeapItem,
 };
-use core::{ffi::c_int, ptr};
-use lazy_static::lazy_static;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 extern "C" {
     /// Prepares an LZ77 dictionary for use during compression.

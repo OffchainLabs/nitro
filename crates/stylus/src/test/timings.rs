@@ -1,10 +1,12 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::test::{run_native, test_configs, TestInstance};
+use std::time::Instant;
+
 use arbutil::{color::Color, format};
 use eyre::Result;
-use std::time::Instant;
+
+use crate::test::{run_native, test_configs, TestInstance};
 
 #[test]
 fn test_timings() -> Result<()> {

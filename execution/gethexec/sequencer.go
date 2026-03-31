@@ -471,7 +471,7 @@ func NewSequencer(
 	execEngine *ExecutionEngine,
 	l1Reader *headerreader.HeaderReader,
 	configFetcher SequencerConfigFetcher,
-	parentChainId *big.Int,
+	parentChain *parent.ParentChain,
 	eventFilter *eventfilter.EventFilter,
 	addressFilterService *addressfilter.FilterService,
 ) (*Sequencer, error) {
@@ -488,19 +488,16 @@ func NewSequencer(
 	}
 
 	s := &Sequencer{
-		execEngine:      execEngine,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1Timestamp:     0,
-		pauseChan:       nil,
-		onForwarderSet:  make(chan struct{}, 1),
-		parentChain: &parent.ParentChain{
-			ChainID:  parentChainId,
-			L1Reader: l1Reader,
-		},
+		execEngine:                        execEngine,
+		txQueue:                           make(chan txQueueItem, config.QueueSize),
+		l1Reader:                          l1Reader,
+		config:                            configFetcher,
+		senderWhitelist:                   senderWhitelist,
+		nonceCache:                        newNonceCache(config.NonceCacheSize),
+		l1Timestamp:                       0,
+		pauseChan:                         nil,
+		onForwarderSet:                    make(chan struct{}, 1),
+		parentChain:                       parentChain,
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
 		addressFilterService:              addressFilterService,
