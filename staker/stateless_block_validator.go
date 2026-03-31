@@ -546,9 +546,9 @@ func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos ar
 	if err != nil {
 		return server_api.InputJSON{}, err
 	}
-	jason := server_api.ValidationInputToJson(input)
-	jason.ExpectedEndState = &entry.End
-	return *jason, nil
+	result := server_api.ValidationInputToJson(input)
+	result.ExpectedEndState = &entry.End
+	return *result, nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {
