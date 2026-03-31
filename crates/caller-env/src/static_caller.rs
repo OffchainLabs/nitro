@@ -1,10 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 use alloc::vec::Vec;
+
 use rand::RngCore;
 use spin::{Lazy, Mutex, MutexGuard};
+
+use crate::{ExecEnv, GoRuntimeState, GuestPtr, MemAccess};
 
 extern crate alloc;
 
