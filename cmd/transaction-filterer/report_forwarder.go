@@ -21,13 +21,13 @@ import (
 
 type ReportForwarderConfig struct {
 	Enable           bool          `koanf:"enable"`
-	Workers            int           `koanf:"workers"`
+	Workers          int           `koanf:"workers"`
 	PollInterval     time.Duration `koanf:"poll-interval"`
 	ExternalEndpoint string        `koanf:"external-endpoint"`
 }
 
 var DefaultReportForwarderConfig = ReportForwarderConfig{
-	Workers:        1,
+	Workers:      1,
 	PollInterval: 5 * time.Second,
 }
 

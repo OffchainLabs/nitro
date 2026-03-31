@@ -6,20 +6,18 @@ package api
 import (
 	"context"
 	"errors"
-	"math/big"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 )
 
 func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 	t.Helper()
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{})
+	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if err := api.Start(ctx); err != nil {
@@ -30,7 +28,7 @@ func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 }
 
 func TestFilterContextCancelledWhenQueueFull(t *testing.T) {
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{})
+	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil, "")
 
 	for range filterQueueSize {
 		api.queue <- common.Hash{}
@@ -68,19 +66,7 @@ func TestFilterConsumesFromQueue(t *testing.T) {
 
 func newTestStack(t *testing.T) (*node.Node, *TransactionFiltererAPI) {
 	t.Helper()
-	key, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	txOpts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stackConfig := DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	stack, api, err := NewStack(&stackConfig, txOpts, nil, nil, "")
+	stack, api, err := NewTestStack(t, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
