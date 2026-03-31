@@ -75,6 +75,15 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
+// DrainStackPool discards all cached Wasmer coroutine stacks so that
+// subsequent allocations use the current process-wide stack size.
+func DrainStackPool() {
+	C.stylus_drain_stack_pool()
+}
+
+// maxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
+const maxNativeStackSize = 100 * 1024 * 1024
+
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
@@ -374,6 +383,38 @@ func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressFor
 	return localAsm
 }
 
+// doStylusCall performs a single CGo call to stylus_call and returns the status and output.
+// Each invocation creates a fresh NativeApi because the Rust side takes ownership of the handler.
+func doStylusCall(
+	asm []byte,
+	calldata []byte,
+	stylusParams *ProgParams,
+	evm *vm.EVM,
+	tracingInfo *util.TracingInfo,
+	scope *vm.ScopeContext,
+	memoryModel *MemoryModel,
+	evmData *EvmData,
+	debug bool,
+	runCtx *core.MessageRunContext,
+) (userStatus, []byte) {
+	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
+	defer evmApi.drop()
+
+	output := &rustBytes{}
+	status := userStatus(C.stylus_call(
+		goSlice(asm),
+		goSlice(calldata),
+		stylusParams.encode(),
+		evmApi.cNative,
+		evmData.encode(),
+		cbool(debug),
+		output,
+		(*u64)(&scope.Contract.Gas),
+		u32(runCtx.WasmCacheTag()),
+	))
+	return status, rustBytesIntoBytes(output)
+}
+
 func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
@@ -386,6 +427,9 @@ func callProgram(
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
+	code []byte,
+	params *StylusParams,
+	program Program,
 ) ([]byte, error) {
 	db := evm.StateDB
 	debug := stylusParams.DebugMode
@@ -404,28 +448,26 @@ func callProgram(
 		}
 	}
 
-	evmApi := newApi(evm, tracingInfo, scope, memoryModel)
-	defer evmApi.drop()
+	savedGas := scope.Contract.Gas
 
-	output := &rustBytes{}
-	status := userStatus(C.stylus_call(
-		goSlice(localAsm),
-		goSlice(calldata),
-		stylusParams.encode(),
-		evmApi.cNative,
-		evmData.encode(),
-		cbool(debug),
-		output,
-		(*u64)(&scope.Contract.Gas),
-		u32(runCtx.WasmCacheTag()),
-	))
+	// First attempt with the pre-compiled (singlepass) ASM.
+	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+
+	if status == userNativeStackOverflow {
+		status, output = retryOnStackOverflow(
+			address, moduleHash,
+			scope, evm, tracingInfo, calldata, evmData, stylusParams,
+			memoryModel, runCtx, savedGas, debug,
+			db, code, params, program,
+		)
+	}
 
 	depth := evm.Depth()
 	if status == userNativeStackOverflow {
-		log.Error("native stack overflow reached Go side (retry loop failed)",
+		log.Error("native stack overflow, all retries exhausted",
 			"program", address, "module", moduleHash, "depth", depth)
 	}
-	data, msg, err := status.toResult(rustBytesIntoBytes(output), debug)
+	data, msg, err := status.toResult(output, debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -433,6 +475,140 @@ func callProgram(
 		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
 	}
 	return data, err
+}
+
+// retryOnStackOverflow handles native stack overflow recovery:
+//
+//  1. If allowFallback is false or off-chain, return the error immediately.
+//  2. Get cranelift ASM (from wasm store or compile + persist).
+//  3. Retry with cranelift ASM.
+//  4. If cranelift also overflows, double the stack size once and retry with cranelift.
+//  5. If still overflowing, give up.
+func retryOnStackOverflow(
+	address common.Address,
+	moduleHash common.Hash,
+	scope *vm.ScopeContext,
+	evm *vm.EVM,
+	tracingInfo *util.TracingInfo,
+	calldata []byte,
+	evmData *EvmData,
+	stylusParams *ProgParams,
+	memoryModel *MemoryModel,
+	runCtx *core.MessageRunContext,
+	savedGas uint64,
+	debug bool,
+	db vm.StateDB,
+	code []byte,
+	params *StylusParams,
+	program Program,
+) (userStatus, []byte) {
+	if !allowFallback.Load() {
+		log.Warn("native stack overflow, fallback disabled",
+			"program", address, "module", moduleHash)
+		return userNativeStackOverflow, nil
+	}
+	if !runCtx.IsExecutedOnChain() {
+		log.Warn("native stack overflow, no retry for off-chain execution",
+			"program", address, "module", moduleHash)
+		return userNativeStackOverflow, nil
+	}
+
+	// Get or compile cranelift ASM (persisted to wasm store on compilation).
+	craneliftAsm := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
+	if len(craneliftAsm) == 0 {
+		log.Error("native stack overflow, cranelift ASM unavailable",
+			"program", address, "module", moduleHash)
+		return userNativeStackOverflow, nil
+	}
+
+	// Retry with cranelift ASM.
+	scope.Contract.Gas = savedGas
+	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	if status != userNativeStackOverflow {
+		return status, output
+	}
+
+	// Cranelift also overflowed — double the stack size once and retry with cranelift.
+	originalStackSize := GetNativeStackSize()
+	defer func() {
+		SetNativeStackSize(originalStackSize)
+		DrainStackPool()
+	}()
+
+	newStackSize := originalStackSize * 2
+	if newStackSize > maxNativeStackSize {
+		newStackSize = maxNativeStackSize
+	}
+	if newStackSize <= originalStackSize {
+		log.Error("native stack overflow at max stack size, giving up",
+			"program", address, "module", moduleHash, "stackSize", originalStackSize)
+		return userNativeStackOverflow, nil
+	}
+
+	log.Warn("native stack overflow with cranelift, doubling stack size",
+		"program", address, "oldSize", originalStackSize, "newSize", newStackSize)
+	SetNativeStackSize(newStackSize)
+	DrainStackPool()
+
+	scope.Contract.Gas = savedGas
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+}
+
+// getCraneliftAsm returns cranelift-compiled ASM for the given module.
+// It first checks the persistent wasm store. If not found, it compiles
+// with cranelift and persists the result to the wasm store.
+func getCraneliftAsm(
+	moduleHash common.Hash,
+	address common.Address,
+	db vm.StateDB,
+	code []byte,
+	params *StylusParams,
+	version uint16,
+	debug bool,
+) []byte {
+	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
+	if err != nil {
+		log.Error("failed to determine cranelift target", "err", err)
+		return nil
+	}
+
+	// Check persistent wasm store.
+	wasmStore := db.Database().WasmStore()
+	if wasmStore != nil {
+		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
+			return asm
+		}
+	}
+
+	// Compile with cranelift.
+	log.Warn("native stack overflow, compiling with cranelift",
+		"program", address, "module", moduleHash)
+
+	wasm, err := getWasmFromContractCode(db, code, params, nil)
+	if err != nil {
+		log.Error("failed to get wasm for cranelift compilation",
+			"program", address, "err", err)
+		return nil
+	}
+
+	asm, err := compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
+	if err != nil {
+		log.Error("cranelift compilation failed",
+			"program", address, "err", err)
+		return nil
+	}
+
+	// Persist to wasm store.
+	if wasmStore != nil {
+		batch := wasmStore.NewBatch()
+		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
+		if err := batch.Write(); err != nil {
+			log.Error("failed to persist cranelift ASM to wasm store",
+				"program", address, "err", err)
+		}
+	}
+
+	return asm
 }
 
 //export handleReqImpl

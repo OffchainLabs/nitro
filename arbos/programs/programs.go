@@ -270,7 +270,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx, contract.Code, params, program)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -792,11 +792,9 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	case userNativeStackOverflow:
-		// Should not reach Go — the Rust retry loop in stylus_call handles
-		// this by retrying or converting to OutOfStack when the maximum stack
-		// size is exhausted. If this status does reach Go, it indicates the
-		// retry loop was bypassed. Treat as depth error. The caller in
-		// native.go logs full context (program, module, depth) before this.
+		// Go-side retry logic (cranelift recompilation + one stack
+		// doubling) has been exhausted or was not applicable (fallback
+		// disabled / off-chain). Treat as depth error.
 		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)

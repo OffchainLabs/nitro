@@ -69,3 +69,35 @@ func TestNativeStackSizeMaxCap(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRetryOnStackOverflow(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testRetryOnStackOverflow()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftCompilationAndCache(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testCraneliftCompilationAndCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStackDoublingGivesUp(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testStackDoublingGivesUp()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftFallbackInRetry(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testCraneliftFallbackInRetry()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
