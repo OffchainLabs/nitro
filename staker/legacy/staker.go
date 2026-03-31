@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -298,6 +298,7 @@ type Staker struct {
 }
 
 type ValidatorWalletInterface interface {
+	stopwaiter.StoppableChild
 	Initialize(context.Context) error
 	InitializeAndCreateSCW(context.Context) error
 	// Address must be able to be called concurrently with other functions
@@ -311,8 +312,6 @@ type ValidatorWalletInterface interface {
 	TimeoutChallenges(context.Context, []uint64, common.Address) (*types.Transaction, error)
 	CanBatchTxs() bool
 	AuthIfEoa() *bind.TransactOpts
-	Start(context.Context)
-	StopAndWait()
 	// May be nil
 	DataPoster() *dataposter.DataPoster
 }
@@ -560,14 +559,6 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 	return latestStaked, count, &globalState, nil
 }
 
-func (s *Staker) StopAndWait() {
-	// wallet is started externally, but stopped here because the Staker owns it.
-	if s.Strategy() != WatchtowerStrategy {
-		s.wallet.StopAndWait()
-	}
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
@@ -590,7 +581,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			} else {
-				validatorGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
+				validatorGasRefunderBalance.Update(floatmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		err = s.updateBlockValidatorModuleRoot(ctx)
@@ -1264,5 +1255,5 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 		log.Warn("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
-	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
+	stakerBalanceGauge.Update(floatmath.BalancePerEther(balance))
 }

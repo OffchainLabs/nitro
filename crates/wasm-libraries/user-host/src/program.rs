@@ -1,6 +1,9 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use core::sync::atomic::{compiler_fence, Ordering};
+use std::{borrow::Cow, cell::UnsafeCell, fmt::Display};
+
 use arbutil::{
     benchmark::Benchmark,
     evm::{
@@ -12,12 +15,8 @@ use arbutil::{
     Color,
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use core::sync::atomic::{compiler_fence, Ordering};
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
-use std::borrow::Cow;
-use std::cell::UnsafeCell;
-use std::fmt::Display;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 
