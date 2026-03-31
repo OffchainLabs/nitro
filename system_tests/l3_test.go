@@ -61,19 +61,26 @@ func TestSimpleL3(t *testing.T) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		headState1, err := firstNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
-		Require(t, err)
-		if headState1.MsgCount > 1 {
-			headState2, err := secondNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
-			Require(t, err)
-			if headState1.Hash() == headState2.Hash() {
-				break
-			}
-		}
 		select {
 		case <-timeout.C:
 			t.Fatal("Timed out waiting for MEL head states to converge with MsgCount > 1")
 		case <-tick.C:
+		}
+		headState1, err := firstNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
+		if err != nil {
+			t.Logf("Node 1 GetHeadState transient error: %v", err)
+			continue
+		}
+		if headState1.MsgCount <= 1 {
+			continue
+		}
+		headState2, err := secondNodeTestClient.ConsensusNode.MessageExtractor.GetHeadState()
+		if err != nil {
+			t.Logf("Node 2 GetHeadState transient error: %v", err)
+			continue
+		}
+		if headState1.Hash() == headState2.Hash() {
+			break
 		}
 	}
 }

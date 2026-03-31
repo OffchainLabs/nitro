@@ -48,6 +48,9 @@ func (c *MessageExtractionConfig) Validate() error {
 	if c.ReadMode != "latest" && c.ReadMode != "safe" && c.ReadMode != "finalized" {
 		return fmt.Errorf("inbox reader read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
 	}
+	if c.LogExtractionStatusFrequencyBlocks == 0 {
+		return errors.New("log-extraction-status-frequency-blocks must be greater than 0")
+	}
 	return nil
 }
 
@@ -531,6 +534,7 @@ func (m *MessageExtractor) FindInboxBatchContainingMessage(pos arbutil.MessageIn
 }
 
 func (m *MessageExtractor) SetBlockValidator(_ *staker.BlockValidator) {
+	log.Info("MEL does not support block validation registration; SetBlockValidator is a no-op")
 }
 
 func (m *MessageExtractor) GetBatchCount() (uint64, error) {
@@ -543,7 +547,10 @@ func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 
 func (m *MessageExtractor) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
-	return metadata.Accumulator, err
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return metadata.Accumulator, nil
 }
 
 func (m *MessageExtractor) CaughtUp() chan struct{} {
@@ -583,7 +590,6 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	// specified block. The FSM will transition to the `ProcessingNextBlock` state
 	// based on this old state after the reorg is handled.
 	case Reorging:
-		fsmReorgsCounter.Inc(1)
 		return m.reorg(ctx, current)
 	default:
 		return m.config.RetryInterval, fmt.Errorf("invalid state: %s", current.State)

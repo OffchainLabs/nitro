@@ -93,7 +93,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		extractionErrors.Inc(1)
 		return m.config.RetryInterval, err
 	}
-	end := time.Since(start)
+	elapsed := time.Since(start)
 	// After processing every 100 parent chain blocks, print a status log
 	if postState.ParentChainBlockNumber%m.config.LogExtractionStatusFrequencyBlocks == 0 {
 		log.Info("Message extraction successful", "parentChainBlockNumber", postState.ParentChainBlockNumber, "msgCount", postState.MsgCount)
@@ -110,7 +110,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	latestDelayedReadCountGauge.Update(int64(postState.DelayedMessagesRead))
 	//#nosec G115
 	msgsExtractedCounter.Inc(int64(len(msgs)))
-	blockProcessTimeGauge.Update(end.Microseconds())
+	blockProcessTimeGauge.Update(elapsed.Microseconds())
 
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{

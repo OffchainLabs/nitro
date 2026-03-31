@@ -6,7 +6,6 @@ var (
 	// FSM health.
 	stuckFSMIndicatingGauge   = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 	fsmBlocksProcessedCounter = metrics.NewRegisteredCounter("arb/mel/fsm/process_block", nil)
-	fsmReorgsCounter          = metrics.NewRegisteredCounter("arb/mel/fsm/reorging", nil)
 	fsmSaveMessagesCounter    = metrics.NewRegisteredCounter("arb/mel/fsm/save_messages", nil)
 
 	// State progress.
