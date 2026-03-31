@@ -12,7 +12,22 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+
+	"github.com/offchainlabs/nitro/arbos/programs"
 )
+
+// saveAndRestoreNativeStackGlobals saves the current process-wide Wasmer stack
+// size and returns a cleanup function that restores it. Tests that modify the
+// native stack size via StylusTargetConfig should call this to avoid polluting
+// other tests running in the same process.
+func saveAndRestoreNativeStackGlobals(t *testing.T) {
+	t.Helper()
+	savedSize := programs.GetNativeStackSize()
+	t.Cleanup(func() {
+		programs.SetInitialNativeStackSize(savedSize)
+		programs.DrainStackPool()
+	})
+}
 
 // TestProgramNativeStackOverflowRecovery exercises the full
 // callProgram → retryOnStackOverflow path with a real EVM context.
@@ -24,7 +39,9 @@ import (
 // program should terminate normally (out-of-ink or out-of-stack) rather
 // than crashing the node.
 func TestProgramNativeStackOverflowRecovery(t *testing.T) {
+	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise()                                   // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024 // 64 KB
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
@@ -57,7 +74,9 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 // cranelift fallback is disabled. No retry is attempted and the call
 // should revert immediately.
 func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
+	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise() // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
 		b.execConfig.StylusTarget.AllowFallback = false
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
@@ -106,7 +125,9 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 // execution uses IsExecutedOnChain()=true, enabling the cranelift fallback
 // when AllowFallback=true.
 func TestProgramNativeStackOverflowViaTransaction(t *testing.T) {
+	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise() // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
@@ -137,7 +158,9 @@ func TestProgramNativeStackOverflowViaTransaction(t *testing.T) {
 //  3. Cranelift ASM is persisted to the wasm store
 //  4. A second on-chain tx reuses the persisted cranelift ASM (no recompilation)
 func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
+	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise() // mutates process-wide native stack size
 		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
 		b.execConfig.StylusTarget.AllowFallback = true
 		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
