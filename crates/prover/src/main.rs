@@ -21,13 +21,6 @@ use prover::{
     wavm::Opcode,
 };
 use serde::Deserialize;
-use std::sync::Arc;
-use std::{convert::TryInto, io::BufWriter};
-use std::{
-    fs::File,
-    io::{BufReader, ErrorKind, Read, Write},
-    path::{Path, PathBuf},
-};
 use structopt::StructOpt;
 use validation::GoGlobalState;
 

@@ -1,15 +1,17 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{fs::File, io::BufReader};
+
 use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
 use jit::{machine::Escape, run, Opts};
 use serde::Deserialize;
-use std::fs::File;
-use std::io::BufReader;
-use validation::transfer::{send_failure_response, send_successful_response};
-use validation::GoGlobalState;
+use validation::{
+    transfer::{send_failure_response, send_successful_response},
+    GoGlobalState,
+};
 use wasmer::FrameInfo;
 
 fn main() -> Result<()> {
@@ -72,7 +74,8 @@ fn get_expected_state(opts: &Opts) -> Result<Option<GoGlobalState>> {
         jit::InputMode::Json { inputs } => {
             let file = File::open(inputs)?;
 
-            // Use a temporary struct with the only interesting field, to avoid parsing all other data.
+            // Use a temporary struct with the only interesting field, to avoid parsing all other
+            // data.
             #[derive(Deserialize)]
             #[serde(rename_all = "PascalCase")]
             struct ExpectedState {
