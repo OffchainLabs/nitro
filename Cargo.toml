@@ -8,6 +8,7 @@ members = [
     "crates/validation",
     "crates/prover",
     "crates/prover-ffi",
+    "crates/sp1/stylus-compiler-program",
     "crates/stylus",
     "crates/validator",
     "crates/wasm-libraries/arbcompress",
