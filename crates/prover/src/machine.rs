@@ -18,7 +18,7 @@ use std::{
 
 use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
