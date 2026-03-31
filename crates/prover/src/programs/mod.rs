@@ -3,12 +3,12 @@
 
 use std::fmt::Debug;
 
-use arbutil::{evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color};
-use eyre::{bail, eyre, Report, Result, WrapErr};
+use arbutil::{Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum};
+use eyre::{Report, Result, WrapErr, bail, eyre};
 use fnv::FnvHashMap as HashMap;
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
-    SignatureIndex, Type,
+    FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex, SignatureIndex, Type,
+    entity::EntityRef,
 };
 use wasmparser::{Operator, ValType};
 #[cfg(feature = "native")]
@@ -510,66 +510,75 @@ mod test {
     #[test]
     fn test_no_multi_value() {
         // Single-value wasm is accepted at and above the threshold.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                 )
             )"#,
-        )
-        .is_ok());
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_function() {
         // Function type with two return values.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (result i32 i32)
                     i32.const 1
                     i32.const 2
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_block() {
         // (block (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (block (result i32) local.get 0)
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (block (param i32) (result i32))
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_loop() {
         // (loop (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (loop  local.get 0  ...)  with value produced inside.
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32) (result i32)
                     local.get 0
                     (loop (param i32) (result i32))
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_reject_multi_value_if() {
         // (if (param i32) (result i32)) — BlockType::FuncType, rejected even with 1 result.
         // Single-value equivalent: (if (result i32) (then local.get 0) (else i32.const 0))
-        assert!(parse_at_threshold(
-            r#"(module
+        assert!(
+            parse_at_threshold(
+                r#"(module
                 (func (param i32 i32) (result i32)
                     local.get 0
                     local.get 1
@@ -579,8 +588,9 @@ mod test {
                     )
                 )
             )"#,
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     // A minimal valid Stylus wasm that contains a multi-value function type.

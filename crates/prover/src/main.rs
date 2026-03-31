@@ -11,13 +11,13 @@ use std::{
     sync::Arc,
 };
 
-use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
-use eyre::{eyre, Context, Result};
+use arbutil::{Bytes32, Color, DebugColor, PreimageType, format};
+use eyre::{Context, Result, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     prepare::prepare_machine,
-    utils::{file_bytes, hash_preimage, CBytes},
+    utils::{CBytes, file_bytes, hash_preimage},
     wavm::Opcode,
 };
 use structopt::StructOpt;

@@ -4,9 +4,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use caller_env::{
-    self,
+    self, GuestPtr,
     static_caller::{StaticExecEnv, StaticMem},
-    GuestPtr,
 };
 
 #[unsafe(no_mangle)]

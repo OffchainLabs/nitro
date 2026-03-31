@@ -13,8 +13,10 @@ pub fn write_wat_ops(
     for _ in 0..number_of_ops_per_loop_iteration {
         wat.write_all(format!("            i32.const 0\n").as_bytes())
             .unwrap();
-        wat.write_all(format!("            {}.const {}\n", data_type, data_type.r#gen()).as_bytes())
-            .unwrap();
+        wat.write_all(
+            format!("            {}.const {}\n", data_type, data_type.r#gen()).as_bytes(),
+        )
+        .unwrap();
         wat.write_all(format!("            {}.store\n", data_type).as_bytes())
             .unwrap();
     }

@@ -4,7 +4,7 @@
 use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
-use jit::{machine::Escape, run, Opts};
+use jit::{Opts, machine::Escape, run};
 use validation::transfer::{send_failure_response, send_successful_response};
 use wasmer::FrameInfo;
 

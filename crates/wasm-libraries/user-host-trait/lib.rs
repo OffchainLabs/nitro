@@ -4,20 +4,19 @@
 use std::{borrow::Cow, fmt::Display, time::Instant};
 
 use arbutil::{
+    Bytes20, Bytes32,
     benchmark::Benchmark,
     crypto,
     evm::{
-        self,
+        self, ARBOS_VERSION_STYLUS_CHARGING_FIXES, EvmData,
         api::{CreateRespone, DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
-        EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
-    pricing::{hostio, EVM_API_INK},
-    Bytes20, Bytes32,
+    pricing::{EVM_API_INK, hostio},
 };
 pub use caller_env::GuestPtr;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use prover::{
     programs::{meter::OutOfInkError, prelude::*},
     value::Value,

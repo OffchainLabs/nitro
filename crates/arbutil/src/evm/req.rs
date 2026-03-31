@@ -3,16 +3,16 @@
 
 use std::collections::hash_map::Entry;
 
-use eyre::{bail, eyre, Result};
+use eyre::{Result, bail, eyre};
 
 use super::api::{Gas, Ink};
 use crate::{
+    Bytes20, Bytes32,
     evm::{
         api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
         storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
-    Bytes20, Bytes32,
 };
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {

@@ -4,24 +4,24 @@
 use std::ptr;
 
 use arbutil::{
+    Bytes32,
     evm::{
+        EvmData,
         api::{DataReader, Gas, Ink},
         req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
-        EvmData,
     },
     format::DebugBytes,
-    Bytes32,
 };
 pub use brotli;
-use cache::{deserialize_module, CacheMetrics, InitCache};
+use cache::{CacheMetrics, InitCache, deserialize_module};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 pub use prover;
 use prover::{
-    programs::{prelude::*, StylusData},
     RustBytes,
+    programs::{StylusData, prelude::*},
 };
 use run::RunProgram;
 use target_cache::{target_cache_get, target_cache_set};
@@ -80,16 +80,20 @@ impl DataReader for GoSliceData {
     }
 }
 
-unsafe fn write_err(output: &mut RustBytes, err: ErrReport) -> UserOutcomeKind { unsafe {
-    output.write(err.debug_bytes());
-    UserOutcomeKind::Failure
-}}
+unsafe fn write_err(output: &mut RustBytes, err: ErrReport) -> UserOutcomeKind {
+    unsafe {
+        output.write(err.debug_bytes());
+        UserOutcomeKind::Failure
+    }
+}
 
-unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOutcomeKind { unsafe {
-    let (status, outs) = outcome.into_data();
-    output.write(outs);
-    status
-}}
+unsafe fn write_outcome(output: &mut RustBytes, outcome: UserOutcome) -> UserOutcomeKind {
+    unsafe {
+        let (status, outs) = outcome.into_data();
+        output.write(outs);
+        status
+    }
+}
 
 /// "activates" a user wasm.
 ///
@@ -114,32 +118,34 @@ pub unsafe extern "C" fn stylus_activate(
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
     gas: *mut u64,
-) -> UserOutcomeKind { unsafe {
-    let wasm = wasm.slice();
-    let output = &mut *output;
-    let module_hash = &mut *module_hash;
-    let codehash = &*codehash;
-    let gas = &mut *gas;
+) -> UserOutcomeKind {
+    unsafe {
+        let wasm = wasm.slice();
+        let output = &mut *output;
+        let module_hash = &mut *module_hash;
+        let codehash = &*codehash;
+        let gas = &mut *gas;
 
-    let (module, info) = match native::activate(
-        wasm,
-        codehash,
-        stylus_version,
-        arbos_version_for_activation,
-        page_limit,
-        debug,
-        gas,
-    ) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err),
-    };
+        let (module, info) = match native::activate(
+            wasm,
+            codehash,
+            stylus_version,
+            arbos_version_for_activation,
+            page_limit,
+            debug,
+            gas,
+        ) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err),
+        };
 
-    *module_hash = module.hash();
-    *stylus_data = info;
+        *module_hash = module.hash();
+        *stylus_data = info;
 
-    output.write(module.into_bytes());
-    UserOutcomeKind::Success
-}}
+        output.write(module.into_bytes());
+        UserOutcomeKind::Success
+    }
+}
 
 /// "compiles" a user wasm.
 ///
@@ -157,40 +163,44 @@ pub unsafe extern "C" fn stylus_compile(
     target: GoSliceData,
     cranelift: bool,
     output: *mut RustBytes,
-) -> UserOutcomeKind { unsafe {
-    let wasm = wasm.slice();
-    let output = &mut *output;
-    let target = match String::from_utf8(target.slice().to_vec()) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err.into()),
-    };
-    let target = match target_cache_get(&target) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err),
-    };
+) -> UserOutcomeKind {
+    unsafe {
+        let wasm = wasm.slice();
+        let output = &mut *output;
+        let target = match String::from_utf8(target.slice().to_vec()) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err.into()),
+        };
+        let target = match target_cache_get(&target) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err),
+        };
 
-    let asm = match native::compile(wasm, version, debug, target, cranelift) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err),
-    };
+        let asm = match native::compile(wasm, version, debug, target, cranelift) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err),
+        };
 
-    output.write(asm);
-    UserOutcomeKind::Success
-}}
+        output.write(asm);
+        UserOutcomeKind::Success
+    }
+}
 
 #[unsafe(no_mangle)]
 /// # Safety
 ///
 /// `output` must not be null.
-pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind { unsafe {
-    let output = &mut *output;
-    let wasm = match wasmer::wat2wasm(wat.slice()) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err.into()),
-    };
-    output.write(wasm.into_owned());
-    UserOutcomeKind::Success
-}}
+pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind {
+    unsafe {
+        let output = &mut *output;
+        let wasm = match wasmer::wat2wasm(wat.slice()) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err.into()),
+        };
+        output.write(wasm.into_owned());
+        UserOutcomeKind::Success
+    }
+}
 
 /// sets target index to a string
 ///
@@ -205,24 +215,26 @@ pub unsafe extern "C" fn stylus_target_set(
     description: GoSliceData,
     output: *mut RustBytes,
     native: bool,
-) -> UserOutcomeKind { unsafe {
-    let output = &mut *output;
-    let name = match String::from_utf8(name.slice().to_vec()) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err.into()),
-    };
+) -> UserOutcomeKind {
+    unsafe {
+        let output = &mut *output;
+        let name = match String::from_utf8(name.slice().to_vec()) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err.into()),
+        };
 
-    let desc_str = match String::from_utf8(description.slice().to_vec()) {
-        Ok(val) => val,
-        Err(err) => return write_err(output, err.into()),
-    };
+        let desc_str = match String::from_utf8(description.slice().to_vec()) {
+            Ok(val) => val,
+            Err(err) => return write_err(output, err.into()),
+        };
 
-    if let Err(err) = target_cache_set(name, desc_str, native) {
-        return write_err(output, err);
-    };
+        if let Err(err) = target_cache_set(name, desc_str, native) {
+            return write_err(output, err);
+        };
 
-    UserOutcomeKind::Success
-}}
+        UserOutcomeKind::Success
+    }
+}
 
 /// Calls an activated user program.
 ///
@@ -241,41 +253,43 @@ pub unsafe extern "C" fn stylus_call(
     output: *mut RustBytes,
     gas: *mut u64,
     long_term_tag: u32,
-) -> UserOutcomeKind { unsafe {
-    let module = module.slice();
-    let calldata = calldata.slice().to_vec();
-    let evm_api = EvmApiRequestor::new(req_handler);
-    let pricing = config.pricing;
-    let output = &mut *output;
-    let ink = pricing.gas_to_ink(Gas(*gas));
+) -> UserOutcomeKind {
+    unsafe {
+        let module = module.slice();
+        let calldata = calldata.slice().to_vec();
+        let evm_api = EvmApiRequestor::new(req_handler);
+        let pricing = config.pricing;
+        let output = &mut *output;
+        let ink = pricing.gas_to_ink(Gas(*gas));
 
-    // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe {
-        NativeInstance::deserialize_cached(
-            module,
-            config.version,
-            evm_api,
-            evm_data,
-            long_term_tag,
-            debug_chain,
-        )
-    };
-    let mut instance = match instance {
-        Ok(instance) => instance,
-        Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
-    };
+        // Safety: module came from compile_user_wasm and we've paid for memory expansion
+        let instance = unsafe {
+            NativeInstance::deserialize_cached(
+                module,
+                config.version,
+                evm_api,
+                evm_data,
+                long_term_tag,
+                debug_chain,
+            )
+        };
+        let mut instance = match instance {
+            Ok(instance) => instance,
+            Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+        };
 
-    let status = match instance.run_main(&calldata, config, ink) {
-        Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
-        Ok(outcome) => write_outcome(output, outcome),
-    };
-    let ink_left = match status {
-        UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
-        _ => instance.ink_left().into(),
-    };
-    *gas = pricing.ink_to_gas(ink_left).0;
-    status
-}}
+        let status = match instance.run_main(&calldata, config, ink) {
+            Err(e) | Ok(UserOutcome::Failure(e)) => write_err(output, e.wrap_err("call failed")),
+            Ok(outcome) => write_outcome(output, outcome),
+        };
+        let ink_left = match status {
+            UserOutcomeKind::OutOfStack => Ink(0), // take all gas when out of stack
+            _ => instance.ink_left().into(),
+        };
+        *gas = pricing.ink_to_gas(ink_left).0;
+        status
+    }
+}
 
 /// set lru cache capacity
 #[unsafe(no_mangle)]
@@ -326,10 +340,12 @@ pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
 ///
 /// `output` must not be null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) { unsafe {
-    let output = &mut *output;
-    InitCache::get_metrics(output);
-}}
+pub unsafe extern "C" fn stylus_get_cache_metrics(output: *mut CacheMetrics) {
+    unsafe {
+        let output = &mut *output;
+        InitCache::get_metrics(output);
+    }
+}
 
 /// Clears lru cache.
 /// Only used for testing purposes.

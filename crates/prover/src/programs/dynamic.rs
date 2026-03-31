@@ -1,15 +1,15 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use parking_lot::RwLock;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{BlockType, Operator};
 
 use super::{
+    FuncMiddleware, Middleware, ModuleMod,
     config::CompilePricingParams,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-    FuncMiddleware, Middleware, ModuleMod,
 };
 
 pub const SCRATCH_GLOBAL: &str = "stylus_scratch_global";

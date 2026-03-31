@@ -32,8 +32,8 @@ use std::{
     path::Path,
     ptr, slice,
     sync::{
-        atomic::{self, AtomicU8},
         Arc, Mutex,
+        atomic::{self, AtomicU8},
     },
 };
 
@@ -42,8 +42,8 @@ use eyre::{Report, Result};
 use lru::LruCache;
 pub use machine::Machine;
 use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
-    PreimageResolver,
+    GlobalState, MachineStatus, PreimageResolver, argument_data_to_inbox,
+    get_empty_preimage_resolver,
 };
 use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
@@ -92,9 +92,9 @@ pub struct RustBytes {
 }
 
 impl RustBytes {
-    pub unsafe fn into_vec(self) -> Vec<u8> { unsafe {
-        Vec::from_raw_parts(self.ptr, self.len, self.cap)
-    }}
+    pub unsafe fn into_vec(self) -> Vec<u8> {
+        unsafe { Vec::from_raw_parts(self.ptr, self.len, self.cap) }
+    }
 
     pub unsafe fn write(&mut self, mut vec: Vec<u8>) {
         if vec.capacity() == 0 {
@@ -118,11 +118,13 @@ impl RustBytes {
 ///
 /// Must only be called once per vec.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) { unsafe {
-    if !vec.ptr.is_null() {
-        drop(vec.into_vec())
+pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) {
+    unsafe {
+        if !vec.ptr.is_null() {
+            drop(vec.into_vec())
+        }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
@@ -131,57 +133,63 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     library_paths: *const *const c_char,
     library_paths_size: isize,
     debug_chain: usize,
-) -> *mut Machine { unsafe {
-    let debug_chain = debug_chain != 0;
-    arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
-        .unwrap_or_else(|err| {
-            eprintln!("Error loading binary: {err:?}");
-            ptr::null_mut()
-        })
-}}
+) -> *mut Machine {
+    unsafe {
+        let debug_chain = debug_chain != 0;
+        arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
+            .unwrap_or_else(|err| {
+                eprintln!("Error loading binary: {err:?}");
+                ptr::null_mut()
+            })
+    }
+}
 
 unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
     debug_chain: bool,
-) -> Result<*mut Machine> { unsafe {
-    let binary_path = cstr_to_string(binary_path);
-    let binary_path = Path::new(&binary_path);
+) -> Result<*mut Machine> {
+    unsafe {
+        let binary_path = cstr_to_string(binary_path);
+        let binary_path = Path::new(&binary_path);
 
-    let mut libraries = vec![];
-    for i in 0..library_paths_size {
-        let path = cstr_to_string(*(library_paths.offset(i)));
-        libraries.push(Path::new(&path).to_owned());
+        let mut libraries = vec![];
+        for i in 0..library_paths_size {
+            let path = cstr_to_string(*(library_paths.offset(i)));
+            libraries.push(Path::new(&path).to_owned());
+        }
+
+        let mach = Machine::from_paths(
+            &libraries,
+            binary_path,
+            true,
+            true,
+            debug_chain,
+            debug_chain,
+            Default::default(),
+            Default::default(),
+            get_empty_preimage_resolver(),
+        )?;
+        Ok(Box::into_raw(Box::new(mach)))
     }
-
-    let mach = Machine::from_paths(
-        &libraries,
-        binary_path,
-        true,
-        true,
-        debug_chain,
-        debug_chain,
-        Default::default(),
-        Default::default(),
-        get_empty_preimage_resolver(),
-    )?;
-    Ok(Box::into_raw(Box::new(mach)))
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine { unsafe {
-    let binary_path = cstr_to_string(binary_path);
-    let binary_path = Path::new(&binary_path);
-    match Machine::new_from_wavm(binary_path) {
-        Ok(mach) => Box::into_raw(Box::new(mach)),
-        Err(err) => {
-            eprintln!("Error loading binary: {err}");
-            ptr::null_mut()
+pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
+    unsafe {
+        let binary_path = cstr_to_string(binary_path);
+        let binary_path = Path::new(&binary_path);
+        match Machine::new_from_wavm(binary_path) {
+            Ok(mach) => Box::into_raw(Box::new(mach)),
+            Err(err) => {
+                eprintln!("Error loading binary: {err}");
+                ptr::null_mut()
+            }
         }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
@@ -189,9 +197,9 @@ pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machin
     Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
-unsafe fn cstr_to_string(c_str: *const c_char) -> String { unsafe {
-    CStr::from_ptr(c_str).to_string_lossy().into_owned()
-}}
+unsafe fn cstr_to_string(c_str: *const c_char) -> String {
+    unsafe { CStr::from_ptr(c_str).to_string_lossy().into_owned() }
+}
 
 pub fn err_to_c_string(err: Report) -> *mut libc::c_char {
     str_to_c_string(&format!("{err:?}"))
@@ -212,22 +220,28 @@ pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) { unsafe {
-    drop(Box::from_raw(mach));
-}}
+pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
+    unsafe {
+        drop(Box::from_raw(mach));
+    }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine { unsafe {
-    let new_mach = (*mach).clone();
-    Box::into_raw(Box::new(new_mach))
-}}
+pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine {
+    unsafe {
+        let new_mach = (*mach).clone();
+        Box::into_raw(Box::new(new_mach))
+    }
+}
 
 /// Go doesn't have this functionality builtin for whatever reason. Uses relaxed ordering.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) { unsafe {
-    (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
-}}
+pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
+    unsafe {
+        (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
+    }
+}
 
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
@@ -237,23 +251,25 @@ pub unsafe extern "C" fn arbitrator_step(
     mach: *mut Machine,
     num_steps: u64,
     condition: *const u8,
-) -> *mut libc::c_char { unsafe {
-    let mach = &mut *mach;
-    let condition = &*(condition as *const AtomicU8);
-    let mut remaining_steps = num_steps;
-    while condition.load(atomic::Ordering::Relaxed) == 0 {
-        if remaining_steps == 0 || mach.is_halted() {
-            break;
+) -> *mut libc::c_char {
+    unsafe {
+        let mach = &mut *mach;
+        let condition = &*(condition as *const AtomicU8);
+        let mut remaining_steps = num_steps;
+        while condition.load(atomic::Ordering::Relaxed) == 0 {
+            if remaining_steps == 0 || mach.is_halted() {
+                break;
+            }
+            let stepping = std::cmp::min(remaining_steps, 1_000_000);
+            match mach.step_n(stepping) {
+                Ok(()) => {}
+                Err(err) => return err_to_c_string(err),
+            }
+            remaining_steps -= stepping;
         }
-        let stepping = std::cmp::min(remaining_steps, 1_000_000);
-        match mach.step_n(stepping) {
-            Ok(()) => {}
-            Err(err) => return err_to_c_string(err),
-        }
-        remaining_steps -= stepping;
+        ptr::null_mut()
     }
-    ptr::null_mut()
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
@@ -262,17 +278,19 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     inbox_identifier: u64,
     index: u64,
     data: CByteArray,
-) -> c_int { unsafe {
-    let mach = &mut *mach;
-    if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
-        let slice = slice::from_raw_parts(data.ptr, data.len);
-        let data = slice.to_vec();
-        mach.add_inbox_msg(identifier, index, data);
-        0
-    } else {
-        1
+) -> c_int {
+    unsafe {
+        let mach = &mut *mach;
+        if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
+            let slice = slice::from_raw_parts(data.ptr, data.len);
+            let data = slice.to_vec();
+            mach.add_inbox_msg(identifier, index, data);
+            0
+        } else {
+            1
+        }
     }
-}}
+}
 
 /// Adds a user program to the machine's known set of wasms.
 #[unsafe(no_mangle)]
@@ -282,10 +300,12 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     module: *const u8,
     module_len: usize,
     module_hash: *const Bytes32,
-) { unsafe {
-    let module = slice::from_raw_parts(module, module_len);
-    (*mach).add_stylus_module(*module_hash, module.to_owned());
-}}
+) {
+    unsafe {
+        let module = slice::from_raw_parts(module, module_len);
+        (*mach).add_stylus_module(*module_hash, module.to_owned());
+    }
+}
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
@@ -294,69 +314,75 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
 pub unsafe extern "C" fn arbitrator_step_until_host_io(
     mach: *mut Machine,
     condition: *const u8,
-) -> *mut libc::c_char { unsafe {
-    let mach = &mut *mach;
-    let condition = &*(condition as *const AtomicU8);
-    while condition.load(atomic::Ordering::Relaxed) == 0 {
-        for _ in 0..1_000_000 {
-            if mach.is_halted() {
-                return ptr::null_mut();
-            }
-            if mach.next_instruction_is_host_io() {
-                return ptr::null_mut();
-            }
-            match mach.step_n(1) {
-                Ok(()) => {}
-                Err(err) => return err_to_c_string(err),
+) -> *mut libc::c_char {
+    unsafe {
+        let mach = &mut *mach;
+        let condition = &*(condition as *const AtomicU8);
+        while condition.load(atomic::Ordering::Relaxed) == 0 {
+            for _ in 0..1_000_000 {
+                if mach.is_halted() {
+                    return ptr::null_mut();
+                }
+                if mach.next_instruction_is_host_io() {
+                    return ptr::null_mut();
+                }
+                match mach.step_n(1) {
+                    Ok(()) => {}
+                    Err(err) => return err_to_c_string(err),
+                }
             }
         }
+        ptr::null_mut()
     }
-    ptr::null_mut()
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_serialize_state(
     mach: *const Machine,
     path: *const c_char,
-) -> c_int { unsafe {
-    let mach = &*mach;
-    let res = CStr::from_ptr(path)
-        .to_str()
-        .map_err(Report::from)
-        .and_then(|path| mach.serialize_state(path));
-    if let Err(err) = res {
-        eprintln!("Failed to serialize machine state: {err}");
-        1
-    } else {
-        0
+) -> c_int {
+    unsafe {
+        let mach = &*mach;
+        let res = CStr::from_ptr(path)
+            .to_str()
+            .map_err(Report::from)
+            .and_then(|path| mach.serialize_state(path));
+        if let Err(err) = res {
+            eprintln!("Failed to serialize machine state: {err}");
+            1
+        } else {
+            0
+        }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     mach: *mut Machine,
     path: *const c_char,
-) -> c_int { unsafe {
-    let mach = &mut *mach;
-    let res = CStr::from_ptr(path)
-        .to_str()
-        .map_err(Report::from)
-        .and_then(|path| mach.deserialize_and_replace_state(path));
-    if let Err(err) = res {
-        eprintln!("Failed to deserialize machine state: {err}");
-        1
-    } else {
-        0
+) -> c_int {
+    unsafe {
+        let mach = &mut *mach;
+        let res = CStr::from_ptr(path)
+            .to_str()
+            .map_err(Report::from)
+            .and_then(|path| mach.deserialize_and_replace_state(path));
+        if let Err(err) = res {
+            eprintln!("Failed to deserialize machine state: {err}");
+            1
+        } else {
+            0
+        }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 { unsafe {
-    (*mach).get_steps()
-}}
+pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
+    unsafe { (*mach).get_steps() }
+}
 
 pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;
 pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
@@ -385,21 +411,23 @@ const_assert_eq!(
 /// Returns one of ARBITRATOR_MACHINE_STATUS_*
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 { unsafe {
-    (*mach).get_status() as u8
-}}
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 {
+    unsafe { (*mach).get_status() as u8 }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState { unsafe {
-    (*mach).get_global_state()
-}}
+pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
+    unsafe { (*mach).get_global_state() }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) { unsafe {
-    (*mach).set_global_state(gs);
-}}
+pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
+    unsafe {
+        (*mach).set_global_state(gs);
+    }
+}
 
 #[repr(C)]
 pub struct ResolvedPreimage {
@@ -413,76 +441,86 @@ unsafe fn handle_preimage_resolution(
     ty: PreimageType,
     hash: Bytes32,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
-) -> Option<CBytes> { unsafe {
-    let res = resolver(context, ty.into(), hash.as_ptr());
-    if res.len < 0 {
-        return None;
-    }
-    let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+) -> Option<CBytes> {
+    unsafe {
+        let res = resolver(context, ty.into(), hash.as_ptr());
+        if res.len < 0 {
+            return None;
+        }
+        let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
 
-    // Hash may not have a direct link to the data for DACertificate
-    if ty == PreimageType::DACertificate {
-        return Some(data);
-    }
+        // Hash may not have a direct link to the data for DACertificate
+        if ty == PreimageType::DACertificate {
+            return Some(data);
+        }
 
-    // Check if preimage rehashes to the provided hash
-    match utils::hash_preimage(&data, ty) {
-        Ok(have_hash) if have_hash.as_slice() == *hash => {}
-        Ok(got_hash) => panic!(
-            "Resolved incorrect data for hash {} (rehashed to {})",
-            hash,
-            Bytes32(got_hash),
-        ),
-        Err(err) => panic!("Failed to hash preimage from resolver (expecting hash {hash}): {err}",),
+        // Check if preimage rehashes to the provided hash
+        match utils::hash_preimage(&data, ty) {
+            Ok(have_hash) if have_hash.as_slice() == *hash => {}
+            Ok(got_hash) => panic!(
+                "Resolved incorrect data for hash {} (rehashed to {})",
+                hash,
+                Bytes32(got_hash),
+            ),
+            Err(err) => {
+                panic!("Failed to hash preimage from resolver (expecting hash {hash}): {err}",)
+            }
+        }
+        Some(data)
     }
-    Some(data)
-}}
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
-) { unsafe {
-    (*mach).set_preimage_resolver(Arc::new(
-        move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
-            if ty == PreimageType::EthVersionedHash {
-                let cache: Arc<OnceCell<CBytes>> = {
-                    let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
-                    locked.get_or_insert(hash, Default::default).clone()
-                };
-                return cache
-                    .get_or_try_init(|| {
-                        handle_preimage_resolution(context, ty, hash, resolver).ok_or(())
-                    })
-                    .ok()
-                    .cloned();
-            }
-            handle_preimage_resolution(context, ty, hash, resolver)
-        },
-    ) as PreimageResolver);
-}}
+) {
+    unsafe {
+        (*mach).set_preimage_resolver(Arc::new(
+            move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
+                if ty == PreimageType::EthVersionedHash {
+                    let cache: Arc<OnceCell<CBytes>> = {
+                        let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
+                        locked.get_or_insert(hash, Default::default).clone()
+                    };
+                    return cache
+                        .get_or_try_init(|| {
+                            handle_preimage_resolution(context, ty, hash, resolver).ok_or(())
+                        })
+                        .ok()
+                        .cloned();
+                }
+                handle_preimage_resolution(context, ty, hash, resolver)
+            },
+        ) as PreimageResolver);
+    }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) { unsafe {
-    (*mach).set_context(context);
-}}
+pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
+    unsafe {
+        (*mach).set_context(context);
+    }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 { unsafe {
-    (*mach).hash()
-}}
+pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
+    unsafe { (*mach).hash() }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 { unsafe {
-    (*mach).get_modules_root()
-}}
+pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
+    unsafe { (*mach).get_modules_root() }
+}
 
 #[unsafe(no_mangle)]
 #[cfg(feature = "native")]
-pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) { unsafe {
-    (*out).write((*mach).serialize_proof());
-}}
+pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) {
+    unsafe {
+        (*out).write((*mach).serialize_proof());
+    }
+}

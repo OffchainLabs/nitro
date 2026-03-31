@@ -3,7 +3,7 @@
 
 use arbutil::evm::api::Ink;
 use eyre::Result;
-use prover::{programs::prelude::*, Machine};
+use prover::{Machine, programs::prelude::*};
 
 use crate::test::{new_test_machine, test_compile_config};
 

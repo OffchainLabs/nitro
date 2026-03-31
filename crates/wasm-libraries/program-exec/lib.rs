@@ -44,17 +44,21 @@ fn check_program_done(mut req_id: u32) -> u32 {
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn programs__start_program(module: u32) -> u32 { unsafe {
-    // call the program
-    let args_len = args_len(module);
-    check_program_done(program_call_main(module, args_len))
-}}
+pub unsafe extern "C" fn programs__start_program(module: u32) -> u32 {
+    unsafe {
+        // call the program
+        let args_len = args_len(module);
+        check_program_done(program_call_main(module, args_len))
+    }
+}
 
 // sends previous response and transfers control to program
 // MUST be called right after set_response to the same id
 // returns request_id for the next request
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn programs__send_response(req_id: u32) -> u32 { unsafe {
-    // call the program
-    check_program_done(program_continue(req_id))
-}}
+pub unsafe extern "C" fn programs__send_response(req_id: u32) -> u32 {
+    unsafe {
+        // call the program
+        check_program_done(program_continue(req_id))
+    }
+}

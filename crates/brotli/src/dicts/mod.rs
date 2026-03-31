@@ -7,8 +7,8 @@ use lazy_static::lazy_static;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::{
-    types::BrotliSharedDictionaryType, BrotliStatus, CustomAllocator, EncoderPreparedDictionary,
-    HeapItem,
+    BrotliStatus, CustomAllocator, EncoderPreparedDictionary, HeapItem,
+    types::BrotliSharedDictionaryType,
 };
 
 unsafe extern "C" {

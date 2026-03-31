@@ -3,7 +3,7 @@
 
 use core::{mem::MaybeUninit, slice};
 
-use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
+use crate::{BrotliStatus, DEFAULT_WINDOW_SIZE, Dictionary};
 
 /// Mechanism for passing data between Go and Rust where Rust can specify the initialized length.
 #[derive(Clone, Copy)]

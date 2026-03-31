@@ -4,11 +4,11 @@
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 
 use arbutil::{
+    Bytes32, Color, DebugColor,
     evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
     math::SaturatingSum,
-    Bytes32, Color, DebugColor,
 };
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -17,7 +17,7 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
+use wasmer_types::{ExportIndex, FunctionIndex, LocalFunctionIndex, entity::EntityRef};
 use wasmparser::{
     BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
     Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
@@ -25,9 +25,9 @@ use wasmparser::{
 
 use crate::{
     programs::{
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
         config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
