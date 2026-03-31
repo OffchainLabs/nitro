@@ -972,11 +972,10 @@ impl PreimageResolverWrapper {
 
     #[cfg(feature = "native")]
     pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
-        if let Some(resolved) = &self.last_resolved {
-            if resolved.0 == hash {
+        if let Some(resolved) = &self.last_resolved
+            && resolved.0 == hash {
                 return Some(resolved.1.clone());
             }
-        }
         (self.resolver)(context, ty, hash)
     }
 }
@@ -2039,8 +2038,7 @@ impl Machine {
                         .host_call_hooks
                         .get(self.pc.func())
                         .and_then(|h| h.as_ref())
-                    {
-                        if let Err(err) = Self::host_call_hook(
+                        && let Err(err) = Self::host_call_hook(
                             value_stack,
                             module,
                             &mut self.stdio_output,
@@ -2052,7 +2050,6 @@ impl Machine {
                                 hook.0, hook.1,
                             );
                         }
-                    }
                 }
                 Opcode::ArbitraryJump => {
                     self.pc.inst = inst.argument_data as u32;
@@ -3248,8 +3245,8 @@ impl Machine {
                 if let Ok(preimage_ty) = PreimageType::try_from(
                     u8::try_from(preimage_type)
                         .expect("ValidateCertificate preimage_type is out of range for u8"),
-                ) {
-                    if preimage_ty == PreimageType::DACertificate {
+                )
+                    && preimage_ty == PreimageType::DACertificate {
                         // We do something special here; we don't create the final proof.
                         // For DACertificate preimages, signal that this proof needs enhancement
                         // Set the enhancement flag (0x80) on the machine status byte.
@@ -3266,7 +3263,6 @@ impl Machine {
                             // the proof by the enhancer.
                         }
                     }
-                }
             }
             _ => {}
         }
