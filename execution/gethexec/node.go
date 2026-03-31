@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"sort"
 	"sync/atomic"
@@ -28,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -260,6 +260,7 @@ type ExecutionNode struct {
 	configFetcher            ConfigFetcher
 	SyncMonitor              *SyncMonitor
 	ParentChainReader        *headerreader.HeaderReader
+	ParentChain              *parent.ParentChain
 	ClassicOutbox            *ClassicOutboxRetriever
 	started                  atomic.Bool
 	bulkBlockMetadataFetcher *BulkBlockMetadataFetcher
@@ -273,8 +274,8 @@ func CreateExecutionNode(
 	l2BlockChain *core.BlockChain,
 	l1client *ethclient.Client,
 	configFetcher ConfigFetcher,
-	parentChainID *big.Int,
 	syncTillBlock uint64,
+	seqParentChain *parent.ParentChain,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
@@ -304,7 +305,7 @@ func CreateExecutionNode(
 
 	if config.Sequencer.Enable {
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
-		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, parentChainID)
+		sequencer, err = NewSequencer(execEngine, parentChainReader, seqConfigFetcher, seqParentChain)
 		if err != nil {
 			return nil, err
 		}
@@ -364,6 +365,7 @@ func CreateExecutionNode(
 		configFetcher:            configFetcher,
 		SyncMonitor:              syncMon,
 		ParentChainReader:        parentChainReader,
+		ParentChain:              seqParentChain,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 	}
@@ -490,6 +492,9 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
+	if n.ParentChain != nil {
+		n.ParentChain.Start(ctx)
+	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
 	return nil
 }
@@ -505,6 +510,9 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
+	if n.ParentChain != nil && n.ParentChain.Started() {
+		n.ParentChain.StopAndWait()
+	}
 	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
 		n.ParentChainReader.StopAndWait()
 	}
@@ -700,8 +708,7 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 			}
 			n.Sequencer.StartExpressLaneService(ctx)
 		}
-
-		expressLaneTracker.Start(ctx)
+		n.StartAndTrackChild(expressLaneTracker)
 	}
 
 	return nil

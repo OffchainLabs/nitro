@@ -1,17 +1,17 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use eyre::{bail, Result};
+use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
+#[cfg(feature = "native")]
+use wasmer::TypedFunction;
+use wasmer_types::LocalFunctionIndex;
+
 use crate::{
     binary::ExportKind,
     programs::{DefaultFuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT},
 };
-use eyre::{bail, Result};
-use fnv::FnvHashMap as HashMap;
-use lazy_static::lazy_static;
-use wasmer_types::LocalFunctionIndex;
-
-#[cfg(feature = "native")]
-use wasmer::TypedFunction;
 
 lazy_static! {
     /// Lists the exports a user program map have

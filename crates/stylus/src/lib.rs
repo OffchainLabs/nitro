@@ -1,6 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::ptr;
+
 use arbutil::{
     evm::{
         api::{DataReader, Gas, Ink},
@@ -11,20 +13,18 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
+pub use brotli;
 use cache::{deserialize_module, CacheMetrics, InitCache};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
+pub use prover;
 use prover::{
     programs::{prelude::*, StylusData},
     RustBytes,
 };
 use run::RunProgram;
-use std::ptr;
 use target_cache::{target_cache_get, target_cache_set};
-
-pub use brotli;
-pub use prover;
 
 pub mod env;
 pub mod host;
@@ -51,7 +51,8 @@ pub struct GoSliceData {
     len: usize,
 }
 
-/// The data we're pointing to is owned by Go and has a lifetime no shorter than the current program.
+/// The data we're pointing to is owned by Go and has a lifetime no shorter than the current
+/// program.
 unsafe impl Send for GoSliceData {}
 
 impl GoSliceData {
@@ -106,7 +107,7 @@ pub unsafe extern "C" fn stylus_activate(
     wasm: GoSliceData,
     page_limit: u16,
     stylus_version: u16,
-    arbos_version_for_gas: u64,
+    arbos_version_for_activation: u64,
     debug: bool,
     output: *mut RustBytes,
     codehash: *const Bytes32,
@@ -124,7 +125,7 @@ pub unsafe extern "C" fn stylus_activate(
         wasm,
         codehash,
         stylus_version,
-        arbos_version_for_gas,
+        arbos_version_for_activation,
         page_limit,
         debug,
         gas,

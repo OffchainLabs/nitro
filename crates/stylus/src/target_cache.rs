@@ -1,10 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{collections::HashMap, str::FromStr};
+
 use eyre::{eyre, OptionExt, Result};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
-use std::{collections::HashMap, str::FromStr};
 use wasmer::sys::{CpuFeature, Target, Triple};
 
 lazy_static! {
