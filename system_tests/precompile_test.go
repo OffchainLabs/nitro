@@ -1370,7 +1370,7 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 
 	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
 	Require(t, err)
-	calldata, err := arbOwnerABI.Pack("GetAllChainOwners")
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
 	Require(t, err)
 	arbOwnerAddr := types.ArbOwnerAddress
 
@@ -1394,6 +1394,7 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 
 	// On-chain transaction should still succeed
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	auth.GasLimit = 32_000_000
 	arbOwner, err := precompilesgen.NewArbOwner(arbOwnerAddr, builder.L2.Client)
 	Require(t, err)
 	tx, err := arbOwner.AddChainOwner(&auth, common.HexToAddress("0xdeadbeef"))
