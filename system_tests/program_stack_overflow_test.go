@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -112,6 +113,9 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected eth_call to fail (off-chain never retries), but it succeeded")
 	}
+	if !strings.Contains(err.Error(), programs.ErrNativeStackOverflow.Error()) {
+		t.Fatalf("expected error to contain %q, got: %v", programs.ErrNativeStackOverflow, err)
+	}
 	t.Logf("eth_call reverted as expected (off-chain, no retry): %v", err)
 
 	// On-chain tx: IsExecutedOnChain()=true enables the cranelift fallback.
@@ -160,6 +164,9 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	_, err := l2client.CallContract(ctx, msg, nil)
 	if err == nil {
 		t.Fatal("expected call to fail with no fallback, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), programs.ErrNativeStackOverflow.Error()) {
+		t.Fatalf("expected error to contain %q, got: %v", programs.ErrNativeStackOverflow, err)
 	}
 	t.Logf("eth_call reverted as expected (no fallback): %v", err)
 

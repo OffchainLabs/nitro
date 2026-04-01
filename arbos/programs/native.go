@@ -494,8 +494,8 @@ func callProgram(
 
 	depth := evm.Depth()
 	if status == userNativeStackOverflow {
-		log.Error("native stack overflow, all retries exhausted",
-			"program", address, "module", moduleHash, "depth", depth)
+		return nil, fmt.Errorf("%w (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v)",
+			ErrNativeStackOverflow, address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain())
 	}
 	data, msg, err := status.toResult(output, debug)
 	if status == userFailure && debug {

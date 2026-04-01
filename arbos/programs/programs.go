@@ -59,6 +59,7 @@ var cacheManagersKey = []byte{4}
 var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -792,9 +793,9 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	case userNativeStackOverflow:
-		// Go-side retry logic (cranelift recompilation + one stack
-		// doubling) has been exhausted or was not applicable (fallback
-		// disabled / off-chain). Treat as depth error.
+		// This should never be reached — callProgram returns an error
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", vm.ErrDepth
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
