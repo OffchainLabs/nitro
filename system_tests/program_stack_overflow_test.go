@@ -21,20 +21,14 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
-// stackOverflowWat is a WAT program that recurses deeply with multi-value
-// loops, consuming native stack quickly in Singlepass. Used to trigger
-// native stack overflow for testing the recovery path.
+// stackOverflowWat is a WAT program that recurses infinitely. With a high
+// MaxStackDepth and low native stack size, normal recursion overflows the
+// native stack before the wasm depth checker fires. Used to trigger native
+// stack overflow for testing the recovery path.
 var stackOverflowWat = `(module
 	(memory 0 0)
 	(export "memory" (memory 0))
 	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
-		i32.const 0
-		i32.const 0
-		(loop $outer (param i32 i32) (result i32 i32)
-			(loop $inner (param i32 i32) (result i32 i32))
-		)
-		drop
-		drop
 		i32.const 0
 		call $main
 	)
@@ -80,12 +74,13 @@ func saveAndRestoreNativeStackGlobals(t *testing.T) {
 // callProgram → retryOnStackOverflow → cranelift fallback path and verifies
 // that off-chain calls (eth_call) do NOT trigger the retry.
 //
-// It deploys a WAT program that recurses deeply with multi-value loops
-// (consuming native stack quickly in Singlepass) and configures a small
-// initial native stack size so the first call overflows. The Go-side retry
-// logic (cranelift recompilation + stack doubling) should recover, and the
-// tx should be included in a block without crashing the node. The program
-// still recurses infinitely so it ultimately reverts (out-of-stack/ink).
+// It deploys a WAT program that recurses infinitely and configures a small
+// initial native stack size so the first call overflows. With the default
+// high MaxStackDepth, normal recursion exhausts the native stack before the
+// wasm depth checker fires. The Go-side retry logic (cranelift recompilation
+// + stack doubling) should recover, and the tx should be included in a block
+// without crashing the node. The program still recurses infinitely so it
+// ultimately reverts (out-of-stack/ink).
 func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {

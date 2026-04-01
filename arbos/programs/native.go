@@ -19,6 +19,7 @@ typedef size_t usize;
 import "C"
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -146,7 +147,10 @@ func activateProgram(
 	if err != nil {
 		return nil, err
 	}
-	return info, db.ActivateWasm(info.moduleHash, asmMap)
+	if err := db.ActivateWasm(info.moduleHash, asmMap); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func activateModule(
@@ -266,7 +270,7 @@ func activateProgramInternal(
 			var err error
 			var module []byte
 			info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
-			results <- result{rawdb.TargetWavm, module, err}
+			results <- result{target: rawdb.TargetWavm, asm: module, err: err}
 		}()
 	}
 	if moduleActivationMandatory {
@@ -279,23 +283,24 @@ func activateProgramInternal(
 		}
 	}
 	for _, target := range nativeTargets {
-		target := target
 		go func() {
 			if target == rawdb.TargetWasm {
-				results <- result{target, wasm, nil}
+				results <- result{target: target, asm: wasm}
 			} else {
 				cranelift := false
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					if useFallback {
+					if ct, ctErr := rawdb.CraneliftTarget(target); useFallback && ctErr == nil {
 						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
-					} else {
+						results <- result{target: ct, asm: asm, err: err}
+						return
+					} else if !useFallback {
 						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
 					}
 				}
-				results <- result{target, asm, err}
+				results <- result{target: target, asm: asm, err: err}
 			}
 		}()
 	}
@@ -369,14 +374,14 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
 
-	// merge in the newly built asms
+	// merge in the newly built asms (includes both regular and cranelift targets)
 	for target, asm := range newlyBuilt {
 		asmMap[target] = asm
 	}
 	currentHoursSince := hoursSinceArbitrum(time)
 	if currentHoursSince > program.activatedAt {
 		// stylus program is active on-chain, and was activated in the past
-		// so we store it directly to database
+		// so we store it directly to database (including cranelift entries)
 		batch := statedb.Database().WasmStore().NewBatch()
 		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
 		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
@@ -394,13 +399,27 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	return asmMap, nil
 }
 
+// selectLocalAsm returns the best available ASM for the local target from an asmMap.
+// Singlepass (non-cranelift) takes precedence over cranelift.
+func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
+	if asmMap == nil {
+		return nil, false
+	}
+	localTarget := rawdb.LocalTarget()
+	if asm, ok := asmMap[localTarget]; ok && len(asm) > 0 {
+		return asm, true
+	}
+	if ct, err := rawdb.CraneliftTarget(localTarget); err == nil {
+		if asm, ok := asmMap[ct]; ok && len(asm) > 0 {
+			return asm, true
+		}
+	}
+	return nil, false
+}
+
 func handleProgramPrepare(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codehash common.Hash, params *StylusParams, time uint64, debugMode bool, program Program, runCtx *core.MessageRunContext) []byte {
 	asmMap, err := getCompiledProgram(statedb, moduleHash, addressForLogging, code, codehash, params, time, debugMode, program, runCtx)
-	var ok bool
-	var localAsm []byte
-	if asmMap != nil {
-		localAsm, ok = asmMap[rawdb.LocalTarget()]
-	}
+	localAsm, ok := selectLocalAsm(asmMap)
 	if err != nil || !ok {
 		panic(fmt.Sprintf("failed to get compiled program for activated program, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
 	}
@@ -486,6 +505,7 @@ func callProgram(
 	if status == userNativeStackOverflow {
 		status, output = retryOnStackOverflow(
 			address, moduleHash,
+			localAsm,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
 			memoryModel, runCtx, savedGas, debug,
 			db, snapshot, code, params, program,
@@ -517,6 +537,7 @@ func callProgram(
 func retryOnStackOverflow(
 	address common.Address,
 	moduleHash common.Hash,
+	localAsm []byte,
 	scope *vm.ScopeContext,
 	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
@@ -552,16 +573,20 @@ func retryOnStackOverflow(
 		return userNativeStackOverflow, nil
 	}
 
-	// Retry with cranelift ASM. Revert any partial state changes the crashed
-	// singlepass attempt may have made via host I/O before the SIGSEGV.
-	// After reverting, take a fresh snapshot so we can revert again if cranelift
-	// also overflows — a snapshot ID can only be reverted once.
-	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = savedGas
-	snapshot = db.Snapshot()
-	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
-	if status != userNativeStackOverflow {
-		return status, output
+	// If localAsm is already cranelift (activation used cranelift fallback),
+	// skip the first retry — it would repeat the same overflow.
+	if !bytes.Equal(localAsm, craneliftAsm) {
+		// Retry with cranelift ASM. Revert any partial state changes the crashed
+		// singlepass attempt may have made via host I/O before the SIGSEGV.
+		// After reverting, take a fresh snapshot so we can revert again if cranelift
+		// also overflows — a snapshot ID can only be reverted once.
+		db.RevertToSnapshot(snapshot)
+		scope.Contract.Gas = savedGas
+		snapshot = db.Snapshot()
+		status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+		if status != userNativeStackOverflow {
+			return status, output
+		}
 	}
 
 	// Cranelift also overflowed — double the stack size once and retry with cranelift.
@@ -677,11 +702,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 	if runCtx.IsCommitMode() {
 		// address is only used for logging
 		asmMap, err := getCompiledProgram(db, module, addressForLogging, code, codehash, params, time, debug, program, runCtx)
-		var ok bool
-		var localAsm []byte
-		if asmMap != nil {
-			localAsm, ok = asmMap[rawdb.LocalTarget()]
-		}
+		localAsm, ok := selectLocalAsm(asmMap)
 		if err != nil || !ok {
 			panic(fmt.Sprintf("failed to get compiled program for caching, program: %v, local target missing: %v, err: %v", addressForLogging.Hex(), !ok, err))
 		}

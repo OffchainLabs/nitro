@@ -38,24 +38,12 @@ import (
 )
 
 // A simple program that calls itself recursively until it runs out of either
-// gas or stack. The nested loops with multi-value signatures consume native
-// stack quickly in Singlepass.
+// gas or stack. With a high MaxStackDepth and low native stack size, normal
+// recursion overflows the native stack before the wasm depth checker fires.
 var recursiveStackOverflowWat = []byte(`(module
 	(memory 0 0)
 	(export "memory" (memory 0))
 	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
-		;; Push initial values for the loop params
-		i32.const 0
-		i32.const 0
-		(loop $outer (param i32 i32) (result i32 i32)
-			(loop $inner (param i32 i32) (result i32 i32)
-				;; just pass through
-			)
-		)
-		drop
-		drop
-
-		;; Recurse to consume more native stack
 		i32.const 0
 		call $main
 	)
@@ -223,7 +211,7 @@ func testCompileLoadFor(filePath string) error {
 
 	evmData := EvmData{}
 	progParams := ProgParams{
-		MaxDepth:  10000,
+		MaxDepth:  1000000,
 		InkPrice:  1,
 		DebugMode: true,
 	}
@@ -271,8 +259,8 @@ func testCompileLoadFor(filePath string) error {
 // 2. A program that overflows a tiny native stack returns NativeStackOverflow.
 // 3. The Go-side retry logic (cranelift + stack doubling) recovers.
 //
-// It compiles and runs a WAT program with deeply nested multi-value loops
-// and recursion, using a very small initial native stack so it overflows.
+// It compiles and runs a WAT program with infinite recursion, using a very
+// high MaxStackDepth and a very small native stack so it overflows.
 func testNativeStackSize() error {
 	localTarget := rawdb.LocalTarget()
 	err := SetTarget(localTarget, "", true)
@@ -296,7 +284,7 @@ func testNativeStackSize() error {
 	calldata := []byte{}
 	evmData := EvmData{}
 	progParams := ProgParams{
-		MaxDepth:  10000,
+		MaxDepth:  1000000,
 		InkPrice:  1,
 		DebugMode: true,
 	}
@@ -402,7 +390,7 @@ func testNativeStackSizeMaxCap() error {
 	calldata := []byte{}
 	evmData := EvmData{}
 	progParams := ProgParams{
-		MaxDepth:  10000,
+		MaxDepth:  1000000,
 		InkPrice:  1,
 		DebugMode: true,
 	}
@@ -495,7 +483,7 @@ func testRetryOnStackOverflow() error {
 
 	stylusParams := &ProgParams{
 		Version:   1,
-		MaxDepth:  10000,
+		MaxDepth:  1000000,
 		InkPrice:  1,
 		DebugMode: true,
 	}
@@ -509,6 +497,7 @@ func testRetryOnStackOverflow() error {
 	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
+		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -524,6 +513,7 @@ func testRetryOnStackOverflow() error {
 
 	status, _ = retryOnStackOverflow(
 		common.Address{}, moduleHash,
+		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, offChainCtx, gas, true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -605,7 +595,7 @@ func testCraneliftCompilationAndCache() error {
 	cgas := u64(0xfffffffffffffff)
 	output := &rustBytes{}
 	progParams := ProgParams{
-		MaxDepth:  10000,
+		MaxDepth:  1000000,
 		InkPrice:  1,
 		DebugMode: true,
 	}
@@ -687,7 +677,7 @@ func testStackDoublingGivesUp() error {
 	wasmStore := db.Database().WasmStore()
 	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
 
-	stylusParams := &ProgParams{Version: 1, MaxDepth: 10000, InkPrice: 1, DebugMode: true}
+	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
 	memModel := NewMemoryModel(0, 0)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 	allowFallback.Store(true)
@@ -695,6 +685,7 @@ func testStackDoublingGivesUp() error {
 	snapshot := db.Snapshot()
 	retryStatus, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
+		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -755,7 +746,7 @@ func testCraneliftFallbackInRetry() error {
 	wasmStore := db.Database().WasmStore()
 	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
 
-	stylusParams := &ProgParams{Version: 1, MaxDepth: 10000, InkPrice: 1, DebugMode: true}
+	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
 	memModel := NewMemoryModel(0, 0)
 	// Use commit context: IsExecutedOnChain() = true → cranelift fallback enabled.
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
@@ -764,6 +755,7 @@ func testCraneliftFallbackInRetry() error {
 	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
+		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, true,
 		db, snapshot, nil, nil, Program{version: 1},

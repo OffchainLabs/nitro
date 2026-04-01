@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/util/testhelpers/flag"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func TestConstants(t *testing.T) {
@@ -99,5 +101,48 @@ func TestCraneliftFallbackInRetry(t *testing.T) {
 	err := testCraneliftFallbackInRetry()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSelectLocalAsm(t *testing.T) {
+	localTarget := rawdb.LocalTarget()
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	singlepassAsm := []byte("singlepass-asm")
+	craneliftAsm := []byte("cranelift-asm")
+
+	// Singlepass takes precedence when both exist.
+	asmMap := map[rawdb.WasmTarget][]byte{
+		localTarget:     singlepassAsm,
+		craneliftTarget: craneliftAsm,
+	}
+	asm, ok := selectLocalAsm(asmMap)
+	if !ok || string(asm) != "singlepass-asm" {
+		t.Fatalf("expected singlepass precedence, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Cranelift-only: returned when singlepass is absent.
+	asmMap = map[rawdb.WasmTarget][]byte{
+		craneliftTarget: craneliftAsm,
+	}
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "cranelift-asm" {
+		t.Fatalf("expected cranelift fallback, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Neither exists: returns false.
+	asmMap = map[rawdb.WasmTarget][]byte{}
+	_, ok = selectLocalAsm(asmMap)
+	if ok {
+		t.Fatal("expected ok=false for empty map")
+	}
+
+	// Nil map: returns false.
+	_, ok = selectLocalAsm(nil)
+	if ok {
+		t.Fatal("expected ok=false for nil map")
 	}
 }
