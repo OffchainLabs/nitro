@@ -30,11 +30,12 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 				},
 			},
 		},
-		BlockNumber:     1042,
-		ParentBlockHash: common.HexToHash("0x1234"),
-		PositionInBlock: 3,
-		FilteredAt:      time.Date(2026, 2, 27, 14, 30, 0, 0, time.UTC),
-		IsDelayed:       false,
+		BlockNumber:       1042,
+		ParentBlockHash:   common.HexToHash("0x1234"),
+		PositionInBlock:   3,
+		FilteredAt:        time.Date(2026, 2, 27, 14, 30, 0, 0, time.UTC),
+		IsDelayed:         false,
+		DelayedReportData: nil,
 	}
 
 	data, err := json.Marshal(report)
@@ -135,11 +136,12 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 				},
 			},
 		},
-		BlockNumber:     1044,
-		ParentBlockHash: common.HexToHash("0x5678"),
-		PositionInBlock: 1,
-		FilteredAt:      time.Date(2026, 2, 27, 14, 32, 0, 0, time.UTC),
-		IsDelayed:       false,
+		BlockNumber:       1044,
+		ParentBlockHash:   common.HexToHash("0x5678"),
+		PositionInBlock:   1,
+		FilteredAt:        time.Date(2026, 2, 27, 14, 32, 0, 0, time.UTC),
+		IsDelayed:         false,
+		DelayedReportData: nil,
 	}
 
 	data, err := json.Marshal(report)
