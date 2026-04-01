@@ -7,16 +7,21 @@
 //! package. Their serialization is configured to match the Go side (by using `PascalCase` for
 //! field names).
 
-use crate::config::ExecutionMode;
-use crate::engine::execution::{validate_continuous, validate_native};
-use crate::engine::ModuleRoot;
-use crate::ServerState;
-use axum::extract::State;
-use axum::Json;
+use std::sync::Arc;
+
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use validation::ValidationRequest;
+
+use crate::{
+    config::ExecutionMode,
+    engine::{
+        execution::{validate_continuous, validate_native},
+        ModuleRoot,
+    },
+    ServerState,
+};
 
 /// JSON-RPC 2.0 response envelope.
 #[derive(Serialize)]

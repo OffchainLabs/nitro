@@ -1,19 +1,21 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::internal_func::InternalFunc;
-use crate::{
-    binary::FloatInstruction,
-    value::{ArbValueType, FunctionType, IntegerValType},
-};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
 use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
 use wasmparser::{BlockType, Operator};
+
+use crate::{
+    binary::FloatInstruction,
+    internal_func::InternalFunc,
+    value::{ArbValueType, FunctionType, IntegerValType},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {

@@ -1,18 +1,14 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+use std::{future::Future, sync::Arc};
+
 use anyhow::Result;
-use axum::routing::post;
-use axum::Router;
-use std::future::Future;
-use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio::signal;
+use axum::{routing::post, Router};
+use tokio::{net::TcpListener, signal};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::config::ServerState;
-use crate::jwt;
-use crate::spawner_endpoints;
+use crate::{config::ServerState, jwt, spawner_endpoints};
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
@@ -86,9 +82,10 @@ pub(crate) async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use std::{net::SocketAddr, sync::Arc};
+
     use anyhow::Result;
     use clap::Parser;
-    use std::{net::SocketAddr, sync::Arc};
     use tokio::{
         net::TcpListener,
         sync::oneshot::{self, Sender},

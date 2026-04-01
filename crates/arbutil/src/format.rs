@@ -1,11 +1,12 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::color::Color;
 use std::{
     fmt::{Debug, Display},
     time::Duration,
 };
+
+use crate::color::Color;
 
 #[must_use]
 pub fn time(span: Duration) -> String {

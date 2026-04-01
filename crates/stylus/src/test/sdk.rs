@@ -3,9 +3,10 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crate::test::{random_bytes20, random_bytes32, run_native, test_configs, TestInstance};
 use eyre::Result;
 use num_bigint::BigUint;
+
+use crate::test::{random_bytes20, random_bytes32, run_native, test_configs, TestInstance};
 
 #[test]
 #[ignore = "needs to update erc20 to use new SDK"]

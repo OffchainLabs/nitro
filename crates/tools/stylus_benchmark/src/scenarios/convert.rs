@@ -1,8 +1,9 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::scenarios::data_type::{DataType, Rand};
 use std::io::Write;
+
+use crate::scenarios::data_type::{DataType, Rand};
 
 pub fn write_wat_ops(
     wat: &mut Vec<u8>,

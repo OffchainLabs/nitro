@@ -1,7 +1,8 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{native, run::RunProgram};
+use std::{collections::HashMap, sync::Arc};
+
 use arbutil::{
     evm::{
         api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
@@ -13,10 +14,10 @@ use arbutil::{
 use eyre::Result;
 use parking_lot::Mutex;
 use prover::programs::{memory::MemoryModel, prelude::*};
-use std::{collections::HashMap, sync::Arc};
 use wasmer::sys::Target;
 
 use super::TestInstance;
+use crate::{native, run::RunProgram};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TestEvmApi {
