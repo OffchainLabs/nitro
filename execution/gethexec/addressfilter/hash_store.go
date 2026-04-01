@@ -99,17 +99,3 @@ func (h *HashStore) Size() int {
 func (h *HashStore) LoadedAt() time.Time {
 	return h.data.Load().loadedAt
 }
-
-// Salt returns a copy of the current salt.
-func (h *HashStore) Salt() uuid.UUID {
-	data := h.data.Load()
-	if data.salt == uuid.Nil {
-		return uuid.Nil
-	}
-	return data.salt
-}
-
-// CacheLen returns the current number of entries in the LRU cache.
-func (h *HashStore) CacheLen() int {
-	return h.data.Load().cache.Len()
-}
