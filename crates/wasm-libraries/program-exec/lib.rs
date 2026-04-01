@@ -4,13 +4,13 @@
 #![allow(clippy::missing_safety_doc)]
 
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_continue(response: u32) -> u32;
     fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
 #[link(wasm_import_module = "program_internal")]
-extern "C" {
+unsafe extern "C" {
     fn set_done(status: u32) -> u32;
     fn args_len(module: u32) -> usize;
 }
@@ -43,18 +43,22 @@ fn check_program_done(mut req_id: u32) -> u32 {
 /// starts the program (in jit waits for first request)
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__start_program(module: u32) -> u32 {
-    // call the program
-    let args_len = args_len(module);
-    check_program_done(program_call_main(module, args_len))
+    unsafe {
+        // call the program
+        let args_len = args_len(module);
+        check_program_done(program_call_main(module, args_len))
+    }
 }
 
 // sends previous response and transfers control to program
 // MUST be called right after set_response to the same id
 // returns request_id for the next request
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__send_response(req_id: u32) -> u32 {
-    // call the program
-    check_program_done(program_continue(req_id))
+    unsafe {
+        // call the program
+        check_program_done(program_continue(req_id))
+    }
 }

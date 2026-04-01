@@ -3,12 +3,11 @@
 use std::{collections::BTreeMap, io::Write};
 
 use crate::{
-    transfer::{
-        markers,
-        primitives::{write_bytes, write_u32, write_u64, write_u8},
-        IOResult,
-    },
     GoGlobalState, Inbox, Preimages, ValidationInput,
+    transfer::{
+        IOResult, markers,
+        primitives::{write_bytes, write_u8, write_u32, write_u64},
+    },
 };
 
 pub fn send_validation_input(writer: &mut impl Write, input: &ValidationInput) -> IOResult<()> {
