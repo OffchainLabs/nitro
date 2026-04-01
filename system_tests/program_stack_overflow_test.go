@@ -6,38 +6,85 @@ package arbtest
 import (
 	"bytes"
 	"math/big"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
+// stackOverflowWat is a WAT program that recurses deeply with multi-value
+// loops, consuming native stack quickly in Singlepass. Used to trigger
+// native stack overflow for testing the recovery path.
+var stackOverflowWat = `(module
+	(memory 0 0)
+	(export "memory" (memory 0))
+	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
+		i32.const 0
+		i32.const 0
+		(loop $outer (param i32 i32) (result i32 i32)
+			(loop $inner (param i32 i32) (result i32 i32))
+		)
+		drop
+		drop
+		i32.const 0
+		call $main
+	)
+)`
+
+var (
+	stackOverflowWatPath string
+	stackOverflowWatOnce sync.Once
+)
+
+// stackOverflowWatFile returns the path to a temp .wat file containing the
+// stack-overflow program. The file is created once and reused across tests.
+// deployWasm expects a file path, and .wat files are globally gitignored
+// so we can't check one in.
+func stackOverflowWatFile(t *testing.T) string {
+	t.Helper()
+	stackOverflowWatOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "stylus-test-wat-*")
+		Require(t, err)
+		stackOverflowWatPath = filepath.Join(dir, "stack-overflow.wat")
+		err = os.WriteFile(stackOverflowWatPath, []byte(stackOverflowWat), 0644) //nolint:gosec
+		Require(t, err)
+	})
+	return stackOverflowWatPath
+}
+
 // saveAndRestoreNativeStackGlobals saves the current process-wide Wasmer stack
-// size and returns a cleanup function that restores it. Tests that modify the
-// native stack size via StylusTargetConfig should call this to avoid polluting
-// other tests running in the same process.
+// size and allowFallback flag, restoring both when the test finishes. Tests that
+// modify these via StylusTargetConfig must call this to avoid polluting other
+// tests running in the same process.
 func saveAndRestoreNativeStackGlobals(t *testing.T) {
 	t.Helper()
 	savedSize := programs.GetNativeStackSize()
+	savedFallback := programs.GetAllowFallback()
 	t.Cleanup(func() {
 		programs.SetInitialNativeStackSize(savedSize)
 		programs.DrainStackPool()
+		programs.SetAllowFallback(savedFallback)
 	})
 }
 
-// TestProgramNativeStackOverflowRecovery exercises the full
-// callProgram → retryOnStackOverflow path with a real EVM context.
+// TestProgramNativeStackOverflowRecovery exercises the on-chain
+// callProgram → retryOnStackOverflow → cranelift fallback path and verifies
+// that off-chain calls (eth_call) do NOT trigger the retry.
 //
 // It deploys a WAT program that recurses deeply with multi-value loops
 // (consuming native stack quickly in Singlepass) and configures a small
 // initial native stack size so the first call overflows. The Go-side retry
 // logic (cranelift recompilation + stack doubling) should recover, and the
-// program should terminate normally (out-of-ink or out-of-stack) rather
-// than crashing the node.
+// tx should be included in a block without crashing the node. The program
+// still recurses infinitely so it ultimately reverts (out-of-stack/ink).
 func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
@@ -50,8 +97,11 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	programAddress := deployWasm(t, ctx, auth, l2client, watFile("stack-overflow"))
+	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
+	// eth_call (off-chain): retryOnStackOverflow skips retry for off-chain
+	// execution (IsExecutedOnChain()=false), so the call should fail even
+	// though AllowFallback=true.
 	msg := ethereum.CallMsg{
 		To:    &programAddress,
 		Value: big.NewInt(0),
@@ -59,20 +109,32 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 		Gas:   32_000_000,
 	}
 	_, err := l2client.CallContract(ctx, msg, nil)
-	if err != nil {
-		t.Logf("call reverted as expected: %v", err)
-	} else {
-		t.Log("call succeeded (program terminated normally after retry)")
+	if err == nil {
+		t.Fatal("expected eth_call to fail (off-chain never retries), but it succeeded")
 	}
+	t.Logf("eth_call reverted as expected (off-chain, no retry): %v", err)
+
+	// On-chain tx: IsExecutedOnChain()=true enables the cranelift fallback.
+	// The program still recurses infinitely so it reverts after recovery.
+	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
+	err = l2client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		t.Fatalf("expected on-chain tx to revert (infinite recursion), got status=%d", receipt.Status)
+	}
+	t.Logf("tx included in block %d, reverted as expected", receipt.BlockNumber)
 
 	blockNum, err := l2client.BlockNumber(ctx)
 	Require(t, err)
-	t.Logf("node still alive, current block: %d", blockNum)
+	t.Logf("node still alive after overflow+recovery, current block: %d", blockNum)
 }
 
 // TestProgramNativeStackOverflowNoFallback tests the behavior when
 // cranelift fallback is disabled. No retry is attempted and the call
-// should revert immediately.
+// should revert with a depth error.
 func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
@@ -85,8 +147,10 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	programAddress := deployWasm(t, ctx, auth, l2client, watFile("stack-overflow"))
+	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
+	// eth_call: should fail because fallback is disabled and off-chain
+	// execution never retries.
 	msg := ethereum.CallMsg{
 		To:    &programAddress,
 		Value: big.NewInt(0),
@@ -94,18 +158,21 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 		Gas:   32_000_000,
 	}
 	_, err := l2client.CallContract(ctx, msg, nil)
-	if err != nil {
-		t.Logf("call reverted as expected (no fallback, no retry): %v", err)
-	} else {
+	if err == nil {
 		t.Fatal("expected call to fail with no fallback, but it succeeded")
 	}
+	t.Logf("eth_call reverted as expected (no fallback): %v", err)
 
-	// Also send an on-chain tx to exercise the on-chain path with fallback disabled.
+	// On-chain tx: should also fail (included in block but reverted) because
+	// AllowFallback=false means no cranelift retry even on-chain.
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		t.Fatalf("expected on-chain tx to revert with fallback disabled, got status=%d", receipt.Status)
+	}
 
 	// Verify no cranelift ASM was persisted — fallback was disabled so
 	// cranelift compilation should never have been attempted.
@@ -114,37 +181,6 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	if len(asm) > 0 {
 		t.Fatalf("cranelift ASM should NOT be in wasm store with fallback disabled, found %d bytes", len(asm))
 	}
-
-	blockNum, err := l2client.BlockNumber(ctx)
-	Require(t, err)
-	t.Logf("node still alive, current block: %d", blockNum)
-}
-
-// TestProgramNativeStackOverflowViaTransaction exercises the retry path
-// through an actual on-chain transaction (not just eth_call). On-chain
-// execution uses IsExecutedOnChain()=true, enabling the cranelift fallback
-// when AllowFallback=true.
-func TestProgramNativeStackOverflowViaTransaction(t *testing.T) {
-	saveAndRestoreNativeStackGlobals(t)
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.DontParalellise() // mutates process-wide native stack size
-		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024
-		b.execConfig.StylusTarget.AllowFallback = true
-		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
-	})
-	ctx := builder.ctx
-	l2client := builder.L2.Client
-	defer cleanup()
-
-	programAddress := deployWasm(t, ctx, auth, l2client, watFile("stack-overflow"))
-
-	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
-	err := l2client.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
-	Require(t, err)
-	t.Logf("tx included in block %d, status=%d (0=fail, 1=success)", receipt.BlockNumber, receipt.Status)
 
 	blockNum, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -169,7 +205,7 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	programAddress := deployWasm(t, ctx, auth, l2client, watFile("stack-overflow"))
+	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
 	// Verify wasm store has NO cranelift ASM before the overflow-triggering call.
 	// Cranelift keys use the {0x00, 'c'} prefix, distinct from singlepass {0x00, 'w'}.
@@ -185,7 +221,13 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	Require(t, err)
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
-	t.Logf("first tx: block=%d, status=%d", receipt.BlockNumber, receipt.Status)
+	// The program recurses infinitely — even after cranelift fallback it hits
+	// out-of-stack/ink and reverts. Cranelift ASM is persisted during the retry
+	// (compilation step), regardless of the final execution outcome.
+	if receipt.Status != types.ReceiptStatusFailed {
+		t.Fatalf("expected first tx to revert (infinite recursion), got status=%d", receipt.Status)
+	}
+	t.Logf("first tx: block=%d, reverted as expected", receipt.BlockNumber)
 
 	// Verify cranelift ASM was persisted to the wasm store.
 	asmAfterFirst := readCraneliftAsm(t, wasmDB)
@@ -200,7 +242,10 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	Require(t, err)
 	receipt2, err := WaitForTx(ctx, l2client, tx2.Hash(), 60*time.Second)
 	Require(t, err)
-	t.Logf("second tx: block=%d, status=%d", receipt2.BlockNumber, receipt2.Status)
+	if receipt2.Status != types.ReceiptStatusFailed {
+		t.Fatalf("expected second tx to revert (infinite recursion), got status=%d", receipt2.Status)
+	}
+	t.Logf("second tx: block=%d, reverted as expected", receipt2.BlockNumber)
 
 	// ASM should be identical (reused from store, not recompiled).
 	asmAfterSecond := readCraneliftAsm(t, wasmDB)

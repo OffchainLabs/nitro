@@ -64,6 +64,11 @@ func SetAllowFallback(enabled bool) {
 	log.Info("Compiler fallback for Stylus compilation configured", "enabled", enabled)
 }
 
+// GetAllowFallback returns the current compiler fallback setting.
+func GetAllowFallback() bool {
+	return allowFallback.Load()
+}
+
 // configuredNativeStackSize stores the stack size set at startup so that
 // retryOnStackOverflow can always restore to the correct base value,
 // regardless of concurrent goroutines mutating the process-wide default.
@@ -132,7 +137,7 @@ func activateProgram(
 	moduleActivationMandatory := true
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
-	shouldAllowFallback := allowFallback.Load() && runCtx.IsExecutedOnChain()
+	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
 	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
@@ -352,7 +357,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	// we know program is activated, so it must be in correct version and not use too much memory
 	moduleActivationMandatory := false
 	// compile only missing targets
-	shouldAllowFallback := allowFallback.Load() && runCtx.IsExecutedOnChain()
+	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
 	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
@@ -528,7 +533,7 @@ func retryOnStackOverflow(
 	params *StylusParams,
 	program Program,
 ) (userStatus, []byte) {
-	if !allowFallback.Load() {
+	if !GetAllowFallback() {
 		log.Warn("native stack overflow, fallback disabled",
 			"program", address, "module", moduleHash)
 		return userNativeStackOverflow, nil
