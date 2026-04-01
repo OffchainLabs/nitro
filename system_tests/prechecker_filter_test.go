@@ -270,47 +270,9 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	builder.L2Info.GenerateAccount("Redeemer")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
 
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	require.NoError(t, err)
-
-	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	maxSubmissionCost := big.NewInt(1e16)
-	gasLimit := big.NewInt(100000)
-	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
-
-	// Invalid selector so the auto-redeem reverts (no fallback on contract)
+	// Submit retryable with invalid calldata so auto-redeem fails
 	invalidCalldata := []byte{0xde, 0xad, 0xbe, 0xef}
-
-	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
-	l1opts.Value = deposit
-	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&l1opts,
-		contractAddr,
-		common.Big0,
-		maxSubmissionCost,
-		common.Address{},
-		common.Address{},
-		gasLimit,
-		maxFeePerGas,
-		invalidCalldata,
-	)
-	require.NoError(t, err)
-	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
-	require.NoError(t, err)
-
-	ticketId := lookupSubmissionTxHash(t, ctx, builder, l1Receipt)
-
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for sequencer to process the retryable
-	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
-	require.NoError(t, err)
-
-	// Verify ticket survived the failed auto-redeem
-	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
-	require.NoError(t, err)
-	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
-	require.NoError(t, err, "retryable ticket should exist after failed auto-redeem")
+	ticketId := precheckerSubmitRetryable(t, ctx, builder, contractAddr, invalidCalldata, big.NewInt(100000))
 
 	// Wait for forwarder to sync to the sequencer's latest block
 	seqLatest, err := builder.L2.Client.BlockNumber(ctx)
@@ -357,46 +319,9 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	builder.L2Info.GenerateAccount("Caller")
 	builder.L2.TransferBalance(t, "Owner", "Caller", big.NewInt(1e18), builder.L2Info)
 
-	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
-	require.NoError(t, err)
-
-	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	maxSubmissionCost := big.NewInt(1e16)
-	gasLimit := big.NewInt(100000)
-	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
-
+	// Submit retryable with invalid calldata so auto-redeem fails
 	invalidCalldata := []byte{0xde, 0xad, 0xbe, 0xef}
-
-	l1opts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
-	l1opts.Value = deposit
-	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&l1opts,
-		destAddr,
-		common.Big0,
-		maxSubmissionCost,
-		common.Address{},
-		common.Address{},
-		gasLimit,
-		maxFeePerGas,
-		invalidCalldata,
-	)
-	require.NoError(t, err)
-	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
-	require.NoError(t, err)
-
-	ticketId := lookupSubmissionTxHash(t, ctx, builder, l1Receipt)
-
-	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-
-	// Wait for sequencer to process the retryable
-	_, err = WaitForTx(ctx, builder.L2.Client, ticketId, 30*time.Second)
-	require.NoError(t, err)
-
-	// Verify ticket survived the failed auto-redeem
-	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
-	require.NoError(t, err)
-	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
-	require.NoError(t, err, "retryable ticket should exist after failed auto-redeem")
+	ticketId := precheckerSubmitRetryable(t, ctx, builder, destAddr, invalidCalldata, big.NewInt(100000))
 
 	// Wait for forwarder to sync to the sequencer's latest block
 	seqLatest, err := builder.L2.Client.BlockNumber(ctx)
