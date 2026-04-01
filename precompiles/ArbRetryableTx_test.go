@@ -71,7 +71,8 @@ func testRetryableRedeem(t *testing.T, evm *vm.EVM, precompileCtx *Context, expe
 	Require(t, err)
 
 	retryAddress := common.HexToAddress("6e")
-	_, gasLeft, _, err := Precompiles()[retryAddress].Call(
+	allPrecompiles, _ := Precompiles()
+	_, gasLeft, _, err := allPrecompiles[retryAddress].Call(
 		redeemCalldata,
 		retryAddress,
 		common.Address{},

@@ -276,43 +276,58 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 }
 
 func TestDisableOffchainArbOwner(t *testing.T) {
-	// Build a chain config with the flag enabled
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams.DisableOffchainArbOwner = true
 
-	// Create a mock inner precompile (we only need the wrapper to panic before delegating)
-	_, inner := MakePrecompile(precompilesgen.ArbOwnerMetaData, &ArbOwner{Address: types.ArbOwnerAddress})
-	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error { return nil }
-	wrapper := &OwnerPrecompile{precompile: inner, emitSuccess: emitOwnerActs}
+	makeWrapper := func() *OwnerPrecompile {
+		_, inner := MakePrecompile(precompilesgen.ArbOwnerMetaData, &ArbOwner{Address: types.ArbOwnerAddress})
+		return &OwnerPrecompile{
+			precompile:  inner,
+			emitSuccess: func(evm mech, method bytes4, owner addr, data []byte) error { return nil },
+		}
+	}
 
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	// Need at least 4 bytes of input for the method selector
 	input := make([]byte, 4)
 
-	// Test 1: ethcall context should panic
-	evmEthcall := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
-	evmEthcall.ProcessingHook = arbos.NewTxProcessor(evmEthcall, &core.Message{TxRunContext: core.NewMessageEthcallContext()})
-	func() {
+	mustPanic := func(t *testing.T, name string, wrapper *OwnerPrecompile, evm mech) {
+		t.Helper()
 		defer func() {
 			if r := recover(); r == nil {
-				t.Fatal("expected panic when DisableOffchainArbOwner is true and context is ethcall")
+				t.Fatalf("%s: expected panic but none occurred", name)
 			}
 		}()
-		wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evmEthcall)
-	}()
+		_, _, _, _ = wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
+	}
 
-	// Test 2: commit context should NOT panic (it will fail on owner check, but that's fine)
-	evmCommit := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
-	evmCommit.ProcessingHook = arbos.NewTxProcessor(evmCommit, &core.Message{TxRunContext: core.NewMessageCommitContext(nil)})
-	func() {
+	mustNotPanic := func(t *testing.T, name string, wrapper *OwnerPrecompile, evm mech) {
+		t.Helper()
 		defer func() {
 			if r := recover(); r != nil {
-				t.Fatal("unexpected panic when DisableOffchainArbOwner is true and context is commit mode:", r)
+				t.Fatalf("%s: unexpected panic: %v", name, r)
 			}
 		}()
-		// This will return an "unauthorized" error since caller isn't an owner, but it should NOT panic
-		wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evmCommit)
-	}()
+		_, _, _, _ = wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
+	}
+
+	makeEVM := func(runCtx *core.MessageRunContext) mech {
+		evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+		evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunContext: runCtx})
+		return evm
+	}
+
+	// Flag enabled: ethcall and gas estimation should panic
+	wrapper := makeWrapper()
+	wrapper.disableOffchain.Store(true)
+	mustPanic(t, "ethcall", wrapper, makeEVM(core.NewMessageEthcallContext()))
+	mustPanic(t, "gas estimation", wrapper, makeEVM(core.NewMessageGasEstimationContext()))
+
+	// Flag enabled: commit and replay should NOT panic
+	mustNotPanic(t, "commit", wrapper, makeEVM(core.NewMessageCommitContext(nil)))
+	mustNotPanic(t, "replay", wrapper, makeEVM(core.NewMessageReplayContext()))
+
+	// Flag disabled (default): ethcall should NOT panic
+	wrapperDisabled := makeWrapper()
+	mustNotPanic(t, "ethcall with flag disabled", wrapperDisabled, makeEVM(core.NewMessageEthcallContext()))
 }
 
 func TestArbInfraFeeAccount(t *testing.T) {

@@ -6,6 +6,7 @@ package precompiles
 import (
 	"errors"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
@@ -62,8 +63,9 @@ func (wrapper *DebugPrecompile) Name() string {
 
 // OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
-	precompile  ArbosPrecompile
-	emitSuccess func(mech, bytes4, addr, []byte) error
+	precompile      ArbosPrecompile
+	emitSuccess     func(mech, bytes4, addr, []byte) error
+	disableOffchain atomic.Bool
 }
 
 func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr, []byte) error) (addr, ArbosPrecompile) {
@@ -71,6 +73,10 @@ func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr,
 		precompile:  impl,
 		emitSuccess: emit,
 	}
+}
+
+func (wrapper *OwnerPrecompile) SetDisableOffchain(disable bool) {
+	wrapper.disableOffchain.Store(disable)
 }
 
 func (wrapper *OwnerPrecompile) Address() common.Address {
@@ -86,7 +92,7 @@ func (wrapper *OwnerPrecompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) ([]byte, uint64, multigas.MultiGas, error) {
-	if evm.ChainConfig().DisableOffchainArbOwner() {
+	if wrapper.disableOffchain.Load() {
 		txProcessor, ok := evm.ProcessingHook.(*arbos.TxProcessor)
 		if !ok || !txProcessor.RunContext().IsExecutedOnChain() {
 			panic("ArbOwner precompile is disabled outside on-chain execution")

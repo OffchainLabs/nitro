@@ -60,7 +60,8 @@ func FuzzPrecompiles(f *testing.F) {
 		addr[19] = precompileSelector
 
 		// Pick a precompile method based on the second byte of the input
-		if precompile := precompiles.Precompiles()[addr]; precompile != nil {
+		allPrecompiles, _ := precompiles.Precompiles()
+		if precompile := allPrecompiles[addr]; precompile != nil {
 			sigs := precompile.Precompile().Get4ByteMethodSignatures()
 			if int(methodSelector) < len(sigs) {
 				newInput := make([]byte, 4)

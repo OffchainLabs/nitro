@@ -512,7 +512,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 	}
 }
 
-func Precompiles() map[addr]ArbosPrecompile {
+func Precompiles() (map[addr]ArbosPrecompile, *OwnerPrecompile) {
 	contracts := make(map[addr]ArbosPrecompile)
 
 	insert := func(address addr, impl ArbosPrecompile) *Precompile {
@@ -636,7 +636,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 		ArbOwner.methodsByName[method].arbosVersion = params.ArbosVersion_Stylus
 	}
 
-	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
+	ownerAddr, ownerWrapper := ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs)
+	ownerPC, _ := ownerWrapper.(*OwnerPrecompile)
+	insert(ownerAddr, ownerWrapper)
 	_, arbDebug := MakePrecompile(precompilesgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
 	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
 	insert(debugOnly(arbDebug.address, arbDebug))
@@ -698,7 +700,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
 	}
 
-	return contracts
+	return contracts, ownerPC
 }
 
 func (p *Precompile) CloneWithImpl(impl interface{}) *Precompile {

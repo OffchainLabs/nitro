@@ -17,6 +17,12 @@ import (
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
+var arbOwnerPrecompile *precompiles.OwnerPrecompile
+
+func GetOwnerPrecompile() *precompiles.OwnerPrecompile {
+	return arbOwnerPrecompile
+}
+
 type ArbosPrecompileWrapper struct {
 	inner precompiles.ArbosPrecompile
 }
@@ -59,7 +65,9 @@ func init() {
 
 	// process arbos precompiles
 	precompileErrors := make(map[[4]byte]abi.Error)
-	for addr, precompile := range precompiles.Precompiles() {
+	arbosPrecompiles, ownerPC := precompiles.Precompiles()
+	arbOwnerPrecompile = ownerPC
+	for addr, precompile := range arbosPrecompiles {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
