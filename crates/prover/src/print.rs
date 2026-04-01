@@ -1,17 +1,19 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::internal_func::InternalFunc;
+use std::fmt::{self, Display};
+
+use arbutil::Color;
+use fnv::FnvHashSet as HashSet;
+use num_traits::FromPrimitive;
+use wasmer_types::WASM_PAGE_SIZE;
+
 use crate::{
+    internal_func::InternalFunc,
     machine::Module,
     value::{FunctionType, Value},
     wavm::{self, Opcode},
 };
-use arbutil::Color;
-use fnv::FnvHashSet as HashSet;
-use num_traits::FromPrimitive;
-use std::fmt::{self, Display};
-use wasmer_types::WASM_PAGE_SIZE;
 
 impl FunctionType {
     fn wat_string(&self, name_args: bool) -> String {

@@ -1,8 +1,8 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(feature = "native")]
-use crate::kzg::ETHEREUM_KZG_SETTINGS;
+use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
+
 use arbutil::PreimageType;
 #[cfg(feature = "native")]
 use c_kzg::Blob;
@@ -11,8 +11,10 @@ use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::Keccak256;
-use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{RefType, TableType};
+
+#[cfg(feature = "native")]
+use crate::kzg::ETHEREUM_KZG_SETTINGS;
 
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
@@ -93,8 +95,9 @@ impl From<RemoteRefType> for RefType {
 }
 
 mod remote_convert {
-    use super::{RefType, RemoteRefType};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::{RefType, RemoteRefType};
 
     pub fn serialize<S: Serializer>(value: &RefType, serializer: S) -> Result<S::Ok, S::Error> {
         RemoteRefType::from(*value).serialize(serializer)

@@ -1,9 +1,12 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::Hash;
+use std::{
+    fmt,
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
+};
+
 use wasmparser::Operator;
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
