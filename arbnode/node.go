@@ -1341,7 +1341,7 @@ func createNodeImpl(
 
 	var batchDataProvider BatchDataProvider
 	if inboxReader != nil && inboxTracker != nil {
-		batchDataProvider = inboxReader.GetBatchDataProvider()
+		batchDataProvider = inboxReader.GetParentChainDataSource()
 	} else if messageExtractor != nil {
 		batchDataProvider = messageExtractor
 	}
@@ -1813,32 +1813,28 @@ func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containe
 	return containers.NewReadyPromise(n.TxStreamer.BlockMetadataAtMessageIndex(msgIdx))
 }
 
+func (n *Node) GetParentChainDataSource() ParentChainDataSource {
+	if n.MessageExtractor != nil {
+		return n.MessageExtractor
+	}
+	return n.InboxReader.GetParentChainDataSource()
+}
+
 func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	if n.L1Reader == nil {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
 
 	// batches not yet posted have 0 confirmations but no error
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
-	}
+	pcds := n.GetParentChainDataSource()
+	batchNum, found, err := pcds.FindInboxBatchContainingMessage(msgIdx)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
 	if !found {
 		return containers.NewReadyPromise(uint64(0), nil)
 	}
-	var parentChainBlockNum uint64
-	if n.MessageExtractor != nil {
-		parentChainBlockNum, err = n.MessageExtractor.GetBatchParentChainBlock(batchNum)
-	} else {
-		parentChainBlockNum, err = n.InboxTracker.GetBatchParentChainBlock(batchNum)
-	}
+	parentChainBlockNum, err := pcds.GetBatchParentChainBlock(batchNum)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
 	}
@@ -1891,14 +1887,7 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 }
 
 func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	var batchNum uint64
-	var found bool
-	var err error
-	if n.MessageExtractor != nil {
-		batchNum, found, err = n.MessageExtractor.FindInboxBatchContainingMessage(msgIdx)
-	} else {
-		batchNum, found, err = n.InboxTracker.FindInboxBatchContainingMessage(msgIdx)
-	}
+	batchNum, found, err := n.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
 	if err == nil && !found {
 		return containers.NewReadyPromise(uint64(0), errors.New("block not yet found on any batch"))
 	}

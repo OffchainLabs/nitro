@@ -145,12 +145,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-	var batchMetaFetcher arbnode.BatchMetadataFetcher
-	if builder.L2.ConsensusNode.InboxTracker != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
-	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
-	}
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -291,12 +286,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
 	}
-	var batchMetaFetcher arbnode.BatchMetadataFetcher
-	if builder.L2.ConsensusNode.InboxTracker != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.InboxTracker
-	} else if builder.L2.ConsensusNode.MessageExtractor != nil {
-		batchMetaFetcher = builder.L2.ConsensusNode.MessageExtractor
-	}
+	batchMetaFetcher := builder.L2.ConsensusNode.GetParentChainDataSource()
 	newBatchPoster := func() *arbnode.BatchPoster {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
@@ -444,9 +434,9 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		postedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		postedMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
 		Require(t, err)
 		haveMessages, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
@@ -836,7 +826,7 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	var batchNum uint64
 	for {
 		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.InboxTracker.FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
+		batchNum, found, err = builder.L2.ConsensusNode.GetParentChainDataSource().FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
 		if err == nil && found {
 			break
 		}
@@ -946,11 +936,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 	Require(t, err)
 	var melBatchCount uint64
 	for range 10 {
-		if builder.L2.ConsensusNode.MessageExtractor != nil {
-			melBatchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
-		} else {
-			melBatchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-		}
+		melBatchCount, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
 		if melBatchCount == batchCount {
 			break
@@ -967,11 +953,7 @@ func TestBatchPosterActuallyPostsBlobsToL1(t *testing.T) {
 		var sequencerMessageBytes []byte
 		retryUntilFound(t, ctx, 30, 100*time.Millisecond, fmt.Sprintf("GetSequencerMessageBytes(seq %d)", sequenceNum), "not found in L1 block", func() error {
 			var getErr error
-			if builder.L2.ConsensusNode.MessageExtractor != nil {
-				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.MessageExtractor.GetSequencerMessageBytes(ctx, sequenceNum)
-			} else {
-				sequencerMessageBytes, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, sequenceNum)
-			}
+			sequencerMessageBytes, _, getErr = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, sequenceNum)
 			return getErr
 		})
 

@@ -57,9 +57,9 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 	inboxPos := arbutil.MessageIndex(receipt.BlockNumber.Uint64())
 	for range 40 {
 		time.Sleep(250 * time.Millisecond)
-		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		haveMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		haveMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
 		Require(t, err)
 		if haveMessages >= inboxPos {
 			break

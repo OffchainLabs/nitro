@@ -1694,7 +1694,6 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment()
-	builder.nodeConfig.MessageExtraction.Enable = false
 
 	for _, opt := range builderOpts {
 		opt(builder)
@@ -1914,9 +1913,9 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	Require(t, err)
 	msgCount := msgIndex + 1
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		batchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
-		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
+		meta, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchCount - 1)
 		Require(t, err)
 		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)

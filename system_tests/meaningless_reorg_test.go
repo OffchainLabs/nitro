@@ -46,7 +46,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
+	metadata, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
 	Require(t, err)
 	originalBatchBlock := batchReceipt.BlockNumber.Uint64()
 	if metadata.ParentChainBlock != originalBatchBlock {
@@ -88,7 +88,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fatal(t, "Failed to read batch reorg from L1")
 		}
-		metadata, err = builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(1)
+		metadata, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(1)
 		Require(t, err)
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
@@ -98,7 +98,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, _, err = builder.L2.ConsensusNode.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
