@@ -298,6 +298,7 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 	for i := range delayedMsgs {
 		requestID := common.BigToHash(big.NewInt(int64(i)))
 		delayedMsgs[i] = &mel.DelayedInboxMessage{
+			BlockHash:              common.Hash{},
 			BeforeInboxAcc:         prevAcc,
 			ParentChainBlockNumber: 10,
 			Message: &arbostypes.L1IncomingMessage{

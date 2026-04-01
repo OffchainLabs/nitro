@@ -32,14 +32,16 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	Require(t, err)
 
 	initMsgDelayed := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: [32]byte{},
-		Message:        init.Message,
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         [32]byte{},
+		Message:                init.Message,
+		ParentChainBlockNumber: 0,
 	}
 	delayedRequestId := common.BigToHash(common.Big1)
 	userDelayed := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         initMsgDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -53,8 +55,9 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	}
 	delayedRequestId2 := common.BigToHash(common.Big2)
 	userDelayed2 := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         userDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -138,8 +141,9 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 
 	// By modifying the timestamp of the userDelayed message, and adding it again, we cause a reorg
 	userDelayedModified := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         initMsgDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -233,14 +237,16 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	Require(t, err)
 
 	initMsgDelayed := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: [32]byte{},
-		Message:        init.Message,
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         [32]byte{},
+		Message:                init.Message,
+		ParentChainBlockNumber: 0,
 	}
 	delayedRequestId := common.BigToHash(common.Big1)
 	userDelayed := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         initMsgDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -254,8 +260,9 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	}
 	delayedRequestId2 := common.BigToHash(common.Big2)
 	userDelayed2 := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         userDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -340,8 +347,9 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 	// Adding an already existing message alongside a new one shouldn't cause a reorg
 	delayedRequestId3 := common.BigToHash(common.Big3)
 	userDelayed3 := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: userDelayed2.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         userDelayed2.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -370,8 +378,9 @@ func TestSequencerReorgFromLastDelayedMsg(t *testing.T) {
 
 	// By modifying the timestamp of the userDelayed2 message, and adding it again, we cause a reorg
 	userDelayed2Modified := &mel.DelayedInboxMessage{
-		BlockHash:      [32]byte{},
-		BeforeInboxAcc: userDelayed.AfterInboxAcc(),
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         userDelayed.AfterInboxAcc(),
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,

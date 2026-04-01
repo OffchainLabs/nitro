@@ -24,6 +24,9 @@ func createDelayedMessages(n int) []*mel.DelayedInboxMessage {
 	for i := range n {
 		reqID := common.BigToHash(big.NewInt(int64(i)))
 		msgs[i] = &mel.DelayedInboxMessage{
+			BlockHash:              common.BigToHash(big.NewInt(int64(i))),
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: uint64(i),
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:      arbostypes.L1MessageType_EndOfBlock,

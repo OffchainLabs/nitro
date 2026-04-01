@@ -44,6 +44,7 @@ type SequencerInboxBatch struct {
 	Serialized             []byte // nil if serialization isn't cached yet
 }
 
+// lint:require-exhaustive-initialization
 type DelayedInboxMessage struct {
 	BlockHash              common.Hash
 	BeforeInboxAcc         common.Hash

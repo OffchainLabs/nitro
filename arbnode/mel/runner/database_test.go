@@ -72,7 +72,9 @@ func TestMelDatabaseReadAndWriteDelayedMessages(t *testing.T) {
 
 	delayedRequestId := common.BigToHash(common.Big1)
 	delayedMsg := &mel.DelayedInboxMessage{
-		BlockHash: [32]byte{},
+		BlockHash:              [32]byte{},
+		BeforeInboxAcc:         common.Hash{},
+		ParentChainBlockNumber: 0,
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
 				Kind:        arbostypes.L1MessageType_EndOfBlock,
@@ -116,7 +118,9 @@ func TestMelDelayedMessagesAccumulation(t *testing.T) {
 	for i := int64(1); i <= int64(numDelayed); i++ {
 		requestID := common.BigToHash(big.NewInt(i))
 		delayedMsgs = append(delayedMsgs, &mel.DelayedInboxMessage{
-			BlockHash: [32]byte{},
+			BlockHash:              [32]byte{},
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: 0,
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        arbostypes.L1MessageType_EndOfBlock,
