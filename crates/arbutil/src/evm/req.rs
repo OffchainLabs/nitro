@@ -1,6 +1,11 @@
 // Copyright 2023-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::collections::hash_map::Entry;
+
+use eyre::{bail, eyre, Result};
+
+use super::api::{Gas, Ink};
 use crate::{
     evm::{
         api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
@@ -9,10 +14,6 @@ use crate::{
     },
     Bytes20, Bytes32,
 };
-use eyre::{bail, eyre, Result};
-use std::collections::hash_map::Entry;
-
-use super::api::{Gas, Ink};
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {
     fn request(&mut self, req_type: EvmApiMethod, req_data: impl AsRef<[u8]>) -> (Vec<u8>, D, Gas);
@@ -317,7 +318,8 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         let mut request = Vec::with_capacity(2 * 8 + 3 * 2 + name.len() + args.len() + outs.len());
         request.extend(start_ink.to_be_bytes());
         request.extend(end_ink.to_be_bytes());
-        // u32 is enough to represent the slices lengths because the WASM environment runs in 32 bits.
+        // u32 is enough to represent the slices lengths because the WASM environment runs in 32
+        // bits.
         request.extend((name.len() as u32).to_be_bytes());
         request.extend((args.len() as u32).to_be_bytes());
         request.extend((outs.len() as u32).to_be_bytes());
