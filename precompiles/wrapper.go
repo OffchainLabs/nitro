@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -85,6 +86,13 @@ func (wrapper *OwnerPrecompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) ([]byte, uint64, multigas.MultiGas, error) {
+	if evm.ChainConfig().DisableOffchainArbOwner() {
+		txProcessor, ok := evm.ProcessingHook.(*arbos.TxProcessor)
+		if !ok || !txProcessor.RunContext().IsExecutedOnChain() {
+			panic("ArbOwner precompile is disabled outside on-chain execution")
+		}
+	}
+
 	con := wrapper.precompile
 
 	burner := &Context{

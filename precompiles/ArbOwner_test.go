@@ -18,10 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -271,6 +273,46 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 	if !bytes.Equal(config, serializedChainConfig) {
 		Fail(t, config, serializedChainConfig)
 	}
+}
+
+func TestDisableOffchainArbOwner(t *testing.T) {
+	// Build a chain config with the flag enabled
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.DisableOffchainArbOwner = true
+
+	// Create a mock inner precompile (we only need the wrapper to panic before delegating)
+	_, inner := MakePrecompile(precompilesgen.ArbOwnerMetaData, &ArbOwner{Address: types.ArbOwnerAddress})
+	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error { return nil }
+	wrapper := &OwnerPrecompile{precompile: inner, emitSuccess: emitOwnerActs}
+
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	// Need at least 4 bytes of input for the method selector
+	input := make([]byte, 4)
+
+	// Test 1: ethcall context should panic
+	evmEthcall := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	evmEthcall.ProcessingHook = arbos.NewTxProcessor(evmEthcall, &core.Message{TxRunContext: core.NewMessageEthcallContext()})
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic when DisableOffchainArbOwner is true and context is ethcall")
+			}
+		}()
+		wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evmEthcall)
+	}()
+
+	// Test 2: commit context should NOT panic (it will fail on owner check, but that's fine)
+	evmCommit := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
+	evmCommit.ProcessingHook = arbos.NewTxProcessor(evmCommit, &core.Message{TxRunContext: core.NewMessageCommitContext(nil)})
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatal("unexpected panic when DisableOffchainArbOwner is true and context is commit mode:", r)
+			}
+		}()
+		// This will return an "unauthorized" error since caller isn't an owner, but it should NOT panic
+		wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evmCommit)
+	}()
 }
 
 func TestArbInfraFeeAccount(t *testing.T) {
