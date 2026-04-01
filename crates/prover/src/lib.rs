@@ -274,7 +274,8 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     }
 }
 
-/// Sets the ending parent chain block hash used for a machine when executing message extraction algorithms.
+/// Sets the ending parent chain block hash used for a machine when executing message extraction
+/// algorithms.
 #[no_mangle]
 #[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_end_parent_chain_block_hash(
