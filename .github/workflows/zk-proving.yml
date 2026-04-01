@@ -40,8 +40,7 @@ jobs:
           rustc +succinct --print target-list | grep succinct
 
       - name: Build SP1 crates
-        # Later on, there will be a whole script. For now it's enough to build just the runner.
-        run: cargo build --release -p stylus-compiler-runner
+        run: ./crates/sp1/build.sh
 
       # Clippy runs after build because sp1-builder uses include_elf!(),
       # which requires the SP1 ELF to exist at compile time.
