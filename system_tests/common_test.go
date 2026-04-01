@@ -751,9 +751,6 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 			b.execConfig.Caching.StateHistory = gethexec.GetStateHistory(gethexec.DefaultSequencerConfig.MaxBlockSpeed)
 		}
 	}
-	// if b.nodeConfig.BlockValidator.Enable {
-	// 	b.nodeConfig.MessageExtraction.Enable = false // Skip running in MEL mode for block validator tests
-	// }
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
@@ -1199,6 +1196,7 @@ func build2ndNode(
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
+		params.nodeConfig.MessageExtraction.Enable = firstNodeNodeConfig.MessageExtraction.Enable
 	}
 	if params.anyTrustConfig != nil {
 		params.nodeConfig.DA.AnyTrust = *params.anyTrustConfig

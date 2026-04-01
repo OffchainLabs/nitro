@@ -119,7 +119,7 @@ type MessageExtractor struct {
 	seqBatchCounter          SequencerBatchCountFetcher
 	l1Reader                 *headerreader.HeaderReader
 
-	validator *staker.BlockValidator // TODO: remove post MEL block validation
+	blockValidator *staker.BlockValidator // TODO: remove post MEL block validation
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -256,8 +256,8 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 	return state, nil
 }
 
-func (m *MessageExtractor) SetBlockValidator(validator *staker.BlockValidator) {
-	m.validator = validator
+func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
+	m.blockValidator = blockValidator
 }
 
 func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
