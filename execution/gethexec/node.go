@@ -122,6 +122,43 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-batch-delay", DefaultTxIndexerConfig.MinBatchDelay, "minimum delay between transaction indexing/unindexing batches; the bigger the delay, the more blocks can be included in each batch")
 }
 
+type TransactionFilteringConfig struct {
+	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
+	EnableRPCFilter                bool                          `koanf:"enable-rpc-filter"`
+	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
+	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
+	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+}
+
+func (c *TransactionFilteringConfig) Validate() error {
+	if err := c.EventFilter.Validate(); err != nil {
+		return fmt.Errorf("invalid event filter config: %w", err)
+	}
+	if err := c.AddressFilter.Validate(); err != nil {
+		return fmt.Errorf("error validating address-filter config: %w", err)
+	}
+	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
+		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
+	}
+	return nil
+}
+
+var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
+	DisableDelayedSequencingFilter: false,
+	EnableRPCFilter:                true,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+}
+
+func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
+	f.Bool(prefix+".enable-rpc-filter", DefaultTransactionFilteringConfig.EnableRPCFilter, "enable address filtering for eth_estimateGas and eth_call")
+	EventFilterAddOptions(prefix+".event-filter", f)
+	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
+	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+}
+
 type Config struct {
 	ParentChainReader           headerreader.Config        `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                   SequencerConfig            `koanf:"sequencer" reload:"hot"`
@@ -359,12 +396,15 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	txFilter := &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, txFilter)
+	var backendTxFilterer core.TxFilterer
+	if config.TransactionFiltering.EnableRPCFilter {
+		backendTxFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
+	}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, backendTxFilterer)
 	if err != nil {
 		return nil, err
 	}
-	txPreChecker.SetBackend(backend.APIBackend())
+	txPreChecker.SetAPIBackend(backend.APIBackend())
 
 	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 

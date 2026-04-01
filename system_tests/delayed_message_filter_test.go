@@ -224,6 +224,7 @@ func setupFilteredTxTestBuilder(t *testing.T, ctx context.Context) *NodeBuilder 
 		WithArbOSInit(arbOSInit)
 
 	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.EnableRPCFilter = false
 	builder.nodeConfig.DelayedSequencer.Enable = true
 	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 

@@ -45,7 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/ctxhelper"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -100,40 +99,6 @@ type SequencerConfig struct {
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
-}
-
-type TransactionFilteringConfig struct {
-	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
-	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
-	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
-	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
-}
-
-func (c *TransactionFilteringConfig) Validate() error {
-	if err := c.EventFilter.Validate(); err != nil {
-		return fmt.Errorf("invalid event filter config: %w", err)
-	}
-	if err := c.AddressFilter.Validate(); err != nil {
-		return fmt.Errorf("error validating address-filter config: %w", err)
-	}
-	if err := c.TransactionFiltererRPCClient.Validate(); err != nil {
-		return fmt.Errorf("error validating transaction-filterer-rpc-client config: %w", err)
-	}
-	return nil
-}
-
-var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
-	DisableDelayedSequencingFilter: false,
-	EventFilter:                    eventfilter.DefaultEventFilterConfig,
-	AddressFilter:                  addressfilter.DefaultConfig,
-	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
-}
-
-func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
-	EventFilterAddOptions(prefix+".event-filter", f)
-	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
-	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 }
 
 type DangerousConfig struct {

@@ -82,7 +82,7 @@ func NewTxPreChecker(
 	}
 }
 
-func (c *TxPreChecker) SetBackend(backend core.NodeInterfaceBackendAPI) {
+func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {
 	c.backend = backend
 }
 
@@ -236,7 +236,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	if err := c.checkFilteredAddresses(tx, block); err != nil {
+	if err := c.checkFilteredAddresses(ctx, tx, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
@@ -268,7 +268,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	if err != nil {
 		return err
 	}
-	if err := c.checkFilteredAddresses(msg.Transaction, block); err != nil {
+	if err := c.checkFilteredAddresses(ctx, msg.Transaction, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
@@ -288,7 +288,7 @@ func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	if err := c.checkFilteredAddresses(tx, block); err != nil {
+	if err := c.checkFilteredAddresses(ctx, tx, block); err != nil {
 		return err
 	}
 	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
@@ -298,7 +298,7 @@ func (c *TxPreChecker) SetExpressLaneTracker(tracker *timeboost.ExpressLaneTrack
 	c.expressLaneTracker = tracker
 }
 
-func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, header *types.Header) error {
+func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Transaction, header *types.Header) error {
 	if c.backend == nil || c.backend.TxFilter() == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -315,12 +315,13 @@ func (c *TxPreChecker) checkFilteredAddresses(tx *types.Transaction, header *typ
 	}
 	msg.SkipNonceChecks = true
 
-	_, err = gasestimator.Run(context.Background(), msg, &gasestimator.Options{
+	_, err = gasestimator.Run(ctx, msg, &gasestimator.Options{
 		Config:           c.bc.Config(),
 		Chain:            c.bc,
 		Header:           header,
 		State:            statedb,
 		Backend:          c.backend,
+		EnableFiltering:  true,
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {

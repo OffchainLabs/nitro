@@ -79,6 +79,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfigB.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessAlwaysCompatible
+	execConfigB.TransactionFiltering.EnableRPCFilter = true
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false

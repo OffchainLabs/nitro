@@ -12,7 +12,7 @@ import (
 )
 
 // txFilterer implements core.TxFilterer for address-based transaction filtering
-// in gas estimation dry-runs. It wraps ExecutionEngine to resolve the address
+// for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine to resolve the address
 // checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
 type txFilterer struct {
 	execEngine  *ExecutionEngine
@@ -20,9 +20,8 @@ type txFilterer struct {
 }
 
 func (f *txFilterer) Setup(statedb *state.StateDB) {
-	if f.execEngine.addressChecker != nil {
-		statedb.SetAddressChecker(f.execEngine.addressChecker)
-	}
+	statedb.SetAddressChecker(f.execEngine.addressChecker)
+	statedb.SetTxContext(common.Hash{}, 0)
 }
 
 func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
