@@ -227,16 +227,29 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
+// getStateByRPCBlockNum currently supports fetching of respective state for safe and finalized parent chain blocks
 func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum rpc.BlockNumber) (*mel.State, error) {
-	blk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(blockNum.Int64()))
-	if err != nil {
-		return nil, err
+	var blk uint64
+	var err error
+	switch blockNum {
+	case rpc.SafeBlockNumber:
+		blk, err = m.l1Reader.LatestSafeBlockNr(ctx)
+		if err != nil {
+			return nil, err
+		}
+	case rpc.FinalizedBlockNumber:
+		blk, err = m.l1Reader.LatestFinalizedBlockNr(ctx)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("getStateByRPCBlockNum requested with unknown blockNum: %v", blockNum)
 	}
 	headMelStateBlockNum, err := m.melDB.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, err
 	}
-	state, err := m.melDB.State(min(headMelStateBlockNum, blk.Number.Uint64()))
+	state, err := m.melDB.State(min(headMelStateBlockNum, blk))
 	if err != nil {
 		return nil, err
 	}
