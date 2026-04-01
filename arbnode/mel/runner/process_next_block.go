@@ -76,6 +76,9 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		if m.reorgEventsNotifier != nil {
 			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
 		}
+		if m.validator != nil {
+			m.validator.ReorgToBatchCount(preState.BatchCount)
+		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {

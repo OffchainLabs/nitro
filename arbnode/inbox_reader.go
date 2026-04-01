@@ -749,3 +749,36 @@ func (r *InboxReader) GetDelayBlocks() uint64 {
 func (r *InboxReader) SupportsPushingFinalityData() bool {
 	return true
 }
+
+func (r *InboxReader) GetBatchDataProvider() BatchDataProvider {
+	return &batchDataProviderImpl{r}
+}
+
+type batchDataProviderImpl struct {
+	r *InboxReader
+}
+
+func (b *batchDataProviderImpl) GetBatchCount() (uint64, error) {
+	return b.r.tracker.GetBatchCount()
+}
+
+func (b *batchDataProviderImpl) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
+	return b.r.tracker.GetBatchMessageCount(seqNum)
+}
+
+func (b *batchDataProviderImpl) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	return b.r.tracker.GetDelayedAcc(seqNum)
+}
+
+func (b *batchDataProviderImpl) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
+	return b.r.GetSequencerMessageBytes(ctx, seqNum)
+}
+
+func (b *batchDataProviderImpl) GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error) {
+	return b.r.GetSequencerMessageBytesForParentBlock(ctx, seqNum, parentChainBlock)
+}
+
+func (b *batchDataProviderImpl) FindParentChainBlockContainingDelayed(ctx context.Context, index uint64) (uint64, error) {
+	_, _, localParentChainBlockNumber, err := b.r.tracker.getRawDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, index)
+	return localParentChainBlockNumber, err
+}
