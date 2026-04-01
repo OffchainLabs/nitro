@@ -1001,16 +1001,16 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "1.8.4"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d2d5991425dfd0785aed03aedcf0b321d61975c9b5b3689c774a2610ae0b51e"
+checksum = "2468ef7d57b3fb7e16b576e8377cdbde2320c60e1491e961d11da40fc4f02a2d"
 dependencies = [
  "arrayref",
  "arrayvec",
  "cc",
  "cfg-if 1.0.4",
  "constant_time_eq",
- "cpufeatures 0.3.0",
+ "cpufeatures",
 ]
 
 [[package]]
@@ -1223,7 +1223,7 @@ checksum = "2d886547e41f740c616ae73108f6eb70afe6d940c7bc697cb30f13daec073037"
 dependencies = [
  "camino",
  "cargo-platform",
- "semver 1.0.23",
+ "semver 1.0.27",
  "serde",
  "serde_json",
  "thiserror 1.0.63",
@@ -1443,7 +1443,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "531185e432bb31db1ecda541e9e7ab21468d4d844ad7505e0546a49b4945d49b"
 dependencies = [
  "cfg-if 1.0.4",
- "cpufeatures 0.2.12",
+ "cpufeatures",
  "proptest",
  "serde_core",
 ]
@@ -1516,25 +1516,16 @@ dependencies = [
  "cfg-if 1.0.4",
  "libc",
  "scopeguard",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp1-zkvm",
  "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.12"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53fe5e26ff1b7aef8bca9c6080520cfb8d9333c7568e1829cef191a9723e5504"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "cpufeatures"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
 ]
@@ -2303,6 +2294,7 @@ dependencies = [
  "ff 0.13.1",
  "generic-array 0.14.7",
  "group 0.13.0",
+ "hkdf",
  "pem-rfc7468",
  "pkcs8",
  "rand_core 0.6.4",
@@ -3018,6 +3010,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hkdf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
+dependencies = [
+ "hmac",
+]
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3582,7 +3583,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
- "cpufeatures 0.2.12",
+ "cpufeatures",
 ]
 
 [[package]]
@@ -3685,7 +3686,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "regex-lite",
- "semver 1.0.23",
+ "semver 1.0.27",
 ]
 
 [[package]]
@@ -4151,6 +4152,20 @@ dependencies = [
 
 [[package]]
 name = "object"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "hashbrown 0.15.5",
+ "indexmap 2.13.0",
+ "memchr",
+ "ruzstd",
+]
+
+[[package]]
+name = "object"
 version = "0.38.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271638cd5fa9cca89c4c304675ca658efc4e64a66c716b7cfe1afb4b9611dbbc"
@@ -4215,235 +4230,270 @@ dependencies = [
 
 [[package]]
 name = "p3-air"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d275c27bb81483d669709d7244ce333b51f9743af2474cdc09ba1509f5c290db"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
  "serde",
 ]
 
 [[package]]
 name = "p3-baby-bear"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95a083928c9055f2171e3cb0bb4767969e4955473e71ba61affe46d7a3c98a89"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "num-bigint 0.4.6",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-mds 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-poseidon2 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-mds 0.1.0",
+ "p3-poseidon2 0.1.0",
+ "p3-symmetric 0.1.0",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
+name = "p3-baby-bear"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7521838ecab2ddf4f7bc4ceebad06ec02414729598485c1ada516c39900820e8"
+dependencies = [
+ "num-bigint 0.4.6",
+ "p3-field 0.2.3-succinct",
+ "p3-mds 0.2.3-succinct",
+ "p3-poseidon2 0.2.3-succinct",
+ "p3-symmetric 0.2.3-succinct",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-bn254-fr"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9abf208fbfe540d6e2a6caaa2a9a345b1c8cb23ffdcdfcc6987244525d4fc821"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "ff 0.13.1",
  "num-bigint 0.4.6",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-poseidon2 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-poseidon2 0.1.0",
+ "p3-symmetric 0.1.0",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-bn254-fr"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebf15b2e55afdfc5ef84bb0a2508a96a924f3d86b8b616053ee727293a02121d"
 dependencies = [
  "ff 0.13.1",
  "num-bigint 0.4.6",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-poseidon2 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.3.1-succinct",
+ "p3-poseidon2 0.3.1-succinct",
+ "p3-symmetric 0.3.1-succinct",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-challenger"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42b725b453bbb35117a1abf0ddfd900b0676063d6e4231e0fa6bb0d76018d8ad"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-symmetric 0.1.0",
+ "p3-util 0.1.0",
  "serde",
  "tracing",
 ]
 
 [[package]]
 name = "p3-challenger"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16b647fe6cb51bb873d09aab77cecf3afe38bd94284fc14d04d57d52f0d26666"
 dependencies = [
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-maybe-rayon 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-util 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.3.1-succinct",
+ "p3-maybe-rayon 0.3.1-succinct",
+ "p3-symmetric 0.3.1-succinct",
+ "p3-util 0.3.1-succinct",
  "serde",
  "tracing",
 ]
 
 [[package]]
 name = "p3-commit"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "518695b56f450f9223bdd8994dda87916b97ebf1d1c03c956807e78522fdb333"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
- "p3-challenger 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-challenger 0.1.0",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-util 0.1.0",
  "serde",
 ]
 
 [[package]]
 name = "p3-dft"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56a1f81101bff744b7ebba7f4497e917a2c6716d6e62736e4a56e555a2d98cb7"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-util 0.1.0",
  "tracing",
 ]
 
 [[package]]
 name = "p3-dft"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46414daedd796f1eefcdc1811c0484e4bced5729486b6eaba9521c572c76761a"
 dependencies = [
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-matrix 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-maybe-rayon 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-util 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.2.3-succinct",
+ "p3-matrix 0.2.3-succinct",
+ "p3-maybe-rayon 0.2.3-succinct",
+ "p3-util 0.2.3-succinct",
+ "tracing",
+]
+
+[[package]]
+name = "p3-dft"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8169aac0ed2575c6c44953a7fa162e3dd07f9a22021e36b4db9d8bd15a3373b8"
+dependencies = [
+ "p3-field 0.3.1-succinct",
+ "p3-matrix 0.3.1-succinct",
+ "p3-maybe-rayon 0.3.1-succinct",
+ "p3-util 0.3.1-succinct",
  "tracing",
 ]
 
 [[package]]
 name = "p3-field"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36459d4acb03d08097d713f336c7393990bb489ab19920d4f68658c7a5c10968"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
  "num-bigint 0.4.6",
  "num-traits",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-util 0.1.0",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-field"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48948a0516b349e9d1cdb95e7236a6ee010c44e68c5cc78b4b92bf1c4022a0d9"
 dependencies = [
  "itertools 0.12.1",
  "num-bigint 0.4.6",
  "num-traits",
- "p3-util 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-util 0.2.3-succinct",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
+name = "p3-field"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f82ed2dfd1e7d6e8759a9605c71b8a2a543069017dfdb6dafe71e7a2ccca937"
+dependencies = [
+ "itertools 0.12.1",
+ "num-bigint 0.4.6",
+ "num-traits",
+ "p3-util 0.3.1-succinct",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-fri"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e2529a174a04189cfe705d756fb0e33d3c8fb06b167b521ddb877c78407f12a"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
- "p3-challenger 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-challenger 0.1.0",
  "p3-commit",
- "p3-dft 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-dft 0.1.0",
+ "p3-field 0.1.0",
  "p3-interpolation",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-matrix 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-util 0.1.0",
  "serde",
  "tracing",
 ]
 
 [[package]]
 name = "p3-interpolation"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6662049877c802155cdb4863db59899469fc3565d22d9047e1bd22d6b71f28e5"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-util 0.1.0",
 ]
 
 [[package]]
 name = "p3-keccak-air"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "169c96f8f0aaa9042872fdb6bbae0477fd1363b87c23877dbb2ec7fb46f8fcfa"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "p3-air",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-util 0.1.0",
  "tracing",
 ]
 
 [[package]]
 name = "p3-koala-bear"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb1f52bcb6be38bdc8fa6b38b3434d4eedd511f361d4249fd798c6a5ef817b40"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "num-bigint 0.4.6",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-mds 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-poseidon2 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-mds 0.1.0",
+ "p3-poseidon2 0.1.0",
+ "p3-symmetric 0.1.0",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-koala-bear"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60e2d5bc3601f6115afd9a55a718bdab49e98d44710438008204d2084d5d70d0"
 dependencies = [
  "num-bigint 0.4.6",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-mds 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-poseidon2 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.3.1-succinct",
+ "p3-mds 0.3.1-succinct",
+ "p3-poseidon2 0.3.1-succinct",
+ "p3-symmetric 0.3.1-succinct",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-matrix"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5583e9cd136a4095a25c41a9edfdcce2dfae58ef01639317813bdbbd5b55c583"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-util 0.1.0",
  "rand 0.8.5",
  "serde",
  "tracing",
@@ -4451,13 +4501,29 @@ dependencies = [
 
 [[package]]
 name = "p3-matrix"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e4de3f373589477cb735ea58e125898ed20935e03664b4614c7fac258b3c42f"
 dependencies = [
  "itertools 0.12.1",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-maybe-rayon 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-util 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.2.3-succinct",
+ "p3-maybe-rayon 0.2.3-succinct",
+ "p3-util 0.2.3-succinct",
+ "rand 0.8.5",
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "p3-matrix"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef05490e47c906f102e08493986b1d3c6b6e2c6be9937eaab2c970ccf5385e8"
+dependencies = [
+ "itertools 0.12.1",
+ "p3-field 0.3.1-succinct",
+ "p3-maybe-rayon 0.3.1-succinct",
+ "p3-util 0.3.1-succinct",
  "rand 0.8.5",
  "serde",
  "tracing",
@@ -4465,144 +4531,197 @@ dependencies = [
 
 [[package]]
 name = "p3-maybe-rayon"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e524d47a49fb4265611303339c4ef970d892817b006cc330dad18afb91e411b1"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "p3-maybe-rayon"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3968ad1160310296eb04f91a5f4edfa38fe1d6b2b8cd6b5c64e6f9b7370979e"
+
+[[package]]
+name = "p3-maybe-rayon"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3d38c20290b92011f12a3fc040a999197e71e1663614998393a24aee4d430da"
 
 [[package]]
 name = "p3-mds"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f6cb8edcb276033d43769a3725570c340d2ed6f35c3cca4cddeee07718fa376"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
- "p3-dft 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-dft 0.1.0",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-symmetric 0.1.0",
+ "p3-util 0.1.0",
  "rand 0.8.5",
 ]
 
 [[package]]
 name = "p3-mds"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2356b1ed0add6d5dfbf7a338ce534a6fde827374394a52cec16a0840af6e97c9"
 dependencies = [
  "itertools 0.12.1",
- "p3-dft 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-matrix 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-util 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-dft 0.2.3-succinct",
+ "p3-field 0.2.3-succinct",
+ "p3-matrix 0.2.3-succinct",
+ "p3-symmetric 0.2.3-succinct",
+ "p3-util 0.2.3-succinct",
+ "rand 0.8.5",
+]
+
+[[package]]
+name = "p3-mds"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b707ec6432a15661ce67e5fc3abb1c2653e0064030d99c8cece4a049b31ebb1a"
+dependencies = [
+ "itertools 0.12.1",
+ "p3-dft 0.3.1-succinct",
+ "p3-field 0.3.1-succinct",
+ "p3-matrix 0.3.1-succinct",
+ "p3-symmetric 0.3.1-succinct",
+ "p3-util 0.3.1-succinct",
  "rand 0.8.5",
 ]
 
 [[package]]
 name = "p3-merkle-tree"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5e8bc3c224fc70d22f9556393e1482b52539e11c7b82ac6933c436fd82738f4"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
  "p3-commit",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-symmetric 0.1.0",
+ "p3-util 0.1.0",
  "serde",
  "tracing",
 ]
 
 [[package]]
 name = "p3-poseidon2"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a26197df2097b98ab7038d59a01e1fe1a0f545e7e04aa9436b2454b1836654f"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "gcd",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-mds 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
+ "p3-mds 0.1.0",
+ "p3-symmetric 0.1.0",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-poseidon2"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da1eec7e1b6900581bedd95e76e1ef4975608dd55be9872c9d257a8a9651c3a"
 dependencies = [
  "gcd",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-mds 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.2.3-succinct",
+ "p3-mds 0.2.3-succinct",
+ "p3-symmetric 0.2.3-succinct",
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
+name = "p3-poseidon2"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9c6dbf170a3fb4d7556023315a525e08c4b94b572bc307eadbf9065bddaf489"
+dependencies = [
+ "gcd",
+ "p3-field 0.3.1-succinct",
+ "p3-mds 0.3.1-succinct",
+ "p3-symmetric 0.3.1-succinct",
  "rand 0.8.5",
  "serde",
 ]
 
 [[package]]
 name = "p3-symmetric"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a1d3b5202096bca57cde912fbbb9cbaedaf5ac7c42a924c7166b98709d64d21"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
  "serde",
 ]
 
 [[package]]
 name = "p3-symmetric"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edb439bea1d822623b41ff4b51e3309e80d13cadf8b86d16ffd5e6efb9fdc360"
 dependencies = [
  "itertools 0.12.1",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-field 0.2.3-succinct",
+ "serde",
+]
+
+[[package]]
+name = "p3-symmetric"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7ec3a99c3dc3d55d0e78ef7041e0d90bdfbf03451e4f0bae3f9877af99cabb3"
+dependencies = [
+ "itertools 0.12.1",
+ "p3-field 0.3.1-succinct",
  "serde",
 ]
 
 [[package]]
 name = "p3-uni-stark"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fef1cdb8285a7adb78df991852d3b66d3b25cf6ffc34f528505d1aee49bdb968"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "itertools 0.12.1",
  "p3-air",
- "p3-challenger 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-challenger 0.1.0",
  "p3-commit",
- "p3-dft 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-dft 0.1.0",
+ "p3-field 0.1.0",
+ "p3-matrix 0.1.0",
+ "p3-maybe-rayon 0.1.0",
+ "p3-util 0.1.0",
  "serde",
  "tracing",
 ]
 
 [[package]]
 name = "p3-util"
-version = "0.3.2-succinct"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec5f0388aa6d935ca3a17444086120f393f0b2f0816010b5ff95998c1c4095e3"
+version = "0.1.0"
+source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#ce9cdfa52326beb93d77669cee52e23287fdb16d"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "p3-util"
-version = "0.3.2-succinct"
-source = "git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6#5fa5e044def35d9fb7b2d8f3296c23efd5b00306"
+version = "0.2.3-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6c2c2010678b9332b563eaa38364915b585c1a94b5ca61e2c7541c087ddda5c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "p3-util"
+version = "0.3.1-succinct"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712473f2a848b672eee90c3b9cd4bfcd3da042112c53a0dc6b088fc3964538ab"
 dependencies = [
  "serde",
 ]
@@ -5476,7 +5595,7 @@ dependencies = [
  "bitflags 1.3.2",
  "libc",
  "mach2 0.4.2",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp1-zkvm",
  "windows-sys 0.52.0",
 ]
@@ -5647,10 +5766,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "rrs-succinct"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efd079cd303257a4cb4e5aadfa79a7fe23f3c8301aa4740ccc3a99673485a352"
+name = "rrs-lib"
+version = "0.1.0"
+source = "git+https://github.com/succinctlabs/rrs-succinct.git?branch=gautham%2Frv64executor-2#eaca3e8e1785f5b4cf55edfe670c1bf2f52eca77"
 dependencies = [
  "downcast-rs",
  "num_enum 0.5.11",
@@ -5748,7 +5866,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
 dependencies = [
- "semver 1.0.23",
+ "semver 1.0.27",
 ]
 
 [[package]]
@@ -6022,11 +6140,12 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.23"
+version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 dependencies = [
  "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -6197,7 +6316,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if 1.0.4",
- "cpufeatures 0.2.12",
+ "cpufeatures",
  "digest 0.10.7",
 ]
 
@@ -6214,7 +6333,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if 1.0.4",
- "cpufeatures 0.2.12",
+ "cpufeatures",
  "digest 0.10.7",
 ]
 
@@ -6225,7 +6344,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c5f3b1e2dc8aad28310d8410bd4d7e180eca65fca176c52ab00d364475d0024"
 dependencies = [
  "cfg-if 1.0.4",
- "cpufeatures 0.2.12",
+ "cpufeatures",
  "digest 0.11.2",
 ]
 
@@ -6338,11 +6457,21 @@ checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slop-air"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "242539aba9e5424923d7bd629775570c7d10ec28584e96ea599575a51bedcde8"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "p3-air",
+]
+
+[[package]]
+name = "slop-algebra"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c99cdaa39f7db4823cf18938544a135f20bf779eb4b3561652a72ba07ac3c41"
+dependencies = [
+ "itertools 0.14.0",
+ "p3-field 0.3.1-succinct",
+ "serde",
 ]
 
 [[package]]
@@ -6351,65 +6480,51 @@ version = "6.0.0"
 source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "itertools 0.13.0",
- "p3-field 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
- "serde",
-]
-
-[[package]]
-name = "slop-algebra"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "691beea96fd18d4881f9ca1cb4e58194dac6366f24956a2fdae00c8ee382a0c9"
-dependencies = [
- "itertools 0.14.0",
- "p3-field 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-field 0.1.0",
  "serde",
 ]
 
 [[package]]
 name = "slop-alloc"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f58b7800cba9b31377f9353174d13fd8e39608b6f1d1531f0e92b8ce4af49ae0"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "thiserror 1.0.63",
 ]
 
 [[package]]
 name = "slop-baby-bear"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "949e3c822532a87b4ad04f7280283c256621b0a83aee1b40cbd721df29df641d"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "lazy_static",
- "p3-baby-bear",
+ "p3-baby-bear 0.1.0",
  "serde",
- "slop-algebra 6.0.2",
- "slop-challenger 6.0.2",
- "slop-poseidon2 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "slop-basefold"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58984f92091a668a006b6895487079d99209e599b02d636f061fe4ae26977fb5"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
- "slop-koala-bear 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-merkle-tree",
  "slop-multilinear",
- "slop-primitives 6.0.2",
+ "slop-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-tensor",
  "slop-utils",
  "thiserror 1.0.63",
@@ -6417,29 +6532,45 @@ dependencies = [
 
 [[package]]
 name = "slop-basefold-prover"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b86eb8581b52f97860242fe5e8d6b49d2a37e1b38d4a647adf24acaa2965ee7d"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rand 0.8.5",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
  "slop-basefold",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-dft",
  "slop-fri",
  "slop-futures",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-merkle-tree",
  "slop-multilinear",
  "slop-tensor",
  "thiserror 1.0.63",
+ "tokio",
+]
+
+[[package]]
+name = "slop-bn254"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ce30d587559808f7a984ea96af231de14f8f793836300347d1ee13d28e194ad"
+dependencies = [
+ "ff 0.13.1",
+ "p3-bn254-fr 0.3.1-succinct",
+ "serde",
+ "slop-algebra 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-challenger 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-poseidon2 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-symmetric 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zkhash",
 ]
 
 [[package]]
@@ -6448,29 +6579,26 @@ version = "6.0.0"
 source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "ff 0.13.1",
- "p3-bn254-fr 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-bn254-fr 0.1.0",
  "serde",
- "slop-algebra 6.0.0",
- "slop-challenger 6.0.0",
- "slop-poseidon2 6.0.0",
- "slop-symmetric 6.0.0",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "zkhash",
 ]
 
 [[package]]
-name = "slop-bn254"
-version = "6.0.2"
+name = "slop-challenger"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1852499c245f7f3dec23408b4930b3ea7570ae914b9c31f12950ac539d85ee"
+checksum = "15fed3b1414bd79c56a21e3ac75c5b549003a0d8f715eb501000d4ac3d7b8a9f"
 dependencies = [
- "ff 0.13.1",
- "p3-bn254-fr 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures",
+ "p3-challenger 0.3.1-succinct",
  "serde",
- "slop-algebra 6.0.2",
- "slop-challenger 6.0.2",
- "slop-poseidon2 6.0.2",
- "slop-symmetric 6.0.2",
- "zkhash",
+ "slop-algebra 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-symmetric 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6479,30 +6607,16 @@ version = "6.0.0"
 source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "futures",
- "p3-challenger 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-challenger 0.1.0",
  "serde",
- "slop-algebra 6.0.0",
- "slop-symmetric 6.0.0",
-]
-
-[[package]]
-name = "slop-challenger"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4349af93602f3876a3eda948a74d9d16d774c401dfe25f41a45ffd84f230bc1"
-dependencies = [
- "futures",
- "p3-challenger 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
- "serde",
- "slop-algebra 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "slop-commit"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "584339690d20fb6b34b0dc957cbd267221ba2ab7b0c1292c118378f3498979c4"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "p3-commit",
  "serde",
@@ -6511,13 +6625,12 @@ dependencies = [
 
 [[package]]
 name = "slop-dft"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "148281e1611ca570d016a733aac2f3ec9867241cc800a96d15bc6ecfd010daf7"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-dft 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-dft 0.1.0",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-matrix",
  "slop-tensor",
@@ -6525,18 +6638,16 @@ dependencies = [
 
 [[package]]
 name = "slop-fri"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0857a346ea28496ee56b1dcad192db8c7ff0455a18bfd67ce6513323b594b746"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "p3-fri",
 ]
 
 [[package]]
 name = "slop-futures"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bbfea5447d243572da7aae8d5e57856229a97fb8bc6a42439d4c5f4de951ee0"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "crossbeam",
  "futures",
@@ -6549,43 +6660,42 @@ dependencies = [
 
 [[package]]
 name = "slop-jagged"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc420430b93d38e9aae903bc4bc11c342f8d49d015cca26eeb36a6ea3f7a0f1f"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
  "futures",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "num_cpus",
  "rand 0.8.5",
  "rayon",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
  "slop-basefold",
  "slop-basefold-prover",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-futures",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-merkle-tree",
  "slop-multilinear",
  "slop-stacked",
  "slop-sumcheck",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-tensor",
  "slop-utils",
  "thiserror 1.0.63",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "slop-keccak-air"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "288abf40d9901f79e221ece87f11324826289bf5d694fde07dd785bdb4afda38"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "p3-keccak-air",
 ]
@@ -6593,82 +6703,79 @@ dependencies = [
 [[package]]
 name = "slop-koala-bear"
 version = "6.0.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "402c403f847e811a788882c7c5ee018ab7076c8bafbf4f46f569fe97f44610d1"
 dependencies = [
  "lazy_static",
- "p3-koala-bear 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-koala-bear 0.3.1-succinct",
  "serde",
- "slop-algebra 6.0.0",
- "slop-challenger 6.0.0",
- "slop-poseidon2 6.0.0",
- "slop-symmetric 6.0.0",
+ "slop-algebra 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-challenger 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-poseidon2 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-symmetric 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "slop-koala-bear"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "574784c044d11cf9d8238dc18bce9b897bc34d0fb1daaceafd75ebb400084016"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "lazy_static",
- "p3-koala-bear 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-koala-bear 0.1.0",
  "serde",
- "slop-algebra 6.0.2",
- "slop-challenger 6.0.2",
- "slop-poseidon2 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "slop-matrix"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd1117c395388bd172826115ac4f9a7e09bf9c937ceafa82194132a058e27c0d"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-matrix 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-matrix 0.1.0",
 ]
 
 [[package]]
 name = "slop-maybe-rayon"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81316cfe721c3f47cd0af63002a8b6557c951ff9588fa7db0f4f3b99af091486"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-maybe-rayon 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-maybe-rayon 0.1.0",
 ]
 
 [[package]]
 name = "slop-merkle-tree"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e700652778c15320f6269362103b87a3787a7c9d70fb05d9742dbce66c46f764"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
  "ff 0.13.1",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "p3-merkle-tree",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-futures",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-matrix",
- "slop-poseidon2 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-tensor",
  "thiserror 1.0.63",
+ "tokio",
  "zkhash",
 ]
 
 [[package]]
 name = "slop-multilinear"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6151db452ace0d960314f46c61a2b8d45e1fa4dfd5830447c67fc1e1e1e823b5"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
  "futures",
@@ -6676,13 +6783,23 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
- "slop-challenger 6.0.2",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-futures",
  "slop-matrix",
  "slop-tensor",
+ "tokio",
+]
+
+[[package]]
+name = "slop-poseidon2"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bc5ba869130dd0711cf7bd54f93785cd566b5c71201f38801fa3f500d508cc4"
+dependencies = [
+ "p3-poseidon2 0.3.1-succinct",
 ]
 
 [[package]]
@@ -6690,16 +6807,16 @@ name = "slop-poseidon2"
 version = "6.0.0"
 source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-poseidon2 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-poseidon2 0.1.0",
 ]
 
 [[package]]
-name = "slop-poseidon2"
-version = "6.0.2"
+name = "slop-primitives"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5af617970b63e8d7199204bc02996745b6c35c39f2b513a118c62c7b1a0b2f1b"
+checksum = "786111f9498e8d465b39cfef062297ef4e9b688f250a39abdafaca08e772b56c"
 dependencies = [
- "p3-poseidon2 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-algebra 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6707,55 +6824,45 @@ name = "slop-primitives"
 version = "6.0.0"
 source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "slop-algebra 6.0.0",
-]
-
-[[package]]
-name = "slop-primitives"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58d82c53508f3ebff8acdabb5db2584f37686257a2549a17c977cf30cd9e24e6"
-dependencies = [
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "slop-stacked"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a25c9fb9c908a2d10037934e2c299d30f98a2146f6ded87a7b529b05ddbfda27"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
  "futures",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-basefold",
  "slop-basefold-prover",
- "slop-challenger 6.0.2",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-futures",
  "slop-merkle-tree",
  "slop-multilinear",
  "slop-tensor",
  "thiserror 1.0.63",
+ "tokio",
 ]
 
 [[package]]
 name = "slop-sumcheck"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05c691f34c05e933777059a10804e00f77834b927abc2701f5f394e9c2b49c1c"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "futures",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rayon",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
- "slop-challenger 6.0.2",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-multilinear",
  "thiserror 1.0.63",
 ]
@@ -6763,81 +6870,78 @@ dependencies = [
 [[package]]
 name = "slop-symmetric"
 version = "6.0.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c41115c944fdb8eec425d4515cbc1649852ab4ddcc6be67a069c8d2aa5205209"
 dependencies = [
- "p3-symmetric 0.3.2-succinct (git+https://github.com/Plonky3/Plonky3/?branch=sp1-v6)",
+ "p3-symmetric 0.3.1-succinct",
 ]
 
 [[package]]
 name = "slop-symmetric"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15acfa7f567ffa4f36de134492632a397c33fa6af2e48894e50978b52eeeb871"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-symmetric 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-symmetric 0.1.0",
 ]
 
 [[package]]
 name = "slop-tensor"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1796e5ff7dcdcd2c15f423a27550a4688e25009bd5ca648d9593d66f243950d6"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "arrayvec",
  "derive-where",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rand 0.8.5",
  "rayon",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-futures",
  "slop-matrix",
  "thiserror 1.0.63",
+ "tokio",
  "transpose",
 ]
 
 [[package]]
 name = "slop-uni-stark"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "504f32330985e48a6aa9c9e0985641a4dc084d3843ff59075591b24b818f2a67"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "p3-uni-stark",
 ]
 
 [[package]]
 name = "slop-utils"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba510663661800990c1207ddbf3a1e67a551f05d882a60197adbb19c6824754f"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "p3-util 0.3.2-succinct (registry+https://github.com/rust-lang/crates.io-index)",
+ "p3-util 0.1.0",
  "tracing-forest",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "slop-whir"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71f6a16450fc701450831121810da91c6ee3ac50e4705327dcd4957b046015a"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "derive-where",
  "futures",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rand 0.8.5",
  "rayon",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-baby-bear",
  "slop-basefold",
- "slop-challenger 6.0.2",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-dft",
  "slop-jagged",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-matrix",
  "slop-merkle-tree",
  "slop-multilinear",
@@ -6888,23 +6992,21 @@ dependencies = [
 
 [[package]]
 name = "sp1-build"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38fe5854ea3054c20b34fe85b08437583174e8cd71e612fcfef67ea841daea14"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "anyhow",
  "cargo_metadata",
  "chrono",
  "clap 4.5.53",
  "dirs",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "sp1-core-executor"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc9268de48a534ccb82287a517c0a07ee594136bc9fce6c7eb438c69e7917be"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -6916,21 +7018,22 @@ dependencies = [
  "eyre",
  "hashbrown 0.14.5",
  "hex",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "memmap2 0.9.10",
  "num",
- "rrs-succinct",
+ "object 0.37.3",
+ "rrs-lib",
  "serde",
  "serde_arrays",
  "serde_json",
  "slop-air",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-maybe-rayon",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-curves",
  "sp1-hypercube",
  "sp1-jit",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "strum",
  "subenum",
  "thiserror 1.0.63",
@@ -6942,9 +7045,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-core-machine"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d436300d3052341854e58c88a9b5444a6f45689ee8933f9bec047ac367693182"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "bincode",
  "cfg-if 1.0.4",
@@ -6952,17 +7054,17 @@ dependencies = [
  "futures",
  "generic-array 1.1.0",
  "hashbrown 0.14.5",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "num",
  "num_cpus",
  "rayon",
  "rayon-scan",
- "rrs-succinct",
+ "rrs-lib",
  "serde",
  "serde_json",
  "slop-air",
- "slop-algebra 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-futures",
  "slop-keccak-air",
  "slop-matrix",
@@ -6974,7 +7076,7 @@ dependencies = [
  "sp1-derive",
  "sp1-hypercube",
  "sp1-jit",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "static_assertions",
  "strum",
  "sysinfo",
@@ -6989,18 +7091,18 @@ dependencies = [
 
 [[package]]
 name = "sp1-cuda"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a03bb846daaabe6e94af5e5199aa110b42c68482d6380b7e765d9d6b65119d52"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "bincode",
  "bytes",
  "reqwest 0.12.28",
+ "semver 1.0.27",
  "serde",
  "serde_json",
  "sp1-core-executor",
  "sp1-core-machine",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-prover",
  "sp1-prover-types",
  "thiserror 1.0.63",
@@ -7010,30 +7112,28 @@ dependencies = [
 
 [[package]]
 name = "sp1-curves"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e3ad4fc0f5ea7286fbe5c788d97125dc0cb40eb81f15becb432a65f350cd2f9"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "cfg-if 1.0.4",
  "dashu",
  "elliptic-curve",
  "generic-array 1.1.0",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "k256",
  "num",
  "p256",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "snowbridge-amcl",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "typenum",
 ]
 
 [[package]]
 name = "sp1-derive"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f111a90749619066fbd7ba102b22375bc6c824abb66804c3184ba0f650d017a2"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7042,16 +7142,15 @@ dependencies = [
 
 [[package]]
 name = "sp1-hypercube"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caff340db83b2c38b01f022624b8b792c38f201417581d6855dbe9a445d2485f"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "arrayref",
  "deepsize2",
  "derive-where",
  "futures",
  "hashbrown 0.14.5",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "num-bigint 0.4.6",
  "num-traits",
  "num_cpus",
@@ -7059,28 +7158,27 @@ dependencies = [
  "rayon-scan",
  "serde",
  "slop-air",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-basefold",
  "slop-basefold-prover",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-futures",
  "slop-jagged",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-matrix",
  "slop-merkle-tree",
  "slop-multilinear",
- "slop-poseidon2 6.0.2",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-stacked",
  "slop-sumcheck",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-tensor",
  "slop-uni-stark",
  "slop-whir",
  "sp1-derive",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "strum",
  "thiserror 1.0.63",
  "thousands",
@@ -7090,17 +7188,29 @@ dependencies = [
 
 [[package]]
 name = "sp1-jit"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcadaa9206d36ae953c1b4390373879281ef1423115aa180e7ef0e82259d92aa"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "dynasmrt 3.2.1",
  "hashbrown 0.14.5",
  "memfd",
  "memmap2 0.9.10",
  "serde",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "sp1-lib"
+version = "5.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b73b8ff343f2405d5935440e56b7aba5cee6d87303f0051974cbd6f5de502f57"
+dependencies = [
+ "bincode",
+ "elliptic-curve",
+ "serde",
+ "sp1-primitives 5.2.4",
 ]
 
 [[package]]
@@ -7110,7 +7220,51 @@ source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b21
 dependencies = [
  "bincode",
  "serde",
- "sp1-primitives 6.0.0",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+]
+
+[[package]]
+name = "sp1-primitives"
+version = "5.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e69a03098f827102c54c31a5e57280eb45b2c085de433b3f702e4f9e3ec1641"
+dependencies = [
+ "bincode",
+ "blake3",
+ "cfg-if 1.0.4",
+ "hex",
+ "lazy_static",
+ "num-bigint 0.4.6",
+ "p3-baby-bear 0.2.3-succinct",
+ "p3-field 0.2.3-succinct",
+ "p3-poseidon2 0.2.3-succinct",
+ "p3-symmetric 0.2.3-succinct",
+ "serde",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "sp1-primitives"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bda0eaba853f3c162e6b62dc8eb25f25100ee0792f59919ef905811809e81e5"
+dependencies = [
+ "bincode",
+ "blake3",
+ "elf",
+ "hex",
+ "itertools 0.14.0",
+ "lazy_static",
+ "num-bigint 0.4.6",
+ "serde",
+ "sha2 0.10.9",
+ "slop-algebra 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-bn254 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-challenger 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-koala-bear 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-poseidon2 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-primitives 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slop-symmetric 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -7127,44 +7281,19 @@ dependencies = [
  "num-bigint 0.4.6",
  "serde",
  "sha2 0.10.9",
- "slop-algebra 6.0.0",
- "slop-bn254 6.0.0",
- "slop-challenger 6.0.0",
- "slop-koala-bear 6.0.0",
- "slop-poseidon2 6.0.0",
- "slop-primitives 6.0.0",
- "slop-symmetric 6.0.0",
-]
-
-[[package]]
-name = "sp1-primitives"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f395525b4fc46d37136f45be264c81718a67f4409c14c547ff491a263e019e7"
-dependencies = [
- "bincode",
- "blake3",
- "elf",
- "hex",
- "itertools 0.14.0",
- "lazy_static",
- "num-bigint 0.4.6",
- "serde",
- "sha2 0.10.9",
- "slop-algebra 6.0.2",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
- "slop-koala-bear 6.0.2",
- "slop-poseidon2 6.0.2",
- "slop-primitives 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
 name = "sp1-prover"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c64545387a6b5ee58155d75183223a8f19961e23d76a13a49c16514896e52ff7"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -7178,7 +7307,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hex",
  "indicatif",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "lru 0.12.5",
  "mti",
  "num-bigint 0.4.6",
@@ -7191,21 +7320,21 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "slop-air",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-basefold",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-futures",
  "slop-jagged",
  "slop-multilinear",
  "slop-stacked",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-core-executor",
  "sp1-core-machine",
  "sp1-derive",
  "sp1-hypercube",
  "sp1-jit",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-prover-types",
  "sp1-recursion-circuit",
  "sp1-recursion-compiler",
@@ -7226,9 +7355,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-prover-types"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "834512266314b8dd35fd52b921d62abb113c3c35b27358acdbc178b3a17ec72e"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "anyhow",
  "async-scoped",
@@ -7247,38 +7375,36 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-circuit"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "105531a782d66030eab608832e0829e4699053a6d41cd3c2c7931def9c9540fb"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "bincode",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rand 0.8.5",
  "rayon",
  "serde",
  "slop-air",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-alloc",
  "slop-basefold",
  "slop-basefold-prover",
- "slop-bn254 6.0.2",
- "slop-challenger 6.0.2",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-challenger 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-commit",
  "slop-jagged",
- "slop-koala-bear 6.0.2",
+ "slop-koala-bear 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-matrix",
  "slop-merkle-tree",
  "slop-multilinear",
  "slop-stacked",
  "slop-sumcheck",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-tensor",
  "slop-whir",
  "sp1-core-executor",
  "sp1-core-machine",
  "sp1-derive",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-recursion-compiler",
  "sp1-recursion-executor",
  "sp1-recursion-machine",
@@ -7287,20 +7413,19 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-compiler"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ab98d241444285539b0d4203288fbe9887707c355e346cfb176b461524c58d"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "backtrace",
  "cfg-if 1.0.4",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
- "slop-algebra 6.0.2",
- "slop-bn254 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-bn254 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-core-machine",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-recursion-executor",
  "tracing",
  "vec_map",
@@ -7308,20 +7433,19 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-executor"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc69767dce218874edbef09515ccc5fb32d5e6b857a95a99944a66f6f405f5b1"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "backtrace",
  "cfg-if 1.0.4",
  "hashbrown 0.14.5",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "range-set-blaze",
  "serde",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-maybe-rayon",
- "slop-poseidon2 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-poseidon2 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "smallvec",
  "sp1-derive",
  "sp1-hypercube",
@@ -7332,9 +7456,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-gnark-ffi"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f526cb636baa1ad67f1410884e7a5580b7068beee3ee88609fb39f906bab27b3"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -7345,10 +7468,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "slop-algebra 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-recursion-compiler",
  "sp1-verifier",
  "tempfile",
@@ -7357,21 +7480,20 @@ dependencies = [
 
 [[package]]
 name = "sp1-recursion-machine"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "228ec6719240b0933289332d730be328d3a3e4f9e6ff9ee2e20ec2b4a99aeed9"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "rand 0.8.5",
  "slop-air",
- "slop-algebra 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "slop-basefold",
  "slop-matrix",
  "slop-maybe-rayon",
- "slop-symmetric 6.0.2",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-derive",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-recursion-executor",
  "strum",
  "tracing",
@@ -7380,9 +7502,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-sdk"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d8dae789acfa3b4e8211234d05901c28cd1b988f230c9db0c29207fa131071a"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7393,27 +7514,17 @@ dependencies = [
  "futures",
  "hex",
  "indicatif",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "k256",
  "num-bigint 0.4.6",
  "serde",
- "sha2 0.10.9",
- "slop-algebra 6.0.2",
- "slop-alloc",
- "slop-basefold",
- "slop-commit",
- "slop-jagged",
- "slop-merkle-tree",
- "slop-multilinear",
- "slop-stacked",
- "slop-sumcheck",
- "slop-tensor",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-build",
  "sp1-core-executor",
  "sp1-core-machine",
  "sp1-cuda",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-prover",
  "sp1-prover-types",
  "sp1-recursion-executor",
@@ -7428,9 +7539,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-verifier"
-version = "6.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11dd15bf0dc2325ced1f3bb58bfed84efc5228a09127ab6787ee5103514f09e"
+version = "6.0.0"
+source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
 dependencies = [
  "bincode",
  "blake3",
@@ -7440,16 +7550,15 @@ dependencies = [
  "lazy_static",
  "serde",
  "sha2 0.10.9",
- "slop-algebra 6.0.2",
- "slop-challenger 6.0.2",
- "slop-primitives 6.0.2",
- "slop-symmetric 6.0.2",
+ "slop-algebra 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
+ "slop-symmetric 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-hypercube",
- "sp1-primitives 6.0.2",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
  "sp1-recursion-executor",
  "sp1-recursion-machine",
  "strum",
- "substrate-bn-succinct-rs",
+ "substrate-bn-succinct",
  "thiserror 2.0.18",
 ]
 
@@ -7467,8 +7576,8 @@ dependencies = [
  "libm",
  "rand 0.8.5",
  "sha2 0.10.9",
- "sp1-lib",
- "sp1-primitives 6.0.0",
+ "sp1-lib 6.0.0",
+ "sp1-primitives 6.0.0 (git+https://github.com/succinctlabs/sp1?rev=be6ebfe)",
 ]
 
 [[package]]
@@ -7634,10 +7743,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "substrate-bn-succinct-rs"
-version = "0.6.0"
+name = "substrate-bn-succinct"
+version = "0.6.0-v5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a241fd7c1016fb8ad30fcf5a20986c0c4538e8f15a1b41a1761516299e377ec1"
+checksum = "0ba32f1b74728f92887c3ad17c42bf82998eb52c9091018f35294e9cd388b0c8"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -7647,6 +7756,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "rand 0.8.5",
  "rustc-hex",
+ "sp1-lib 5.2.4",
 ]
 
 [[package]]
@@ -8400,9 +8510,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.23.0"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ac8b6f42ead25368cf5b098aeb3dc8a1a2c05a3eee8a9a1a68c640edbfc79d9"
+checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
 dependencies = [
  "atomic",
  "getrandom 0.4.2",
@@ -8735,7 +8845,7 @@ dependencies = [
  "rayon",
  "regex",
  "rustc_version 0.4.0",
- "semver 1.0.23",
+ "semver 1.0.27",
  "smallvec",
  "target-lexicon",
  "tracing",
@@ -8829,7 +8939,7 @@ dependencies = [
  "bitflags 2.11.0",
  "hashbrown 0.15.5",
  "indexmap 2.13.0",
- "semver 1.0.23",
+ "semver 1.0.27",
 ]
 
 [[package]]
@@ -8841,7 +8951,7 @@ dependencies = [
  "bitflags 2.11.0",
  "hashbrown 0.16.1",
  "indexmap 2.13.0",
- "semver 1.0.23",
+ "semver 1.0.27",
  "serde",
 ]
 
@@ -9414,7 +9524,7 @@ dependencies = [
  "id-arena",
  "indexmap 2.13.0",
  "log",
- "semver 1.0.23",
+ "semver 1.0.27",
  "serde",
  "serde_derive",
  "serde_json",
@@ -9596,18 +9706,3 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[patch.unused]]
-name = "sp1-build"
-version = "6.0.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
-
-[[patch.unused]]
-name = "sp1-core-executor"
-version = "6.0.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"
-
-[[patch.unused]]
-name = "sp1-sdk"
-version = "6.0.0"
-source = "git+https://github.com/succinctlabs/sp1?rev=be6ebfe#be6ebfe1412e4f7b2175cd767f60bf67dec67ac5"

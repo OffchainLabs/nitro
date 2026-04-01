@@ -22,5 +22,5 @@ path = "main.rs"
 anyhow = { workspace = true }
 prover = { workspace = true, features = ["native"] }
 serde = { workspace = true, features = ["derive"] }
-sp1-zkvm = { workspace = true }
+sp1-zkvm = { workspace = true, features = ["untrusted_programs", "may_dump_elf"] }
 wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }

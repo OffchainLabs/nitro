@@ -21,4 +21,4 @@ stylus-compiler-program = { workspace = true }
 tracing = { workspace = true }
 
 [build-dependencies]
-sp1-build = { workspace = true }
+sp1-build = { workspace = true, features = ["may_dump_elf"] }
