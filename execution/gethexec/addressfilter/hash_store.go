@@ -18,6 +18,7 @@ import (
 // Once created, this struct is never modified, making it safe for concurrent reads.
 // The cache is included here so it gets swapped atomically with the hash data.
 type hashData struct {
+	id       uuid.UUID
 	salt     uuid.UUID
 	hashes   map[common.Hash]struct{}
 	digest   string
@@ -54,8 +55,9 @@ func NewHashStore(cacheSize int) *HashStore {
 // Store atomically swaps in a new hash list.
 // This is called after a new hash list has been downloaded and parsed.
 // A new LRU cache is created for the new data, ensuring atomic consistency.
-func (h *HashStore) Store(salt uuid.UUID, hashes []common.Hash, digest string) {
+func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, hashes []common.Hash, digest string) {
 	newData := &hashData{
+		id:       id,
 		salt:     salt,
 		hashes:   make(map[common.Hash]struct{}, len(hashes)),
 		digest:   digest,
