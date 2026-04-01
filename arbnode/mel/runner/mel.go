@@ -263,7 +263,11 @@ func (m *MessageExtractor) GetFinalizedMsgCount(ctx context.Context) (arbutil.Me
 func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, error) {
 	headState, err := m.melDB.GetHeadMelState()
 	if err != nil {
-		return mel.MessageSyncProgress{}, err
+		return mel.MessageSyncProgress{
+			BatchSeen:      0,
+			BatchProcessed: 0,
+			MsgCount:       0,
+		}, err
 	}
 	batchSeen := headState.BatchCount // fallback when seqBatchCounter is nil or returns error
 	if m.seqBatchCounter != nil {

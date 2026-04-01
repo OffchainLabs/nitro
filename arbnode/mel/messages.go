@@ -78,6 +78,7 @@ type BatchMetadata struct {
 	ParentChainBlock    uint64
 }
 
+// lint:require-exhaustive-initialization
 type MessageSyncProgress struct {
 	BatchSeen      uint64
 	BatchProcessed uint64
