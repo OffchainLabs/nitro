@@ -87,7 +87,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	filtered5, _ := state5.IsFiltered()
 	assert.True(t, filtered5, "expected cached filtered address to still be filtered")
 
-	// Tx 6: queue overflow should not panic and must be conservative
+	// Tx 6: unbuffered channel (synchronous send) should not panic
 	overflowChecker := NewHashedAddressChecker(
 		store,
 		/* workerCount */ 1,
