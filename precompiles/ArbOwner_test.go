@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -288,25 +289,18 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	input := make([]byte, 4)
+	expectedErr := "ArbOwner precompile is disabled outside on-chain execution"
 
-	mustPanic := func(t *testing.T, name string, wrapper *OwnerPrecompile, evm mech) {
-		t.Helper()
+	callWrapper := func(wrapper *OwnerPrecompile, evm mech) (retErr error) {
 		defer func() {
-			if r := recover(); r == nil {
-				t.Fatalf("%s: expected panic but none occurred", name)
-			}
-		}()
-		_, _, _, _ = wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
-	}
-
-	mustNotPanic := func(t *testing.T, name string, wrapper *OwnerPrecompile, evm mech) {
-		t.Helper()
-		defer func() {
+			// Recover from panics deeper in Call (e.g. incomplete mock state).
+			// We only care whether the disableOffchain guard returned its error.
 			if r := recover(); r != nil {
-				t.Fatalf("%s: unexpected panic: %v", name, r)
+				retErr = nil // not the disable error
 			}
 		}()
-		_, _, _, _ = wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
+		_, _, _, err := wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
+		return err
 	}
 
 	makeEVM := func(runCtx *core.MessageRunContext) mech {
@@ -315,19 +309,52 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 		return evm
 	}
 
-	// Flag enabled: ethcall and gas estimation should panic
+	// Flag enabled: ethcall and gas estimation should return the disable error
 	wrapper := makeWrapper()
-	wrapper.disableOffchain.Store(true)
-	mustPanic(t, "ethcall", wrapper, makeEVM(core.NewMessageEthcallContext()))
-	mustPanic(t, "gas estimation", wrapper, makeEVM(core.NewMessageGasEstimationContext()))
+	wrapper.SetDisableOffchain(true)
+	for _, tc := range []struct {
+		name string
+		evm  mech
+	}{
+		{"ethcall", makeEVM(core.NewMessageEthcallContext())},
+		{"gas estimation", makeEVM(core.NewMessageGasEstimationContext())},
+	} {
+		err := callWrapper(wrapper, tc.evm)
+		if err == nil || err.Error() != expectedErr {
+			t.Fatalf("%s: expected error %q, got %v", tc.name, expectedErr, err)
+		}
+	}
 
-	// Flag enabled: commit and replay should NOT panic
-	mustNotPanic(t, "commit", wrapper, makeEVM(core.NewMessageCommitContext(nil)))
-	mustNotPanic(t, "replay", wrapper, makeEVM(core.NewMessageReplayContext()))
+	// Flag enabled: commit and replay should NOT return the disable error
+	for _, tc := range []struct {
+		name string
+		evm  mech
+	}{
+		{"commit", makeEVM(core.NewMessageCommitContext(nil))},
+		{"replay", makeEVM(core.NewMessageReplayContext())},
+	} {
+		err := callWrapper(wrapper, tc.evm)
+		if err != nil && err.Error() == expectedErr {
+			t.Fatalf("%s: should not return disable error for on-chain context", tc.name)
+		}
+	}
 
-	// Flag disabled (default): ethcall should NOT panic
+	// Flag enabled but ProcessingHook is not a TxProcessor: should return error
+	evmNoHook := vm.NewEVM(vm.BlockContext{
+		BlockNumber: big.NewInt(0),
+		GasLimit:    ^uint64(0),
+	}, nil, chainConfig, vm.Config{})
+	err := callWrapper(wrapper, evmNoHook)
+	if err == nil || err.Error() != expectedErr {
+		t.Fatalf("no TxProcessor hook: expected error %q, got %v", expectedErr, err)
+	}
+
+	// Flag disabled (default): ethcall should NOT return the disable error
 	wrapperDisabled := makeWrapper()
-	mustNotPanic(t, "ethcall with flag disabled", wrapperDisabled, makeEVM(core.NewMessageEthcallContext()))
+	err = callWrapper(wrapperDisabled, makeEVM(core.NewMessageEthcallContext()))
+	if err != nil && err.Error() == expectedErr {
+		t.Fatalf("ethcall with flag disabled: should not return disable error")
+	}
 }
 
 func TestArbInfraFeeAccount(t *testing.T) {

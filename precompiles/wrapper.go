@@ -95,7 +95,7 @@ func (wrapper *OwnerPrecompile) Call(
 	if wrapper.disableOffchain.Load() {
 		txProcessor, ok := evm.ProcessingHook.(*arbos.TxProcessor)
 		if !ok || !txProcessor.RunContext().IsExecutedOnChain() {
-			panic("ArbOwner precompile is disabled outside on-chain execution")
+			return nil, 0, multigas.ComputationGas(gasSupplied), errors.New("ArbOwner precompile is disabled outside on-chain execution")
 		}
 	}
 

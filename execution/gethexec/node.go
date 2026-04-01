@@ -233,6 +233,7 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+	DisableOffchainArbOwner:     false,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -445,8 +446,12 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.configFetcher.Get()
-	if ownerPC := gethhook.GetOwnerPrecompile(); ownerPC != nil {
-		ownerPC.SetDisableOffchain(config.DisableOffchainArbOwner)
+	if config.DisableOffchainArbOwner {
+		ownerPC := gethhook.GetOwnerPrecompile()
+		if ownerPC == nil {
+			return fmt.Errorf("cannot enable disable-offchain-arbowner: ArbOwner precompile not found")
+		}
+		ownerPC.SetDisableOffchain(true)
 	}
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {

@@ -17,6 +17,10 @@ import (
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
+// arbOwnerPrecompile holds the *OwnerPrecompile created during init().
+// This is needed because init() creates the instance (before node config exists)
+// and ExecutionNode.Initialize() configures it later (when config is available).
+// Since init() can't return values, this var bridges the gap between the two.
 var arbOwnerPrecompile *precompiles.OwnerPrecompile
 
 func GetOwnerPrecompile() *precompiles.OwnerPrecompile {

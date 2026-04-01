@@ -637,7 +637,14 @@ func Precompiles() (map[addr]ArbosPrecompile, *OwnerPrecompile) {
 	}
 
 	ownerAddr, ownerWrapper := ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs)
-	ownerPC, _ := ownerWrapper.(*OwnerPrecompile)
+	// This runs during init() so a panic here will prevent the node from starting.
+	// ownerOnly always returns *OwnerPrecompile, so this can only fail if ownerOnly
+	// is refactored — in which case we want a loud failure during development, not a
+	// silent no-op of the disable-offchain-arbowner flag at runtime.
+	ownerPC, ok := ownerWrapper.(*OwnerPrecompile)
+	if !ok {
+		panic("ownerOnly must return *OwnerPrecompile")
+	}
 	insert(ownerAddr, ownerWrapper)
 	_, arbDebug := MakePrecompile(precompilesgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
 	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
