@@ -3,10 +3,13 @@
 
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
+use core::{
+    convert::TryInto,
+    ops::{Deref, DerefMut, Index, RangeTo},
+};
+
 use arbutil::PreimageType;
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use core::convert::TryInto;
-use core::ops::{Deref, DerefMut, Index, RangeTo};
 
 extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);

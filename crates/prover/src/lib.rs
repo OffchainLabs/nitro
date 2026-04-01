@@ -24,17 +24,6 @@ pub mod wavm;
 #[cfg(test)]
 mod test;
 
-pub use machine::Machine;
-
-use arbutil::{Bytes32, PreimageType};
-use eyre::{Report, Result};
-use lru::LruCache;
-use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
-    PreimageResolver,
-};
-use once_cell::sync::OnceCell;
-use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
     marker::PhantomData,
@@ -47,6 +36,17 @@ use std::{
         Arc, Mutex,
     },
 };
+
+use arbutil::{Bytes32, PreimageType};
+use eyre::{Report, Result};
+use lru::LruCache;
+pub use machine::Machine;
+use machine::{
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+    PreimageResolver,
+};
+use once_cell::sync::OnceCell;
+use static_assertions::const_assert_eq;
 use utils::CBytes;
 
 lazy_static::lazy_static! {
@@ -374,7 +374,8 @@ pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
 pub const ARBITRATOR_MACHINE_STATUS_ERRORED: u8 = 2;
 pub const ARBITRATOR_MACHINE_STATUS_TOO_FAR: u8 = 3;
 
-// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that they're correct.
+// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that
+// they're correct.
 const_assert_eq!(
     ARBITRATOR_MACHINE_STATUS_RUNNING,
     MachineStatus::Running as u8,

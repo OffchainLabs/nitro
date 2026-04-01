@@ -1,16 +1,16 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::value::{ArbValueType, FunctionType};
-
-use super::{
-    config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL, FuncMiddleware, Middleware, ModuleMod,
-};
 use arbutil::Color;
 use eyre::{bail, Result};
 use parking_lot::RwLock;
 use wasmer_types::{FunctionIndex, GlobalIndex, ImportIndex, LocalFunctionIndex, Pages};
 use wasmparser::Operator;
+
+use super::{
+    config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL, FuncMiddleware, Middleware, ModuleMod,
+};
+use crate::value::{ArbValueType, FunctionType};
 
 #[derive(Debug)]
 pub struct HeapBound {

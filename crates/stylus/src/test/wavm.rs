@@ -1,10 +1,11 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::test::{new_test_machine, test_compile_config};
 use arbutil::evm::api::Ink;
 use eyre::Result;
 use prover::{programs::prelude::*, Machine};
+
+use crate::test::{new_test_machine, test_compile_config};
 
 #[test]
 fn test_ink() -> Result<()> {

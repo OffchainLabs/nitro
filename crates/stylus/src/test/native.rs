@@ -6,13 +6,8 @@
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{
-    run::RunProgram,
-    test::{
-        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
-        test_compile_config, test_configs, TestInstance,
-    },
-};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
+
 use arbutil::{
     crypto,
     evm::{
@@ -32,13 +27,20 @@ use prover::{
     },
     Machine,
 };
-use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
-use wasmer::wasmparser::Operator;
 use wasmer::{
     sys::{CompilerConfig, EngineBuilder},
+    wasmparser::Operator,
     ExportIndex, Imports, Pages, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{
+    run::RunProgram,
+    test::{
+        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
+        test_compile_config, test_configs, TestInstance,
+    },
+};
 
 #[test]
 fn test_ink() -> Result<()> {

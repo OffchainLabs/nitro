@@ -1,7 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::program::Program;
 use arbutil::{
     evm::{
         api::{Gas, Ink},
@@ -13,6 +12,8 @@ use arbutil::{
 };
 use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
 use prover::{machine::Module, programs::config::StylusConfig};
+
+use crate::program::Program;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -49,7 +50,7 @@ pub unsafe extern "C" fn programs__activate_v2(
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
     stylus_version: u16,
-    arbos_version_for_gas: u64,
+    arbos_version_for_activation: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn programs__activate_v2(
         &wasm,
         codehash,
         stylus_version,
-        arbos_version_for_gas,
+        arbos_version_for_activation,
         page_limit,
         debug,
         gas_left,
@@ -275,7 +276,6 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-///
 #[no_mangle]
 pub unsafe extern "C" fn programs__create_evm_data_v2(
     arbos_version: u64,

@@ -1,10 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::arbcrypto::ECRecoveryStatus::*;
-use crate::{ExecEnv, GuestPtr, MemAccess};
 use core::mem::MaybeUninit;
+
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use tiny_keccak::{Hasher, Keccak};
+
+use crate::{arbcrypto::ECRecoveryStatus::*, ExecEnv, GuestPtr, MemAccess};
 
 #[repr(u32)]
 enum ECRecoveryStatus {
