@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -1356,4 +1357,47 @@ func TestArbDebugOverwriteContractCode(t *testing.T) {
 	if !bytes.Equal(code, testCodeB) {
 		t.Fatal("expected code B to be", testCodeB, "got", code)
 	}
+}
+
+func TestDisableOffchainArbOwner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.execConfig.DisableOffchainArbOwner = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("GetAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	// eth_call should fail
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	if err == nil {
+		Fatal(t, "eth_call to ArbOwner should fail when disable-offchain-arbowner is enabled")
+	}
+
+	// eth_estimateGas should fail
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	if err == nil {
+		Fatal(t, "eth_estimateGas to ArbOwner should fail when disable-offchain-arbowner is enabled")
+	}
+
+	// On-chain transaction should still succeed
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(arbOwnerAddr, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.AddChainOwner(&auth, common.HexToAddress("0xdeadbeef"))
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 }

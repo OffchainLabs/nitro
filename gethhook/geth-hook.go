@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -17,10 +18,8 @@ import (
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
-// arbOwnerPrecompile holds the *OwnerPrecompile created during init().
-// This is needed because init() creates the instance (before node config exists)
-// and ExecutionNode.Initialize() configures it later (when config is available).
-// Since init() can't return values, this var bridges the gap between the two.
+// arbOwnerPrecompile holds the *OwnerPrecompile retrieved from the precompile map during init().
+// ExecutionNode.Initialize() configures it later when the node config is available.
 var arbOwnerPrecompile *precompiles.OwnerPrecompile
 
 func GetOwnerPrecompile() *precompiles.OwnerPrecompile {
@@ -69,8 +68,12 @@ func init() {
 
 	// process arbos precompiles
 	precompileErrors := make(map[[4]byte]abi.Error)
-	arbosPrecompiles, ownerPC := precompiles.Precompiles()
-	arbOwnerPrecompile = ownerPC
+	arbosPrecompiles := precompiles.Precompiles()
+	if ownerPC, ok := arbosPrecompiles[types.ArbOwnerAddress].(*precompiles.OwnerPrecompile); ok {
+		arbOwnerPrecompile = ownerPC
+	} else {
+		log.Error("ArbOwner precompile is not an *OwnerPrecompile, disable-offchain-arbowner flag will not work")
+	}
 	for addr, precompile := range arbosPrecompiles {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
 			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI

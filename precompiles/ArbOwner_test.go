@@ -15,16 +15,13 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -273,87 +270,6 @@ func TestArbOwnerSetChainConfig(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(config, serializedChainConfig) {
 		Fail(t, config, serializedChainConfig)
-	}
-}
-
-func TestDisableOffchainArbOwner(t *testing.T) {
-	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
-
-	makeWrapper := func() *OwnerPrecompile {
-		_, inner := MakePrecompile(precompilesgen.ArbOwnerMetaData, &ArbOwner{Address: types.ArbOwnerAddress})
-		return &OwnerPrecompile{
-			precompile:  inner,
-			emitSuccess: func(evm mech, method bytes4, owner addr, data []byte) error { return nil },
-		}
-	}
-
-	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	input := make([]byte, 4)
-	expectedErr := "ArbOwner precompile is disabled outside on-chain execution"
-
-	callWrapper := func(wrapper *OwnerPrecompile, evm mech) (retErr error) {
-		defer func() {
-			// Recover from panics deeper in Call (e.g. incomplete mock state).
-			// We only care whether the disableOffchain guard returned its error.
-			if r := recover(); r != nil {
-				retErr = nil // not the disable error
-			}
-		}()
-		_, _, _, err := wrapper.Call(input, caller, caller, common.Big0, false, 1000000, evm)
-		return err
-	}
-
-	makeEVM := func(runCtx *core.MessageRunContext) mech {
-		evm := newMockEVMForTestingWithConfigs(chainConfig, chainConfig)
-		evm.ProcessingHook = arbos.NewTxProcessor(evm, &core.Message{TxRunContext: runCtx})
-		return evm
-	}
-
-	// Flag enabled: ethcall and gas estimation should return the disable error
-	wrapper := makeWrapper()
-	wrapper.SetDisableOffchain(true)
-	for _, tc := range []struct {
-		name string
-		evm  mech
-	}{
-		{"ethcall", makeEVM(core.NewMessageEthcallContext())},
-		{"gas estimation", makeEVM(core.NewMessageGasEstimationContext())},
-	} {
-		err := callWrapper(wrapper, tc.evm)
-		if err == nil || err.Error() != expectedErr {
-			t.Fatalf("%s: expected error %q, got %v", tc.name, expectedErr, err)
-		}
-	}
-
-	// Flag enabled: commit and replay should NOT return the disable error
-	for _, tc := range []struct {
-		name string
-		evm  mech
-	}{
-		{"commit", makeEVM(core.NewMessageCommitContext(nil))},
-		{"replay", makeEVM(core.NewMessageReplayContext())},
-	} {
-		err := callWrapper(wrapper, tc.evm)
-		if err != nil && err.Error() == expectedErr {
-			t.Fatalf("%s: should not return disable error for on-chain context", tc.name)
-		}
-	}
-
-	// Flag enabled but ProcessingHook is not a TxProcessor: should return error
-	evmNoHook := vm.NewEVM(vm.BlockContext{
-		BlockNumber: big.NewInt(0),
-		GasLimit:    ^uint64(0),
-	}, nil, chainConfig, vm.Config{})
-	err := callWrapper(wrapper, evmNoHook)
-	if err == nil || err.Error() != expectedErr {
-		t.Fatalf("no TxProcessor hook: expected error %q, got %v", expectedErr, err)
-	}
-
-	// Flag disabled (default): ethcall should NOT return the disable error
-	wrapperDisabled := makeWrapper()
-	err = callWrapper(wrapperDisabled, makeEVM(core.NewMessageEthcallContext()))
-	if err != nil && err.Error() == expectedErr {
-		t.Fatalf("ethcall with flag disabled: should not return disable error")
 	}
 }
 
