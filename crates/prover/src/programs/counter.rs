@@ -12,6 +12,7 @@ use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::Operator;
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
+#[cfg(feature = "native")]
 use crate::Machine;
 
 lazy_static! {
@@ -139,6 +140,7 @@ pub trait CountingMachine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>>;
 }
 
+#[cfg(feature = "native")]
 impl CountingMachine for Machine {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();

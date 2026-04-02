@@ -16,7 +16,9 @@ use super::{
     FuncMiddleware, Middleware, ModuleMod,
     config::{CompileMemoryParams, SigMap},
 };
-use crate::{Machine, internal_func::InternalFunc, value::FunctionType};
+#[cfg(feature = "native")]
+use crate::Machine;
+use crate::{internal_func::InternalFunc, value::FunctionType};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
@@ -535,6 +537,7 @@ pub trait DepthCheckedMachine {
     fn set_stack(&mut self, size: u32);
 }
 
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
         let global = self.get_global(STYLUS_STACK_LEFT).unwrap();

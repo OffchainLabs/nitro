@@ -20,6 +20,7 @@ hex = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 prover = { workspace = true, features = ["native"] }
+prover-ffi = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 user-host-trait = { workspace = true }
