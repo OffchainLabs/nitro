@@ -72,7 +72,7 @@ func init() {
 	if ownerPC, ok := arbosPrecompiles[types.ArbOwnerAddress].(*precompiles.OwnerPrecompile); ok {
 		arbOwnerPrecompile = ownerPC
 	} else {
-		log.Error("ArbOwner precompile is not an *OwnerPrecompile, disable-arbowner-ethcall flag will not work")
+		panic("ArbOwner precompile is not an *OwnerPrecompile, disable-arbowner-ethcall flag will not work")
 	}
 	for addr, precompile := range arbosPrecompiles {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {

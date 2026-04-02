@@ -1413,3 +1413,32 @@ func TestDisableArbOwnerEthCall(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 }
+
+func TestArbOwnerEthCallEnabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
+	Require(t, err)
+	calldata, err := arbOwnerABI.Pack("getAllChainOwners")
+	Require(t, err)
+	arbOwnerAddr := types.ArbOwnerAddress
+
+	// eth_call should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	}, nil)
+	Require(t, err)
+
+	// eth_estimateGas should succeed when DisableArbOwnerEthCall is false (default)
+	_, err = builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
+		To:   &arbOwnerAddr,
+		Data: calldata,
+	})
+	Require(t, err)
+}
