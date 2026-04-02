@@ -102,7 +102,7 @@ where
 }
 
 macro_rules! hostio {
-    ($env:expr, $($func:tt)*) => {
+    ($env:expr_2021, $($func:tt)*) => {
         WasmEnv::program(&mut $env)?.$($func)*
     };
 }

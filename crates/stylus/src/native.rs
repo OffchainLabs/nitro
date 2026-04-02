@@ -163,7 +163,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
-            ($func:expr) => {
+            ($func:expr_2021) => {
                 Function::new_typed_with_env(&mut store, &func_env, $func)
             };
         }

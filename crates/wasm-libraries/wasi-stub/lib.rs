@@ -13,7 +13,7 @@ use paste::paste;
 use wee_alloc::WeeAlloc;
 
 #[cfg(target_arch = "wasm32")]
-extern "C" {
+unsafe extern "C" {
     fn wavm_halt_and_set_finished() -> !;
 }
 
@@ -27,7 +27,7 @@ unsafe fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
     if code == 0 {
         wavm_halt_and_set_finished()
@@ -40,7 +40,7 @@ macro_rules! wrap {
     ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
         paste! {
             $(
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
                     caller_env::wasip1_stub::$func_name(
                         &mut StaticMem,

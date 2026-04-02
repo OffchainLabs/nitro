@@ -12,10 +12,12 @@ pub struct CByteArray {
 
 impl CByteArray {
     pub unsafe fn as_slice(&self) -> &[u8] {
-        if self.ptr.is_null() {
-            return &[];
+        unsafe {
+            if self.ptr.is_null() {
+                return &[];
+            }
+            std::slice::from_raw_parts(self.ptr, self.len)
         }
-        std::slice::from_raw_parts(self.ptr, self.len)
     }
 }
 
@@ -52,10 +54,12 @@ pub struct RustBytes {
 
 impl RustBytes {
     pub unsafe fn into_vec(self) -> Vec<u8> {
-        if self.ptr.is_null() {
-            return Vec::new();
+        unsafe {
+            if self.ptr.is_null() {
+                return Vec::new();
+            }
+            Vec::from_raw_parts(self.ptr, self.len, self.cap)
         }
-        Vec::from_raw_parts(self.ptr, self.len, self.cap)
     }
 
     pub unsafe fn write(&mut self, mut vec: Vec<u8>) {

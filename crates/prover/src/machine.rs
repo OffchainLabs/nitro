@@ -823,6 +823,17 @@ pub struct GlobalState {
     pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
 }
 
+impl From<GlobalState> for validation::GoGlobalState {
+    fn from(gs: GlobalState) -> Self {
+        Self {
+            block_hash: gs.bytes32_vals[0],
+            send_root: gs.bytes32_vals[1],
+            batch: gs.u64_vals[0],
+            pos_in_batch: gs.u64_vals[1],
+        }
+    }
+}
+
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
@@ -974,10 +985,10 @@ impl PreimageResolverWrapper {
 
     #[cfg(feature = "native")]
     pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
-        if let Some(resolved) = &self.last_resolved {
-            if resolved.0 == hash {
-                return Some(resolved.1.clone());
-            }
+        if let Some(resolved) = &self.last_resolved
+            && resolved.0 == hash
+        {
+            return Some(resolved.1.clone());
         }
         (self.resolver)(context, ty, hash)
     }
@@ -2041,19 +2052,18 @@ impl Machine {
                         .host_call_hooks
                         .get(self.pc.func())
                         .and_then(|h| h.as_ref())
-                    {
-                        if let Err(err) = Self::host_call_hook(
+                        && let Err(err) = Self::host_call_hook(
                             value_stack,
                             module,
                             &mut self.stdio_output,
                             &hook.0,
                             &hook.1,
-                        ) {
-                            eprintln!(
-                                "Failed to process host call hook for host call {:?} {:?}: {err}",
-                                hook.0, hook.1,
-                            );
-                        }
+                        )
+                    {
+                        eprintln!(
+                            "Failed to process host call hook for host call {:?} {:?}: {err}",
+                            hook.0, hook.1,
+                        );
                     }
                 }
                 Opcode::ArbitraryJump => {
@@ -3256,23 +3266,22 @@ impl Machine {
                 if let Ok(preimage_ty) = PreimageType::try_from(
                     u8::try_from(preimage_type)
                         .expect("ValidateCertificate preimage_type is out of range for u8"),
-                ) {
-                    if preimage_ty == PreimageType::DACertificate {
-                        // We do something special here; we don't create the final proof.
-                        // For DACertificate preimages, signal that this proof needs enhancement
-                        // Set the enhancement flag (0x80) on the machine status byte.
-                        data[0] |= 0x80;
+                ) && preimage_ty == PreimageType::DACertificate
+                {
+                    // We do something special here; we don't create the final proof.
+                    // For DACertificate preimages, signal that this proof needs enhancement
+                    // Set the enhancement flag (0x80) on the machine status byte.
+                    data[0] |= 0x80;
 
-                        // Load the hash from memory
-                        if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                            // Append hash for the enhancer to use
-                            data.extend(hash.0);
+                    // Load the hash from memory
+                    if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                        // Append hash for the enhancer to use
+                        data.extend(hash.0);
 
-                            // Append marker to identify this as DACertificate ValidateCertificate
-                            data.push(0xDB);
-                            // The enhancement flag and marker data will be stripped out of
-                            // the proof by the enhancer.
-                        }
+                        // Append marker to identify this as DACertificate ValidateCertificate
+                        data.push(0xDB);
+                        // The enhancement flag and marker data will be stripped out of
+                        // the proof by the enhancer.
                     }
                 }
             }

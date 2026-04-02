@@ -16,7 +16,7 @@ fn test_ink() -> Result<()> {
     let call = |mech: &mut Machine, v: u32| mech.call_function("user", "add_one", vec![v.into()]);
 
     macro_rules! exhaust {
-        ($ink:expr) => {
+        ($ink:expr_2021) => {
             machine.set_ink(Ink($ink));
             assert_eq!(machine.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(call(machine, 32).is_err());

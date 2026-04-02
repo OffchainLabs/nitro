@@ -12,6 +12,7 @@ use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::Operator;
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
+#[cfg(feature = "native")]
 use crate::Machine;
 
 lazy_static! {
