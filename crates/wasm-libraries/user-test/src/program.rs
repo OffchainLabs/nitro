@@ -4,16 +4,16 @@
 use std::{borrow::Cow, fmt::Display};
 
 use arbutil::{
+    Bytes20, Bytes32, Color,
     benchmark::Benchmark,
     evm::{
+        EvmData,
         api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Bytes20, Bytes32, Color,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use eyre::{eyre, Result};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
+use eyre::{Result, eyre};
 use prover::programs::memory::MemoryModel;
 use user_host_trait::UserHost;
 

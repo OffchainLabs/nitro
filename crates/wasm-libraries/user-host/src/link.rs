@@ -2,29 +2,30 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::{
+    Bytes20, Bytes32,
     evm::{
+        EvmData,
         api::{Gas, Ink},
         user::UserOutcomeKind,
-        EvmData,
     },
     format::DebugBytes,
-    heapify, Bytes20, Bytes32,
+    heapify,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
 use crate::program::Program;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn wavm_link_module(hash: *const MemoryLeaf) -> u32;
     fn wavm_unlink_module();
 }
 
 // these dynamic hostio methods allow introspection into user modules
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn program_set_ink(module: u32, ink: u64);
     fn program_set_stack(module: u32, stack: u32);
     fn program_ink_left(module: u32) -> u64;
@@ -41,7 +42,7 @@ struct MemoryLeaf([u8; 32]);
 /// The amount left is written back at the end of the call.
 ///
 /// pages_ptr: starts pointing to max allowed pages, returns number of pages used
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__activate_v2(
     wasm_ptr: GuestPtr,
     wasm_size: usize,
@@ -58,41 +59,43 @@ pub unsafe extern "C" fn programs__activate_v2(
     err_buf: GuestPtr,
     err_buf_len: usize,
 ) -> usize {
-    let wasm = StaticMem.read_slice(wasm_ptr, wasm_size);
-    let codehash = &read_bytes32(codehash);
-    let debug = debug != 0;
+    unsafe {
+        let wasm = StaticMem.read_slice(wasm_ptr, wasm_size);
+        let codehash = &read_bytes32(codehash);
+        let debug = debug != 0;
 
-    let page_limit = StaticMem.read_u16(pages_ptr);
-    let gas_left = &mut StaticMem.read_u64(gas_ptr);
-    match Module::activate(
-        &wasm,
-        codehash,
-        stylus_version,
-        arbos_version_for_activation,
-        page_limit,
-        debug,
-        gas_left,
-    ) {
-        Ok((module, data)) => {
-            StaticMem.write_u64(gas_ptr, *gas_left);
-            StaticMem.write_u16(pages_ptr, data.footprint);
-            StaticMem.write_u32(asm_estimate_ptr, data.asm_estimate);
-            StaticMem.write_u16(init_cost_ptr, data.init_cost);
-            StaticMem.write_u16(cached_init_cost_ptr, data.cached_init_cost);
-            StaticMem.write_slice(module_hash_ptr, module.hash().as_slice());
-            0
-        }
-        Err(error) => {
-            let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
-            err_bytes.truncate(err_buf_len);
-            StaticMem.write_slice(err_buf, &err_bytes);
-            StaticMem.write_u64(gas_ptr, 0);
-            StaticMem.write_u16(pages_ptr, 0);
-            StaticMem.write_u32(asm_estimate_ptr, 0);
-            StaticMem.write_u16(init_cost_ptr, 0);
-            StaticMem.write_u16(cached_init_cost_ptr, 0);
-            StaticMem.write_slice(module_hash_ptr, Bytes32::default().as_slice());
-            err_bytes.len()
+        let page_limit = StaticMem.read_u16(pages_ptr);
+        let gas_left = &mut StaticMem.read_u64(gas_ptr);
+        match Module::activate(
+            &wasm,
+            codehash,
+            stylus_version,
+            arbos_version_for_activation,
+            page_limit,
+            debug,
+            gas_left,
+        ) {
+            Ok((module, data)) => {
+                StaticMem.write_u64(gas_ptr, *gas_left);
+                StaticMem.write_u16(pages_ptr, data.footprint);
+                StaticMem.write_u32(asm_estimate_ptr, data.asm_estimate);
+                StaticMem.write_u16(init_cost_ptr, data.init_cost);
+                StaticMem.write_u16(cached_init_cost_ptr, data.cached_init_cost);
+                StaticMem.write_slice(module_hash_ptr, module.hash().as_slice());
+                0
+            }
+            Err(error) => {
+                let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
+                err_bytes.truncate(err_buf_len);
+                StaticMem.write_slice(err_buf, &err_bytes);
+                StaticMem.write_u64(gas_ptr, 0);
+                StaticMem.write_u16(pages_ptr, 0);
+                StaticMem.write_u32(asm_estimate_ptr, 0);
+                StaticMem.write_u16(init_cost_ptr, 0);
+                StaticMem.write_u16(cached_init_cost_ptr, 0);
+                StaticMem.write_slice(module_hash_ptr, Bytes32::default().as_slice());
+                err_bytes.len()
+            }
         }
     }
 }
@@ -109,7 +112,7 @@ unsafe fn read_bytes20(ptr: GuestPtr) -> Bytes20 {
 /// consumes both evm_data_handler and config_handler
 /// returns module number
 /// see program-exec for starting the user program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__new_program(
     module_hash_ptr: GuestPtr,
     calldata_ptr: GuestPtr,
@@ -118,35 +121,37 @@ pub unsafe extern "C" fn programs__new_program(
     evm_data_box: u64,
     gas: u64,
 ) -> u32 {
-    let module_hash = read_bytes32(module_hash_ptr);
-    let calldata = StaticMem.read_slice(calldata_ptr, calldata_size);
-    let config: StylusConfig = *Box::from_raw(config_box as _);
-    let evm_data: EvmData = *Box::from_raw(evm_data_box as _);
+    unsafe {
+        let module_hash = read_bytes32(module_hash_ptr);
+        let calldata = StaticMem.read_slice(calldata_ptr, calldata_size);
+        let config: StylusConfig = *Box::from_raw(config_box as _);
+        let evm_data: EvmData = *Box::from_raw(evm_data_box as _);
 
-    // buy ink
-    let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(Gas(gas));
+        // buy ink
+        let pricing = config.pricing;
+        let ink = pricing.gas_to_ink(Gas(gas));
 
-    // link the program and ready its instrumentation
-    let module = wavm_link_module(&MemoryLeaf(*module_hash));
-    program_set_ink(module, ink.0);
-    program_set_stack(module, config.max_depth);
+        // link the program and ready its instrumentation
+        let module = wavm_link_module(&MemoryLeaf(*module_hash));
+        program_set_ink(module, ink.0);
+        program_set_stack(module, config.max_depth);
 
-    // provide arguments
-    Program::push_new(calldata, evm_data, module, config);
-    module
+        // provide arguments
+        Program::push_new(calldata, evm_data, module, config);
+        module
+    }
 }
 
 /// consumes module hash
 /// returns true if we should call into program_prepare, false otherwise
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__program_requires_prepare(_module_hash_ptr: GuestPtr) -> u32 {
     0
 }
 
 /// prepares program by recompiling wasm for all targets if not already compiled
 /// consumes activated program module hash and wasm code
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__program_prepare(
     _wasm_ptr: GuestPtr,
     _wasm_size: u64,
@@ -164,13 +169,15 @@ pub unsafe extern "C" fn programs__program_prepare(
 /// # Safety
 ///
 /// `request_id` MUST be last request id returned from start_program or send_response.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
-    let (req_type, len) = Program::current().request_handler().get_request_meta(id);
-    if len_ptr != GuestPtr(0) {
-        StaticMem.write_u32(len_ptr, len as u32);
+    unsafe {
+        let (req_type, len) = Program::current().request_handler().get_request_meta(id);
+        if len_ptr != GuestPtr(0) {
+            StaticMem.write_u32(len_ptr, len as u32);
+        }
+        req_type
     }
-    req_type
 }
 
 /// Gets data associated with last request.
@@ -179,16 +186,18 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 ///
 /// `request_id` MUST be last request receieved
 /// `data_ptr` MUST point to a buffer of at least the length returned by `get_request`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
-    let (_, data) = Program::current().request_handler().take_request(id);
-    StaticMem.write_slice(data_ptr, &data);
+    unsafe {
+        let (_, data) = Program::current().request_handler().take_request(id);
+        StaticMem.write_slice(data_ptr, &data);
+    }
 }
 
 /// sets response for the next request made
 /// id MUST be the id of last request made
 /// see `program-exec::send_response` for sending this response to the program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__set_response(
     id: u32,
     gas: u64,
@@ -197,26 +206,30 @@ pub unsafe extern "C" fn programs__set_response(
     raw_data_ptr: GuestPtr,
     raw_data_len: usize,
 ) {
-    let program = Program::current();
-    program.request_handler().set_response(
-        id,
-        StaticMem.read_slice(result_ptr, result_len),
-        StaticMem.read_slice(raw_data_ptr, raw_data_len),
-        Gas(gas),
-    );
+    unsafe {
+        let program = Program::current();
+        program.request_handler().set_response(
+            id,
+            StaticMem.read_slice(result_ptr, result_len),
+            StaticMem.read_slice(raw_data_ptr, raw_data_len),
+            Gas(gas),
+        );
+    }
 }
 
 // removes the last created program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__pop() {
-    Program::pop();
-    wavm_unlink_module();
+    unsafe {
+        Program::pop();
+        wavm_unlink_module();
+    }
 }
 
 // used by program-exec
 // returns arguments_len
 // module MUST be the last one returned from new_program
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
     let program = Program::current();
     if program.module != module {
@@ -227,44 +240,46 @@ pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
 
 /// used by program-exec
 /// sets status of the last program and sends a program_done request
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind) -> u32 {
-    use UserOutcomeKind::*;
+    unsafe {
+        use UserOutcomeKind::*;
 
-    let program = Program::current();
-    let module = program.module;
-    let mut outs = program.outs.as_slice();
-    let mut ink_left = Ink(program_ink_left(module));
+        let program = Program::current();
+        let module = program.module;
+        let mut outs = program.outs.as_slice();
+        let mut ink_left = Ink(program_ink_left(module));
 
-    // apply any early exit codes
-    if let Some(early) = program.early_exit {
-        status = early;
+        // apply any early exit codes
+        if let Some(early) = program.early_exit {
+            status = early;
+        }
+
+        // check if instrumentation stopped the program
+        if program_ink_status(module) != 0 {
+            status = OutOfInk;
+            outs = &[];
+            ink_left = Ink(0);
+        }
+        if program_stack_left(module) == 0 {
+            status = OutOfStack;
+            outs = &[];
+            ink_left = Ink(0);
+        }
+
+        let gas_left = program.config.pricing.ink_to_gas(ink_left);
+
+        let mut output = Vec::with_capacity(8 + outs.len());
+        output.extend(gas_left.to_be_bytes());
+        output.extend(outs);
+        program
+            .request_handler()
+            .set_request(status as u32, &output)
     }
-
-    // check if instrumentation stopped the program
-    if program_ink_status(module) != 0 {
-        status = OutOfInk;
-        outs = &[];
-        ink_left = Ink(0);
-    }
-    if program_stack_left(module) == 0 {
-        status = OutOfStack;
-        outs = &[];
-        ink_left = Ink(0);
-    }
-
-    let gas_left = program.config.pricing.ink_to_gas(ink_left);
-
-    let mut output = Vec::with_capacity(8 + outs.len());
-    output.extend(gas_left.to_be_bytes());
-    output.extend(outs);
-    program
-        .request_handler()
-        .set_request(status as u32, &output)
 }
 
 /// Creates a `StylusConfig` from its component parts.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__create_stylus_config(
     version: u16,
     max_depth: u32,
@@ -276,7 +291,7 @@ pub unsafe extern "C" fn programs__create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__create_evm_data_v2(
     arbos_version: u64,
     block_basefee_ptr: GuestPtr,
@@ -294,24 +309,26 @@ pub unsafe extern "C" fn programs__create_evm_data_v2(
     cached: u32,
     reentrant: u32,
 ) -> u64 {
-    let evm_data = EvmData {
-        arbos_version,
-        block_basefee: read_bytes32(block_basefee_ptr),
-        cached: cached != 0,
-        chainid,
-        block_coinbase: read_bytes20(block_coinbase_ptr),
-        block_gas_limit,
-        block_number,
-        block_timestamp,
-        contract_address: read_bytes20(contract_address_ptr),
-        module_hash: read_bytes32(module_hash_ptr),
-        msg_sender: read_bytes20(msg_sender_ptr),
-        msg_value: read_bytes32(msg_value_ptr),
-        tx_gas_price: read_bytes32(tx_gas_price_ptr),
-        tx_origin: read_bytes20(tx_origin_ptr),
-        reentrant,
-        return_data_len: 0,
-        tracing: false,
-    };
-    heapify(evm_data) as u64
+    unsafe {
+        let evm_data = EvmData {
+            arbos_version,
+            block_basefee: read_bytes32(block_basefee_ptr),
+            cached: cached != 0,
+            chainid,
+            block_coinbase: read_bytes20(block_coinbase_ptr),
+            block_gas_limit,
+            block_number,
+            block_timestamp,
+            contract_address: read_bytes20(contract_address_ptr),
+            module_hash: read_bytes32(module_hash_ptr),
+            msg_sender: read_bytes20(msg_sender_ptr),
+            msg_value: read_bytes32(msg_value_ptr),
+            tx_gas_price: read_bytes32(tx_gas_price_ptr),
+            tx_origin: read_bytes20(tx_origin_ptr),
+            reentrant,
+            return_data_len: 0,
+            tracing: false,
+        };
+        heapify(evm_data) as u64
+    }
 }

@@ -7,11 +7,11 @@ use lazy_static::lazy_static;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::{
-    types::BrotliSharedDictionaryType, BrotliStatus, CustomAllocator, EncoderPreparedDictionary,
-    HeapItem,
+    BrotliStatus, CustomAllocator, EncoderPreparedDictionary, HeapItem,
+    types::BrotliSharedDictionaryType,
 };
 
-extern "C" {
+unsafe extern "C" {
     /// Prepares an LZ77 dictionary for use during compression.
     fn BrotliEncoderPrepareDictionary(
         dict_type: BrotliSharedDictionaryType,

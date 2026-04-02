@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use tiny_keccak::{Hasher, Keccak};
 
-use crate::{arbcrypto::ECRecoveryStatus::*, ExecEnv, GuestPtr, MemAccess};
+use crate::{ExecEnv, GuestPtr, MemAccess, arbcrypto::ECRecoveryStatus::*};
 
 #[repr(u32)]
 enum ECRecoveryStatus {

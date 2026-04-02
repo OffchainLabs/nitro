@@ -9,18 +9,18 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use validation::ValidationRequest;
 
 use crate::{
+    ServerState,
     config::ExecutionMode,
     engine::{
-        execution::{validate_continuous, validate_native},
         ModuleRoot,
+        execution::{validate_continuous, validate_native},
     },
-    ServerState,
 };
 
 /// JSON-RPC 2.0 response envelope.
