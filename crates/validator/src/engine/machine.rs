@@ -25,14 +25,14 @@ use std::{
     path::PathBuf,
     process::Stdio,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread::sleep,
     time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tokio::{
     io::AsyncWriteExt,
     process::{Child, ChildStdin, Command},
@@ -40,16 +40,15 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 use validation::{
-    local_target,
+    GoGlobalState, ValidationInput, ValidationRequest, local_target,
     transfer::{receive_response, send_validation_input},
-    GoGlobalState, ValidationInput, ValidationRequest,
 };
 
 use crate::{
     config::get_jit_path,
     engine::{
-        machine_locator::MachineLocator, replay_binary, ModuleRoot, DEFAULT_JIT_CRANELIFT,
-        DEFAULT_WASM_MEMORY_USAGE_LIMIT,
+        DEFAULT_JIT_CRANELIFT, DEFAULT_WASM_MEMORY_USAGE_LIMIT, ModuleRoot,
+        machine_locator::MachineLocator, replay_binary,
     },
 };
 
@@ -180,7 +179,11 @@ impl JitProcessManager {
                 // Clone the Arc while holding the read lock, then drop the lock immediately.
                 // This allows other threads to access the HashMap while we perform I/O operations.
                 Some(machine) => machine.clone(),
-                None => return Err(anyhow!("Trying to feed machine when no machine for module root {module_root} is available/running"))
+                None => {
+                    return Err(anyhow!(
+                        "Trying to feed machine when no machine for module root {module_root} is available/running"
+                    ));
+                }
             }
         };
 

@@ -10,12 +10,12 @@ use std::{
 };
 
 use arbutil::{
+    Color,
     benchmark::Benchmark,
     evm::{
-        api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Gas, Ink},
     },
-    Color,
 };
 use caller_env::GuestPtr;
 use eyre::Result;
@@ -102,7 +102,7 @@ where
 }
 
 macro_rules! hostio {
-    ($env:expr, $($func:tt)*) => {
+    ($env:expr_2021, $($func:tt)*) => {
         WasmEnv::program(&mut $env)?.$($func)*
     };
 }

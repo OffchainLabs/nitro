@@ -2,13 +2,13 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use parking_lot::RwLock;
 use wasmer_types::{FunctionIndex, GlobalIndex, ImportIndex, LocalFunctionIndex, Pages};
 use wasmparser::Operator;
 
 use super::{
-    config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL, FuncMiddleware, Middleware, ModuleMod,
+    FuncMiddleware, Middleware, ModuleMod, config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL,
 };
 use crate::value::{ArbValueType, FunctionType};
 
