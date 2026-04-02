@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1382,13 +1383,15 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 	Require(t, err)
 	arbOwnerAddr := types.ArbOwnerAddress
 
+	expectedErrMsg := "ArbOwner precompile is disabled outside on-chain execution"
+
 	// eth_call should fail
 	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
 		To:   &arbOwnerAddr,
 		Data: calldata,
 	}, nil)
-	if err == nil {
-		Fatal(t, "eth_call to ArbOwner should fail when disable-offchain-arbowner is enabled")
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_call to ArbOwner expected error containing", expectedErrMsg, "got", err)
 	}
 
 	// eth_estimateGas should fail
@@ -1396,8 +1399,8 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 		To:   &arbOwnerAddr,
 		Data: calldata,
 	})
-	if err == nil {
-		Fatal(t, "eth_estimateGas to ArbOwner should fail when disable-offchain-arbowner is enabled")
+	if err == nil || !strings.Contains(err.Error(), expectedErrMsg) {
+		Fatal(t, "eth_estimateGas to ArbOwner expected error containing", expectedErrMsg, "got", err)
 	}
 
 	// On-chain transaction should still succeed
