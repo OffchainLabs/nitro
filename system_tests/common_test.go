@@ -2285,6 +2285,55 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
+// waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
+// containing msgIdx is found, returning the batch number. Any error is treated
+// as immediately fatal. Calls t.Fatalf on timeout.
+func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.MessageIndex, timeout, interval time.Duration) uint64 {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batchNum, found, err := node.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
+		if err != nil {
+			t.Fatalf("FindInboxBatchContainingMessage(%d): %v", msgIdx, err)
+		}
+		if found {
+			return batchNum
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for batch containing message %d", timeout, msgIdx)
+	return 0 // unreachable
+}
+
+// waitForBatchContainingMessage polls until the latest batch's message count
+// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
+// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
+	t.Helper()
+	var lastBatchCount uint64
+	var lastMsgCount arbutil.MessageIndex
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batches, err := node.GetParentChainDataSource().GetBatchCount()
+		if err != nil {
+			t.Fatalf("GetBatchCount: %v", err)
+		}
+		lastBatchCount = batches
+		if batches > 0 {
+			haveMessages, err := node.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
+			if err != nil {
+				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
+			}
+			lastMsgCount = haveMessages
+			if haveMessages >= msgPos {
+				return
+			}
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for inbox position %d (last state: %d batches, %d messages)", timeout, msgPos, lastBatchCount, lastMsgCount)
+}
+
 func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(want, got) {
@@ -2812,16 +2861,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ra
 	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
-	for {
-		time.Sleep(250 * time.Millisecond)
-		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
-		Require(t, err)
-		haveMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
-		Require(t, err)
-		if haveMessages >= inboxPos {
-			break
-		}
-	}
+	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 60*time.Second, 250*time.Millisecond)
 	var options []inputs.WriterOption
 	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
 	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))

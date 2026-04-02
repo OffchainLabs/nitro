@@ -148,8 +148,14 @@ func checkReceiverAccountBalance(t *testing.T, ctx context.Context, builder *Nod
 
 // ensureBatchWasProcessed waits until a particular batch has been processed by the L2 node.
 func ensureBatchWasProcessed(t *testing.T, builder *NodeBuilder, batchNum uint64) {
-	require.Eventuallyf(t, func() bool {
-		_, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchNum)
-		return err == nil
-	}, 5*time.Second, time.Second, "Batch %d was not processed in time", batchNum)
+	t.Helper()
+	var lastErr error
+	for range 5 {
+		_, lastErr = builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchNum)
+		if lastErr == nil {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("Batch %d was not processed in time, last err: %v", batchNum, lastErr)
 }

@@ -55,16 +55,7 @@ func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 	Require(t, err)
 
 	inboxPos := arbutil.MessageIndex(receipt.BlockNumber.Uint64())
-	for range 40 {
-		time.Sleep(250 * time.Millisecond)
-		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
-		Require(t, err)
-		haveMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
-		Require(t, err)
-		if haveMessages >= inboxPos {
-			break
-		}
-	}
+	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 10*time.Second, 250*time.Millisecond)
 
 	// Retry ValidationInputsAt because the batch may be tracked locally but
 	// not yet confirmed on L1 ("batch not found on L1 yet").
