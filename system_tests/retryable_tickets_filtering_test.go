@@ -515,7 +515,6 @@ func TestRetryableFilteringL2ManualRedeemCascadeDepth2(t *testing.T) {
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
-	// Skip eth_estimateGas — it rejects filtered txs before the sequencer sees them.
 
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
@@ -586,7 +585,6 @@ func TestRetryableFilteringL2ManualRedeemCascadeDepth3(t *testing.T) {
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
-	// Skip eth_estimateGas — it rejects filtered txs before the sequencer sees them.
 
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
@@ -1088,7 +1086,6 @@ func TestRetryableFilteringL2ManualRedeemCascadeWithCallValue(t *testing.T) {
 		common.HexToAddress("6e"), builder.L2.Client)
 	require.NoError(t, err)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
-	// Skip eth_estimateGas — it rejects filtered txs before the sequencer sees them.
 
 	_, err = arbRetryable.Redeem(&redeemOpts, ticketIdA)
 	require.ErrorContains(t, err, "cascading redeem filtered",
@@ -1411,7 +1408,6 @@ func TestRetryableFilteringL2ContractChainToRedeemFiltered(t *testing.T) {
 	// Send L2 tx from EOA: contractA.forwardCall(contractB, middleCalldata)
 	// This creates: EOA → contractA → contractB → 0x6e.Redeem(ticketId)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
-	// Skip eth_estimateGas — it rejects filtered txs before the sequencer sees them.
 
 	_, err = contractA.ForwardCall(&redeemOpts, contractBAddr, middleCalldata)
 	require.ErrorContains(t, err, "cascading redeem filtered",
