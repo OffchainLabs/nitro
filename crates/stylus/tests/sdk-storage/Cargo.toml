@@ -1,20 +1,11 @@
 [package]
 name = "sdk-storage"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 [dependencies]
-stylus-sdk.path = "../../../langs/rust/stylus-sdk"
-hex = "0.4.3"
-
-[profile.release]
-codegen-units = 1
-strip = true
-lto = true
-panic = "abort"
-opt-level = "s"
+stylus-sdk.workspace = true
+hex.workspace = true
 
 [features]
 contract-client-gen = []
-
-[workspace]

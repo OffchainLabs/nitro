@@ -1,23 +1,14 @@
 [package]
 name = "erc20"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 [dependencies]
-alloy-primitives = "1.0.1"
-alloy-sol-types = "1.0.1"
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["reentrant"] }
-hex = "0.4.3"
+alloy-primitives.workspace = true
+alloy-sol-types.workspace = true
+stylus-sdk = { workspace = true, features = ["reentrant"] }
+hex.workspace = true
 
 [features]
 export-abi = ["stylus-sdk/export-abi"]
 contract-client-gen = []
-
-[profile.release]
-codegen-units = 1
-strip = true
-lto = true
-panic = "abort"
-opt-level = "s"
-
-[workspace]

@@ -1,21 +1,10 @@
 [package]
 name = "math"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 [dependencies]
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["debug"] }
-
-[profile.release]
-codegen-units = 1
-strip = true
-lto = true
-panic = "abort"
-
-# uncomment to optimize for size
-#   opt-level = "z"
+stylus-sdk = { workspace = true, features = ["debug"] }
 
 [features]
 contract-client-gen = []
-
-[workspace]
