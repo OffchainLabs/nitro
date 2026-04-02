@@ -412,8 +412,8 @@ func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
 	if asm, ok := asmMap[localTarget]; ok && len(asm) > 0 {
 		return asm, true
 	}
-	if ct, err := rawdb.CraneliftTarget(localTarget); err == nil {
-		if asm, ok := asmMap[ct]; ok && len(asm) > 0 {
+	if craneliftTraget, err := rawdb.CraneliftTarget(localTarget); err == nil {
+		if asm, ok := asmMap[craneliftTraget]; ok && len(asm) > 0 {
 			return asm, true
 		}
 	}
@@ -661,6 +661,9 @@ func getCraneliftAsm(
 		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
 			return asm, nil
 		}
+	} else {
+		log.Warn("wasm store unavailable, cranelift ASM will not be cached",
+			"program", address, "module", moduleHash)
 	}
 
 	// Compile with cranelift.

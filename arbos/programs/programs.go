@@ -796,7 +796,7 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		// This should never be reached — callProgram returns an error
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
-		return nil, "", vm.ErrDepth
+		return nil, "", ErrNativeStackOverflow
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
