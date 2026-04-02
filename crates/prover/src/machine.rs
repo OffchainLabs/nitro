@@ -397,22 +397,27 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else { match host::get_impl(import.module, import_name) { Ok((hostio, debug)) => {
-                ensure!(
+            } else {
+                match host::get_impl(import.module, import_name) {
+                    Ok((hostio, debug)) => {
+                        ensure!(
                     (debug && debug_funcs) || (!debug && allow_hostapi),
                     "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
                     import_name.red(),
                     import.module.red(),
                 );
-                hostio
-            } _ => {
-                bail!(
-                    "No such import {} in {} for {}",
-                    import_name.red(),
-                    import.module.red(),
-                    bin_name.red()
-                )
-            }}};
+                        hostio
+                    }
+                    _ => {
+                        bail!(
+                            "No such import {} in {} for {}",
+                            import_name.red(),
+                            import.module.red(),
+                            bin_name.red()
+                        )
+                    }
+                }
+            };
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
