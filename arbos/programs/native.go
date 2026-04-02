@@ -412,8 +412,8 @@ func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
 	if asm, ok := asmMap[localTarget]; ok && len(asm) > 0 {
 		return asm, true
 	}
-	if craneliftTraget, err := rawdb.CraneliftTarget(localTarget); err == nil {
-		if asm, ok := asmMap[craneliftTraget]; ok && len(asm) > 0 {
+	if craneliftTarget, err := rawdb.CraneliftTarget(localTarget); err == nil {
+		if asm, ok := asmMap[craneliftTarget]; ok && len(asm) > 0 {
 			return asm, true
 		}
 	}
