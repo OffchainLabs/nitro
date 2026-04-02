@@ -4,20 +4,19 @@
 use std::{borrow::Cow, fmt::Display, time::Instant};
 
 use arbutil::{
+    Bytes20, Bytes32,
     benchmark::Benchmark,
     crypto,
     evm::{
-        self,
+        self, ARBOS_VERSION_STYLUS_CHARGING_FIXES, EvmData,
         api::{CreateRespone, DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
-        EvmData, ARBOS_VERSION_STYLUS_CHARGING_FIXES,
     },
-    pricing::{hostio, EVM_API_INK},
-    Bytes20, Bytes32,
+    pricing::{EVM_API_INK, hostio},
 };
 pub use caller_env::GuestPtr;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use prover::{
     programs::{meter::OutOfInkError, prelude::*},
     value::Value,
@@ -25,13 +24,13 @@ use prover::{
 use ruint2::Uint;
 
 macro_rules! be {
-    ($int:expr) => {
+    ($int:expr_2021) => {
         $int.to_be_bytes()
     };
 }
 
 macro_rules! trace {
-    ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], [$($outs:expr_2021),+], $ret:expr_2021) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
             let mut args = vec![];
@@ -42,16 +41,16 @@ macro_rules! trace {
         }
         Ok($ret)
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021) => {{
         trace!($name, $env, [$($args),+], $outs, ())
     }};
-    ($name:expr, $env:expr, $args:expr, $outs:expr) => {{
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021) => {{
         trace!($name, $env, $args, $outs, ())
     }};
-    ($name:expr, $env:expr, [$($args:expr),+], $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, [$($args:expr_2021),+], $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$($args),+], [$outs], $ret)
     };
-    ($name:expr, $env:expr, $args:expr, $outs:expr, $ret:expr) => {
+    ($name:expr_2021, $env:expr_2021, $args:expr_2021, $outs:expr_2021, $ret:expr_2021) => {
         trace!($name, $env, [$args], [$outs], $ret)
     };
 }

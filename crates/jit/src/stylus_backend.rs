@@ -5,8 +5,8 @@
 
 use std::{
     sync::{
-        mpsc::{self, Receiver, SyncSender},
         Arc,
+        mpsc::{self, Receiver, SyncSender},
     },
     thread,
     thread::JoinHandle,
@@ -16,13 +16,13 @@ use std::{
 use arbutil::{
     benchmark::Benchmark,
     evm::{
-        api::{EvmApiMethod, Gas, Ink, VecReader, EVM_API_METHOD_REQ_OFFSET},
+        EvmData,
+        api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas, Ink, VecReader},
         req::{EvmApiRequestor, RequestHandler},
         user::UserOutcome,
-        EvmData,
     },
 };
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use prover::programs::prelude::*;
 use stylus::{native::NativeInstance, run::RunProgram};
 

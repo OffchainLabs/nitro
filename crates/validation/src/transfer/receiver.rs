@@ -9,12 +9,11 @@ use std::{
 use io::Error;
 
 use crate::{
-    transfer::{
-        markers,
-        primitives::{read_bytes, read_u32, read_u64, read_u8},
-        IOResult,
-    },
     GoGlobalState, Inbox, Preimages, ValidationInput,
+    transfer::{
+        IOResult, markers,
+        primitives::{read_bytes, read_u8, read_u32, read_u64},
+    },
 };
 
 pub fn receive_validation_input(reader: &mut impl Read) -> IOResult<ValidationInput> {

@@ -3,7 +3,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use caller_env::{self, wasip1_stub::Errno, GuestPtr};
+use caller_env::{self, GuestPtr, wasip1_stub::Errno};
 
 use crate::{
     caller_env::{JitEnv, JitExecEnv},

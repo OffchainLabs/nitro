@@ -6,9 +6,10 @@
 use std::sync::Arc;
 
 use arbutil::{
-    evm::{api::Gas, EvmData},
+    Bytes32,
+    evm::{EvmData, api::Gas},
     format::DebugBytes,
-    heapify, Bytes32,
+    heapify,
 };
 use caller_env::{GuestPtr, MemAccess};
 use eyre::eyre;
@@ -23,7 +24,7 @@ use prover::{
 use crate::{
     caller_env::JitEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    stylus_backend::{exec_wasm, MessageFromCothread},
+    stylus_backend::{MessageFromCothread, exec_wasm},
 };
 
 const DEFAULT_STYLUS_ARBOS_VERSION: u64 = 31;
