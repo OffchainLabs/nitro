@@ -4,12 +4,11 @@
 #![allow(clippy::missing_safety_doc)]
 
 use caller_env::{
-    self,
+    self, GuestPtr,
     static_caller::{StaticExecEnv, StaticMem},
-    GuestPtr,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbcrypto__ecrecovery(
     hash_ptr: GuestPtr,
     hash_len: u32,
@@ -28,7 +27,7 @@ pub unsafe extern "C" fn arbcrypto__ecrecovery(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbcrypto__keccak256(
     in_buf_ptr: GuestPtr,
     in_buf_len: u32,

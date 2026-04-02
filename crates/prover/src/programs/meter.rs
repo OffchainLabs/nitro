@@ -8,12 +8,13 @@ use std::{
 };
 
 use arbutil::{
+    Bytes32,
     evm::{
         self,
         api::{Gas, Ink},
     },
     operator::OperatorInfo,
-    pricing, Bytes32,
+    pricing,
 };
 use derivative::Derivative;
 use eyre::Result;
@@ -23,13 +24,14 @@ use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, 
 use wasmparser::{BlockType, Operator};
 
 use super::config::OpCosts;
+#[cfg(feature = "native")]
+use crate::Machine;
 use crate::{
     programs::{
-        config::{CompilePricingParams, PricingParams, SigMap},
         FuncMiddleware, Middleware, ModuleMod,
+        config::{CompilePricingParams, PricingParams, SigMap},
     },
     value::FunctionType,
-    Machine,
 };
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
@@ -334,12 +336,11 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
-            ($global:expr) => {{
-                $global.unwrap().try_into().expect("type mismatch")
-            }};
+            ($global:expr_2021) => {{ $global.unwrap().try_into().expect("type mismatch") }};
         }
 
         let ink = || Ink(convert!(self.get_global(STYLUS_INK_LEFT)));

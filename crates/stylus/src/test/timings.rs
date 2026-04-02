@@ -6,7 +6,7 @@ use std::time::Instant;
 use arbutil::{color::Color, format};
 use eyre::Result;
 
-use crate::test::{run_native, test_configs, TestInstance};
+use crate::test::{TestInstance, run_native, test_configs};
 
 #[test]
 fn test_timings() -> Result<()> {

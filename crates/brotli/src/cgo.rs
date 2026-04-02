@@ -3,7 +3,7 @@
 
 use core::{mem::MaybeUninit, slice};
 
-use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
+use crate::{BrotliStatus, DEFAULT_WINDOW_SIZE, Dictionary};
 
 /// Mechanism for passing data between Go and Rust where Rust can specify the initialized length.
 #[derive(Clone, Copy)]
@@ -37,7 +37,7 @@ impl BrotliBuffer {
 }
 
 /// Brotli compresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_compress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,
@@ -54,7 +54,7 @@ pub extern "C" fn brotli_compress(
 }
 
 /// Brotli decompresses the given Go data into a buffer of limited capacity.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn brotli_decompress(
     input: BrotliBuffer,
     mut output: BrotliBuffer,

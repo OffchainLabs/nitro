@@ -14,7 +14,7 @@ pub fn write_wat_ops(wat: &mut Vec<u8>, number_of_loop_iterations: usize) {
         wat.write_all(
             format!(
                 "            (local.set $var (i32.const {}))\n",
-                DataType::I32.gen()
+                DataType::I32.r#gen()
             )
             .as_bytes(),
         )

@@ -87,7 +87,8 @@ rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* 
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_dir = crates/prover/
-rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
+prover_ffi_dir = crates/prover-ffi/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(wildcard $(prover_ffi_dir)/src/*.rs $(prover_ffi_dir)/*.toml) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
 
 wasm_lib = crates/wasm-libraries
 wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
