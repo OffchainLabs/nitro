@@ -11,7 +11,7 @@ use std::{
 };
 
 use arbutil::Color;
-use eyre::{bail, ErrReport};
+use eyre::{ErrReport, bail};
 use prover::{
     machine,
     machine::{GlobalState, Machine, MachineStatus, ProofInfo},

@@ -7,7 +7,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 use arbutil::Bytes32;
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use parking_lot::Mutex;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
