@@ -13,7 +13,7 @@ use stylus_sdk::{
 };
 
 #[link(wasm_import_module = "vm_hooks")]
-extern "C" {
+unsafe extern "C" {
     fn transient_load_bytes32(key: *const u8, dest: *mut u8);
     fn transient_store_bytes32(key: *const u8, value: *const u8);
 }

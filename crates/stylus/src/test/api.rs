@@ -4,12 +4,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arbutil::{
+    Bytes20, Bytes32,
     evm::{
+        EvmData,
         api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Bytes20, Bytes32,
 };
 use eyre::Result;
 use parking_lot::Mutex;

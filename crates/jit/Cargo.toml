@@ -19,7 +19,8 @@ hex = { workspace = true }
 libc = { workspace = true }
 prover = { workspace = true, features = ["native"] }
 rand = { workspace = true }
-rand_pcg = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 stylus = { workspace = true }

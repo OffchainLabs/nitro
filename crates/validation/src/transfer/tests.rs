@@ -5,11 +5,11 @@ use std::{collections::BTreeMap, io::pipe};
 use arbutil::Bytes32;
 
 use crate::{
+    GoGlobalState, ValidationInput,
     transfer::{
         receive_response, receive_validation_input, send_failure_response,
         send_successful_response, send_validation_input,
     },
-    GoGlobalState, ValidationInput,
 };
 
 #[test]

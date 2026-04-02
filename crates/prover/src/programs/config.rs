@@ -13,13 +13,13 @@ use wasmparser::Operator;
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
-        meter::Meter, start::StartMover, MiddlewareWrapper,
+        MiddlewareWrapper, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     std::sync::Arc,
     wasmer::{
-        sys::{Cranelift, CraneliftOptLevel, Target},
         Engine, Store,
+        sys::{Cranelift, CraneliftOptLevel, Target},
     },
     wasmer_compiler_singlepass::Singlepass,
 };
