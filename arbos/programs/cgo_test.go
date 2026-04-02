@@ -88,6 +88,13 @@ func TestCraneliftCompilationAndCache(t *testing.T) {
 	}
 }
 
+func TestGetCraneliftAsmErrors(t *testing.T) {
+	err := testGetCraneliftAsmErrors()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStackDoublingGivesUp(t *testing.T) {
 	defer SetNativeStackSize(1024 * 1024)
 	err := testStackDoublingGivesUp()

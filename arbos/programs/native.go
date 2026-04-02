@@ -569,10 +569,10 @@ func retryOnStackOverflow(
 	}
 
 	// Get or compile cranelift ASM (persisted to wasm store on compilation).
-	craneliftAsm := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
-	if len(craneliftAsm) == 0 {
+	craneliftAsm, err := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
+	if err != nil || len(craneliftAsm) == 0 {
 		log.Error("native stack overflow, cranelift ASM unavailable",
-			"program", address, "module", moduleHash)
+			"program", address, "module", moduleHash, "err", err)
 		return userNativeStackOverflow, nil
 	}
 
@@ -649,18 +649,17 @@ func getCraneliftAsm(
 	params *StylusParams,
 	version uint16,
 	debug bool,
-) []byte {
+) ([]byte, error) {
 	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
 	if err != nil {
-		log.Error("failed to determine cranelift target", "err", err)
-		return nil
+		return nil, fmt.Errorf("failed to determine cranelift target: %w", err)
 	}
 
 	// Check persistent wasm store.
 	wasmStore := db.Database().WasmStore()
 	if wasmStore != nil {
 		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
-			return asm
+			return asm, nil
 		}
 	}
 
@@ -670,16 +669,12 @@ func getCraneliftAsm(
 
 	wasm, err := getWasmFromContractCode(db, code, params, nil)
 	if err != nil {
-		log.Error("failed to get wasm for cranelift compilation",
-			"program", address, "err", err)
-		return nil
+		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
 
 	asm, err := compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
 	if err != nil {
-		log.Error("cranelift compilation failed",
-			"program", address, "err", err)
-		return nil
+		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
 	}
 
 	// Persist to wasm store.
@@ -687,12 +682,12 @@ func getCraneliftAsm(
 		batch := wasmStore.NewBatch()
 		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
 		if err := batch.Write(); err != nil {
-			log.Error("failed to persist cranelift ASM to wasm store",
+			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next overflow",
 				"program", address, "err", err)
 		}
 	}
 
-	return asm
+	return asm, nil
 }
 
 //export handleReqImpl

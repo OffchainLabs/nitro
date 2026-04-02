@@ -244,11 +244,6 @@ pub unsafe extern "C" fn stylus_target_set(
 pub extern "C" fn stylus_set_native_stack_size(size: u64) {
     if size > 0 {
         wasmer_vm::set_stack_size(size as usize);
-        eprintln!(
-            "stylus: native_stack_size={} (configured={})",
-            wasmer_vm::get_stack_size(),
-            size,
-        );
     }
 }
 

@@ -278,7 +278,7 @@ func testCompileLoadFor(filePath string) error {
 // 2. A program that overflows a tiny native stack returns NativeStackOverflow.
 // 3. The Go-side retry logic (cranelift + stack doubling) recovers.
 //
-// It compiles and runs a WAT program with infinite recursion, using a very
+// It compiles and runs a WAT program with deep recursion (500 calls), using a very
 // high MaxStackDepth and a very small native stack so it overflows.
 func testNativeStackSize() error {
 	localTarget := rawdb.LocalTarget()
@@ -591,7 +591,10 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	// Verify getCraneliftAsm reads from the wasm store.
-	readAsm := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
+	readAsm, err := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
+	if err != nil {
+		return fmt.Errorf("getCraneliftAsm failed: %w", err)
+	}
 	if len(readAsm) == 0 {
 		return fmt.Errorf("getCraneliftAsm returned empty after wasm store write")
 	}
@@ -636,6 +639,34 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	fmt.Printf("testCraneliftCompilationAndCache: passed (status=%d, getCraneliftAsm + wasm store verified)\n", status)
+	return nil
+}
+
+// testGetCraneliftAsmErrors verifies getCraneliftAsm returns specific errors
+// when the wasm store has no cached ASM and compilation is not possible.
+func testGetCraneliftAsmErrors() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	moduleHash := common.HexToHash("0xdeadbeef")
+	gas := uint64(0xfffffffffffffff)
+	_, _, db := makeTestEVMScope(gas)
+
+	// With no cached ASM and invalid code, getWasmFromContractCode should fail,
+	// and getCraneliftAsm should return that error instead of a bare nil.
+	// Use non-empty invalid bytes so we don't hit the ProgramNotWasmError()
+	// function pointer (which is only initialized by the precompiles package).
+	asm, err := getCraneliftAsm(moduleHash, common.Address{}, db, []byte{0xff}, &StylusParams{}, 1, true)
+	if err == nil {
+		return fmt.Errorf("expected error from getCraneliftAsm with no cached ASM and invalid code, got nil (asm len=%d)", len(asm))
+	}
+	if len(asm) != 0 {
+		return fmt.Errorf("expected nil ASM on error, got %d bytes", len(asm))
+	}
+
+	fmt.Printf("testGetCraneliftAsmErrors: passed (err=%v)\n", err)
 	return nil
 }
 
