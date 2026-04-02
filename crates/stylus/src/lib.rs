@@ -240,7 +240,7 @@ pub unsafe extern "C" fn stylus_target_set(
 /// If `size` is 0, the existing default (1MB) is kept. Typically called at
 /// startup, but safe to call at any time — changes take effect on the next
 /// coroutine allocation.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_set_native_stack_size(size: u64) {
     if size > 0 {
         wasmer_vm::set_stack_size(size as usize);
@@ -253,7 +253,7 @@ pub extern "C" fn stylus_set_native_stack_size(size: u64) {
 }
 
 /// Returns the current process-wide default native stack size in bytes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
@@ -322,7 +322,7 @@ pub unsafe extern "C" fn stylus_call(
 
 /// Drains the Wasmer coroutine stack pool so that subsequent allocations
 /// use the current process-wide stack size.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stylus_drain_stack_pool() {
     wasmer_vm::drain_stack_pool();
 }
