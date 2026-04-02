@@ -123,10 +123,10 @@ impl Hostio {
             () => {
                 FunctionType::default()
             };
-            ([$($args:expr),*]) => {
+            ([$($args:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![])
             };
-            ([$($args:expr),*], [$($outs:expr),*]) => {
+            ([$($args:expr_2021),*], [$($outs:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }
@@ -180,10 +180,10 @@ impl Hostio {
         let mut body = vec![];
 
         macro_rules! opcode {
-            ($opcode:expr) => {
+            ($opcode:expr_2021) => {
                 body.push(Instruction::simple($opcode))
             };
-            ($opcode:expr, $value:expr) => {
+            ($opcode:expr_2021, $value:expr_2021) => {
                 body.push(Instruction::with_data($opcode, $value as u64))
             };
         }

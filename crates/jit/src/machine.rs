@@ -114,7 +114,7 @@ fn make_llvm_engine() -> Engine {
 
 fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Imports {
     macro_rules! func {
-        ($func:expr) => {
+        ($func:expr_2021) => {
             Function::new_typed_with_env(store, func_env, $func)
         };
     }
