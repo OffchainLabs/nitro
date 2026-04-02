@@ -7,10 +7,18 @@ export TOP=$SCRIPT_DIR/../..
 
 cd "$TOP"
 
+# Install sp1up if not present
+if [ ! -f "$HOME/.sp1/bin/sp1up" ]; then
+    curl -L https://sp1up.succinct.xyz | bash
+fi
+
+# Install SP1 Rust toolchain (succinct) if not present
+if ! rustup toolchain list 2>/dev/null | grep -q succinct; then
+    "$HOME"/.sp1/bin/sp1up -v v6.0.0
+fi
+
 # Download RISC-V C toolchain if needed
 if [ ! -d "$HOME/.sp1/riscv" ]; then
-    # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
-    curl -L https://sp1up.succinct.xyz | bash
     "$HOME"/.sp1/bin/sp1up -c
 
     echo "Testing riscv64-unknown-elf-gcc..."
