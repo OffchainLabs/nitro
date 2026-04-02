@@ -64,6 +64,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	ipcPath := tmpPath(t, "test.ipc")
 
 	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.TransactionFiltering.EnableRPCFilter = false
 	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builder.l2StackConfig.IPCPath = ipcPath
 	if withDelayedSeq {
