@@ -384,17 +384,19 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 	// TestIsShutdownCancellation.
 	tests := []struct {
 		name        string
-		cancelCtx   bool // whether to cancel the context before calling
-		validErr    error
-		wantReorg   bool  // expect non-nil reorg pointer
-		wantErr     error // if non-nil, expect errors.Is match on returned err
-		wantFatal   bool  // expect an error on fatalCh
-		fatalTarget error // if non-nil, the fatal error must match via errors.Is
+		cancelCtx   bool                   // whether to cancel the context before calling
+		validErr    error                  // error stored in DoneEntry.Err
+		severity    validationErrorSeverity // pre-classified severity stored in DoneEntry.ErrSeverity
+		wantReorg   bool                   // expect non-nil reorg pointer
+		wantErr     error                  // if non-nil, expect errors.Is match on returned err
+		wantFatal   bool                   // expect an error on fatalCh
+		fatalTarget error                  // if non-nil, the fatal error must match via errors.Is
 	}{
 		{
 			name:      "cancelled context returns early with context error",
 			cancelCtx: true,
 			validErr:  context.Canceled,
+			severity:  validationShutdown,
 			wantReorg: false,
 			wantErr:   context.Canceled,
 			wantFatal: false,
@@ -403,6 +405,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			name:        "non-canceled error with live context calls possiblyFatal",
 			cancelCtx:   false,
 			validErr:    errors.New("validation execution failed"),
+			severity:    validationFatal,
 			wantReorg:   true,
 			wantErr:     nil,
 			wantFatal:   true,
@@ -412,6 +415,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			name:      "canceled error with live context treated as transient (spawner shutdown race)",
 			cancelCtx: false,
 			validErr:  context.Canceled,
+			severity:  validationTransient,
 			wantReorg: true,
 			wantErr:   nil,
 			wantFatal: false,
@@ -420,6 +424,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			name:      "wrapped canceled error with live context treated as transient",
 			cancelCtx: false,
 			validErr:  fmt.Errorf("spawner died: %w", context.Canceled),
+			severity:  validationTransient,
 			wantReorg: true,
 			wantErr:   nil,
 			wantFatal: false,
@@ -428,6 +433,34 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			name:        "deadline exceeded with live context calls possiblyFatal",
 			cancelCtx:   false,
 			validErr:    context.DeadlineExceeded,
+			severity:    validationFatal,
+			wantReorg:   true,
+			wantErr:     nil,
+			wantFatal:   true,
+			fatalTarget: nil,
+		},
+		{
+			// Exercises the case validationShutdown: branch with a live
+			// ctx.  This is the core shutdown-resilience path: sendValidations
+			// classified the error as shutdown (ctx was canceled at error time),
+			// but by the time advanceValidations reads it the main loop hasn't
+			// noticed the cancellation yet.  Must return (nil, err) with no
+			// reorg and no possiblyFatal.
+			name:      "shutdown severity with live context returns error without possiblyFatal",
+			cancelCtx: false,
+			validErr:  context.Canceled,
+			severity:  validationShutdown,
+			wantReorg: false,
+			wantErr:   context.Canceled,
+			wantFatal: false,
+		},
+		{
+			// Safety-net test: if ErrSeverity is never set (validationUnclassified,
+			// the zero value), the default branch must call possiblyFatal.
+			name:        "unclassified severity hits default branch and calls possiblyFatal",
+			cancelCtx:   false,
+			validErr:    errors.New("some error"),
+			severity:    validationUnclassified,
 			wantReorg:   true,
 			wantErr:     nil,
 			wantFatal:   true,
@@ -445,9 +478,10 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			status := &validationStatus{}
 			status.Status.Store(uint32(ValidationDone))
 			status.DoneEntry = &validationDoneEntry{
-				Success: false,
-				Err:     tc.validErr,
-				Start:   validator.GoGlobalState{},
+				Success:     false,
+				Err:         tc.validErr,
+				ErrSeverity: tc.severity,
+				Start:       validator.GoGlobalState{},
 			}
 			v.validations.Store(arbutil.MessageIndex(0), status)
 
@@ -508,9 +542,10 @@ func TestAdvanceValidationsSpawnerShutdownRace(t *testing.T) {
 	status := &validationStatus{}
 	status.Status.Store(uint32(ValidationDone))
 	status.DoneEntry = &validationDoneEntry{
-		Success: false,
-		Err:     context.Canceled,
-		Start:   validator.GoGlobalState{},
+		Success:     false,
+		Err:         context.Canceled,
+		ErrSeverity: validationTransient,
+		Start:       validator.GoGlobalState{},
 	}
 	v.validations.Store(arbutil.MessageIndex(0), status)
 

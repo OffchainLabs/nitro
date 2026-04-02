@@ -335,9 +335,16 @@ type validationStatus struct {
 type validationDoneEntry struct {
 	Success         bool
 	Err             error
+	ErrSeverity     validationErrorSeverity // set once alongside Err; read by advanceValidations
 	Start           validator.GoGlobalState
 	End             validator.GoGlobalState
 	WasmModuleRoots []common.Hash
+}
+
+// setError sets both Err and ErrSeverity together, ensuring they stay in sync.
+func (d *validationDoneEntry) setError(err error, severity validationErrorSeverity) {
+	d.Err = err
+	d.ErrSeverity = severity
 }
 
 func (s *validationStatus) getStatus() valStatusField {
@@ -472,10 +479,26 @@ func isShutdownCancellation(ctx context.Context, err error) bool {
 type validationErrorSeverity int
 
 const (
-	validationShutdown  validationErrorSeverity = iota // expected shutdown cancellation
-	validationTransient                                // unexpected cancellation, warn but don't escalate
-	validationFatal                                    // real error, escalate via possiblyFatal
+	validationUnclassified validationErrorSeverity = iota // zero value; error has not been classified yet
+	validationShutdown                                    // expected shutdown cancellation
+	validationTransient                                   // unexpected cancellation, warn but don't escalate
+	validationFatal                                       // real error, escalate via possiblyFatal
 )
+
+func (s validationErrorSeverity) String() string {
+	switch s {
+	case validationUnclassified:
+		return "unclassified"
+	case validationShutdown:
+		return "shutdown"
+	case validationTransient:
+		return "transient"
+	case validationFatal:
+		return "fatal"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(s))
+	}
+}
 
 // classifyValidationError logs err at the appropriate level based on whether
 // it's a shutdown cancellation, unexpected cancellation, or real failure.
@@ -769,6 +792,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
+		processed, processedErr := v.streamer.GetProcessedMessageCount()
+		log.Info("validation entry creation failed", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 		return v.handleValidationResult(ctx, nil, err, "createNextValidationEntry")
 	}
 	if moreWork {
@@ -942,7 +967,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 			return &pos, nil
 		}
 		if !validationStatus.DoneEntry.Success {
-			switch classifyValidationError(ctx, validationStatus.DoneEntry.Err, "advanceValidations") {
+			switch validationStatus.DoneEntry.ErrSeverity {
 			case validationShutdown:
 				// Both the spawner and the block validator's context are
 				// canceled.  Return the error without calling possiblyFatal
@@ -959,7 +984,7 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 				v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
 				return &pos, nil // possiblyFatal may stop us; if still running, retry via reorg
 			default:
-				v.possiblyFatal(fmt.Errorf("validation: unhandled error severity for pos %d: %w", pos, validationStatus.DoneEntry.Err))
+				v.possiblyFatal(fmt.Errorf("validation: unhandled error severity %s for pos %d: %w", validationStatus.DoneEntry.ErrSeverity, pos, validationStatus.DoneEntry.Err))
 				return &pos, nil
 			}
 		}
@@ -1083,7 +1108,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 			}()
 			markSuccess := len(runs) > 0
 			if !markSuccess {
-				validationStatus.DoneEntry.Err = errors.New("no validation runs were launched")
+				validationStatus.DoneEntry.setError(errors.New("no validation runs were launched"), validationFatal)
 			}
 
 			// validationStatus might be removed from under us
@@ -1095,8 +1120,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) (*arbutil.MessageI
 				}
 				if err != nil {
 					markSuccess = false
-					validationStatus.DoneEntry.Err = err
-					if classifyValidationError(ctx, err, "sendValidations") == validationFatal {
+					// Use ctx (block validator lifecycle), not validationCtx (per-validation),
+					// so that isShutdownCancellation detects full validator shutdown.
+					// Using validationCtx would misclassify reorg cancellations as shutdown.
+					severity := classifyValidationError(ctx, err, "sendValidations")
+					validationStatus.DoneEntry.setError(err, severity)
+					if severity == validationFatal {
 						validatorFailedValidationsCounter.Inc(1)
 					}
 					break
@@ -1207,7 +1236,7 @@ func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) er
 
 	err := v.writeLastValidated(globalState, nil)
 	if err != nil {
-		log.Error("failed writing new validated to database", "pos", v.lastValidGS, "err", err)
+		return fmt.Errorf("failed writing assume-valid state to database: %w", err)
 	}
 
 	log.Info("block_validator: assume-valid", "blockhash", globalState.BlockHash, "batch", globalState.Batch, "posInBatch", globalState.PosInBatch)
@@ -1234,7 +1263,7 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.legacyValidInfo = nil
 		err := v.writeLastValidated(globalState, nil)
 		if err != nil {
-			log.Error("error writing last validated", "err", err)
+			v.possiblyFatal(fmt.Errorf("failed writing last validated (not caught up): %w", err))
 		}
 		return
 	}
@@ -1276,7 +1305,9 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
-		log.Error("failed writing valid state after reorg", "err", err)
+		// In-memory state has already been advanced; escalate so the node
+		// shuts down rather than running with inconsistent on-disk state.
+		v.possiblyFatal(fmt.Errorf("failed writing valid state in UpdateLatestStaked: %w", err))
 	}
 	nonBlockingTrigger(v.createNodesChan)
 }
@@ -1299,7 +1330,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	// count == 1 is valid: it reorgs to keep only genesis (message index 0).
 	// All error paths below should call possiblyFatal before returning.
 	// handleValidationResult also calls possiblyFatal defensively on any
-	// returned error, so a missed call here is logged (not silently lost).
+	// returned error, so a missed call here is still escalated (not silently lost).
 	if count == 0 {
 		err := errors.New("cannot reorg out genesis")
 		v.possiblyFatal(err)
