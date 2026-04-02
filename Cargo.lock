@@ -5324,7 +5324,7 @@ dependencies = [
  "eyre",
  "lazy_static",
  "libc",
- "lru",
+ "lru 0.16.3",
  "once_cell",
  "prover",
  "static_assertions",

@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use std::{
-    ffi::CStr,
     os::raw::{c_char, c_int},
     path::Path,
     ptr, slice,
@@ -10,7 +9,6 @@ use std::{
 };
 
 use arbutil::Bytes32;
-use eyre::Report;
 use prover::{
     Machine,
     machine::{GlobalState, MachineStatus, argument_data_to_inbox, get_empty_preimage_resolver},
