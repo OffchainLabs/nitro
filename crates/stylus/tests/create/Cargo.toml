@@ -1,11 +1,11 @@
 [package]
 name = "create"
 version = "0.1.0"
-edition.workspace = true
+edition = { workspace = true }
 
 [dependencies]
-stylus-sdk.workspace = true
-hex.workspace = true
+stylus-sdk = { workspace = true }
+hex = { workspace = true }
 
 [features]
 contract-client-gen = []

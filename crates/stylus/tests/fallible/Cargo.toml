@@ -1,10 +1,10 @@
 [package]
 name = "fallible"
 version = "0.1.0"
-edition.workspace = true
+edition = { workspace = true }
 
 [dependencies]
-stylus-sdk.workspace = true
+stylus-sdk = { workspace = true }
 
 [features]
 contract-client-gen = []
