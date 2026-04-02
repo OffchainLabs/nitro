@@ -64,7 +64,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	reorgEventChan := make(chan uint64, 1)
@@ -197,7 +198,8 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	blobReaderRegistry := daprovider.NewDAProviderRegistry()
@@ -338,7 +340,8 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}
 	reorgEventChan := make(chan uint64, 1)
@@ -690,7 +693,8 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	melDB := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	melDB, err := melrunner.NewDatabase(builder.L2.ConsensusNode.ConsensusDB)
+	Require(t, err)
 	Require(t, melDB.SaveState(melState)) // save head mel state
 	// TODO: tx streamer to be used here when ready to run the node using mel thus replacing inbox reader-tracker code
 	mockMsgConsumer := &mockMELDB{savedMsgs: make([]*arbostypes.MessageWithMetadata, 0)}

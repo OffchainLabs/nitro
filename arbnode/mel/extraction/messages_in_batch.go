@@ -49,7 +49,7 @@ func messagesFromBatchSegments(
 				continue // We ignore being able to parse an advance segment.
 			}
 			return nil, fmt.Errorf(
-				"error parsing segment %d: %w", idx, err,
+				"error parsing segment %d, delayedSeen: %d delayedRead: %d, err: %w", idx, melState.DelayedMessagesSeen, melState.DelayedMessagesRead, err,
 			)
 		}
 		timestamp = newTimestamp

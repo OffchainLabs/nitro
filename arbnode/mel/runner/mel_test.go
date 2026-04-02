@@ -37,7 +37,7 @@ func TestMessageExtractorStallTriggersMetric(t *testing.T) {
 		&mockParentChainReader{},
 		chaininfo.ArbitrumDevTestChainConfig(),
 		&chaininfo.RollupAddresses{},
-		NewDatabase(rawdb.NewMemoryDatabase()),
+		func() *Database { d, _ := NewDatabase(rawdb.NewMemoryDatabase()); return d }(),
 		daprovider.NewDAProviderRegistry(),
 		nil,
 		nil,
@@ -72,7 +72,8 @@ func TestMessageExtractor(t *testing.T) {
 	parentChainReader.blocks[common.BigToHash(common.Big2)] = emptyblk1
 	parentChainReader.blocks[common.BigToHash(common.Big3)] = emptyblk2
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 	messageConsumer := &mockMessageConsumer{}
 	extractor, err := NewMessageExtractor(
 		DefaultMessageExtractionConfig,
@@ -268,7 +269,8 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 	defer cancel()
 
 	consensusDB := rawdb.NewMemoryDatabase()
-	melDB := NewDatabase(consensusDB)
+	melDB, err := NewDatabase(consensusDB)
+	require.NoError(t, err)
 	parentChainReader := &mockParentChainReader{
 		blocks:  map[common.Hash]*types.Block{},
 		headers: map[common.Hash]*types.Header{},
