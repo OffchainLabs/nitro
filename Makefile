@@ -293,7 +293,7 @@ clean:
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f crates/wasm-libraries/forward/*.wat
-	rm -rf crates/stylus/tests/*/target/ crates/stylus/tests/*/*.wasm
+	rm -rf crates/stylus/tests/target/ crates/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache
