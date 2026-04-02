@@ -44,27 +44,27 @@ const_assert_eq!(
     MachineStatus::TooFar as u8,
 );
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
     debug_chain: usize,
-) -> *mut Machine {
+) -> *mut Machine { unsafe {
     let debug_chain = debug_chain != 0;
     arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
         .unwrap_or_else(|err| {
             eprintln!("Error loading binary: {err:?}");
             ptr::null_mut()
         })
-}
+}}
 
 unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
     debug_chain: bool,
-) -> eyre::Result<*mut Machine> {
+) -> eyre::Result<*mut Machine> { unsafe {
     let binary_path = c_string_to_string(binary_path)?;
     let binary_path = Path::new(&binary_path);
 
@@ -86,10 +86,10 @@ unsafe fn arbitrator_load_machine_impl(
         get_empty_preimage_resolver(),
     )?;
     Ok(Box::into_raw(Box::new(mach)))
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine { unsafe {
     let binary_path = match c_string_to_string(binary_path) {
         Ok(s) => s,
         Err(err) => {
@@ -105,32 +105,32 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
             ptr::null_mut()
         }
     }
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_new_finished(gs: GlobalState) -> *mut Machine {
     Box::into_raw(Box::new(Machine::new_finished(gs)))
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) { unsafe {
     drop(Box::from_raw(mach));
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Machine { unsafe {
     let new_mach = (*mach).clone();
     Box::into_raw(Box::new(new_mach))
-}
+}}
 
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_step(
     mach: *mut Machine,
     num_steps: u64,
     condition: *const u8,
-) -> *mut libc::c_char {
+) -> *mut libc::c_char { unsafe {
     let mach = &mut *mach;
     let condition = &*(condition as *const AtomicU8);
     let mut remaining_steps = num_steps;
@@ -146,15 +146,15 @@ pub unsafe extern "C" fn arbitrator_step(
         remaining_steps -= stepping;
     }
     ptr::null_mut()
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_add_inbox_message(
     mach: *mut Machine,
     inbox_identifier: u64,
     index: u64,
     data: CByteArray,
-) -> c_int {
+) -> c_int { unsafe {
     let mach = &mut *mach;
     if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
         let data = data.as_slice().to_vec();
@@ -164,27 +164,27 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
         eprintln!("Unknown inbox identifier: {inbox_identifier}");
         1
     }
-}
+}}
 
 /// Adds a user program to the machine's known set of wasms.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     module: *const u8,
     module_len: usize,
     module_hash: *const Bytes32,
-) {
+) { unsafe {
     let module = slice::from_raw_parts(module, module_len);
     (*mach).add_stylus_module(*module_hash, module.to_owned());
-}
+}}
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_step_until_host_io(
     mach: *mut Machine,
     condition: *const u8,
-) -> *mut libc::c_char {
+) -> *mut libc::c_char { unsafe {
     let mach = &mut *mach;
     let condition = &*(condition as *const AtomicU8);
     while condition.load(atomic::Ordering::Relaxed) == 0 {
@@ -202,13 +202,13 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
         }
     }
     ptr::null_mut()
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_serialize_state(
     mach: *const Machine,
     path: *const c_char,
-) -> c_int {
+) -> c_int { unsafe {
     let mach = &*mach;
     let res = c_string_to_string(path).and_then(|path| mach.serialize_state(path));
     if let Err(err) = res {
@@ -217,13 +217,13 @@ pub unsafe extern "C" fn arbitrator_serialize_state(
     } else {
         0
     }
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     mach: *mut Machine,
     path: *const c_char,
-) -> c_int {
+) -> c_int { unsafe {
     let mach = &mut *mach;
     let res = c_string_to_string(path).and_then(|path| mach.deserialize_and_replace_state(path));
     if let Err(err) = res {
@@ -232,45 +232,45 @@ pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
     } else {
         0
     }
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 { unsafe {
     (*mach).get_steps()
-}
+}}
 
 /// Returns one of ARBITRATOR_MACHINE_STATUS_*
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 { unsafe {
     (*mach).get_status() as u8
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState { unsafe {
     (*mach).get_global_state()
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) { unsafe {
     (*mach).set_global_state(gs);
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) { unsafe {
     (*mach).set_context(context);
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 { unsafe {
     (*mach).hash()
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 { unsafe {
     (*mach).get_modules_root()
-}
+}}
 
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine, out: *mut RustBytes) { unsafe {
     (*out).write((*mach).serialize_proof());
-}
+}}

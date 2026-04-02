@@ -21,11 +21,11 @@ lazy_static::lazy_static! {
     static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
-) {
+) { unsafe {
     (*mach).set_preimage_resolver(Arc::new(
         move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
             if ty == PreimageType::EthVersionedHash {
@@ -51,14 +51,14 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
             handle_preimage_resolution(context, ty, hash, resolver)
         },
     ) as PreimageResolver);
-}
+}}
 
 unsafe fn handle_preimage_resolution(
     context: u64,
     ty: PreimageType,
     hash: Bytes32,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
-) -> Option<CBytes> {
+) -> Option<CBytes> { unsafe {
     let res = resolver(context, ty.into(), hash.as_ptr());
     if res.len < 0 {
         return None;
@@ -81,4 +81,4 @@ unsafe fn handle_preimage_resolution(
         Err(err) => panic!("Failed to hash preimage from resolver (expecting hash {hash}): {err}",),
     }
     Some(data)
-}
+}}
