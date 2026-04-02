@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -774,11 +775,11 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		}
 		conditionalTxAcceptedBySequencerCounter.Inc(1)
 	}
-	statedb.TouchAddress(sender)
+	statedb.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	if tx.To() != nil {
-		statedb.TouchAddress(*tx.To())
+		statedb.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
 	}
-	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
 		return state.ErrArbTxFilter
 	}
 	return nil
@@ -788,13 +789,13 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
-			for _, addr := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(addr)
+			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
+				statedb.TouchAddress(record)
 			}
 		}
 	}
 
-	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
+	if addressFiltered, _ := statedb.IsAddressFiltered(); statedb.IsTxFiltered() || addressFiltered {
 		return state.ErrArbTxFilter
 	}
 
