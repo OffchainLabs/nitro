@@ -18,11 +18,11 @@ use std::collections::HashMap;
 use axum::Json;
 use jit::CompiledModule;
 use tracing::info;
-use validation::{local_target, GoGlobalState, ValidationInput, ValidationRequest};
+use validation::{GoGlobalState, ValidationInput, ValidationRequest, local_target};
 
 use crate::engine::{
-    machine::JitProcessManager, machine_locator::MachineLocator, replay_binary, ModuleRoot,
-    DEFAULT_JIT_CRANELIFT,
+    DEFAULT_JIT_CRANELIFT, ModuleRoot, machine::JitProcessManager, machine_locator::MachineLocator,
+    replay_binary,
 };
 
 pub async fn validate_native(

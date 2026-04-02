@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use num_enum::IntoPrimitive;
 
-use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
+use crate::{Bytes20, Bytes32, evm::user::UserOutcomeKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, IntoPrimitive)]
 #[repr(u8)]
@@ -184,7 +184,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache
     /// entirely if requested. Analogous to repeated invocations of `vm.SSTORE`.
     fn flush_storage_cache(&mut self, clear: bool, gas_left: Gas)
-        -> Result<(Gas, UserOutcomeKind)>;
+    -> Result<(Gas, UserOutcomeKind)>;
 
     /// Reads the 32-byte value in the EVM's transient state trie at offset `key`.
     /// Analogous to `vm.TLOAD`.
