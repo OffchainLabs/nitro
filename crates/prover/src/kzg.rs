@@ -5,8 +5,8 @@ use std::{convert::TryFrom, io::Write};
 
 use arbutil::Bytes32;
 #[cfg(feature = "kzg")]
-use c_kzg::{KzgSettings, BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB};
-use eyre::{ensure, Result, WrapErr};
+use c_kzg::{BYTES_PER_BLOB, FIELD_ELEMENTS_PER_BLOB, KzgSettings};
+use eyre::{Result, WrapErr, ensure};
 use num::BigUint;
 use sha2::{Digest, Sha256};
 

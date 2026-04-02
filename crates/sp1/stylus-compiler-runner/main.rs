@@ -2,10 +2,11 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use sp1_sdk::{
+    Elf, ProvingKey, SP1Stdin,
     blocking::{ProveRequest, Prover, ProverClient},
-    include_elf, Elf, ProvingKey, SP1Stdin,
+    include_elf,
 };
-use stylus_compiler_program::{compile, CompileInput};
+use stylus_compiler_program::{CompileInput, compile};
 
 const COMPILER_ELF: Elf = include_elf!("stylus-compiler-program");
 
