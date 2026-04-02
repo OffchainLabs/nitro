@@ -543,9 +543,8 @@ func testRetryOnStackOverflow() error {
 }
 
 // testCraneliftCompilationAndCache tests getCraneliftAsm:
-// 1. When wasm store is empty, getCraneliftAsm compiles, persists, and returns ASM.
-// 2. On second call, getCraneliftAsm reads from wasm store without recompiling.
-// 3. The returned cranelift ASM produces valid execution results.
+// 1. getCraneliftAsm reads from the wasm store when cranelift ASM is cached.
+// 2. The returned cranelift ASM produces valid execution results.
 func testCraneliftCompilationAndCache() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {
@@ -591,13 +590,10 @@ func testCraneliftCompilationAndCache() error {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
 
-	// Verify getCraneliftAsm reads from the wasm store (compiled=false since it's cached).
-	readAsm, compiled := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
+	// Verify getCraneliftAsm reads from the wasm store.
+	readAsm := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
 	if len(readAsm) == 0 {
 		return fmt.Errorf("getCraneliftAsm returned empty after wasm store write")
-	}
-	if compiled {
-		return fmt.Errorf("getCraneliftAsm should return compiled=false when reading from cache")
 	}
 	if len(readAsm) != len(craneliftAsm) {
 		return fmt.Errorf("getCraneliftAsm length mismatch: expected %d, got %d", len(craneliftAsm), len(readAsm))

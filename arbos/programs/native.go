@@ -291,10 +291,10 @@ func activateProgramInternal(
 				timeout := time.Second * 15
 				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
-					if ct, ctErr := rawdb.CraneliftTarget(target); useFallback && ctErr == nil {
+					if craneliftTarget, ctErr := rawdb.CraneliftTarget(target); useFallback && ctErr == nil {
 						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
 						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
-						results <- result{target: ct, asm: asm, err: err}
+						results <- result{target: craneliftTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
 						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
@@ -569,33 +569,23 @@ func retryOnStackOverflow(
 	}
 
 	// Get or compile cranelift ASM (persisted to wasm store on compilation).
-	// If compiled=true, this is freshly compiled cranelift (localAsm was singlepass).
-	// If compiled=false, this was already in the store (localAsm was already cranelift
-	// from activation fallback), so retrying with it would repeat the same overflow.
-	craneliftAsm, compiled := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
+	craneliftAsm := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
 	if len(craneliftAsm) == 0 {
 		log.Error("native stack overflow, cranelift ASM unavailable",
 			"program", address, "module", moduleHash)
 		return userNativeStackOverflow, nil
 	}
 
-	if compiled {
-		// Freshly compiled means localAsm was singlepass, so cranelift is different
-		// code worth retrying. If !compiled, the cranelift ASM was already in the
-		// store — meaning localAsm was already cranelift (from activation fallback)
-		// and just overflowed, so retrying with the same ASM would be pointless.
-		//
-		// Revert any partial state changes the crashed singlepass attempt may have
-		// made via host I/O before the SIGSEGV. After reverting, take a fresh
-		// snapshot so we can revert again if cranelift also overflows.
-		db.RevertToSnapshot(snapshot)
-		scope.Contract.Gas = savedGas
-		scope.Contract.UsedMultiGas = savedUsedMultiGas
-		snapshot = db.Snapshot()
-		status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
-		if status != userNativeStackOverflow {
-			return status, output
-		}
+	// Revert any partial state changes the previous attempt may have made via
+	// host I/O before the overflow. After reverting, take a fresh snapshot so
+	// we can revert again if cranelift also overflows.
+	db.RevertToSnapshot(snapshot)
+	scope.Contract.Gas = savedGas
+	scope.Contract.UsedMultiGas = savedUsedMultiGas
+	snapshot = db.Snapshot()
+	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	if status != userNativeStackOverflow {
+		return status, output
 	}
 
 	// Cranelift also overflowed — double the stack size once and retry with cranelift.
@@ -659,18 +649,18 @@ func getCraneliftAsm(
 	params *StylusParams,
 	version uint16,
 	debug bool,
-) (asm []byte, compiled bool) {
+) []byte {
 	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
 	if err != nil {
 		log.Error("failed to determine cranelift target", "err", err)
-		return nil, false
+		return nil
 	}
 
 	// Check persistent wasm store.
 	wasmStore := db.Database().WasmStore()
 	if wasmStore != nil {
 		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
-			return asm, false
+			return asm
 		}
 	}
 
@@ -682,14 +672,14 @@ func getCraneliftAsm(
 	if err != nil {
 		log.Error("failed to get wasm for cranelift compilation",
 			"program", address, "err", err)
-		return nil, false
+		return nil
 	}
 
-	asm, err = compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
+	asm, err := compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
 	if err != nil {
 		log.Error("cranelift compilation failed",
 			"program", address, "err", err)
-		return nil, false
+		return nil
 	}
 
 	// Persist to wasm store.
@@ -702,7 +692,7 @@ func getCraneliftAsm(
 		}
 	}
 
-	return asm, true
+	return asm
 }
 
 //export handleReqImpl
