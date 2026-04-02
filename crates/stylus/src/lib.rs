@@ -4,22 +4,22 @@
 use std::ptr;
 
 use arbutil::{
+    Bytes32,
     evm::{
+        EvmData,
         api::{DataReader, Gas, Ink},
         req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
-        EvmData,
     },
     format::DebugBytes,
-    Bytes32,
 };
 pub use brotli;
-use cache::{deserialize_module, CacheMetrics, InitCache};
+use cache::{CacheMetrics, InitCache, deserialize_module};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 pub use prover;
-use prover::programs::{prelude::*, StylusData};
+use prover::programs::{StylusData, prelude::*};
 // This re-export is required to pull prover_ffi's #[no_mangle] FFI symbols into the staticlib
 // output.
 pub use prover_ffi;

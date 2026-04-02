@@ -2,15 +2,16 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::{
+    Bytes20, Bytes32,
     evm::{
+        EvmData,
         api::{Gas, Ink},
         user::UserOutcomeKind,
-        EvmData,
     },
     format::DebugBytes,
-    heapify, Bytes20, Bytes32,
+    heapify,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
 use crate::program::Program;

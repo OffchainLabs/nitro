@@ -9,7 +9,7 @@ use core::{
 };
 
 use arbutil::PreimageType;
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 
 extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);

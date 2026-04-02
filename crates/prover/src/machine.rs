@@ -16,15 +16,15 @@ use std::{
     sync::Arc,
 };
 
-use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
+use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
 #[cfg(feature = "kzg")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
-use num::{traits::PrimInt, Zero};
+use num::{Zero, traits::PrimInt};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -40,18 +40,18 @@ use crate::kzg::prove_kzg_preimage;
 use crate::programs::meter::MeteredMachine;
 use crate::{
     binary::{
-        self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+        self, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary, parse,
     },
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::CompileConfig, ModuleMod, StylusData},
+    programs::{ModuleMod, StylusData, config::CompileConfig},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, CBytes, RemoteTableType},
+    utils::{CBytes, RemoteTableType, file_bytes},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
-        self, pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
-        IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
+        self, FloatingPointImpls, IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
+        pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm,
     },
 };
 
@@ -401,11 +401,11 @@ impl Module {
                 match host::get_impl(import.module, import_name) {
                     Ok((hostio, debug)) => {
                         ensure!(
-                    (debug && debug_funcs) || (!debug && allow_hostapi),
-                    "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
-                    import_name.red(),
-                    import.module.red(),
-                );
+                            (debug && debug_funcs) || (!debug && allow_hostapi),
+                            "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
+                            import_name.red(),
+                            import.module.red(),
+                        );
                         hostio
                     }
                     _ => {
@@ -421,7 +421,11 @@ impl Module {
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
-                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
+                import_name.red(),
+                bin_name.red(),
+                func.ty.red(),
+                module.red(),
+                have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
@@ -1717,7 +1721,8 @@ impl Machine {
         if self.initial_hash != new_state.initial_hash {
             bail!(
                 "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
-                new_state.initial_hash, self.initial_hash,
+                new_state.initial_hash,
+                self.initial_hash,
             );
         }
         assert_eq!(self.modules.len(), new_state.modules.len());
@@ -2968,9 +2973,11 @@ impl Machine {
 
         // Prove module is in modules merkle tree
 
-        out!(mod_merkle
-            .prove(self.pc.module())
-            .expect("Failed to prove module"));
+        out!(
+            mod_merkle
+                .prove(self.pc.module())
+                .expect("Failed to prove module")
+        );
 
         if self.is_halted() {
             return data;
@@ -2980,14 +2987,17 @@ impl Machine {
 
         let func = &module.funcs[self.pc.func()];
         out!(func.serialize_body_for_proof(self.pc));
-        out!(func
-            .code_merkle
-            .prove(self.pc.inst() / Function::CHUNK_SIZE)
-            .expect("Failed to prove against code merkle"));
-        out!(module
-            .funcs_merkle
-            .prove(self.pc.func())
-            .expect("Failed to prove against function merkle"));
+        out!(
+            func.code_merkle
+                .prove(self.pc.inst() / Function::CHUNK_SIZE)
+                .expect("Failed to prove against code merkle")
+        );
+        out!(
+            module
+                .funcs_merkle
+                .prove(self.pc.func())
+                .expect("Failed to prove against function merkle")
+        );
 
         // End next instruction proof, begin instruction specific serialization
 
@@ -3074,30 +3084,38 @@ impl Machine {
                 out!(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
                 let table = &module.tables[table_usize];
-                out!(table
-                    .serialize_for_proof()
-                    .expect("failed to serialize table"));
-                out!(module
-                    .tables_merkle
-                    .prove(table_usize)
-                    .expect("Failed to prove tables merkle"));
+                out!(
+                    table
+                        .serialize_for_proof()
+                        .expect("failed to serialize table")
+                );
+                out!(
+                    module
+                        .tables_merkle
+                        .prove(table_usize)
+                        .expect("Failed to prove tables merkle")
+                );
                 let idx_usize = usize::try_from(idx).unwrap();
                 if let Some(elem) = table.elems.get(idx_usize) {
                     out!(elem.func_ty.hash());
                     out!(elem.val.serialize_for_proof());
-                    out!(table
-                        .elems_merkle
-                        .prove(idx_usize)
-                        .expect("Failed to prove elements merkle"));
+                    out!(
+                        table
+                            .elems_merkle
+                            .prove(idx_usize)
+                            .expect("Failed to prove elements merkle")
+                    );
                 }
             }
             CrossModuleInternalCall => {
                 let module_idx = value_stack.last().unwrap().assume_u32() as usize;
                 let called_module = &self.modules[module_idx];
                 out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
-                out!(mod_merkle
-                    .prove(module_idx)
-                    .expect("Failed to prove module for CrossModuleInternalCall"));
+                out!(
+                    mod_merkle
+                        .prove(module_idx)
+                        .expect("Failed to prove module for CrossModuleInternalCall")
+                );
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());

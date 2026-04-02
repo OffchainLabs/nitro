@@ -5,10 +5,9 @@
 #![no_std]
 
 use caller_env::{
-    self,
+    self, GuestPtr,
     static_caller::{StaticExecEnv, StaticMem},
     wasip1_stub::Errno,
-    GuestPtr,
 };
 use paste::paste;
 use wee_alloc::WeeAlloc;

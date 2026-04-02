@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 use arbutil::evm::{
-    api::{EvmApiMethod, Gas, EVM_API_METHOD_REQ_OFFSET},
+    api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas},
     req::RequestHandler,
 };
 use prover_ffi::RustSlice;

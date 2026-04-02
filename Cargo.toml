@@ -39,7 +39,7 @@ resolver = "2"
 
 [workspace.package]
 authors = ["Offchain Labs"]
-edition = "2021"
+edition = "2024"
 homepage = "https://arbitrum.io"
 license = "BSL"
 publish = false

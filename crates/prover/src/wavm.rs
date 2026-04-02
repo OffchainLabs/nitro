@@ -5,7 +5,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
-use eyre::{bail, ensure, Result};
+use eyre::{Result, bail, ensure};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
@@ -224,9 +224,7 @@ impl Opcode {
                 (ArbValueType::I64, 1) => 0x3C,
                 (ArbValueType::I64, 2) => 0x3D,
                 (ArbValueType::I64, 4) => 0x3E,
-                _ => panic!(
-                    "Unsupported memory store of type {ty:?} to {bytes} bytes",
-                ),
+                _ => panic!("Unsupported memory store of type {ty:?} to {bytes} bytes",),
             },
             Opcode::MemorySize => 0x3F,
             Opcode::MemoryGrow => 0x40,

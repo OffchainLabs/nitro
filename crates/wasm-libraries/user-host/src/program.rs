@@ -1,21 +1,21 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 use std::{borrow::Cow, cell::UnsafeCell, fmt::Display};
 
 use arbutil::{
+    Color,
     benchmark::Benchmark,
     evm::{
-        api::{EvmApiMethod, Gas, Ink, VecReader, EVM_API_METHOD_REQ_OFFSET},
+        EvmData,
+        api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas, Ink, VecReader},
         req::{EvmApiRequestor, RequestHandler},
         user::UserOutcomeKind,
-        EvmData,
     },
-    Color,
 };
-use caller_env::{static_caller::StaticMem, GuestPtr, MemAccess};
-use eyre::{eyre, Result};
+use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
+use eyre::{Result, eyre};
 use prover::programs::prelude::*;
 use user_host_trait::UserHost;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};

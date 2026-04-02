@@ -9,9 +9,9 @@ use std::{
 
 use arbutil::{Bytes32, Color};
 use digest::Digest;
-use eyre::{bail, ErrReport, Result};
+use eyre::{ErrReport, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, TryFromInto};
+use serde_with::{TryFromInto, serde_as};
 use sha3::Keccak256;
 use wasmparser::{FuncType, RefType, ValType};
 
@@ -289,9 +289,7 @@ impl Display for Value {
         let rparem = ")".grey();
 
         macro_rules! single {
-            ($ty:expr_2021, $value:expr_2021) => {{
-                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
-            }};
+            ($ty:expr_2021, $value:expr_2021) => {{ write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem) }};
         }
         macro_rules! pair {
             ($ty:expr_2021, $left:expr_2021, $right:expr_2021) => {{

@@ -10,12 +10,12 @@ use std::{
 };
 
 use arbutil::{
+    Color,
     benchmark::Benchmark,
     evm::{
-        api::{DataReader, EvmApi, Gas, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Gas, Ink},
     },
-    Color,
 };
 use caller_env::GuestPtr;
 use eyre::Result;

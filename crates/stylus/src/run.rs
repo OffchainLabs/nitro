@@ -7,10 +7,10 @@ use arbutil::evm::{
     api::{DataReader, EvmApi, Ink},
     user::UserOutcome,
 };
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use prover::{
     machine::Machine,
-    programs::{prelude::*, STYLUS_ENTRY_POINT},
+    programs::{STYLUS_ENTRY_POINT, prelude::*},
 };
 
 use crate::{env::Escape, native::NativeInstance};

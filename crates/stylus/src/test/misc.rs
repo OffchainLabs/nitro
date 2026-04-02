@@ -3,7 +3,7 @@
 
 use eyre::Result;
 use prover::programs::{prelude::*, start::StartMover};
-use wasmer::{imports, sys::Target, Function};
+use wasmer::{Function, imports, sys::Target};
 
 use super::test_configs;
 use crate::{

@@ -7,7 +7,7 @@ use std::{
 
 use arbutil::{Bytes32, PreimageType};
 use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, As, DisplayFromStr};
+use serde_with::{As, DisplayFromStr, base64::Base64};
 
 pub mod transfer;
 

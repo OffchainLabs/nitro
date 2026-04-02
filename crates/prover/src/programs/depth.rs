@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
 use wasmer_types::{
@@ -13,10 +13,10 @@ use wasmer_types::{
 use wasmparser::{BlockType, Operator, ValType};
 
 use super::{
-    config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
+    config::{CompileMemoryParams, SigMap},
 };
-use crate::{internal_func::InternalFunc, value::FunctionType, Machine};
+use crate::{Machine, internal_func::InternalFunc, value::FunctionType};
 
 pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 

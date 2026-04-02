@@ -8,29 +8,29 @@ use std::{
 };
 
 use arbutil::{
+    Bytes32, Color,
     evm::{
-        api::{DataReader, EvmApi, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Ink},
     },
     operator::OperatorCode,
-    Bytes32, Color,
 };
-use eyre::{bail, eyre, ErrReport, Result};
+use eyre::{ErrReport, Result, bail, eyre};
 use prover::{
     machine::Module as ProverModule,
     programs::{
+        StylusData,
         config::PricingParams,
         counter::{Counter, CountingMachine, OP_OFFSETS},
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
         start::StartMover,
-        StylusData,
     },
 };
 use wasmer::{
-    imports, sys::Target, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages,
-    Store, TypedFunction, Value, WasmTypeList,
+    AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, TypedFunction,
+    Value, WasmTypeList, imports, sys::Target,
 };
 use wasmer_vm::VMExtern;
 
