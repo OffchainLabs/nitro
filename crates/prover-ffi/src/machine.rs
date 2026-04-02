@@ -10,14 +10,14 @@ use std::{
 
 use arbutil::Bytes32;
 use prover::{
-    machine::{argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus},
     Machine,
+    machine::{GlobalState, MachineStatus, argument_data_to_inbox, get_empty_preimage_resolver},
 };
 use static_assertions::const_assert_eq;
 
 use crate::{
-    c_strings::{c_string_to_string, err_to_c_string},
     CByteArray, RustBytes,
+    c_strings::{c_string_to_string, err_to_c_string},
 };
 
 pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;

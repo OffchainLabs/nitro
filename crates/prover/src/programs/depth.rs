@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
 use wasmer_types::{
@@ -13,8 +13,8 @@ use wasmer_types::{
 use wasmparser::{BlockType, Operator, ValType};
 
 use super::{
-    config::{CompileMemoryParams, SigMap},
     FuncMiddleware, Middleware, ModuleMod,
+    config::{CompileMemoryParams, SigMap},
 };
 #[cfg(feature = "native")]
 use crate::Machine;
@@ -238,7 +238,7 @@ impl FuncDepthChecker<'_> {
         let mut stack: u32 = 0;
 
         macro_rules! push {
-            ($count:expr) => {{
+            ($count:expr_2021) => {{
                 stack += $count;
                 worst = worst.max(stack);
             }};
@@ -247,7 +247,7 @@ impl FuncDepthChecker<'_> {
             };
         }
         macro_rules! pop {
-            ($count:expr) => {{
+            ($count:expr_2021) => {{
                 stack = stack.saturating_sub($count);
             }};
             () => {
@@ -255,7 +255,7 @@ impl FuncDepthChecker<'_> {
             };
         }
         macro_rules! ins_and_outs {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 let ins = $ty.inputs.len() as u32;
                 let outs = $ty.outputs.len() as u32;
                 push!(outs);
@@ -274,7 +274,7 @@ impl FuncDepthChecker<'_> {
         }
         #[rustfmt::skip]
         macro_rules! block_type {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 match $ty {
                     BlockType::Empty => {}
                     BlockType::Type(_) => push!(1),

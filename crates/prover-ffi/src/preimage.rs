@@ -10,9 +10,9 @@ use arbutil::{Bytes32, PreimageType};
 use lru::LruCache;
 use once_cell::sync::OnceCell;
 use prover::{
+    Machine,
     machine::PreimageResolver,
     utils::{self, CBytes},
-    Machine,
 };
 
 use crate::ResolvedPreimage;

@@ -4,7 +4,7 @@
 use std::{clone::Clone, collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use arbutil::operator::{OperatorCode, OperatorInfo};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;

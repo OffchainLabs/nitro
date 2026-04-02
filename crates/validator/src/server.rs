@@ -3,7 +3,7 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
-use axum::{routing::post, Router};
+use axum::{Router, routing::post};
 use tokio::{net::TcpListener, signal};
 use tower_http::trace::TraceLayer;
 use tracing::info;

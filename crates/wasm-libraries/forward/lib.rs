@@ -68,7 +68,7 @@ pub fn forward<W: Write>(file: &mut W) -> Result<()> {
     );
 
     macro_rules! group {
-        ($list:expr, $kind:expr) => {
+        ($list:expr_2021, $kind:expr_2021) => {
             (!$list.is_empty())
                 .then(|| format!(" ({} {})", $kind, $list))
                 .unwrap_or_default()
@@ -143,7 +143,7 @@ pub fn forward_stub<W: Write>(file: &mut W) -> Result<()> {
     );
 
     macro_rules! group {
-        ($list:expr, $kind:expr) => {
+        ($list:expr_2021, $kind:expr_2021) => {
             (!$list.is_empty())
                 .then(|| format!(" ({} {})", $kind, $list))
                 .unwrap_or_default()

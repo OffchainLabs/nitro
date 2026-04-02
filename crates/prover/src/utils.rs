@@ -7,7 +7,7 @@ use arbutil::PreimageType;
 #[cfg(feature = "native")]
 use c_kzg::Blob;
 use digest::Digest;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::Keccak256;
