@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
-// stackOverflowWat is a WAT program that recurses 500 times using a
+// stackOverflowWat is a WAT program that recurses 1,000 times using a
 // counter in WASM memory. At a small native stack size (e.g., 64KB) this
 // overflows the native stack before completing. At a larger stack (e.g., 1MB+)
 // it completes and returns 0. Used to trigger native stack overflow for
@@ -33,8 +33,8 @@ var stackOverflowWat = `(module
 		;; Load counter from memory[0]
 		i32.const 0
 		i32.load
-		;; If counter >= 500, return 0
-		i32.const 500
+		;; If counter >= 1000, return 0
+		i32.const 1000
 		i32.ge_u
 		if (result i32)
 			i32.const 0
@@ -93,13 +93,11 @@ func saveAndRestoreNativeStackGlobals(t *testing.T) {
 // callProgram → retryOnStackOverflow → cranelift fallback path and verifies
 // that off-chain calls (eth_call) do NOT trigger the retry.
 //
-// It deploys a WAT program that recurses infinitely and configures a small
-// initial native stack size so the first call overflows. With the default
-// high MaxStackDepth, normal recursion exhausts the native stack before the
-// wasm depth checker fires. The Go-side retry logic (cranelift recompilation
-// + stack doubling) should recover, and the tx should be included in a block
-// without crashing the node. The program still recurses infinitely so it
-// ultimately reverts (out-of-stack/ink).
+// It deploys a WAT program that recurses 1,000 times and configures a small
+// initial native stack size (64KB) so the first singlepass call overflows.
+// The Go-side retry logic (cranelift recompilation + stack doubling) should
+// recover, and the tx should succeed since cranelift can handle 1,000
+// recursions within a larger stack.
 func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
@@ -133,17 +131,17 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	t.Logf("eth_call reverted as expected (off-chain, no retry): %v", err)
 
 	// On-chain tx: IsExecutedOnChain()=true enables the cranelift fallback.
-	// The program still recurses infinitely so it reverts after recovery.
+	// The program recurses 1,000 times — after cranelift recovery it completes successfully.
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
-		t.Fatalf("expected on-chain tx to revert (infinite recursion), got status=%d", receipt.Status)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("expected on-chain tx to succeed after cranelift recovery, got status=%d", receipt.Status)
 	}
-	t.Logf("tx included in block %d, reverted as expected", receipt.BlockNumber)
+	t.Logf("tx included in block %d, succeeded after cranelift recovery", receipt.BlockNumber)
 
 	blockNum, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -152,7 +150,7 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 
 // TestProgramNativeStackOverflowNoFallback tests the behavior when
 // cranelift fallback is disabled. No retry is attempted and the call
-// should revert with a depth error.
+// fails with ErrNativeStackOverflow.
 func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
@@ -242,13 +240,12 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	Require(t, err)
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
-	// The program recurses infinitely — even after cranelift fallback it hits
-	// out-of-stack/ink and reverts. Cranelift ASM is persisted during the retry
-	// (compilation step), regardless of the final execution outcome.
-	if receipt.Status != types.ReceiptStatusFailed {
-		t.Fatalf("expected first tx to revert (infinite recursion), got status=%d", receipt.Status)
+	// The program recurses 1,000 times — after cranelift recovery it completes.
+	// Cranelift ASM is persisted during the retry (compilation step).
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("expected first tx to succeed after cranelift recovery, got status=%d", receipt.Status)
 	}
-	t.Logf("first tx: block=%d, reverted as expected", receipt.BlockNumber)
+	t.Logf("first tx: block=%d, succeeded after cranelift recovery", receipt.BlockNumber)
 
 	// Verify cranelift ASM was persisted to the wasm store.
 	asmAfterFirst := readCraneliftAsm(t, wasmDB)
@@ -263,10 +260,10 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	Require(t, err)
 	receipt2, err := WaitForTx(ctx, l2client, tx2.Hash(), 60*time.Second)
 	Require(t, err)
-	if receipt2.Status != types.ReceiptStatusFailed {
-		t.Fatalf("expected second tx to revert (infinite recursion), got status=%d", receipt2.Status)
+	if receipt2.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("expected second tx to succeed (reusing cached cranelift), got status=%d", receipt2.Status)
 	}
-	t.Logf("second tx: block=%d, reverted as expected", receipt2.BlockNumber)
+	t.Logf("second tx: block=%d, succeeded (reusing cached cranelift)", receipt2.BlockNumber)
 
 	// ASM should be identical (reused from store, not recompiled).
 	asmAfterSecond := readCraneliftAsm(t, wasmDB)
