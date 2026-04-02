@@ -13,14 +13,14 @@ use std::{
 use arbutil::{
     benchmark::Benchmark,
     evm::{
-        api::{DataReader, EvmApi, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Ink},
     },
     pricing,
 };
 use caller_env::GuestPtr;
 use derivative::Derivative;
-use eyre::{eyre, ErrReport};
+use eyre::{ErrReport, eyre};
 use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use thiserror::Error;
 use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, StoreMut};

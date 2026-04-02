@@ -46,7 +46,7 @@ wat = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-rand = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
 
 [build-dependencies]
 forward = { workspace = true }

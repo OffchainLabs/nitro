@@ -54,10 +54,10 @@ impl MachineLocator {
             }
 
             // Check relative to the executable
-            if let Ok(exec_path) = env::current_exe() {
-                if let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent()) {
-                    dirs.push(grandparent_of_exec.join("machines"));
-                }
+            if let Ok(exec_path) = env::current_exe()
+                && let Some(grandparent_of_exec) = exec_path.parent().and_then(|p| p.parent())
+            {
+                dirs.push(grandparent_of_exec.join("machines"));
             }
         }
 
@@ -172,13 +172,13 @@ mod tests {
         str::FromStr,
     };
 
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use arbutil::Bytes32;
     use rand::RngCore;
 
     use crate::engine::{
-        machine_locator::{MachineLocator, ModuleRootMeta},
         ModuleRoot,
+        machine_locator::{MachineLocator, ModuleRootMeta},
     };
 
     fn get_temp_machines_dir() -> Result<tempfile::TempDir> {
@@ -293,10 +293,12 @@ mod tests {
                 // let root_meta_wrapper = file_manager.root_metas.first().unwrap();
                 let mod_root = root_meta_wrapper.module_root;
                 let module_root = machine_locator.get_machine_path(mod_root).unwrap();
-                assert!(module_root
-                    .to_str()
-                    .unwrap()
-                    .contains(&mod_root.to_string()));
+                assert!(
+                    module_root
+                        .to_str()
+                        .unwrap()
+                        .contains(&mod_root.to_string())
+                );
             });
 
         Ok(())

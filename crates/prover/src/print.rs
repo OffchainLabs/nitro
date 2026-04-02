@@ -65,13 +65,13 @@ impl Display for Module {
         let mut pad = 0;
 
         macro_rules! w {
-            ($($args:expr),*) => {{
+            ($($args:expr_2021),*) => {{
                 let text = format!($($args),*);
                 write!(f, "{:pad$}{text}", "")?;
             }};
         }
         macro_rules! wln {
-            ($($args:expr),*) => {{
+            ($($args:expr_2021),*) => {{
                 w!($($args),*);
                 writeln!(f)?;
             }};
