@@ -28,6 +28,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -37,15 +38,33 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// A simple program that calls itself recursively until it runs out of either
-// gas or stack. With a high MaxStackDepth and low native stack size, normal
-// recursion overflows the native stack before the wasm depth checker fires.
+// A program that recurses a fixed number of times (500). At 32KB native
+// stack this overflows before completing. At 1MB native stack it completes
+// and returns 0. The counter is stored in WASM memory at offset 0.
 var recursiveStackOverflowWat = []byte(`(module
-	(memory 0 0)
+	(memory 1 1)
 	(export "memory" (memory 0))
 	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
+		;; Load counter from memory[0]
 		i32.const 0
-		call $main
+		i32.load
+		;; If counter >= 500, return 0
+		i32.const 500
+		i32.ge_u
+		if (result i32)
+			i32.const 0
+		else
+			;; Increment counter in memory[0]
+			i32.const 0
+			i32.const 0
+			i32.load
+			i32.const 1
+			i32.add
+			i32.store
+			;; Recurse
+			i32.const 0
+			call $main
+		end
 	)
 )`)
 
@@ -342,12 +361,12 @@ func testNativeStackSize() error {
 
 	rustBytesIntoBytes(output)
 
-	// With 1MB stack the program should run until out-of-ink or out-of-stack.
+	// With 1MB stack the program should complete its 50,000 recursions successfully.
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("still got NativeStackOverflow with 1MB stack")
 	}
-	if status != userOutOfInk && status != userOutOfStack {
-		return fmt.Errorf("expected out-of-ink or out-of-stack after stack increase, got status %d", status)
+	if status != userSuccess {
+		return fmt.Errorf("expected success after stack increase, got status %d", status)
 	}
 
 	// Verify SetNativeStackSize(0) is a no-op.
@@ -416,13 +435,12 @@ func testNativeStackSizeMaxCap() error {
 
 	rustBytesIntoBytes(output)
 
-	// At 100MB stack, the program should run successfully until out-of-ink
-	// or out-of-stack (DepthChecker), not NativeStackOverflow.
+	// At 100MB stack, the program should complete its 50,000 recursions successfully.
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("got NativeStackOverflow even at 100MB stack")
 	}
-	if status != userOutOfInk && status != userOutOfStack {
-		return fmt.Errorf("expected out-of-ink or out-of-stack at max cap, got status %d", status)
+	if status != userSuccess {
+		return fmt.Errorf("expected success at max cap, got status %d", status)
 	}
 
 	// Verify the stack size is unchanged.
@@ -499,7 +517,7 @@ func testRetryOnStackOverflow() error {
 		common.Address{}, moduleHash,
 		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, true,
+		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
@@ -515,7 +533,7 @@ func testRetryOnStackOverflow() error {
 		common.Address{}, moduleHash,
 		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, offChainCtx, gas, true,
+		memModel, offChainCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
@@ -616,8 +634,8 @@ func testCraneliftCompilationAndCache() error {
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("cranelift ASM overflowed with 1MB stack")
 	}
-	if status != userOutOfInk && status != userOutOfStack {
-		return fmt.Errorf("expected out-of-ink or out-of-stack from cranelift ASM, got %d", status)
+	if status != userSuccess {
+		return fmt.Errorf("expected success from cranelift ASM, got %d", status)
 	}
 
 	fmt.Printf("testCraneliftCompilationAndCache: passed (status=%d, getCraneliftAsm + wasm store verified)\n", status)
@@ -687,7 +705,7 @@ func testStackDoublingGivesUp() error {
 		common.Address{}, moduleHash,
 		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, true,
+		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 
@@ -757,16 +775,16 @@ func testCraneliftFallbackInRetry() error {
 		common.Address{}, moduleHash,
 		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, true,
+		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 
-	// Cranelift should have succeeded (out-of-ink or out-of-stack, not overflow).
+	// Cranelift should have succeeded (program completes its recursions, not overflow).
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("cranelift fallback did not resolve overflow")
 	}
-	if status != userOutOfInk && status != userOutOfStack {
-		return fmt.Errorf("expected out-of-ink or out-of-stack from cranelift fallback, got %d", status)
+	if status != userSuccess {
+		return fmt.Errorf("expected success from cranelift fallback, got %d", status)
 	}
 
 	// Verify the stack size was restored (cranelift path doesn't double).

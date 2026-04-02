@@ -21,16 +21,35 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
-// stackOverflowWat is a WAT program that recurses infinitely. With a high
-// MaxStackDepth and low native stack size, normal recursion overflows the
-// native stack before the wasm depth checker fires. Used to trigger native
-// stack overflow for testing the recovery path.
+// stackOverflowWat is a WAT program that recurses 500 times using a
+// counter in WASM memory. At a small native stack size (e.g., 64KB) this
+// overflows the native stack before completing. At a larger stack (e.g., 1MB+)
+// it completes and returns 0. Used to trigger native stack overflow for
+// testing the recovery path.
 var stackOverflowWat = `(module
-	(memory 0 0)
+	(memory 1 1)
 	(export "memory" (memory 0))
 	(func $main (export "user_entrypoint") (param $args_len i32) (result i32)
+		;; Load counter from memory[0]
 		i32.const 0
-		call $main
+		i32.load
+		;; If counter >= 500, return 0
+		i32.const 500
+		i32.ge_u
+		if (result i32)
+			i32.const 0
+		else
+			;; Increment counter in memory[0]
+			i32.const 0
+			i32.const 0
+			i32.load
+			i32.const 1
+			i32.add
+			i32.store
+			;; Recurse
+			i32.const 0
+			call $main
+		end
 	)
 )`
 

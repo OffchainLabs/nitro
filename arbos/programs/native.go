@@ -493,6 +493,7 @@ func callProgram(
 	}
 
 	savedGas := scope.Contract.Gas
+	savedUsedMultiGas := scope.Contract.UsedMultiGas
 
 	// Snapshot the StateDB before the first attempt so we can revert any partial
 	// state changes (storage writes, subcalls) if the call hits a native stack
@@ -507,7 +508,7 @@ func callProgram(
 			address, moduleHash,
 			localAsm,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
-			memoryModel, runCtx, savedGas, debug,
+			memoryModel, runCtx, savedGas, savedUsedMultiGas, debug,
 			db, snapshot, code, params, program,
 		)
 	}
@@ -547,6 +548,7 @@ func retryOnStackOverflow(
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 	savedGas uint64,
+	savedUsedMultiGas multigas.MultiGas,
 	debug bool,
 	db vm.StateDB,
 	snapshot int,
@@ -582,6 +584,7 @@ func retryOnStackOverflow(
 		// also overflows — a snapshot ID can only be reverted once.
 		db.RevertToSnapshot(snapshot)
 		scope.Contract.Gas = savedGas
+		scope.Contract.UsedMultiGas = savedUsedMultiGas
 		snapshot = db.Snapshot()
 		status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 		if status != userNativeStackOverflow {
@@ -625,6 +628,7 @@ func retryOnStackOverflow(
 	// Revert any partial state changes from the cranelift attempt before retrying.
 	db.RevertToSnapshot(snapshot)
 	scope.Contract.Gas = savedGas
+	scope.Contract.UsedMultiGas = savedUsedMultiGas
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 }
 
