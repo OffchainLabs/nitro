@@ -515,7 +515,6 @@ func testRetryOnStackOverflow() error {
 	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
-		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -531,7 +530,6 @@ func testRetryOnStackOverflow() error {
 
 	status, _ = retryOnStackOverflow(
 		common.Address{}, moduleHash,
-		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, offChainCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -593,10 +591,13 @@ func testCraneliftCompilationAndCache() error {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
 
-	// Verify getCraneliftAsm reads from the wasm store.
-	readAsm := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
+	// Verify getCraneliftAsm reads from the wasm store (compiled=false since it's cached).
+	readAsm, compiled := getCraneliftAsm(moduleHash, common.Address{}, db, nil, nil, 1, true)
 	if len(readAsm) == 0 {
 		return fmt.Errorf("getCraneliftAsm returned empty after wasm store write")
+	}
+	if compiled {
+		return fmt.Errorf("getCraneliftAsm should return compiled=false when reading from cache")
 	}
 	if len(readAsm) != len(craneliftAsm) {
 		return fmt.Errorf("getCraneliftAsm length mismatch: expected %d, got %d", len(craneliftAsm), len(readAsm))
@@ -703,7 +704,6 @@ func testStackDoublingGivesUp() error {
 	snapshot := db.Snapshot()
 	retryStatus, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
-		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},
@@ -773,7 +773,6 @@ func testCraneliftFallbackInRetry() error {
 	snapshot := db.Snapshot()
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
-		nil,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, gas, multigas.ZeroGas(), true,
 		db, snapshot, nil, nil, Program{version: 1},

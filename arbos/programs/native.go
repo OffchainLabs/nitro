@@ -19,7 +19,6 @@ typedef size_t usize;
 import "C"
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -506,7 +505,6 @@ func callProgram(
 	if status == userNativeStackOverflow {
 		status, output = retryOnStackOverflow(
 			address, moduleHash,
-			localAsm,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
 			memoryModel, runCtx, savedGas, savedUsedMultiGas, debug,
 			db, snapshot, code, params, program,
@@ -538,7 +536,6 @@ func callProgram(
 func retryOnStackOverflow(
 	address common.Address,
 	moduleHash common.Hash,
-	localAsm []byte,
 	scope *vm.ScopeContext,
 	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
@@ -568,20 +565,25 @@ func retryOnStackOverflow(
 	}
 
 	// Get or compile cranelift ASM (persisted to wasm store on compilation).
-	craneliftAsm := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
+	// If compiled=true, this is freshly compiled cranelift (localAsm was singlepass).
+	// If compiled=false, this was already in the store (localAsm was already cranelift
+	// from activation fallback), so retrying with it would repeat the same overflow.
+	craneliftAsm, compiled := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
 	if len(craneliftAsm) == 0 {
 		log.Error("native stack overflow, cranelift ASM unavailable",
 			"program", address, "module", moduleHash)
 		return userNativeStackOverflow, nil
 	}
 
-	// If localAsm is already cranelift (activation used cranelift fallback),
-	// skip the first retry — it would repeat the same overflow.
-	if !bytes.Equal(localAsm, craneliftAsm) {
-		// Retry with cranelift ASM. Revert any partial state changes the crashed
-		// singlepass attempt may have made via host I/O before the SIGSEGV.
-		// After reverting, take a fresh snapshot so we can revert again if cranelift
-		// also overflows — a snapshot ID can only be reverted once.
+	if compiled {
+		// Freshly compiled means localAsm was singlepass, so cranelift is different
+		// code worth retrying. If !compiled, the cranelift ASM was already in the
+		// store — meaning localAsm was already cranelift (from activation fallback)
+		// and just overflowed, so retrying with the same ASM would be pointless.
+		//
+		// Revert any partial state changes the crashed singlepass attempt may have
+		// made via host I/O before the SIGSEGV. After reverting, take a fresh
+		// snapshot so we can revert again if cranelift also overflows.
 		db.RevertToSnapshot(snapshot)
 		scope.Contract.Gas = savedGas
 		scope.Contract.UsedMultiGas = savedUsedMultiGas
@@ -643,18 +645,18 @@ func getCraneliftAsm(
 	params *StylusParams,
 	version uint16,
 	debug bool,
-) []byte {
+) (asm []byte, compiled bool) {
 	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
 	if err != nil {
 		log.Error("failed to determine cranelift target", "err", err)
-		return nil
+		return nil, false
 	}
 
 	// Check persistent wasm store.
 	wasmStore := db.Database().WasmStore()
 	if wasmStore != nil {
 		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
-			return asm
+			return asm, false
 		}
 	}
 
@@ -666,14 +668,14 @@ func getCraneliftAsm(
 	if err != nil {
 		log.Error("failed to get wasm for cranelift compilation",
 			"program", address, "err", err)
-		return nil
+		return nil, false
 	}
 
-	asm, err := compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
+	asm, err = compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
 	if err != nil {
 		log.Error("cranelift compilation failed",
 			"program", address, "err", err)
-		return nil
+		return nil, false
 	}
 
 	// Persist to wasm store.
@@ -686,7 +688,7 @@ func getCraneliftAsm(
 		}
 	}
 
-	return asm
+	return asm, true
 }
 
 //export handleReqImpl
