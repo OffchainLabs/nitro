@@ -361,7 +361,7 @@ func testNativeStackSize() error {
 
 	rustBytesIntoBytes(output)
 
-	// With 1MB stack the program should complete its 50,000 recursions successfully.
+	// With 1MB stack the program should complete its 500 recursions successfully.
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("still got NativeStackOverflow with 1MB stack")
 	}
@@ -383,9 +383,9 @@ func testNativeStackSize() error {
 	return nil
 }
 
-// testNativeStackSizeMaxCap tests the give-up path: when the stack is already
-// at MAX_STACK_SIZE (100 MB) and the program still overflows, Rust returns
-// NativeStackOverflow with gas set to 0.
+// testNativeStackSizeMaxCap tests that a program which overflows at smaller
+// stack sizes runs successfully when the stack is set to MaxNativeStackSize
+// (100 MB), verifying the maximum cap is correctly applied.
 func testNativeStackSizeMaxCap() error {
 	localTarget := rawdb.LocalTarget()
 	err := SetTarget(localTarget, "", true)
@@ -435,7 +435,7 @@ func testNativeStackSizeMaxCap() error {
 
 	rustBytesIntoBytes(output)
 
-	// At 100MB stack, the program should complete its 50,000 recursions successfully.
+	// At 100MB stack, the program should complete its 500 recursions successfully.
 	if status == userNativeStackOverflow {
 		return fmt.Errorf("got NativeStackOverflow even at 100MB stack")
 	}
@@ -643,17 +643,16 @@ func testCraneliftCompilationAndCache() error {
 	return nil
 }
 
-// testStackDoublingGivesUp verifies the give-up path: when the stack is
-// already at MaxNativeStackSize, the single doubling attempt cannot grow
-// and retryOnStackOverflow returns NativeStackOverflow.
+// testStackDoublingGivesUp verifies behavior when configuredNativeStackSize is
+// already at MaxNativeStackSize: the doubling path cannot grow further, so the
+// cranelift retry at max stack is the last attempt. Since the 500-recursion
+// program succeeds at 100MB, the test verifies that cranelift works at max
+// stack and that the stack size is properly restored afterward.
 //
-// To force cranelift to also overflow at max stack size we use a trick:
-// we pre-populate invalid (empty) cranelift ASM in the wasm store. The
-// cranelift call will fail, causing the code to attempt doubling, which
-// cannot grow past max and gives up.
-//
-// Note: we can't use real cranelift ASM because at 100MB it would succeed.
-// Instead we test the doubling give-up path in isolation by starting at max.
+// To test the true give-up path (cranelift also overflows at max stack) we
+// would need a program that exceeds 100MB even with cranelift, which is
+// impractical. What we CAN test: the stack is at max, cranelift is called,
+// and the stack size globals are properly restored regardless of outcome.
 func testStackDoublingGivesUp() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {

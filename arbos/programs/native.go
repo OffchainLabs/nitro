@@ -72,7 +72,7 @@ func GetAllowFallback() bool {
 // configuredNativeStackSize stores the stack size set at startup so that
 // retryOnStackOverflow can always restore to the correct base value,
 // regardless of concurrent goroutines mutating the process-wide default.
-// Only written by SetInitialNativeStackSize (called once at node startup).
+// Only written by SetInitialNativeStackSize (called once at node startup; may be called multiple times in tests).
 var configuredNativeStackSize atomic.Uint64
 
 // SetInitialNativeStackSize configures the Wasmer coroutine stack size and
@@ -103,7 +103,8 @@ func DrainStackPool() {
 	C.stylus_drain_stack_pool()
 }
 
-// MinNativeStackSize is the floor enforced by Wasmer's set_stack_size (must match wasmer_vm clamping).
+// MinNativeStackSize is the floor enforced by Wasmer's set_stack_size (must match wasmer_vm clamping
+// in crates/tools/wasmer/lib/vm/src/trap/traphandlers.rs, set_stack_size()).
 const MinNativeStackSize = 8 * 1024 // 8 KB
 
 // MaxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
@@ -297,6 +298,9 @@ func activateProgramInternal(
 						return
 					} else if !useFallback {
 						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
+					} else {
+						log.Error("stylus compilation failed and cranelift target lookup also failed",
+							"address", addressForLogging, "target", target, "compileErr", err, "craneliftTargetErr", ctErr)
 					}
 				}
 				results <- result{target: target, asm: asm, err: err}
@@ -499,7 +503,7 @@ func callProgram(
 	// overflow and we need to retry. Snapshot is cheap — it just records a journal ID.
 	snapshot := db.Snapshot()
 
-	// First attempt with the pre-compiled (singlepass) ASM.
+	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
 	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 
 	if status == userNativeStackOverflow {
@@ -599,13 +603,23 @@ func retryOnStackOverflow(
 	// always double from and restore to the same known-good value.
 	//
 	// Note: the Set/Drain/Call/Restore sequence is intentionally not serialized
-	// with a mutex. The race window is narrow and benign: if thread A's defer
-	// restores the base size and drains the pool just before thread B's
-	// doStylusCall allocates a coroutine, thread B's catch_traps will read the
-	// smaller (base) stack size. That is equivalent to thread B never having
-	// seen the doubled value — thread B will overflow again and the retry will
-	// give up, which is the same outcome as if it had never entered the
-	// doubling path. No corruption or crash results.
+	// with a mutex. The race window is narrow and benign in both directions:
+	//
+	// Direction 1 (restore before allocate): Thread A's defer restores the base
+	// size and drains the pool just before thread B's doStylusCall allocates a
+	// coroutine. Thread B gets the smaller (base) stack, overflows again, and
+	// the retry gives up — the same outcome as if it had never entered the
+	// doubling path.
+	//
+	// Direction 2 (allocate before restore): Thread B (an unrelated Stylus call)
+	// allocates a coroutine while thread A's doubled size is still active,
+	// getting an oversized stack. This wastes memory transiently but is harmless
+	// — DrainStackPool only reclaims idle/pooled stacks, not in-flight ones.
+	//
+	// For on-chain execution this race cannot affect consensus: block processing
+	// is single-threaded, so concurrent overflow retries cannot happen during
+	// state transitions. For off-chain (eth_call), the retry path is skipped
+	// entirely (see above). No corruption or crash results.
 	baseStackSize := configuredNativeStackSize.Load()
 	defer func() {
 		SetNativeStackSize(baseStackSize)
