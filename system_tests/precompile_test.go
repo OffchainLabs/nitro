@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -1363,10 +1364,17 @@ func TestDisableOffchainArbOwner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
 	builder.execConfig.DisableOffchainArbOwner = true
 	cleanup := builder.Build(t)
-	defer cleanup()
+	// The DisableOffchainArbOwner flag is set on the global OwnerPrecompile singleton,
+	// so it persists across tests running in the same process. We must:
+	// 1. Not run in parallel (DontParalellise above) to avoid affecting concurrent tests
+	// 2. Reset the flag on cleanup to avoid affecting subsequent tests
+	defer func() {
+		gethhook.GetOwnerPrecompile().SetDisableOffchain(false)
+		cleanup()
+	}()
 
 	arbOwnerABI, err := precompilesgen.ArbOwnerMetaData.GetAbi()
 	Require(t, err)
