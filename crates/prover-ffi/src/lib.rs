@@ -18,14 +18,18 @@ pub use types::{CByteArray, ResolvedPreimage, RustBytes, RustSlice};
 ///
 /// Must only be called once per vec.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) { unsafe {
-    if !vec.ptr.is_null() {
-        drop(vec.into_vec())
+pub unsafe extern "C" fn free_rust_bytes(vec: RustBytes) {
+    unsafe {
+        if !vec.ptr.is_null() {
+            drop(vec.into_vec())
+        }
     }
-}}
+}
 
 /// Go doesn't have this functionality builtin for whatever reason. Uses relaxed ordering.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) { unsafe {
-    (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
-}}
+pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
+    unsafe {
+        (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
+    }
+}

@@ -5,15 +5,17 @@ use std::{ffi::CStr, os::raw::c_char, ptr};
 
 use eyre::Report;
 
-pub unsafe fn c_string_to_string(c_str: *const c_char) -> eyre::Result<String> { unsafe {
-    if c_str.is_null() {
-        eyre::bail!("unexpected null string pointer");
+pub unsafe fn c_string_to_string(c_str: *const c_char) -> eyre::Result<String> {
+    unsafe {
+        if c_str.is_null() {
+            eyre::bail!("unexpected null string pointer");
+        }
+        CStr::from_ptr(c_str)
+            .to_str()
+            .map(str::to_owned)
+            .map_err(Report::from)
     }
-    CStr::from_ptr(c_str)
-        .to_str()
-        .map(str::to_owned)
-        .map_err(Report::from)
-}}
+}
 
 /// Copies the str-data into a libc free-able C string.
 pub fn str_to_c_string(text: &str) -> *mut libc::c_char {
