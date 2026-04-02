@@ -1,2 +1,2 @@
 ### Configuration
-- Add `--execution.disable-offchain-arbowner` flag to disable ArbOwner precompile calls outside on-chain execution
+- Add `--execution.disable-arbowner-ethcall` flag to disable ArbOwner precompile calls outside on-chain execution

@@ -1361,19 +1361,19 @@ func TestArbDebugOverwriteContractCode(t *testing.T) {
 	}
 }
 
-func TestDisableOffchainArbOwner(t *testing.T) {
+func TestDisableArbOwnerEthCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise()
-	builder.execConfig.DisableOffchainArbOwner = true
+	builder.execConfig.DisableArbOwnerEthCall = true
 	cleanup := builder.Build(t)
-	// The DisableOffchainArbOwner flag is set on the global OwnerPrecompile singleton,
+	// The DisableArbOwnerEthCall flag is set on the global OwnerPrecompile singleton,
 	// so it persists across tests running in the same process. We must:
 	// 1. Not run in parallel (DontParalellise above) to avoid affecting concurrent tests
 	// 2. Reset the flag on cleanup to avoid affecting subsequent tests
 	defer func() {
-		gethhook.GetOwnerPrecompile().SetDisableOffchain(false)
+		gethhook.GetOwnerPrecompile().SetDisableEthCall(false)
 		cleanup()
 	}()
 
