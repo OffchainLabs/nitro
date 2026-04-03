@@ -192,7 +192,7 @@ where
         };
         let provisional_mix_hash = compute_mix_hash(send_count, l1_block_number, arbos_version);
 
-        // Open state at parent block via block hash (matches reth fork pattern).
+        // Open state at parent block via block hash.
         let state_provider = self
             .provider
             .state_by_block_hash(parent_header.hash())
@@ -236,7 +236,6 @@ where
             .evm_env(&provisional_header)
             .map_err(|_| BlockProducerError::Execution("evm_env construction failed".into()))?;
 
-        // Disable EIP-161 pruning for zombie accounts.
         let mut db = StateBuilder::new()
             .with_database(StateProviderDatabase::new(state_provider.as_ref()))
             .with_bundle_update()
@@ -590,15 +589,6 @@ where
             acc.append_cached(updates.clone(), hashed_state.clone());
             (root, updates)
         };
-
-        debug!(
-            target: "block_producer",
-            changed_accounts = hashed_state.accounts.len(),
-            changed_storages = hashed_state.storages.len(),
-            total_storage_slots = hashed_state.storages.values().map(|s| s.storage.len()).sum::<usize>(),
-            ?state_root,
-            "HashedPostState from bundle"
-        );
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
         let arb_info = derive_header_info_from_state(state_provider.as_ref(), &bundle);

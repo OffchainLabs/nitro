@@ -320,7 +320,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
 
     // Read retryable data through internals.sload.
     let ticket_key_pre = ticket_storage_key(ticket_id);
-    let (calldata_words, write_bytes, nonce) = {
+    let (calldata_words, write_bytes, nonce, calldata_raw_size) = {
         // Read timeout
         let timeout_slot = map_slot(ticket_key_pre.as_slice(), TIMEOUT_OFFSET);
         let timeout_check = internals
@@ -354,7 +354,7 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
             .data;
         let n: u64 = num_tries.try_into().unwrap_or(0);
 
-        (cw, wb, n)
+        (cw, wb, n, calldata_size_u64)
     };
     let _ticket_key = ticket_key_pre;
 
@@ -389,17 +389,16 @@ fn handle_redeem(input: &mut PrecompileInput<'_>) -> PrecompileResult {
     const PARAMS_SLOAD_GAS: u64 = 50; // params.SloadGas (NOT StorageReadCost)
     let retryable_size_gas = PARAMS_SLOAD_GAS.saturating_mul(write_bytes);
 
-    // Count MakeTx burner reads: from(1) + to(1) + value(1) + calldataSize(1) + calldataWords
-    let make_tx_reads = 4 + calldata_words;
+    // MakeTx reads: from + to + callvalue + GetBytes(size + floor(len/32) loop + trailing)
+    let make_tx_reads = 5 + calldata_raw_size / 32;
 
-    // Total gas charged before gas_to_donate
-    let gas_used_so_far = COPY_GAS                                // framework argsCost (3)
-        + SLOAD_GAS                             // OpenArbosState version read (800)
-        + 2 * SLOAD_GAS                         // RetryableSizeBytes: timeout + calldataSize (1600)
-        + retryable_size_gas                    // explicit c.Burn: 50 * writeBytes
-        + SLOAD_GAS                             // OpenRetryable timeout (800)
-        + SLOAD_GAS + SSTORE_GAS                // IncrementNumTries: read + write (20800)
-        + make_tx_reads * SLOAD_GAS; // MakeTx reads
+    let gas_used_so_far = COPY_GAS
+        + SLOAD_GAS       // OpenArbosState version read
+        + 2 * SLOAD_GAS   // RetryableSizeBytes: timeout + calldataSize
+        + retryable_size_gas
+        + SLOAD_GAS       // OpenRetryable timeout
+        + SLOAD_GAS + SSTORE_GAS // IncrementNumTries
+        + make_tx_reads * SLOAD_GAS;
 
     // BacklogUpdateCost: RESERVATION used for computing gas_to_donate.
     // Actual ShrinkBacklog cost may be less (5800 if writing zero).
