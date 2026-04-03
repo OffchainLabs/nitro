@@ -111,6 +111,14 @@ func TestCraneliftFallbackInRetry(t *testing.T) {
 	}
 }
 
+func TestRetryRestoresStylusPages(t *testing.T) {
+	defer SetNativeStackSize(1024 * 1024)
+	err := testRetryRestoresStylusPages()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSelectLocalAsm(t *testing.T) {
 	localTarget := rawdb.LocalTarget()
 	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)

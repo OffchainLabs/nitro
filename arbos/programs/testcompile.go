@@ -29,7 +29,6 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -517,7 +516,7 @@ func testRetryOnStackOverflow() error {
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, multigas.ZeroGas(), true,
+		memModel, runCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
@@ -532,7 +531,7 @@ func testRetryOnStackOverflow() error {
 	status, _ = retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, offChainCtx, gas, multigas.ZeroGas(), true,
+		memModel, offChainCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userNativeStackOverflow {
@@ -732,7 +731,7 @@ func testStackDoublingGivesUp() error {
 	retryStatus, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, multigas.ZeroGas(), true,
+		memModel, runCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 
@@ -801,7 +800,7 @@ func testCraneliftFallbackInRetry() error {
 	status, _ := retryOnStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
-		memModel, runCtx, gas, multigas.ZeroGas(), true,
+		memModel, runCtx, savedState{gas: gas}, true,
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 
@@ -819,5 +818,103 @@ func testCraneliftFallbackInRetry() error {
 	}
 
 	fmt.Printf("testCraneliftFallbackInRetry: passed (status=%d, cranelift fallback worked)\n", status)
+	return nil
+}
+
+// testRetryRestoresStylusPages verifies that retryOnStackOverflow correctly
+// restores openWasmPages and everWasmPages after reverting a failed attempt.
+// These fields are not journaled, so RevertToSnapshot alone does not restore
+// them — the retry path must do it explicitly via savedState.
+func testRetryRestoresStylusPages() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	// Compile cranelift ASM so the retry path succeeds.
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling cranelift: %w", err)
+	}
+
+	// Use a tiny stack so singlepass overflows and retry is triggered.
+	SetInitialNativeStackSize(32 * 1024)
+	DrainStackPool()
+
+	gas := uint64(0xfffffffffffffff)
+	evm, scope, db := makeTestEVMScope(gas)
+	scope.Contract.Gas = gas
+
+	// Pre-populate cranelift ASM in the wasm store.
+	moduleHash := common.HexToHash("0x1234567890abcdef")
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("failed getting cranelift target: %w", err)
+	}
+	wasmStore := db.Database().WasmStore()
+	rawdb.WriteActivatedAsm(wasmStore, craneliftTarget, moduleHash, craneliftAsm)
+
+	// Set initial page counts to simulate a prior Stylus call in the same tx.
+	initialOpen := uint16(10)
+	initialEver := uint16(15)
+	db.SetStylusPages(initialOpen, initialEver)
+
+	// Inflate pages to simulate what memory.grow during the first (failed)
+	// attempt would have done. The retry must undo this.
+	db.AddStylusPages(20)
+	inflatedOpen, inflatedEver := db.GetStylusPages()
+	if inflatedOpen <= initialOpen || inflatedEver <= initialEver {
+		return fmt.Errorf("inflation failed: open=%d ever=%d", inflatedOpen, inflatedEver)
+	}
+
+	stylusParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
+	memModel := NewMemoryModel(0, 0)
+	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
+	allowFallback.Store(true)
+
+	// savedState captures the pre-call values; retryOnStackOverflow must
+	// restore them before retrying.
+	saved := savedState{
+		gas:       gas,
+		openPages: initialOpen,
+		everPages: initialEver,
+	}
+
+	snapshot := db.Snapshot()
+	status, _ := retryOnStackOverflow(
+		common.Address{}, moduleHash,
+		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
+		memModel, runCtx, saved, true,
+		db, snapshot, nil, nil, Program{version: 1},
+	)
+
+	if status == userNativeStackOverflow {
+		return fmt.Errorf("cranelift fallback did not resolve overflow")
+	}
+
+	// Verify pages were restored before the retry executed.
+	// After the successful retry, openWasmPages may have been modified by the
+	// retried program's own memory.grow calls, but everWasmPages must be at
+	// least initialEver (the restored value) and must NOT still be the
+	// inflated value from the first attempt unless the retry itself grew
+	// beyond it.
+	//
+	// The recursive_stack_overflow program doesn't call memory.grow, so
+	// openWasmPages should equal initialOpen after the retry's revert +
+	// re-execution.
+	gotOpen, gotEver := db.GetStylusPages()
+	if gotOpen != initialOpen {
+		return fmt.Errorf("openWasmPages not restored: got %d, want %d", gotOpen, initialOpen)
+	}
+	if gotEver != initialEver {
+		return fmt.Errorf("everWasmPages not restored: got %d, want %d", gotEver, initialEver)
+	}
+
+	fmt.Printf("testRetryRestoresStylusPages: passed (open=%d, ever=%d after retry)\n", gotOpen, gotEver)
 	return nil
 }

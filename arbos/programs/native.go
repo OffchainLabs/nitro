@@ -50,6 +50,15 @@ type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
+// savedState captures the contract state before a Stylus call so it can be
+// restored if the call hits a native stack overflow and needs to be retried.
+type savedState struct {
+	gas          uint64
+	usedMultiGas multigas.MultiGas
+	openPages    uint16
+	everPages    uint16
+}
+
 // allowFallback controls whether compilation failures fall back to an alternative compiler.
 // Set once at startup via SetAllowFallback; defaults to true (fallback enabled).
 var allowFallback atomic.Bool
@@ -495,8 +504,13 @@ func callProgram(
 		}
 	}
 
-	savedGas := scope.Contract.Gas
-	savedUsedMultiGas := scope.Contract.UsedMultiGas
+	openPages, everPages := db.GetStylusPages()
+	saved := savedState{
+		gas:          scope.Contract.Gas,
+		usedMultiGas: scope.Contract.UsedMultiGas,
+		openPages:    openPages,
+		everPages:    everPages,
+	}
 
 	// Snapshot the StateDB before the first attempt so we can revert any partial
 	// state changes (storage writes, subcalls) if the call hits a native stack
@@ -510,7 +524,7 @@ func callProgram(
 		status, output = retryOnStackOverflow(
 			address, moduleHash,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
-			memoryModel, runCtx, savedGas, savedUsedMultiGas, debug,
+			memoryModel, runCtx, saved, debug,
 			db, snapshot, code, params, program,
 		)
 	}
@@ -548,8 +562,7 @@ func retryOnStackOverflow(
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
-	savedGas uint64,
-	savedUsedMultiGas multigas.MultiGas,
+	saved savedState,
 	debug bool,
 	db vm.StateDB,
 	snapshot int,
@@ -579,9 +592,12 @@ func retryOnStackOverflow(
 	// Revert any partial state changes the previous attempt may have made via
 	// host I/O before the overflow. After reverting, take a fresh snapshot so
 	// we can revert again if cranelift also overflows.
+	// Note: openWasmPages/everWasmPages are not journaled, so RevertToSnapshot
+	// does not restore them — we must do it manually.
 	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = savedGas
-	scope.Contract.UsedMultiGas = savedUsedMultiGas
+	scope.Contract.Gas = saved.gas
+	scope.Contract.UsedMultiGas = saved.usedMultiGas
+	db.SetStylusPages(saved.openPages, saved.everPages)
 	snapshot = db.Snapshot()
 	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 	if status != userNativeStackOverflow {
@@ -633,8 +649,9 @@ func retryOnStackOverflow(
 
 	// Revert any partial state changes from the cranelift attempt before retrying.
 	db.RevertToSnapshot(snapshot)
-	scope.Contract.Gas = savedGas
-	scope.Contract.UsedMultiGas = savedUsedMultiGas
+	scope.Contract.Gas = saved.gas
+	scope.Contract.UsedMultiGas = saved.usedMultiGas
+	db.SetStylusPages(saved.openPages, saved.everPages)
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 }
 
