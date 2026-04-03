@@ -53,3 +53,10 @@ func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) contai
 		return res, err
 	})
 }
+
+func (c *TransactionFiltererRPCClient) ReportCurrentFilterSetId(filterSetId string) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, TransactionFiltererNamespace+"_reportCurrentFilterSetId", filterSetId)
+		return struct{}{}, err
+	})
+}

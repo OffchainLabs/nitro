@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -118,6 +120,13 @@ func (s *FilterService) GetHashStore() *HashStore {
 		return nil
 	}
 	return s.hashStore
+}
+
+func (s *FilterService) GetFilterSetId() uuid.UUID {
+	if !s.config.Enable {
+		return uuid.Nil
+	}
+	return s.hashStore.Id()
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

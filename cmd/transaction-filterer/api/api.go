@@ -4,8 +4,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -28,6 +31,7 @@ type TransactionFiltererAPI struct {
 
 	arbFilteredTransactionsManager *precompilesgen.ArbFilteredTransactionsManager
 	txOpts                         *bind.TransactOpts
+	filterSetReportingEndpoint     string
 }
 
 // Filter adds the given transaction hash to the filtered transactions set, which is managed by the ArbFilteredTransactionsManager precompile.
@@ -50,6 +54,32 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 		log.Info("Submitted filter transaction", "txHashToFilter", txHashToFilter.Hex(), "txHash", tx.Hash().Hex())
 		return tx.Hash(), nil
 	}
+}
+
+// ReportCurrentFilterSetId POSTs the given filter set ID to the configured external reporting endpoint.
+func (t *TransactionFiltererAPI) ReportCurrentFilterSetId(ctx context.Context, filterSetId string) error {
+	if t.filterSetReportingEndpoint == "" {
+		return errors.New("filter set reporting endpoint not configured")
+	}
+	payload, err := json.Marshal(map[string]string{"filterSetId": filterSetId})
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.filterSetReportingEndpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to POST filter set id: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	log.Info("Reported filter set id", "filterSetId", filterSetId)
+	return nil
 }
 
 // Only used for testing.
@@ -98,6 +128,7 @@ func NewStack(
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,
+	filterSetReportingEndpoint string,
 ) (*node.Node, *TransactionFiltererAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
@@ -118,6 +149,7 @@ func NewStack(
 	api := &TransactionFiltererAPI{
 		arbFilteredTransactionsManager: arbFilteredTransactionsManager,
 		txOpts:                         txOpts,
+		filterSetReportingEndpoint:     filterSetReportingEndpoint,
 	}
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,

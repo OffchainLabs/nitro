@@ -101,3 +101,7 @@ func (h *HashStore) Size() int {
 func (h *HashStore) LoadedAt() time.Time {
 	return h.data.Load().loadedAt
 }
+
+func (h *HashStore) Id() uuid.UUID {
+	return h.data.Load().id
+}
