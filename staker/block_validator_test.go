@@ -816,3 +816,195 @@ func TestReorgDBWriteFailureEscalates(t *testing.T) {
 	}
 	requireFatalError(t, fatalCh, dbErr)
 }
+
+// failAfterNPutsDB wraps an ethdb.Database and makes Put return an error
+// after the first N successful calls.
+type failAfterNPutsDB struct {
+	ethdb.Database
+	putErr      error
+	allowedPuts int
+	putCount    int
+}
+
+func (f *failAfterNPutsDB) Put(key []byte, value []byte) error {
+	f.putCount++
+	if f.putCount > f.allowedPuts {
+		return f.putErr
+	}
+	return f.Database.Put(key, value)
+}
+
+func TestAdvanceValidationsMultipleEntries(t *testing.T) {
+	// Verifies the advanceValidations loop correctly chains lastValidGS
+	// across multiple entries in a single call. The second entry's Start
+	// must match the first entry's End (which becomes lastValidGS after
+	// the first iteration's writeLastValidated).
+	db := rawdb.NewMemoryDatabase()
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.chainCaughtUp = true
+	v.validatedA.Store(0)
+	v.recordSentA.Store(2)
+	v.createNodesChan = make(chan struct{}, 1)
+	v.sendRecordChan = make(chan struct{}, 1)
+	v.sendValidationsChan = make(chan struct{}, 1)
+
+	gs0 := validator.GoGlobalState{Batch: 0, PosInBatch: 0}
+	gs1 := validator.GoGlobalState{Batch: 1, PosInBatch: 0}
+	gs2 := validator.GoGlobalState{Batch: 2, PosInBatch: 0}
+
+	v.lastValidGS = gs0
+
+	// Entry at pos 0: Start=gs0, End=gs1
+	status0 := &validationStatus{}
+	status0.Status.Store(uint32(ValidationDone))
+	status0.DoneEntry = &validationDoneEntry{
+		Success: true,
+		Start:   gs0,
+		End:     gs1,
+	}
+	v.validations.Store(arbutil.MessageIndex(0), status0)
+
+	// Entry at pos 1: Start=gs1 (must match End of entry 0), End=gs2
+	status1 := &validationStatus{}
+	status1.Status.Store(uint32(ValidationDone))
+	status1.DoneEntry = &validationDoneEntry{
+		Success: true,
+		Start:   gs1,
+		End:     gs2,
+	}
+	v.validations.Store(arbutil.MessageIndex(1), status1)
+
+	reorg, err := v.advanceValidations(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reorg != nil {
+		t.Fatalf("unexpected reorg: %v", *reorg)
+	}
+
+	// Both entries should have been processed.
+	if v.validated() != 2 {
+		t.Fatalf("expected validated=2, got %d", v.validated())
+	}
+	if v.lastValidGS != gs2 {
+		t.Fatalf("expected lastValidGS=%v, got %v", gs2, v.lastValidGS)
+	}
+	requireNoFatalError(t, fatalCh)
+}
+
+func TestAdvanceValidationsMultiEntryDBFailureOnSecond(t *testing.T) {
+	// First entry succeeds (DB write ok), second entry's DB write fails.
+	// Verifies that the first entry's state is committed and the error
+	// from the second is returned.
+	dbErr := errors.New("disk full")
+	db := &failAfterNPutsDB{
+		Database:    rawdb.NewMemoryDatabase(),
+		putErr:      dbErr,
+		allowedPuts: 1, // first writeLastValidated succeeds, second fails
+	}
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.chainCaughtUp = true
+	v.validatedA.Store(0)
+	v.recordSentA.Store(2)
+	v.createNodesChan = make(chan struct{}, 1)
+	v.sendRecordChan = make(chan struct{}, 1)
+	v.sendValidationsChan = make(chan struct{}, 1)
+
+	gs0 := validator.GoGlobalState{Batch: 0, PosInBatch: 0}
+	gs1 := validator.GoGlobalState{Batch: 1, PosInBatch: 0}
+	gs2 := validator.GoGlobalState{Batch: 2, PosInBatch: 0}
+
+	v.lastValidGS = gs0
+
+	status0 := &validationStatus{}
+	status0.Status.Store(uint32(ValidationDone))
+	status0.DoneEntry = &validationDoneEntry{
+		Success: true,
+		Start:   gs0,
+		End:     gs1,
+	}
+	v.validations.Store(arbutil.MessageIndex(0), status0)
+
+	status1 := &validationStatus{}
+	status1.Status.Store(uint32(ValidationDone))
+	status1.DoneEntry = &validationDoneEntry{
+		Success: true,
+		Start:   gs1,
+		End:     gs2,
+	}
+	v.validations.Store(arbutil.MessageIndex(1), status1)
+
+	reorg, err := v.advanceValidations(context.Background())
+	if err == nil {
+		t.Fatal("expected error from second entry's DB write failure")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("expected error wrapping dbErr, got: %v", err)
+	}
+	if reorg != nil {
+		t.Fatalf("expected nil reorg on DB error, got: %v", *reorg)
+	}
+
+	// First entry should have been committed before the second failed.
+	if v.validated() != 1 {
+		t.Fatalf("expected validated=1 (first entry committed), got %d", v.validated())
+	}
+	if v.lastValidGS != gs1 {
+		t.Fatalf("expected lastValidGS=%v (first entry's End), got %v", gs1, v.lastValidGS)
+	}
+
+	// The error propagates to handleValidationResult which calls possiblyFatal.
+	v.handleValidationResult(context.Background(), reorg, err, "test")
+	requireFatalError(t, fatalCh, dbErr)
+}
+
+func TestUpdateLatestStakedDBWriteFailureNotCaughtUp(t *testing.T) {
+	// When chainCaughtUp=false, UpdateLatestStaked calls writeLastValidated
+	// directly. On failure it must call possiblyFatal.
+	dbErr := errors.New("disk full")
+	db := &failingDB{Database: rawdb.NewMemoryDatabase(), putErr: dbErr}
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.chainCaughtUp = false
+	v.validatedA.Store(0)
+	// lastValidGS at zero value, so any non-zero globalState is "new".
+
+	gs := validator.GoGlobalState{Batch: 1, PosInBatch: 0}
+	v.UpdateLatestStaked(1, gs)
+
+	requireFatalError(t, fatalCh, dbErr)
+	// lastValidGS must NOT have been updated since the DB write failed.
+	if v.lastValidGS != (validator.GoGlobalState{}) {
+		t.Fatalf("lastValidGS was updated despite DB failure: got %v", v.lastValidGS)
+	}
+}
+
+func TestUpdateLatestStakedDBWriteFailureCaughtUp(t *testing.T) {
+	// When chainCaughtUp=true, UpdateLatestStaked advances in-memory state
+	// before calling writeLastValidated. On DB failure it must call
+	// possiblyFatal to shut down (since in-memory state is already ahead).
+	dbErr := errors.New("disk full")
+	db := &failingDB{Database: rawdb.NewMemoryDatabase(), putErr: dbErr}
+
+	streamer := &mockStreamer{
+		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{
+			0: {DelayedMessagesRead: 1},
+		},
+	}
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.StatelessBlockValidator = &StatelessBlockValidator{
+		db:       db,
+		streamer: streamer,
+	}
+	v.chainCaughtUp = true
+	v.validatedA.Store(0)
+	v.createNodesChan = make(chan struct{}, 1)
+
+	gs := validator.GoGlobalState{Batch: 1, PosInBatch: 0}
+	v.UpdateLatestStaked(1, gs)
+
+	requireFatalError(t, fatalCh, dbErr)
+	// In-memory state was already advanced before the DB write.
+	if v.validatedA.Load() != 1 {
+		t.Fatalf("expected validatedA=1 (advanced before DB write), got %d", v.validatedA.Load())
+	}
+}

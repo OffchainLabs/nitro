@@ -463,7 +463,7 @@ func (v *BlockValidator) possiblyFatal(err error) {
 		select {
 		case v.fatalErr <- err:
 		default:
-			log.Error("Fatal error channel full, dropping additional error", "err", err)
+			log.Warn("Fatal error channel full, dropping additional error", "err", err)
 		}
 	}
 }
@@ -793,7 +793,7 @@ func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ig
 	moreWork, err := v.createNextValidationEntry(ctx)
 	if err != nil {
 		processed, processedErr := v.streamer.GetProcessedMessageCount()
-		log.Info("validation entry creation failed", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
+		log.Debug("validation entry creation failed", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 		return v.handleValidationResult(ctx, nil, err, "createNextValidationEntry")
 	}
 	if moreWork {
@@ -969,16 +969,16 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 		if !validationStatus.DoneEntry.Success {
 			switch validationStatus.DoneEntry.ErrSeverity {
 			case validationShutdown:
-				// Both the spawner and the block validator's context are
-				// canceled.  Return the error without calling possiblyFatal
-				// or requesting a reorg — the CallIterativelyWith loop will
-				// exit once the block validator's context is done.
+				// The error was classified as a shutdown cancellation when it
+				// occurred (both contexts were canceled at classification time).
+				// Return the error without calling possiblyFatal or requesting
+				// a reorg — the CallIterativelyWith loop will exit once it
+				// notices the context is done.
 				return nil, validationStatus.DoneEntry.Err
 			case validationTransient:
-				// Spawners are tracked children stopped before the block
-				// validator's context is canceled; a context.Canceled error
-				// may arrive while ctx is still active.  Returning &pos
-				// signals a reorg/retry to the caller.
+				// A spawner stopped or a reorg canceled the per-validation
+				// context while the block validator's context is still active.
+				// Returning &pos signals a reorg/retry to the caller.
 				return &pos, nil
 			case validationFatal:
 				v.possiblyFatal(fmt.Errorf("validation: failed entry pos %d, start %v: %w", pos, validationStatus.DoneEntry.Start, validationStatus.DoneEntry.Err))
@@ -1328,9 +1328,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	// count == 1 is valid: it reorgs to keep only genesis (message index 0).
-	// All error paths below should call possiblyFatal before returning.
-	// handleValidationResult also calls possiblyFatal defensively on any
-	// returned error, so a missed call here is still escalated (not silently lost).
+	// All error paths below call possiblyFatal before returning.
 	if count == 0 {
 		err := errors.New("cannot reorg out genesis")
 		v.possiblyFatal(err)
