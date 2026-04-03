@@ -148,6 +148,17 @@ func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
 }
 
+func (tc *TestClient) RecalibrateNonce(t *testing.T, lInfo info) {
+	t.Helper()
+	for account, accInfo := range lInfo.Accounts {
+		if accInfo.PrivateKey != nil {
+			currNonce, err := tc.Client.PendingNonceAt(tc.ctx, lInfo.GetAddress(account))
+			Require(t, err)
+			lInfo.GetInfoWithPrivKey(account).Nonce.Store(currNonce)
+		}
+	}
+}
+
 func (tc *TestClient) SendSignedTx(t *testing.T, l2Client *ethclient.Client, transaction *types.Transaction, lInfo info) *types.Receipt {
 	t.Helper()
 	return SendSignedTxViaL1(t, tc.ctx, lInfo, tc.Client, l2Client, transaction)
