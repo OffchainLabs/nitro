@@ -728,7 +728,11 @@ func (r *InboxReader) GetSyncProgress(_ context.Context) (mel.MessageSyncProgres
 		var err error
 		msgCount, err = r.tracker.GetBatchMessageCount(batchProcessed - 1)
 		if err != nil {
-			return mel.MessageSyncProgress{}, err
+			return mel.MessageSyncProgress{
+				BatchSeen:      0,
+				BatchProcessed: 0,
+				MsgCount:       0,
+			}, err
 		}
 	}
 	return mel.MessageSyncProgress{
