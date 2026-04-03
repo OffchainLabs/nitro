@@ -11,13 +11,13 @@ use std::{
     sync::Arc,
 };
 
-use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
-use eyre::{eyre, Context, Result};
+use arbutil::{Bytes32, Color, DebugColor, PreimageType, format};
+use eyre::{Context, Result, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     prepare::prepare_machine,
-    utils::{file_bytes, hash_preimage, CBytes},
+    utils::{CBytes, file_bytes, hash_preimage},
     wavm::Opcode,
 };
 use serde::Deserialize;
@@ -209,10 +209,10 @@ fn main() -> Result<()> {
     }
     let mut skipping_profiling = opts.skip_until_host_io;
     while !mach.is_halted() {
-        if let Some(max_steps) = opts.max_steps {
-            if mach.get_steps() >= max_steps {
-                break;
-            }
+        if let Some(max_steps) = opts.max_steps
+            && mach.get_steps() >= max_steps
+        {
+            break;
         }
 
         let next_inst = mach.get_next_instruction().unwrap();

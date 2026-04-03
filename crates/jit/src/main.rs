@@ -6,11 +6,11 @@ use std::{fs::File, io::BufReader};
 use arbutil::Color;
 use clap::Parser;
 use eyre::Result;
-use jit::{machine::Escape, run, Opts};
+use jit::{Opts, machine::Escape, run};
 use serde::Deserialize;
 use validation::{
-    transfer::{send_failure_response, send_successful_response},
     GoGlobalState,
+    transfer::{send_failure_response, send_successful_response},
 };
 use wasmer::FrameInfo;
 
@@ -59,7 +59,9 @@ fn main() -> Result<()> {
         if let Some(expected_state) = expected_state {
             let actual_state = result.new_state.into();
             if expected_state != actual_state {
-                eprintln!("Expected state does not match actual state: {expected_state:?} != {actual_state:?}");
+                eprintln!(
+                    "Expected state does not match actual state: {expected_state:?} != {actual_state:?}"
+                );
                 std::process::exit(1);
             } else {
                 println!("Computed state matches the expected one");

@@ -7,10 +7,10 @@ use prover::programs::{
     prelude::{GasMeteredMachine, MachineMeter, MeteredMachine},
 };
 
-use crate::{program::Program, GLOBAL_STATE};
+use crate::{GLOBAL_STATE, program::Program};
 
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn user_ink_left() -> u64;
     fn user_ink_status() -> u32;
     fn user_set_ink(ink: u64, status: u32);

@@ -12,7 +12,7 @@ use arbutil::{Bytes32, PreimageType};
 use validation::ValidationRequest;
 
 use crate::{
-    machine::{argument_data_to_inbox, GlobalState, Machine},
+    machine::{GlobalState, Machine, argument_data_to_inbox},
     utils::CBytes,
 };
 

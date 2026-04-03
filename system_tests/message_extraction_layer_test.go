@@ -53,7 +53,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	// Wait for headMelState to be finalized to avoid initializing delayed message backlog
+	// Wait for headMelState to be finalized
 	for {
 		latestFinalized, err := l1Reader.Client().BlockByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 		Require(t, err)
@@ -752,15 +752,9 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	if newInitialState.ParentChainBlockHash != lastState.ParentChainBlockHash {
 		t.Fatalf("head mel state ParentChainBlockHash mismatch. Want: %s, Have: %s", lastState.ParentChainBlockHash, newInitialState.ParentChainBlockHash)
 	}
-	delayedMessageBacklog, err := mel.NewDelayedMessageBacklog(100, extractor.GetFinalizedDelayedMessagesRead)
-	Require(t, err)
-	err = melrunner.InitializeDelayedMessageBacklog(ctx, delayedMessageBacklog, melDB, newInitialState, extractor.GetFinalizedDelayedMessagesRead)
-	Require(t, err)
-	newInitialState.SetDelayedMessageBacklog(delayedMessageBacklog)
-	newInitialState.SetReadCountFromBacklog(newInitialState.DelayedMessagesSeen) // skip checking against accumulator- not the purpose of this test
 	for i := newInitialState.DelayedMessagesRead; i < newInitialState.DelayedMessagesSeen; i++ {
-		// Validates the pending unread delayed messages via accumulator
-		delayedMsgSavedByMel, err := melDB.ReadDelayedMessage(newInitialState, newInitialState.DelayedMessagesRead)
+		// Validates the delayed messages saved by MEL match the inbox tracker
+		delayedMsgSavedByMel, err := extractor.GetDelayedMessage(i)
 		Require(t, err)
 		fetchedDelayedMsg, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedMessage(ctx, i)
 		Require(t, err)

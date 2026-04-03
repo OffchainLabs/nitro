@@ -1,7 +1,7 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 #[cfg(feature = "native")]
