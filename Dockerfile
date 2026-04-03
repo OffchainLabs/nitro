@@ -140,6 +140,7 @@ RUN touch -a -m crates/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-validation-server
 
 FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -318,6 +319,18 @@ ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roo
 
 USER user
 
+# The nitro-node-rust-validator runs a single Rust validation server that handles all WASM module roots.
+FROM nitro-node AS nitro-node-rust-validator
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd curl && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY --from=prover-export /bin/validator /usr/local/bin/
+COPY scripts/rust-val-entry.sh /usr/local/bin/
+ENTRYPOINT [ "/usr/local/bin/rust-val-entry.sh" ]
+USER user
+
 # The nitro-node-validator is needed in case some modifications are needed in arbitrator or jit API.
 # That was the case when enabling arbos30.
 # We no longer support pre-arbos-30 wasmmoduleroots (newer wasmmoduleroots can execute old blocks)
@@ -339,6 +352,7 @@ USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
 COPY --from=prover-export /bin/jit                                         /usr/local/bin/
+COPY --from=prover-export /bin/validator                                    /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
@@ -349,7 +363,7 @@ COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
-    sudo && \
+    sudo curl && \
     chmod -R 555 /home/user/target/machines && \
     adduser user sudo && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
