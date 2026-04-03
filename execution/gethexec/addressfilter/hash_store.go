@@ -41,7 +41,7 @@ func HashWithPrefix(prefix string, address common.Address) common.Hash {
 }
 
 func GetHashInputPrefix(salt uuid.UUID) string {
-	return salt.String() + "::"
+	return salt.String() + "::0x"
 }
 
 func NewHashStore(cacheSize int) *HashStore {
