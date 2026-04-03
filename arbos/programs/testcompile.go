@@ -5,7 +5,8 @@
 
 package programs
 
-// This file exists because cgo isn't allowed in tests
+// This file provides CGo test helpers for native Stylus compilation and execution.
+// It lives here (not in _test.go) because cgo isn't allowed in test files.
 
 /*
 #cgo CFLAGS: -g -I../../target/include/

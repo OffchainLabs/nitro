@@ -96,7 +96,8 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
             Err(outcome) => {
                 // Detect native stack overflow FIRST — it takes priority because
                 // the DepthChecker counter may also be at zero when SIGSEGV fires,
-                // and we need the retry loop in stylus_call to see NativeStackOverflow.
+                // and we need the Go-side retry logic (retryOnStackOverflow) to see
+                // NativeStackOverflow.
                 if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
                     return Ok(NativeStackOverflow);
                 }
