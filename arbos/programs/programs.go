@@ -59,6 +59,7 @@ var cacheManagersKey = []byte{4}
 var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -270,7 +271,7 @@ func (p Programs) CallProgram(
 
 	address := contract.Address()
 	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/program_calls/%s", runCtx.RunModeMetricName()), nil).Inc(1)
-	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, evm, tracingInfo, calldata, evmData, goParams, model, runCtx, contract.Code, params, program)
 	if len(ret) > 0 && p.ArbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -775,6 +776,7 @@ const (
 	userFailure
 	userOutOfInk
 	userOutOfStack
+	userNativeStackOverflow
 )
 
 func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
@@ -790,6 +792,11 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
+	case userNativeStackOverflow:
+		// This should never be reached — callProgram returns an error
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
+		return nil, "", ErrNativeStackOverflow
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
