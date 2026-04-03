@@ -384,13 +384,13 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 	// TestIsShutdownCancellation.
 	tests := []struct {
 		name        string
-		cancelCtx   bool                   // whether to cancel the context before calling
-		validErr    error                  // error stored in DoneEntry.Err
+		cancelCtx   bool                    // whether to cancel the context before calling
+		validErr    error                   // error stored in DoneEntry.Err
 		severity    validationErrorSeverity // pre-classified severity stored in DoneEntry.ErrSeverity
-		wantReorg   bool                   // expect non-nil reorg pointer
-		wantErr     error                  // if non-nil, expect errors.Is match on returned err
-		wantFatal   bool                   // expect an error on fatalCh
-		fatalTarget error                  // if non-nil, the fatal error must match via errors.Is
+		wantReorg   bool                    // expect non-nil reorg pointer
+		wantErr     error                   // if non-nil, expect errors.Is match on returned err
+		wantFatal   bool                    // expect an error on fatalCh
+		fatalTarget error                   // if non-nil, the fatal error must match via errors.Is
 	}{
 		{
 			name:      "cancelled context returns early with context error",
