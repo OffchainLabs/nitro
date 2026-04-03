@@ -12,19 +12,19 @@ use std::{
 
 use arbutil::{Bytes32, PreimageType};
 use caller_env::GoRuntimeState;
-use eyre::{bail, ErrReport, Report, Result};
+use eyre::{ErrReport, Report, Result, bail};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use validation::local_target;
 use wasmer::{
-    imports, sys::CompilerConfig, Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory,
-    Module, RuntimeError, Store,
+    Engine, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store,
+    imports, sys::CompilerConfig,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
 use crate::{
-    arbcompress, arbcrypto, program, stylus_backend::CothreadHandler, wasip1_stub, wavmio,
-    InputMode, LocalInput, Opts, ValidatorOpts,
+    InputMode, LocalInput, Opts, ValidatorOpts, arbcompress, arbcrypto, program,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio,
 };
 
 /// A pre-compiled WASM module bundled with the Engine that produced it.
@@ -114,7 +114,7 @@ fn make_llvm_engine() -> Engine {
 
 fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Imports {
     macro_rules! func {
-        ($func:expr) => {
+        ($func:expr_2021) => {
             Function::new_typed_with_env(store, func_env, $func)
         };
     }

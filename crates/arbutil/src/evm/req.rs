@@ -3,16 +3,16 @@
 
 use std::collections::hash_map::Entry;
 
-use eyre::{bail, eyre, Result};
+use eyre::{Result, bail, eyre};
 
 use super::api::{Gas, Ink};
 use crate::{
+    Bytes20, Bytes32,
     evm::{
         api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
         storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
-    Bytes20, Bytes32,
 };
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {
@@ -280,10 +280,10 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         address: Bytes20,
         gas_left: Gas,
     ) -> Result<(D, Gas)> {
-        if let Some((stored_address, data)) = self.last_code.as_ref() {
-            if address == *stored_address {
-                return Ok((data.clone(), Gas(0)));
-            }
+        if let Some((stored_address, data)) = self.last_code.as_ref()
+            && address == *stored_address
+        {
+            return Ok((data.clone(), Gas(0)));
         }
         let mut req = Vec::with_capacity(20 + 8);
         req.extend(address);

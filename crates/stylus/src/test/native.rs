@@ -9,36 +9,35 @@
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 
 use arbutil::{
-    crypto,
+    Bytes20, Bytes32, Color, crypto,
     evm::{
         api::{EvmApi, Gas, Ink},
         user::{UserOutcome, UserOutcomeKind},
     },
-    format, Bytes20, Bytes32, Color,
+    format,
 };
-use eyre::{bail, ensure, Result};
+use eyre::{Result, bail, ensure};
 use prover::{
-    binary,
+    Machine, binary,
     programs::{
+        MiddlewareWrapper, ModuleMod,
         counter::{Counter, CountingMachine},
         prelude::*,
         start::StartMover,
-        MiddlewareWrapper, ModuleMod,
     },
-    Machine,
 };
 use wasmer::{
+    ExportIndex, Imports, Pages, Store,
     sys::{CompilerConfig, EngineBuilder},
     wasmparser::Operator,
-    ExportIndex, Imports, Pages, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
     run::RunProgram,
     test::{
-        check_instrumentation, random_bytes20, random_bytes32, random_ink, run_machine, run_native,
-        test_compile_config, test_configs, TestInstance,
+        TestInstance, check_instrumentation, random_bytes20, random_bytes32, random_ink,
+        run_machine, run_native, test_compile_config, test_configs,
     },
 };
 
@@ -52,7 +51,7 @@ fn test_ink() -> Result<()> {
     let add_one = exports.get_typed_function::<i32, i32>(&native.store, "add_one")?;
 
     macro_rules! exhaust {
-        ($ink:expr) => {
+        ($ink:expr_2021) => {
             native.set_ink(Ink($ink));
             assert_eq!(native.ink_left(), MachineMeter::Ready(Ink($ink)));
             assert!(add_one.call(&mut native.store, 32).is_err());

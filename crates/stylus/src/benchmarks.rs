@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use arbutil::{crypto, format};
 use eyre::Result;
-use prover::programs::{config::StylusConfig, STYLUS_ENTRY_POINT};
+use prover::programs::{STYLUS_ENTRY_POINT, config::StylusConfig};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};
 #[cfg(feature = "llvm")]
-use wasmer_compiler_llvm::{LLVMOptLevel, LLVM};
+use wasmer_compiler_llvm::{LLVM, LLVMOptLevel};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{env::WasmEnv, native::NativeInstance};
