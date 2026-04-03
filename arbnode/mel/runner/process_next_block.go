@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
@@ -38,9 +39,6 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
 	preState := processAction.melState
-	if preState.GetDelayedMessageBacklog() == nil { // Safety check since its relevant for native mode
-		return m.config.RetryInterval, errors.New("detected nil DelayedMessageBacklog of melState, shouldnt be possible")
-	}
 	// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
 	if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
 		return m.config.RetryInterval, nil
@@ -70,9 +68,14 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			melState: preState,
 		})
 	}
-	// Reorging of MEL states successfully completed, we can now rewind MEL validator
-	if m.reorgEventsNotifier != nil && processAction.prevStepWasReorg {
-		m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+	// Reorging of MEL states successfully completed, we can now rewind MEL validator and rebuild delayedMsgPreimages based on inbox and outbox accumulators
+	if processAction.prevStepWasReorg {
+		if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
+		}
+		if m.reorgEventsNotifier != nil {
+			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
+		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
@@ -91,6 +94,12 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	)
 	if err != nil {
 		extractionErrors.Inc(1)
+		if errors.Is(err, mel.ErrDelayedMessagePreimageNotFound) {
+			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
+				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
+			}
+			return 0, nil
+		}
 		return m.config.RetryInterval, err
 	}
 	elapsed := time.Since(start)

@@ -5,11 +5,12 @@ package arbtest
 
 import (
 	"context"
-	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -33,13 +34,10 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
-		salt := []byte("test-salt")
+		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
 		for i, addr := range addrs {
-			salted := make([]byte, len(salt)+common.AddressLength)
-			copy(salted, salt)
-			copy(salted[len(salt):], addr.Bytes())
-			hashes[i] = sha256.Sum256(salted)
+			hashes[i] = addressfilter.HashWithSalt(salt, addr)
 		}
 		store.Store(salt, hashes, "test")
 	}
@@ -588,7 +586,8 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	execNode.Sequencer.StoreFilterRulesForTest(t, []byte("test-salt"), nil, "test-digest")
+	salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	execNode.Sequencer.StoreFilterRulesForTest(t, salt, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")

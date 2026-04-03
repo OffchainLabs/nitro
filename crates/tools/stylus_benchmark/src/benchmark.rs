@@ -4,7 +4,7 @@
 use core::time::Duration;
 use std::str;
 
-use arbutil::evm::{api::Ink, EvmData};
+use arbutil::evm::{EvmData, api::Ink};
 use jit::{machine::WasmEnv, program::JitConfig};
 use prover::programs::{
     config::{CompileConfig, PricingParams},

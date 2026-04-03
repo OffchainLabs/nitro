@@ -18,7 +18,6 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 	if !ok {
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
 	}
-	saveAction.postState.GetDelayedMessageBacklog().CommitDirties()
 	if err := m.melDB.SaveBatchMetas(saveAction.postState, saveAction.batchMetas); err != nil {
 		return m.config.RetryInterval, err
 	}

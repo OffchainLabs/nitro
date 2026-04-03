@@ -17,7 +17,7 @@ pub struct StaticExecEnv;
 
 static GO_RUNTIME_STATE: Lazy<Mutex<GoRuntimeState>> = Lazy::new(Default::default);
 
-extern "C" {
+unsafe extern "C" {
     fn wavm_caller_load8(ptr: GuestPtr) -> u8;
     fn wavm_caller_load32(ptr: GuestPtr) -> u32;
     fn wavm_caller_store8(ptr: GuestPtr, val: u8);
