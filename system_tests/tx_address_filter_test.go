@@ -5,8 +5,13 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
@@ -595,5 +601,106 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
+	}
+}
+
+// TestPeriodicFilterSetIdReporting verifies that the active sequencer periodically
+// reports the current filter set ID to the transaction-filterer's external endpoint.
+// It sets up a real sequencer with address filtering, loads filter rules, and asserts
+// that the external endpoint receives the filter set ID at least twice.
+func TestPeriodicFilterSetIdReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	expectedId := uuid.New()
+	var reportCount atomic.Int32
+	received := make(chan string, 10)
+
+	// External endpoint that captures reported filter set IDs
+	externalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var payload map[string]string
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		reportCount.Add(1)
+		select {
+		case received <- payload["filterSetId"]:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalServer.Close()
+
+	// Set up transaction-filterer API stack with external endpoint
+	transactionFiltererStackConf := api.DefaultStackConfig
+	transactionFiltererStackConf.HTTPPort = 0
+	transactionFiltererStackConf.WSPort = 0
+	transactionFiltererStackConf.AuthPort = 0
+	transactionFiltererStack, _, err := api.NewStack(
+		&transactionFiltererStackConf, nil, nil, externalServer.URL,
+	)
+	Require(t, err)
+	err = transactionFiltererStack.Start()
+	Require(t, err)
+	defer transactionFiltererStack.Close()
+
+	// Build sequencer node with address filtering and short reporting interval
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.Sequencer.TransactionFiltering.AddressFilter = addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	builder.execConfig.Sequencer.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.TransactionFiltering.FilterSetReportingInterval = 500 * time.Millisecond
+
+	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
+	builder.execConfig.SyncMonitor.MsgLag = time.Hour
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execNode := builder.L2.ExecNode
+
+	// Small delay to ensure ConsensusExecutionSyncer's initial sync call completes
+	time.Sleep(500 * time.Millisecond)
+
+	// Store filter rules with a known ID so periodic reporting has something to report
+	salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	execNode.Sequencer.StoreFilterRulesForTest(t, expectedId, salt, nil, "test-digest")
+
+	// Wait for at least 2 periodic reports to arrive
+	var reports []string
+	deadline := time.After(30 * time.Second)
+	for len(reports) < 2 {
+		select {
+		case id := <-received:
+			reports = append(reports, id)
+		case <-deadline:
+			t.Fatalf("timed out waiting for 2 periodic reports, got %d (total count: %d)", len(reports), reportCount.Load())
+		}
+	}
+
+	// Verify both reports contain the expected filter set ID
+	for i, id := range reports {
+		if id != expectedId.String() {
+			t.Fatalf("report %d: expected filterSetId %s, got %s", i, expectedId, id)
+		}
 	}
 }

@@ -109,6 +109,7 @@ type TransactionFilteringConfig struct {
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
+	FilterSetReportingInterval     time.Duration                 `koanf:"filter-set-reporting-interval"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -129,6 +130,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilterSetReportingInterval:     5 * time.Minute,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -136,6 +138,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultTransactionFilteringConfig.FilterSetReportingInterval, "interval for reporting current filter set id to the transaction-filterer")
 }
 
 type DangerousConfig struct {
@@ -1739,6 +1742,29 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	if s.addressFilterService != nil {
 		s.addressFilterService.Start(ctx)
 		s.execEngine.SetAddressChecker(s.addressFilterService.GetAddressChecker())
+
+		if s.execEngine.GetTransactionFiltererRPCClient() != nil {
+			s.CallIteratively(func(ctx context.Context) time.Duration {
+				reportingInterval := s.config().TransactionFiltering.FilterSetReportingInterval
+				if reportingInterval <= 0 {
+					return 5 * time.Minute
+				}
+				// Only report if active sequencer
+				pauseChan, forwarder := s.GetPauseAndForwarder()
+				if pauseChan != nil || forwarder != nil {
+					return reportingInterval
+				}
+				filterSetId := s.addressFilterService.GetFilterSetId()
+				if filterSetId == uuid.Nil {
+					return reportingInterval
+				}
+				_, err := s.execEngine.GetTransactionFiltererRPCClient().ReportCurrentFilterSetId(filterSetId.String()).Await(ctx)
+				if err != nil {
+					log.Warn("failed to report filter set id", "filterSetId", filterSetId, "err", err)
+				}
+				return reportingInterval
+			})
+		}
 	}
 
 	if s.l1Reader != nil {

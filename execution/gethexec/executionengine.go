@@ -1357,6 +1357,10 @@ func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFil
 	s.transactionFiltererRPCClient = client
 }
 
+func (s *ExecutionEngine) GetTransactionFiltererRPCClient() *TransactionFiltererRPCClient {
+	return s.transactionFiltererRPCClient
+}
+
 func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {

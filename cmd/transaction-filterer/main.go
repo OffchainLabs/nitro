@@ -43,9 +43,10 @@ type TransactionFiltererConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	ChainId   int64                    `koanf:"chain-id"`
-	Wallet    genericconf.WalletConfig `koanf:"wallet"`
-	Sequencer rpcclient.ClientConfig   `koanf:"sequencer"`
+	ChainId                    int64                    `koanf:"chain-id"`
+	Wallet                     genericconf.WalletConfig `koanf:"wallet"`
+	Sequencer                  rpcclient.ClientConfig   `koanf:"sequencer"`
+	FilterSetReportingEndpoint string                   `koanf:"filter-set-reporting-endpoint"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -108,6 +109,7 @@ func addFlags(f *pflag.FlagSet) {
 	f.Int64("chain-id", DefaultTransactionFiltererConfig.ChainId, "chain ID of the chain being filtered")
 	genericconf.WalletConfigAddOptions("wallet", f, "")
 	rpcclient.RPCClientAddOptions("sequencer", f, &DefaultTransactionFiltererConfig.Sequencer)
+	f.String("filter-set-reporting-endpoint", DefaultTransactionFiltererConfig.FilterSetReportingEndpoint, "external endpoint to POST current filter set id")
 }
 
 func parseConfig(args []string) (*TransactionFiltererConfig, error) {
@@ -204,7 +206,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	stack, _, err := api.NewStack(&stackConf, txOpts, sequencerClient)
+	stack, _, err := api.NewStack(&stackConf, txOpts, sequencerClient, config.FilterSetReportingEndpoint)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1
