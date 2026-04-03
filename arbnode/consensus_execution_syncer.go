@@ -14,7 +14,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -108,7 +107,7 @@ func (c *ConsensusExecutionSyncer) getFinalityData(
 	}
 	msgIdx := msgCount - 1
 	msgResult, err := c.txStreamer.ResultAtMessageIndex(msgIdx)
-	if errors.Is(err, gethexec.ResultNotFound) {
+	if errors.Is(err, execution.ErrResultNotFound) {
 		log.Debug("Message result not found, node out of sync", "msgIdx", msgIdx, "err", err)
 		return nil, nil
 	} else if err != nil {

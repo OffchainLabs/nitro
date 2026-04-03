@@ -71,8 +71,9 @@ var (
 
 var (
 	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	ResultNotFound                      = errors.New("result not found")
-	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+	// Deprecated: use execution.ErrResultNotFound.
+	ResultNotFound        = execution.ErrResultNotFound
+	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
