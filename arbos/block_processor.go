@@ -497,18 +497,16 @@ func ProduceBlockAdvanced(
 							return err
 						}
 					}
+
+					// Additional post-transaction validity check
+					if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
+						return err
+					}
 					return nil
 				},
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(snap)
-				buildState.statedb.ClearTxFilter()
-				return nil, nil, err
-			}
-
-			// Additional post-transaction validity check
-			if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
 				buildState.statedb.RevertToSnapshot(snap)
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
