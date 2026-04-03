@@ -3,7 +3,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use eyre::{eyre, OptionExt, Result};
+use eyre::{OptionExt, Result, eyre};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use wasmer::sys::{CpuFeature, Target, Triple};
