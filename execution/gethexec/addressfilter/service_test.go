@@ -76,7 +76,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	salt1, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hash1 := HashWithSalt(salt1, addr1)
+	hash1 := HashWithPrefix(GetHashInputPrefix(salt1), addr1)
 
 	// Store first set
 	store.Store(salt1, []common.Hash{hash1}, "etag1")
@@ -87,7 +87,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	// Store second set with different salt (simulating hourly rotation)
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
-	hash2 := HashWithSalt(salt2, addr2)
+	hash2 := HashWithPrefix(GetHashInputPrefix(salt2), addr2)
 
 	store.Store(salt2, []common.Hash{hash2}, "etag2")
 
@@ -115,7 +115,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big1)
 		addr[18] = byte(i)
 		addresses = append(addresses, addr)
-		hash := HashWithSalt(salt1, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt1), addr)
 		hashes1 = append(hashes1, hash)
 	}
 	store.Store(salt1, hashes1, "etag")
@@ -128,7 +128,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		addr := common.BigToAddress(common.Big2)
 		addr[18] = byte(i)
 		addresses2 = append(addresses2, addr)
-		hash := HashWithSalt(salt2, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt2), addr)
 		hashes2 = append(hashes2, hash)
 	}
 
@@ -378,7 +378,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Pre-compute hashes
 	hashes := make([]common.Hash, 0, len(addresses))
 	for _, addr := range addresses {
-		hash := HashWithSalt(salt, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(salt), addr)
 		hashes = append(hashes, hash)
 	}
 
@@ -435,7 +435,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithSalt(data.salt, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(data.salt), addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if !restricted {
@@ -461,7 +461,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithSalt(data.salt, addr)
+		hash := HashWithPrefix(GetHashInputPrefix(data.salt), addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if restricted {

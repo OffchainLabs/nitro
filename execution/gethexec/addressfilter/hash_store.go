@@ -18,11 +18,12 @@ import (
 // Once created, this struct is never modified, making it safe for concurrent reads.
 // The cache is included here so it gets swapped atomically with the hash data.
 type hashData struct {
-	salt     uuid.UUID
-	hashes   map[common.Hash]struct{}
-	digest   string
-	loadedAt time.Time
-	cache    *lru.Cache[common.Address, bool] // LRU cache for address lookup results
+	salt            uuid.UUID
+	hashInputPrefix string
+	hashes          map[common.Hash]struct{}
+	digest          string
+	loadedAt        time.Time
+	cache           *lru.Cache[common.Address, bool] // LRU cache for address lookup results
 }
 
 // HashStore provides thread-safe access to restricted address hashes.
@@ -34,10 +35,13 @@ type HashStore struct {
 	cacheSize int
 }
 
-func HashWithSalt(salt uuid.UUID, address common.Address) common.Hash {
-	hashInput := salt.String() + "::0x" + common.Bytes2Hex(address.Bytes())
-	saltedHash := sha256.Sum256([]byte(hashInput))
-	return saltedHash
+func HashWithPrefix(prefix string, address common.Address) common.Hash {
+	hashInput := prefix + common.Bytes2Hex(address.Bytes())
+	return sha256.Sum256([]byte(hashInput))
+}
+
+func GetHashInputPrefix(salt uuid.UUID) string {
+	return salt.String() + "::"
 }
 
 func NewHashStore(cacheSize int) *HashStore {
@@ -56,11 +60,12 @@ func NewHashStore(cacheSize int) *HashStore {
 // A new LRU cache is created for the new data, ensuring atomic consistency.
 func (h *HashStore) Store(salt uuid.UUID, hashes []common.Hash, digest string) {
 	newData := &hashData{
-		salt:     salt,
-		hashes:   make(map[common.Hash]struct{}, len(hashes)),
-		digest:   digest,
-		loadedAt: time.Now(),
-		cache:    lru.NewCache[common.Address, bool](h.cacheSize),
+		salt:            salt,
+		hashInputPrefix: GetHashInputPrefix(salt),
+		hashes:          make(map[common.Hash]struct{}, len(hashes)),
+		digest:          digest,
+		loadedAt:        time.Now(),
+		cache:           lru.NewCache[common.Address, bool](h.cacheSize),
 	}
 	for _, hash := range hashes {
 		newData.hashes[hash] = struct{}{}
@@ -81,7 +86,7 @@ func (h *HashStore) IsRestricted(addr common.Address) bool {
 	if restricted, ok := data.cache.Get(addr); ok {
 		return restricted
 	}
-	_, restricted := data.hashes[HashWithSalt(data.salt, addr)]
+	_, restricted := data.hashes[HashWithPrefix(data.hashInputPrefix, addr)]
 	// Cache the result
 	data.cache.Add(addr, restricted)
 	return restricted
