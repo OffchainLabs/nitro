@@ -27,11 +27,18 @@ func trimHexPrefix(s string) string {
 
 // hashListPayload represents the JSON structure of the hash list file used for unmarshalling.
 type hashListPayload struct {
+	Id            string `json:"id"`
 	Salt          string `json:"salt"`
 	HashingScheme string `json:"hashing_scheme,omitempty"`
 	AddressHashes []struct {
 		Hash string `json:"hash"`
 	} `json:"address_hashes"`
+}
+
+type parsedPayload struct {
+	Id     uuid.UUID
+	Salt   uuid.UUID
+	Hashes []common.Hash
 }
 
 type S3SyncManager struct {
@@ -58,22 +65,22 @@ func (s *S3SyncManager) Initialize(ctx context.Context) error {
 
 // handleHashListData parses the downloaded JSON data and loads it into the hashStore.
 func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
-	salt, hashes, err := parseHashListJSON(data)
+	parsedData, err := parseHashListJSON(data)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	s.hashStore.Store(salt, hashes, digest)
-	log.Info("loaded restricted addr list", "hash_count", len(hashes), "etag", digest, "size_bytes", len(data))
+	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Hashes, digest)
+	log.Info("loaded restricted addr list", "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data))
 	return nil
 }
 
 // parseHashListJSON parses the JSON hash list file.
 // Expected format: {"salt": "uuid-string-representation", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
-func parseHashListJSON(data []byte) (uuid.UUID, []common.Hash, error) {
+func parseHashListJSON(data []byte) (*parsedPayload, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return uuid.Nil, nil, fmt.Errorf("JSON unmarshal failed: %w", err)
+		return nil, fmt.Errorf("JSON unmarshal failed: %w", err)
 	}
 
 	// Validate hashing scheme - warn if not Sha256 but continue for forward compatibility
@@ -84,19 +91,28 @@ func parseHashListJSON(data []byte) (uuid.UUID, []common.Hash, error) {
 
 	salt, err := uuid.Parse(payload.Salt)
 	if err != nil {
-		return uuid.Nil, nil, err
+		return nil, err
+	}
+
+	id, err := uuid.Parse(payload.Id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid filter set ID UUID: %w", err)
 	}
 
 	hashes := make([]common.Hash, len(payload.AddressHashes))
 	for i, h := range payload.AddressHashes {
 		hashBytes, err := hex.DecodeString(trimHexPrefix(h.Hash))
 		if err != nil {
-			return uuid.Nil, nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
+			return nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
 		}
 		if len(hashBytes) != 32 {
-			return uuid.Nil, nil, fmt.Errorf("invalid hash length at index %d: got %d, want 32", i, len(hashBytes))
+			return nil, fmt.Errorf("invalid hash length at index %d: got %d, want 32", i, len(hashBytes))
 		}
 		copy(hashes[i][:], hashBytes)
 	}
-	return salt, hashes, nil
+	return &parsedPayload{
+		Id:     id,
+		Salt:   salt,
+		Hashes: hashes,
+	}, nil
 }

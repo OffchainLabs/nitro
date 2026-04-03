@@ -1886,10 +1886,10 @@ func (s *Sequencer) StopAndWait() {
 	}
 }
 
-func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt uuid.UUID, hashes []common.Hash, digest string) {
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, id uuid.UUID, salt uuid.UUID, hashes []common.Hash, digest string) {
 	t.Helper()
 	if s.addressFilterService == nil {
 		t.Fatal("addressFilterService is nil")
 	}
-	s.addressFilterService.GetHashStore().Store(salt, hashes, digest)
+	s.addressFilterService.GetHashStore().Store(id, salt, hashes, digest)
 }
