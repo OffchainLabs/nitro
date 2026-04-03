@@ -27,8 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -39,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/uuid"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -72,8 +71,8 @@ var (
 var (
 	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
 	// Deprecated: use execution.ErrResultNotFound.
-	ResultNotFound = execution.ErrResultNotFound
-	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+	ResultNotFound        = execution.ErrResultNotFound
+	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
