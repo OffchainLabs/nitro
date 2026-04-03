@@ -1,9 +1,11 @@
 ---
 name: Fuzz Tests
+run-name: Twice Weekly Fuzzing tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
   workflow_dispatch:
   schedule:
+    # Run at 02:36 AM UTC on Mondays and Thursdays
     - cron: "36 2 * * 1,4"
 
 permissions:
@@ -40,12 +42,38 @@ jobs:
         include: ${{fromJson(needs.list.outputs.fuzz-tests)}}
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: "go.mod"
-      - uses: shogo82148/actions-go-fuzz/run@v1
+
+      - name: Fuzz
+        uses: shogo82148/actions-go-fuzz/run@v1
         with:
           packages: ${{ matrix.package }}
           fuzz-regexp: ${{ matrix.func }}
           fuzz-time: "1m"
+
+  notify-on-failure:
+    name: Notify Slack on failure
+    needs: [fuzz]
+    runs-on: ubuntu-4
+    if: ${{ failure() }}
+    env:
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          errors: true
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "⚠️ Fuzzing job failed! ${{ env.RUN_URL }}"
+            }
+

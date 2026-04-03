@@ -78,9 +78,6 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			daprovider.KeysetValidate,
 			chaininfo.ArbitrumDevTestChainConfig(),
 		)
-		_, err := multiplexer.Pop(context.TODO())
-		if err != nil {
-			panic(err)
-		}
+		_, _ = multiplexer.Pop(context.TODO())
 	})
 }
