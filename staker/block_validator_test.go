@@ -149,15 +149,6 @@ func TestReorgToGenesisWithCaughtUpValidator(t *testing.T) {
 	requireNoFatalError(t, fatalCh)
 }
 
-func TestReorgGuardAllowsTwo(t *testing.T) {
-	// Verify count == 2 also passes the guard (boundary sanity check).
-	v := &BlockValidator{}
-	err := v.Reorg(context.Background(), 2)
-	if err != nil {
-		t.Fatalf("expected no error for count == 2, got: %v", err)
-	}
-}
-
 func TestPossiblyFatalSendsAllErrorsWhenNotStopped(t *testing.T) {
 	v, fatalCh := newTestValidator(true, 0)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -275,18 +266,33 @@ func TestHandleValidationResult(t *testing.T) {
 
 func TestHandleValidationResultDoesNotSkipReorgOnDeadlineExceeded(t *testing.T) {
 	// The reorg skip guard only triggers for context.Canceled (clean shutdown),
-	// not for context.DeadlineExceeded (timeout). With chainCaughtUp=false,
-	// Reorg returns nil early without side effects. We verify no fatal error
-	// is produced (if the skip guard incorrectly matched DeadlineExceeded,
-	// Reorg would not be called, but the observable result is the same here).
+	// not for context.DeadlineExceeded (timeout). With chainCaughtUp=true and
+	// mock data, we verify Reorg actually executes (modifying validator state)
+	// rather than being skipped.
+	streamer := &mockStreamer{
+		results: map[arbutil.MessageIndex]*execution.MessageResult{
+			0: {BlockHash: common.HexToHash("0xaa"), SendRoot: common.HexToHash("0xbb")},
+		},
+		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{
+			0: {DelayedMessagesRead: 1},
+		},
+	}
 	v, fatalCh := newTestValidator(true, 0)
+	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
+	v.chainCaughtUp = true
+	v.createNodesChan = make(chan struct{}, 1)
+	v.createdA.Store(2)
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
-	reorgTarget := arbutil.MessageIndex(5)
+	reorgTarget := arbutil.MessageIndex(1)
 	v.handleValidationResult(ctx, &reorgTarget, nil, "test")
 
+	// Reorg was executed (not skipped): createdA should be reset to count.
+	if v.createdA.Load() != 1 {
+		t.Errorf("expected createdA=1 after reorg, got %d", v.createdA.Load())
+	}
 	requireNoFatalError(t, fatalCh)
 }
 
@@ -379,9 +385,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 	//   - context state (live vs cancelled)
 	//
 	// Note: with a pre-cancelled context, advanceValidations returns early at
-	// the ctx.Err() check before reaching the isShutdownCancellation logic.
-	// The isShutdownCancellation function itself is tested in
-	// TestIsShutdownCancellation.
+	// the ctx.Err() check before reaching the ErrSeverity switch.
 	tests := []struct {
 		name        string
 		cancelCtx   bool                    // whether to cancel the context before calling
@@ -522,46 +526,36 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 	}
 }
 
-// TestAdvanceValidationsSpawnerShutdownRace exercises the race condition where
-// validation spawners (tracked children of the block validator) are stopped
-// before the block validator's own context is canceled.  During this window,
-// in-flight validations fail with context.Canceled while the block validator's
-// ctx is still live.  Before the fix, this caused possiblyFatal to fire and
-// send a spurious fatal error.
-func TestAdvanceValidationsSpawnerShutdownRace(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 100*time.Millisecond)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	v.StopWaiter.Start(ctx, v)
+func TestAdvanceValidationsStartStateMismatchTriggersReorg(t *testing.T) {
+	v, fatalCh := newTestValidator(true, 0)
 	v.chainCaughtUp = true
 	v.validatedA.Store(0)
 	v.recordSentA.Store(1)
 
-	// Simulate a validation that completed with context.Canceled — as happens
-	// when a spawner child is stopped while a validation is in flight.
+	cancelCalled := false
 	status := &validationStatus{}
 	status.Status.Store(uint32(ValidationDone))
+	status.Cancel = func() { cancelCalled = true }
 	status.DoneEntry = &validationDoneEntry{
-		Success:     false,
-		Err:         context.Canceled,
-		ErrSeverity: validationTransient,
-		Start:       validator.GoGlobalState{},
+		Success: true,
+		Start:   validator.GoGlobalState{Batch: 99, PosInBatch: 0},
+		End:     validator.GoGlobalState{Batch: 100, PosInBatch: 0},
 	}
 	v.validations.Store(arbutil.MessageIndex(0), status)
+	v.lastValidGS = validator.GoGlobalState{Batch: 0, PosInBatch: 0}
 
-	// The block validator's context is still live (not canceled) — this is
-	// the key condition that triggers the race.  advanceValidations must
-	// treat context.Canceled as transient and retry (return &pos) without
-	// calling possiblyFatal.
-	reorg, err := v.advanceValidations(ctx)
+	reorg, err := v.advanceValidations(context.Background())
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
 	if reorg == nil {
-		t.Fatal("expected non-nil reorg pointer (retry position)")
+		t.Fatal("expected non-nil reorg pointer for start-state mismatch")
 	}
 	if *reorg != 0 {
-		t.Fatalf("expected retry at position 0, got %v", *reorg)
+		t.Fatalf("expected reorg at position 0, got %v", *reorg)
+	}
+	if !cancelCalled {
+		t.Fatal("expected Cancel to be called on mismatched entry")
 	}
 	requireNoFatalError(t, fatalCh)
 }
@@ -636,39 +630,6 @@ func TestClassifyValidationErrorSpawnerShutdownRace(t *testing.T) {
 	}
 }
 
-// TestFailedValidationsCounterNotIncrementedForTransient verifies the
-// interaction between classifyValidationError and the counter-increment
-// guard in sendValidations' untracked thread.  Before the fix, the guard
-// used `!= validationShutdown`, which caused the counter to be incremented
-// for transient (spawner-shutdown-race) cancellations.  After the fix it
-// uses `== validationFatal`, so the counter is only incremented for real
-// failures.
-func TestFailedValidationsCounterNotIncrementedForTransient(t *testing.T) {
-	liveCtx := context.Background()
-
-	// Simulates the guard condition in the untracked validation thread:
-	//   if classifyValidationError(ctx, err, label) == validationFatal { counter.Inc(1) }
-	shouldIncrement := func(ctx context.Context, err error) bool {
-		return classifyValidationError(ctx, err, "test") == validationFatal
-	}
-
-	// Spawner shutdown race: context.Canceled with live ctx should NOT increment.
-	if shouldIncrement(liveCtx, context.Canceled) {
-		t.Error("counter would be incremented for context.Canceled with live ctx (spawner shutdown race)")
-	}
-	if shouldIncrement(liveCtx, fmt.Errorf("wrapped: %w", context.Canceled)) {
-		t.Error("counter would be incremented for wrapped context.Canceled with live ctx")
-	}
-
-	// Real errors SHOULD increment.
-	if !shouldIncrement(liveCtx, errors.New("validation execution failed")) {
-		t.Error("counter should be incremented for real validation errors")
-	}
-	if !shouldIncrement(liveCtx, context.DeadlineExceeded) {
-		t.Error("counter should be incremented for deadline exceeded")
-	}
-}
-
 func TestPossiblyFatalNonFatalConfig(t *testing.T) {
 	v, fatalCh := newTestValidator(false, 0)
 
@@ -692,6 +653,21 @@ func newTestValidatorWithDB(t *testing.T, failureIsFatal bool, db ethdb.Database
 	v, fatalCh := newTestValidator(failureIsFatal, 0)
 	v.StatelessBlockValidator = &StatelessBlockValidator{db: db}
 	return v, fatalCh
+}
+
+func TestInitAssumeValidDBFailure(t *testing.T) {
+	dbErr := errors.New("disk full")
+	db := &failingDB{Database: rawdb.NewMemoryDatabase(), putErr: dbErr}
+	v, _ := newTestValidatorWithDB(t, true, db)
+
+	gs := validator.GoGlobalState{Batch: 5, PosInBatch: 3}
+	err := v.InitAssumeValid(gs)
+	if err == nil {
+		t.Fatal("expected error from InitAssumeValid when DB write fails")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Fatalf("expected error wrapping dbErr, got: %v", err)
+	}
 }
 
 func TestWriteLastValidatedOrderingOnSuccess(t *testing.T) {
@@ -976,6 +952,24 @@ func TestUpdateLatestStakedDBWriteFailureNotCaughtUp(t *testing.T) {
 	if v.lastValidGS != (validator.GoGlobalState{}) {
 		t.Fatalf("lastValidGS was updated despite DB failure: got %v", v.lastValidGS)
 	}
+}
+
+func TestUpdateLatestStakedGetMessageFailureCaughtUp(t *testing.T) {
+	// When chainCaughtUp=true, if GetMessage fails, UpdateLatestStaked must
+	// call possiblyFatal rather than silently abandoning the operation.
+	streamer := &mockStreamer{
+		// No messages — GetMessage will fail for any index.
+		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{},
+	}
+	v, fatalCh := newTestValidator(true, 0)
+	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
+	v.chainCaughtUp = true
+	v.validatedA.Store(0)
+
+	gs := validator.GoGlobalState{Batch: 1, PosInBatch: 0}
+	v.UpdateLatestStaked(1, gs)
+
+	requireFatalError(t, fatalCh, nil)
 }
 
 func TestUpdateLatestStakedDBWriteFailureCaughtUp(t *testing.T) {

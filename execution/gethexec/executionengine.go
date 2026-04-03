@@ -71,7 +71,8 @@ var (
 
 var (
 	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	ResultNotFound                      = execution.ErrResultNotFound
+	// Deprecated: use execution.ErrResultNotFound.
+	ResultNotFound = execution.ErrResultNotFound
 	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
 )
 
