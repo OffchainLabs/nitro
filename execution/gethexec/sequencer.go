@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -1910,7 +1911,7 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 	return block, hooks.GetTxErrors()
 }
 
-func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt []byte, hashes []common.Hash, digest string) {
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt uuid.UUID, hashes []common.Hash, digest string) {
 	t.Helper()
 	if s.addressFilterService == nil {
 		t.Fatal("addressFilterService is nil")
