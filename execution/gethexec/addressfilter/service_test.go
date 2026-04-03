@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/util/s3client"
@@ -21,24 +24,26 @@ func TestHashStore_IsRestricted(t *testing.T) {
 	store := NewHashStore(100)
 
 	// Test empty store
-	addr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+	addr := common.HexToAddress("0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740")
 	if store.IsRestricted(addr) {
 		t.Error("empty store should not restrict any address")
 	}
 
 	// Create test data
-	salt := []byte("test-salt")
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err, "failed to parse salt UUID")
+
 	addresses := []common.Address{
-		common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		addr,
 		common.HexToAddress("0x2222222222222222222222222222222222222222"),
 		common.HexToAddress("0x3333333333333333333333333333333333333333"),
 	}
 
 	// Pre-compute hashes
-	hashes := make([]common.Hash, 0, len(addresses))
-	for _, addr := range addresses {
-		hash := sha256.Sum256(append(salt, addr.Bytes()...))
-		hashes = append(hashes, hash)
+	hashes := []common.Hash{
+		common.HexToHash("0x8fb74f22f0aed996e7548101ae1cea812ccdf86e7ad8a781eebea00f797ce4a6"),
+		common.HexToHash("0xc9dd008409dbc74d6420ed5ca87c0e833ea10e85562b5d07403195271142f9bb"),
+		common.HexToHash("0x615d83d8357c337c142c8d795f1a9334163de4170a870af0ce21e43b67fd5be3"),
 	}
 
 	// Store the hashes
@@ -69,9 +74,9 @@ func TestHashStore_IsRestricted(t *testing.T) {
 func TestHashStore_AtomicSwap(t *testing.T) {
 	store := NewHashStore(100)
 
-	salt1 := []byte("salt1")
+	salt1, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	hash1 := sha256.Sum256(append(salt1, addr1.Bytes()...))
+	hash1 := HashWithSalt(salt1, addr1)
 
 	// Store first set
 	store.Store(salt1, []common.Hash{hash1}, "etag1")
@@ -80,9 +85,9 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	}
 
 	// Store second set with different salt (simulating hourly rotation)
-	salt2 := []byte("salt2")
+	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
-	hash2 := sha256.Sum256(append(salt2, addr2.Bytes()...))
+	hash2 := HashWithSalt(salt2, addr2)
 
 	store.Store(salt2, []common.Hash{hash2}, "etag2")
 
@@ -102,27 +107,28 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 func TestHashStore_ConcurrentAccess(t *testing.T) {
 	store := NewHashStore(100)
 
-	salt1 := []byte("test-salt")
+	salt1, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+
 	var addresses []common.Address
 	var hashes1 []common.Hash
 	for i := 0; i < 100; i++ {
 		addr := common.BigToAddress(common.Big1)
 		addr[18] = byte(i)
 		addresses = append(addresses, addr)
-		hash := sha256.Sum256(append(salt1, addr.Bytes()...))
+		hash := HashWithSalt(salt1, addr)
 		hashes1 = append(hashes1, hash)
 	}
 	store.Store(salt1, hashes1, "etag")
 
 	// prepare second set for swapping
-	salt2 := []byte("new-salt")
+	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	var addresses2 []common.Address
 	var hashes2 []common.Hash
 	for i := 0; i < 100; i++ {
 		addr := common.BigToAddress(common.Big2)
 		addr[18] = byte(i)
 		addresses2 = append(addresses2, addr)
-		hash := sha256.Sum256(append(salt2, addr.Bytes()...))
+		hash := HashWithSalt(salt2, addr)
 		hashes2 = append(hashes2, hash)
 	}
 
@@ -136,7 +142,6 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 				for i := 0; i < 100; i++ {
 					addr1 := addresses[i]
 					addr2 := addresses2[i]
-
 					if store.isAllRestricted([]common.Address{addr1, addr2}) ||
 						!store.isAnyRestricted([]common.Address{addr1, addr2}) {
 						// One should be restricted, the other not, atomic swap should ensure consistency
@@ -172,7 +177,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test valid JSON
 	// should follow format: {"salt": "hex...", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
 	validPayload := map[string]interface{}{
-		"salt": hex.EncodeToString([]byte("test-salt")),
+		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"address_hashes": []map[string]interface{}{
 			{
 				"hash":                 hex.EncodeToString(hashed_addr1[:]),
@@ -190,8 +195,9 @@ func TestParseHashListJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse valid JSON: %v", err)
 	}
-	if string(salt) != "test-salt" {
-		t.Errorf("expected salt 'test-salt', got '%s'", string(salt))
+	expectedSalt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
+	if salt != expectedSalt {
+		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), salt.String())
 	}
 	if len(hashes) != 2 {
 		t.Errorf("expected 2 hashes, got %d", len(hashes))
@@ -205,7 +211,7 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test invalid salt hex
 	invalidSaltPayload := map[string]interface{}{
-		"salt":           "not-hex",
+		"salt":           "not-UUID-salt",
 		"address_hashes": []map[string]interface{}{{"hash": hex.EncodeToString(hashed_addr1[:])}},
 	}
 	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
@@ -216,7 +222,7 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test invalid hash hex
 	invalidHashPayload := map[string]interface{}{
-		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"address_hashes": []map[string]interface{}{{"hash": "not-hex"}},
 	}
 	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
@@ -227,7 +233,7 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test wrong hash length
 	wrongLenPayload := map[string]interface{}{
-		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"address_hashes": []map[string]interface{}{{"hash": "0123456789abcdef"}},
 	}
 	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
@@ -238,7 +244,7 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test with hashing_scheme: Sha256 (should parse without error)
 	sha256Payload := map[string]interface{}{
-		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"hashing_scheme": "Sha256",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
@@ -249,16 +255,13 @@ func TestParseHashListJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse JSON with Sha256 hashing_scheme: %v", err)
 	}
-	if string(salt) != "test-salt" {
-		t.Errorf("expected salt 'test-salt', got '%s'", string(salt))
-	}
 	if len(hashes) != 1 {
 		t.Errorf("expected 1 hash, got %d", len(hashes))
 	}
 
 	// Test with unknown hashing_scheme (should parse but log warning - we can't easily verify log in test)
 	unknownSchemePayload := map[string]interface{}{
-		"salt":           hex.EncodeToString([]byte("test-salt")),
+		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"hashing_scheme": "Unknown",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
@@ -275,7 +278,7 @@ func TestParseHashListJSON(t *testing.T) {
 
 	// Test with 0x-prefixed salt and hashes (lowercase)
 	prefixedPayload := map[string]interface{}{
-		"salt": "0x" + hex.EncodeToString([]byte("test-salt")),
+		"salt": "3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7",
 		"address_hashes": []map[string]interface{}{
 			{"hash": "0x" + hex.EncodeToString(hashed_addr1[:])},
 			{"hash": "0X" + hex.EncodeToString(hashed_addr2[:])},
@@ -286,9 +289,6 @@ func TestParseHashListJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse 0x-prefixed JSON: %v", err)
 	}
-	if string(salt) != "test-salt" {
-		t.Errorf("expected salt 'test-salt', got '%s'", string(salt))
-	}
 	if len(hashes) != 2 {
 		t.Errorf("expected 2 hashes, got %d", len(hashes))
 	}
@@ -297,7 +297,7 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
-		"salt": hex.EncodeToString([]byte("test-salt")),
+		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
 		},
@@ -369,7 +369,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	store := NewHashStore(500)
 
 	// Create test data
-	salt := []byte("test-salt")
+	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
 	addresses := []common.Address{
 		common.HexToAddress("0x1111111111111111111111111111111111111111"),
 		common.HexToAddress("0x2222222222222222222222222222222222222222"),
@@ -378,7 +378,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Pre-compute hashes
 	hashes := make([]common.Hash, 0, len(addresses))
 	for _, addr := range addresses {
-		hash := sha256.Sum256(append(salt, addr.Bytes()...))
+		hash := HashWithSalt(salt, addr)
 		hashes = append(hashes, hash)
 	}
 
@@ -409,7 +409,8 @@ func TestHashStore_LoadedAt(t *testing.T) {
 
 	// After load, should have current time
 	before := time.Now()
-	store.Store([]byte("salt"), nil, "etag")
+	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
+	store.Store(salt, nil, "etag")
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()
@@ -422,7 +423,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 // from same hash-store snapshot. Results are cached in the LRU cache.
 func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // Atomic load - no lock needed
-	if len(data.salt) == 0 {
+	if data.salt == uuid.Nil {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
@@ -434,7 +435,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
+		hash := HashWithSalt(data.salt, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if !restricted {
@@ -448,7 +449,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 // from same hash-store snapshot. Results are cached in the LRU cache.
 func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // Atomic load - no lock needed
-	if len(data.salt) == 0 {
+	if data.salt == uuid.Nil {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
@@ -460,7 +461,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := sha256.Sum256(append(data.salt, addr.Bytes()...))
+		hash := HashWithSalt(data.salt, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if restricted {
