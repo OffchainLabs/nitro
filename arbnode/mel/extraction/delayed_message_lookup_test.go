@@ -535,6 +535,9 @@ func Test_sortableMessageList(t *testing.T) {
 	hash2 := common.BigToHash(big.NewInt(2))
 	messages := []*mel.DelayedInboxMessage{
 		{
+			BlockHash:              common.Hash{},
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: 0,
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					RequestId: &hash2,
@@ -542,6 +545,9 @@ func Test_sortableMessageList(t *testing.T) {
 			},
 		},
 		{
+			BlockHash:              common.Hash{},
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: 0,
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					RequestId: &hash1,

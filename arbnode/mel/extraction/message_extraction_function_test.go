@@ -278,6 +278,9 @@ func successfulLookupDelayedMsgs(
 	hash := common.MaxHash
 	delayedMsgs := []*mel.DelayedInboxMessage{
 		{
+			BlockHash:              common.Hash{},
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: 0,
 			Message: &arbostypes.L1IncomingMessage{
 				L2msg: []byte("foobar"),
 				Header: &arbostypes.L1IncomingMessageHeader{
@@ -428,6 +431,9 @@ func delayedMsgsWithOneReportForSecondBatch(
 	hash := common.MaxHash
 	return []*mel.DelayedInboxMessage{
 		{
+			BlockHash:              common.Hash{},
+			BeforeInboxAcc:         common.Hash{},
+			ParentChainBlockNumber: 0,
 			Message: &arbostypes.L1IncomingMessage{
 				L2msg: []byte("report-for-batch1"),
 				Header: &arbostypes.L1IncomingMessageHeader{

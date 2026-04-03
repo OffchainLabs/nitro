@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -86,11 +87,17 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	mockDB := &mockDelayedMessageDB{
 		DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 			0: {
+				BlockHash:              common.Hash{},
+				BeforeInboxAcc:         common.Hash{},
+				ParentChainBlockNumber: 0,
 				Message: &arbostypes.L1IncomingMessage{
 					L2msg: []byte("foobar"),
 				},
 			},
 			1: {
+				BlockHash:              common.Hash{},
+				BeforeInboxAcc:         common.Hash{},
+				ParentChainBlockNumber: 0,
 				Message: &arbostypes.L1IncomingMessage{
 					L2msg: []byte("barfoo"),
 				},
@@ -284,6 +291,9 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 				return &mockDelayedMessageDB{
 					DelayedMessages: map[uint64]*mel.DelayedInboxMessage{
 						0: {
+							BlockHash:              common.Hash{},
+							BeforeInboxAcc:         common.Hash{},
+							ParentChainBlockNumber: 0,
 							Message: &arbostypes.L1IncomingMessage{
 								L2msg: []byte("foobar"),
 							},

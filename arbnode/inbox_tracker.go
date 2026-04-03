@@ -932,6 +932,7 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 	if lastDelayedAccumulator != (common.Hash{}) {
 		// Ensure that there hasn't been a reorg and this message follows the last
 		fullMsg := mel.DelayedInboxMessage{
+			BlockHash:              common.Hash{},
 			BeforeInboxAcc:         lastDelayedAccumulator,
 			Message:                msg,
 			ParentChainBlockNumber: parentChainBlockNumber,
