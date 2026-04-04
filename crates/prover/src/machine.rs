@@ -18,7 +18,7 @@ use std::{
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
@@ -34,7 +34,7 @@ use smallvec::SmallVec;
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use crate::kzg::prove_kzg_preimage;
 use crate::{
     binary::{
@@ -2549,6 +2549,7 @@ impl Machine {
                         self.print_backtrace(true);
                         bail!("missing requested preimage for hash {}", hash);
                     };
+                    #[cfg(feature = "kzg")]
                     if preimage_ty == PreimageType::EthVersionedHash
                         && preimage.len() != BYTES_PER_BLOB
                     {
@@ -3162,9 +3163,14 @@ impl Machine {
                                 // The proofs for these preimage types are just the raw preimages.
                                 data.extend(preimage);
                             }
+                            #[cfg(feature = "kzg")]
                             PreimageType::EthVersionedHash => {
                                 prove_kzg_preimage(hash, &preimage, offset, &mut data)
                                     .expect("Failed to generate KZG preimage proof");
+                            }
+                            #[cfg(not(feature = "kzg"))]
+                            PreimageType::EthVersionedHash => {
+                                panic!("kzg feature not enabled");
                             }
                             PreimageType::DACertificate => {
                                 // We do something special here; we don't create the final proof.

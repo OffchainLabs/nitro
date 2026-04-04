@@ -1,0 +1,26 @@
+[package]
+name = "stylus-compiler-program"
+description = "SP1 program wrapping wasmer singlepass compiler for provable compilation"
+version = "0.1.0"
+edition = "2024"
+authors.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "stylus_compiler_program"
+path = "lib.rs"
+
+[[bin]]
+name = "stylus-compiler-program"
+path = "main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+prover = { workspace = true, features = ["native"] }
+serde = { workspace = true, features = ["derive"] }
+sp1-zkvm = { workspace = true, features = ["untrusted_programs", "may_dump_elf"] }
+wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }

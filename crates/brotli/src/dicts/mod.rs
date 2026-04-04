@@ -33,6 +33,7 @@ unsafe extern "C" {
 struct ForceSync<T>(T);
 
 unsafe impl<T> Sync for ForceSync<T> {}
+unsafe impl<T> Send for ForceSync<T> {}
 
 lazy_static! {
     /// Memoizes dictionary preperation.
