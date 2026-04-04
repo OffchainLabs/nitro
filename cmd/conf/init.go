@@ -3,7 +3,9 @@
 package conf
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -11,40 +13,94 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/util"
 )
 
+type GenesisOverrideConfig struct {
+	SerializedChainConfig string `koanf:"serialized-chain-config"`
+	InitialL1BaseFee      string `koanf:"initial-l1-base-fee"`
+}
+
+var GenesisOverrideConfigDefault = GenesisOverrideConfig{
+	SerializedChainConfig: "",
+	InitialL1BaseFee:      "",
+}
+
+func GenesisOverrideConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".serialized-chain-config", GenesisOverrideConfigDefault.SerializedChainConfig, "JSON-serialized chain config, can be used to provide chain config when genesis.json is not available")
+	f.String(prefix+".initial-l1-base-fee", GenesisOverrideConfigDefault.InitialL1BaseFee, "initial L1 base fee (in wei), must be set together with serialized-chain-config")
+}
+
+// ParseInitialL1BaseFee parses the InitialL1BaseFee string into a *big.Int.
+func (c *GenesisOverrideConfig) ParseInitialL1BaseFee() (*big.Int, error) {
+	if c.InitialL1BaseFee == "" {
+		return nil, fmt.Errorf("initial-l1-base-fee is not set")
+	}
+	fee, ok := new(big.Int).SetString(c.InitialL1BaseFee, 10)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse initial-l1-base-fee %q as integer", c.InitialL1BaseFee)
+	}
+	if fee.Sign() < 0 {
+		return nil, fmt.Errorf("initial-l1-base-fee must be non-negative, got %s", c.InitialL1BaseFee)
+	}
+	return fee, nil
+}
+
+func (c *GenesisOverrideConfig) Validate() error {
+	chainConfigSet := c.SerializedChainConfig != ""
+	baseFeeSet := c.InitialL1BaseFee != ""
+	if chainConfigSet != baseFeeSet {
+		return fmt.Errorf("genesis-override.serialized-chain-config and genesis-override.initial-l1-base-fee must both be set or both be empty")
+	}
+	if chainConfigSet {
+		var chainConfig params.ChainConfig
+		if err := json.Unmarshal([]byte(c.SerializedChainConfig), &chainConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal serialized-chain-config: %w", err)
+		}
+		if _, err := c.ParseInitialL1BaseFee(); err != nil {
+			return fmt.Errorf("failed to parse initial-l1-base-fee: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *GenesisOverrideConfig) IsSet() bool {
+	return c != nil && c.SerializedChainConfig != ""
+}
+
 type InitConfig struct {
-	Force                         bool          `koanf:"force"`
-	Url                           string        `koanf:"url"`
-	Latest                        string        `koanf:"latest"`
-	LatestBase                    string        `koanf:"latest-base"`
-	ValidateChecksum              bool          `koanf:"validate-checksum"`
-	DownloadPath                  string        `koanf:"download-path"`
-	DownloadPoll                  time.Duration `koanf:"download-poll"`
-	DevInit                       bool          `koanf:"dev-init"`
-	DevInitAddress                string        `koanf:"dev-init-address"`
-	DevMaxCodeSize                uint64        `koanf:"dev-max-code-size"`
-	DevInitBlockNum               uint64        `koanf:"dev-init-blocknum"`
-	Empty                         bool          `koanf:"empty"`
-	ImportWasm                    bool          `koanf:"import-wasm"`
-	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
-	ImportFile                    string        `koanf:"import-file"`
-	GenesisJsonFile               string        `koanf:"genesis-json-file"`
-	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
-	ThenQuit                      bool          `koanf:"then-quit"`
-	Prune                         string        `koanf:"prune"`
-	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
-	PruneBloomSize                uint64        `koanf:"prune-bloom-size"`
-	PruneThreads                  int           `koanf:"prune-threads"`
-	PruneTrieCleanCache           int           `koanf:"prune-trie-clean-cache"`
-	RecreateMissingStateFrom      uint64        `koanf:"recreate-missing-state-from"`
-	RebuildLocalWasm              string        `koanf:"rebuild-local-wasm"`
-	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
-	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
-	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
-	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	Force                         bool                  `koanf:"force"`
+	Url                           string                `koanf:"url"`
+	Latest                        string                `koanf:"latest"`
+	LatestBase                    string                `koanf:"latest-base"`
+	ValidateChecksum              bool                  `koanf:"validate-checksum"`
+	DownloadPath                  string                `koanf:"download-path"`
+	DownloadPoll                  time.Duration         `koanf:"download-poll"`
+	DevInit                       bool                  `koanf:"dev-init"`
+	DevInitAddress                string                `koanf:"dev-init-address"`
+	DevMaxCodeSize                uint64                `koanf:"dev-max-code-size"`
+	DevInitBlockNum               uint64                `koanf:"dev-init-blocknum"`
+	Empty                         bool                  `koanf:"empty"`
+	ImportWasm                    bool                  `koanf:"import-wasm"`
+	AccountsPerSync               uint                  `koanf:"accounts-per-sync"`
+	ImportFile                    string                `koanf:"import-file"`
+	GenesisJsonFile               string                `koanf:"genesis-json-file"`
+	GenesisJsonFileDirectory      string                `koanf:"genesis-json-file-directory"`
+	GenesisOverride               GenesisOverrideConfig `koanf:"genesis-override"`
+	ThenQuit                      bool                  `koanf:"then-quit"`
+	Prune                         string                `koanf:"prune"`
+	PruneParallelStorageTraversal bool                  `koanf:"prune-parallel-storage-traversal"`
+	PruneBloomSize                uint64                `koanf:"prune-bloom-size"`
+	PruneThreads                  int                   `koanf:"prune-threads"`
+	PruneTrieCleanCache           int                   `koanf:"prune-trie-clean-cache"`
+	RecreateMissingStateFrom      uint64                `koanf:"recreate-missing-state-from"`
+	RebuildLocalWasm              string                `koanf:"rebuild-local-wasm"`
+	ReorgToBatch                  int64                 `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch           int64                 `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch             int64                 `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool                  `koanf:"validate-genesis-assertion"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -64,6 +120,7 @@ var InitConfigDefault = InitConfig{
 	ImportFile:                    "",
 	GenesisJsonFile:               "",
 	GenesisJsonFileDirectory:      "",
+	GenesisOverride:               GenesisOverrideConfigDefault,
 	AccountsPerSync:               100000,
 	ThenQuit:                      false,
 	Prune:                         "",
@@ -97,6 +154,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.String(prefix+".genesis-json-file-directory", InitConfigDefault.GenesisJsonFileDirectory, "directory path for genesis json files - will search for a file named by the chain ID")
+	GenesisOverrideConfigAddOptions(prefix+".genesis-override", f)
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Bool(prefix+".prune-parallel-storage-traversal", InitConfigDefault.PruneParallelStorageTraversal, "if true: use parallel pruning per account")
@@ -118,6 +176,9 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func (c *InitConfig) Validate() error {
 	if c.Empty && c.GenesisJsonFile != "" {
 		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
+	}
+	if err := c.GenesisOverride.Validate(); err != nil {
+		return fmt.Errorf("invalid init.genesis-override: %w", err)
 	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
