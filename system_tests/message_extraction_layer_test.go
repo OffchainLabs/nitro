@@ -626,32 +626,27 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
-	{
-		timeout := time.NewTimer(time.Minute)
-		defer timeout.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			// Verify that both MEL and TxStreamer detected the reorg
-			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
-				break
-			}
-			select {
-			case <-tick.C:
-			case <-timeout.C:
-				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
-			}
+	// Wait for the reorg to complete: MEL and TxStreamer reorg logs, then check balance.
+	var reorgLogsFound bool
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if logHandler.WasLogged("MEL detected L1 reorg") &&
+			logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+			reorgLogsFound = true
+			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// Verify that after reorg handling, resulting balance in the account is correct
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if !reorgLogsFound {
+		t.Fatal("timed out waiting for reorg logs")
+	}
+	expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+	bal, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
 	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+		t.Fatalf("BalanceAt: %v", err)
 	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	if bal.Cmp(expectedBalance) != 0 {
+		t.Fatalf("balance=%v, want %v", bal, expectedBalance)
 	}
 }
 

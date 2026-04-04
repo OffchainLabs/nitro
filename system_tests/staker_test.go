@@ -196,9 +196,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
+	pcdsA := l2nodeA.GetParentChainDataSource()
 	statelessA, err := staker.NewStatelessBlockValidator(
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
+		pcdsA,
+		pcdsA,
 		l2nodeA.TxStreamer,
 		execNodeA,
 		l2nodeA.ConsensusDB,
@@ -221,9 +222,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		l2nodeA.DeployInfo.Rollup,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
@@ -255,9 +256,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.Strategy = "MakeNodes"
+	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
+		pcdsB,
+		pcdsB,
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ConsensusDB,
@@ -280,9 +282,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
 		l2nodeB.DeployInfo.Rollup,
-		l2nodeB.InboxTracker,
+		pcdsB,
 		l2nodeB.TxStreamer,
-		l2nodeB.InboxReader,
+		pcdsB,
 		nil,
 	)
 	Require(t, err)
@@ -306,9 +308,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
 		l2nodeA.DeployInfo.Rollup,
-		l2nodeA.InboxTracker,
+		pcdsA,
 		l2nodeA.TxStreamer,
-		l2nodeA.InboxReader,
+		pcdsA,
 		nil,
 	)
 	Require(t, err)
