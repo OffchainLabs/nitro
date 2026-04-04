@@ -60,7 +60,7 @@ impl ValidationInput {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
-        } else {
+        } else if !cfg!(feature = "sp1") {
             for (arch, wasms) in &req.user_wasms {
                 if !wasms.is_empty() {
                     return Err(format!("bad stylus arch: got {arch}, expected {target}"));
@@ -147,7 +147,6 @@ impl AsRef<[u8]> for UserWasm {
     }
 }
 
-/// The `Vec<u8>` is assumed to be compressed using `brotli`, and must be decompressed before use.
 impl TryFrom<Vec<u8>> for UserWasm {
     type Error = brotli::BrotliStatus;
 

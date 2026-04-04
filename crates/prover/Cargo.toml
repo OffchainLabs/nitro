@@ -36,7 +36,7 @@ serde_with = { workspace = true, features = ["base64"] }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
-structopt = { workspace = true }
+structopt = { workspace = true, optional = true }
 validation = { workspace = true }
 wasmer = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true, features = ["std", "unwind", "avx"] }
@@ -46,7 +46,7 @@ wat = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-rand = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
 
 [build-dependencies]
 forward = { workspace = true }
@@ -60,10 +60,11 @@ name = "prover"
 crate-type = ["lib"]
 
 [features]
-default = ["native", "rayon", "singlepass_rayon"]
+default = ["native", "rayon", "singlepass_rayon", "kzg", "dep:structopt"]
 counters = []
+kzg = ["dep:c-kzg"]
 libc = ["dep:libc"]
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
 cc_brotli = ["brotli/cc_brotli"]

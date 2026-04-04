@@ -4,7 +4,7 @@
 use std::{convert::TryInto, fs::File, io::Read, path::Path};
 
 use arbutil::PreimageType;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use c_kzg::Blob;
 use digest::Digest;
 use eyre::{Result, eyre};
@@ -16,7 +16,7 @@ use wasmparser::{RefType, TableType};
 pub use crate::cbytes::CBytes;
 #[cfg(feature = "libc")]
 pub use crate::cbytes::CBytesIntoIter;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
 
 /// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
@@ -80,6 +80,7 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
         PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
         PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
+        #[cfg(feature = "kzg")]
         PreimageType::EthVersionedHash => {
             // TODO: really we should also accept what version it is,
             // but right now only one version is supported by this hash format anyways.
@@ -88,6 +89,10 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
             let mut commitment_hash: [u8; 32] = Sha256::digest(*commitment.to_bytes()).into();
             commitment_hash[0] = 1;
             Ok(commitment_hash)
+        }
+        #[cfg(not(feature = "kzg"))]
+        PreimageType::EthVersionedHash => {
+            eyre::bail!("EthVersionedHash preimage hashing requires the 'kzg' feature");
         }
         PreimageType::DACertificate => {
             // There is no way for us to compute the hash of the preimage for DACertificate.

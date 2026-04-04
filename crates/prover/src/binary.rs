@@ -341,6 +341,7 @@ pub fn parse_with_version<'a>(
     features.set(WasmFeatures::GC, false);
     features.set(WasmFeatures::CM_NESTED_NAMES, false);
     features.set(WasmFeatures::GC_TYPES, true);
+
     Validator::new_with_features(features)
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
