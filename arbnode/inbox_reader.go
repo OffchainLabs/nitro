@@ -100,6 +100,9 @@ type InboxReader struct {
 	// Atomic
 	lastSeenBatchCount atomic.Uint64
 	lastReadBatchCount atomic.Uint64
+
+	// Only accessed from the run() goroutine
+	consecutiveDelayedMismatch int
 }
 
 func NewInboxReader(tracker *InboxTracker, client *ethclient.Client, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
@@ -578,7 +581,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					"haveBeforeAcc", havePrevAcc,
 					"readLastAcc", lazyHashLogging{func() common.Hash {
 						// Only compute this if we need to log it, as it's somewhat expensive
-						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						acc, err := delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						if err != nil {
+							log.Warn("Failed to compute AfterInboxAcc for logging", "err", err)
+							return common.Hash{}
+						}
+						return acc
 					}},
 				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
@@ -595,11 +603,23 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if delayedMismatch {
 					reorgingDelayed = true
-				}
-				if len(sequencerBatches) > 0 {
-					readAnyBatches = true
-					r.lastReadBatchCount.Store(sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1)
-					storeSeenBatchCount()
+					r.consecutiveDelayedMismatch++
+					if r.consecutiveDelayedMismatch >= 10 {
+						log.Error("Persistent delayed message mismatch, inbox reader may be stuck",
+							"consecutiveMismatches", r.consecutiveDelayedMismatch,
+							"numBatches", len(sequencerBatches))
+					} else {
+						log.Warn("Skipping batch count update due to delayed message mismatch",
+							"consecutiveMismatches", r.consecutiveDelayedMismatch,
+							"numBatches", len(sequencerBatches))
+					}
+				} else {
+					r.consecutiveDelayedMismatch = 0
+					if len(sequencerBatches) > 0 {
+						readAnyBatches = true
+						r.lastReadBatchCount.Store(sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1)
+						storeSeenBatchCount()
+					}
 				}
 			}
 			// #nosec G115
@@ -632,16 +652,36 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 }
 
+// addMessages adds delayed messages and sequencer batches to the tracker. If the
+// sequencer batches detect a delayed accumulator mismatch, it rolls back the
+// delayed messages that were just committed. This method is only called from the
+// single InboxReader goroutine in run(), so prevDelayedCount remains valid
+// through the rollback (no concurrent modifications).
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*mel.SequencerInboxBatch, delayedMessages []*mel.DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	prevDelayedCount, err := r.tracker.GetDelayedCount()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("getting delayed message count before adding messages: %w", err)
+	}
+	err = r.tracker.AddDelayedMessages(delayedMessages)
+	if err != nil {
+		return false, fmt.Errorf("adding delayed messages: %w", err)
 	}
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
+		// Roll back the delayed messages that were just committed so they don't
+		// remain as orphans in the DB without corresponding batches.
+		if rollbackErr := r.tracker.ReorgDelayedTo(prevDelayedCount); rollbackErr != nil {
+			return false, fmt.Errorf("failed to rollback delayed messages after sequencer batch mismatch (prevDelayedCount=%d): rollback: %w; original mismatch: %w", prevDelayedCount, rollbackErr, err)
+		}
+		log.Warn("Rolled back delayed messages after sequencer batch mismatch",
+			"prevDelayedCount", prevDelayedCount,
+			"attemptedDelayedCount", prevDelayedCount+uint64(len(delayedMessages)),
+			"numBatches", len(sequencerBatches),
+			"mismatchErr", err,
+		)
 		return true, nil
 	} else if err != nil {
-		return false, err
+		return false, fmt.Errorf("adding sequencer batches: %w", err)
 	}
 	return false, nil
 }
@@ -809,8 +849,8 @@ func (b *batchDataProviderImpl) GetDelayedCount() (uint64, error) {
 	return b.r.tracker.GetDelayedCount()
 }
 
-func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) {
-	b.r.tracker.SetBlockValidator(validator)
+func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) error {
+	return b.r.tracker.SetBlockValidator(validator)
 }
 
 func (b *batchDataProviderImpl) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

@@ -15,17 +15,19 @@ var (
 	SequencerBatchMetaPrefix            []byte = []byte("s") // maps a batch sequence number to BatchMetadata
 	DelayedSequencedPrefix              []byte = []byte("a") // maps a delayed message count to the first sequencer batch sequence number with this delayed count
 	MelStatePrefix                      []byte = []byte("l") // maps a parent chain block number to its computed MEL state
-	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an accumulator and an RLP encoded message [TODO(NIT-4209): might need to replace or be replaced by RlpDelayedMessagePrefix]
-	MelSequencerBatchMetaPrefix         []byte = []byte("q") // maps a batch sequence number to BatchMetadata [TODO(NIT-4209): might need to replace or be replaced by SequencerBatchMetaPrefix]
+	MelDelayedMessagePrefix             []byte = []byte("y") // maps a delayed sequence number to an RLP-encoded DelayedInboxMessage (coexists with RlpDelayedMessagePrefix for legacy data below the initial MEL boundary)
+	MelSequencerBatchMetaPrefix         []byte = []byte("q") // maps a batch sequence number to BatchMetadata (coexists with SequencerBatchMetaPrefix for legacy data below the initial MEL boundary)
 
-	MessageCountKey             []byte = []byte("_messageCount")                // contains the current message count
-	LastPrunedMessageKey        []byte = []byte("_lastPrunedMessageKey")        // contains the last pruned message key
-	LastPrunedDelayedMessageKey []byte = []byte("_lastPrunedDelayedMessageKey") // contains the last pruned RLP delayed message key
-	DelayedMessageCountKey      []byte = []byte("_delayedMessageCount")         // contains the current delayed message count
-	SequencerBatchCountKey      []byte = []byte("_sequencerBatchCount")         // contains the current sequencer message count
-	DbSchemaVersion             []byte = []byte("_schemaVersion")               // contains a uint64 representing the database schema version
-	HeadMelStateBlockNumKey     []byte = []byte("_headMelStateBlockNum")        // contains the latest computed MEL state's parent chain block number
-	InitialMelStateBlockNumKey  []byte = []byte("_initialMelStateBlockNum")     // contains the initial MEL state's parent chain block number (legacy/MEL boundary)
+	MessageCountKey                   []byte = []byte("_messageCount")                      // contains the current message count
+	LastPrunedMessageKey              []byte = []byte("_lastPrunedMessageKey")              // contains the last pruned message key
+	LastPrunedDelayedMessageKey       []byte = []byte("_lastPrunedDelayedMessageKey")       // contains the last pruned RLP delayed message key
+	LastPrunedLegacyDelayedMessageKey []byte = []byte("_lastPrunedLegacyDelayedMessageKey") // contains the last pruned legacy delayed message key
+	LastPrunedMelDelayedMessageKey    []byte = []byte("_lastPrunedMelDelayedMessageKey")    // contains the last pruned MEL delayed message key
+	DelayedMessageCountKey            []byte = []byte("_delayedMessageCount")               // contains the current delayed message count
+	SequencerBatchCountKey            []byte = []byte("_sequencerBatchCount")               // contains the current sequencer message count
+	DbSchemaVersion                   []byte = []byte("_schemaVersion")                     // contains a uint64 representing the database schema version
+	HeadMelStateBlockNumKey           []byte = []byte("_headMelStateBlockNum")              // contains the latest computed MEL state's parent chain block number
+	InitialMelStateBlockNumKey        []byte = []byte("_initialMelStateBlockNum")           // contains the initial MEL state's parent chain block number (legacy/MEL boundary)
 )
 
 const CurrentDbSchemaVersion uint64 = 2

@@ -55,8 +55,9 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapRead
 	return tracker, nil
 }
 
-func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
+func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) error {
 	t.validator = validator
+	return nil
 }
 
 func (t *InboxTracker) Initialize() error {
@@ -101,7 +102,7 @@ func (t *InboxTracker) Initialize() error {
 	return nil
 }
 
-var AccumulatorNotFoundErr = errors.New("accumulator not found")
+var AccumulatorNotFoundErr = mel.ErrAccumulatorNotFound
 
 func (t *InboxTracker) deleteBatchMetadataStartingAt(dbBatch ethdb.Batch, startIndex uint64) error {
 	t.batchMetaMutex.Lock()
@@ -217,55 +218,8 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-// err will return unexpected/internal errors
-// bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := t.GetBatchCount()
-	if err != nil {
-		return 0, false, err
-	}
-	if batchCount == 0 {
-		return 0, false, nil
-	}
-	low := uint64(0)
-	high := batchCount - 1
-	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
-	if err != nil {
-		return 0, false, err
-	}
-	if lastBatchMessageCount <= pos {
-		return 0, false, nil
-	}
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := t.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, false, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, true, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, true, nil
-		} else {
-			// implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < oldHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-		if high == low {
-			return high, true, nil
-		}
-	}
+	return arbutil.FindInboxBatchContainingMessage(t, pos)
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
@@ -381,7 +335,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 	// This math is safe to do as we know len(messages) > 0
 	haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
 	if err == nil {
-		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
+		lastMsgAcc, accErr := messages[len(messages)-1].AfterInboxAcc()
+		if accErr != nil {
+			return accErr
+		}
+		if haveLastAcc == lastMsgAcc {
 			// We already have these delayed messages
 			return nil
 		}
@@ -415,7 +373,10 @@ func (t *InboxTracker) AddDelayedMessages(messages []*mel.DelayedInboxMessage) e
 		if nextAcc != message.BeforeInboxAcc {
 			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
-		nextAcc = message.AfterInboxAcc()
+		nextAcc, err = message.AfterInboxAcc()
+		if err != nil {
+			return fmt.Errorf("computing AfterInboxAcc for delayed message %v: %w", seqNum, err)
+		}
 
 		if firstPos == pos {
 			// Check if this message is a duplicate
@@ -877,7 +838,11 @@ func (t *InboxTracker) FinalizedDelayedMessageAtPosition(
 			Message:                msg,
 			ParentChainBlockNumber: parentChainBlockNumber,
 		}
-		if fullMsg.AfterInboxAcc() != acc {
+		fullMsgAcc, accErr := fullMsg.AfterInboxAcc()
+		if accErr != nil {
+			return nil, common.Hash{}, 0, fmt.Errorf("computing AfterInboxAcc while sequencing: %w", accErr)
+		}
+		if fullMsgAcc != acc {
 			return nil, common.Hash{}, 0, errors.New("delayed message accumulator mismatch while sequencing")
 		}
 	}

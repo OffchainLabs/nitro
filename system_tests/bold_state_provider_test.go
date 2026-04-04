@@ -82,7 +82,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := getBatchMessageCount(t, l2node, totalBatches-1)
 	Require(t, err)
 	log.Info("Status", "totalBatches", totalBatches, "totalMessageCount", totalMessageCount)
 	t.Logf("totalBatches: %v, totalMessageCount: %v\n", totalBatches, totalMessageCount)
@@ -100,7 +100,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 		if lastInfo.GlobalState.Batch >= totalBatches {
 			return true
 		}
-		batchMsgCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(lastInfo.GlobalState.Batch)
+		batchMsgCount, err := getBatchMessageCount(t, l2node, lastInfo.GlobalState.Batch)
 		if err != nil {
 			t.Logf("GetBatchMessageCount error (will retry): %v", err)
 			return false
@@ -199,7 +199,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.GetParentChainDataSource().GetBatchMessageCount(totalBatches - 1)
+	totalMessageCount, err := getBatchMessageCount(t, l2node, totalBatches-1)
 	Require(t, err)
 
 	// Wait until the validator has validated the batches.
@@ -382,7 +382,8 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
-	pcds := l2node.GetParentChainDataSource()
+	pcds, err := l2node.GetParentChainDataSource()
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		pcds,
 		pcds,

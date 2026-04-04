@@ -26,7 +26,7 @@ type mockInboxTracker struct {
 }
 
 // Implement staker.InboxTrackerInterface - only the methods we use
-func (m *mockInboxTracker) SetBlockValidator(v *staker.BlockValidator) {}
+func (m *mockInboxTracker) SetBlockValidator(v *staker.BlockValidator) error { return nil }
 func (m *mockInboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
 	return nil, nil
 }

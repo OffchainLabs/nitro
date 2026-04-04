@@ -108,7 +108,6 @@ func TestLogsFetcher(t *testing.T) {
 	require.True(t, reflect.DeepEqual(fetcher.logsByTxIndex[batchBlockHash][batchTxIndex], batchTxLogs[:2]))             // last log shouldn't be returned by the filter query
 	require.True(t, reflect.DeepEqual(fetcher.logsByTxIndex[delayedBlockHash][delayedMsgTxIndex], delayedMsgTxLogs[:3])) // last log shouldn't be returned by the filter query
 
-	// TODO: remove this when mel runner code is synced, this is added temporarily to fix lint failures
 	_, err := fetcher.getHeaderByNumber(ctx, 0)
 	require.Error(t, err)
 }

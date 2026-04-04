@@ -151,7 +151,7 @@ func testChallengeProtocolBOLDVirtualBlocks(t *testing.T, wrongAtFirstVirtual bo
 	})
 	defer cleanupEvilNode()
 
-	go keepChainMoving(t, 3*time.Second, ctx, builder.L1Info, builder.L1.Client)
+	go keepChainMoving(t, ctx, 3*time.Second, builder.L1Info, builder.L1.Client)
 
 	builder.L1Info.GenerateAccount("HonestAsserter")
 	fundBoldStaker(t, ctx, builder, "HonestAsserter")
@@ -281,8 +281,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 	}
 
 	var stateManager BoldStateProviderInterface
-	var err error
 	cacheDir := t.TempDir()
+	pcds, err := node.ConsensusNode.GetParentChainDataSource()
+	Require(t, err)
 	stateManager, err = bold.NewBOLDStateProvider(
 		node.ConsensusNode.BlockValidator,
 		node.ConsensusNode.StatelessBlockValidator,
@@ -293,9 +294,9 @@ func startBoldChallengeManager(t *testing.T, ctx context.Context, builder *NodeB
 			CheckBatchFinality:     false,
 		},
 		cacheDir,
-		node.ConsensusNode.GetParentChainDataSource(),
+		pcds,
 		node.ConsensusNode.TxStreamer,
-		node.ConsensusNode.GetParentChainDataSource(),
+		pcds,
 		nil,
 	)
 	Require(t, err)

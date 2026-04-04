@@ -14,7 +14,7 @@ import (
 type FSMState uint8
 
 const (
-	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
+	// Value 0 is reserved so the zero value of FSMState does not correspond to any valid state.
 	_ FSMState = iota
 	Start
 	ProcessingNextBlock
@@ -48,7 +48,7 @@ type backToStart struct{}
 // An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
 	melState         *mel.State
-	prevStepWasReorg bool // Helps prevent unnecessary continuous rewinding of MEL validator when we detect L1 reorg
+	prevStepWasReorg bool // Triggers one-time preimage rebuild and block validator notification after a reorg
 }
 
 // An action that transitions the FSM to the saving messages state.

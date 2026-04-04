@@ -172,7 +172,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
-	_, err = l2Node.GetParentChainDataSource().GetBatchMetadata(0)
+	_, err = getBatchMetadata(t, l2Node, 0)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
@@ -381,7 +381,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	locator, err := server_common.NewMachineLocator(builder.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	asserterPcds := asserterL2.GetParentChainDataSource()
+	asserterPcds, err := asserterL2.GetParentChainDataSource()
+	Require(t, err)
 	asserterValidator, err := staker.NewStatelessBlockValidator(asserterPcds, asserterPcds, asserterL2.TxStreamer, asserterExec, asserterL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)
@@ -399,7 +400,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerPcds := challengerL2.GetParentChainDataSource()
+	challengerPcds, err := challengerL2.GetParentChainDataSource()
+	Require(t, err)
 	challengerValidator, err := staker.NewStatelessBlockValidator(challengerPcds, challengerPcds, challengerL2.TxStreamer, challengerExec, challengerL2.ConsensusDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack, locator.LatestWasmModuleRoot())
 	if err != nil {
 		Fatal(t, err)

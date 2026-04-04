@@ -17,6 +17,65 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+// keccakPreimages returns the Keccak256 preimage sub-map from a PreimagesMap,
+// or an error if the sub-map has not been initialized.
+func keccakPreimages(dest daprovider.PreimagesMap) (map[common.Hash][]byte, error) {
+	m, ok := dest[arbutil.Keccak256PreimageType]
+	if !ok {
+		return nil, errors.New("keccak256 preimage map not initialized")
+	}
+	return m, nil
+}
+
+// recordDelayedChainLink stores a hash chain link preimage in the LRU cache
+// and optionally in the validation preimage map.
+func (s *State) recordDelayedChainLink(newAcc common.Hash, preimage []byte) error {
+	s.delayedMsgPreimages.Add(newAcc, preimage)
+	if s.delayedMsgPreimagesDest == nil {
+		return nil
+	}
+	keccakMap, err := keccakPreimages(s.delayedMsgPreimagesDest)
+	if err != nil {
+		return err
+	}
+	keccakMap[newAcc] = preimage
+	return nil
+}
+
+// recordDelayedContent stores message content in the validation preimage map
+// when recording is enabled. No-op when not recording.
+func (s *State) recordDelayedContent(hash common.Hash, content []byte) error {
+	if s.delayedMsgPreimagesDest == nil {
+		return nil
+	}
+	keccakMap, err := keccakPreimages(s.delayedMsgPreimagesDest)
+	if err != nil {
+		return err
+	}
+	keccakMap[hash] = content
+	return nil
+}
+
+// HashChainLinkHash computes the next accumulator in a Keccak256 hash chain
+// without allocating the preimage. Use this when only the hash is needed.
+func HashChainLinkHash(prevAcc, itemHash common.Hash) common.Hash {
+	var buf [2 * common.HashLength]byte
+	copy(buf[:common.HashLength], prevAcc[:])
+	copy(buf[common.HashLength:], itemHash[:])
+	return crypto.Keccak256Hash(buf[:])
+}
+
+// HashChainLink computes the next accumulator in a Keccak256 hash chain.
+// Returns the new accumulator hash and the 64-byte preimage (prevAcc || itemHash).
+// This is the single canonical implementation of the hash chain step used throughout
+// MEL for both message and delayed message accumulators, in native and replay modes.
+func HashChainLink(prevAcc, itemHash common.Hash) (newAcc common.Hash, preimage []byte) {
+	preimage = make([]byte, 2*common.HashLength)
+	copy(preimage[:common.HashLength], prevAcc[:])
+	copy(preimage[common.HashLength:], itemHash[:])
+	return crypto.Keccak256Hash(preimage), preimage
+}
+
 // SplitPreimage validates that a preimage is exactly 2*common.HashLength bytes
 // and splits it into left (previous accumulator) and right (message hash) halves.
 func SplitPreimage(preimage []byte) (left, right common.Hash, err error) {
@@ -40,7 +99,7 @@ type State struct {
 	ParentChainPreviousBlockHash       common.Hash
 	BatchCount                         uint64
 	MsgCount                           uint64
-	LocalMsgAccumulator                common.Hash // starts at zero hash for each clone; updated only by AccumulateMessage; represents messages accumulated during processing of this specific parent chain block
+	LocalMsgAccumulator                common.Hash // zeroed on Clone(); updated only by AccumulateMessage. In production, each clone processes exactly one parent chain block.
 	DelayedMessagesRead                uint64
 	DelayedMessagesSeen                uint64
 	DelayedMessageInboxAcc             common.Hash
@@ -48,18 +107,20 @@ type State struct {
 
 	msgPreimagesDest        daprovider.PreimagesMap
 	delayedMsgPreimagesDest daprovider.PreimagesMap
-	// delayedMsgPreimages is always populated during delayed message operations
-	// (inbox push, pour, outbox pop) regardless of recording mode. It enables
-	// the pour and pop operations in native mode without requiring full recording.
+	// delayedMsgPreimages is populated during inbox push and pour operations
+	// regardless of recording mode. Pop reads from this cache via Peek.
+	// It enables the pour and pop operations in native mode without requiring full recording.
 	delayedMsgPreimages *containers.LruCache[common.Hash, []byte]
 
-	// initMsg holds the init delayed message (index 0) in memory. It is both
-	// accumulated and read in the same block, so it may not be in the DB yet
-	// when ReadDelayedMessage is called in native mode.
+	// initMsg holds the init delayed message (index 0), set during the first
+	// AccumulateDelayedMessage call (when DelayedMessagesSeen is 0). It persists
+	// through Clone() and is accessed by Database.ReadDelayedMessage as a fallback
+	// when the message has not yet been written to the DB (accumulated and read in
+	// the same block).
 	initMsg *DelayedInboxMessage
 }
 
-// MessageConsumer is an interface to be implemented by readers of MEL such as transaction streamer of the nitro node
+// MessageConsumer is an interface for downstream consumers of messages extracted by MEL.
 type MessageConsumer interface {
 	PushMessages(
 		ctx context.Context,
@@ -70,93 +131,87 @@ type MessageConsumer interface {
 
 func (s *State) InitMsg() *DelayedInboxMessage { return s.initMsg }
 
-func (s *State) Hash() common.Hash {
+func (s *State) Hash() (common.Hash, error) {
 	encoded, err := rlp.EncodeToBytes(s)
 	if err != nil {
-		panic(err)
+		return common.Hash{}, fmt.Errorf("failed to RLP-encode MEL state at block %d: %w", s.ParentChainBlockNumber, err)
 	}
-	return crypto.Keccak256Hash(encoded)
+	return crypto.Keccak256Hash(encoded), nil
 }
 
-// Clone performs a deep clone of the state struct to prevent any unintended
-// mutations of pointers at runtime. LocalMsgAccumulator is zeroed because the
+// Clone copies all state-tracking fields by value and zeroes
+// LocalMsgAccumulator because the
 // extraction function rebuilds it from scratch per block. Delayed message
 // accumulators (DelayedMessageInboxAcc, DelayedMessageOutboxAcc) are preserved
 // because they carry state across blocks.
 func (s *State) Clone() *State {
-	batchPostingTarget := common.Address{}
-	delayedMessageTarget := common.Address{}
-	parentChainHash := common.Hash{}
-	parentChainPrevHash := common.Hash{}
-	delayedInboxAcc := common.Hash{}
-	delayedOutboxAcc := common.Hash{}
-	copy(batchPostingTarget[:], s.BatchPostingTargetAddress[:])
-	copy(delayedMessageTarget[:], s.DelayedMessagePostingTargetAddress[:])
-	copy(parentChainHash[:], s.ParentChainBlockHash[:])
-	copy(parentChainPrevHash[:], s.ParentChainPreviousBlockHash[:])
-	copy(delayedInboxAcc[:], s.DelayedMessageInboxAcc[:])
-	copy(delayedOutboxAcc[:], s.DelayedMessageOutboxAcc[:])
+	// common.Hash and common.Address are fixed-size arrays, copied by value on assignment.
 	return &State{
 		Version:                            s.Version,
 		ParentChainId:                      s.ParentChainId,
 		ParentChainBlockNumber:             s.ParentChainBlockNumber,
-		BatchPostingTargetAddress:          batchPostingTarget,
-		DelayedMessagePostingTargetAddress: delayedMessageTarget,
-		ParentChainBlockHash:               parentChainHash,
-		ParentChainPreviousBlockHash:       parentChainPrevHash,
+		BatchPostingTargetAddress:          s.BatchPostingTargetAddress,
+		DelayedMessagePostingTargetAddress: s.DelayedMessagePostingTargetAddress,
+		ParentChainBlockHash:               s.ParentChainBlockHash,
+		ParentChainPreviousBlockHash:       s.ParentChainPreviousBlockHash,
 		MsgCount:                           s.MsgCount,
 		BatchCount:                         s.BatchCount,
 		DelayedMessagesRead:                s.DelayedMessagesRead,
 		DelayedMessagesSeen:                s.DelayedMessagesSeen,
-		DelayedMessageInboxAcc:             delayedInboxAcc,
-		DelayedMessageOutboxAcc:            delayedOutboxAcc,
+		DelayedMessageInboxAcc:             s.DelayedMessageInboxAcc,
+		DelayedMessageOutboxAcc:            s.DelayedMessageOutboxAcc,
 		// LocalMsgAccumulator is intentionally not copied — each cloned state
 		// starts a fresh hash chain for its own batch of accumulated messages.
 		//
 		// we pass along msgPreimagesDest to continue recording of msg preimages
 		msgPreimagesDest:        s.msgPreimagesDest,
 		delayedMsgPreimagesDest: s.delayedMsgPreimagesDest,
-		delayedMsgPreimages:     s.delayedMsgPreimages,
-		initMsg:                 s.initMsg,
+		// delayedMsgPreimages is intentionally shared (not deep-copied) between
+		// the original and cloned state. This is safe because the FSM processes
+		// blocks sequentially: only the post-state is used going forward, and
+		// the pre-state is never read concurrently. Do NOT use the pre-state
+		// after cloning if the post-state may be mutated concurrently.
+		delayedMsgPreimages: s.delayedMsgPreimages,
+		initMsg:             s.initMsg,
 	}
 }
 
+// AccumulateMessage appends a message to the local accumulator hash chain and
+// increments MsgCount.
 func (s *State) AccumulateMessage(msg *arbostypes.MessageWithMetadata) error {
 	msgBytes, err := rlp.EncodeToBytes(msg)
 	if err != nil {
 		return err
 	}
 	msgHash := crypto.Keccak256Hash(msgBytes)
-	preimage := make([]byte, 0, 2*common.HashLength)
-	preimage = append(preimage, s.LocalMsgAccumulator.Bytes()...)
-	preimage = append(preimage, msgHash.Bytes()...)
-	newAcc := crypto.Keccak256Hash(preimage)
+	newAcc, preimage := HashChainLink(s.LocalMsgAccumulator, msgHash)
 	if s.msgPreimagesDest != nil {
-		keccakMap, ok := s.msgPreimagesDest[arbutil.Keccak256PreimageType]
-		if !ok {
-			return errors.New("keccak256 preimage map not initialized in msgPreimagesDest")
+		keccakMap, err := keccakPreimages(s.msgPreimagesDest)
+		if err != nil {
+			return err
 		}
 		keccakMap[newAcc] = preimage  // acc chain link
 		keccakMap[msgHash] = msgBytes // message content
 	}
 	s.LocalMsgAccumulator = newAcc
+	s.MsgCount++
 	return nil
 }
 
 func (s *State) ensureDelayedMsgPreimages() {
 	if s.delayedMsgPreimages == nil {
-		s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](0)
+		s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](16)
 	}
 }
 
-// AccumulateDelayedMessage pushes a delayed message onto the inbox accumulator hash chain.
+// AccumulateDelayedMessage pushes a delayed message onto the inbox accumulator
+// hash chain and increments DelayedMessagesSeen.
 func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 	if s.DelayedMessagesSeen == 0 {
 		s.initMsg = msg
 	}
 	s.ensureDelayedMsgPreimages()
-	// totalUnread is the count of live unread messages before this accumulation
-	// (DelayedMessagesSeen is incremented by the caller after this returns).
+	// totalUnread is the count of live unread messages before this accumulation.
 	// Resize to totalUnread+1 to ensure capacity for the entry about to be added.
 	// Stale entries (e.g. old inbox preimages left after pour) are the oldest in
 	// LRU order and will be evicted first if the cache is full, so sizing for
@@ -171,20 +226,15 @@ func (s *State) AccumulateDelayedMessage(msg *DelayedInboxMessage) error {
 		return err
 	}
 	msgHash := crypto.Keccak256Hash(msgBytes)
-	preimage := append(s.DelayedMessageInboxAcc.Bytes(), msgHash.Bytes()...)
-	newAcc := crypto.Keccak256Hash(preimage)
-	// Always record delayed message preimages for pour/pop operations
-	s.delayedMsgPreimages.Add(newAcc, preimage)
-	// Also record to the delayed msg validation preimage map if in recording mode
-	if s.delayedMsgPreimagesDest != nil {
-		keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
-		if !ok {
-			return errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
-		}
-		keccakMap[newAcc] = preimage
-		keccakMap[msgHash] = msgBytes
+	newAcc, preimage := HashChainLink(s.DelayedMessageInboxAcc, msgHash)
+	if err := s.recordDelayedChainLink(newAcc, preimage); err != nil {
+		return err
+	}
+	if err := s.recordDelayedContent(msgHash, msgBytes); err != nil {
+		return err
 	}
 	s.DelayedMessageInboxAcc = newAcc
+	s.DelayedMessagesSeen++
 	return nil
 }
 
@@ -195,7 +245,7 @@ func (s *State) resolveDelayedPreimage(hash common.Hash) ([]byte, error) {
 	}
 	preimage, ok := s.delayedMsgPreimages.Peek(hash)
 	if !ok {
-		return nil, fmt.Errorf("%w: for hash: %s", ErrDelayedMessagePreimageNotFound, hash.Hex())
+		return nil, fmt.Errorf("%w: for hash: %s (cache size: %d, capacity: %d)", ErrDelayedMessagePreimageNotFound, hash.Hex(), s.delayedMsgPreimages.Len(), s.delayedMsgPreimages.Size())
 	}
 	return preimage, nil
 }
@@ -203,8 +253,12 @@ func (s *State) resolveDelayedPreimage(hash common.Hash) ([]byte, error) {
 // PourDelayedInboxToOutbox moves all items from the inbox to the outbox,
 // reversing their order so that the first-seen message is popped first from the outbox.
 // This implements the "pour" operation of the two-stack FIFO queue.
-// The number of items to pour is DelayedMessagesSeen - DelayedMessagesRead (called when outbox is empty).
+// The caller must ensure the outbox is empty before calling. The number of items to
+// pour is DelayedMessagesSeen - DelayedMessagesRead.
 func (s *State) PourDelayedInboxToOutbox() error {
+	if s.DelayedMessageOutboxAcc != (common.Hash{}) {
+		return errors.New("PourDelayedInboxToOutbox: outbox must be empty before pouring")
+	}
 	inboxSize := s.DelayedMessagesSeen - s.DelayedMessagesRead
 	if inboxSize == 0 {
 		return nil
@@ -218,8 +272,8 @@ func (s *State) PourDelayedInboxToOutbox() error {
 	if s.delayedMsgPreimages.Size() < 3*int(inboxSize) {
 		s.delayedMsgPreimages.Resize(3 * int(inboxSize))
 	}
-	// Pop all items from inbox (LIFO: last-seen comes out first) and Push onto outbox
-	// in original order (first-seen first → it ends up on top)
+	// Pop from inbox (LIFO: last-seen out first), push each onto outbox. First-seen is
+	// pushed last, landing on top of the outbox (LIFO), restoring FIFO order.
 	curr := s.DelayedMessageInboxAcc
 	for i := range inboxSize {
 		result, err := s.resolveDelayedPreimage(curr)
@@ -230,16 +284,10 @@ func (s *State) PourDelayedInboxToOutbox() error {
 		if err != nil {
 			return fmt.Errorf("inbox preimage at position %d: %w", i, err)
 		}
-		preimage := append(s.DelayedMessageOutboxAcc.Bytes(), msgHash.Bytes()...)
-		newAcc := crypto.Keccak256Hash(preimage)
+		newAcc, preimage := HashChainLink(s.DelayedMessageOutboxAcc, msgHash)
 		s.DelayedMessageOutboxAcc = newAcc
-		s.delayedMsgPreimages.Add(newAcc, preimage)
-		if s.delayedMsgPreimagesDest != nil {
-			keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
-			if !ok {
-				return errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
-			}
-			keccakMap[newAcc] = preimage
+		if err := s.recordDelayedChainLink(newAcc, preimage); err != nil {
+			return err
 		}
 		curr = prevAcc
 	}
@@ -271,15 +319,24 @@ func (s *State) PopDelayedOutbox() (common.Hash, error) {
 	return msgHash, nil
 }
 
+// ensureKeccakPreimagesMap validates a PreimagesMap is non-nil and ensures
+// the Keccak256 sub-map exists.
+func ensureKeccakPreimagesMap(preimagesMap daprovider.PreimagesMap) error {
+	if preimagesMap == nil {
+		return errors.New("preimages recording destination cannot be nil")
+	}
+	if _, ok := preimagesMap[arbutil.Keccak256PreimageType]; !ok {
+		preimagesMap[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	}
+	return nil
+}
+
 // RecordMsgPreimagesTo initializes the state's msgPreimagesDest to record preimages
 // related to the extracted L2 messages needed for MEL validation into the given preimages map.
 // When set, AccumulateMessage will record accumulator chain and message content preimages.
 func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
-	if preimagesMap == nil {
-		return errors.New("msg preimages recording destination cannot be nil")
-	}
-	if _, ok := preimagesMap[arbutil.Keccak256PreimageType]; !ok {
-		preimagesMap[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	if err := ensureKeccakPreimagesMap(preimagesMap); err != nil {
+		return err
 	}
 	s.msgPreimagesDest = preimagesMap
 	return nil
@@ -287,14 +344,11 @@ func (s *State) RecordMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error
 
 // RecordDelayedMsgPreimagesTo initializes the state's delayedMsgPreimagesDest to record
 // preimages related to delayed messages needed for MEL validation into the given preimages map.
-// When set, AccumulateDelayedMessage will record accumulator chain and message content preimages,
-// whereas PourDelayedInboxToOutbox record only accumulator chain preimages
+// When set, AccumulateDelayedMessage records accumulator chain and message content preimages,
+// whereas PourDelayedInboxToOutbox records only accumulator chain preimages.
 func (s *State) RecordDelayedMsgPreimagesTo(preimagesMap daprovider.PreimagesMap) error {
-	if preimagesMap == nil {
-		return errors.New("delayed msg preimages recording destination cannot be nil")
-	}
-	if _, ok := preimagesMap[arbutil.Keccak256PreimageType]; !ok {
-		preimagesMap[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+	if err := ensureKeccakPreimagesMap(preimagesMap); err != nil {
+		return err
 	}
 	s.delayedMsgPreimagesDest = preimagesMap
 	return nil
@@ -325,8 +379,9 @@ func (s *State) fetchAndHashUnreadMessages(
 	return msgHashes, msgBytesArr, nil
 }
 
-// findPivot determines how many of the unread messages are in the outbox vs
-// the inbox. Returns -1 if no valid pivot can be found (legacy fallback failure).
+// findPivot returns the index boundary between outbox and inbox messages within
+// the unread range. Messages at indices [0..pivot) are in the outbox;
+// [pivot..totalUnread) are in the inbox. Returns -1 if no valid partition is found.
 func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 	if s.DelayedMessageOutboxAcc == (common.Hash{}) {
 		return 0
@@ -335,17 +390,18 @@ func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 		// #nosec G115
 		return int(totalUnread)
 	}
-	// Legacy fallback: try each candidate pivot, starting with the smallest
-	// inbox (most likely case) and working backward.
-	for candidatePivot := totalUnread - 1; candidatePivot >= 1; candidatePivot-- {
+	// Brute-force O(N^2) search: iterate candidate pivots from totalUnread-1 down to 0.
+	// Each pivot cp splits the range into inbox [cp..totalUnread) and outbox [0..cp).
+	// Starting with the largest cp (smallest inbox) is an optimization for the common
+	// case where few messages remain in the inbox after the last pour.
+	// Use signed int to avoid unsigned underflow when totalUnread == 1.
+	for cp := int(totalUnread) - 1; cp >= 0; cp-- { //nolint:gosec
 		acc := common.Hash{}
-		for i := candidatePivot; i < totalUnread; i++ {
-			preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
-			acc = crypto.Keccak256Hash(preimage)
+		for i := uint64(cp); i < totalUnread; i++ {
+			acc = HashChainLinkHash(acc, msgHashes[i])
 		}
 		if acc == s.DelayedMessageInboxAcc {
-			// #nosec G115
-			return int(candidatePivot)
+			return cp
 		}
 	}
 	return -1
@@ -358,16 +414,12 @@ func (s *State) findPivot(totalUnread uint64, msgHashes []common.Hash) int {
 func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, msgBytesArr [][]byte) (common.Hash, error) {
 	acc := common.Hash{}
 	for i := start; i != end; i += step {
-		preimage := append(acc.Bytes(), msgHashes[i].Bytes()...)
-		newAcc := crypto.Keccak256Hash(preimage)
-		s.delayedMsgPreimages.Add(newAcc, preimage)
-		if s.delayedMsgPreimagesDest != nil {
-			keccakMap, ok := s.delayedMsgPreimagesDest[arbutil.Keccak256PreimageType]
-			if !ok {
-				return common.Hash{}, errors.New("keccak256 preimage map not initialized in delayedMsgPreimagesDest")
-			}
-			keccakMap[newAcc] = preimage
-			keccakMap[msgHashes[i]] = msgBytesArr[i]
+		newAcc, preimage := HashChainLink(acc, msgHashes[i])
+		if err := s.recordDelayedChainLink(newAcc, preimage); err != nil {
+			return common.Hash{}, err
+		}
+		if err := s.recordDelayedContent(msgHashes[i], msgBytesArr[i]); err != nil {
+			return common.Hash{}, err
 		}
 		acc = newAcc
 	}
@@ -376,8 +428,8 @@ func (s *State) buildHashChain(start, end, step int, msgHashes []common.Hash, ms
 
 // RebuildDelayedMsgPreimages reconstructs the in-memory preimage cache from
 // delayed messages stored in the database. This is needed after loading state
-// from DB (where the cache is nil), after reorgs, and periodically for memory
-// cleanup.
+// from DB (where the cache is nil), after reorgs, and for recovery from
+// preimage cache misses.
 //
 // The delayed message queue is a two-stack FIFO: an inbox accumulator and an
 // outbox accumulator. Unread messages (indices [DelayedMessagesRead, DelayedMessagesSeen))
@@ -392,16 +444,18 @@ func (s *State) RebuildDelayedMsgPreimages(fetchDelayedMsg func(index uint64) (*
 		return nil
 	}
 	totalUnread := s.DelayedMessagesSeen - s.DelayedMessagesRead
+	// Use 2x capacity to leave headroom for post-rebuild accumulations before
+	// the next pour, preventing eviction of needed preimages.
 	// #nosec G115
-	s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](int(totalUnread))
+	s.delayedMsgPreimages = containers.NewLruCache[common.Hash, []byte](max(2*int(totalUnread), 64))
 	msgHashes, msgBytesArr, err := s.fetchAndHashUnreadMessages(totalUnread, fetchDelayedMsg)
 	if err != nil {
 		return err
 	}
 	pivot := s.findPivot(totalUnread, msgHashes)
 	if pivot < 0 {
-		return fmt.Errorf("failed to find pivot: neither outbox acc %s nor inbox acc %s matched any partition",
-			s.DelayedMessageOutboxAcc.Hex(), s.DelayedMessageInboxAcc.Hex())
+		return fmt.Errorf("failed to find pivot between inbox and outbox: totalUnread=%d, delayedRead=%d, delayedSeen=%d, inboxAcc=%s, outboxAcc=%s",
+			totalUnread, s.DelayedMessagesRead, s.DelayedMessagesSeen, s.DelayedMessageInboxAcc.Hex(), s.DelayedMessageOutboxAcc.Hex())
 	}
 	// Rebuild outbox chain: messages [0..pivot) in reverse order (pivot-1, pivot-2, ..., 0)
 	if pivot > 0 {

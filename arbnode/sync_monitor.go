@@ -171,6 +171,7 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 			res["batchMetadataError"] = err.Error()
 		} else {
 			res["batchSeen"] = progress.BatchSeen
+			res["batchSeenIsEstimate"] = progress.BatchSeenIsEstimate
 			res["batchProcessed"] = progress.BatchProcessed
 			if progress.BatchProcessed > 0 {
 				res["messageOfProcessedBatch"] = progress.MsgCount
@@ -242,6 +243,9 @@ func (s *SyncMonitor) Synced() bool {
 			return false
 		}
 		if progress.BatchSeen == 0 {
+			return false
+		}
+		if progress.BatchSeenIsEstimate {
 			return false
 		}
 		if progress.BatchProcessed < progress.BatchSeen {

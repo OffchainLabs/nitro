@@ -143,7 +143,7 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	}
 
 	// Phase 2: Activate BPO1 by advancing L1
-	go keepChainMoving(t, 100*time.Millisecond, ctx, builder.L1Info, builder.L1.Client)
+	go keepChainMoving(t, ctx, 100*time.Millisecond, builder.L1Info, builder.L1.Client)
 
 	t.Logf("Phase 1: got initial blob config target=%d max=%d (expecting Osaka: target=%d max=%d)",
 		blobConfigPhase1.Target, blobConfigPhase1.Max,

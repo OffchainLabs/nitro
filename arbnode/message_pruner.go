@@ -25,14 +25,16 @@ import (
 
 type MessagePruner struct {
 	stopwaiter.StopWaiter
-	consensusDB                 ethdb.Database
-	transactionStreamer         *TransactionStreamer
-	batchMetaFetcher            BatchMetadataFetcher
-	config                      MessagePrunerConfigFetcher
-	pruningLock                 sync.Mutex
-	lastPruneDone               time.Time
-	cachedPrunedMessages        uint64
-	cachedPrunedDelayedMessages uint64
+	consensusDB                       ethdb.Database
+	transactionStreamer               *TransactionStreamer
+	batchMetaFetcher                  BatchMetadataFetcher
+	config                            MessagePrunerConfigFetcher
+	pruningLock                       sync.Mutex
+	lastPruneDone                     time.Time
+	cachedPrunedMessages              uint64
+	cachedPrunedDelayedMessages       uint64
+	cachedPrunedLegacyDelayedMessages uint64
+	cachedPrunedMelDelayedMessages    uint64
 }
 
 type MessagePrunerConfig struct {
@@ -115,7 +117,7 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 	msgCount := endBatchMetadata.MessageCount
 	delayedCount := endBatchMetadata.DelayedMessageCount
 	if delayedCount > 0 {
-		// keep an extra delayed message for the inbox reader to use
+		// keep an extra delayed message for the inbox reader or message extractor to use
 		delayedCount--
 	}
 
@@ -123,52 +125,85 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 }
 
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
+	// Lazy-init the message bookmark for the two auxiliary deletes below.
 	if m.cachedPrunedMessages == 0 {
-		m.cachedPrunedMessages = fetchLastPrunedKey(m.transactionStreamer.db, schema.LastPrunedMessageKey)
+		val, err := fetchLastPrunedKey(m.transactionStreamer.db, schema.LastPrunedMessageKey)
+		if err != nil {
+			return err
+		}
+		m.cachedPrunedMessages = val
 	}
+
+	// Auxiliary prefixes that share the message count cursor but don't track their own bookmark.
+	if _, err := deleteAndLog(ctx, m.transactionStreamer.db, schema.MessageResultPrefix, m.cachedPrunedMessages, uint64(messageCount), "message results"); err != nil {
+		return err
+	}
+	if _, err := deleteAndLog(ctx, m.transactionStreamer.db, schema.BlockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount), "expected block hashes"); err != nil {
+		return err
+	}
+
+	// Main prune targets, each with its own bookmark and cache.
+	if err := m.prunePrefix(ctx, m.transactionStreamer.db, schema.MessagePrefix, schema.LastPrunedMessageKey, &m.cachedPrunedMessages, uint64(messageCount), "messages"); err != nil {
+		return err
+	}
+	if err := m.prunePrefix(ctx, m.consensusDB, schema.LegacyDelayedMessagePrefix, schema.LastPrunedLegacyDelayedMessageKey, &m.cachedPrunedLegacyDelayedMessages, delayedMessageCount, "legacy delayed messages"); err != nil {
+		return err
+	}
+	// Lazy-init cachedPrunedDelayedMessages before capturing the start position,
+	// so that the ParentChainBlockNumberPrefix delete uses the correct bookmark.
 	if m.cachedPrunedDelayedMessages == 0 {
-		m.cachedPrunedDelayedMessages = fetchLastPrunedKey(m.consensusDB, schema.LastPrunedDelayedMessageKey)
+		val, err := fetchLastPrunedKey(m.consensusDB, schema.LastPrunedDelayedMessageKey)
+		if err != nil {
+			return err
+		}
+		m.cachedPrunedDelayedMessages = val
 	}
-	prunedKeysRange, _, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.MessageResultPrefix, m.cachedPrunedMessages, uint64(messageCount))
-	if err != nil {
-		return fmt.Errorf("error deleting message results: %w", err)
+	parentChainPruneStart := m.cachedPrunedDelayedMessages
+	if err := m.prunePrefix(ctx, m.consensusDB, schema.RlpDelayedMessagePrefix, schema.LastPrunedDelayedMessageKey, &m.cachedPrunedDelayedMessages, delayedMessageCount, "delayed messages"); err != nil {
+		return err
 	}
-	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned message results:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
+	// ParentChainBlockNumberPrefix ("p") shares the delayed message index space with RLP delayed messages.
+	if _, err := deleteAndLog(ctx, m.consensusDB, schema.ParentChainBlockNumberPrefix, parentChainPruneStart, delayedMessageCount, "parent chain block numbers"); err != nil {
+		return err
 	}
+	return m.prunePrefix(ctx, m.consensusDB, schema.MelDelayedMessagePrefix, schema.LastPrunedMelDelayedMessageKey, &m.cachedPrunedMelDelayedMessages, delayedMessageCount, "MEL delayed messages")
+}
 
-	prunedKeysRange, _, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.BlockHashInputFeedPrefix, m.cachedPrunedMessages, uint64(messageCount))
+// deleteAndLog deletes keys in [startKey, endKey) under prefix and logs the pruned range.
+func deleteAndLog(ctx context.Context, db ethdb.Database, prefix []byte, startKey, endKey uint64, label string) (uint64, error) {
+	prunedKeysRange, lastPruned, err := deleteFromLastPrunedUptoEndKey(ctx, db, prefix, startKey, endKey)
 	if err != nil {
-		return fmt.Errorf("error deleting expected block hashes: %w", err)
+		return 0, fmt.Errorf("error deleting %s: %w", label, err)
 	}
 	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned expected block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
+		log.Info("Pruned "+label, "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
+	return lastPruned, nil
+}
 
-	prunedKeysRange, lastPrunedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, schema.MessagePrefix, m.cachedPrunedMessages, uint64(messageCount))
+// prunePrefix deletes keys under the given prefix, persists the bookmark, and
+// updates the cached start position. Lazy-inits the cache from the DB on first call.
+func (m *MessagePruner) prunePrefix(ctx context.Context, db ethdb.Database, prefix, bookmarkKey []byte, cachedStart *uint64, endKey uint64, label string) error {
+	if *cachedStart == 0 {
+		val, err := fetchLastPrunedKey(db, bookmarkKey)
+		if err != nil {
+			return err
+		}
+		*cachedStart = val
+	}
+	lastPruned, err := deleteAndLog(ctx, db, prefix, *cachedStart, endKey, label)
 	if err != nil {
-		return fmt.Errorf("error deleting last batch messages: %w", err)
+		return err
 	}
-	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned last batch messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
+	if err = insertLastPrunedKey(db, bookmarkKey, lastPruned); err != nil {
+		return fmt.Errorf("error persisting last pruned %s key: %w", label, err)
 	}
-	insertLastPrunedKey(m.transactionStreamer.db, schema.LastPrunedMessageKey, lastPrunedMessage)
-	m.cachedPrunedMessages = lastPrunedMessage
-
-	prunedKeysRange, lastPrunedDelayedMessage, err := deleteFromLastPrunedUptoEndKey(ctx, m.consensusDB, schema.RlpDelayedMessagePrefix, m.cachedPrunedDelayedMessages, delayedMessageCount)
-	if err != nil {
-		return fmt.Errorf("error deleting last batch delayed messages: %w", err)
-	}
-	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned last batch delayed messages:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
-	}
-	insertLastPrunedKey(m.consensusDB, schema.LastPrunedDelayedMessageKey, lastPrunedDelayedMessage)
-	m.cachedPrunedDelayedMessages = lastPrunedDelayedMessage
+	*cachedStart = lastPruned
 	return nil
 }
 
 // deleteFromLastPrunedUptoEndKey is similar to deleteFromRange but automatically populates the start key if it's not set.
-// It's returns the new start key (i.e. last pruned key) at the end of this function if successful.
+// It returns the pruned key range, the new bookmark value (endMinKey-1 on success), and any error.
 func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) ([]uint64, uint64, error) {
 	if startMinKey == 0 {
 		startIter := db.NewIterator(prefix, uint64ToKey(1))
@@ -185,37 +220,33 @@ func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, pref
 	return keys, endMinKey - 1, err
 }
 
-func insertLastPrunedKey(db ethdb.Database, lastPrunedKey []byte, lastPrunedValue uint64) {
+func insertLastPrunedKey(db ethdb.Database, lastPrunedKey []byte, lastPrunedValue uint64) error {
 	lastPrunedValueByte, err := rlp.EncodeToBytes(lastPrunedValue)
 	if err != nil {
-		log.Error("error encoding last pruned value: %w", err)
-	} else {
-		err = db.Put(lastPrunedKey, lastPrunedValueByte)
-		if err != nil {
-			log.Error("error saving last pruned value: %w", err)
-		}
+		return fmt.Errorf("error encoding last pruned value: %w", err)
 	}
+	if err = db.Put(lastPrunedKey, lastPrunedValueByte); err != nil {
+		return fmt.Errorf("error saving last pruned value: %w", err)
+	}
+	return nil
 }
 
-func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) uint64 {
+func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) (uint64, error) {
 	hasKey, err := db.Has(lastPrunedKey)
 	if err != nil {
-		log.Warn("error checking for last pruned key: %w", err)
-		return 0
+		return 0, fmt.Errorf("error checking for last pruned key: %w", err)
 	}
 	if !hasKey {
-		return 0
+		return 0, nil
 	}
 	lastPrunedValueByte, err := db.Get(lastPrunedKey)
 	if err != nil {
-		log.Warn("error fetching last pruned key: %w", err)
-		return 0
+		return 0, fmt.Errorf("error fetching last pruned key: %w", err)
 	}
 	var lastPrunedValue uint64
 	err = rlp.DecodeBytes(lastPrunedValueByte, &lastPrunedValue)
 	if err != nil {
-		log.Warn("error decoding last pruned value: %w", err)
-		return 0
+		return 0, fmt.Errorf("error decoding last pruned value: %w", err)
 	}
-	return lastPrunedValue
+	return lastPrunedValue, nil
 }

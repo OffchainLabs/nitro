@@ -107,6 +107,9 @@ type DataPosterOpts struct {
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
+	if opts.ParentChain == nil {
+		return nil, errors.New("ParentChain is required")
+	}
 	cfg := opts.Config()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
