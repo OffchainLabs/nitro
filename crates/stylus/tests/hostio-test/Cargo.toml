@@ -1,20 +1,17 @@
 [package]
 name = "hostio-test"
 version = "0.1.0"
-edition = "2024"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["debug", "hostio"] }
-
-[profile.release]
-codegen-units = 1
-strip = true
-lto = true
-panic = "abort"
-opt-level = "s"
+stylus-sdk = { workspace = true, features = ["debug", "hostio"] }
 
 [features]
 contract-client-gen = []
 export-abi = ["stylus-sdk/export-abi"]
-
-[workspace]
