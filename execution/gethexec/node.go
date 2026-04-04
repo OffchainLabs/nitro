@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/consensus/consensusrpcclient"
 	"github.com/offchainlabs/nitro/execution"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util"
@@ -140,6 +141,7 @@ type Config struct {
 	ExposeMultiGas              bool                   `koanf:"expose-multi-gas"`
 	RPCServer                   rpcserver.Config       `koanf:"rpc-server"`
 	ConsensusRPCClient          rpcclient.ClientConfig `koanf:"consensus-rpc-client" reload:"hot"`
+	DisableArbOwnerEthCall      bool                   `koanf:"disable-arbowner-ethcall"`
 
 	forwardingTarget string
 }
@@ -191,6 +193,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".block-metadata-api-cache-size", ConfigDefault.BlockMetadataApiCacheSize, "size (in bytes) of lru cache storing the blockMetadata to service arb_getRawBlockMetadata")
 	f.Uint64(prefix+".block-metadata-api-blocks-limit", ConfigDefault.BlockMetadataApiBlocksLimit, "maximum number of blocks allowed to be queried for blockMetadata per arb_getRawBlockMetadata query. Enabled by default, set 0 to disable the limit")
 	f.Bool(prefix+".expose-multi-gas", false, "experimental: expose multi-dimensional gas in transaction receipts")
+	f.Bool(prefix+".disable-arbowner-ethcall", ConfigDefault.DisableArbOwnerEthCall, "disable ArbOwner precompile calls outside on-chain execution (ethcall, gas estimation)")
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
@@ -230,6 +233,7 @@ var ConfigDefault = Config{
 	BlockMetadataApiBlocksLimit: 100,
 	VmTrace:                     DefaultLiveTracingConfig,
 	ExposeMultiGas:              false,
+	DisableArbOwnerEthCall:      false,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -442,6 +446,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) containers.Promis
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	config := n.configFetcher.Get()
+	if config.DisableArbOwnerEthCall {
+		ownerPC := gethhook.GetOwnerPrecompile()
+		if ownerPC == nil {
+			return fmt.Errorf("cannot enable disable-arbowner-ethcall: ArbOwner precompile not found")
+		}
+		ownerPC.SetDisableEthCall(true)
+	}
 	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCacheCapacity, &config.StylusTarget)
 	if err != nil {
 		return fmt.Errorf("error initializing execution engine: %w", err)
