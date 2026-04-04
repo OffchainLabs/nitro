@@ -16,6 +16,7 @@ unsafe extern "C" {
     pub fn wavm_set_globalstate_bytes32(idx: u32, ptr: *const u8);
     pub fn wavm_get_globalstate_u64(idx: u32) -> u64;
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
+    pub fn wavm_get_end_parent_chain_block_hash(ptr: *mut u8);
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
@@ -87,6 +88,16 @@ pub unsafe extern "C" fn wavmio__setGlobalStateU64(idx: u32, val: u64) {
     unsafe {
         wavm_set_globalstate_u64(idx, val);
     }
+}
+
+/// Reads 32-bytes of the ending parent chain block hash for MEL.
+#[no_mangle]
+pub unsafe extern "C" fn wavmio__getEndParentChainBlockHash(out_ptr: GuestPtr) {
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let our_ptr = our_buf.as_mut_ptr();
+    assert_eq!(our_ptr as usize % 32, 0);
+    wavm_get_end_parent_chain_block_hash(our_ptr);
+    StaticMem.write_slice(out_ptr, &our_buf[..32]);
 }
 
 /// Reads an inbox message
