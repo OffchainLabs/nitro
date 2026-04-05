@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -46,17 +47,25 @@ const (
 	// Auctioneer coordination key for failover
 	AUCTIONEER_CHOSEN_KEY = "auctioneer.chosen"
 
-	// Default buffer size for bids receiver channel
 	DefaultBidsReceiverBufferSize = 100_000
+
+	defaultPersistBidsBufferSize = 128
+	defaultConsumeInterval       = 250 * time.Millisecond
+	maxConsumeBackoff            = 30 * time.Second
+	maxAuctionResolutionRetries  = 5
 )
 
 var (
-	receivedBidsCounter         = metrics.NewRegisteredCounter("arb/auctioneer/bids/received", nil)
-	validatedBidsCounter        = metrics.NewRegisteredCounter("arb/auctioneer/bids/validated", nil)
-	reserveOriginatorBidCounter = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/bid", nil)
-	reserveOriginatorWonCounter = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/won", nil)
-	FirstBidValueGauge          = metrics.NewRegisteredGauge("arb/auctioneer/bids/firstbidvalue", nil)
-	SecondBidValueGauge         = metrics.NewRegisteredGauge("arb/auctioneer/bids/secondbidvalue", nil)
+	receivedBidsCounter             = metrics.NewRegisteredCounter("arb/auctioneer/bids/received", nil)
+	validatedBidsCounter            = metrics.NewRegisteredCounter("arb/auctioneer/bids/validated", nil)
+	persistBidFailureCounter        = metrics.NewRegisteredCounter("arb/auctioneer/bids/persist_failures", nil)
+	persistBidChannelFullCounter    = metrics.NewRegisteredCounter("arb/auctioneer/bids/persist_channel_full", nil)
+	auctionResolutionFailureCounter = metrics.NewRegisteredCounter("arb/auctioneer/auction/resolution_failures", nil)
+	bidAckFailureCounter            = metrics.NewRegisteredCounter("arb/auctioneer/bids/ack_failures", nil)
+	reserveOriginatorBidCounter     = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/bid", nil)
+	reserveOriginatorWonCounter     = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/won", nil)
+	FirstBidValueGauge              = metrics.NewRegisteredGauge("arb/auctioneer/bids/firstbidvalue", nil)
+	SecondBidValueGauge             = metrics.NewRegisteredGauge("arb/auctioneer/bids/secondbidvalue", nil)
 )
 
 func init() {
@@ -69,7 +78,7 @@ type AuctioneerServerConfig struct {
 	Enable         bool                  `koanf:"enable"`
 	RedisURL       string                `koanf:"redis-url"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
-	// Timeout on polling for existence of each redis stream.
+	// Maximum time to wait for the redis stream to exist before treating startup as failed.
 	StreamTimeout             time.Duration            `koanf:"stream-timeout"`
 	Wallet                    genericconf.WalletConfig `koanf:"wallet"`
 	SequencerEndpoint         string                   `koanf:"sequencer-endpoint"`
@@ -150,14 +159,16 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
-// AuctioneerServer is a struct that represents an autonomous auctioneer.
-// It is responsible for receiving bids, validating them, and resolving auctions.
+// AuctioneerServer is an autonomous auctioneer.
+// It consumes validated bids from a Redis stream and resolves auctions on-chain.
 type AuctioneerServer struct {
 	stopwaiter.StopWaiter
-	consumer                       *pubsub.Consumer[*JsonValidatedBid, error]
-	txOpts                         *bind.TransactOpts
-	chainId                        *big.Int
-	endpointManager                SequencerEndpointManager
+	consumer        *pubsub.Consumer[*JsonValidatedBid, error]
+	txOpts          *bind.TransactOpts
+	chainId         *big.Int
+	endpointManager SequencerEndpointManager
+	// auctionContract may be updated by refreshSequencerEndpoint during failover;
+	// both reads and writes happen exclusively on the auction resolution thread.
 	auctionContract                *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr            common.Address
 	auctionContractDomainSeparator [32]byte
@@ -170,13 +181,17 @@ type AuctioneerServer struct {
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
 	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
+	persistBids                    chan *ValidatedBid
 	reserveOriginatorAddr          common.Address
+	consumeBackoff                 time.Duration // only accessed from consumeNextBid (single-threaded via CallIteratively)
+	consecutiveResolutionFailures  int64         // only accessed from the auction resolution thread
 
 	// Coordination fields
 	redisClient               redis.UniversalClient
 	myId                      string
 	isPrimary                 atomic.Bool
-	lastPrimaryStatus         bool // Track state changes for logging
+	lastPrimaryStatus         bool          // only accessed from updateCoordination (single-threaded via CallIteratively)
+	coordinationBackoff       time.Duration // only accessed from updateCoordination (single-threaded via CallIteratively)
 	auctioneerLivenessTimeout time.Duration
 }
 
@@ -196,6 +211,12 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
+	success := false
+	defer func() {
+		if !success {
+			database.Close()
+		}
+	}()
 	var s3StorageService *S3StorageService
 	if cfg.S3Storage.Enable {
 		s3StorageService, err = NewS3StorageService(&cfg.S3Storage, database)
@@ -209,6 +230,11 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if !success {
+			redisClient.Close()
+		}
+	}()
 	c, err := pubsub.NewConsumer[*JsonValidatedBid, error](redisClient, validatedBidsRedisStream, &cfg.ConsumerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating consumer for validation: %w", err)
@@ -225,6 +251,11 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	} else {
 		endpointManager = NewStaticEndpointManager(cfg.SequencerEndpoint, cfg.SequencerJWTPath)
 	}
+	defer func() {
+		if !success {
+			endpointManager.Close()
+		}
+	}()
 
 	rpcClient, _, err := endpointManager.GetSequencerRPC(ctx)
 	if err != nil {
@@ -271,20 +302,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	}
 
 	if cfg.ReserveOriginatorAddress != "" {
-		log.Info(
-			"ReserveOriginator configured, on-chain auction resolution will be skipped when this address wins",
-			"address",
-			reserveOriginatorAddr.String(),
-		)
+		log.Info("ReserveOriginator configured, on-chain resolution skipped when this address wins", "address", reserveOriginatorAddr)
 	}
 
-	// Generate unique ID for this auctioneer instance
-	myId := fmt.Sprintf("auctioneer-%s-%d",
-		uuid.New().String()[:8], // Short UUID
-		time.Now().UnixNano())   // Timestamp for uniqueness
+	myId := fmt.Sprintf("auctioneer-%s-%d", uuid.New().String()[:8], time.Now().UnixNano())
 
 	log.Info("Auctioneer coordinator initialized", "id", myId)
 
+	success = true
 	return &AuctioneerServer{
 		txOpts:                         txOpts,
 		endpointManager:                endpointManager,
@@ -296,6 +321,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		auctionContractAddr:            auctionContractAddr,
 		auctionContractDomainSeparator: domainSeparator,
 		bidsReceiver:                   make(chan *JsonValidatedBid, int(bufferSize)),
+		persistBids:                    make(chan *ValidatedBid, defaultPersistBidsBufferSize),
 		bidCache:                       newBidCache(domainSeparator),
 		roundTimingInfo:                *roundTimingInfo,
 		auctionResolutionWaitTime:      cfg.AuctionResolutionWaitTime,
@@ -305,34 +331,37 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		myId:                           myId,
 		auctioneerLivenessTimeout:      cfg.ConsumerConfig.IdletimeToAutoclaim * 3,
 		reserveOriginatorAddr:          reserveOriginatorAddr,
+		consumeBackoff:                 defaultConsumeInterval,
 	}, nil
 }
 
 func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
-	// Only consume if we're primary
 	if !a.isPrimary.Load() {
-		return 250 * time.Millisecond
+		a.consumeBackoff = defaultConsumeInterval
+		return defaultConsumeInterval
 	}
 
 	req, err := a.consumer.Consume(ctx)
 	if err != nil {
-		log.Error("Consuming request", "error", err)
-		return 0
+		if ctx.Err() != nil {
+			return 0
+		}
+		log.Error("Error consuming from Redis stream", "stream", validatedBidsRedisStream, "id", a.myId, "error", err)
+		backoff := a.consumeBackoff
+		a.consumeBackoff = min(backoff*2, maxConsumeBackoff)
+		return backoff
 	}
+	a.consumeBackoff = defaultConsumeInterval
 	if req == nil {
-		// There's nothing in the queue.
-		return time.Millisecond * 250
+		return defaultConsumeInterval
 	}
 
-	if err := validateBidTimeConstraints(&a.roundTimingInfo, (uint64)(req.Value.Round)); err != nil {
+	if err := validateBidTimeConstraints(&a.roundTimingInfo, uint64(req.Value.Round)); err != nil {
 		log.Info("Consumed bid that was no longer valid, skipping", "err", err, "msgId", req.ID)
 		req.Ack()
-		if errerr := a.consumer.SetError(ctx, req.ID, err.Error()); errerr != nil {
-			log.Warn("Error setting error response to bid", "err", err, "msgId", req.ID)
-			// We tried, all we can do here is warn.
-			// It will be cleaned up by the Consumer
-			// on the next try or ultimately by
-			// Producer.clearMessages after RequestTimeout
+		if redisErr := a.consumer.SetError(ctx, req.ID, err.Error()); redisErr != nil {
+			// Best-effort: the Consumer will retry or the Producer will clean up after RequestTimeout.
+			log.Warn("Error setting error response to bid", "redisErr", redisErr, "originalErr", err, "msgId", req.ID)
 		}
 		return 0
 	}
@@ -353,44 +382,97 @@ func (a *AuctioneerServer) consumeNextBid(ctx context.Context) time.Duration {
 		// and will be stopped at auction end.
 		req.Ack()
 
-		// Importantly we don't want to send duplicate bids to
-		// the bidsReceiver since it cares about the ordering.
 		return 0
 	}
 
 	a.unackedBids[req.ID] = req
 	a.unackedBidsMutex.Unlock()
 
-	// Forward the message over a channel for processing elsewhere in
-	// another thread, so as to not block this consumption thread.
-	a.bidsReceiver <- req.Value
+	// Forward to the bid receiver thread to avoid blocking consumption.
+	stallTimer := time.NewTimer(5 * time.Second)
+	select {
+	case a.bidsReceiver <- req.Value:
+		stallTimer.Stop()
+	case <-stallTimer.C:
+		log.Warn("bidsReceiver channel blocked for 5s, bid consumption is stalled",
+			"msgId", req.ID, "bidder", req.Value.Bidder, "round", req.Value.Round,
+			"channelCap", cap(a.bidsReceiver))
+		select {
+		case a.bidsReceiver <- req.Value:
+		case <-ctx.Done():
+			log.Info("Context cancelled after consuming bid, will be re-consumed on restart", "msgId", req.ID, "bidder", req.Value.Bidder, "round", req.Value.Round)
+			return 0
+		}
+	case <-ctx.Done():
+		stallTimer.Stop()
+		log.Info("Context cancelled after consuming bid, will be re-consumed on restart", "msgId", req.ID, "bidder", req.Value.Bidder, "round", req.Value.Round)
+		return 0
+	}
 
 	return 0
 }
 
+func parseAuctioneerLockValue(value string) (id string, timestamp int64, ok bool) {
+	id, tsStr, found := strings.Cut(value, ":")
+	if !found || id == "" {
+		return "", 0, false
+	}
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil || ts <= 0 {
+		return "", 0, false
+	}
+	return id, ts, true
+}
+
+func (a *AuctioneerServer) tryAcquireLock(ctx context.Context, candidateValue, reason string) (acquired, hadError bool) {
+	ok, err := a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Result()
+	if err != nil {
+		log.Error("Redis error during lock acquisition", "id", a.myId, "reason", reason, "error", err)
+		return false, true
+	}
+	if ok {
+		log.Info("Acquired lock", "id", a.myId, "reason", reason)
+	} else {
+		log.Trace("Lock not acquired", "id", a.myId, "reason", reason)
+	}
+	return ok, false
+}
+
 // updateCoordination manages the primary/secondary status of this auctioneer
 func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration {
+	if ctx.Err() != nil {
+		return 0
+	}
 	var success bool
+	var hadRedisError bool
 	candidateValue := fmt.Sprintf("%s:%d", a.myId, time.Now().UnixMilli())
 	storedValue, err := a.redisClient.Get(ctx, AUCTIONEER_CHOSEN_KEY).Result()
 	if err == nil {
-		parts := strings.SplitN(storedValue, ":", 2)
-		var storedId string
-		var storedTimestamp int64
-
-		if len(parts) == 2 {
-			storedId = parts[0]
-			storedTimestamp, _ = strconv.ParseInt(parts[1], 10, 64)
-		} else {
-			log.Error("AUCTIONEER_CHOSEN_KEY in wrong format, deleting it before proceeding", "value", candidateValue)
-			_, _ = a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Result()
-			return a.auctioneerLivenessTimeout / 6
+		storedId, storedTimestamp, valid := parseAuctioneerLockValue(storedValue)
+		if !valid {
+			log.Error("AUCTIONEER_CHOSEN_KEY has invalid format, deleting before proceeding", "value", storedValue)
+			if delErr := a.redisClient.Del(ctx, AUCTIONEER_CHOSEN_KEY).Err(); delErr != nil {
+				log.Error("Failed to delete invalid AUCTIONEER_CHOSEN_KEY; no auctioneer can become primary until resolved", "value", storedValue, "error", delErr)
+				hadRedisError = true
+			}
+			a.isPrimary.Store(false)
+			if a.lastPrimaryStatus {
+				log.Info("No longer primary auctioneer (invalid lock format)", "id", a.myId)
+				a.lastPrimaryStatus = false
+			}
+			return a.coordinationInterval(hadRedisError)
 		}
 
 		if storedId == a.myId {
 			log.Trace("Refreshing our lock", "id", a.myId)
 			err = a.redisClient.Set(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Err()
-			success = err == nil
+			if err != nil {
+				log.Error("Failed to refresh auctioneer lock in Redis", "id", a.myId, "error", err)
+				hadRedisError = true
+			}
+			// Remain primary even if refresh failed: the lock TTL hasn't
+			// expired yet, so no other auctioneer can take over until it does.
+			success = true
 		} else {
 			elapsed := time.Now().UnixMilli() - storedTimestamp
 			if elapsed > a.auctioneerLivenessTimeout.Milliseconds() {
@@ -403,29 +485,23 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 						"storedId", storedId,
 						"storedTimestamp", storedTimestamp,
 						"elapsedMs", elapsed)
+					hadRedisError = true
 				} else {
-					// Try to acquire with SetNX
-					success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
-					if success {
-						log.Info("Successfully acquired stale lock", "id", a.myId)
-					} else {
-						log.Info("Failed to acquire after deleting stale lock (lost race)", "id", a.myId)
-					}
+					acquired, hadErr := a.tryAcquireLock(ctx, candidateValue, "stale lock deleted")
+					success = acquired
+					hadRedisError = hadRedisError || hadErr
 				}
 			} else {
 				log.Trace("Lock held by someone else", "id", a.myId, "current", storedId, "remainingMs", a.auctioneerLivenessTimeout.Milliseconds()-elapsed)
 			}
 		}
 	} else if errors.Is(err, redis.Nil) {
-		log.Trace("Lock is free, trying to acquire", "id", a.myId)
-		success = a.redisClient.SetNX(ctx, AUCTIONEER_CHOSEN_KEY, candidateValue, a.auctioneerLivenessTimeout).Val()
-		if success {
-			log.Info("Successfully acquired lock", "id", a.myId)
-		} else {
-			log.Info("Failed to acquire lock (other auctioneer won the race)", "id", a.myId)
-		}
+		acquired, hadErr := a.tryAcquireLock(ctx, candidateValue, "lock free")
+		success = acquired
+		hadRedisError = hadRedisError || hadErr
 	} else {
-		log.Warn("Redis error when checking lock", "id", a.myId, "err", err)
+		log.Error("Redis error when checking lock", "id", a.myId, "err", err)
+		hadRedisError = true
 	}
 
 	if success != a.lastPrimaryStatus {
@@ -438,25 +514,31 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 	}
 	a.isPrimary.Store(success)
 
-	// Refresh more frequently than expiry, with defaults is this is every 500ms.
-	// Needs to be parameterized rather than hardcoded for tests which run more quickly.
-	return a.auctioneerLivenessTimeout / 6
+	return a.coordinationInterval(hadRedisError)
+}
+
+// coordinationInterval returns the next polling interval for coordination,
+// applying exponential backoff on Redis errors and resetting on success.
+func (a *AuctioneerServer) coordinationInterval(hadRedisError bool) time.Duration {
+	baseInterval := a.auctioneerLivenessTimeout / 6
+	if hadRedisError {
+		backoff := max(a.coordinationBackoff, baseInterval)
+		a.coordinationBackoff = min(backoff*2, a.auctioneerLivenessTimeout)
+		return backoff
+	}
+	a.coordinationBackoff = 0
+	return baseInterval
 }
 
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
-	// Start S3 storage service to persist validated bids to s3.
-	// ORDERING MATTERS: s3StorageService must be tracked before consumer so that
-	// consumer stops first on shutdown (LIFO). The consumer holds the
-	// AUCTIONEER_CHOSEN_KEY distributed lock; stopping it first releases the lock,
-	// which expires after auctioneerLivenessTimeout. That timeout gives existing
-	// in-flight messages time to become unclaimed via IdleTimeToAutoclaim before
-	// a secondary auctioneer starts consuming them.
+	// ORDERING MATTERS: s3StorageService is tracked before consumer so that
+	// on LIFO shutdown, the consumer stops first (ceasing bid consumption),
+	// while s3StorageService gets a chance to upload any remaining persisted bids.
 	if a.s3StorageService != nil {
 		a.StartAndTrackChild(a.s3StorageService)
 	}
 
-	// Start coordination to manage primary/secondary status
 	a.StopWaiter.CallIteratively(a.updateCoordination)
 
 	// Channel that consumer uses to indicate its readiness.
@@ -472,11 +554,13 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				readyStream <- struct{}{}
 				return
 			}
+			timer := time.NewTimer(time.Millisecond * 100)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				log.Info("Context done while checking redis stream existence", "error", ctx.Err().Error())
 				return
-			case <-time.After(time.Millisecond * 100):
+			case <-timer.C:
 			}
 		}
 	})
@@ -491,13 +575,15 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 		a.StopWaiter.CallIteratively(a.consumeNextBid)
 	})
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		streamTimer := time.NewTimer(a.streamTimeout)
+		defer streamTimer.Stop()
 		for {
 			select {
 			case <-readyStream:
 				log.Trace("At least one stream is ready")
 				return // Don't block Start if at least one of the stream is ready.
-			case <-time.After(a.streamTimeout):
-				log.Error("Waiting for redis streams timed out")
+			case <-streamTimer.C:
+				log.Crit("Waiting for redis streams timed out, auctioneer cannot consume bids", "timeout", a.streamTimeout)
 				return
 			case <-ctx.Done():
 				log.Info("Context done while waiting redis streams to be ready, failed to start")
@@ -517,11 +603,36 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				if a.reserveOriginatorAddr != (common.Address{}) && converted.Bidder == a.reserveOriginatorAddr {
 					reserveOriginatorBidCounter.Inc(1)
 				}
-				// Persist the validated bid to the database as a non-blocking operation.
-				go a.persistValidatedBid(bid)
+				select {
+				case a.persistBids <- converted:
+				default:
+					persistBidChannelFullCounter.Inc(1)
+					log.Error("Persistence channel full, bid will not be persisted to database", "bidder", converted.Bidder, "round", converted.Round, "amount", converted.Amount.String())
+				}
 			case <-ctx.Done():
-				log.Info("Context done while waiting redis streams to be ready, failed to start")
+				log.Info("Bid receiver thread shutting down")
 				return
+			}
+		}
+	})
+
+	// Bid persistence worker.
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case bid := <-a.persistBids:
+				a.persistValidatedBid(bid)
+			case <-ctx.Done():
+				// Drain remaining buffered bids before shutting down.
+				for {
+					select {
+					case bid := <-a.persistBids:
+						a.persistValidatedBid(bid)
+					default:
+						log.Info("Bid persistence worker shut down")
+						return
+					}
+				}
 			}
 		}
 	})
@@ -529,32 +640,66 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	// Auction resolution thread.
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
 		ticker := newRoundTicker(a.roundTimingInfo)
-		go ticker.tickAtAuctionClose(ctx)
+		a.StopWaiter.LaunchThread(func(ctx context.Context) {
+			ticker.tickAtAuctionClose(ctx)
+		})
 		for {
 			select {
 			case <-ctx.Done():
-				log.Error("Context closed, autonomous auctioneer shutting down")
+				log.Info("Context closed, autonomous auctioneer shutting down")
 				return
 			case auctionClosingTime := <-ticker.c:
 				log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
-				time.Sleep(a.auctionResolutionWaitTime)
-				if err := a.resolveAuction(ctx); err != nil {
-					log.Error("Could not resolve auction for round", "error", err)
+				resolutionTimer := time.NewTimer(a.auctionResolutionWaitTime)
+				select {
+				case <-resolutionTimer.C:
+				case <-ctx.Done():
+					resolutionTimer.Stop()
+					log.Info("Context cancelled during auction resolution wait")
+					return
 				}
-				// Clear the bid cache.
-				a.bidCache = newBidCache(a.auctionContractDomainSeparator)
+				upcomingRound := a.roundTimingInfo.RoundNumber() + 1
+				if err := a.resolveAuction(ctx, upcomingRound); err != nil {
+					a.consecutiveResolutionFailures++
+					auctionResolutionFailureCounter.Inc(1)
+					log.Error("Auction resolution failed; this round's express lane will remain unassigned",
+						"round", upcomingRound, "consecutiveFailures", a.consecutiveResolutionFailures, "error", err)
+				} else {
+					a.consecutiveResolutionFailures = 0
+				}
 			}
 		}
 	})
 }
 
-// Resolves the auction by calling the smart contract with the top two bids.
-func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
-	upcomingRound := a.roundTimingInfo.RoundNumber() + 1
-	result := a.bidCache.topTwoBids()
+// refreshSequencerEndpoint updates a.auctionContract if the sequencer endpoint
+// has changed and returns the current RPC client.
+func (a *AuctioneerServer) refreshSequencerEndpoint(ctx context.Context) (*rpc.Client, error) {
+	sequencerRpc, isNew, err := a.endpointManager.GetSequencerRPC(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting sequencer RPC: %w", err)
+	}
+	if isNew {
+		newContract, err := express_lane_auctiongen.NewExpressLaneAuction(a.auctionContractAddr, ethclient.NewClient(sequencerRpc))
+		if err != nil {
+			return nil, fmt.Errorf("creating ExpressLaneAuction contract binding for new sequencer endpoint: %w", err)
+		}
+		a.auctionContract = newContract
+	}
+	return sequencerRpc, nil
+}
+
+// resolveAuction resolves the auction by submitting the winning bid(s) on-chain.
+func (a *AuctioneerServer) resolveAuction(ctx context.Context, upcomingRound uint64) error {
+	result := a.bidCache.topTwoBidsAndClear()
 	first := result.firstPlace
 	second := result.secondPlace
-	if first == nil { // No bids received
+
+	// Always run on return to stop heartbeat goroutines; Redis cleanup
+	// is best-effort (degrades gracefully during shutdown).
+	defer a.acknowledgeAllBids(ctx, upcomingRound)
+
+	if first == nil {
 		if second == nil {
 			log.Info("No bids received for auction resolution", "round", upcomingRound)
 			return nil
@@ -563,75 +708,51 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		return errors.New("invalid auctionResult, first place bid is not present but second place bid is") // this should ideally never happen
 	}
 
-	// Once resolveAuction returns, we acknowledge all bids to remove them from redis.
-	// We remove them unconditionally, since resolveAuction retries until the round ends,
-	// and there is no way to use them after the round ends.
-	defer a.acknowledgeAllBids(ctx, upcomingRound)
+	FirstBidValueGauge.Update(first.Amount.Int64())
+	if second != nil {
+		SecondBidValueGauge.Update(second.Amount.Int64())
+	}
 
-	// If ReserveOriginator is configured, and it won this round, skip on-chain auction resolution
+	// If ReserveOriginator is configured and it won this round, skip on-chain auction resolution.
 	if a.reserveOriginatorAddr != (common.Address{}) && a.reserveOriginatorAddr == first.Bidder {
 		reserveOriginatorWonCounter.Inc(1)
-		FirstBidValueGauge.Update(first.Amount.Int64())
-		if second == nil {
-			log.Info(
-				"Only ReserveOriginator bid received for auction resolution",
-				"round",
-				upcomingRound,
-				"firstBid",
-				first.Amount.String(),
-				"firstBidder",
-				first.Bidder.Hex(),
-			)
+		if second != nil {
+			log.Info("ReserveOriginator won round, skipping on-chain resolution",
+				"round", upcomingRound, "firstBid", first.Amount.String(), "firstBidder", first.Bidder.Hex(),
+				"secondBid", second.Amount.String(), "secondBidder", second.Bidder.Hex())
 		} else {
-			SecondBidValueGauge.Update(second.Amount.Int64())
-			log.Info(
-				"ReserveOriginator won round so skipping auction resolution",
-				"round",
-				upcomingRound,
-				"firstBid",
-				first.Amount.String(),
-				"secondBid",
-				second.Amount.String(),
-				"firstBidder",
-				first.Bidder.Hex(),
-				"secondBidder",
-				second.Bidder.Hex(),
-			)
+			log.Info("ReserveOriginator won round (sole bidder), skipping on-chain resolution",
+				"round", upcomingRound, "firstBid", first.Amount.String(), "firstBidder", first.Bidder.Hex())
 		}
 		return nil
 	}
 
-	sequencerRpc, newRpc, err := a.endpointManager.GetSequencerRPC(ctx)
+	sequencerRpc, err := a.refreshSequencerEndpoint(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get sequencer RPC: %w", err)
+		return err
 	}
 
-	if newRpc {
-		a.auctionContract, err = express_lane_auctiongen.NewExpressLaneAuction(a.auctionContractAddr, ethclient.NewClient(sequencerRpc))
-		if err != nil {
-			return fmt.Errorf("failed to recreate ExpressLaneAuction contract bindings with new sequencer endpoint: %w", err)
-		}
+	if second != nil {
+		log.Info("Resolving auction with two bids", "round", upcomingRound)
+	} else {
+		log.Info("Resolving auction with single bid", "round", upcomingRound)
 	}
 
-	makeAuctionResolutionTx := func(onRetry bool) (*types.Transaction, error) {
+	firstBid := express_lane_auctiongen.Bid{
+		ExpressLaneController: first.ExpressLaneController,
+		Amount:                first.Amount,
+		Signature:             first.Signature,
+	}
+
+	makeAuctionResolutionTx := func(contract *express_lane_auctiongen.ExpressLaneAuction) (*types.Transaction, error) {
 		opts := copyTxOpts(a.txOpts)
 		opts.GasMargin = 2000 // Add a 20% buffer to GasLimit to avoid running out of gas
 		opts.NoSend = true
 
-		// Both bids are present
 		if second != nil {
-			if !onRetry {
-				FirstBidValueGauge.Update(first.Amount.Int64())
-				SecondBidValueGauge.Update(second.Amount.Int64())
-				log.Info("Resolving auction with two bids", "round", upcomingRound)
-			}
-			return a.auctionContract.ResolveMultiBidAuction(
+			return contract.ResolveMultiBidAuction(
 				opts,
-				express_lane_auctiongen.Bid{
-					ExpressLaneController: first.ExpressLaneController,
-					Amount:                first.Amount,
-					Signature:             first.Signature,
-				},
+				firstBid,
 				express_lane_auctiongen.Bid{
 					ExpressLaneController: second.ExpressLaneController,
 					Amount:                second.Amount,
@@ -640,65 +761,51 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 			)
 		}
 
-		// Single bid is present
-		if !onRetry {
-			FirstBidValueGauge.Update(first.Amount.Int64())
-			log.Info("Resolving auction with single bid", "round", upcomingRound)
-		}
-		return a.auctionContract.ResolveSingleBidAuction(
-			opts,
-			express_lane_auctiongen.Bid{
-				ExpressLaneController: first.ExpressLaneController,
-				Amount:                first.Amount,
-				Signature:             first.Signature,
-			},
-		)
+		return contract.ResolveSingleBidAuction(opts, firstBid)
 	}
 
-	var tx *types.Transaction
-	var receipt *types.Receipt
-	tx, err = makeAuctionResolutionTx(false)
+	tx, err := makeAuctionResolutionTx(a.auctionContract)
 	if err != nil {
-		log.Error("Error resolving auction", "error", err)
+		log.Error("Error building initial auction resolution transaction", "round", upcomingRound, "error", err)
 		return err
 	}
 
 	roundEndTime := a.roundTimingInfo.TimeOfNextRound()
-	retryInterval := 1 * time.Second
+	retryInterval := time.Second
 
-	retryLimit := 5
-	for retryCount := 0; ; retryCount++ {
+	for attempt := 0; ; attempt++ {
 		if err = retryUntil(ctx, func() error {
-			if err := sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err != nil {
+			err := sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
+			if err != nil {
 				log.Error("Error submitting auction resolution to sequencer endpoint", "error", err)
-				return err
 			}
-			return nil
+			return err
 		}, retryInterval, roundEndTime); err != nil {
 			return err
 		}
 
-		// Wait for the transaction to be mined until this round ends
 		waitMinedCtx, cancel := context.WithTimeout(ctx, time.Until(roundEndTime))
-		receipt, err = bind.WaitMined(waitMinedCtx, ethclient.NewClient(sequencerRpc), tx)
+		receipt, err := bind.WaitMined(waitMinedCtx, ethclient.NewClient(sequencerRpc), tx)
 		cancel()
-		if err != nil { // error is only returned when context expires i.e the current round has ended so no point in retrying
+		if err != nil {
 			return fmt.Errorf("error waiting for transaction to be mined: %w", err)
 		}
 
-		// Check if the transaction was successful
-		if tx != nil && receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
+		if receipt.Status == types.ReceiptStatusSuccessful {
 			break
 		}
-		if tx != nil {
-			log.Warn("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
-		}
-		if retryCount == retryLimit {
+		log.Warn("Auction resolution transaction reverted on-chain",
+			"round", upcomingRound, "txHash", tx.Hash().Hex(), "attempt", attempt+1, "receiptStatus", receipt.Status)
+		if attempt >= maxAuctionResolutionRetries {
 			return errors.New("could not resolve auction after multiple attempts")
 		}
-		tx, err = makeAuctionResolutionTx(true)
+		// Re-acquire sequencer RPC in case of failover since the last attempt.
+		sequencerRpc, err = a.refreshSequencerEndpoint(ctx)
 		if err != nil {
-			log.Error("Error resolving auction", "error", err)
+			return err
+		}
+		tx, err = makeAuctionResolutionTx(a.auctionContract)
+		if err != nil {
 			return err
 		}
 	}
@@ -712,54 +819,83 @@ func (a *AuctioneerServer) acknowledgeAllBids(ctx context.Context, round uint64)
 	defer a.unackedBidsMutex.Unlock()
 
 	var acknowledgedCount int
+	shuttingDown := ctx.Err() != nil
 	for msgID, msg := range a.unackedBids {
 		bid := msg.Value
 		if uint64(bid.Round) <= round {
 			msg.Ack() // Stop the heartbeat goroutine
 
-			// SetResult calls XAck to remove the msg from the consumer group's
-			// pending list and then removes it from the stream with XDel.
-			if err := a.consumer.SetResult(ctx, msgID, nil); err != nil {
-				log.Warn("Error marking bid message as consumed by auctioneer", "msgID", msgID, "error", err)
-				// We still need delete that bid from unacked bids since
-				// it can't be Ack()ed more than once.
-				// It will be cleaned up when it's re-read or by the producer
-				// after it expires.
+			if !shuttingDown {
+				// SetResult calls XAck to remove the msg from the consumer group's
+				// pending list and then removes it from the stream with XDel.
+				if err := a.consumer.SetResult(ctx, msgID, nil); err != nil {
+					if ctx.Err() != nil {
+						shuttingDown = true
+						log.Debug("Skipping remaining bid acknowledgments during shutdown (will be re-consumed on restart)")
+					} else {
+						bidAckFailureCounter.Inc(1)
+						log.Warn("Error marking bid message as consumed by auctioneer", "msgID", msgID, "error", err)
+					}
+				}
 			}
+			// Delete from unackedBids unconditionally since Ack() can only be
+			// called once. Bids not removed from Redis will be re-consumed on
+			// restart via the consumer group's pending entries list.
 			delete(a.unackedBids, msgID)
 			acknowledgedCount++
 		}
 	}
 
-	log.Info("Acknowledged bids in redis stream", "count", acknowledgedCount)
+	if shuttingDown {
+		log.Info("Bid heartbeats stopped during shutdown (bids remain in Redis for re-consumption on restart)", "count", acknowledgedCount)
+	} else {
+		log.Info("Acknowledged bids in redis stream", "count", acknowledgedCount)
+	}
 }
 
-// retryUntil retries a given operation defined by the closure until the specified duration
-// has passed or the operation succeeds. It waits for the specified retry interval between
-// attempts. The function returns an error if all attempts fail.
+// retryUntil retries a given operation until it succeeds, the end time passes, or the
+// context is cancelled. It returns nil on success, or an error indicating whether the
+// deadline was already past, the context was cancelled, or all attempts failed.
 func retryUntil(ctx context.Context, operation func() error, retryInterval time.Duration, endTime time.Time) error {
+	if time.Now().After(endTime) {
+		return fmt.Errorf("operation not attempted: deadline %v already passed", endTime)
+	}
+
+	var lastErr error
 	for {
 		if time.Now().After(endTime) {
 			break
 		}
-
-		// Execute the operation
-		if err := operation(); err == nil {
+		if lastErr = operation(); lastErr == nil {
 			return nil
 		}
 
-		if ctx.Err() != nil {
-			return ctx.Err()
+		remaining := time.Until(endTime)
+		if remaining <= 0 {
+			break
 		}
-
-		time.Sleep(retryInterval)
+		timer := time.NewTimer(min(retryInterval, remaining))
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("%w (last operation error: %w)", ctx.Err(), lastErr)
+		}
 	}
-	return errors.New("operation failed after multiple attempts")
+
+	return fmt.Errorf("operation failed after retrying until %v: %w", endTime, lastErr)
 }
 
-func (a *AuctioneerServer) persistValidatedBid(bid *JsonValidatedBid) {
-	if err := a.database.InsertBid(JsonValidatedBidToGo(bid)); err != nil {
-		log.Error("Could not persist validated bid to database", "err", err, "bidder", bid.Bidder, "amount", bid.Amount.String())
+func (a *AuctioneerServer) persistValidatedBid(bid *ValidatedBid) {
+	if err := a.database.InsertBid(bid); err != nil {
+		persistBidFailureCounter.Inc(1)
+		// The bid is still in the bidCache for auction resolution; only the
+		// archival record (used by S3 upload) is lost.
+		log.Error("Could not persist validated bid to database", "err", err, "bidder", bid.Bidder, "amount", bid.Amount.String(), "round", bid.Round)
 	}
 }
 
@@ -801,4 +937,15 @@ func (a *AuctioneerServer) IsPrimary() bool {
 // GetId returns the unique identifier for this auctioneer instance
 func (a *AuctioneerServer) GetId() string {
 	return a.myId
+}
+
+func (a *AuctioneerServer) StopAndWait() {
+	a.StopWaiter.StopAndWait()
+	a.endpointManager.Close()
+	if err := a.database.Close(); err != nil {
+		log.Warn("Error closing database during AuctioneerServer shutdown", "error", err)
+	}
+	if err := a.redisClient.Close(); err != nil {
+		log.Warn("Error closing Redis client during AuctioneerServer shutdown", "error", err)
+	}
 }

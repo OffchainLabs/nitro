@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
+
+var consecutiveReservePriceFailuresGauge = metrics.NewRegisteredGauge("arb/bidvalidator/reserve_price/consecutive_failures", nil)
 
 type BidValidatorConfigFetcher func() *BidValidatorConfig
 
@@ -267,6 +270,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 				rp, err := bv.auctionContract.ReservePrice(&bind.CallOpts{})
 				if err != nil {
 					consecutiveReservePriceFailures++
+					consecutiveReservePriceFailuresGauge.Update(int64(consecutiveReservePriceFailures))
 					if consecutiveReservePriceFailures >= 5 {
 						log.Error("Reserve price fetch has failed repeatedly, using stale value",
 							"consecutiveFailures", consecutiveReservePriceFailures, "error", err)
@@ -276,6 +280,7 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 					continue
 				}
 				consecutiveReservePriceFailures = 0
+				consecutiveReservePriceFailuresGauge.Update(0)
 
 				currentReservePrice := bv.fetchReservePrice()
 				if currentReservePrice.Cmp(rp) == 0 {
@@ -377,7 +382,7 @@ func (bv *BidValidator) SetReservePrice(p *big.Int) {
 func (bv *BidValidator) fetchReservePrice() *big.Int {
 	bv.reservePriceLock.RLock()
 	defer bv.reservePriceLock.RUnlock()
-	return bv.reservePrice
+	return new(big.Int).Set(bv.reservePrice)
 }
 
 // Check time-related constraints for bid.

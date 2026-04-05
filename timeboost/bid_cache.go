@@ -32,10 +32,22 @@ type auctionResult struct {
 	secondPlace *ValidatedBid
 }
 
+func (bc *bidCache) clear() {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	bc.bidsByBidder = make(map[common.Address]*ValidatedBid)
+}
+
 func (bc *bidCache) size() int {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	return len(bc.bidsByBidder)
+}
+
+func (bc *bidCache) getBid(bidder common.Address) *ValidatedBid {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	return bc.bidsByBidder[bidder]
 }
 
 // topTwoBids returns the top two bids without modifying the cache.
