@@ -529,7 +529,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	// Auction resolution thread.
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
 		ticker := newRoundTicker(a.roundTimingInfo)
-		go ticker.tickAtAuctionClose()
+		go ticker.tickAtAuctionClose(ctx)
 		for {
 			select {
 			case <-ctx.Done():

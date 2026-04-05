@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -241,6 +243,112 @@ func TestBidCacheTwoBiddersSameController(t *testing.T) {
 
 	require.Equal(t, bidderB, result.secondPlace.Bidder)
 	require.Equal(t, 0, result.secondPlace.Amount.Cmp(big.NewInt(5)))
+}
+
+func TestBidCacheConcurrentAddAndClear(t *testing.T) {
+	t.Parallel()
+	cache := newBidCache([32]byte{})
+
+	const numAdds = 1000
+	var wg sync.WaitGroup
+
+	// Writer goroutine: adds bids concurrently.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numAdds; i++ {
+			addr := common.BigToAddress(big.NewInt(int64(i)))
+			cache.add(&ValidatedBid{
+				Bidder:                addr,
+				Amount:                big.NewInt(int64(i)),
+				ExpressLaneController: addr,
+				ChainId:               big.NewInt(1),
+			})
+		}
+	}()
+
+	// Clearer goroutine: periodically clears the cache (as auction resolution does).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			cache.topTwoBidsAndClear()
+			time.Sleep(10 * time.Microsecond)
+		}
+	}()
+
+	wg.Wait()
+	// The main assertion is that no panic or race occurred (run with -race).
+	_ = cache.topTwoBids()
+}
+
+func TestTopTwoBidsAndClearReturnsCorrectResultAndEmptiesCache(t *testing.T) {
+	t.Parallel()
+	bc := newBidCache([32]byte{})
+
+	bidderA := common.HexToAddress("0xA")
+	bidderB := common.HexToAddress("0xB")
+	bidderC := common.HexToAddress("0xC")
+
+	bc.add(&ValidatedBid{Bidder: bidderA, Amount: big.NewInt(100), ExpressLaneController: bidderA, ChainId: big.NewInt(1)})
+	bc.add(&ValidatedBid{Bidder: bidderB, Amount: big.NewInt(300), ExpressLaneController: bidderB, ChainId: big.NewInt(1)})
+	bc.add(&ValidatedBid{Bidder: bidderC, Amount: big.NewInt(200), ExpressLaneController: bidderC, ChainId: big.NewInt(1)})
+	require.Equal(t, 3, bc.size())
+
+	result := bc.topTwoBidsAndClear()
+
+	// Verify the result contains the correct top two bids.
+	require.NotNil(t, result.firstPlace)
+	require.NotNil(t, result.secondPlace)
+	require.Equal(t, bidderB, result.firstPlace.Bidder)
+	require.Equal(t, 0, result.firstPlace.Amount.Cmp(big.NewInt(300)))
+	require.Equal(t, bidderC, result.secondPlace.Bidder)
+	require.Equal(t, 0, result.secondPlace.Amount.Cmp(big.NewInt(200)))
+
+	// Verify the cache is empty after the call.
+	require.Equal(t, 0, bc.size())
+
+	// Verify a subsequent topTwoBids returns nil.
+	emptyResult := bc.topTwoBids()
+	require.Nil(t, emptyResult.firstPlace)
+	require.Nil(t, emptyResult.secondPlace)
+}
+
+func TestTopTwoBidsAndClearConcurrentAddGoesToFreshMap(t *testing.T) {
+	t.Parallel()
+	bc := newBidCache([32]byte{})
+
+	// Add initial bids.
+	bc.add(&ValidatedBid{Bidder: common.HexToAddress("0xA"), Amount: big.NewInt(100), ExpressLaneController: common.HexToAddress("0xA"), ChainId: big.NewInt(1)})
+
+	// Clear and simultaneously add a new bid.
+	var wg sync.WaitGroup
+	var result *auctionResult
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		result = bc.topTwoBidsAndClear()
+	}()
+	go func() {
+		defer wg.Done()
+		bc.add(&ValidatedBid{Bidder: common.HexToAddress("0xB"), Amount: big.NewInt(200), ExpressLaneController: common.HexToAddress("0xB"), ChainId: big.NewInt(1)})
+	}()
+	wg.Wait()
+
+	// The bid from 0xA must appear in the result or in the cache (never lost).
+	// The bid from 0xB must appear in the result or in the cache (never lost).
+	resultCount := 0
+	if result.firstPlace != nil {
+		resultCount++
+	}
+	if result.secondPlace != nil {
+		resultCount++
+	}
+	cacheCount := bc.size()
+
+	// Total bids across result and cache must equal 2 (both bids accounted for).
+	require.Equal(t, 2, resultCount+cacheCount, "every bid must appear in the result or the fresh map, never lost")
 }
 
 func BenchmarkBidValidation(b *testing.B) {
