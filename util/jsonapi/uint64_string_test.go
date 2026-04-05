@@ -4,6 +4,7 @@
 package jsonapi
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 )
@@ -140,6 +141,94 @@ func TestUint64String_UnmarshalJSON(t *testing.T) {
 				if result != tt.expected {
 					t.Errorf("UnmarshalJSON() = %d, want %d", result, tt.expected)
 				}
+			}
+		})
+	}
+}
+
+func TestUint64String_RoundTrip(t *testing.T) {
+	tests := []uint64{
+		0,
+		1,
+		123,
+		9876543210,
+		math.MaxUint64,
+	}
+
+	for _, original := range tests {
+		t.Run("round_trip", func(t *testing.T) {
+			// Marshal
+			u := Uint64String(original)
+			marshaled, err := u.MarshalJSON()
+			if err != nil {
+				t.Fatalf("MarshalJSON() error: %v", err)
+			}
+
+			// Unmarshal
+			var decoded Uint64String
+			err = decoded.UnmarshalJSON(marshaled)
+			if err != nil {
+				t.Fatalf("UnmarshalJSON() error: %v", err)
+			}
+
+			// Verify
+			if uint64(decoded) != original {
+				t.Errorf("Round trip failed: got %d, want %d", decoded, original)
+			}
+		})
+	}
+}
+
+func TestUint64String_InStruct(t *testing.T) {
+	type testStruct struct {
+		Value Uint64String `json:"value"`
+	}
+
+	tests := []struct {
+		name     string
+		input    string
+		expected uint64
+	}{
+		{
+			name:     "struct with zero",
+			input:    `{"value":"0"}`,
+			expected: 0,
+		},
+		{
+			name:     "struct with number",
+			input:    `{"value":"12345"}`,
+			expected: 12345,
+		},
+		{
+			name:     "struct with max uint64",
+			input:    `{"value":"18446744073709551615"}`,
+			expected: math.MaxUint64,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var s testStruct
+			err := json.Unmarshal([]byte(tt.input), &s)
+			if err != nil {
+				t.Fatalf("json.Unmarshal() error: %v", err)
+			}
+			if uint64(s.Value) != tt.expected {
+				t.Errorf("Unmarshal into struct: got %d, want %d", s.Value, tt.expected)
+			}
+
+			// Test marshaling back
+			marshaled, err := json.Marshal(s)
+			if err != nil {
+				t.Fatalf("json.Marshal() error: %v", err)
+			}
+			var s2 testStruct
+			err = json.Unmarshal(marshaled, &s2)
+			if err != nil {
+				t.Fatalf("Round trip unmarshal error: %v", err)
+			}
+			if uint64(s2.Value) != tt.expected {
+				t.Errorf("Round trip failed: got %d, want %d", s2.Value, tt.expected)
 			}
 		})
 	}
