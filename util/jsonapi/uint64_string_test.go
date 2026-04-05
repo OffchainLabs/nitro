@@ -4,6 +4,7 @@
 package jsonapi
 
 import (
+	"math"
 	"testing"
 )
 
@@ -27,6 +28,11 @@ func TestUint64String_MarshalJSON(t *testing.T) {
 			name:     "large value",
 			value:    Uint64String(9876543210),
 			expected: `"9876543210"`,
+		},
+		{
+			name:     "max uint64",
+			value:    Uint64String(math.MaxUint64),
+			expected: `"18446744073709551615"`,
 		},
 	}
 
@@ -66,6 +72,18 @@ func TestUint64String_UnmarshalJSON(t *testing.T) {
 			name:      "valid large number",
 			input:     `"9876543210"`,
 			expected:  Uint64String(9876543210),
+			shouldErr: false,
+		},
+		{
+			name:      "max uint64",
+			input:     `"18446744073709551615"`,
+			expected:  Uint64String(math.MaxUint64),
+			shouldErr: false,
+		},
+		{
+			name:      "null value",
+			input:     `null`,
+			expected:  Uint64String(0),
 			shouldErr: false,
 		},
 	}
