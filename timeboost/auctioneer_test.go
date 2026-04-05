@@ -536,33 +536,33 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 
 func TestAuctioneerServerConfig_Validate(t *testing.T) {
 	tests := []struct {
-		name                   string
-		auctionContractAddress string
-		bidFloorAgentAddress   string
-		s3Storage              S3StorageServiceConfig
-		wantErr                string
+		name                     string
+		auctionContractAddress   string
+		reserveOriginatorAddress string
+		s3Storage                S3StorageServiceConfig
+		wantErr                  string
 	}{
 		{
 			name:    "both addresses empty is valid",
 			wantErr: "",
 		},
 		{
-			name:                 "bid floor agent zero address rejected",
-			bidFloorAgentAddress: "0x0000000000000000000000000000000000000000",
-			wantErr:              "cannot be the zero address",
+			name:                     "reserve originator zero address rejected",
+			reserveOriginatorAddress: "0x0000000000000000000000000000000000000000",
+			wantErr:                  "cannot be the zero address",
 		},
 		{
 			name:                   "valid auction contract address only",
 			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
 		},
 		{
-			name:                 "valid bid floor agent address only",
-			bidFloorAgentAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
+			name:                     "valid reserve originator address only",
+			reserveOriginatorAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
 		},
 		{
-			name:                   "both valid addresses",
-			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
-			bidFloorAgentAddress:   "0xabcdef1234567890abcdef1234567890abcdef12",
+			name:                     "both valid addresses",
+			auctionContractAddress:   "0x1234567890abcdef1234567890abcdef12345678",
+			reserveOriginatorAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
 		},
 		{
 			name:                   "invalid auction contract address",
@@ -570,21 +570,21 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 			wantErr:                "invalid auctioneer-server.auction-contract-address",
 		},
 		{
-			name:                 "invalid bid floor agent address",
-			bidFloorAgentAddress: "not-a-hex-address",
-			wantErr:              "invalid auctioneer-server.bid-floor-agent-address",
+			name:                     "invalid reserve originator address",
+			reserveOriginatorAddress: "not-a-hex-address",
+			wantErr:                  "invalid auctioneer-server.reserve-originator-address",
 		},
 		{
-			name:                   "valid auction contract but invalid bid floor agent",
-			auctionContractAddress: "0x1234567890abcdef1234567890abcdef12345678",
-			bidFloorAgentAddress:   "xyz",
-			wantErr:                "invalid auctioneer-server.bid-floor-agent-address",
+			name:                     "valid auction contract but invalid reserve originator",
+			auctionContractAddress:   "0x1234567890abcdef1234567890abcdef12345678",
+			reserveOriginatorAddress: "xyz",
+			wantErr:                  "invalid auctioneer-server.reserve-originator-address",
 		},
 		{
-			name:                   "invalid auction contract checked first",
-			auctionContractAddress: "bad",
-			bidFloorAgentAddress:   "also-bad",
-			wantErr:                "invalid auctioneer-server.auction-contract-address",
+			name:                     "invalid auction contract checked first",
+			auctionContractAddress:   "bad",
+			reserveOriginatorAddress: "also-bad",
+			wantErr:                  "invalid auctioneer-server.auction-contract-address",
 		},
 		{
 			name: "s3 storage validation is delegated",
@@ -599,9 +599,9 @@ func TestAuctioneerServerConfig_Validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &AuctioneerServerConfig{
-				AuctionContractAddress: tt.auctionContractAddress,
-				BidFloorAgentAddress:   tt.bidFloorAgentAddress,
-				S3Storage:              tt.s3Storage,
+				AuctionContractAddress:   tt.auctionContractAddress,
+				ReserveOriginatorAddress: tt.reserveOriginatorAddress,
+				S3Storage:                tt.s3Storage,
 			}
 			err := cfg.Validate()
 			if tt.wantErr == "" {

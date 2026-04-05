@@ -357,7 +357,7 @@ func TestConsumeNextBid_MultipleValidBids(t *testing.T) {
 	assert.Equal(t, 0, helper.getUnackedBidsCount(), "unackedBids should be empty, all bids were acknowledged")
 }
 
-func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pubsub.ConsumerConfig, bidFloorAgentAddr string) (string, *auctionSetup, *AuctioneerServer) {
+func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pubsub.ConsumerConfig, reserveOriginatorAddr string) (string, *auctionSetup, *AuctioneerServer) {
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	tmpDir := t.TempDir()
@@ -368,13 +368,13 @@ func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pub
 
 	auctioneerConfig := func() *AuctioneerServerConfig {
 		return &AuctioneerServerConfig{
-			RedisURL:               redisURL,
-			SequencerEndpoint:      testSetup.endpoint,
-			SequencerJWTPath:       jwtFilePath,
-			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
-			DbDirectory:            tmpDir,
-			ConsumerConfig:         consumerConfig,
-			BidFloorAgentAddress:   bidFloorAgentAddr,
+			RedisURL:                 redisURL,
+			SequencerEndpoint:        testSetup.endpoint,
+			SequencerJWTPath:         jwtFilePath,
+			AuctionContractAddress:   testSetup.expressLaneAuctionAddr.Hex(),
+			DbDirectory:              tmpDir,
+			ConsumerConfig:           consumerConfig,
+			ReserveOriginatorAddress: reserveOriginatorAddr,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
 			},
@@ -386,11 +386,11 @@ func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pub
 	return redisURL, testSetup, auctioneer
 }
 
-func TestResolveAuction_BidFloorAgent(t *testing.T) {
+func TestResolveAuction_ReserveOriginator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Account index 1's address will be the BidFloorAgent
+	// Account index 1's address will be the ReserveOriginator
 	testSetup := setupAuctionTest(t, ctx)
 	bidFloorAddr := testSetup.accounts[1].accountAddr
 
@@ -398,8 +398,8 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 		t, ctx, pubsub.TestConsumerConfig, bidFloorAddr.Hex(),
 	)
 
-	t.Run("BidFloorAgent wins alone - skip resolution", func(t *testing.T) {
-		// Only BidFloorAgent bid in cache
+	t.Run("ReserveOriginator wins alone - skip resolution", func(t *testing.T) {
+		// Only ReserveOriginator bid in cache
 		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
 		auctioneer.bidCache.add(&ValidatedBid{
 			Bidder:                bidFloorAddr,
@@ -409,7 +409,7 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 
 		err := auctioneer.resolveAuction(ctx)
 		require.NoError(t, err)
-		// No on-chain call made, no error → BidFloorAgent path hit
+		// No on-chain call made, no error → ReserveOriginator path hit
 	})
 
 	t.Run("Spoofed ExpressLaneController does not skip resolution", func(t *testing.T) {
@@ -425,7 +425,7 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("BidFloorAgent wins with second place - skip resolution", func(t *testing.T) {
+	t.Run("ReserveOriginator wins with second place - skip resolution", func(t *testing.T) {
 		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
 		otherAddr := testSetup.accounts[2].accountAddr
 		auctioneer.bidCache.add(&ValidatedBid{
@@ -441,10 +441,10 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 
 		err := auctioneer.resolveAuction(ctx)
 		require.NoError(t, err)
-		// BidFloorAgent is first place → skips on-chain, returns nil
+		// ReserveOriginator is first place → skips on-chain, returns nil
 	})
 
-	t.Run("BidFloorAgent loses - normal resolution attempted", func(t *testing.T) {
+	t.Run("ReserveOriginator loses - normal resolution attempted", func(t *testing.T) {
 		auctioneer.bidCache = newBidCache(auctioneer.bidCache.auctionContractDomainSeparator)
 		otherAddr := testSetup.accounts[2].accountAddr
 		auctioneer.bidCache.add(&ValidatedBid{
@@ -461,12 +461,12 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 		err := auctioneer.resolveAuction(ctx)
 		// This will attempt on-chain resolution (may error in test env
 		// since there's no real sequencer — the important thing is it
-		// did NOT return nil early via the BidFloorAgent path)
+		// did NOT return nil early via the ReserveOriginator path)
 		require.Error(t, err) // Expect error from sequencer RPC call
 	})
 
-	t.Run("No BidFloorAgent configured - normal resolution", func(t *testing.T) {
-		// Create auctioneer WITHOUT BidFloorAgent
+	t.Run("No ReserveOriginator configured - normal resolution", func(t *testing.T) {
+		// Create auctioneer WITHOUT ReserveOriginator
 		_, _, auctioneerNoBFA := setupAuctioneerServer(
 			t, ctx, pubsub.TestConsumerConfig, "",
 		)
@@ -483,7 +483,7 @@ func TestResolveAuction_BidFloorAgent(t *testing.T) {
 		})
 
 		err := auctioneerNoBFA.resolveAuction(ctx)
-		// Without BidFloorAgent configured, even if same address wins,
+		// Without ReserveOriginator configured, even if same address wins,
 		// it proceeds to on-chain resolution (which errors in test env)
 		require.Error(t, err)
 	})

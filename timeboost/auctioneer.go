@@ -51,10 +51,12 @@ const (
 )
 
 var (
-	receivedBidsCounter  = metrics.NewRegisteredCounter("arb/auctioneer/bids/received", nil)
-	validatedBidsCounter = metrics.NewRegisteredCounter("arb/auctioneer/bids/validated", nil)
-	FirstBidValueGauge   = metrics.NewRegisteredGauge("arb/auctioneer/bids/firstbidvalue", nil)
-	SecondBidValueGauge  = metrics.NewRegisteredGauge("arb/auctioneer/bids/secondbidvalue", nil)
+	receivedBidsCounter         = metrics.NewRegisteredCounter("arb/auctioneer/bids/received", nil)
+	validatedBidsCounter        = metrics.NewRegisteredCounter("arb/auctioneer/bids/validated", nil)
+	reserveOriginatorBidCounter = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/bid", nil)
+	reserveOriginatorWonCounter = metrics.NewRegisteredCounter("arb/auctioneer/reserve_originator/won", nil)
+	FirstBidValueGauge          = metrics.NewRegisteredGauge("arb/auctioneer/bids/firstbidvalue", nil)
+	SecondBidValueGauge         = metrics.NewRegisteredGauge("arb/auctioneer/bids/secondbidvalue", nil)
 )
 
 func init() {
@@ -79,7 +81,7 @@ type AuctioneerServerConfig struct {
 	AuctionResolutionWaitTime time.Duration            `koanf:"auction-resolution-wait-time"`
 	BidsReceiverBufferSize    uint64                   `koanf:"bids-receiver-buffer-size"`
 	S3Storage                 S3StorageServiceConfig   `koanf:"s3-storage"`
-	BidFloorAgentAddress      string                   `koanf:"bid-floor-agent-address"`
+	ReserveOriginatorAddress  string                   `koanf:"reserve-originator-address"`
 }
 
 func (c *AuctioneerServerConfig) Validate() error {
@@ -87,13 +89,13 @@ func (c *AuctioneerServerConfig) Validate() error {
 		return errors.New("invalid auctioneer-server.auction-contract-address")
 	}
 
-	if c.BidFloorAgentAddress != "" {
-		if !common.IsHexAddress(c.BidFloorAgentAddress) {
-			return errors.New("invalid auctioneer-server.bid-floor-agent-address")
+	if c.ReserveOriginatorAddress != "" {
+		if !common.IsHexAddress(c.ReserveOriginatorAddress) {
+			return errors.New("invalid auctioneer-server.reserve-originator-address")
 		}
 
-		if common.HexToAddress(c.BidFloorAgentAddress) == (common.Address{}) {
-			return errors.New("auctioneer-server.bid-floor-agent-address cannot be the zero address")
+		if common.HexToAddress(c.ReserveOriginatorAddress) == (common.Address{}) {
+			return errors.New("auctioneer-server.reserve-originator-address cannot be the zero address")
 		}
 	}
 
@@ -144,7 +146,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".auction-resolution-wait-time", DefaultAuctioneerServerConfig.AuctionResolutionWaitTime, "wait time after auction closing before resolving the auction")
 	f.Uint64(prefix+".bids-receiver-buffer-size", DefaultAuctioneerServerConfig.BidsReceiverBufferSize, fmt.Sprintf("buffer size for the bids receiver channel (0 = use default of %d)", DefaultBidsReceiverBufferSize))
-	f.String(prefix+".bid-floor-agent-address", DefaultAuctioneerServerConfig.BidFloorAgentAddress, "bid floor agent address, on-chain auction resolution is skipped if this address wins")
+	f.String(prefix+".reserve-originator-address", DefaultAuctioneerServerConfig.ReserveOriginatorAddress, "reserve originator address, on-chain auction resolution is skipped if this address wins")
 	S3StorageServiceConfigAddOptions(prefix+".s3-storage", f)
 }
 
@@ -168,7 +170,7 @@ type AuctioneerServer struct {
 	s3StorageService               *S3StorageService
 	unackedBidsMutex               sync.Mutex
 	unackedBids                    map[string]*pubsub.Message[*JsonValidatedBid]
-	bidFloorAgentAddr              common.Address
+	reserveOriginatorAddr          common.Address
 
 	// Coordination fields
 	redisClient               redis.UniversalClient
@@ -202,7 +204,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		}
 	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
-	bidFloorAgentAddr := common.HexToAddress(cfg.BidFloorAgentAddress)
+	reserveOriginatorAddr := common.HexToAddress(cfg.ReserveOriginatorAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
@@ -268,11 +270,11 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, fmt.Errorf("bids receiver buffer size %d exceeds maximum int value", bufferSize)
 	}
 
-	if cfg.BidFloorAgentAddress != "" {
+	if cfg.ReserveOriginatorAddress != "" {
 		log.Info(
-			"BidFloorAgent configured, on-chain auction resolution will be skipped when this address wins",
+			"ReserveOriginator configured, on-chain auction resolution will be skipped when this address wins",
 			"address",
-			bidFloorAgentAddr.String(),
+			reserveOriginatorAddr.String(),
 		)
 	}
 
@@ -302,7 +304,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		redisClient:                    redisClient,
 		myId:                           myId,
 		auctioneerLivenessTimeout:      cfg.ConsumerConfig.IdletimeToAutoclaim * 3,
-		bidFloorAgentAddr:              bidFloorAgentAddr,
+		reserveOriginatorAddr:          reserveOriginatorAddr,
 	}, nil
 }
 
@@ -510,7 +512,11 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			select {
 			case bid := <-a.bidsReceiver:
 				log.Info("Consumed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
-				a.bidCache.add(JsonValidatedBidToGo(bid))
+				converted := JsonValidatedBidToGo(bid)
+				a.bidCache.add(converted)
+				if a.reserveOriginatorAddr != (common.Address{}) && converted.Bidder == a.reserveOriginatorAddr {
+					reserveOriginatorBidCounter.Inc(1)
+				}
 				// Persist the validated bid to the database as a non-blocking operation.
 				go a.persistValidatedBid(bid)
 			case <-ctx.Done():
@@ -562,12 +568,13 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	// and there is no way to use them after the round ends.
 	defer a.acknowledgeAllBids(ctx, upcomingRound)
 
-	// If BidFloorAgent is configured, and it won this round, skip on-chain auction resolution
-	if a.bidFloorAgentAddr != (common.Address{}) && a.bidFloorAgentAddr == first.Bidder {
+	// If ReserveOriginator is configured, and it won this round, skip on-chain auction resolution
+	if a.reserveOriginatorAddr != (common.Address{}) && a.reserveOriginatorAddr == first.Bidder {
+		reserveOriginatorWonCounter.Inc(1)
 		FirstBidValueGauge.Update(first.Amount.Int64())
 		if second == nil {
 			log.Info(
-				"Only BidFloorAgent bid received for auction resolution",
+				"Only ReserveOriginator bid received for auction resolution",
 				"round",
 				upcomingRound,
 				"firstBid",
@@ -578,7 +585,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		} else {
 			SecondBidValueGauge.Update(second.Amount.Int64())
 			log.Info(
-				"BidFloorAgent won round so skipping auction resolution",
+				"ReserveOriginator won round so skipping auction resolution",
 				"round",
 				upcomingRound,
 				"firstBid",
