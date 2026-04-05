@@ -86,6 +86,42 @@ func TestUint64String_UnmarshalJSON(t *testing.T) {
 			expected:  Uint64String(0),
 			shouldErr: false,
 		},
+		{
+			name:      "invalid - negative number",
+			input:     `"-123"`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - not a string",
+			input:     `123`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - non-numeric string",
+			input:     `"abc"`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - overflow",
+			input:     `"18446744073709551616"`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - empty string",
+			input:     `""`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
+		{
+			name:      "invalid - float",
+			input:     `"123.45"`,
+			expected:  Uint64String(0),
+			shouldErr: true,
+		},
 	}
 
 	for _, tt := range tests {
