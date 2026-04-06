@@ -435,7 +435,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithPrefix(GetHashInputPrefix(data.salt), addr)
+		hash := HashWithPrefix(data.hashInputPrefix, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if !restricted {
@@ -461,7 +461,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 			continue
 		}
 
-		hash := HashWithPrefix(GetHashInputPrefix(data.salt), addr)
+		hash := HashWithPrefix(data.hashInputPrefix, addr)
 		_, restricted := data.hashes[hash]
 		data.cache.Add(addr, restricted)
 		if restricted {
