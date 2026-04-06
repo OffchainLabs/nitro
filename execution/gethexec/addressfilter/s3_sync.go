@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -67,11 +69,11 @@ func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 }
 
 // parseHashListJSON parses the JSON hash list file.
-// Expected format: {"salt": "hex...", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
-func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
+// Expected format: {"salt": "uuid-string-representation", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
+func parseHashListJSON(data []byte) (uuid.UUID, []common.Hash, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, nil, fmt.Errorf("JSON unmarshal failed: %w", err)
+		return uuid.Nil, nil, fmt.Errorf("JSON unmarshal failed: %w", err)
 	}
 
 	// Validate hashing scheme - warn if not Sha256 but continue for forward compatibility
@@ -80,25 +82,21 @@ func parseHashListJSON(data []byte) ([]byte, []common.Hash, error) {
 			"scheme", payload.HashingScheme)
 	}
 
-	salt, err := hex.DecodeString(trimHexPrefix(payload.Salt))
+	salt, err := uuid.Parse(payload.Salt)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid salt hex: %w", err)
-	}
-	if len(salt) == 0 {
-		return nil, nil, fmt.Errorf("salt cannot be empty")
+		return uuid.Nil, nil, err
 	}
 
 	hashes := make([]common.Hash, len(payload.AddressHashes))
 	for i, h := range payload.AddressHashes {
 		hashBytes, err := hex.DecodeString(trimHexPrefix(h.Hash))
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
+			return uuid.Nil, nil, fmt.Errorf("invalid hash hex at index %d: %w", i, err)
 		}
 		if len(hashBytes) != 32 {
-			return nil, nil, fmt.Errorf("invalid hash length at index %d: got %d, want 32", i, len(hashBytes))
+			return uuid.Nil, nil, fmt.Errorf("invalid hash length at index %d: got %d, want 32", i, len(hashBytes))
 		}
 		copy(hashes[i][:], hashBytes)
 	}
-
 	return salt, hashes, nil
 }
