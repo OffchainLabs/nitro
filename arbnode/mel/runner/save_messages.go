@@ -31,6 +31,7 @@ func (m *MessageExtractor) saveMessages(ctx context.Context, current *fsm.Curren
 		log.Error("Error saving latest state as head state to db", "err", err)
 		return m.config.RetryInterval, err
 	}
+	msgsPushedCounter.Inc(int64(len(saveAction.messages)))
 	return 0, m.fsm.Do(processNextBlock{
 		melState: saveAction.postState,
 	})

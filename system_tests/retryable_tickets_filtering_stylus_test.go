@@ -3,7 +3,6 @@ package arbtest
 import (
 	"context"
 	"math/big"
-	"sync"
 	"testing"
 	"time"
 
@@ -28,8 +27,8 @@ func deployStylusStorageContract(
 
 // TestRetryableFilteringStylusSandwichRollback verifies that a group rollback
 // of a Stylus redeem chain does not affect neighboring transactions in the same
-// block. Three L2 transactions are forced into one block via sequencer
-// Pause/Activate:
+// block. Three L2 transactions are forced into one block via
+// SequenceTransactionsForTest (bypasses the sequencer queue):
 //   - TX1: writes keyBefore to multicall's storage
 //   - TX2: manual redeem that triggers a Stylus chain (multicall writes
 //     keyRedeem + CALLs filtered Stylus contract) → group rollback
@@ -75,7 +74,7 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 
 	// --- Step 2: Set filter and prepare sandwich txns ---
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	sequencer := builder.L2.ExecNode.Sequencer
 
@@ -103,43 +102,28 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	tx3Args = multicallAppendStore(tx3Args, keyAfter, valueAfter, false, false)
 	tx3 := builder.L2Info.PrepareTxTo("Sender2", &multicallAddr, 1e9, nil, tx3Args)
 
-	// --- Pause sequencer, queue all 3, resume → same block ---
+	// --- Sequence all 3 txs in a single block (bypasses queue for determinism) ---
 	sequencer.Pause()
+	defer sequencer.Activate()
 
-	var wg sync.WaitGroup
-	var tx1Err, tx2Err, tx3Err error
-	wg.Add(3)
+	block, txErrors := sequencer.SequenceTransactionsForTest(
+		t, types.Transactions{tx1, tx2, tx3},
+	)
+	require.NotNil(t, block, "block should have been created")
+	require.Len(t, txErrors, 3, "should have 3 tx results")
 
-	go func() {
-		defer wg.Done()
-		tx1Err = sequencer.PublishTransaction(ctx, tx1, nil)
-	}()
-	go func() {
-		defer wg.Done()
-		tx2Err = sequencer.PublishTransaction(ctx, tx2, nil)
-	}()
-	go func() {
-		defer wg.Done()
-		tx3Err = sequencer.PublishTransaction(ctx, tx3, nil)
-	}()
-
-	sequencer.Activate()
-	wg.Wait()
-
-	require.NoError(t, tx1Err, "TX1 should have been published successfully")
-	require.NoError(t, tx3Err, "TX3 should have been published successfully")
+	require.NoError(t, txErrors[0], "TX1 should have succeeded")
+	require.NoError(t, txErrors[2], "TX3 should have succeeded")
 
 	// TX2 should have failed (cascading redeem filtered)
-	require.Error(t, tx2Err, "redeem should have been rejected by filter")
-	require.ErrorContains(t, tx2Err, "cascading redeem filtered")
+	require.Error(t, txErrors[1], "redeem should have been rejected by filter")
+	require.ErrorContains(t, txErrors[1], "cascading redeem filtered")
 
-	// Wait for TX1 and TX3 receipts
+	// TX1 and TX3 are in the same block by construction (single SequenceTransactions call)
 	tx1Receipt, err := builder.L2.EnsureTxSucceeded(tx1)
 	require.NoError(t, err)
 	tx3Receipt, err := builder.L2.EnsureTxSucceeded(tx3)
 	require.NoError(t, err)
-
-	// Verify same block
 	require.Equal(t, tx1Receipt.BlockNumber.Uint64(), tx3Receipt.BlockNumber.Uint64(),
 		"TX1 and TX3 should be in the same block")
 
@@ -193,7 +177,7 @@ func TestRetryableFilteringStylusDelayedSandwichRollback(t *testing.T) {
 
 	// Set filter on B's address BEFORE submitting any retryables
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// --- Submit 3 retryables via L1 (all with auto-redeem) ---
 
