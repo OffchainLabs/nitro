@@ -1,8 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::caller_env::{JitEnv, JitExecEnv};
-use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use caller_env::GuestPtr;
+
+use crate::{
+    caller_env::{JitEnv, JitExecEnv},
+    machine::{Escape, MaybeEscape, WasmEnvMut},
+};
 
 pub fn ecrecovery(
     mut src: WasmEnvMut,

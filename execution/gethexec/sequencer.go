@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -474,7 +475,7 @@ type Sequencer struct {
 	addressFilterService *addressfilter.FilterService
 }
 
-func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChainId *big.Int) (*Sequencer, error) {
+func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher, parentChain *parent.ParentChain) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -507,19 +508,16 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	}
 
 	s := &Sequencer{
-		execEngine:      execEngine,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1Timestamp:     0,
-		pauseChan:       nil,
-		onForwarderSet:  make(chan struct{}, 1),
-		parentChain: &parent.ParentChain{
-			ChainID:  parentChainId,
-			L1Reader: l1Reader,
-		},
+		execEngine:                        execEngine,
+		txQueue:                           make(chan txQueueItem, config.QueueSize),
+		l1Reader:                          l1Reader,
+		config:                            configFetcher,
+		senderWhitelist:                   senderWhitelist,
+		nonceCache:                        newNonceCache(config.NonceCacheSize),
+		l1Timestamp:                       0,
+		pauseChan:                         nil,
+		onForwarderSet:                    make(chan struct{}, 1),
+		parentChain:                       parentChain,
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
 		addressFilterService:              addressFilterService,
@@ -1888,7 +1886,32 @@ func (s *Sequencer) StopAndWait() {
 	}
 }
 
-func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt []byte, hashes []common.Hash, digest string) {
+// SequenceTransactionsForTest sequences the given transactions in a single block,
+// using the sequencer's real preTxFilter and postTxFilter. This bypasses the
+// txQueue, guaranteeing all transactions land in the same block.
+func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transactions) (*types.Block, []error) {
+	t.Helper()
+	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s.preTxFilter, s.postTxFilter, nil)
+
+	s.L1BlockAndTimeMutex.Lock()
+	l1Block := s.l1BlockNumber.Load()
+	s.L1BlockAndTimeMutex.Unlock()
+
+	header := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1Block,
+		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
+	}
+
+	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
+	if err != nil {
+		t.Fatalf("SequenceTransactionsForTest: %v", err)
+	}
+	return block, hooks.GetTxErrors()
+}
+
+func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt uuid.UUID, hashes []common.Hash, digest string) {
 	t.Helper()
 	if s.addressFilterService == nil {
 		t.Fatal("addressFilterService is nil")

@@ -1,14 +1,6 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use arbutil::Color;
-use eyre::{bail, ErrReport};
-use prover::{
-    machine,
-    machine::{GlobalState, Machine, MachineStatus, ProofInfo},
-    value::Value,
-};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
@@ -17,6 +9,15 @@ use std::{
     path::PathBuf,
     time::Instant,
 };
+
+use arbutil::Color;
+use eyre::{ErrReport, bail};
+use prover::{
+    machine,
+    machine::{GlobalState, Machine, MachineStatus, ProofInfo},
+    value::Value,
+};
+use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -179,9 +180,10 @@ fn main() -> eyre::Result<()> {
 
     let soft_float = PathBuf::from("../../target/machines/latest/soft-float.wasm");
 
-    // The modules listed below will be tested for compliance with the spec, but won't produce proofs for the OSP test.
-    // We list the soft-float modules because, while compliance is necessary, the funcs are comprised of opcodes
-    // better tested elsewhere and aren't worth 10x the test time.
+    // The modules listed below will be tested for compliance with the spec, but won't produce
+    // proofs for the OSP test. We list the soft-float modules because, while compliance is
+    // necessary, the funcs are comprised of opcodes better tested elsewhere and aren't worth
+    // 10x the test time.
     let mut do_not_prove = HashSet::new();
     do_not_prove.insert(PathBuf::from("f32.json"));
     do_not_prove.insert(PathBuf::from("f64.json"));
@@ -350,7 +352,8 @@ fn main() -> eyre::Result<()> {
                     skip = true;
 
                     let skippables = vec![
-                        "module has no code", // we don't support metadata-only modules that have no code
+                        "module has no code", /* we don't support metadata-only modules that
+                                               * have no code */
                         "no such import",     // we don't support imports
                         "unsupported import", // we don't support imports
                         "reference types",    // we don't support the reference-type extension

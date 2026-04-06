@@ -1,17 +1,18 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{env::WasmEnv, native::NativeInstance};
+use std::time::{Duration, Instant};
+
 use arbutil::{crypto, format};
 use eyre::Result;
-use prover::programs::{config::StylusConfig, STYLUS_ENTRY_POINT};
-use std::time::{Duration, Instant};
+use prover::programs::{STYLUS_ENTRY_POINT, config::StylusConfig};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};
+#[cfg(feature = "llvm")]
+use wasmer_compiler_llvm::{LLVM, LLVMOptLevel};
 use wasmer_compiler_singlepass::Singlepass;
 
-#[cfg(feature = "llvm")]
-use wasmer_compiler_llvm::{LLVMOptLevel, LLVM};
+use crate::{env::WasmEnv, native::NativeInstance};
 
 #[test]
 fn benchmark_wasmer() -> Result<()> {

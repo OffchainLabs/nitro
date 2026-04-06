@@ -43,6 +43,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -559,6 +560,9 @@ func mainImpl() int {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 	}
 
+	parentChainID := new(big.Int).SetUint64(nodeConfig.ParentChain.ID)
+	parentChain := parent.NewParentChain(ctx, parentChainID, l1Reader)
+
 	var execNode *gethexec.ExecutionNode
 	var consensusNode *arbnode.Node
 
@@ -570,8 +574,8 @@ func mainImpl() int {
 			l2BlockChain,
 			l1Client,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
+			parentChain,
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
@@ -603,9 +607,9 @@ func mainImpl() int {
 			l1TransactionOptsBatchPoster,
 			dataSigner,
 			fatalErrChan,
-			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 			blobReader,
 			wasmModuleRoot,
+			parentChain,
 		)
 		if err != nil {
 			log.Error("failed to create consensus node", "err", err)

@@ -49,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -80,7 +81,6 @@ type DataPoster struct {
 	usingNoOpStorage  bool
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
-	parentChainID     *big.Int
 	parentChainID256  *uint256.Int
 	parentChain       *parent.ParentChain
 
@@ -103,7 +103,7 @@ type DataPosterOpts struct {
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
-	ParentChainID     *big.Int
+	ParentChain       *parent.ParentChain
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -160,13 +160,12 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		internalState:       state.NewInternalState(queue),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
-		parentChainID:       opts.ParentChainID,
-		parentChain:         &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.HeaderReader},
+		parentChain:         opts.ParentChain,
 	}
 	var overflow bool
-	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
+	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChain.ChainID)
 	if overflow {
-		return nil, fmt.Errorf("parent chain ID %v overflows uint256 (necessary for blob transactions)", opts.ParentChainID)
+		return nil, fmt.Errorf("parent chain ID %v overflows uint256 (necessary for blob transactions)", opts.ParentChain.ChainID)
 	}
 	if dp.extraBacklog == nil {
 		dp.extraBacklog = func() uint64 { return 0 }
@@ -523,7 +522,7 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 	// 1e9 gwei gas price is practically speaking an infinite gas price, so we cap it there.
 	// This also allows the formula to return positive infinity safely.
 	resultFloat = math.Min(resultFloat, 1e9)
-	resultBig := arbmath.FloatToBig(resultFloat * params.GWei)
+	resultBig := floatmath.FloatToBig(resultFloat * params.GWei)
 	if resultBig == nil {
 		return nil, fmt.Errorf("maxFeeCapExpression evaluated to float64 not convertible to integer: %v", resultFloat)
 	}
@@ -576,8 +575,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, s *state.LockedInternalS
 		minTipCapGwei, maxTipCapGwei, minRbfIncrease = config.MinBlobTxTipCapGwei, config.MaxBlobTxTipCapGwei, minBlobRbfIncrease
 	}
 	newTipCap := suggestedTip
-	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(minTipCapGwei*params.GWei))
-	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(maxTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMax(newTipCap, floatmath.FloatToBig(minTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMin(newTipCap, floatmath.FloatToBig(maxTipCapGwei*params.GWei))
 
 	// Compute the max fee with normalized gas so that blob txs aren't priced differently.
 	// Later, split the total cost bid into blob and non-blob fee caps.
@@ -846,7 +845,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, s *state.LockedInterna
 			Value:      value,
 			Data:       calldata,
 			AccessList: accessList,
-			ChainID:    p.parentChainID,
+			ChainID:    p.parentChain.ChainID,
 		}
 		inner = &deprecatedData
 	}

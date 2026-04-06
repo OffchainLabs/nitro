@@ -1225,13 +1225,6 @@ func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageInde
 	return containers.NewReadyPromise(extra.ArbOSFormatVersion, nil)
 }
 
-func (s *ExecutionEngine) StopAndWait() {
-	if s.transactionFiltererRPCClient != nil {
-		s.transactionFiltererRPCClient.StopAndWait()
-	}
-	s.StopWaiter.StopAndWait()
-}
-
 func (s *ExecutionEngine) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
@@ -1245,6 +1238,7 @@ func (s *ExecutionEngine) Start(ctxIn context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to start transaction filterer RPC client: %w", err)
 		}
+		s.TrackChild(s.transactionFiltererRPCClient)
 	}
 
 	s.LaunchThread(func(ctx context.Context) {
