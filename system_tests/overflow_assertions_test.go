@@ -84,7 +84,7 @@ func TestOverflowAssertions(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, ctx, l1info, l1client)
+	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
@@ -189,14 +189,10 @@ func TestOverflowAssertions(t *testing.T) {
 	if !ok {
 		Fatal(t, "not geth execution node")
 	}
-	for {
+	pollUntil(t, ctx, 5*time.Minute, 200*time.Millisecond, "node to catch up", func() bool {
 		latest := nodeExec.Backend.APIBackend().CurrentHeader()
-		isCaughtUp := latest.Number.Uint64() == uint64(totalMessagesPosted)
-		if isCaughtUp {
-			break
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
+		return latest.Number.Uint64() == uint64(totalMessagesPosted)
+	})
 
 	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
 	Require(t, err)
@@ -205,17 +201,18 @@ func TestOverflowAssertions(t *testing.T) {
 	totalBatches := totalBatchesBig.Uint64()
 
 	// Wait until the validator has validated the batches.
-	for {
+	pollUntil(t, ctx, 5*time.Minute, 200*time.Millisecond, "validator to validate batches", func() bool {
 		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
+		if err != nil {
+			t.Logf("ReadLastValidatedInfo error (will retry): %v", err)
+			return false
+		}
+		if lastInfo == nil {
+			return false
 		}
 		t.Log("Batch", lastInfo.GlobalState.Batch, "Total", totalBatches-1)
-		if lastInfo.GlobalState.Batch >= totalBatches-1 {
-			break
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
+		return lastInfo.GlobalState.Batch >= totalBatches-1
+	})
 
 	provider := state.NewHistoryCommitmentProvider(
 		stateManager,

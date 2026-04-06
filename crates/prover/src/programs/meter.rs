@@ -2,34 +2,37 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 #![allow(clippy::needless_lifetimes)]
 
-use crate::{
-    programs::{
-        config::{CompilePricingParams, PricingParams, SigMap},
-        FuncMiddleware, Middleware, ModuleMod,
-    },
-    value::FunctionType,
-    Machine,
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
 };
+
 use arbutil::{
+    Bytes32,
     evm::{
         self,
         api::{Gas, Ink},
     },
     operator::OperatorInfo,
-    pricing, Bytes32,
+    pricing,
 };
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::RwLock;
-use std::{
-    fmt::{Debug, Display},
-    sync::Arc,
-};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type};
 use wasmparser::{BlockType, Operator};
 
 use super::config::OpCosts;
+#[cfg(feature = "native")]
+use crate::Machine;
+use crate::{
+    programs::{
+        FuncMiddleware, Middleware, ModuleMod,
+        config::{CompilePricingParams, PricingParams, SigMap},
+    },
+    value::FunctionType,
+};
 
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
 pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";
@@ -333,12 +336,11 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
-            ($global:expr) => {{
-                $global.unwrap().try_into().expect("type mismatch")
-            }};
+            ($global:expr_2021) => {{ $global.unwrap().try_into().expect("type mismatch") }};
         }
 
         let ink = || Ink(convert!(self.get_global(STYLUS_INK_LEFT)));
@@ -518,6 +520,11 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
             I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
         ) => u64::MAX,
+        // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+        // include a wildcard arm even though we handle all known variants.
+        // If a new variant appears that we don't explicitly map yet, return
+        // unsupported opcode
+        _ => u64::MAX,
     };
     ink
 }

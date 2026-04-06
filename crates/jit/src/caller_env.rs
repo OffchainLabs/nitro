@@ -1,12 +1,14 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::machine::{WasmEnv, WasmEnvMut};
-use arbutil::{Bytes20, Bytes32};
-use caller_env::{wavmio::WavmIo, ExecEnv, GuestPtr, MemAccess};
-use rand::RngCore;
 use std::mem::{self, MaybeUninit};
+
+use arbutil::{Bytes20, Bytes32};
+use caller_env::{ExecEnv, GuestPtr, MemAccess, wavmio::WavmIo};
+use rand::RngCore;
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
+
+use crate::machine::{WasmEnv, WasmEnvMut};
 
 pub struct JitMemAccess<'s> {
     pub memory: Memory,
@@ -124,7 +126,8 @@ impl ExecEnv for JitExecEnv<'_> {
 
     fn print_string(&mut self, bytes: &[u8]) {
         match String::from_utf8(bytes.to_vec()) {
-            Ok(s) => eprintln!("JIT: WASM says: {s}"), // TODO: this adds too many newlines since go calls this in chunks
+            Ok(s) => eprintln!("JIT: WASM says: {s}"), // TODO: this adds too many newlines
+            // since go calls this in chunks
             Err(e) => {
                 let bytes = e.as_bytes();
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
@@ -135,11 +138,11 @@ impl ExecEnv for JitExecEnv<'_> {
 
 impl WavmIo for WasmEnv {
     fn get_u64_global(&self, idx: usize) -> Option<u64> {
-        self.small_globals.get(idx).copied()
+        self.input.small_globals.get(idx).copied()
     }
 
     fn set_u64_global(&mut self, idx: usize, val: u64) -> bool {
-        let Some(g) = self.small_globals.get_mut(idx) else {
+        let Some(g) = self.input.small_globals.get_mut(idx) else {
             return false;
         };
         *g = val;
@@ -147,33 +150,33 @@ impl WavmIo for WasmEnv {
     }
 
     fn get_bytes32_global(&self, idx: usize) -> Option<&[u8; 32]> {
-        self.large_globals.get(idx).map(|b| &b.0)
+        self.input.large_globals.get(idx)
     }
 
     fn set_bytes32_global(&mut self, idx: usize, val: [u8; 32]) -> bool {
-        let Some(g) = self.large_globals.get_mut(idx) else {
+        let Some(g) = self.input.large_globals.get_mut(idx) else {
             return false;
         };
-        *g = val.into();
+        *g = val;
         true
     }
 
     fn get_sequencer_message(&self, num: u64) -> Option<&[u8]> {
-        self.sequencer_messages.get(&num).map(|v| v.as_slice())
+        self.input
+            .sequencer_messages
+            .get(&num)
+            .map(|v| v.as_slice())
     }
 
     fn get_delayed_message(&self, num: u64) -> Option<&[u8]> {
-        self.delayed_messages.get(&num).map(|v| v.as_slice())
+        self.input.delayed_messages.get(&num).map(|v| v.as_slice())
     }
 
     fn get_preimage(&self, preimage_type: u8, hash: &[u8; 32]) -> Option<&[u8]> {
-        let Ok(pt) = preimage_type.try_into() else {
-            eprintln!("Go trying to get a preimage with unknown type {preimage_type}");
-            return None;
-        };
-        self.preimages
-            .get(&pt)
-            .and_then(|m| m.get(&Bytes32(*hash)))
+        self.input
+            .preimages
+            .get(&preimage_type)
+            .and_then(|m| m.get(hash))
             .map(|v| v.as_slice())
     }
 }

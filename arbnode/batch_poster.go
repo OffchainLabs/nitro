@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -380,7 +381,7 @@ type BatchPosterOpts struct {
 	DeployInfo           *chaininfo.RollupAddresses
 	TransactOpts         *bind.TransactOpts
 	DAPWriters           []daprovider.Writer
-	ParentChainID        *big.Int
+	ParentChain          *parent.ParentChain
 	DAPReaders           *daprovider.DAProviderRegistry
 	ChainConfig          *params.ChainConfig
 }
@@ -440,7 +441,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		dapWriters:         opts.DAPWriters,
 		redisLock:          redisLock,
 		dapReaders:         opts.DAPReaders,
-		parentChain:        &parent.ParentChain{ChainID: opts.ParentChainID, L1Reader: opts.L1Reader},
+		parentChain:        opts.ParentChain,
 		checkEip7623:       checkEip7623,
 		useEip7623:         useEip7623,
 	}
@@ -463,7 +464,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 			MetadataRetriever: b.getBatchPosterPosition,
 			ExtraBacklog:      b.GetBacklogEstimate,
 			RedisKey:          "data-poster.queue",
-			ParentChainID:     opts.ParentChainID,
+			ParentChain:       opts.ParentChain,
 		})
 	if err != nil {
 		return nil, err
@@ -1862,7 +1863,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	delayProofNeeded := b.building.firstDelayedMsg != nil && delayBufferConfig != nil && delayBufferConfig.Enabled // checking if delayBufferConfig is non-nil isn't needed, but better to be safe
 	delayProofNeeded = delayProofNeeded && (config.DelayBufferAlwaysUpdatable || delayBufferConfig.isUpdatable(latestHeader.Number.Uint64()))
 	if delayProofNeeded {
-		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher) // TODO: how to replace inboxTracer with msgExtractor here?
+		delayProof, err = GenDelayProof(ctx, b.building.firstDelayedMsg, b.batchMetaFetcher)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate delay proof: %w", err)
 		}
@@ -2071,9 +2072,9 @@ func (b *BatchPoster) GetBacklogEstimate() uint64 {
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
-	b.dataPoster.Start(ctxIn)
-	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
+	b.StartAndTrackChild(b.dataPoster)
+	b.StartAndTrackChild(b.redisLock)
 	b.LaunchThread(b.pollForReverts)
 	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
@@ -2097,7 +2098,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
-				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
+				batchPosterGasRefunderBalance.Update(floatmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		if b.dataPoster.Sender() != (common.Address{}) {
@@ -2105,7 +2106,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
-				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
+				batchPosterWalletBalance.Update(floatmath.BalancePerEther(walletBalance))
 			}
 		}
 		couldLock, err := b.redisLock.CouldAcquireLock(ctx)
@@ -2154,12 +2155,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config().PollInterval
 		}
 	})
-}
-
-func (b *BatchPoster) StopAndWait() {
-	b.StopWaiter.StopAndWait()
-	b.dataPoster.StopAndWait()
-	b.redisLock.StopAndWait()
 }
 
 type BoolRing struct {

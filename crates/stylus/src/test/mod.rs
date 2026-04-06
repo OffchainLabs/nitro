@@ -1,27 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
+use std::{collections::HashMap, path::Path, sync::Arc};
+
 use arbutil::{
+    Bytes20, Bytes32, Color,
     evm::{
         api::{Ink, VecReader},
         user::UserOutcome,
     },
-    Bytes20, Bytes32, Color,
 };
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use prover::{
+    Machine,
     machine::GlobalState,
     programs::{config::SigMap, prelude::*},
-    Machine,
 };
 use rand::prelude::*;
-use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store, Target,
+    Function, FunctionEnv, Imports, Instance, Module, Store, imports,
+    sys::{CompilerConfig, EngineBuilder, Target},
+    wasmparser::Operator,
 };
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 
 mod api;
 mod misc;
@@ -61,7 +64,10 @@ impl TestInstance {
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
-        let mut store = Store::new(compiler);
+        // Build a Wasmer engine from the singlepass compiler config using the
+        // re-exported `EngineBuilder`, then create a store from that engine.
+        let engine = wasmer::Engine::from(EngineBuilder::new(compiler));
+        let mut store = Store::new(engine);
         let wat = std::fs::read(path)?;
         let module = Module::new(&store, wat)?;
         let instance = Instance::new(&mut store, &module, &Imports::new())?;

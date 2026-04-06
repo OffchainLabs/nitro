@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocks_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
@@ -75,6 +76,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().DontParalellise()
+	builder.nodeConfig.MessageExtraction.Enable = false
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -160,7 +162,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.L1Reader,
 		&l1authA, NewCommonConfigFetcher(arbnode.ConfigDefaultL1NonSequencerTest()),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeA.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
@@ -244,7 +246,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		NewCommonConfigFetcher(cfg),
 		nil,
-		parentChainID,
+		parent.NewParentChain(ctx, parentChainID, l2nodeB.L1Reader),
 	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)

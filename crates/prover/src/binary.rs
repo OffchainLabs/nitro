@@ -1,18 +1,14 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    programs::{
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
-    },
-    value::{ArbValueType, FunctionType, IntegerValType, Value},
-};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
+
 use arbutil::{
-    evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum, Bytes32, Color, DebugColor,
+    Bytes32, Color, DebugColor,
+    evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
+    math::SaturatingSum,
 };
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -21,11 +17,19 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
+use wasmer_types::{ExportIndex, FunctionIndex, LocalFunctionIndex, entity::EntityRef};
 use wasmparser::{
-    Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
-    Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+    BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
+    Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+};
+
+use crate::{
+    programs::{
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -232,6 +236,7 @@ pub enum ExportKind {
     Memory,
     Global,
     Tag,
+    FuncExact,
 }
 
 impl From<ExternalKind> for ExportKind {
@@ -243,6 +248,7 @@ impl From<ExternalKind> for ExportKind {
             E::Memory => Self::Memory,
             E::Global => Self::Global,
             E::Tag => Self::Tag,
+            E::FuncExact => Self::FuncExact,
         }
     }
 }
@@ -255,6 +261,7 @@ impl From<ExportIndex> for ExportKind {
             E::Table(_) => Self::Table,
             E::Memory(_) => Self::Memory,
             E::Global(_) => Self::Global,
+            E::Tag(_) => Self::Tag,
         }
     }
 }
@@ -301,29 +308,39 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
-    let features = WasmFeatures {
-        mutable_global: true,
-        saturating_float_to_int: true,
-        sign_extension: true,
-        reference_types: false,
-        multi_value: true,
-        bulk_memory: true, // not all ops supported yet
-        simd: false,
-        relaxed_simd: false,
-        threads: false,
-        tail_call: false,
-        floats: true,
-        multi_memory: false,
-        exceptions: false,
-        memory64: false,
-        extended_const: false,
-        component_model: false,
-        function_references: false,
-        memory_control: false,
-        gc: false,
-        component_model_values: false,
-        component_model_nested_names: false,
-    };
+    parse_with_version(input, path, 0)
+}
+
+pub fn parse_with_version<'a>(
+    input: &'a [u8],
+    path: &'_ Path,
+    arbos_version: u64,
+) -> Result<WasmBinary<'a>> {
+    let mut features = WasmFeatures::empty();
+    features.set(WasmFeatures::MUTABLE_GLOBAL, true);
+    features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
+    features.set(WasmFeatures::SIGN_EXTENSION, true);
+    features.set(WasmFeatures::REFERENCE_TYPES, false);
+    features.set(
+        WasmFeatures::MULTI_VALUE,
+        arbos_version < ARBOS_VERSION_STYLUS_NO_MULTI_VALUE,
+    );
+    features.set(WasmFeatures::BULK_MEMORY, true); // not all ops supported yet
+    features.set(WasmFeatures::SIMD, false);
+    features.set(WasmFeatures::RELAXED_SIMD, false);
+    features.set(WasmFeatures::THREADS, false);
+    features.set(WasmFeatures::TAIL_CALL, false);
+    features.set(WasmFeatures::FLOATS, true);
+    features.set(WasmFeatures::MULTI_MEMORY, false);
+    features.set(WasmFeatures::EXCEPTIONS, false);
+    features.set(WasmFeatures::MEMORY64, false);
+    features.set(WasmFeatures::EXTENDED_CONST, false);
+    features.set(WasmFeatures::COMPONENT_MODEL, false);
+    features.set(WasmFeatures::FUNCTION_REFERENCES, false);
+    features.set(WasmFeatures::MEMORY_CONTROL, false);
+    features.set(WasmFeatures::GC, false);
+    features.set(WasmFeatures::CM_NESTED_NAMES, false);
+    features.set(WasmFeatures::GC_TYPES, true);
     Validator::new_with_features(features)
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
@@ -338,7 +355,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         use Payload::*;
 
         macro_rules! process {
-            ($dest:expr, $source:expr) => {{
+            ($dest:expr_2021, $source:expr_2021) => {{
                 for item in $source.into_iter() {
                     $dest.push(item?.into())
                 }
@@ -387,6 +404,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
             ImportSection(imports) => {
                 for import in imports {
                     let import = import?;
+                    let Imports::Single(_, import) = import else {
+                        bail!("unsupported import kind {:?}", import)
+                    };
                     let TypeRef::Func(offset) = import.ty else {
                         bail!("unsupported import kind {:?}", import)
                     };
@@ -429,7 +449,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 }
 
                 // CHECK: maybe reader.data_offset()
-                let name_reader = NameSectionReader::new(reader.data(), 0);
+                let name_reader =
+                    NameSectionReader::new(BinaryReader::new(reader.data(), reader.data_offset()));
 
                 for name in name_reader {
                     match name? {
@@ -459,11 +480,11 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         let name = import.name;
 
         let key = (module, name);
-        if let Some(prior) = imports.insert(key, offset) {
-            if prior != offset {
-                let name = name.debug_red();
-                bail!("inconsistent imports for {} {name}", module.red());
-            }
+        if let Some(prior) = imports.insert(key, offset)
+            && prior != offset
+        {
+            let name = name.debug_red();
+            bail!("inconsistent imports for {} {name}", module.red());
         }
     }
 
@@ -551,7 +572,7 @@ impl<'a> WasmBinary<'a> {
 
             /// this macro exists since middlewares aren't sized (can't use a vec without boxes)
             macro_rules! apply {
-                ($middleware:expr) => {
+                ($middleware:expr_2021) => {
                     let mut mid = Middleware::<WasmBinary>::instrument(&$middleware, index)?;
                     mid.locals_info(&locals);
 
@@ -643,12 +664,13 @@ impl<'a> WasmBinary<'a> {
     /// Parses and instruments a user wasm
     pub fn parse_user(
         wasm: &'a [u8],
-        arbos_version_for_gas: u64,
+        arbos_version_for_activation: u64,
         page_limit: u16,
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse(wasm, Path::new("user"))?;
+        let mut bin = parse_with_version(wasm, Path::new("user"), arbos_version_for_activation)?;
+
         let stylus_data = bin.instrument(compile, codehash)?;
 
         let Some(memory) = bin.memories.first() else {
@@ -664,7 +686,7 @@ impl<'a> WasmBinary<'a> {
 
         // not strictly necessary, but anti-DoS limits and extra checks in case of bugs
         macro_rules! limit {
-            ($limit:expr, $count:expr, $name:expr) => {
+            ($limit:expr_2021, $count:expr_2021, $name:expr_2021) => {
                 if $count > $limit {
                     bail!("too many wasm {}: {} > {}", $name, $count, $limit);
                 }
@@ -681,7 +703,7 @@ impl<'a> WasmBinary<'a> {
             limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
-        if arbos_version_for_gas >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
+        if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
             limit!(513, bin.imports.len(), "imports")
         }
 
@@ -693,7 +715,7 @@ impl<'a> WasmBinary<'a> {
 
         let max_len = 512;
         macro_rules! too_long {
-            ($name:expr, $len:expr) => {
+            ($name:expr_2021, $len:expr_2021) => {
                 bail!(
                     "wasm {} too long: {} > {}",
                     $name.red(),

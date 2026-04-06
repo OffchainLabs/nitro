@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -307,7 +308,7 @@ func gasForTxData(ctx context.Context, l1Reader *headerreader.HeaderReader, from
 		return 0, fmt.Errorf("getting the last header: %w", err)
 	}
 	gasFeeCap := new(big.Int).Mul(h.BaseFee, big.NewInt(2))
-	gasFeeCap = arbmath.BigMax(gasFeeCap, arbmath.FloatToBig(params.GWei))
+	gasFeeCap = arbmath.BigMax(gasFeeCap, floatmath.FloatToBig(params.GWei))
 
 	gasTipCap, err := l1Reader.Client().SuggestGasTipCap(ctx)
 	if err != nil {
@@ -384,6 +385,10 @@ func (w *Contract) Start(ctx context.Context) {
 
 func (b *Contract) StopAndWait() {
 	b.dataPoster.StopAndWait()
+}
+
+func (b *Contract) StopOnly() {
+	b.dataPoster.StopOnly()
 }
 
 func (b *Contract) DataPoster() *dataposter.DataPoster {

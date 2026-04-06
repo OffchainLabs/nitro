@@ -443,9 +443,15 @@ func (a *AuctioneerServer) updateCoordination(ctx context.Context) time.Duration
 
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
-	// Start S3 storage service to persist validated bids to s3
+	// Start S3 storage service to persist validated bids to s3.
+	// ORDERING MATTERS: s3StorageService must be tracked before consumer so that
+	// consumer stops first on shutdown (LIFO). The consumer holds the
+	// AUCTIONEER_CHOSEN_KEY distributed lock; stopping it first releases the lock,
+	// which expires after auctioneerLivenessTimeout. That timeout gives existing
+	// in-flight messages time to become unclaimed via IdleTimeToAutoclaim before
+	// a secondary auctioneer starts consuming them.
 	if a.s3StorageService != nil {
-		a.s3StorageService.Start(ctx_in)
+		a.StartAndTrackChild(a.s3StorageService)
 	}
 
 	// Start coordination to manage primary/secondary status
@@ -453,7 +459,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
-	a.consumer.Start(ctx_in)
+	a.StartAndTrackChild(a.consumer)
 	// Channel for single consumer, once readiness is indicated in this,
 	// consumer will start consuming iteratively.
 	ready := make(chan struct{}, 1)
@@ -788,13 +794,4 @@ func (a *AuctioneerServer) IsPrimary() bool {
 // GetId returns the unique identifier for this auctioneer instance
 func (a *AuctioneerServer) GetId() string {
 	return a.myId
-}
-
-func (a *AuctioneerServer) StopAndWait() {
-	// The AUCTIONEER_CHOSEN_KEY lock will be considered expired by other auctioneers after
-	// auctioneerLivenessTimeout. This timeout gives time for existing messages to become
-	// unclaimed after IdleTimeToAutoclaim before the secondary auctioneer starts consuming
-	// messages.
-	a.StopWaiter.StopAndWait()
-	a.consumer.StopAndWait()
 }

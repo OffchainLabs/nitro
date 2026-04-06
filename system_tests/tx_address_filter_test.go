@@ -5,17 +5,22 @@ package arbtest
 
 import (
 	"context"
-	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/util/s3client"
+	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
 func isFilteredError(err error) bool {
@@ -29,13 +34,10 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
-		salt := []byte("test-salt")
+		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
 		for i, addr := range addrs {
-			salted := make([]byte, len(salt)+common.AddressLength)
-			copy(salted, salt)
-			copy(salted[len(salt):], addr.Bytes())
-			hashes[i] = sha256.Sum256(salted)
+			hashes[i] = addressfilter.HashWithSalt(salt, addr)
 		}
 		store.Store(salt, hashes, "test")
 	}
@@ -517,4 +519,81 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	Require(t, err)
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+}
+
+func TestFilteringReadyWithoutAddressFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	if !builder.L2.ExecNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true when no address filter service is configured")
+	}
+}
+
+func TestSyncBlockedUntilFilteringReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.Sequencer.TransactionFiltering.AddressFilter = addressfilter.Config{
+		Enable: true,
+		S3: s3syncer.Config{
+			Config:    s3client.Config{Region: "us-east-1"},
+			Bucket:    "test-bucket",
+			ObjectKey: "test-key",
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	// Use large MsgLag and SyncInterval to prevent ConsensusExecutionSyncer from overwriting it.
+	builder.execConfig.SyncMonitor.MsgLag = time.Hour
+	builder.nodeConfig.ConsensusExecutionSyncer.SyncInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execNode := builder.L2.ExecNode
+
+	// Small delay to ensure ConsensusExecutionSyncer's initial sync call
+	// (which happens immediately on start) completes before we set our own data.
+	time.Sleep(500 * time.Millisecond)
+
+	// Push sync data to make SyncMonitor.Synced return true
+	execNode.SyncMonitor.SetConsensusSyncData(&execution.ConsensusSyncData{
+		Synced:          true,
+		MaxMessageCount: 1,
+		UpdatedAt:       time.Now(),
+	})
+
+	if !execNode.SyncMonitor.Synced(ctx) {
+		t.Fatal("SyncMonitor.Synced should return true after pushing sync data")
+	}
+
+	// Filter service exists but rules haven't been loaded
+	if execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be false before filter rules are loaded")
+	}
+
+	if execNode.Synced(ctx) {
+		t.Fatal("Synced should return false when filtering is not ready")
+	}
+
+	// Store hashes to the hashstore so FilteringReady returns true
+	salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	execNode.Sequencer.StoreFilterRulesForTest(t, salt, nil, "test-digest")
+
+	if !execNode.Sequencer.FilteringReady() {
+		t.Fatal("FilteringReady should be true after filter rules are loaded")
+	}
+
+	if !execNode.Synced(ctx) {
+		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
+	}
 }

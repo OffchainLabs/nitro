@@ -1,7 +1,7 @@
 [package]
 name = "read-return-data"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 stylus-sdk = { path = "../../../langs/rust/stylus-sdk" }
@@ -16,5 +16,7 @@ panic = "abort"
 # uncomment to optimize for size
 #   opt-level = "z"
 
-[workspace]
+[features]
+contract-client-gen = []
 
+[workspace]

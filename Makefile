@@ -87,7 +87,8 @@ rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* 
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_dir = crates/prover/
-rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
+prover_ffi_dir = crates/prover-ffi/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(wildcard $(prover_ffi_dir)/src/*.rs $(prover_ffi_dir)/*.toml) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
 
 wasm_lib = crates/wasm-libraries
 wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
@@ -148,8 +149,8 @@ stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
 stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
-stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
-stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+#stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+#stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
@@ -203,7 +204,7 @@ build-jit: $(arbitrator_jit)
 build-validation-server: $(validation_server)
 
 .PHONY: build-replay-env
-build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
 
 .PHONY: build-wasm-libs
 build-wasm-libs: $(arbitrator_wasm_libs)
@@ -482,7 +483,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 	cargo run --release --package forward -- --path $(forward_dir)/forward_stub.wat --stub
 	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
 
-$(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+$(output_latest)/machine.v2.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
 	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
 
@@ -609,8 +610,8 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint fmt
-	cargo fmt -p arbutil -p prover -p jit -p stylus -- --check
-	cargo fmt --all --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
+	cargo +nightly fmt -- --check
+	cargo +nightly fmt --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
 	@touch $@
 

@@ -5,13 +5,14 @@
 
 use stylus_sdk::{
     alloy_primitives::{b256, B256},
+    host::VM,
     prelude::*,
     ArbResult,
 };
 extern crate alloc;
 
 #[link(wasm_import_module = "vm_hooks")]
-extern "C" {
+unsafe extern "C" {
     fn math_div(value: *mut u8, divisor: *const u8);
     fn math_mod(value: *mut u8, modulus: *const u8);
     fn math_pow(value: *mut u8, exponent: *const u8);
@@ -20,7 +21,7 @@ extern "C" {
 }
 
 #[entrypoint]
-fn user_main(_: Vec<u8>) -> ArbResult {
+fn user_main(_: Vec<u8>, _vm: VM) -> ArbResult {
     let mut value = b256!("eddecf107b5740cef7f5a01e3ea7e287665c4e75a8eb6afae2fda2e3d4367786");
     let unknown = b256!("c6178c2de1078cd36c3bd302cde755340d7f17fcb3fcc0b9c333ba03b217029f");
     let ed25519 = b256!("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f");

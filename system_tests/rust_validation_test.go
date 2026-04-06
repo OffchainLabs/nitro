@@ -8,6 +8,8 @@ package arbtest
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"os"
 	"os/exec"
@@ -37,27 +39,10 @@ func TestRustValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	rvAddr := startRustValidatorServer(t, ctx)
-	valClient := connectValidationClient(t, ctx, rvAddr)
+	rvAddr := startRustValidatorServer(t, ctx, "")
+	valClient := connectValidationClient(t, ctx, rvAddr, "")
 	defer valClient.Stop()
-
-	if valClient.Name() != "Rust JIT validator" {
-		Fatal(t, "unexpected validator name:", valClient.Name())
-	}
-	if valClient.Capacity() < 2 {
-		Fatal(t, "unexpected capacity:", valClient.Capacity())
-	}
-
-	roots, err := valClient.WasmModuleRoots()
-	Require(t, err)
-	if len(roots) == 0 {
-		Fatal(t, "server reported no WASM module roots")
-	}
-
-	archs := valClient.StylusArchs()
-	if len(archs) == 0 {
-		Fatal(t, "server reported no stylus architectures")
-	}
+	assertAPIHandshake(t, valClient)
 }
 
 // TestRustServerValidation proves end-to-end block validation through
@@ -72,7 +57,7 @@ func TestRustServerValidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(builder.ctx, 120*time.Second)
 	defer cancel()
 
-	rvAddr := startRustValidatorServer(t, ctx)
+	rvAddr := startRustValidatorServer(t, ctx, "")
 
 	msgIdx := deployStylusContractAndCall(t, ctx, builder, auth)
 	waitForMessageIndex(t, ctx, builder, msgIdx)
@@ -86,7 +71,9 @@ func TestRustServerValidation(t *testing.T) {
 		actualState.BlockHash.Hex(), actualState.Batch, actualState.PosInBatch)
 }
 
-func startRustValidatorServer(t *testing.T, ctx context.Context) string {
+// startRustValidatorServer starts the Rust validation server and returns its address.
+// If jwtSecretFile is non-empty the server is started with --jwt-secret pointing at that file.
+func startRustValidatorServer(t *testing.T, ctx context.Context, jwtSecretFile string) string {
 	t.Helper()
 	root := projectRoot(t)
 
@@ -96,7 +83,11 @@ func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 	}
 
 	// Pass port 0 so the OS assigns a free port, avoiding TOCTOU races.
-	cmd := exec.CommandContext(ctx, validatorBin, "--address", "127.0.0.1:0")
+	args := []string{"--address", "127.0.0.1:0"}
+	if jwtSecretFile != "" {
+		args = append(args, "--jwt-secret", jwtSecretFile)
+	}
+	cmd := exec.CommandContext(ctx, validatorBin, args...)
 	stdout, err := cmd.StdoutPipe()
 	Require(t, err)
 	cmd.Stderr = os.Stderr
@@ -110,6 +101,21 @@ func startRustValidatorServer(t *testing.T, ctx context.Context) string {
 	addr := scanListeningAddr(t, stdout)
 	waitForTCP(t, addr, 30*time.Second)
 	return addr
+}
+
+// writeJWTSecretFile generates a random 32-byte secret, writes it as a hex file,
+// and returns both the file path and the hex string.
+func writeJWTSecretFile(t *testing.T) (filePath string, hexSecret string) {
+	t.Helper()
+	var secret [32]byte
+	_, err := rand.Read(secret[:])
+	Require(t, err)
+	hexSecret = hex.EncodeToString(secret[:])
+
+	dir := t.TempDir()
+	filePath = filepath.Join(dir, "jwt.hex")
+	Require(t, os.WriteFile(filePath, []byte(hexSecret), 0600))
+	return filePath, hexSecret
 }
 
 // scanListeningAddr reads lines from the validator's stdout until it finds
@@ -132,20 +138,90 @@ func scanListeningAddr(t *testing.T, r io.Reader) string {
 	return ""
 }
 
-func connectValidationClient(t *testing.T, ctx context.Context, addr string) *client.ValidationClient {
+func connectValidationClient(t *testing.T, ctx context.Context, addr, jwtSecretFile string) *client.ValidationClient {
 	t.Helper()
-	config := rustValidatorClientConfig(addr)
+	config := rustValidatorClientConfig(addr, jwtSecretFile)
 	valClient := client.NewValidationClient(StaticFetcherFrom(t, &config), nil)
 	Require(t, valClient.Start(ctx))
 	return valClient
 }
 
-func rustValidatorClientConfig(addr string) rpcclient.ClientConfig {
+func assertAPIHandshake(t *testing.T, valClient *client.ValidationClient) {
+	t.Helper()
+	if valClient.Name() != "Rust JIT validator" {
+		Fatal(t, "unexpected validator name:", valClient.Name())
+	}
+	if valClient.Capacity() < 2 {
+		Fatal(t, "unexpected capacity:", valClient.Capacity())
+	}
+	roots, err := valClient.WasmModuleRoots()
+	Require(t, err)
+	if len(roots) == 0 {
+		Fatal(t, "server reported no WASM module roots")
+	}
+	archs := valClient.StylusArchs()
+	if len(archs) == 0 {
+		Fatal(t, "server reported no stylus architectures")
+	}
+}
+
+func rustValidatorClientConfig(addr string, jwtSecretFile string) rpcclient.ClientConfig {
 	return rpcclient.ClientConfig{
 		URL:       "http://" + addr,
-		JWTSecret: "",
+		JWTSecret: jwtSecretFile,
 		Timeout:   120 * time.Second,
 		Retries:   3,
+	}
+}
+
+// TestRustValidationServerAPIWithJWT verifies that when the Rust server is started
+// with a JWT secret, a client carrying the correct secret can connect and use all
+// handshake API methods.
+//
+// Prerequisites: make build-validation-server && make build-replay-env
+func TestRustValidationServerAPIWithJWT(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	secretFile, _ := writeJWTSecretFile(t)
+	rvAddr := startRustValidatorServer(t, ctx, secretFile)
+	valClient := connectValidationClient(t, ctx, rvAddr, secretFile)
+	defer valClient.Stop()
+	assertAPIHandshake(t, valClient)
+}
+
+// TestRustValidationServerJWTRejected verifies that a client with a missing or
+// wrong JWT secret cannot connect to a server that requires one.
+//
+// Prerequisites: make build-validation-server && make build-replay-env
+func TestRustValidationServerJWTRejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	secretFile, _ := writeJWTSecretFile(t)
+	rvAddr := startRustValidatorServer(t, ctx, secretFile)
+
+	wrongSecretFile, _ := writeJWTSecretFile(t)
+	tests := []struct {
+		name         string
+		clientSecret string
+	}{
+		{"no secret", ""},
+		{"wrong secret", wrongSecretFile},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			config := rustValidatorClientConfig(rvAddr, tc.clientSecret)
+			valClient := client.NewValidationClient(StaticFetcherFrom(t, &config), nil)
+			defer valClient.Stop()
+			err := valClient.Start(ctx)
+			if err == nil {
+				Fatal(t, "expected connection to fail with", tc.name, "but it succeeded")
+			}
+			if !strings.Contains(err.Error(), "401") {
+				Fatal(t, "expected HTTP 401 error, got:", err)
+			}
+		})
 	}
 }
 
@@ -215,7 +291,7 @@ func validateBlockViaRustServer(
 
 	moduleRoot := sbv.GetLatestWasmModuleRoot()
 
-	valClient := connectValidationClient(t, ctx, rustAddr)
+	valClient := connectValidationClient(t, ctx, rustAddr, "")
 	defer valClient.Stop()
 
 	run := valClient.Launch(valInput, moduleRoot)

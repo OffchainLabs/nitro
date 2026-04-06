@@ -1,17 +1,14 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+use std::{future::Future, sync::Arc};
+
 use anyhow::Result;
-use axum::routing::post;
-use axum::Router;
-use std::future::Future;
-use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio::signal;
+use axum::{Router, routing::post};
+use tokio::{net::TcpListener, signal};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::config::ServerState;
-use crate::spawner_endpoints;
+use crate::{config::ServerState, jwt, spawner_endpoints};
 
 pub async fn run_server(listener: TcpListener, state: Arc<ServerState>) -> Result<()> {
     run_server_internal(listener, state, shutdown_signal()).await
@@ -22,21 +19,29 @@ async fn run_server_internal(
     state: Arc<ServerState>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, create_router().with_state(state.clone()))
+    let shutdown_state = state.clone();
+    axum::serve(listener, create_router(state))
         .with_graceful_shutdown(shutdown)
         .await?;
 
     info!("Shutdown signal received. Running cleanup...");
 
-    state.shutdown().await
+    shutdown_state.shutdown().await
 }
 
-fn create_router() -> Router<Arc<ServerState>> {
+fn create_router(state: Arc<ServerState>) -> Router {
     let router = Router::new()
         .route("/", post(spawner_endpoints::jsonrpc_dispatch))
-        .layer(TraceLayer::new_for_http());
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            jwt::auth_middleware,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
 
-    // Add a simple test endpoint that can be used in integration tests to verify that the server is up and running.
+    // Test-only health-check endpoint. Added after route_layer so it is NOT
+    // behind JWT auth — this is intentional: tests use it to verify the server
+    // is up without needing a valid token.
     #[cfg(test)]
     let router = router.route("/test", axum::routing::get(|| async { "OK" }));
 
@@ -77,9 +82,10 @@ pub(crate) async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use std::{net::SocketAddr, sync::Arc};
+
     use anyhow::Result;
     use clap::Parser;
-    use std::{net::SocketAddr, sync::Arc};
     use tokio::{
         net::TcpListener,
         sync::oneshot::{self, Sender},

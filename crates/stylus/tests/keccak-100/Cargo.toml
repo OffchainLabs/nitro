@@ -1,7 +1,7 @@
 [package]
 name = "keccak-100"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 sha3 = "0.10.5"
@@ -15,5 +15,8 @@ panic = "abort"
 
 # uncomment to optimize for size
 #   opt-level = "z"
+
+[features]
+contract-client-gen = []
 
 [workspace]

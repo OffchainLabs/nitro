@@ -1,19 +1,21 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    binary::FloatInstruction,
-    host::InternalFunc,
-    value::{ArbValueType, FunctionType, IntegerValType},
-};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
 use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
-use eyre::{bail, ensure, Result};
+use eyre::{Result, bail, ensure};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
 use wasmparser::{BlockType, Operator};
+
+use crate::{
+    binary::FloatInstruction,
+    internal_func::InternalFunc,
+    value::{ArbValueType, FunctionType, IntegerValType},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -222,9 +224,7 @@ impl Opcode {
                 (ArbValueType::I64, 1) => 0x3C,
                 (ArbValueType::I64, 2) => 0x3D,
                 (ArbValueType::I64, 4) => 0x3E,
-                _ => panic!(
-                    "Unsupported memory store of type {ty:?} to {bytes} bytes",
-                ),
+                _ => panic!("Unsupported memory store of type {ty:?} to {bytes} bytes",),
             },
             Opcode::MemorySize => 0x3F,
             Opcode::MemoryGrow => 0x40,
@@ -481,40 +481,40 @@ pub fn wasm_to_wavm(
         };
     }
     macro_rules! opcode {
-        ($opcode:ident ($($inside:expr),*)) => {{
+        ($opcode:ident ($($inside:expr_2021),*)) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
         }};
-        ($opcode:ident ($($inside:expr),*), @push $delta:expr) => {{
+        ($opcode:ident ($($inside:expr_2021),*), @push $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack += $delta;
         }};
-        ($opcode:ident ($($inside:expr),*), @pop $delta:expr) => {{
+        ($opcode:ident ($($inside:expr_2021),*), @pop $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack -= $delta;
         }};
         ($opcode:ident) => {{
             out.push(Instruction::simple(Opcode::$opcode));
         }};
-        ($opcode:ident, @push $delta:expr) => {{
+        ($opcode:ident, @push $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode));
             stack += $delta;
         }};
-        ($opcode:ident, @pop $delta:expr) => {{
+        ($opcode:ident, @pop $delta:expr_2021) => {{
             out.push(Instruction::simple(Opcode::$opcode));
             stack -= $delta;
         }};
-        ($opcode:ident, $value:expr) => {{
+        ($opcode:ident, $value:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
         }};
-        ($opcode:ident, $value:expr, @push $delta:expr) => {{
+        ($opcode:ident, $value:expr_2021, @push $delta:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
             stack += $delta;
         }};
-        ($opcode:ident, $value:expr, @pop $delta:expr) => {{
+        ($opcode:ident, $value:expr_2021, @pop $delta:expr_2021) => {{
             out.push(Instruction::with_data(Opcode::$opcode, $value));
             stack -= $delta;
         }};
-        (@cross, $module:expr, $func:expr) => {
+        (@cross, $module:expr_2021, $func:expr_2021) => {
             out.push(Instruction::with_data(
                 Opcode::CrossModuleCall,
                 pack_cross_module_call($module, $func),
@@ -522,7 +522,7 @@ pub fn wasm_to_wavm(
         };
     }
     macro_rules! load {
-        ($type:ident, $memory:expr, $bytes:expr, $signed:ident) => {{
+        ($type:ident, $memory:expr_2021, $bytes:expr_2021, $signed:ident) => {{
             ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryLoad {
                 ty: ArbValueType::$type,
@@ -533,7 +533,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! store {
-        ($type:ident, $memory:expr, $bytes:expr) => {{
+        ($type:ident, $memory:expr_2021, $bytes:expr_2021) => {{
             ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryStore {
                 ty: ArbValueType::$type,
@@ -544,7 +544,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! compare {
-        ($type:ident, $rel:ident, $signed:expr) => {{
+        ($type:ident, $rel:ident, $signed:expr_2021) => {{
             let op = Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed);
             out.push(Instruction::simple(op));
             stack -= 1;
@@ -570,7 +570,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! call {
-        ($func:expr) => {{
+        ($func:expr_2021) => {{
             let ty = &func_types[($func) as usize];
             let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
             opcode!(Call, ($func).into(), @push delta)
@@ -583,7 +583,7 @@ pub fn wasm_to_wavm(
         ($func:ident $(,$data:ident)+) => {
             float!(@impl $func($($data),+))
         };
-        (@impl $func:expr) => {{
+        (@impl $func:expr_2021) => {{
             #[allow(unused_imports)]
             use crate::{
                 binary::{FloatInstruction::*, FloatType::*, FloatUnOp::*, FloatBinOp::*, FloatRelOp::*},
@@ -658,7 +658,7 @@ pub fn wasm_to_wavm(
     };
 
     macro_rules! branch {
-        ($kind:ident, $depth:expr) => {{
+        ($kind:ident, $depth:expr_2021) => {{
             use Scope::*;
             let mut dest = 0;
             let scope = scopes.len() - $depth as usize - 1;
@@ -716,7 +716,7 @@ pub fn wasm_to_wavm(
         }};
     }
     macro_rules! height_after_block {
-        ($ty:expr) => {{
+        ($ty:expr_2021) => {{
             let ty = $ty;
             stack + block_type_results(*ty) as isize - block_type_params(*ty) as isize
         }};
@@ -860,12 +860,12 @@ pub fn wasm_to_wavm(
             I64Store8 { memarg } => store!(I64, memarg, 1),
             I64Store16 { memarg } => store!(I64, memarg, 2),
             I64Store32 { memarg } => store!(I64, memarg, 4),
-            MemorySize { mem, mem_byte } => {
-                ensure!(*mem == 0 && *mem_byte == 0, "MemorySize args must be 0");
+            MemorySize { mem } => {
+                ensure!(*mem == 0, "MemorySize args must be 0");
                 opcode!(MemorySize, @push 1)
             }
-            MemoryGrow { mem, mem_byte } => {
-                ensure!(*mem == 0 && *mem_byte == 0, "MemoryGrow args must be 0");
+            MemoryGrow { mem } => {
+                ensure!(*mem == 0, "MemoryGrow args must be 0");
                 opcode!(MemoryGrow)
             }
             I32Const { value } => opcode!(I32Const, *value as u32 as u64, @push 1),
@@ -1112,7 +1112,12 @@ pub fn wasm_to_wavm(
                     I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
                     I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                 )
-            ) => bail!("SIMD extension not supported {unsupported:?}")
+            ) => bail!("SIMD extension not supported {unsupported:?}"),
+            // `wasmparser::Operator` is marked `non_exhaustive`, so we must
+            // include a wildcard arm even though we handle all known variants.
+            // If a new variant appears that we don't explicitly map yet, panic
+            // so that it is noticed and added with a proper opcode.
+            _ => bail!("reached unsupported opcode {op:?}"),
         };
     }
     Ok(())

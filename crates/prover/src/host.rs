@@ -3,64 +3,21 @@
 
 #![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
+use std::{collections::HashMap, path::Path, str::FromStr};
+
+use arbutil::{Color, PreimageType, evm::user::UserOutcomeKind};
+use eyre::{ErrReport, Result, bail};
+use lazy_static::lazy_static;
+
 use crate::{
     binary, host,
+    internal_func::InternalFunc,
     machine::{Function, InboxIdentifier},
     programs::StylusData,
     utils,
     value::{ArbValueType, FunctionType},
-    wavm::{wasm_to_wavm, Instruction, Opcode},
+    wavm::{Instruction, Opcode, wasm_to_wavm},
 };
-use arbutil::{evm::user::UserOutcomeKind, Color, PreimageType};
-use eyre::{bail, ErrReport, Result};
-use lazy_static::lazy_static;
-use num_derive::FromPrimitive;
-use std::{collections::HashMap, path::Path, str::FromStr};
-
-/// Represents the internal hostio functions a module may have.
-#[derive(Clone, Copy, Debug, FromPrimitive)]
-#[repr(u64)]
-pub enum InternalFunc {
-    WavmCallerLoad8,
-    WavmCallerLoad32,
-    WavmCallerStore8,
-    WavmCallerStore32,
-    MemoryFill,
-    MemoryCopy,
-    UserInkLeft,
-    UserInkStatus,
-    UserSetInk,
-    UserStackLeft,
-    UserSetStack,
-    UserMemorySize,
-    CallMain,
-}
-
-impl InternalFunc {
-    pub fn ty(&self) -> FunctionType {
-        use ArbValueType::*;
-        use InternalFunc::*;
-        macro_rules! func {
-            ([$($args:expr),*], [$($outs:expr),*]) => {
-                FunctionType::new(vec![$($args),*], vec![$($outs),*])
-            };
-        }
-        #[rustfmt::skip]
-        let ty = match self {
-            WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
-            WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
-            MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
-            UserInkLeft    => func!([], [I64]),      // λ() → ink_left
-            UserInkStatus  => func!([], [I32]),      // λ() → ink_status
-            UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
-            UserStackLeft  => func!([], [I32]),      // λ() → stack_left
-            UserSetStack   => func!([I32], []),      // λ(stack_left)
-            UserMemorySize => func!([], [I32]),      // λ() → memory_size
-            CallMain       => func!([I32], [I32]),   // λ(args_len) → status
-        };
-        ty
-    }
-}
 
 /// Represents the internal hostio functions a module may have.
 pub enum Hostio {
@@ -166,10 +123,10 @@ impl Hostio {
             () => {
                 FunctionType::default()
             };
-            ([$($args:expr),*]) => {
+            ([$($args:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![])
             };
-            ([$($args:expr),*], [$($outs:expr),*]) => {
+            ([$($args:expr_2021),*], [$($outs:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }
@@ -223,10 +180,10 @@ impl Hostio {
         let mut body = vec![];
 
         macro_rules! opcode {
-            ($opcode:expr) => {
+            ($opcode:expr_2021) => {
                 body.push(Instruction::simple($opcode))
             };
-            ($opcode:expr, $value:expr) => {
+            ($opcode:expr_2021, $value:expr_2021) => {
                 body.push(Instruction::with_data($opcode, $value as u64))
             };
         }

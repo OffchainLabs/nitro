@@ -10,7 +10,7 @@
 use crate::{ExecEnv, GuestPtr, MemAccess};
 
 #[repr(transparent)]
-pub struct Errno(pub(crate) u16);
+pub struct Errno(pub u16);
 
 pub const ERRNO_SUCCESS: Errno = Errno(0);
 pub const ERRNO_BADF: Errno = Errno(8);
@@ -328,7 +328,8 @@ pub fn sock_shutdown<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32, _: 
     ERRNO_BADF
 }
 
-/// Yields execution to the OS scheduler. Effectively does nothing in Nitro due to the lack of threads.
+/// Yields execution to the OS scheduler. Effectively does nothing in Nitro due to the lack of
+/// threads.
 pub fn sched_yield<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E) -> Errno {
     ERRNO_SUCCESS
 }
@@ -337,8 +338,8 @@ pub fn sched_yield<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E) -> Errno {
 static TIME_INTERVAL: u64 = 10_000_000;
 
 /// Retrieves the time in ns of the given clock.
-/// Note that in Nitro, all clocks point to the same deterministic counter that advances 10ms whenever
-/// this function is called.
+/// Note that in Nitro, all clocks point to the same deterministic counter that advances 10ms
+/// whenever this function is called.
 pub fn clock_time_get<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     env: &mut E,

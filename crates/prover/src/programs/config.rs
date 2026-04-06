@@ -3,24 +3,28 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use crate::{programs::meter, value::FunctionType};
+use std::fmt::Debug;
+
 use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
-use std::fmt::Debug;
 use wasmer_types::{Pages, SignatureIndex, WASM_PAGE_SIZE};
 use wasmparser::Operator;
-
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
-        meter::Meter, start::StartMover, MiddlewareWrapper,
+        MiddlewareWrapper, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     std::sync::Arc,
-    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store, Target},
+    wasmer::{
+        Engine, Store,
+        sys::{Cranelift, CraneliftOptLevel, Target},
+    },
     wasmer_compiler_singlepass::Singlepass,
 };
+
+use crate::{programs::meter, value::FunctionType};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -182,7 +186,7 @@ impl CompileConfig {
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
 
-        let mut wasmer_config: Box<dyn wasmer::CompilerConfig> = match cranelift {
+        let mut wasmer_config: Box<dyn wasmer::sys::CompilerConfig> = match cranelift {
             true => {
                 let mut wasmer_config = Cranelift::new();
                 wasmer_config.opt_level(CraneliftOptLevel::Speed);

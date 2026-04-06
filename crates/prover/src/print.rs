@@ -1,17 +1,19 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::fmt::{self, Display};
+
+use arbutil::Color;
+use fnv::FnvHashSet as HashSet;
+use num_traits::FromPrimitive;
+use wasmer_types::WASM_PAGE_SIZE;
+
 use crate::{
-    host::InternalFunc,
+    internal_func::InternalFunc,
     machine::Module,
     value::{FunctionType, Value},
     wavm::{self, Opcode},
 };
-use arbutil::Color;
-use fnv::FnvHashSet as HashSet;
-use num_traits::FromPrimitive;
-use std::fmt::{self, Display};
-use wasmer_types::WASM_PAGE_SIZE;
 
 impl FunctionType {
     fn wat_string(&self, name_args: bool) -> String {
@@ -63,13 +65,13 @@ impl Display for Module {
         let mut pad = 0;
 
         macro_rules! w {
-            ($($args:expr),*) => {{
+            ($($args:expr_2021),*) => {{
                 let text = format!($($args),*);
                 write!(f, "{:pad$}{text}", "")?;
             }};
         }
         macro_rules! wln {
-            ($($args:expr),*) => {{
+            ($($args:expr_2021),*) => {{
                 w!($($args),*);
                 writeln!(f)?;
             }};

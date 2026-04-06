@@ -1,22 +1,18 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::machine::Escape;
-use arbutil::{Bytes32, PreimageType};
+use std::{io::BufWriter, net::TcpStream, path::PathBuf, time::Duration};
+
+use arbutil::Bytes32;
 use clap::{Args, Parser, Subcommand};
-use std::collections::HashMap;
-use std::io::BufWriter;
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::time::Duration;
-use validation::{BatchInfo, UserWasm};
 use wasmer::{FrameInfo, FunctionEnv, Instance, Pages, Store};
+
+use crate::machine::Escape;
 
 mod arbcompress;
 mod arbcrypto;
 mod caller_env;
 pub mod machine;
-mod prepare;
 pub mod program;
 pub mod stylus_backend;
 mod test;
@@ -63,7 +59,7 @@ pub enum InputMode {
     Local(LocalInput),
     /// Use direct Rust objects
     #[command(skip)]
-    Native(NativeInput),
+    Native(validation::ValidationInput),
     /// Continuously read new inputs from TCP connections
     Continuous,
 }
@@ -116,15 +112,6 @@ impl From<GlobalState> for validation::GoGlobalState {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct NativeInput {
-    pub old_state: GlobalState,
-    pub inbox: Vec<BatchInfo>,
-    pub delayed_inbox: Vec<BatchInfo>,
-    pub preimages: HashMap<PreimageType, HashMap<Bytes32, Vec<u8>>>,
-    pub programs: HashMap<Bytes32, UserWasm>,
-}
-
 /// Result of running the JIT validation.
 pub struct RunResult {
     /// Amount of memory used by the Wasm instance.
@@ -132,7 +119,8 @@ pub struct RunResult {
     /// Total runtime of the Wasm instance (measured from the first wavmio instruction to finish).
     pub runtime: Duration,
 
-    /// New global state after running the Wasm instance. May be invalid, if `self.error` is `Some`.
+    /// New global state after running the Wasm instance. May be invalid, if `self.error` is
+    /// `Some`.
     pub new_state: GlobalState,
 
     /// Error encountered during execution, if any.
@@ -176,20 +164,22 @@ fn run_instance(
         memory_used,
         runtime: env.process.timestamp.elapsed(),
         new_state: GlobalState {
-            last_block_hash: env.large_globals[0],
-            last_send_root: env.large_globals[1],
-            inbox_position: env.small_globals[0],
-            position_within_message: env.small_globals[1],
+            last_block_hash: Bytes32(env.input.large_globals[0]),
+            last_send_root: Bytes32(env.input.large_globals[1]),
+            inbox_position: env.input.small_globals[0],
+            position_within_message: env.input.small_globals[1],
         },
         error: None,
         trace: vec![],
-        // It is okay to take the socket ownership here because `env` will be dropped after this function returns.
+        // It is okay to take the socket ownership here because `env` will be dropped after this
+        // function returns.
         socket: env.process.socket.take().map(|(w, _)| w),
     };
 
     match outcome {
         Ok(value) => {
-            // The proper way `_start` returns successfully is by trapping with an exit code `0`, not by returning a value.
+            // The proper way `_start` returns successfully is by trapping with an exit code `0`,
+            // not by returning a value.
             result.error = Some(Escape::UnexpectedReturn(value.to_vec()));
         }
         Err(err) => {
