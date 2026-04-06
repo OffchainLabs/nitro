@@ -128,24 +128,45 @@ func TestSelectLocalAsm(t *testing.T) {
 
 	singlepassAsm := []byte("singlepass-asm")
 	craneliftAsm := []byte("cranelift-asm")
+	savedFallback := GetAllowFallback()
+	defer SetAllowFallback(savedFallback)
 
-	// Singlepass takes precedence when both exist.
+	// When both exist and allowFallback=true: cranelift wins (avoids repeated overflows).
+	SetAllowFallback(true)
 	asmMap := map[rawdb.WasmTarget][]byte{
 		localTarget:     singlepassAsm,
 		craneliftTarget: craneliftAsm,
 	}
 	asm, ok := selectLocalAsm(asmMap)
-	if !ok || string(asm) != "singlepass-asm" {
-		t.Fatalf("expected singlepass precedence, got ok=%v asm=%q", ok, asm)
+	if !ok || string(asm) != "cranelift-asm" {
+		t.Fatalf("expected cranelift precedence with allowFallback=true, got ok=%v asm=%q", ok, asm)
 	}
 
-	// Cranelift-only: returned when singlepass is absent.
+	// When both exist and allowFallback=false: singlepass wins.
+	SetAllowFallback(false)
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "singlepass-asm" {
+		t.Fatalf("expected singlepass precedence with allowFallback=false, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Singlepass-only: returned regardless of allowFallback.
+	SetAllowFallback(true)
+	asmMap = map[rawdb.WasmTarget][]byte{
+		localTarget: singlepassAsm,
+	}
+	asm, ok = selectLocalAsm(asmMap)
+	if !ok || string(asm) != "singlepass-asm" {
+		t.Fatalf("expected singlepass when cranelift absent, got ok=%v asm=%q", ok, asm)
+	}
+
+	// Cranelift-only: returned regardless of allowFallback.
+	SetAllowFallback(false)
 	asmMap = map[rawdb.WasmTarget][]byte{
 		craneliftTarget: craneliftAsm,
 	}
 	asm, ok = selectLocalAsm(asmMap)
 	if !ok || string(asm) != "cranelift-asm" {
-		t.Fatalf("expected cranelift fallback, got ok=%v asm=%q", ok, asm)
+		t.Fatalf("expected cranelift when singlepass absent, got ok=%v asm=%q", ok, asm)
 	}
 
 	// Neither exists: returns false.
@@ -159,5 +180,19 @@ func TestSelectLocalAsm(t *testing.T) {
 	_, ok = selectLocalAsm(nil)
 	if ok {
 		t.Fatal("expected ok=false for nil map")
+	}
+}
+
+func TestCraneliftFallbackTargetKeyMismatch(t *testing.T) {
+	err := testCraneliftFallbackTargetKeyMismatch()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftFallbackActivateWasmConsistency(t *testing.T) {
+	err := testCraneliftFallbackActivateWasmConsistency()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

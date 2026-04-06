@@ -918,3 +918,111 @@ func testRetryRestoresStylusPages() error {
 	fmt.Printf("testRetryRestoresStylusPages: passed (open=%d, ever=%d after retry)\n", gotOpen, gotEver)
 	return nil
 }
+
+// testCraneliftFallbackTargetKeyMismatch reproduces a bug where
+// activateProgramInternal stores cranelift-fallback ASM under the cranelift
+// target key (e.g., TargetArm64Cranelift) instead of the base target key
+// (TargetArm64). This breaks ActivatedAsmMap's consistency check when the
+// program is called in the same block it was activated.
+func testCraneliftFallbackTargetKeyMismatch() error {
+	_, _, db := makeTestEVMScope(1_000_000)
+
+	localTarget := rawdb.LocalTarget()
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("CraneliftTarget: %w", err)
+	}
+
+	module := common.HexToHash("0x01")
+
+	// Simulate what activateProgramInternal produces when singlepass fails
+	// and cranelift fallback fires: ASM stored under cranelift key only.
+	fallbackAsmMap := map[rawdb.WasmTarget][]byte{
+		craneliftTarget:  []byte("cranelift-asm"),
+		rawdb.TargetWavm: []byte("wavm-asm"),
+	}
+	if err := db.ActivateWasm(module, fallbackAsmMap); err != nil {
+		return fmt.Errorf("ActivateWasm: %w", err)
+	}
+
+	// getCompiledProgram requests base targets (from node config WasmTargets()).
+	targets := []rawdb.WasmTarget{localTarget, rawdb.TargetWavm}
+	_, _, err = db.ActivatedAsmMap(targets, module)
+	if err != nil {
+		return fmt.Errorf(
+			"ActivatedAsmMap should accept cranelift key as substitute for base target %v, but got: %w",
+			localTarget, err)
+	}
+
+	fmt.Printf("testCraneliftFallbackTargetKeyMismatch: passed\n")
+	return nil
+}
+
+// testCraneliftFallbackActivateWasmConsistency verifies that ActivateWasm
+// accepts a mix of normal and cranelift-fallback activations in the same
+// StateDB cycle. When singlepass fails for one program but succeeds for
+// another in the same block, the target key sets differ (e.g.,
+// {TargetArm64, TargetWavm} vs {TargetArm64Cranelift, TargetWavm}).
+// ActivateWasm's consistency check must treat cranelift keys as equivalent
+// to their base counterparts.
+func testCraneliftFallbackActivateWasmConsistency() error {
+	_, _, db := makeTestEVMScope(1_000_000)
+
+	localTarget := rawdb.LocalTarget()
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("CraneliftTarget: %w", err)
+	}
+
+	module1 := common.HexToHash("0x01")
+	module2 := common.HexToHash("0x02")
+
+	// Normal activation (singlepass succeeded).
+	normal := map[rawdb.WasmTarget][]byte{
+		localTarget:      []byte("sp-asm"),
+		rawdb.TargetWavm: []byte("wavm"),
+	}
+	if err := db.ActivateWasm(module1, normal); err != nil {
+		return fmt.Errorf("ActivateWasm(module1): %w", err)
+	}
+
+	// Fallback activation in same block (singlepass failed, cranelift succeeded).
+	fallback := map[rawdb.WasmTarget][]byte{
+		craneliftTarget:  []byte("cl-asm"),
+		rawdb.TargetWavm: []byte("wavm-2"),
+	}
+	if err := db.ActivateWasm(module2, fallback); err != nil {
+		return fmt.Errorf(
+			"ActivateWasm should accept cranelift fallback alongside normal activation, but got: %w", err)
+	}
+
+	fmt.Printf("testCraneliftFallbackActivateWasmConsistency: passed\n")
+
+	// Reverse direction: fallback first, then normal.
+	// When previouslyActivated has cranelift keys and new asmMap has base keys,
+	// the consistency check must also pass.
+	_, _, db2 := makeTestEVMScope(1_000_000)
+
+	module3 := common.HexToHash("0x03")
+	module4 := common.HexToHash("0x04")
+
+	fallback2 := map[rawdb.WasmTarget][]byte{
+		craneliftTarget:  []byte("cl-asm-3"),
+		rawdb.TargetWavm: []byte("wavm-3"),
+	}
+	if err := db2.ActivateWasm(module3, fallback2); err != nil {
+		return fmt.Errorf("ActivateWasm(module3, fallback first): %w", err)
+	}
+
+	normal2 := map[rawdb.WasmTarget][]byte{
+		localTarget:      []byte("sp-asm-4"),
+		rawdb.TargetWavm: []byte("wavm-4"),
+	}
+	if err := db2.ActivateWasm(module4, normal2); err != nil {
+		return fmt.Errorf(
+			"ActivateWasm should accept normal activation after cranelift fallback, but got: %w", err)
+	}
+
+	fmt.Printf("testCraneliftFallbackActivateWasmConsistency (reverse): passed\n")
+	return nil
+}

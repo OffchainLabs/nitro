@@ -412,16 +412,32 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 }
 
 // selectLocalAsm returns the best available ASM for the local target from an asmMap.
-// Singlepass (non-cranelift) takes precedence over cranelift.
+// When allowFallback is enabled and cranelift ASM exists, cranelift is preferred.
+// Cranelift ASM is only persisted after a singlepass overflow, so its presence
+// means singlepass is known to overflow for this program — preferring cranelift
+// avoids repeated overflows and expensive retry cycles on subsequent calls.
 func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
 	if asmMap == nil {
 		return nil, false
 	}
 	localTarget := rawdb.LocalTarget()
+	craneliftTarget, ctErr := rawdb.CraneliftTarget(localTarget)
+
+	// When fallback is enabled and cranelift ASM exists, prefer it.
+	if GetAllowFallback() && ctErr == nil {
+		if asm, ok := asmMap[craneliftTarget]; ok && len(asm) > 0 {
+			return asm, true
+		}
+	}
+
+	// Default: use singlepass ASM.
 	if asm, ok := asmMap[localTarget]; ok && len(asm) > 0 {
 		return asm, true
 	}
-	if craneliftTarget, err := rawdb.CraneliftTarget(localTarget); err == nil {
+
+	// Fallback to cranelift even if allowFallback is false,
+	// in case cranelift is the only available ASM.
+	if ctErr == nil {
 		if asm, ok := asmMap[craneliftTarget]; ok && len(asm) > 0 {
 			return asm, true
 		}
@@ -672,15 +688,9 @@ func getCraneliftAsm(
 		return nil, fmt.Errorf("failed to determine cranelift target: %w", err)
 	}
 
-	// Check persistent wasm store.
-	wasmStore := db.Database().WasmStore()
-	if wasmStore != nil {
-		if asm := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash); len(asm) > 0 {
-			return asm, nil
-		}
-	} else {
-		log.Warn("wasm store unavailable, cranelift ASM will not be cached",
-			"program", address, "module", moduleHash)
+	// Check in-memory activatedWasms (same-block activation) then persistent wasm store.
+	if asm := db.ActivatedAsm(craneliftTarget, moduleHash); len(asm) > 0 {
+		return asm, nil
 	}
 
 	// Compile with cranelift.
@@ -698,6 +708,7 @@ func getCraneliftAsm(
 	}
 
 	// Persist to wasm store.
+	wasmStore := db.Database().WasmStore()
 	if wasmStore != nil {
 		batch := wasmStore.NewBatch()
 		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
