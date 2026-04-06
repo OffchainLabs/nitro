@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -58,6 +59,9 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 
 // ReportCurrentFilterSetId POSTs the given filter set ID to the configured external reporting endpoint.
 func (t *TransactionFiltererAPI) ReportCurrentFilterSetId(ctx context.Context, filterSetId string) error {
+	// add timeout to context to avoid hanging if the endpoint is unresponsive
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	if t.filterSetReportingEndpoint == "" {
 		return errors.New("filter set reporting endpoint not configured")
 	}
