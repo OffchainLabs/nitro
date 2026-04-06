@@ -12,9 +12,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 )
 
@@ -65,6 +67,48 @@ func TestValidateAndInitializeDBForMEL_NonZeroMessageCount(t *testing.T) {
 	require.ErrorContains(t, err, "stale msgs")
 }
 
+func putBatchMetadata(t *testing.T, db interface{ Put([]byte, []byte) error }, seqNum uint64, meta mel.BatchMetadata) {
+	t.Helper()
+	data, err := rlp.EncodeToBytes(meta)
+	require.NoError(t, err)
+	require.NoError(t, db.Put(read.Key(schema.SequencerBatchMetaPrefix, seqNum), data))
+}
+
+func TestComputeMigrationStartBlock_WithBatches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Arbitrum parent chain returns last batch ParentChainBlock", func(t *testing.T) {
+		t.Parallel()
+		db := rawdb.NewMemoryDatabase()
+		putRLPValue(t, db, schema.SequencerBatchCountKey, 3)
+		putBatchMetadata(t, db, 2, mel.BatchMetadata{
+			MessageCount:     arbutil.MessageIndex(100),
+			ParentChainBlock: 500,
+		})
+
+		block, err := computeMigrationStartBlock(
+			context.Background(), nil, db,
+			&chaininfo.RollupAddresses{DeployedAt: 10}, true,
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(500), block)
+	})
+
+	t.Run("missing batch metadata returns error", func(t *testing.T) {
+		t.Parallel()
+		db := rawdb.NewMemoryDatabase()
+		putRLPValue(t, db, schema.SequencerBatchCountKey, 3)
+		// Don't write any batch metadata
+
+		_, err := computeMigrationStartBlock(
+			context.Background(), nil, db,
+			&chaininfo.RollupAddresses{DeployedAt: 10}, true,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to read last legacy batch metadata")
+	})
+}
+
 func TestComputeMigrationStartBlock_ZeroBatches(t *testing.T) {
 	t.Parallel()
 
@@ -105,4 +149,26 @@ func TestComputeMigrationStartBlock_ZeroBatches(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(99), block)
 	})
+}
+
+func TestSetDelayedSequencer_ErrorOnDoubleSet(t *testing.T) {
+	t.Parallel()
+	// Create a minimal SeqCoordinator (without Redis) to test SetDelayedSequencer guards.
+	coord := &SeqCoordinator{}
+
+	// First call should succeed.
+	require.NoError(t, coord.SetDelayedSequencer(&DelayedSequencer{}))
+
+	// Second call should return "already set" error.
+	err := coord.SetDelayedSequencer(&DelayedSequencer{})
+	require.ErrorContains(t, err, "already set")
+}
+
+func TestValidateAndInitializeDBForMEL_FreshNodeNoKeys(t *testing.T) {
+	t.Parallel()
+	// Fresh node with no legacy keys and no MEL state. Without an l1client,
+	// createInitialMELState will fail.
+	db := rawdb.NewMemoryDatabase()
+	_, err := validateAndInitializeDBForMEL(context.Background(), nil, &chaininfo.RollupAddresses{DeployedAt: 100}, db, true)
+	require.Error(t, err)
 }

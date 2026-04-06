@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"math/big"
 	"reflect"
 	"testing"
 
@@ -110,4 +111,55 @@ func TestLogsFetcher(t *testing.T) {
 
 	_, err := fetcher.getHeaderByNumber(ctx, 0)
 	require.Error(t, err)
+}
+
+// TestLogsFetcher_NilHeaderFromParentChain verifies that fetch returns an
+// error (instead of panicking) when the parent chain returns a nil header
+// for the latest block query. This exercises the nil guard added at line 67.
+func TestLogsFetcher_NilHeaderFromParentChain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// nilHeaderParentChainReader returns (nil, nil) for all HeaderByNumber calls.
+	parentChainReader := &nilHeaderParentChainReader{mockParentChainReader{
+		blocks:  map[common.Hash]*types.Block{},
+		headers: map[common.Hash]*types.Header{},
+	}}
+	fetcher := newLogsAndHeadersFetcher(parentChainReader, 10)
+	// chainHeight = 0 forces the fetcher into the branch that queries the
+	// parent chain for the latest block height.
+	fetcher.chainHeight = 0
+
+	melState := &mel.State{ParentChainBlockNumber: 0}
+	err := fetcher.fetch(ctx, melState)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil header")
+}
+
+// TestLogsFetcher_NilHeaderNumber verifies that fetch returns an error when
+// the parent chain returns a header with a nil Number field.
+func TestLogsFetcher_NilHeaderNumber(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	parentChainReader := &nilNumberParentChainReader{mockParentChainReader{
+		blocks:  map[common.Hash]*types.Block{},
+		headers: map[common.Hash]*types.Header{},
+	}}
+	fetcher := newLogsAndHeadersFetcher(parentChainReader, 10)
+	fetcher.chainHeight = 0
+
+	melState := &mel.State{ParentChainBlockNumber: 0}
+	err := fetcher.fetch(ctx, melState)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil")
+}
+
+// nilNumberParentChainReader returns a header with Number == nil.
+type nilNumberParentChainReader struct {
+	mockParentChainReader
+}
+
+func (m *nilNumberParentChainReader) HeaderByNumber(_ context.Context, _ *big.Int) (*types.Header, error) {
+	return &types.Header{Number: nil}, nil
 }
