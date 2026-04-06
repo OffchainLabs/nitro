@@ -869,7 +869,7 @@ impl GlobalState {
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, &val)| val != Bytes32::default())
+            .find(|&(_, &val)| val != Bytes32::default())
             .map(|(i, _)| i);
 
         match last_non_zero_idx {
