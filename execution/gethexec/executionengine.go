@@ -110,7 +110,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 	}
 }
 
-func touchAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *types.Transaction, sender common.Address) {
+func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Address) {
 	db.TouchAddress(sender)
 	if tx.To() != nil {
 		db.TouchAddress(*tx.To())
@@ -124,7 +124,6 @@ func touchAddresses(db *state.StateDB, ef *eventfilter.EventFilter, tx *types.Tr
 		db.TouchAddress(arbosutil.InverseRemapL1Address(sender))
 	}
 	touchRetryableAddresses(db, tx)
-	applyEventFilter(ef, db)
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
@@ -134,7 +133,8 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	if tx.Type() == types.ArbitrumInternalTxType {
 		return nil
 	}
-	touchAddresses(db, f.eventFilter, tx, sender)
+	touchAddresses(db, tx, sender)
+	applyEventFilter(f.eventFilter, db)
 
 	if db.IsAddressFiltered() {
 		// For redeems, return the filter error so the block processor can

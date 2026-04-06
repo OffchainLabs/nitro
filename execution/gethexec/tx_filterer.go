@@ -25,7 +25,7 @@ func (f *txFilterer) Setup(statedb *state.StateDB) {
 }
 
 func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
-	touchAddresses(statedb, nil, tx, sender)
+	touchAddresses(statedb, tx, sender)
 }
 
 func (f *txFilterer) CheckFiltered(statedb *state.StateDB) error {
