@@ -76,7 +76,7 @@ func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
 }
 
 // parseHashListJSON parses the JSON hash list file.
-// Expected format: {"salt": "uuid-string-representation", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
+// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "address_hashes": [{"hash": "hex1"}, {"hash": "hex2"}, ...]}
 func parseHashListJSON(data []byte) (*parsedPayload, error) {
 	var payload hashListPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
