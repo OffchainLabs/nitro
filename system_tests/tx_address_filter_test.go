@@ -36,8 +36,9 @@ func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecke
 	if len(addrs) > 0 {
 		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
+		hashPrefix := addressfilter.GetHashInputPrefix(salt)
 		for i, addr := range addrs {
-			hashes[i] = addressfilter.HashWithSalt(salt, addr)
+			hashes[i] = addressfilter.HashWithPrefix(hashPrefix, addr)
 		}
 		store.Store(salt, hashes, "test")
 	}
