@@ -175,7 +175,7 @@ func TestParseHashListJSON(t *testing.T) {
 	hashed_addr1 := sha256.Sum256(common.BigToAddress(common.Big1).Bytes())
 	hashed_addr2 := sha256.Sum256(common.BigToAddress(common.Big2).Bytes())
 	// Test valid JSON
-	// should follow format: {"salt": "uuid-format", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
+	// should follow format: {"id": "uuid-format", "salt": "uuid-format", "address_hashes": [{"hash": "hex1", "max_risk_score_level":1}, {"hash": "hex2", "max_risk_score_level":3}, ...]}
 	id := uuid.New()
 	validPayload := map[string]interface{}{
 		"id":   id,
@@ -219,6 +219,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test invalid salt hex
 	invalidSaltPayload := map[string]interface{}{
 		"salt":           "not-UUID-salt",
+		"id":             uuid.NewString(),
 		"address_hashes": []map[string]interface{}{{"hash": hex.EncodeToString(hashed_addr1[:])}},
 	}
 	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
@@ -252,6 +253,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test with hashing_scheme: Sha256 (should parse without error)
 	sha256Payload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"hashing_scheme": "Sha256",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
@@ -269,6 +271,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test with unknown hashing_scheme (should parse but log warning - we can't easily verify log in test)
 	unknownSchemePayload := map[string]interface{}{
 		"salt":           "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":             uuid.NewString(),
 		"hashing_scheme": "Unknown",
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
@@ -283,9 +286,10 @@ func TestParseHashListJSON(t *testing.T) {
 		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
 	}
 
-	// Test with 0x-prefixed salt and hashes (lowercase)
+	// Test with 0x-prefixed hashes (lowercase)
 	prefixedPayload := map[string]interface{}{
 		"salt": "3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7",
+		"id":   uuid.NewString(),
 		"address_hashes": []map[string]interface{}{
 			{"hash": "0x" + hex.EncodeToString(hashed_addr1[:])},
 			{"hash": "0X" + hex.EncodeToString(hashed_addr2[:])},
@@ -305,6 +309,7 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
 		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":   uuid.NewString(),
 		"address_hashes": []map[string]interface{}{
 			{"hash": hex.EncodeToString(hashed_addr1[:])},
 		},
