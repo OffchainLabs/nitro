@@ -14,17 +14,17 @@ import (
 
 // buildEstimateGasFilterNode creates a single sequencer node with RPC filtering
 // enabled. The txFilterer is wired into the backend at construction time.
-func buildEstimateGasFilterNode(t *testing.T, ctx context.Context, enableRPCFilter bool) (builder *NodeBuilder, cleanup func()) {
+func buildEstimateGasFilterNode(t *testing.T, ctx context.Context, enableETHCallFilter bool) (builder *NodeBuilder, cleanup func()) {
 	t.Helper()
 	builder = NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
-	builder.execConfig.TransactionFiltering.EnableRPCFilter = enableRPCFilter
+	builder.execConfig.TransactionFiltering.EnableETHCallFilter = enableETHCallFilter
 	cleanup = builder.Build(t)
 	return builder, cleanup
 }
 
 // TestEstimateGasFilterDirectAddress verifies that eth_estimateGas rejects
-// calls involving a filtered address when EnableRPCFilter is true.
+// calls involving a filtered address when EnableETHCallFilter is true.
 func TestEstimateGasFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -72,7 +72,7 @@ func TestEstimateGasFilterDirectAddress(t *testing.T) {
 }
 
 // TestEstimateGasFilterDisabled verifies that eth_estimateGas does not reject
-// calls to filtered addresses when EnableRPCFilter is false.
+// calls to filtered addresses when EnableETHCallFilter is false.
 func TestEstimateGasFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -64,7 +64,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	ipcPath := tmpPath(t, "test.ipc")
 
 	builder = NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.TransactionFiltering.EnableRPCFilter = false
+	builder.execConfig.TransactionFiltering.EnableETHCallFilter = false
 	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builder.l2StackConfig.IPCPath = ipcPath
 	if withDelayedSeq {
@@ -80,7 +80,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfigB.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessAlwaysCompatible
-	execConfigB.TransactionFiltering.EnableRPCFilter = true
+	execConfigB.TransactionFiltering.EnableETHCallFilter = true
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
