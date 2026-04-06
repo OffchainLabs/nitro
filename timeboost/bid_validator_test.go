@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -696,7 +695,7 @@ func TestBidValidator_validateBid_concurrentRoundReset(t *testing.T) {
 		}
 		go func() {
 			defer wg.Done()
-			bv.validateBid(bidCopy, balanceFn)
+			_, _ = bv.validateBid(bidCopy, balanceFn)
 		}()
 	}
 	wg.Wait()
