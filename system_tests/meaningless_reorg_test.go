@@ -93,7 +93,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if metadata.ParentChainBlock == newBatchBlock {
 			break
 		} else if metadata.ParentChainBlock != originalBatchBlock {
-			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", metadata.ParentChainBlock)
+			Fatal(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.ParentChainBlock, "instead of expected", newBatchBlock)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

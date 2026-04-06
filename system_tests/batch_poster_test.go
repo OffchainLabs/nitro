@@ -436,6 +436,9 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 		time.Sleep(time.Second)
 		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
+		if batches == 0 {
+			continue
+		}
 		postedMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
 		Require(t, err)
 		haveMessages, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
@@ -822,30 +825,35 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, receipt.BlockHash)
 	Require(t, err)
 
-	// wait for this tx to be posted in a batch, and check which batch
-	var batchNum uint64
-	for {
-		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.GetParentChainDataSource().FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		if err == nil && found {
-			break
-		}
-		t.Logf("waiting for tx to be posted in a batch")
-		<-time.After(time.Millisecond * 10)
-	}
+	// Wait for this tx to be posted in a batch, and record which batch.
+	batchNum := waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()), 30*time.Second, 10*time.Millisecond)
 
 	// find the transaction that posted this batch to parent chain
 	seqInboxContract, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
 	var batchTxHash common.Hash
-	for {
-		it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
-		if err == nil && it.Next() {
-			batchTxHash = it.Event.Raw.TxHash
-			break
+	var lastFilterErr error
+	{
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			it, err := seqInboxContract.FilterSequencerBatchDelivered(nil, []*big.Int{new(big.Int).SetUint64(batchNum)}, nil, nil)
+			if err != nil {
+				lastFilterErr = err
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if it.Next() {
+				batchTxHash = it.Event.Raw.TxHash
+			}
+			it.Close()
+			if batchTxHash != (common.Hash{}) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		t.Logf("waiting to find sequencer batch message")
-		<-time.After(time.Millisecond * 10)
+		if batchTxHash == (common.Hash{}) {
+			t.Fatalf("sequencer batch delivery event not found for batch %d (last filter error: %v)", batchNum, lastFilterErr)
+		}
 	}
 
 	// get receipt of batch tx to know gas used

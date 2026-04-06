@@ -86,16 +86,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	l2Block, err := builder.L2.Client.BlockByHash(ctx, txReceipt.BlockHash)
 	Require(t, err)
 
-	var batchNum uint64
-	for i := 0; i < 30; i++ {
-		var found bool
-		batchNum, found, err = builder.L2.ConsensusNode.GetParentChainDataSource().FindInboxBatchContainingMessage(arbutil.MessageIndex(l2Block.NumberU64()))
-		Require(t, err)
-		if found {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(l2Block.NumberU64()), 3*time.Second, 100*time.Millisecond)
 
 	// Advance L1 more for batch-posting-report finality
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
@@ -188,24 +179,16 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	verifyTx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, big.NewInt(2e12), nil)
 	err = builder.L2.Client.SendTransaction(ctx, verifyTx)
 	Require(t, err)
-	_, err = builder.L2.EnsureTxSucceeded(verifyTx)
+	verifyReceipt, err := builder.L2.EnsureTxSucceeded(verifyTx)
 	Require(t, err)
 
 	// Advance L1 to post batch
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
 
-	// Wait for batch and advance for finality
-	for i := 0; i < 30; i++ {
-		verifyReceipt, _ := builder.L2.Client.TransactionReceipt(ctx, verifyTx.Hash())
-		if verifyReceipt != nil {
-			verifyBlock, _ := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
-			_, found, err := builder.L2.ConsensusNode.GetParentChainDataSource().FindInboxBatchContainingMessage(arbutil.MessageIndex(verifyBlock.NumberU64()))
-			if err == nil && found {
-				break
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	// Wait for the verify transaction's batch to be tracked.
+	verifyBlock, err := builder.L2.Client.BlockByHash(ctx, verifyReceipt.BlockHash)
+	Require(t, err)
+	waitForFindInboxBatch(t, builder.L2.ConsensusNode, arbutil.MessageIndex(verifyBlock.NumberU64()), 30*time.Second, 100*time.Millisecond)
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 5)
 
 	// Check if follower synced the new transaction
@@ -238,10 +221,7 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 	t.Logf("Final block numbers: sequencer=%d follower=%d", seqBlockNum, follBlockNum)
 
 	// Compare the highest common block
-	checkBlockNum := follBlockNum
-	if seqBlockNum < follBlockNum {
-		checkBlockNum = seqBlockNum
-	}
+	checkBlockNum := min(seqBlockNum, follBlockNum)
 
 	// #nosec G115
 	seqBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(int64(checkBlockNum)))
@@ -264,8 +244,6 @@ func TestInboxReaderBlobFailureWithDelayedMessage(t *testing.T) {
 		t.Logf("PASS: Follower is fully synced")
 	}
 
-	// Prevent unused variable warning
-	_ = batchNum
 }
 
 // Build2ndNodeWithBlobReader builds a second node with a custom blob reader.

@@ -1915,6 +1915,9 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
 		batchCount, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
 		Require(t, err)
+		if batchCount == 0 {
+			return false
+		}
 		meta, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMetadata(batchCount - 1)
 		Require(t, err)
 		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
