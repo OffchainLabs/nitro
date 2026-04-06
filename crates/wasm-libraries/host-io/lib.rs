@@ -91,12 +91,14 @@ pub unsafe extern "C" fn wavmio__setGlobalStateU64(idx: u32, val: u64) {
 }
 
 /// Reads 32-bytes of the ending parent chain block hash for MEL.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn wavmio__getEndParentChainBlockHash(out_ptr: GuestPtr) {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
-    wavm_get_end_parent_chain_block_hash(our_ptr);
+    unsafe {
+        wavm_get_end_parent_chain_block_hash(our_ptr);
+    }
     StaticMem.write_slice(out_ptr, &our_buf[..32]);
 }
 
