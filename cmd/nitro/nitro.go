@@ -39,7 +39,6 @@ import (
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
@@ -175,8 +174,7 @@ func mainImpl() int {
 		executionNodeEnabled = nodeConfig.Execution.RPCServer.Enable
 		consensusNodeEnabled = nodeConfig.Node.RPCServer.Enable
 	} else {
-		// same process: no RPC communication
-		// TODO: There should be a validation that in this scenario no RPC URL is set.
+		// same process: no RPC communication (validated in config.Validate())
 		executionNodeEnabled = true
 		consensusNodeEnabled = true
 	}
@@ -521,6 +519,10 @@ func mainImpl() int {
 		log.Error("error processing l2 chain info", "err", err)
 		return 1
 	}
+	if chainInfo.ChainConfig == nil {
+		log.Error("missing chain config in chain info", "chainId", nodeConfig.Chain.ID, "chainName", nodeConfig.Chain.Name)
+		return 1
+	}
 
 	if executionNodeEnabled {
 		if err := nitroinit.ValidateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
@@ -586,21 +588,13 @@ func mainImpl() int {
 	seqInboxMaxDataSize := 117964
 
 	if consensusNodeEnabled {
-		var chainConfig *params.ChainConfig
-		// TODO: First try to get chainConfig from consensusParsedInitMsg (needs https://github.com/OffchainLabs/nitro/pull/4395)
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(nodeConfig.Chain.ID), nodeConfig.Chain.Name, nil, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoJson)
-		if err != nil {
-			log.Error("failed to get chainConfig for consensus node", "err", err)
-			return 1
-		}
-
 		consensusNode, err = arbnode.CreateConsensusNode(
 			ctx,
 			stack,
 			execNode,
 			consensusDB,
 			&config.ConsensusNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			chainConfig,
+			chainInfo.ChainConfig,
 			l1Client,
 			&rollupAddrs,
 			l1TransactionOptsValidator,
@@ -742,7 +736,7 @@ func mainImpl() int {
 			defer valNode.Stop()
 		}
 	}
-	if (executionNodeEnabled || consensusNodeEnabled) && err == nil {
+	if err == nil {
 		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
 			log.Error("Error initializing and starting execution and consensus", "err", err)

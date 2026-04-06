@@ -175,6 +175,14 @@ func (c *NodeConfig) Validate() error {
 	} else if c.Node.RPCServer.Enable && c.Node.ExecutionRPCClient.URL == "" {
 		return errors.New("communication over rpc is enabled on consensus but execution RPC client is not set")
 	}
+	if !c.Node.RPCServer.Enable && !c.Execution.RPCServer.Enable {
+		if c.Node.ExecutionRPCClient.URL != "" {
+			return errors.New("no RPC server is enabled but execution RPC client URL is set")
+		}
+		if c.Execution.ConsensusRPCClient.URL != "" {
+			return errors.New("no RPC server is enabled but consensus RPC client URL is set")
+		}
+	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
 	}
