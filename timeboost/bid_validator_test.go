@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -397,7 +399,9 @@ func makeValidSignature(t *testing.T, err error, bidHash common.Hash, privateKey
 	signature, err := crypto.Sign(bidHash[:], privateKey)
 	require.NoError(t, err)
 
-	signature[len(signature)-1] = 27
+	// crypto.Sign returns V as 0 or 1 (recovery ID). EIP-712 expects V as
+	// 27 or 28, so we add 27 rather than unconditionally setting to 27.
+	signature[len(signature)-1] += 27
 	return signature
 }
 
@@ -447,6 +451,263 @@ func TestBidValidator_SetReservePriceCopiesValue(t *testing.T) {
 
 	stored := bv.fetchReservePrice()
 	require.Equal(t, big.NewInt(100), stored, "SetReservePrice must copy the value; mutating the original should not affect stored price")
+}
+
+// Test 1: Sign → validateBid → recovered bidder must match the signing key.
+// Exercises BOTH recovery IDs (V=27 and V=28) deterministically.
+func TestBidValidator_validateBid_identityRoundTrip(t *testing.T) {
+	t.Parallel()
+	auctionContractAddr := common.Address{'a'}
+	domainSep := common.Hash{}
+
+	validBalanceFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
+		return big.NewInt(10), nil
+	}
+
+	// Run enough iterations to guarantee we see both V=0 and V=1 from crypto.Sign.
+	var sawV0, sawV1 bool
+	for iter := 0; iter < 50; iter++ {
+		bv := BidValidator{
+			chainId: big.NewInt(1),
+			roundTimingInfo: RoundTimingInfo{
+				Offset:         time.Now().Add(-time.Second),
+				Round:          time.Minute,
+				AuctionClosing: 45 * time.Second,
+			},
+			reservePrice:                   big.NewInt(2),
+			bidsPerSenderInRound:           make(map[common.Address]uint8),
+			maxBidsPerSenderInRound:        255,
+			auctionContractAddr:            auctionContractAddr,
+			auctionContractDomainSeparator: domainSep,
+		}
+		privateKey, err := crypto.GenerateKey()
+		require.NoError(t, err)
+		expectedBidder := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+		bid := &Bid{
+			ExpressLaneController:  common.Address{'b'},
+			AuctionContractAddress: auctionContractAddr,
+			ChainId:                big.NewInt(1),
+			Round:                  1,
+			Amount:                 big.NewInt(3),
+			Signature:              []byte{'a'},
+		}
+		bidHash, err := bid.ToEIP712Hash(domainSep)
+		require.NoError(t, err)
+		sig := makeValidSignature(t, err, bidHash, privateKey)
+
+		// Track which recovery IDs we see.
+		v := sig[64]
+		if v == 27 {
+			sawV0 = true
+		} else if v == 28 {
+			sawV1 = true
+		} else {
+			t.Fatalf("unexpected V value %d", v)
+		}
+
+		bid.Signature = sig
+
+		validated, err := bv.validateBid(bid, validBalanceFn)
+		require.NoError(t, err, "iter %d: validateBid must succeed", iter)
+		require.Equal(t, expectedBidder, validated.Bidder,
+			"iter %d: recovered bidder must match signing key (V=%d)", iter, v)
+	}
+	require.True(t, sawV0 && sawV1, "expected to see both V=27 and V=28 across iterations (saw V0=%v, V1=%v)", sawV0, sawV1)
+}
+
+// Test 2: EIP-712 hash must change when any bid field changes.
+func TestToEIP712Hash_fieldSensitivity(t *testing.T) {
+	t.Parallel()
+	domainSep := common.Hash{}
+	base := &Bid{
+		ExpressLaneController:  common.Address{'b'},
+		AuctionContractAddress: common.Address{'a'},
+		ChainId:                big.NewInt(1),
+		Round:                  1,
+		Amount:                 big.NewInt(3),
+	}
+	baseHash, err := base.ToEIP712Hash(domainSep)
+	require.NoError(t, err)
+
+	// Same inputs → same hash (determinism).
+	clone := &Bid{
+		ExpressLaneController:  common.Address{'b'},
+		AuctionContractAddress: common.Address{'a'},
+		ChainId:                big.NewInt(1),
+		Round:                  1,
+		Amount:                 big.NewInt(3),
+	}
+	cloneHash, err := clone.ToEIP712Hash(domainSep)
+	require.NoError(t, err)
+	require.Equal(t, baseHash, cloneHash, "identical bids must produce identical hashes")
+
+	// Change round.
+	diffRound := &Bid{ExpressLaneController: base.ExpressLaneController, AuctionContractAddress: base.AuctionContractAddress, ChainId: big.NewInt(1), Round: 2, Amount: big.NewInt(3)}
+	h, err := diffRound.ToEIP712Hash(domainSep)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, h, "different round must produce different hash")
+
+	// Change amount.
+	diffAmt := &Bid{ExpressLaneController: base.ExpressLaneController, AuctionContractAddress: base.AuctionContractAddress, ChainId: big.NewInt(1), Round: 1, Amount: big.NewInt(99)}
+	h, err = diffAmt.ToEIP712Hash(domainSep)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, h, "different amount must produce different hash")
+
+	// Change controller.
+	diffCtrl := &Bid{ExpressLaneController: common.Address{'z'}, AuctionContractAddress: base.AuctionContractAddress, ChainId: big.NewInt(1), Round: 1, Amount: big.NewInt(3)}
+	h, err = diffCtrl.ToEIP712Hash(domainSep)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, h, "different controller must produce different hash")
+
+	// Different domain separator.
+	altDomain := common.Hash{0xff}
+	h, err = base.ToEIP712Hash(altDomain)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, h, "different domain separator must produce different hash")
+}
+
+// Test 4: maxBidsPerSenderInRound enforced under concurrent flood.
+func TestBidValidator_validateBid_concurrentRateLimitEnforcement(t *testing.T) {
+	t.Parallel()
+	auctionContractAddr := common.Address{'a'}
+	const maxBids = 5
+	bv := BidValidator{
+		chainId: big.NewInt(1),
+		roundTimingInfo: RoundTimingInfo{
+			Offset:         time.Now().Add(-time.Second),
+			Round:          time.Minute,
+			AuctionClosing: 45 * time.Second,
+		},
+		reservePrice:                   big.NewInt(2),
+		bidsPerSenderInRound:           make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:        maxBids,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: common.Hash{},
+	}
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	bidder := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+	templateBid := &Bid{
+		ExpressLaneController:  common.Address{'b'},
+		AuctionContractAddress: auctionContractAddr,
+		ChainId:                big.NewInt(1),
+		Round:                  1,
+		Amount:                 big.NewInt(3),
+		Signature:              []byte{'a'},
+	}
+	bidHash, err := templateBid.ToEIP712Hash(bv.auctionContractDomainSeparator)
+	require.NoError(t, err)
+	sig := makeValidSignature(t, err, bidHash, privateKey)
+
+	validBalanceFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
+		return big.NewInt(10), nil
+	}
+
+	const goroutines = 30
+	var wg sync.WaitGroup
+	var successCount int64
+	var rateLimitedCount int64
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		bidCopy := &Bid{
+			ExpressLaneController:  templateBid.ExpressLaneController,
+			AuctionContractAddress: templateBid.AuctionContractAddress,
+			ChainId:                new(big.Int).Set(templateBid.ChainId),
+			Round:                  templateBid.Round,
+			Amount:                 new(big.Int).Set(templateBid.Amount),
+			Signature:              append([]byte(nil), sig...),
+		}
+		go func() {
+			defer wg.Done()
+			_, err := bv.validateBid(bidCopy, validBalanceFn)
+			if err == nil {
+				atomic.AddInt64(&successCount, 1)
+			} else if errors.Is(err, ErrTooManyBids) {
+				atomic.AddInt64(&rateLimitedCount, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(maxBids), successCount, "exactly maxBidsPerSenderInRound bids must succeed")
+	require.Equal(t, int64(goroutines-maxBids), rateLimitedCount, "remaining bids must be rate-limited")
+	require.Equal(t, uint8(maxBids), bv.bidCountForSender(bidder), "final count must equal maxBidsPerSenderInRound")
+}
+
+// Test 6: Concurrent validations with a round reset mid-flight.
+func TestBidValidator_validateBid_concurrentRoundReset(t *testing.T) {
+	t.Parallel()
+	auctionContractAddr := common.Address{'a'}
+	bv := BidValidator{
+		chainId: big.NewInt(1),
+		roundTimingInfo: RoundTimingInfo{
+			Offset:         time.Now().Add(-time.Second),
+			Round:          time.Minute,
+			AuctionClosing: 45 * time.Second,
+		},
+		reservePrice:                   big.NewInt(2),
+		bidsPerSenderInRound:           make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:        255,
+		auctionContractAddr:            auctionContractAddr,
+		auctionContractDomainSeparator: common.Hash{},
+	}
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	templateBid := &Bid{
+		ExpressLaneController:  common.Address{'b'},
+		AuctionContractAddress: auctionContractAddr,
+		ChainId:                big.NewInt(1),
+		Round:                  1,
+		Amount:                 big.NewInt(3),
+		Signature:              []byte{'a'},
+	}
+	bidHash, err := templateBid.ToEIP712Hash(bv.auctionContractDomainSeparator)
+	require.NoError(t, err)
+	sig := makeValidSignature(t, err, bidHash, privateKey)
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+
+	// Half the goroutines will have their balance check trigger a round reset.
+	for i := 0; i < goroutines; i++ {
+		i := i
+		wg.Add(1)
+		bidCopy := &Bid{
+			ExpressLaneController:  templateBid.ExpressLaneController,
+			AuctionContractAddress: templateBid.AuctionContractAddress,
+			ChainId:                new(big.Int).Set(templateBid.ChainId),
+			Round:                  templateBid.Round,
+			Amount:                 new(big.Int).Set(templateBid.Amount),
+			Signature:              append([]byte(nil), sig...),
+		}
+		balanceFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
+			if i%3 == 0 {
+				// Simulate round reset during validation.
+				bv.mu.Lock()
+				bv.bidsPerSenderInRound = make(map[common.Address]uint8)
+				bv.mu.Unlock()
+				return big.NewInt(0), nil // Will fail → trigger rollback.
+			}
+			return big.NewInt(10), nil
+		}
+		go func() {
+			defer wg.Done()
+			bv.validateBid(bidCopy, balanceFn)
+		}()
+	}
+	wg.Wait()
+
+	// The key assertion: no panic, no underflow.
+	// After round resets, the count must be <= 255 (not wrapped around to 255 via underflow).
+	bv.mu.RLock()
+	for _, count := range bv.bidsPerSenderInRound {
+		require.True(t, count < 200, "count %d suggests underflow", count)
+	}
+	bv.mu.RUnlock()
 }
 
 func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {

@@ -351,6 +351,80 @@ func TestTopTwoBidsAndClearConcurrentAddGoesToFreshMap(t *testing.T) {
 	require.Equal(t, 2, resultCount+cacheCount, "every bid must appear in the result or the fresh map, never lost")
 }
 
+// Test 3: Bid overwrite must replace ALL fields atomically — not just Amount.
+func TestBidCacheOverwriteReplacesAllFields(t *testing.T) {
+	t.Parallel()
+	bc := newBidCache([32]byte{})
+
+	bidder := common.HexToAddress("0xA")
+	sigOld := []byte("old-signature-bytes-here-padding-to-65-chars-0000000000000000000000000")
+	sigNew := []byte("new-signature-bytes-here-padding-to-65-chars-0000000000000000000000000")
+
+	bc.add(&ValidatedBid{
+		Bidder:                bidder,
+		Amount:                big.NewInt(10),
+		ExpressLaneController: common.HexToAddress("0xC1"),
+		ChainId:               big.NewInt(1),
+		Round:                 1,
+		Signature:             sigOld,
+	})
+
+	bc.add(&ValidatedBid{
+		Bidder:                bidder,
+		Amount:                big.NewInt(20),
+		ExpressLaneController: common.HexToAddress("0xC2"),
+		ChainId:               big.NewInt(42),
+		Round:                 2,
+		Signature:             sigNew,
+	})
+
+	require.Equal(t, 1, bc.size())
+
+	stored := bc.getBid(bidder)
+	require.NotNil(t, stored)
+	require.Equal(t, big.NewInt(20), stored.Amount, "Amount must be updated")
+	require.Equal(t, common.HexToAddress("0xC2"), stored.ExpressLaneController, "Controller must be updated")
+	require.Equal(t, big.NewInt(42), stored.ChainId, "ChainId must be updated")
+	require.Equal(t, uint64(2), stored.Round, "Round must be updated")
+	require.Equal(t, sigNew, stored.Signature, "Signature must be updated")
+}
+
+// Test 7: Tiebreaker must be deterministic — same bids always produce same winner.
+func TestBidCacheTiebreakerDeterminism(t *testing.T) {
+	t.Parallel()
+	domainSep := [32]byte{}
+
+	bidderA := common.HexToAddress("0xA")
+	bidderB := common.HexToAddress("0xB")
+	bidA := &ValidatedBid{Bidder: bidderA, Amount: big.NewInt(100), ExpressLaneController: bidderA, ChainId: big.NewInt(1), Round: 1}
+	bidB := &ValidatedBid{Bidder: bidderB, Amount: big.NewInt(100), ExpressLaneController: bidderB, ChainId: big.NewInt(1), Round: 1}
+
+	// Compute the expected winner once.
+	bc := newBidCache(domainSep)
+	bc.add(bidA)
+	bc.add(bidB)
+	first := bc.topTwoBids()
+	require.NotNil(t, first.firstPlace)
+	require.NotNil(t, first.secondPlace)
+	expectedWinner := first.firstPlace.Bidder
+
+	// Verify 100 fresh caches always elect the same winner.
+	for i := 0; i < 100; i++ {
+		c := newBidCache(domainSep)
+		// Alternate insertion order to catch ordering-dependent bugs.
+		if i%2 == 0 {
+			c.add(bidA)
+			c.add(bidB)
+		} else {
+			c.add(bidB)
+			c.add(bidA)
+		}
+		result := c.topTwoBids()
+		require.Equal(t, expectedWinner, result.firstPlace.Bidder,
+			"iter %d: tiebreaker must be deterministic regardless of insertion order", i)
+	}
+}
+
 func BenchmarkBidValidation(b *testing.B) {
 	b.StopTimer()
 	ctx, cancel := context.WithCancel(context.Background())

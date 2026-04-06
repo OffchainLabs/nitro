@@ -141,6 +141,7 @@ func TestAuctioneerRecoversBidsOnRestart(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         DefaultAuctioneerConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDir,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -511,6 +512,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         testConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirPrimary,
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
@@ -598,6 +600,7 @@ func TestAuctioneerFailoverMessageReprocessing(t *testing.T) {
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,
 			ConsumerConfig:         testConsumerConfig,
+			StreamTimeout:          time.Minute,
 			DbDirectory:            tmpDirSecondary, // Different DB directory
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
