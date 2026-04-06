@@ -195,14 +195,15 @@ func NewSeqCoordinator(
 	return coordinator, nil
 }
 
-func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) error {
 	if c.Started() {
-		panic("trying to set delayed sequencer after start")
+		return errors.New("cannot set delayed sequencer after start")
 	}
 	if c.delayedSequencer != nil {
-		panic("trying to set delayed sequencer when already set")
+		return errors.New("delayed sequencer already set")
 	}
 	c.delayedSequencer = delayedSequencer
+	return nil
 }
 
 func (c *SeqCoordinator) RedisCoordinator() *redisutil.RedisCoordinator {

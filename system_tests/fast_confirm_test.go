@@ -267,7 +267,8 @@ func setupFastConfirmation(ctx context.Context, t *testing.T) (*NodeBuilder, *le
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
-	pcds := l2node.GetParentChainDataSource()
+	pcds, err := l2node.GetParentChainDataSource()
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		pcds,
 		pcds,
@@ -464,7 +465,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
-	pcdsA := l2nodeA.GetParentChainDataSource()
+	pcdsA, err := l2nodeA.GetParentChainDataSource()
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		pcdsA,
 		pcdsA,
@@ -522,7 +524,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
-	pcdsB := l2nodeB.GetParentChainDataSource()
+	pcdsB, err := l2nodeB.GetParentChainDataSource()
+	Require(t, err)
 	statelessB, err := staker.NewStatelessBlockValidator(
 		pcdsB,
 		pcdsB,

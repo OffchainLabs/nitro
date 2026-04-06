@@ -34,8 +34,13 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-var (
-	stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
+var stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
+
+// Valid values for the ReadMode config field.
+const (
+	ReadModeLatest    = "latest"
+	ReadModeSafe      = "safe"
+	ReadModeFinalized = "finalized"
 )
 
 type MessageExtractionConfig struct {
@@ -46,10 +51,12 @@ type MessageExtractionConfig struct {
 	StallTolerance   uint64        `koanf:"stall-tolerance"`
 }
 
+// Validate normalizes and validates the config.
+// Note: this method mutates c.ReadMode (lowercases it) in addition to validating.
 func (c *MessageExtractionConfig) Validate() error {
 	c.ReadMode = strings.ToLower(c.ReadMode)
-	if c.ReadMode != "latest" && c.ReadMode != "safe" && c.ReadMode != "finalized" {
-		return fmt.Errorf("inbox reader read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
+	if c.ReadMode != ReadModeLatest && c.ReadMode != ReadModeSafe && c.ReadMode != ReadModeFinalized {
+		return fmt.Errorf("message extraction read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
 	}
 	return nil
 }
@@ -59,8 +66,8 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	// The retry interval for the message extractor FSM. After each tick of the FSM,
 	// the extractor service stop waiter will wait for this duration before trying to act again.
 	RetryInterval:    time.Millisecond * 500,
-	BlocksToPrefetch: 499, // 500 is the eth_getLogs block range limit
-	ReadMode:         "latest",
+	BlocksToPrefetch: 499, // 499 so that eth_getLogs spans at most 500 blocks (from..from+499 inclusive)
+	ReadMode:         ReadModeLatest,
 	StallTolerance:   10,
 }
 
@@ -68,15 +75,15 @@ var TestMessageExtractionConfig = MessageExtractionConfig{
 	Enable:           false,
 	RetryInterval:    time.Millisecond * 10,
 	BlocksToPrefetch: 499,
-	ReadMode:         "latest",
+	ReadMode:         ReadModeLatest,
 	StallTolerance:   10,
 }
 
 func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
-	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retring upon a failure")
+	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retrying upon a failure")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from. Recommend using max allowed range for eth_getLogs rpc query")
-	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.String(prefix+".read-mode", ReadModeLatest, "mode to only read latest or safe or finalized L1 blocks. When safe or finalized is used, the node should be configured without feed input/output. Defaults to latest. Valid values: latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
@@ -98,33 +105,36 @@ type ParentChainReader interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
-// Defines a message extraction service for a Nitro node which reads parent chain
-// blocks one by one to transform them into messages for the execution layer.
+// MessageExtractor reads parent chain blocks one by one and transforms them into
+// messages for the execution layer.
 type MessageExtractor struct {
 	stopwaiter.StopWaiter
-	config                   MessageExtractionConfig
-	parentChainReader        ParentChainReader
-	chainConfig              *params.ChainConfig
-	logsAndHeadersPreFetcher *logsAndHeadersFetcher
-	addrs                    *chaininfo.RollupAddresses
-	melDB                    *Database
-	msgConsumer              mel.MessageConsumer
-	dataProviders            *daprovider.DAProviderRegistry
-	fsm                      *fsm.Fsm[action, FSMState]
-	caughtUp                 bool
-	caughtUpChan             chan struct{}
-	lastBlockToRead          atomic.Uint64
-	stuckCount               uint64
-	reorgEventsNotifier      chan uint64
-	seqBatchCounter          SequencerBatchCountFetcher
-	l1Reader                 *headerreader.HeaderReader
+	config                      MessageExtractionConfig
+	parentChainReader           ParentChainReader
+	chainConfig                 *params.ChainConfig
+	logsAndHeadersPreFetcher    *logsAndHeadersFetcher
+	addrs                       *chaininfo.RollupAddresses
+	melDB                       *Database
+	msgConsumer                 mel.MessageConsumer
+	dataProviders               *daprovider.DAProviderRegistry
+	fsm                         *fsm.Fsm[action, FSMState]
+	caughtUp                    bool
+	caughtUpChan                chan struct{}
+	lastBlockToRead             atomic.Uint64
+	stuckCount                  uint64
+	consecutiveNotFound         uint64
+	consecutivePreimageRebuilds int
+	reorgEventsNotifier         chan uint64
+	seqBatchCounter             SequencerBatchCountFetcher
+	l1Reader                    *headerreader.HeaderReader
+	lastBlockToReadFailures     uint64
 
-	blockValidator *staker.BlockValidator // TODO: remove post MEL block validation
+	blockValidator *staker.BlockValidator
+	fatalErrChan   chan<- error
 }
 
-// Creates a message extractor instance with the specified parameters,
-// including a parent chain reader, rollup addresses, and data providers
-// to be used when extracting messages from the parent chain.
+// NewMessageExtractor returns a new MessageExtractor configured with the given
+// parent chain reader, rollup addresses, and data providers.
 func NewMessageExtractor(
 	config MessageExtractionConfig,
 	parentChainReader ParentChainReader,
@@ -135,6 +145,7 @@ func NewMessageExtractor(
 	seqBatchCounter SequencerBatchCountFetcher,
 	l1Reader *headerreader.HeaderReader,
 	reorgEventsNotifier chan uint64,
+	fatalErrChan chan<- error,
 ) (*MessageExtractor, error) {
 	fsm, err := newFSM(Start)
 	if err != nil {
@@ -152,6 +163,7 @@ func NewMessageExtractor(
 		reorgEventsNotifier: reorgEventsNotifier,
 		seqBatchCounter:     seqBatchCounter,
 		l1Reader:            l1Reader,
+		fatalErrChan:        fatalErrChan,
 	}, nil
 }
 
@@ -166,19 +178,17 @@ func (m *MessageExtractor) SetMessageConsumer(consumer mel.MessageConsumer) erro
 	return nil
 }
 
-// Starts a message extraction service using a stopwaiter. The message extraction
-// "loop" consists of a ticking a finite state machine (FSM) that performs different
-// responsibilities based on its current state. For instance, processing a parent chain
-// block, saving data to a database, or handling reorgs. The FSM is designed to be
-// resilient to errors, and each error will retry the same FSM state after a specified interval
-// in this Start method.
+// Start begins the message extraction loop. The loop ticks a finite state machine (FSM)
+// that processes parent chain blocks, saves data, or handles reorgs. On error, the FSM
+// retries the same state after RetryInterval. If errors persist beyond 2x StallTolerance
+// and fatalErrChan was provided, a fatal error is sent to stop the node.
 func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	if m.msgConsumer == nil {
 		return errors.New("message consumer not set")
 	}
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
-	if m.config.ReadMode != "latest" {
+	if m.config.ReadMode != ReadModeLatest {
 		m.CallIteratively(m.updateLastBlockToRead)
 	}
 	return stopwaiter.CallIterativelyWith(
@@ -194,6 +204,8 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 			if m.stuckCount > m.config.StallTolerance {
 				stuckFSMIndicatingGauge.Update(1)
 				log.Error("Message extractor has been stuck at the same fsm state past the stall-tolerance number of times", "state", m.fsm.Current().State.String(), "stuckCount", m.stuckCount, "err", err)
+				m.escalateIfPersistent(ctx, m.stuckCount,
+					fmt.Errorf("message extractor stuck for %d consecutive errors (state %s): %w", m.stuckCount, m.fsm.Current().State.String(), err))
 			} else {
 				stuckFSMIndicatingGauge.Update(0)
 			}
@@ -203,22 +215,47 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	)
 }
 
+// escalateIfPersistent sends a fatal error to shut down the node gracefully
+// when the failure count exceeds the escalation threshold (2x StallTolerance).
+// The caller is responsible for incrementing the counter before calling.
+func (m *MessageExtractor) escalateIfPersistent(ctx context.Context, failures uint64, err error) {
+	if m.fatalErrChan != nil && m.config.StallTolerance > 0 && failures > 2*m.config.StallTolerance {
+		select {
+		case m.fatalErrChan <- err:
+		case <-ctx.Done():
+		}
+	}
+}
+
 func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Duration {
 	var header *types.Header
 	var err error
 	switch m.config.ReadMode {
-	case "safe":
+	case ReadModeSafe:
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
-	case "finalized":
+	case ReadModeFinalized:
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 	default:
 		log.Error("updateLastBlockToRead called with unexpected ReadMode", "mode", m.config.ReadMode)
 		return m.config.RetryInterval
 	}
+
+	var failReason string
 	if err != nil {
-		log.Error("Error fetching header to update last block to read in MEL", "err", err)
+		failReason = fmt.Sprintf("fetch error: %v", err)
+	} else if header == nil {
+		failReason = "nil header"
+	} else if header.Number == nil {
+		failReason = "nil header.Number"
+	}
+	if failReason != "" {
+		m.lastBlockToReadFailures++
+		log.Error("Error updating last block to read in MEL", "reason", failReason, "mode", m.config.ReadMode, "consecutiveFailures", m.lastBlockToReadFailures)
+		m.escalateIfPersistent(ctx, m.lastBlockToReadFailures,
+			fmt.Errorf("updateLastBlockToRead: %s for %d consecutive attempts (mode=%s)", failReason, m.lastBlockToReadFailures, m.config.ReadMode))
 		return m.config.RetryInterval
 	}
+	m.lastBlockToReadFailures = 0
 	m.lastBlockToRead.Store(header.Number.Uint64())
 	return m.config.RetryInterval
 }
@@ -227,37 +264,54 @@ func (m *MessageExtractor) CurrentFSMState() FSMState {
 	return m.fsm.Current().State
 }
 
-// getStateByRPCBlockNum currently supports fetching of respective state for safe and finalized parent chain blocks
+// clampToInitialBlock ensures blockNum is not below the MEL migration boundary.
+func (m *MessageExtractor) clampToInitialBlock(blockNum uint64) uint64 {
+	if initialBlockNum, ok := m.melDB.InitialBlockNum(); ok && blockNum < initialBlockNum {
+		log.Debug("Clamping requested block to MEL migration boundary", "requested", blockNum, "clamped", initialBlockNum)
+		return initialBlockNum
+	}
+	return blockNum
+}
+
+// getStateByRPCBlockNum supports only safe and finalized block numbers; returns an error for other values.
 func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum rpc.BlockNumber) (*mel.State, error) {
-	var blk uint64
+	if m.l1Reader == nil {
+		return nil, errors.New("l1Reader is not configured; cannot resolve safe/finalized block number")
+	}
+	var resolvedBlockNum uint64
 	var err error
 	switch blockNum {
 	case rpc.SafeBlockNumber:
-		blk, err = m.l1Reader.LatestSafeBlockNr(ctx)
-		if err != nil {
-			return nil, err
-		}
+		resolvedBlockNum, err = m.l1Reader.LatestSafeBlockNr(ctx)
 	case rpc.FinalizedBlockNumber:
-		blk, err = m.l1Reader.LatestFinalizedBlockNr(ctx)
-		if err != nil {
-			return nil, err
-		}
+		resolvedBlockNum, err = m.l1Reader.LatestFinalizedBlockNr(ctx)
 	default:
 		return nil, fmt.Errorf("getStateByRPCBlockNum requested with unknown blockNum: %v", blockNum)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getStateByRPCBlockNum: resolving %v block number: %w", blockNum, err)
 	}
 	headMelStateBlockNum, err := m.melDB.GetHeadMelStateBlockNum()
 	if err != nil {
 		return nil, err
 	}
-	state, err := m.melDB.State(min(headMelStateBlockNum, blk))
-	if err != nil {
-		return nil, err
+	rawBlockNum := min(headMelStateBlockNum, resolvedBlockNum)
+	stateBlockNum := m.clampToInitialBlock(rawBlockNum)
+	if stateBlockNum != rawBlockNum {
+		log.Info("getStateByRPCBlockNum clamped to MEL migration boundary", "requested", blockNum, "resolved", rawBlockNum, "clamped", stateBlockNum)
 	}
-	return state, nil
+	return m.melDB.StateAtOrBelowHead(stateBlockNum)
 }
 
-func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
+func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) error {
+	if m.Started() {
+		return errors.New("cannot set block validator after start")
+	}
+	if m.blockValidator != nil {
+		return errors.New("block validator already set")
+	}
 	m.blockValidator = blockValidator
+	return nil
 }
 
 func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
@@ -281,26 +335,32 @@ func (m *MessageExtractor) GetSyncProgress(ctx context.Context) (mel.MessageSync
 	if err != nil {
 		return mel.MessageSyncProgress{}, err
 	}
-	batchSeen := headState.BatchCount // fallback when seqBatchCounter is nil or returns error
+	batchSeen := headState.BatchCount
+	batchSeenIsEstimate := false
 	if m.seqBatchCounter != nil {
 		seen, err := m.seqBatchCounter.GetBatchCount(ctx, new(big.Int).SetUint64(headState.ParentChainBlockNumber))
 		if err != nil {
+			if ctx.Err() != nil {
+				return mel.MessageSyncProgress{}, ctx.Err()
+			}
 			// TODO: Replace with a sentinel error check once geth exposes one for "header not found".
 			// This error originates from the RPC/header lookup path, distinct from the database-level
 			// not-found errors handled by rawdb.IsDbErrNotFound in FinalizedDelayedMessageAtPosition.
 			if strings.Contains(err.Error(), "header not found") {
-				log.Debug("SequencerInbox GetBatchCount header not found, using headState.BatchCount fallback", "parentChainBlock", headState.ParentChainBlockNumber)
+				batchSeenIsEstimate = true
+				log.Info("SequencerInbox GetBatchCount header not found, using headState.BatchCount fallback", "parentChainBlock", headState.ParentChainBlockNumber)
 			} else {
-				log.Error("SequencerInbox GetBatchCount error, using headState.BatchCount fallback", "err", err, "parentChainBlock", headState.ParentChainBlockNumber)
+				return mel.MessageSyncProgress{}, fmt.Errorf("SequencerInbox GetBatchCount error at block %d: %w", headState.ParentChainBlockNumber, err)
 			}
 		} else {
 			batchSeen = seen
 		}
 	}
 	return mel.MessageSyncProgress{
-		BatchSeen:      batchSeen,
-		BatchProcessed: headState.BatchCount,
-		MsgCount:       arbutil.MessageIndex(headState.MsgCount),
+		BatchSeen:           batchSeen,
+		BatchSeenIsEstimate: batchSeenIsEstimate,
+		BatchProcessed:      headState.BatchCount,
+		MsgCount:            arbutil.MessageIndex(headState.MsgCount),
 	}, nil
 }
 
@@ -325,7 +385,7 @@ func (m *MessageExtractor) GetHeadState() (*mel.State, error) {
 }
 
 func (m *MessageExtractor) GetState(parentchainBlocknumber uint64) (*mel.State, error) {
-	return m.melDB.State(parentchainBlocknumber)
+	return m.melDB.StateAtOrBelowHead(parentchainBlocknumber)
 }
 
 func (m *MessageExtractor) RebuildStateDelayedMsgPreimages(state *mel.State) error {
@@ -346,7 +406,7 @@ func (m *MessageExtractor) GetDelayedMessage(index uint64) (*mel.DelayedInboxMes
 		return nil, err
 	}
 	if index >= headState.DelayedMessagesSeen {
-		return nil, fmt.Errorf("DelayedInboxMessage not available for index: %d greater than head MEL state DelayedMessagesSeen count: %d", index, headState.DelayedMessagesSeen)
+		return nil, fmt.Errorf("%w: delayed message index %d >= seen count %d", mel.ErrAccumulatorNotFound, index, headState.DelayedMessagesSeen)
 	}
 	return m.melDB.FetchDelayedMessage(index)
 }
@@ -356,6 +416,9 @@ func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, seqNum ui
 	if err != nil {
 		return nil, err
 	}
+	if delayedMsg.Message == nil {
+		return nil, fmt.Errorf("delayed message %d has nil Message", seqNum)
+	}
 	return delayedMsg.Message.Serialize()
 }
 
@@ -364,11 +427,11 @@ func (m *MessageExtractor) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return delayedMsg.AfterInboxAcc(), nil
+	return delayedMsg.AfterInboxAcc()
 }
 
 func (m *MessageExtractor) GetDelayedCountAtParentChainBlock(ctx context.Context, parentChainBlockNum uint64) (uint64, error) {
-	state, err := m.melDB.State(parentChainBlockNum)
+	state, err := m.melDB.StateAtOrBelowHead(m.clampToInitialBlock(parentChainBlockNum))
 	if err != nil {
 		return 0, err
 	}
@@ -383,10 +446,11 @@ func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 	return state.DelayedMessagesSeen, nil
 }
 
-// FindParentChainBlockContainingDelayed is only relevant and invoked by txstreamer when batch gas cost data is nil for a
-// batchpostingreport- but this should never be possible as ExtractMessages function would fill in the cost data during message extraction
+// FindParentChainBlockContainingDelayed is not supported under MEL. The transaction
+// streamer handles ErrNotImplementedUnderMEL by falling back to GetSequencerMessageBytes
+// (without a specific parent chain block), which resolves the block internally via batch metadata.
 func (m *MessageExtractor) FindParentChainBlockContainingDelayed(context.Context, uint64) (uint64, error) {
-	return 0, errors.New("FindParentChainBlockContainingDelayed is not implemented by MEL as batch gas cost data is already filled in during extraction")
+	return 0, fmt.Errorf("FindParentChainBlockContainingDelayed: %w", mel.ErrNotImplementedUnderMEL)
 }
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
@@ -395,7 +459,7 @@ func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, e
 		return mel.BatchMetadata{}, err
 	}
 	if seqNum >= headState.BatchCount {
-		return mel.BatchMetadata{}, fmt.Errorf("batchMetadata not available for seqNum: %d greater than head MEL state batch count: %d", seqNum, headState.BatchCount)
+		return mel.BatchMetadata{}, fmt.Errorf("batchMetadata not available for seqNum %d: head MEL state batch count is %d", seqNum, headState.BatchCount)
 	}
 	batchMetadata, err := m.melDB.fetchBatchMetadata(seqNum)
 	if err != nil {
@@ -427,8 +491,19 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	}
 	finalizedDelayedCount, err := m.GetDelayedCountAtParentChainBlock(ctx, finalizedBlock)
 	if err != nil {
+		// Both db-not-found and "above head" errors mean MEL hasn't processed
+		// this block yet, so the message is not yet finalized.
+		headBlockNum, headErr := m.melDB.GetHeadMelStateBlockNum()
+		if headErr != nil {
+			log.Warn("MEL GetHeadMelStateBlockNum failed during finalized delayed message check",
+				"parentChainBlock", finalizedBlock, "headErr", headErr, "originalErr", err)
+		}
 		if rawdb.IsDbErrNotFound(err) {
-			log.Debug("MEL delayed count not found for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)
+			log.Debug("MEL delayed count not available for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)
+			return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
+		}
+		if headErr == nil && finalizedBlock > headBlockNum {
+			log.Debug("Finalized block is above MEL head, treating as not yet finalized", "parentChainBlock", finalizedBlock, "headBlock", headBlockNum, "originalErr", err)
 			return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 		}
 		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedBlock, "err", err)
@@ -440,7 +515,11 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 	if lastDelayedAccumulator != (common.Hash{}) && msg.BeforeInboxAcc != lastDelayedAccumulator {
 		return nil, common.Hash{}, 0, fmt.Errorf("position %d (finalized block %d): BeforeInboxAcc %v != lastDelayedAccumulator %v: %w", requestedPosition, finalizedBlock, msg.BeforeInboxAcc, lastDelayedAccumulator, mel.ErrDelayedAccumulatorMismatch)
 	}
-	return msg.Message, msg.AfterInboxAcc(), msg.ParentChainBlockNumber, nil
+	acc, err := msg.AfterInboxAcc()
+	if err != nil {
+		return nil, common.Hash{}, 0, fmt.Errorf("MEL: failed to compute AfterInboxAcc at position %d: %w", requestedPosition, err)
+	}
+	return msg.Message, acc, msg.ParentChainBlockNumber, nil
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
@@ -452,7 +531,7 @@ func (m *MessageExtractor) GetSequencerMessageBytes(ctx context.Context, seqNum 
 }
 
 func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Context, seqNum uint64, parentChainBlock uint64) ([]byte, common.Hash, error) {
-	// No need to specify a max headers to fetch, as we are using the logs fetcher only, so we can pass in a 0.
+	// blocksToFetch=0: single-block lookup, no range prefetch needed.
 	logsFetcher := newLogsAndHeadersFetcher(m.parentChainReader, 0)
 	if err := logsFetcher.fetchSequencerBatchLogs(ctx, parentChainBlock, parentChainBlock); err != nil {
 		return nil, common.Hash{}, err
@@ -460,6 +539,9 @@ func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Co
 	parentChainHeader, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(parentChainBlock))
 	if err != nil {
 		return nil, common.Hash{}, err
+	}
+	if parentChainHeader == nil {
+		return nil, common.Hash{}, fmt.Errorf("parent chain block %d not found", parentChainBlock)
 	}
 	seqBatches, batchTxs, err := melextraction.ParseBatchesFromBlock(ctx, parentChainHeader, &txByLogFetcher{m.parentChainReader}, logsFetcher, &melextraction.LogUnpacker{})
 	if err != nil {
@@ -476,86 +558,69 @@ func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Co
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, parentChainBlock, seenBatches)
 }
 
-// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation. To be only
-// called during init when reorging to a message batch
+// sendReorgNotification sends a reorg notification on the reorgEventsNotifier channel.
+// Returns nil immediately if the notifier is not set.
+func (m *MessageExtractor) sendReorgNotification(ctx context.Context, blockNum uint64) error {
+	if m.reorgEventsNotifier == nil {
+		return nil
+	}
+	select {
+	case m.reorgEventsNotifier <- blockNum:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ReorgTo rewrites the head MEL state block number and notifies reorg listeners.
+// When called before Start() (e.g. during node init), the notification is skipped
+// because the channel consumer hasn't started yet. Downstream consumers (block
+// validator, batch poster) must not be started before MEL, so they will initialize
+// from the current (rewound) head state when they start.
 func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
-	dbBatch := m.melDB.db.NewBatch()
-	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
+	if err := m.melDB.RewriteHeadBlockNum(parentChainBlockNumber); err != nil {
 		return err
 	}
-	if err := dbBatch.Write(); err != nil {
+	if m.reorgEventsNotifier == nil {
+		return nil
+	}
+	if !m.Started() {
+		log.Info("ReorgTo applied during init (MEL not running); downstream consumers will start from rewound state", "block", parentChainBlockNumber)
+		return nil
+	}
+	ctx, err := m.GetContextSafe()
+	if err != nil {
 		return err
 	}
-	if m.reorgEventsNotifier != nil {
-		m.reorgEventsNotifier <- parentChainBlockNumber
-	}
-	return nil
+	return m.sendReorgNotification(ctx, parentChainBlockNumber)
 }
 
 func (m *MessageExtractor) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	batchMetadata, err := m.GetBatchMetadata(seqNum)
-	return batchMetadata.Accumulator, err
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return batchMetadata.Accumulator, nil
 }
 
 func (m *MessageExtractor) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
-	return metadata.MessageCount, err
+	if err != nil {
+		return 0, err
+	}
+	return metadata.MessageCount, nil
 }
 
 func (m *MessageExtractor) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := m.GetBatchMetadata(seqNum)
-	return metadata.ParentChainBlock, err
+	if err != nil {
+		return 0, err
+	}
+	return metadata.ParentChainBlock, nil
 }
 
-// err will return unexpected/internal errors
-// bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (m *MessageExtractor) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
-	batchCount, err := m.GetBatchCount()
-	if err != nil {
-		return 0, false, err
-	}
-	if batchCount == 0 {
-		return 0, false, nil
-	}
-	low := uint64(0)
-	high := batchCount - 1
-	lastBatchMessageCount, err := m.GetBatchMessageCount(high)
-	if err != nil {
-		return 0, false, err
-	}
-	if lastBatchMessageCount <= pos {
-		return 0, false, nil
-	}
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := m.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, false, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, true, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, true, nil
-		} else {
-			// implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < oldHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-		if high == low {
-			return high, true, nil
-		}
-	}
+	return arbutil.FindInboxBatchContainingMessage(m, pos)
 }
 
 func (m *MessageExtractor) GetBatchCount() (uint64, error) {
@@ -566,20 +631,24 @@ func (m *MessageExtractor) GetBatchCount() (uint64, error) {
 	return headState.BatchCount, nil
 }
 
+func (m *MessageExtractor) LegacyDelayedBound() uint64 {
+	return m.melDB.LegacyDelayedCount()
+}
+
 func (m *MessageExtractor) CaughtUp() chan struct{} {
 	return m.caughtUpChan
 }
 
-// Ticks the message extractor FSM and performs the action associated with the current state,
+// Act ticks the message extractor FSM and performs the action associated with the current state,
 // such as processing the next block, saving messages, or handling reorgs.
-// Question: do we want to make this private? System tests currently use it, but I believe this should only ever be called by start
 func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	current := m.fsm.Current()
 	switch current.State {
 	// `Start` is the initial state of the FSM. It is responsible for
 	// initializing the message extraction process. The FSM will transition to
-	// the `ProcessingNextBlock` state after successfully fetching the initial
-	// MEL state struct for the message extraction process.
+	// `ProcessingNextBlock` after successfully loading and validating the initial
+	// MEL state, or to `Reorging` if a parent chain reorg is detected at the
+	// stored head block.
 	case Start:
 		return m.initialize(ctx, current)
 	// `ProcessingNextBlock` is the state responsible for processing the next block
@@ -590,10 +659,10 @@ func (m *MessageExtractor) Act(ctx context.Context) (time.Duration, error) {
 	case ProcessingNextBlock:
 		return m.processNextBlock(ctx, current)
 	// `SavingMessages` is the state responsible for saving the extracted messages
-	// and delayed messages to the database. It stores data in the node's consensus database
-	// and runs after the `ProcessingNextBlock` state.
-	// After data is stored, the FSM will then transition to the `ProcessingNextBlock` state
-	// yet again.
+	// and delayed messages. It first pushes extracted messages to the transaction
+	// streamer, then atomically writes batch metadata, delayed messages, and the
+	// new head MEL state to the consensus database.
+	// The FSM transitions to `ProcessingNextBlock` after both writes succeed.
 	case SavingMessages:
 		return m.saveMessages(ctx, current)
 	// `Reorging` is the state responsible for handling reorgs in the parent chain.

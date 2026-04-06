@@ -80,6 +80,7 @@ func Test_messagesFromBatchSegments_delayedMessages(t *testing.T) {
 	ctx := context.Background()
 	melState := &mel.State{
 		DelayedMessagesRead: 0,
+		DelayedMessagesSeen: 2,
 	}
 	// No segments, but the sequencer message says that we must read 2 delayed messages.
 	seqMsg := sequencerMessageWithSegments(2, [][]byte{})
@@ -275,6 +276,7 @@ func Test_messagesFromBatchSegments(t *testing.T) {
 			setupMelState: func() *mel.State {
 				return &mel.State{
 					DelayedMessagesRead: 0,
+					DelayedMessagesSeen: 1,
 				}
 			},
 			setupSeqMsg: func(segments [][]byte) *arbstate.SequencerMessage {

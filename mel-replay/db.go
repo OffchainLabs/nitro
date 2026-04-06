@@ -51,15 +51,15 @@ func (p DB) Stat() (string, error) {
 }
 
 func (p DB) NewBatch() ethdb.Batch {
-	panic("unimplemented")
+	panic("mel-replay DB: NewBatch not supported in validation mode")
 }
 
 func (p DB) NewBatchWithSize(size int) ethdb.Batch {
-	panic("unimplemented")
+	panic("mel-replay DB: NewBatchWithSize not supported in validation mode")
 }
 
 func (p DB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
-	panic("unimplemented")
+	panic("mel-replay DB: NewIterator not supported in validation mode")
 }
 
 func (p DB) SyncAncient() error {
@@ -107,7 +107,7 @@ func (d *DB) AncientSize(kind string) (uint64, error) {
 }
 
 func (d *DB) ReadAncients(fn func(ethdb.AncientReaderOp) error) (err error) {
-	panic("unimplemented")
+	return errors.New("mel-replay DB: ReadAncients not supported in validation mode")
 }
 
 func (d *DB) ModifyAncients(f func(ethdb.AncientWriteOp) error) (int64, error) {
@@ -135,5 +135,5 @@ func (d *DB) AncientDatadir() (string, error) {
 }
 
 func (d *DB) WasmDataBase() ethdb.KeyValueStore {
-	panic("unimplemented")
+	panic("mel-replay DB: WasmDataBase not supported in validation mode")
 }

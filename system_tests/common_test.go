@@ -58,6 +58,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -2296,6 +2297,129 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
+// Helpers that dispatch to MEL or InboxTracker via Node.BatchDataSource().
+// getDelayedMessage and getSequencerMessageBytes are exceptions because the
+// underlying methods have incompatible signatures across the two backends.
+
+func requireBatchDataSource(t testing.TB, node *arbnode.Node) arbnode.BatchDataReader {
+	t.Helper()
+	r, err := node.BatchDataSource()
+	if err != nil {
+		t.Fatalf("BatchDataSource: %v", err)
+	}
+	return r
+}
+
+func findInboxBatchContainingMessage(t testing.TB, node *arbnode.Node, msgIdx arbutil.MessageIndex) (uint64, bool, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).FindInboxBatchContainingMessage(msgIdx)
+}
+
+func getDelayedCount(t testing.TB, node *arbnode.Node) (uint64, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).GetDelayedCount()
+}
+
+func getBatchCount(t testing.TB, node *arbnode.Node) (uint64, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).GetBatchCount()
+}
+
+func getBatchMetadata(t testing.TB, node *arbnode.Node, seqNum uint64) (mel.BatchMetadata, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).GetBatchMetadata(seqNum)
+}
+
+func getBatchMessageCount(t testing.TB, node *arbnode.Node, seqNum uint64) (arbutil.MessageIndex, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).GetBatchMessageCount(seqNum)
+}
+
+func getBatchParentChainBlock(t testing.TB, node *arbnode.Node, seqNum uint64) (uint64, error) {
+	t.Helper()
+	return requireBatchDataSource(t, node).GetBatchParentChainBlock(seqNum)
+}
+
+// getDelayedMessage returns a delayed message by index. MEL and InboxTracker
+// have incompatible signatures (different parameters and return types), so
+// this helper cannot go through BatchDataSource.
+func getDelayedMessage(ctx context.Context, node *arbnode.Node, seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
+	if node.MessageExtractor != nil {
+		delayed, err := node.MessageExtractor.GetDelayedMessage(seqNum)
+		if err != nil {
+			return nil, err
+		}
+		return delayed.Message, nil
+	}
+	if node.InboxTracker != nil {
+		return node.InboxTracker.GetDelayedMessage(ctx, seqNum)
+	}
+	return nil, arbnode.ErrNoBatchDataReader
+}
+
+// getSequencerMessageBytes dispatches to MEL or InboxReader. Unlike the
+// BatchDataReader methods, GetSequencerMessageBytes lives on InboxReader
+// (not InboxTracker), so this helper cannot use BatchDataSource.
+func getSequencerMessageBytes(ctx context.Context, node *arbnode.Node, seqNum uint64) ([]byte, common.Hash, error) {
+	if node.MessageExtractor != nil {
+		return node.MessageExtractor.GetSequencerMessageBytes(ctx, seqNum)
+	}
+	if node.InboxReader != nil {
+		return node.InboxReader.GetSequencerMessageBytes(ctx, seqNum)
+	}
+	return nil, common.Hash{}, fmt.Errorf("GetSequencerMessageBytes: %w", arbnode.ErrNoBatchDataReader)
+}
+
+// waitForBatchContainingMessage polls until the latest batch's message count
+// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
+// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
+	t.Helper()
+	var lastBatchCount uint64
+	var lastMsgCount arbutil.MessageIndex
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batches, err := getBatchCount(t, node)
+		if err != nil {
+			t.Fatalf("getBatchCount: %v", err)
+		}
+		lastBatchCount = batches
+		if batches > 0 {
+			haveMessages, err := getBatchMessageCount(t, node, batches-1)
+			if err != nil {
+				t.Fatalf("getBatchMessageCount(%d): %v", batches-1, err)
+			}
+			lastMsgCount = haveMessages
+			if haveMessages >= msgPos {
+				return
+			}
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for inbox position %d (last state: %d batches, %d messages)", timeout, msgPos, lastBatchCount, lastMsgCount)
+}
+
+// waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
+// containing msgIdx is found, returning the batch number. The normal "not yet
+// available" case is found=false, so any error is treated as immediately fatal.
+// Calls t.Fatalf on timeout.
+func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.MessageIndex, timeout, interval time.Duration) uint64 {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		batchNum, found, err := findInboxBatchContainingMessage(t, node, msgIdx)
+		if err != nil {
+			t.Fatalf("findInboxBatchContainingMessage(%d): %v", msgIdx, err)
+		}
+		if found {
+			return batchNum
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("timed out after %v waiting for batch containing message %d", timeout, msgIdx)
+	return 0 // unreachable
+}
+
 func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(want, got) {
@@ -2823,16 +2947,7 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder, targets ...ra
 	}
 	ctx := builder.ctx
 	inboxPos := arbutil.MessageIndex(block)
-	for {
-		time.Sleep(250 * time.Millisecond)
-		batches, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchCount()
-		Require(t, err)
-		haveMessages, err := builder.L2.ConsensusNode.GetParentChainDataSource().GetBatchMessageCount(batches - 1)
-		Require(t, err)
-		if haveMessages >= inboxPos {
-			break
-		}
-	}
+	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 60*time.Second, 250*time.Millisecond)
 	var options []inputs.WriterOption
 	options = append(options, inputs.WithTimestampDirEnabled(*testflag.RecordBlockInputsWithTimestampDirEnabled))
 	options = append(options, inputs.WithBlockIdInFileNameEnabled(*testflag.RecordBlockInputsWithBlockIdInFileNameEnabled))
@@ -2912,16 +3027,14 @@ func getFreePort(t testing.TB) int {
 	return tcpAddr.Port
 }
 
-func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
+func keepChainMoving(t *testing.T, ctx context.Context, delay time.Duration, l1Info *BlockchainTestInfo, client *ethclient.Client) {
+	ticker := time.NewTicker(delay)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			time.Sleep(delay)
-			if ctx.Err() != nil {
-				return
-			}
+		case <-ticker.C:
 			to := l1Info.GetAddress("Faucet")
 			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
 			if err := client.SendTransaction(ctx, tx); err != nil {

@@ -11,10 +11,27 @@ import (
 )
 
 // Defines a finite state machine (FSM) for the message extraction process.
+//
+// State transitions:
+//
+//	Start              -> ProcessingNextBlock  (via processNextBlock)
+//	Start              -> Reorging             (via reorgToOldBlock)
+//	ProcessingNextBlock -> SavingMessages       (via saveMessages)
+//	ProcessingNextBlock -> ProcessingNextBlock  (via processNextBlock, self-loop)
+//	ProcessingNextBlock -> Reorging             (via reorgToOldBlock)
+//	SavingMessages      -> ProcessingNextBlock  (via processNextBlock)
+//	SavingMessages      -> SavingMessages       (via saveMessages, self-loop/retry)
+//	Reorging            -> ProcessingNextBlock  (via processNextBlock)
+//
+// Additionally, backToStart is registered (Start/ProcessingNextBlock -> Start)
+// but currently has no call sites.
+//
+// When an action returns an error, the FSM stays in the current state and
+// retries the same action after RetryInterval.
 type FSMState uint8
 
 const (
-	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
+	// Value 0 is reserved so the zero value of FSMState does not correspond to any valid state.
 	_ FSMState = iota
 	Start
 	ProcessingNextBlock
@@ -48,7 +65,7 @@ type backToStart struct{}
 // An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
 	melState         *mel.State
-	prevStepWasReorg bool // Helps prevent unnecessary continuous rewinding of MEL validator when we detect L1 reorg
+	prevStepWasReorg bool // Triggers one-time preimage rebuild after a reorg
 }
 
 // An action that transitions the FSM to the saving messages state.

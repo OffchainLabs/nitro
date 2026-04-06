@@ -50,7 +50,7 @@ type StatelessBlockValidator struct {
 }
 
 type BlockValidatorRegistrer interface {
-	SetBlockValidator(*BlockValidator)
+	SetBlockValidator(*BlockValidator) error
 }
 
 type InboxTrackerInterface interface {

@@ -47,28 +47,28 @@ func PeekFromAccumulator[T any](
 	}
 	var msgHash common.Hash
 	curr := outBox
-	lookbacksForLogging := lookbacks
+	totalLookbacks := lookbacks
 	for lookbacks > 0 {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		result, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, curr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve preimage at lookback position %d: %w", lookbacksForLogging, err)
+			return nil, fmt.Errorf("failed to resolve preimage at lookback %d/%d: %w", lookbacks, totalLookbacks, err)
 		}
 		curr, msgHash, err = mel.SplitPreimage(result)
 		if err != nil {
-			return nil, fmt.Errorf("accumulator preimage at lookback %d: %w", lookbacks, err)
+			return nil, fmt.Errorf("accumulator preimage at lookback %d/%d: %w", lookbacks, totalLookbacks, err)
 		}
 		lookbacks--
 	}
 	objectBytes, err := preimageResolver.ResolveTypedPreimage(arbutil.Keccak256PreimageType, msgHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve message content preimage at lookback position %d: %w", lookbacksForLogging, err)
+		return nil, fmt.Errorf("failed to resolve message content preimage (after %d lookbacks): %w", totalLookbacks, err)
 	}
 	object := new(T)
 	if err = rlp.Decode(bytes.NewBuffer(objectBytes), &object); err != nil {
-		return nil, fmt.Errorf("failed to decode accumulator object at lookback position %d: %w", lookbacksForLogging, err)
+		return nil, fmt.Errorf("failed to decode accumulator object (after %d lookbacks): %w", totalLookbacks, err)
 	}
 	return object, nil
 }

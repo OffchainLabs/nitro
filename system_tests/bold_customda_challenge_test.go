@@ -333,7 +333,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
+	go keepChainMoving(t, ctx, 3*time.Second, l1info, l1client)
 
 	// Configure external DA for node B
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
@@ -398,7 +398,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	err = dapReadersB.SetupDACertificateReader(daClientB, daClientB)
 	Require(t, err)
 
-	pcdsA := l2nodeA.GetParentChainDataSource()
+	pcdsA, err := l2nodeA.GetParentChainDataSource()
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		pcdsA,
 		pcdsA,
@@ -415,7 +416,8 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	Require(t, err)
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
-	pcdsB := l2nodeB.GetParentChainDataSource()
+	pcdsB, err := l2nodeB.GetParentChainDataSource()
+	Require(t, err)
 	statelessB, err := staker.NewStatelessBlockValidator(
 		pcdsB,
 		pcdsB,
@@ -586,14 +588,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	time.Sleep(100 * time.Millisecond)
 
 	// Get and log batch 0 from both nodes
-	msgA0, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 0)
+	msgA0, _, err := getSequencerMessageBytes(ctx, l2nodeA, 0)
 	if err != nil {
 		t.Logf("Error getting batch 0 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 0", msgA0)
 	}
 
-	msgB0, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 0)
+	msgB0, _, err := getSequencerMessageBytes(ctx, l2nodeB, 0)
 	if err != nil {
 		t.Logf("Error getting batch 0 from node B: %v", err)
 	}
@@ -680,14 +682,14 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	time.Sleep(100 * time.Millisecond)
 
 	// Get and log batch 1 from both nodes
-	msgA1, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
+	msgA1, _, err := getSequencerMessageBytes(ctx, l2nodeA, 1)
 	if err != nil {
 		t.Logf("Error getting batch 1 from node A: %v", err)
 	} else {
 		PrintSequencerInboxMessage(t, "Node A - Batch 1", msgA1)
 	}
 
-	msgB1, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 1)
+	msgB1, _, err := getSequencerMessageBytes(ctx, l2nodeB, 1)
 	if err != nil {
 		t.Logf("Error getting batch 1 from node B: %v", err)
 	}
@@ -704,7 +706,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// Log third batch messages (batch 2 - second CustomDA batch with divergence)
 	t.Logf("\n======== BATCH 2 (second CustomDA batch - WITH DIVERGENCE) ========")
 	// Get and log batch 2 from both nodes
-	msgA2, _, err := l2nodeA.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 2)
+	msgA2, _, err := getSequencerMessageBytes(ctx, l2nodeA, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node A: %v", err)
 	} else {
@@ -716,7 +718,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		}
 	}
 
-	msgB2, _, err := l2nodeB.GetParentChainDataSource().GetSequencerMessageBytes(ctx, 2)
+	msgB2, _, err := getSequencerMessageBytes(ctx, l2nodeB, 2)
 	if err != nil {
 		t.Logf("Error getting batch 2 from node B: %v", err)
 	} else {
@@ -739,18 +741,18 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		}
 	}
 
-	bcA, err := l2nodeA.GetParentChainDataSource().GetBatchCount()
+	bcA, err := getBatchCount(t, l2nodeA)
 	Require(t, err)
-	bcB, err := l2nodeB.GetParentChainDataSource().GetBatchCount()
+	bcB, err := getBatchCount(t, l2nodeB)
 	Require(t, err)
 
 	if bcA != bcB {
 		t.Fatalf("FATAL: Expected Node A batch count %d to be equal to Node B batch count %d", bcA, bcB)
 	}
 
-	msgA, err := l2nodeA.GetParentChainDataSource().GetBatchMessageCount(bcA - 1)
+	msgA, err := getBatchMessageCount(t, l2nodeA, bcA-1)
 	Require(t, err)
-	msgB, err := l2nodeB.GetParentChainDataSource().GetBatchMessageCount(bcB - 1)
+	msgB, err := getBatchMessageCount(t, l2nodeB, bcB-1)
 	Require(t, err)
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)

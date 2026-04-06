@@ -14,7 +14,8 @@ import (
 )
 
 func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
-	// Start from the latest MEL state we have in the database
+	// Start from the latest MEL state we have in the database.
+	// State() already calls Validate(), so invariants are checked at load time.
 	melState, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return m.config.RetryInterval, err
@@ -26,6 +27,9 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
 	if err != nil {
 		return m.config.RetryInterval, fmt.Errorf("failed to get start parent chain block: %d corresponding to head mel state from parent chain: %w", melState.ParentChainBlockNumber, err)
+	}
+	if startBlock == nil {
+		return m.config.RetryInterval, fmt.Errorf("start parent chain block %d not found", melState.ParentChainBlockNumber)
 	}
 	// Initialize logsPreFetcher
 	m.logsAndHeadersPreFetcher = newLogsAndHeadersFetcher(m.parentChainReader, m.config.BlocksToPrefetch)

@@ -578,7 +578,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					"haveBeforeAcc", havePrevAcc,
 					"readLastAcc", lazyHashLogging{func() common.Hash {
 						// Only compute this if we need to log it, as it's somewhat expensive
-						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						acc, err := delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						if err != nil {
+							log.Warn("Failed to compute AfterInboxAcc for logging", "err", err)
+							return common.Hash{}
+						}
+						return acc
 					}},
 				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
@@ -633,12 +638,22 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*mel.SequencerInboxBatch, delayedMessages []*mel.DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	delayedCountBeforeAdd, err := r.tracker.GetDelayedCount()
+	if err != nil {
+		return false, fmt.Errorf("getting delayed message count before adding messages: %w", err)
+	}
+	err = r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
+		log.Warn("Delayed message mismatch detected, rolling back and reorging", "err", err, "delayedCountBeforeAdd", delayedCountBeforeAdd)
+		// Roll back delayed messages added above so orphaned entries
+		// don't accumulate in the DB without corresponding batches.
+		if rollbackErr := r.tracker.ReorgDelayedTo(delayedCountBeforeAdd); rollbackErr != nil {
+			return false, fmt.Errorf("failed to rollback delayed messages (original mismatch: %w): %w", err, rollbackErr)
+		}
 		return true, nil
 	} else if err != nil {
 		return false, err
@@ -809,8 +824,8 @@ func (b *batchDataProviderImpl) GetDelayedCount() (uint64, error) {
 	return b.r.tracker.GetDelayedCount()
 }
 
-func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) {
-	b.r.tracker.SetBlockValidator(validator)
+func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) error {
+	return b.r.tracker.SetBlockValidator(validator)
 }
 
 func (b *batchDataProviderImpl) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

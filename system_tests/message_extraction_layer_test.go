@@ -80,6 +80,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence(t *testing.T) {
 		nil, // TODO: SequencerInbox interface needed.
 		l1Reader,
 		reorgEventChan,
+		nil,
 	)
 	Require(t, err)
 	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
@@ -216,6 +217,7 @@ func TestMessageExtractionLayer_SequencerBatchMessageEquivalence_Blobs(t *testin
 		nil,
 		nil,
 		reorgEventChan,
+		nil,
 	)
 	Require(t, err)
 	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
@@ -356,6 +358,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		nil,
 		nil,
 		reorgEventChan,
+		nil,
 	)
 	Require(t, err)
 	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
@@ -422,6 +425,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 		nil,
 		nil,
 		reorgEventChan,
+		nil,
 	)
 	Require(t, err)
 	Require(t, newExtractor.SetMessageConsumer(mockMsgConsumer))
@@ -586,7 +590,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	// Verify that ethDeposit works as intended on the sequence node's side
 	testDepositETH(t, ctx, builder, delayedInbox, lookupL2Tx, txOpts) // this also checks if balance increment is seen on L2
 
-	// Reorg L1 and advance it so that MEl can pick up the reorg
+	// Reorg L1 and advance it so that MEL can pick up the reorg
 	currHead, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
 	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
@@ -613,7 +617,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 		}
 	}
 
-	// Post a batch so that mel can send up-to-date L2 messages to txStreamer
+	// Post a batch so that MEL can send up-to-date L2 messages to txStreamer
 	initialBatchCount := GetBatchCount(t, builder)
 	var txs types.Transactions
 	for i := 0; i < 10; i++ {
@@ -630,32 +634,27 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	}
 	CheckBatchCount(t, builder, initialBatchCount+1)
 
-	// Wait until mel can read the posted batch, send correct L2 messages to txStreamer and txStreamer is able to detect the Reorg and handle correct execution of L2 messages
-	{
-		timeout := time.NewTimer(time.Minute)
-		defer timeout.Stop()
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			// Verify that both MEL and TxStreamer detected the reorg
-			if logHandler.WasLogged("MEL detected L1 reorg") && logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
-				break
-			}
-			select {
-			case <-tick.C:
-			case <-timeout.C:
-				t.Fatalf("timed out waiting for MEL and TransactionStreamer to detect reorg")
-			}
+	// Wait for the reorg to complete: MEL and TxStreamer reorg logs, then check balance.
+	var reorgLogsFound bool
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if logHandler.WasLogged("MEL detected L1 reorg") &&
+			logHandler.WasLogged("TransactionStreamer: Reorg detected!") {
+			reorgLogsFound = true
+			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// Verify that after reorg handling, resulting balance in the account is correct
-	newBalance, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
+	if !reorgLogsFound {
+		t.Fatal("timed out waiting for reorg logs")
+	}
+	expectedBalance := new(big.Int).Add(oldBalance, txOpts.Value)
+	bal, err := builder.L2.Client.BalanceAt(ctx, txOpts.From, nil)
 	if err != nil {
-		t.Fatalf("BalanceAt(%v) unexpected error: %v", txOpts.From, err)
+		t.Fatalf("BalanceAt: %v", err)
 	}
-	if got := new(big.Int); got.Sub(newBalance, oldBalance).Cmp(txOpts.Value) != 0 {
-		t.Errorf("Got transferred: %v, want: %v", got, txOpts.Value)
+	if bal.Cmp(expectedBalance) != 0 {
+		t.Fatalf("balance=%v, want %v", bal, expectedBalance)
 	}
 }
 
@@ -710,6 +709,7 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 		nil,
 		nil,
 		reorgEventsChan,
+		nil,
 	)
 	Require(t, err)
 	Require(t, extractor.SetMessageConsumer(mockMsgConsumer))
@@ -1104,7 +1104,7 @@ func sendDelayedMessagesViaL1(
 		Require(t, err)
 	}
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-	waitForDelayedCount(t, ctx, builder, countBefore+uint64(numMsgs))
+	waitForDelayedCount(t, ctx, builder, countBefore+uint64(numMsgs)) // #nosec G115
 }
 
 // waitForDelayedCount polls the inbox tracker until the delayed message count reaches the expected value.

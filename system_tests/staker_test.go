@@ -196,7 +196,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	locator, err := server_common.NewMachineLocator(valnode.TestValidationConfig.Wasm.RootPath)
 	Require(t, err)
-	pcdsA := l2nodeA.GetParentChainDataSource()
+	pcdsA, err := l2nodeA.GetParentChainDataSource()
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		pcdsA,
 		pcdsA,
@@ -256,7 +257,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.Strategy = "MakeNodes"
-	pcdsB := l2nodeB.GetParentChainDataSource()
+	pcdsB, err := l2nodeB.GetParentChainDataSource()
+	Require(t, err)
 	statelessB, err := staker.NewStatelessBlockValidator(
 		pcdsB,
 		pcdsB,

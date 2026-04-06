@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -109,6 +110,8 @@ func NewParentChainWithConfig(ctx context.Context, chainID *big.Int, l1Reader *h
 		if err := parentChain.pollEthConfig(fetchCtx); err != nil {
 			if fetchCtx.Err() != nil {
 				log.Warn("Eager eth_config fetch timed out, will use static config until next successful poll", "timeout", "10s")
+			} else if isMethodNotFoundError(err) {
+				log.Debug("Parent chain RPC does not support eth_config, using static config", "err", err)
 			} else {
 				log.Warn("Failed to poll parent chain eth_config, will use static config until next successful poll", "err", err)
 			}
@@ -131,6 +134,12 @@ type ethConfigEntry struct {
 	ActivationTime uint64             `json:"activationTime"`
 }
 
+// isMethodNotFoundError returns true if the error is an RPC "method not found" error (-32601).
+func isMethodNotFoundError(err error) bool {
+	var rpcErr rpc.Error
+	return errors.As(err, &rpcErr) && rpcErr.ErrorCode() == -32601
+}
+
 // Start begins polling the parent chain's eth_config RPC.
 // ParentChain is shared between execution and consensus nodes when co-located,
 // so it may be Start()'d twice. We call StopWaiterSafe.Start() directly
@@ -150,7 +159,11 @@ func (p *ParentChain) Start(ctxIn context.Context) {
 
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		if err := p.pollEthConfig(ctx); err != nil && ctx.Err() == nil {
-			log.Warn("Failed to poll parent chain eth_config", "err", err)
+			if isMethodNotFoundError(err) {
+				log.Debug("Parent chain RPC does not support eth_config, using static config", "err", err)
+			} else {
+				log.Warn("Failed to poll parent chain eth_config", "err", err)
+			}
 		}
 		return p.config().ConfigPollInterval
 	})
@@ -246,8 +259,7 @@ func (p *ParentChain) chainConfig() (*params.ChainConfig, error) {
 // Returns (nil, nil) when the parent chain does not support blobs (e.g. an
 // Arbitrum L2 acting as parent for an L3). Callers must handle a nil config.
 func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) {
-	cached := p.cachedEthConfig.Load()
-	if cached != nil {
+	if cached := p.cachedEthConfig.Load(); cached != nil {
 		// If next config exists and headerTime is at or past its activation,
 		// use the next config's blob schedule.
 		if cached.Next != nil && cached.Next.BlobSchedule != nil &&
@@ -269,6 +281,8 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 			"headerTime", headerTime,
 			"currentActivationTime", currentActivationTime,
 		)
+	} else {
+		log.Info("No cached eth_config available, falling back to static blob config")
 	}
 	// Fall back to the hardcoded chain config. If the parent chain is an
 	// Arbitrum chain (e.g. an L2 acting as parent for an L3), it won't
@@ -288,17 +302,31 @@ func (p *ParentChain) blobConfig(headerTime uint64) (*params.BlobConfig, error) 
 	return staticBlobConfig.BlobConfig(staticBlobConfig.LatestFork(headerTime, 0)), nil
 }
 
+// resolveHeader returns h if non-nil, otherwise fetches the latest header from the L1 reader.
+func (p *ParentChain) resolveHeader(ctx context.Context, h *types.Header) (*types.Header, error) {
+	if h != nil {
+		return h, nil
+	}
+	if p.L1Reader == nil {
+		return nil, errors.New("cannot resolve header: L1Reader is nil and no header provided")
+	}
+	header, err := p.L1Reader.LastHeader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if header == nil {
+		return nil, errors.New("L1Reader has no header available yet")
+	}
+	return header, nil
+}
+
 // MaxBlobGasPerBlock returns the maximum blob gas per block according to
 // the configuration of the parent chain.
 // Passing in a nil header will use the time from the latest header.
 func (p *ParentChain) MaxBlobGasPerBlock(ctx context.Context, h *types.Header) (uint64, error) {
-	header := h
-	if h == nil {
-		lh, err := p.L1Reader.LastHeader(ctx)
-		if err != nil {
-			return 0, err
-		}
-		header = lh
+	header, err := p.resolveHeader(ctx, h)
+	if err != nil {
+		return 0, err
 	}
 	blobConfig, err := p.blobConfig(header.Time)
 	if err != nil {
@@ -316,13 +344,9 @@ func (p *ParentChain) MaxBlobGasPerBlock(ctx context.Context, h *types.Header) (
 // of the parent chain.
 // Passing in a nil header will use the time from the latest header.
 func (p *ParentChain) BlobFeePerByte(ctx context.Context, h *types.Header) (*big.Int, error) {
-	header := h
-	if h == nil {
-		lh, err := p.L1Reader.LastHeader(ctx)
-		if err != nil {
-			return big.NewInt(0), err
-		}
-		header = lh
+	header, err := p.resolveHeader(ctx, h)
+	if err != nil {
+		return big.NewInt(0), err
 	}
 	bc, err := p.blobConfig(header.Time)
 	if err != nil {
@@ -331,6 +355,9 @@ func (p *ParentChain) BlobFeePerByte(ctx context.Context, h *types.Header) (*big
 	// nil means the parent chain doesn't support blobs (e.g. Arbitrum L2
 	// parent). Return 0, matching CalcBlobFee behavior.
 	if bc == nil {
+		return big.NewInt(0), nil
+	}
+	if header.ExcessBlobGas == nil {
 		return big.NewInt(0), nil
 	}
 	return eip4844.CalcBlobFeeWithConfig(bc, header.ExcessBlobGas), nil

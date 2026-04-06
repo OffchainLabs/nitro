@@ -84,7 +84,7 @@ func TestOverflowAssertions(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
+	go keepChainMoving(t, ctx, 3*time.Second, l1info, l1client)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
@@ -97,7 +97,8 @@ func TestOverflowAssertions(t *testing.T) {
 
 	locator, err := server_common.NewMachineLocator(valCfg.Wasm.RootPath)
 	Require(t, err)
-	pcds := l2node.GetParentChainDataSource()
+	pcds, err := l2node.GetParentChainDataSource()
+	Require(t, err)
 	stateless, err := staker.NewStatelessBlockValidator(
 		pcds,
 		pcds,
@@ -178,9 +179,9 @@ func TestOverflowAssertions(t *testing.T) {
 	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, honestSeqInboxBinding, honestSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bc, err := l2node.GetParentChainDataSource().GetBatchCount()
+	bc, err := getBatchCount(t, l2node)
 	Require(t, err)
-	msgs, err := l2node.GetParentChainDataSource().GetBatchMessageCount(bc - 1)
+	msgs, err := getBatchMessageCount(t, l2node, bc-1)
 	Require(t, err)
 
 	t.Logf("Node batch count %d, msgs %d", bc, msgs)
