@@ -4,6 +4,7 @@ package melrunner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -62,6 +63,9 @@ func (f *logsAndHeadersFetcher) fetch(ctx context.Context, preState *mel.State) 
 		head, err := f.parentChainReader.HeaderByNumber(ctx, nil)
 		if err != nil {
 			return err
+		}
+		if head == nil || head.Number == nil {
+			return errors.New("parent chain returned nil header or nil block number for latest block")
 		}
 		if head.Number.Uint64() < parentChainBlockNumber {
 			return fmt.Errorf("reorg detected inside logsAndHeadersFetcher")

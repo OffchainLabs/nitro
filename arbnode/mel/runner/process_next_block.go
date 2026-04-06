@@ -39,7 +39,7 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	}
 	preState := processAction.melState
 	// If the current parent chain block is not safe/finalized we wait till it becomes safe/finalized as determined by the ReadMode
-	if m.config.ReadMode != "latest" && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
+	if m.config.ReadMode != ReadModeLatest && preState.ParentChainBlockNumber+1 > m.lastBlockToRead.Load() {
 		return m.config.RetryInterval, nil
 	}
 	parentChainBlock, err := m.logsAndHeadersPreFetcher.getHeaderByNumber(ctx, preState.ParentChainBlockNumber+1)
@@ -51,11 +51,11 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			// If the block with the specified number is not found, it likely has not
 			// been posted yet to the parent chain, so we can retry
 			// without returning an error from the FSM.
-			if !m.caughtUp && m.config.ReadMode == "latest" {
+			if !m.caughtUp && m.config.ReadMode == ReadModeLatest {
 				if latestBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.LatestBlockNumber.Int64())); err != nil {
 					log.Error("Error fetching LatestBlockNumber from parent chain to determine if mel has caught up", "err", err)
-				} else if latestBlk == nil {
-					log.Error("Parent chain returned nil header for latest block")
+				} else if latestBlk == nil || latestBlk.Number == nil {
+					log.Error("Parent chain returned nil header or nil block number for latest block")
 				} else if latestBlk.Number.Uint64()-preState.ParentChainBlockNumber <= 5 { // tolerance of catching up i.e parent chain might have progressed in the time between the above two function calls
 					m.caughtUp = true
 					close(m.caughtUpChan)

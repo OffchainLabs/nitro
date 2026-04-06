@@ -111,7 +111,7 @@ func (c *Config) Validate() error {
 		c.Feed.Output.Enable = false
 		c.Feed.Input.URL = []string{}
 	}
-	if c.MessageExtraction.Enable && c.MessageExtraction.ReadMode != "latest" {
+	if c.MessageExtraction.Enable && c.MessageExtraction.ReadMode != melrunner.ReadModeLatest {
 		if c.Sequencer {
 			return errors.New("cannot enable message extraction in safe or finalized mode along with sequencer")
 		}
@@ -848,6 +848,9 @@ func computeMigrationStartBlock(
 		}
 		if finalizedHeader == nil {
 			return 0, errors.New("finalized block header not available on parent chain")
+		}
+		if finalizedHeader.Number == nil {
+			return 0, errors.New("finalized block header has nil Number")
 		}
 		startBlockNum = min(startBlockNum, finalizedHeader.Number.Uint64())
 	}
