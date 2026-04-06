@@ -65,7 +65,7 @@ type backToStart struct{}
 // An action that transitions the FSM to the processing next block state.
 type processNextBlock struct {
 	melState         *mel.State
-	prevStepWasReorg bool // Triggers one-time preimage rebuild and block validator notification after a reorg
+	prevStepWasReorg bool // Triggers one-time preimage rebuild after a reorg
 }
 
 // An action that transitions the FSM to the saving messages state.

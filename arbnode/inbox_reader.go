@@ -638,12 +638,22 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*mel.SequencerInboxBatch, delayedMessages []*mel.DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	delayedCountBeforeAdd, err := r.tracker.GetDelayedCount()
+	if err != nil {
+		return false, fmt.Errorf("getting delayed message count before adding messages: %w", err)
+	}
+	err = r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
 	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
+		log.Warn("Delayed message mismatch detected, rolling back and reorging", "err", err, "delayedCountBeforeAdd", delayedCountBeforeAdd)
+		// Roll back delayed messages added above so orphaned entries
+		// don't accumulate in the DB without corresponding batches.
+		if rollbackErr := r.tracker.ReorgDelayedTo(delayedCountBeforeAdd); rollbackErr != nil {
+			return false, fmt.Errorf("failed to rollback delayed messages (original mismatch: %w): %w", err, rollbackErr)
+		}
 		return true, nil
 	} else if err != nil {
 		return false, err

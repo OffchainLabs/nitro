@@ -14,14 +14,11 @@ import (
 )
 
 func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
-	// Start from the latest MEL state we have in the database
+	// Start from the latest MEL state we have in the database.
+	// State() already calls Validate(), so invariants are checked at load time.
 	melState, err := m.melDB.GetHeadMelState()
 	if err != nil {
 		return m.config.RetryInterval, err
-	}
-	if melState.DelayedMessagesSeen < melState.DelayedMessagesRead {
-		return m.config.RetryInterval, fmt.Errorf("invalid head MEL state at block %d: DelayedMessagesSeen (%d) < DelayedMessagesRead (%d)",
-			melState.ParentChainBlockNumber, melState.DelayedMessagesSeen, melState.DelayedMessagesRead)
 	}
 	if err := melState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 		return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages: %w", err)

@@ -36,6 +36,13 @@ import (
 
 var stuckFSMIndicatingGauge = metrics.NewRegisteredGauge("arb/mel/stuck", nil) // 1-stuck, 0-not_stuck
 
+// Valid values for the ReadMode config field.
+const (
+	ReadModeLatest    = "latest"
+	ReadModeSafe      = "safe"
+	ReadModeFinalized = "finalized"
+)
+
 type MessageExtractionConfig struct {
 	Enable           bool          `koanf:"enable"`
 	RetryInterval    time.Duration `koanf:"retry-interval"`
@@ -48,7 +55,7 @@ type MessageExtractionConfig struct {
 // Note: this method mutates c.ReadMode (lowercases it) in addition to validating.
 func (c *MessageExtractionConfig) Validate() error {
 	c.ReadMode = strings.ToLower(c.ReadMode)
-	if c.ReadMode != "latest" && c.ReadMode != "safe" && c.ReadMode != "finalized" {
+	if c.ReadMode != ReadModeLatest && c.ReadMode != ReadModeSafe && c.ReadMode != ReadModeFinalized {
 		return fmt.Errorf("message extraction read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
 	}
 	return nil
@@ -60,7 +67,7 @@ var DefaultMessageExtractionConfig = MessageExtractionConfig{
 	// the extractor service stop waiter will wait for this duration before trying to act again.
 	RetryInterval:    time.Millisecond * 500,
 	BlocksToPrefetch: 499, // 499 so that eth_getLogs spans at most 500 blocks (from..from+499 inclusive)
-	ReadMode:         "latest",
+	ReadMode:         ReadModeLatest,
 	StallTolerance:   10,
 }
 
@@ -68,7 +75,7 @@ var TestMessageExtractionConfig = MessageExtractionConfig{
 	Enable:           false,
 	RetryInterval:    time.Millisecond * 10,
 	BlocksToPrefetch: 499,
-	ReadMode:         "latest",
+	ReadMode:         ReadModeLatest,
 	StallTolerance:   10,
 }
 
@@ -76,7 +83,7 @@ func MessageExtractionConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessageExtractionConfig.Enable, "enable message extraction service")
 	f.Duration(prefix+".retry-interval", DefaultMessageExtractionConfig.RetryInterval, "wait time before retrying upon a failure")
 	f.Uint64(prefix+".blocks-to-prefetch", DefaultMessageExtractionConfig.BlocksToPrefetch, "the number of blocks to prefetch relevant logs from. Recommend using max allowed range for eth_getLogs rpc query")
-	f.String(prefix+".read-mode", DefaultMessageExtractionConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. When safe or finalized is used, the node should be configured without feed input/output. Defaults to latest. Valid values: latest, safe, finalized")
+	f.String(prefix+".read-mode", ReadModeLatest, "mode to only read latest or safe or finalized L1 blocks. When safe or finalized is used, the node should be configured without feed input/output. Defaults to latest. Valid values: latest, safe, finalized")
 	f.Uint64(prefix+".stall-tolerance", DefaultMessageExtractionConfig.StallTolerance, "max times the MEL fsm is allowed to be stuck without logging error")
 }
 
@@ -181,7 +188,7 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	}
 	m.StopWaiter.Start(ctxIn, m)
 	runChan := make(chan struct{}, 1)
-	if m.config.ReadMode != "latest" {
+	if m.config.ReadMode != ReadModeLatest {
 		m.CallIteratively(m.updateLastBlockToRead)
 	}
 	return stopwaiter.CallIterativelyWith(
@@ -197,13 +204,8 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 			if m.stuckCount > m.config.StallTolerance {
 				stuckFSMIndicatingGauge.Update(1)
 				log.Error("Message extractor has been stuck at the same fsm state past the stall-tolerance number of times", "state", m.fsm.Current().State.String(), "stuckCount", m.stuckCount, "err", err)
-				if m.fatalErrChan != nil && m.config.StallTolerance > 0 && m.stuckCount > 2*m.config.StallTolerance {
-					select {
-					case m.fatalErrChan <- fmt.Errorf("message extractor stuck for %d consecutive errors (state %s): %w", m.stuckCount, m.fsm.Current().State.String(), err):
-					case <-ctx.Done():
-						return 0
-					}
-				}
+				m.escalateIfPersistent(ctx, m.stuckCount,
+					fmt.Errorf("message extractor stuck for %d consecutive errors (state %s): %w", m.stuckCount, m.fsm.Current().State.String(), err))
 			} else {
 				stuckFSMIndicatingGauge.Update(0)
 			}
@@ -213,49 +215,44 @@ func (m *MessageExtractor) Start(ctxIn context.Context) error {
 	)
 }
 
+// escalateIfPersistent sends a fatal error to shut down the node gracefully
+// when the failure count exceeds the escalation threshold (2x StallTolerance).
+// The caller is responsible for incrementing the counter before calling.
+func (m *MessageExtractor) escalateIfPersistent(ctx context.Context, failures uint64, err error) {
+	if m.fatalErrChan != nil && m.config.StallTolerance > 0 && failures > 2*m.config.StallTolerance {
+		select {
+		case m.fatalErrChan <- err:
+		case <-ctx.Done():
+		}
+	}
+}
+
 func (m *MessageExtractor) updateLastBlockToRead(ctx context.Context) time.Duration {
 	var header *types.Header
 	var err error
 	switch m.config.ReadMode {
-	case "safe":
+	case ReadModeSafe:
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
-	case "finalized":
+	case ReadModeFinalized:
 		header, err = m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 	default:
 		log.Error("updateLastBlockToRead called with unexpected ReadMode", "mode", m.config.ReadMode)
 		return m.config.RetryInterval
 	}
+
+	var failReason string
 	if err != nil {
-		m.lastBlockToReadFailures++
-		log.Error("Error fetching header to update last block to read in MEL", "err", err, "consecutiveFailures", m.lastBlockToReadFailures)
-		if m.fatalErrChan != nil && m.config.StallTolerance > 0 && m.lastBlockToReadFailures > 2*m.config.StallTolerance {
-			select {
-			case m.fatalErrChan <- fmt.Errorf("updateLastBlockToRead failed %d consecutive times (mode=%s): %w", m.lastBlockToReadFailures, m.config.ReadMode, err):
-			case <-ctx.Done():
-			}
-		}
-		return m.config.RetryInterval
+		failReason = fmt.Sprintf("fetch error: %v", err)
+	} else if header == nil {
+		failReason = "nil header"
+	} else if header.Number == nil {
+		failReason = "nil header.Number"
 	}
-	if header == nil {
+	if failReason != "" {
 		m.lastBlockToReadFailures++
-		log.Warn("No header returned for MEL ReadMode block", "mode", m.config.ReadMode, "consecutiveFailures", m.lastBlockToReadFailures)
-		if m.fatalErrChan != nil && m.config.StallTolerance > 0 && m.lastBlockToReadFailures > 2*m.config.StallTolerance {
-			select {
-			case m.fatalErrChan <- fmt.Errorf("updateLastBlockToRead: nil header for %d consecutive attempts (mode=%s)", m.lastBlockToReadFailures, m.config.ReadMode):
-			case <-ctx.Done():
-			}
-		}
-		return m.config.RetryInterval
-	}
-	if header.Number == nil {
-		m.lastBlockToReadFailures++
-		log.Error("Header for MEL ReadMode block has nil Number", "mode", m.config.ReadMode, "consecutiveFailures", m.lastBlockToReadFailures)
-		if m.fatalErrChan != nil && m.config.StallTolerance > 0 && m.lastBlockToReadFailures > 2*m.config.StallTolerance {
-			select {
-			case m.fatalErrChan <- fmt.Errorf("updateLastBlockToRead: nil header.Number for %d consecutive attempts (mode=%s)", m.lastBlockToReadFailures, m.config.ReadMode):
-			case <-ctx.Done():
-			}
-		}
+		log.Error("Error updating last block to read in MEL", "reason", failReason, "mode", m.config.ReadMode, "consecutiveFailures", m.lastBlockToReadFailures)
+		m.escalateIfPersistent(ctx, m.lastBlockToReadFailures,
+			fmt.Errorf("updateLastBlockToRead: %s for %d consecutive attempts (mode=%s)", failReason, m.lastBlockToReadFailures, m.config.ReadMode))
 		return m.config.RetryInterval
 	}
 	m.lastBlockToReadFailures = 0
@@ -419,6 +416,9 @@ func (m *MessageExtractor) GetDelayedMessageBytes(ctx context.Context, seqNum ui
 	if err != nil {
 		return nil, err
 	}
+	if delayedMsg.Message == nil {
+		return nil, fmt.Errorf("delayed message %d has nil Message", seqNum)
+	}
 	return delayedMsg.Message.Serialize()
 }
 
@@ -498,8 +498,12 @@ func (m *MessageExtractor) FinalizedDelayedMessageAtPosition(
 			log.Warn("MEL GetHeadMelStateBlockNum failed during finalized delayed message check",
 				"parentChainBlock", finalizedBlock, "headErr", headErr, "originalErr", err)
 		}
-		if rawdb.IsDbErrNotFound(err) || (headErr == nil && finalizedBlock > headBlockNum) {
+		if rawdb.IsDbErrNotFound(err) {
 			log.Debug("MEL delayed count not available for finalized block, treating as not yet finalized", "parentChainBlock", finalizedBlock)
+			return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
+		}
+		if headErr == nil && finalizedBlock > headBlockNum {
+			log.Debug("Finalized block is above MEL head, treating as not yet finalized", "parentChainBlock", finalizedBlock, "headBlock", headBlockNum, "originalErr", err)
 			return nil, common.Hash{}, msg.ParentChainBlockNumber, mel.ErrDelayedMessageNotYetFinalized
 		}
 		log.Warn("MEL GetDelayedCountAtParentChainBlock failed with unexpected error", "parentChainBlock", finalizedBlock, "err", err)

@@ -231,8 +231,15 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	if err != nil {
 		return err
 	}
-	batch := s.db.NewBatch()
-	minKey := uint64ToKey(uint64(msgCount))
+	return deleteTrailingEntries(s.db, uint64(msgCount))
+}
+
+// deleteTrailingEntries removes entries at or beyond msgCount for all
+// message-related prefixes. This cleans up orphaned data left by a crash
+// between writing individual entries and updating the count.
+func deleteTrailingEntries(db ethdb.Database, msgCount uint64) error {
+	batch := db.NewBatch()
+	minKey := uint64ToKey(msgCount)
 	for _, prefix := range [][]byte{
 		schema.MessagePrefix,
 		schema.MessageResultPrefix,
@@ -240,7 +247,7 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 		schema.BlockMetadataInputFeedPrefix,
 		schema.MissingBlockMetadataInputFeedPrefix,
 	} {
-		if err := deleteStartingAt(s.db, batch, prefix, minKey); err != nil {
+		if err := deleteStartingAt(db, batch, prefix, minKey); err != nil {
 			return fmt.Errorf("cleaning up trailing %x entries: %w", prefix, err)
 		}
 	}
