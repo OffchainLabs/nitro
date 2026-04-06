@@ -115,8 +115,7 @@ func (w *execClientWrapper) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIn
 	return w.ExecutionEngine.ArbOSVersionForMessageIndex(msgIdx)
 }
 
-func (w *execClientWrapper) StopAndWait() {
-}
+func (w *execClientWrapper) StopAndWait() {}
 
 func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()

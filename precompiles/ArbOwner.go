@@ -660,6 +660,13 @@ func (con ArbOwner) SetMultiGasPricingConstraints(
 	return nil
 }
 
+// SetCollectTips enables or disables tip collection.
+// When enabled, transaction tips are collected by the network fee account.
+// When disabled (default), tips are dropped.
+func (con ArbOwner) SetCollectTips(c ctx, evm mech, collectTips bool) error {
+	return c.State.SetCollectTips(collectTips)
+}
+
 func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments uint8) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
@@ -667,4 +674,11 @@ func (con ArbOwner) SetMaxStylusContractFragments(c ctx, evm mech, maxFragments 
 	}
 	params.MaxFragmentCount = maxFragments
 	return params.Save()
+}
+
+// Sets the constant gas charge applied before each stylus contract activation.
+// Defaults to zero. Can be raised to deter DOS via activations, or set to a
+// value exceeding the block gas limit to block all activations entirely.
+func (con ArbOwner) SetWasmActivationGas(c ctx, _ mech, gas uint64) error {
+	return c.State.Programs().SetActivationGas(gas)
 }

@@ -35,6 +35,7 @@ type Programs struct {
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
 	cacheManagers  *addressSet.AddressSet
+	activationGas  storage.StorageBackedUint64
 }
 
 type Program struct {
@@ -55,6 +56,7 @@ var programDataKey = []byte{1}
 var moduleHashesKey = []byte{2}
 var dataPricerKey = []byte{3}
 var cacheManagersKey = []byte{4}
+var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
 
@@ -79,7 +81,21 @@ func Open(arbosVersion uint64, sto *storage.Storage) *Programs {
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
 		cacheManagers:  addressSet.OpenAddressSet(sto.OpenCachedSubStorage(cacheManagersKey)),
+		activationGas:  sto.OpenSubStorage(activationGasKey).OpenStorageBackedUint64(0),
 	}
+}
+
+// ActivationGas returns the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) ActivationGas() (uint64, error) {
+	if p.ArbosVersion < gethParams.ArbosVersion_StylusActivationGas {
+		return 0, nil
+	}
+	return p.activationGas.Get()
+}
+
+// SetActivationGas sets the constant gas charge burned at the start of each Stylus activation.
+func (p Programs) SetActivationGas(gas uint64) error {
+	return p.activationGas.Set(gas)
 }
 
 func (p Programs) DataPricer() *DataPricer {
@@ -389,6 +405,8 @@ func getWasmFromContractCode(statedb vm.StateDB, prefixedWasm []byte, params *St
 		if state.IsStylusFragmentPrefix(prefixedWasm) {
 			return nil, errors.New("fragmented stylus programs cannot be activated directly; activate the root program instead")
 		}
+	} else {
+		return nil, errors.New("specified bytecode is not a Stylus program") // Old arbOS behavior - this is not a solidity error (uses less gas)
 	}
 
 	return nil, ProgramNotWasmError()
