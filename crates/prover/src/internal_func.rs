@@ -31,7 +31,7 @@ impl InternalFunc {
     pub fn ty(&self) -> FunctionType {
         use InternalFunc::*;
         macro_rules! func {
-            ([$($args:expr),*], [$($outs:expr),*]) => {
+            ([$($args:expr_2021),*], [$($outs:expr_2021),*]) => {
                 FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }
