@@ -5,7 +5,7 @@ use arbutil::evm::{
     api::{EVM_API_METHOD_REQ_OFFSET, EvmApiMethod, Gas},
     req::RequestHandler,
 };
-use prover::RustSlice;
+use prover_ffi::RustSlice;
 
 use crate::GoSliceData;
 

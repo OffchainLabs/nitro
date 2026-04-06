@@ -19,10 +19,11 @@ use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 pub use prover;
-use prover::{
-    RustBytes,
-    programs::{StylusData, prelude::*},
-};
+use prover::programs::{StylusData, prelude::*};
+// This re-export is required to pull prover_ffi's #[no_mangle] FFI symbols into the staticlib
+// output.
+pub use prover_ffi;
+use prover_ffi::RustBytes;
 use run::RunProgram;
 use target_cache::{target_cache_get, target_cache_set};
 

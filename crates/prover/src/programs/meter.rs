@@ -24,8 +24,9 @@ use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, 
 use wasmparser::{BlockType, Operator};
 
 use super::config::OpCosts;
+#[cfg(feature = "native")]
+use crate::Machine;
 use crate::{
-    Machine,
     programs::{
         FuncMiddleware, Middleware, ModuleMod,
         config::{CompilePricingParams, PricingParams, SigMap},
@@ -335,6 +336,7 @@ pub trait GasMeteredMachine: MeteredMachine {
     }
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Machine {
     fn ink_left(&self) -> MachineMeter {
         macro_rules! convert {
