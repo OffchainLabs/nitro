@@ -1099,7 +1099,7 @@ func sendDelayedMessagesViaL1(
 		Require(t, err)
 	}
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 30)
-	waitForDelayedCount(t, ctx, builder, countBefore+uint64(numMsgs))
+	waitForDelayedCount(t, ctx, builder, countBefore+uint64(numMsgs)) // #nosec G115
 }
 
 // waitForDelayedCount polls the inbox tracker until the delayed message count reaches the expected value.
