@@ -79,6 +79,126 @@ func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	checkDbKeys(t, messagesCount, inboxTrackerDb, schema.RlpDelayedMessagePrefix)
 }
 
+func TestMessagePrunerLegacyDelayedBound(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up 20 entries under each legacy delayed prefix ("e", "d", "p")
+	// and 10 entries under the MEL delayed prefix ("y").
+	count := uint64(20)
+	consensusDB := rawdb.NewMemoryDatabase()
+	transactionStreamerDb := rawdb.NewMemoryDatabase()
+	for i := uint64(1); i <= count; i++ {
+		Require(t, consensusDB.Put(dbKey(schema.RlpDelayedMessagePrefix, i), []byte{}))
+		Require(t, consensusDB.Put(dbKey(schema.LegacyDelayedMessagePrefix, i), []byte{}))
+		Require(t, consensusDB.Put(dbKey(schema.ParentChainBlockNumberPrefix, i), []byte{}))
+	}
+	for i := uint64(1); i <= 10; i++ {
+		Require(t, consensusDB.Put(dbKey(schema.MelDelayedMessagePrefix, i), []byte{}))
+	}
+
+	pruner := &MessagePruner{
+		transactionStreamer: &TransactionStreamer{db: transactionStreamerDb},
+		consensusDB:         consensusDB,
+		batchMetaFetcher:    &InboxTracker{db: consensusDB},
+		legacyDelayedBound:  15, // cap legacy pruning at index 15
+	}
+
+	// Try to prune up to index 20 — legacy prefixes should be capped at 15,
+	// MEL prefix should prune up to 20.
+	err := pruner.deleteOldMessagesFromDB(ctx, 0, count)
+	Require(t, err)
+
+	// Legacy "e" entries at 15+ should still exist (not pruned past bound)
+	for i := uint64(15); i <= count; i++ {
+		has, err := consensusDB.Has(dbKey(schema.RlpDelayedMessagePrefix, i))
+		Require(t, err)
+		if !has {
+			Fail(t, "RlpDelayedMessagePrefix key", i, "should still exist (at or above legacyDelayedBound)")
+		}
+	}
+	// Legacy "d" entries at 15+ should still exist
+	for i := uint64(15); i <= count; i++ {
+		has, err := consensusDB.Has(dbKey(schema.LegacyDelayedMessagePrefix, i))
+		Require(t, err)
+		if !has {
+			Fail(t, "LegacyDelayedMessagePrefix key", i, "should still exist (at or above legacyDelayedBound)")
+		}
+	}
+	// Legacy "p" entries at 15+ should still exist
+	for i := uint64(15); i <= count; i++ {
+		has, err := consensusDB.Has(dbKey(schema.ParentChainBlockNumberPrefix, i))
+		Require(t, err)
+		if !has {
+			Fail(t, "ParentChainBlockNumberPrefix key", i, "should still exist (at or above legacyDelayedBound)")
+		}
+	}
+
+	// Legacy entries below bound should be pruned (except boundary keys)
+	for i := uint64(2); i < 14; i++ {
+		for _, tc := range []struct {
+			prefix []byte
+			name   string
+		}{
+			{schema.RlpDelayedMessagePrefix, "RlpDelayedMessagePrefix"},
+			{schema.LegacyDelayedMessagePrefix, "LegacyDelayedMessagePrefix"},
+			{schema.ParentChainBlockNumberPrefix, "ParentChainBlockNumberPrefix"},
+		} {
+			has, err := consensusDB.Has(dbKey(tc.prefix, i))
+			Require(t, err)
+			if has {
+				Fail(t, tc.name, "key", i, "should be pruned (below legacyDelayedBound)")
+			}
+		}
+	}
+
+	// MEL "y" entries should be pruned up to count (not capped by bound)
+	for i := uint64(2); i < 10; i++ {
+		has, err := consensusDB.Has(dbKey(schema.MelDelayedMessagePrefix, i))
+		Require(t, err)
+		if has {
+			Fail(t, "MelDelayedMessagePrefix key", i, "should be pruned (not limited by legacyDelayedBound)")
+		}
+	}
+}
+
+func TestMessagePrunerNewPrefixes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	count := uint64(2 * 100 * 1024)
+	consensusDB := rawdb.NewMemoryDatabase()
+	transactionStreamerDb := rawdb.NewMemoryDatabase()
+
+	// Populate all delayed-related prefixes
+	for i := uint64(0); i < count; i++ {
+		Require(t, consensusDB.Put(dbKey(schema.RlpDelayedMessagePrefix, i), []byte{}))
+		Require(t, consensusDB.Put(dbKey(schema.LegacyDelayedMessagePrefix, i), []byte{}))
+		Require(t, consensusDB.Put(dbKey(schema.ParentChainBlockNumberPrefix, i), []byte{}))
+		Require(t, consensusDB.Put(dbKey(schema.MelDelayedMessagePrefix, i), []byte{}))
+	}
+
+	pruner := &MessagePruner{
+		transactionStreamer: &TransactionStreamer{db: transactionStreamerDb},
+		consensusDB:         consensusDB,
+		batchMetaFetcher:    &InboxTracker{db: consensusDB},
+		// No legacyDelayedBound — all prefixes should prune to the same target
+	}
+
+	err := pruner.deleteOldMessagesFromDB(ctx, 0, count)
+	Require(t, err)
+
+	// All prefixes should be pruned up to count
+	for _, prefix := range [][]byte{
+		schema.RlpDelayedMessagePrefix,
+		schema.LegacyDelayedMessagePrefix,
+		schema.ParentChainBlockNumberPrefix,
+		schema.MelDelayedMessagePrefix,
+	} {
+		checkDbKeys(t, count, consensusDB, prefix)
+	}
+}
+
 func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethdb.Database, ethdb.Database, *MessagePruner) {
 	transactionStreamerDb := rawdb.NewMemoryDatabase()
 	for i := uint64(0); i < uint64(messageCount); i++ {

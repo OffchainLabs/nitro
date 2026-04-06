@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
-// Defines a method that can read a delayed message from an external database.
+// DelayedMessageDatabase provides access to delayed messages stored in an external database.
 type DelayedMessageDatabase interface {
 	ReadDelayedMessage(
 		state *mel.State,
@@ -27,7 +27,7 @@ type DelayedMessageDatabase interface {
 	) (*mel.DelayedInboxMessage, error)
 }
 
-// Defines methods that can fetch all the logs of a parent chain block
+// LogsFetcher fetches all the logs of a parent chain block
 // and logs corresponding to a specific transaction in a parent chain block.
 type LogsFetcher interface {
 	LogsForBlockHash(
@@ -41,7 +41,7 @@ type LogsFetcher interface {
 	) ([]*types.Log, error)
 }
 
-// Defines a method that can fetch transaction of a parent chain block by hash.
+// TransactionFetcher fetches a transaction of a parent chain block by its log.
 type TransactionFetcher interface {
 	TransactionByLog(
 		ctx context.Context,
@@ -49,10 +49,11 @@ type TransactionFetcher interface {
 	) (*types.Transaction, error)
 }
 
-// ExtractMessages is a pure function that can read a parent chain block and
-// and input MEL state to run a specific algorithm that extracts Arbitrum messages and
-// delayed messages observed from transactions in the block. This function can be proven
-// through a replay binary, and should also compile to WAVM in addition to running in native mode.
+// ExtractMessages is a deterministic function that reads a parent chain block and
+// an input MEL state to extract Arbitrum messages and delayed messages observed from
+// transactions in the block. Given identical inputs and parent chain data, it produces
+// identical outputs, enabling fraud proof validation via the replay binary. It compiles
+// to both native mode and WAVM.
 func ExtractMessages(
 	ctx context.Context,
 	inputState *mel.State,
@@ -82,9 +83,8 @@ func ExtractMessages(
 	)
 }
 
-// Defines an internal implementation of the ExtractMessages function where many internal details
-// can be mocked out for testing purposes, while the public function is clear about what dependencies it
-// needs from callers.
+// extractMessagesImpl is the internal implementation of ExtractMessages with
+// injected dependencies for testing. Production callers should use ExtractMessages.
 func extractMessagesImpl(
 	ctx context.Context,
 	inputState *mel.State,
@@ -103,8 +103,8 @@ func extractMessagesImpl(
 	parseBatchPostingReport batchPostingReportParserFunc,
 ) (*mel.State, []*arbostypes.MessageWithMetadata, []*mel.DelayedInboxMessage, []*mel.BatchMetadata, error) {
 
+	// Clone to avoid mutating the input state in case of errors.
 	state := inputState.Clone()
-	// Clones the state to avoid mutating the input pointer in case of errors.
 	// Check parent chain block hash linkage.
 	if state.ParentChainBlockHash != parentChainHeader.ParentHash {
 		return nil, nil, nil, nil, fmt.Errorf(
@@ -215,7 +215,6 @@ func extractMessagesImpl(
 		if err = state.AccumulateDelayedMessage(delayed); err != nil {
 			return nil, nil, nil, nil, err
 		}
-		state.DelayedMessagesSeen += 1
 	}
 
 	// Extract L2 messages from batches
@@ -252,11 +251,8 @@ func extractMessagesImpl(
 			if err = state.AccumulateMessage(msg); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("failed to accumulate message: %w", err)
 			}
-			// Updating of MsgCount is consistent with how DelayedMessagesSeen is updated
-			// i.e after the corresponding message has been accumulated
-			state.MsgCount += 1
 		}
-		state.BatchCount += 1
+		state.IncrementBatchCount()
 		batchMetas = append(batchMetas, &mel.BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
 			MessageCount:        arbutil.MessageIndex(state.MsgCount),

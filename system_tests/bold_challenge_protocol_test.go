@@ -132,7 +132,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	go keepChainMoving(t, 3*time.Second, ctx, l1info, l1client)
+	go keepChainMoving(t, ctx, 3*time.Second, l1info, l1client)
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	l2StackB, _, l2nodeB, l2execNodeB, _ := create2ndNodeWithConfigForBoldProtocol(
@@ -174,7 +174,8 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	blockValidatorConfig.RedisValidationClientConfig.RedisURL = redisURL
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	pcdsA := l2nodeA.GetParentChainDataSource()
+	pcdsA, err := l2nodeA.GetParentChainDataSource()
+	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		pcdsA,
 		pcdsA,
@@ -193,7 +194,8 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	valCfg.UseJit = false
 	_, valStackB := createTestValidationNode(t, ctx, &valCfg, spawnerOpts...)
 
-	pcdsB := l2nodeB.GetParentChainDataSource()
+	pcdsB, err := l2nodeB.GetParentChainDataSource()
+	Require(t, err)
 	statelessB, err := staker.NewStatelessBlockValidator(
 		pcdsB,
 		pcdsB,
@@ -352,13 +354,13 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 	makeBoldBatch(t, l2nodeB, l2info, l1client, &sequencerTxOpts, evilSeqInboxBinding, evilSeqInbox, numMessagesPerBatch, divergeAt)
 	totalMessagesPosted += numMessagesPerBatch
 
-	bcA, err := l2nodeA.GetParentChainDataSource().GetBatchCount()
+	bcA, err := getBatchCount(t, l2nodeA)
 	Require(t, err)
-	bcB, err := l2nodeB.GetParentChainDataSource().GetBatchCount()
+	bcB, err := getBatchCount(t, l2nodeB)
 	Require(t, err)
-	msgA, err := l2nodeA.GetParentChainDataSource().GetBatchMessageCount(bcA - 1)
+	msgA, err := getBatchMessageCount(t, l2nodeA, bcA-1)
 	Require(t, err)
-	msgB, err := l2nodeB.GetParentChainDataSource().GetBatchMessageCount(bcB - 1)
+	msgB, err := getBatchMessageCount(t, l2nodeB, bcB-1)
 	Require(t, err)
 
 	t.Logf("Node A batch count %d, msgs %d", bcA, msgA)
@@ -713,7 +715,7 @@ func syncBatchToNode(
 	Require(t, err)
 
 	// Optional: log batch metadata
-	batchMetaData, err := l2Node.GetParentChainDataSource().GetBatchMetadata(batches[0].SequenceNumber)
+	batchMetaData, err := getBatchMetadata(t, l2Node, batches[0].SequenceNumber)
 	log.Info("Batch metadata", "md", batchMetaData)
 	Require(t, err, "failed to get batch metadata after adding batch:")
 }

@@ -208,11 +208,13 @@ func extractDelayedMessageFromSegment(
 		return nil, fmt.Errorf("no more delayed messages in db")
 	}
 
-	// Increment the delayed messages read count in the mel state.
-	melState.DelayedMessagesRead += 1
+	newRead, err := melState.IncrementDelayedMessagesRead()
+	if err != nil {
+		return nil, fmt.Errorf("incrementing delayed messages read: %w", err)
+	}
 
 	return &arbostypes.MessageWithMetadata{
 		Message:             delayed.Message,
-		DelayedMessagesRead: melState.DelayedMessagesRead,
+		DelayedMessagesRead: newRead,
 	}, nil
 }

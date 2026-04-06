@@ -19,6 +19,10 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	if err != nil {
 		return m.config.RetryInterval, err
 	}
+	if melState.DelayedMessagesSeen < melState.DelayedMessagesRead {
+		return m.config.RetryInterval, fmt.Errorf("invalid head MEL state at block %d: DelayedMessagesSeen (%d) < DelayedMessagesRead (%d)",
+			melState.ParentChainBlockNumber, melState.DelayedMessagesSeen, melState.DelayedMessagesRead)
+	}
 	if err := melState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 		return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages: %w", err)
 	}
@@ -26,6 +30,9 @@ func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentS
 	startBlock, err := m.parentChainReader.HeaderByNumber(ctx, new(big.Int).SetUint64(melState.ParentChainBlockNumber))
 	if err != nil {
 		return m.config.RetryInterval, fmt.Errorf("failed to get start parent chain block: %d corresponding to head mel state from parent chain: %w", melState.ParentChainBlockNumber, err)
+	}
+	if startBlock == nil {
+		return m.config.RetryInterval, fmt.Errorf("start parent chain block %d not found", melState.ParentChainBlockNumber)
 	}
 	// Initialize logsPreFetcher
 	m.logsAndHeadersPreFetcher = newLogsAndHeadersFetcher(m.parentChainReader, m.config.BlocksToPrefetch)

@@ -122,7 +122,6 @@ func accumulateN(t *testing.T, s *State, msgs []*DelayedInboxMessage) {
 	t.Helper()
 	for _, msg := range msgs {
 		require.NoError(t, s.AccumulateDelayedMessage(msg))
-		s.DelayedMessagesSeen++
 	}
 }
 
@@ -234,11 +233,12 @@ func TestAccumulateDelayedMessage_CacheResize(t *testing.T) {
 		expectedSizeAfter int
 	}{
 		{
-			name:             "zero capacity grows to totalUnread+1",
+			name:             "nil cache initializes with minimum capacity",
 			initialCacheSize: 0,
 			msgsToAdd:        3,
-			// Each accumulate: totalUnread=0→resize(1), totalUnread=1→resize(2), totalUnread=2→resize(3)
-			expectedSizeAfter: 3,
+			// ensureDelayedMsgPreimages creates cache with minimum capacity 16;
+			// since 16 > totalUnread for all 3 accumulations, no resize occurs.
+			expectedSizeAfter: 16,
 		},
 		{
 			name:              "no resize when cache already large enough",
@@ -276,7 +276,7 @@ func TestPourDelayedInboxToOutbox_CacheResize(t *testing.T) {
 		{
 			name:       "pour 1 message",
 			msgCount:   1,
-			expectSize: 3, // 3 * 1
+			expectSize: 16, // ensureDelayedMsgPreimages minimum capacity; 3*1=3 < 16 so no resize
 			// With 1 message, inbox key = Keccak256(zero || msgHash) = outbox key,
 			// so the outbox Add overwrites the inbox entry. Len = 1.
 			expectLen: 1,
@@ -284,7 +284,7 @@ func TestPourDelayedInboxToOutbox_CacheResize(t *testing.T) {
 		{
 			name:       "pour 5 messages",
 			msgCount:   5,
-			expectSize: 15, // 3 * 5
+			expectSize: 16, // ensureDelayedMsgPreimages minimum capacity; 3*5=15 < 16 so no resize
 			expectLen:  10, // 5 inbox + 5 outbox
 		},
 		{
@@ -401,4 +401,103 @@ func TestRebuildThenPourAndPop_MatchesOriginal(t *testing.T) {
 	}
 
 	require.Equal(t, originalHashes[1:], rebuiltHashes)
+}
+
+func TestPourDelayedInboxToOutbox_NonEmptyOutboxReturnsError(t *testing.T) {
+	t.Parallel()
+	s := &State{}
+	msgs := createTestDelayedMessages(3)
+	accumulateN(t, s, msgs)
+
+	require.NoError(t, s.PourDelayedInboxToOutbox())
+	require.NotEqual(t, common.Hash{}, s.DelayedMessageOutboxAcc)
+
+	err := s.PourDelayedInboxToOutbox()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outbox must be empty before pouring")
+}
+
+func TestHashChainLinkHashMatchesHashChainLink(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		prevAcc common.Hash
+		item    common.Hash
+	}{
+		{"zero inputs", common.Hash{}, common.Hash{}},
+		{"zero prev", common.Hash{}, common.HexToHash("0xdeadbeef")},
+		{"both nonzero", common.HexToHash("0xaaaa"), common.HexToHash("0xbbbb")},
+		{"max values", common.MaxHash, common.MaxHash},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hashOnly := HashChainLinkHash(tc.prevAcc, tc.item)
+			hashWithPreimage, _ := HashChainLink(tc.prevAcc, tc.item)
+			require.Equal(t, hashWithPreimage, hashOnly)
+		})
+	}
+}
+
+func TestAfterInboxAccReturnsErrorOnNilInputs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil Message", func(t *testing.T) {
+		msg := &DelayedInboxMessage{Message: nil}
+		_, err := msg.AfterInboxAcc()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Message or Header is nil")
+	})
+
+	t.Run("nil Header", func(t *testing.T) {
+		msg := &DelayedInboxMessage{
+			Message: &arbostypes.L1IncomingMessage{Header: nil},
+		}
+		_, err := msg.AfterInboxAcc()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Message or Header is nil")
+	})
+
+	t.Run("valid message succeeds", func(t *testing.T) {
+		requestId := common.BigToHash(common.Big1)
+		msg := &DelayedInboxMessage{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:      arbostypes.L1MessageType_EndOfBlock,
+					RequestId: &requestId,
+					L1BaseFee: common.Big0,
+				},
+			},
+		}
+		acc, err := msg.AfterInboxAcc()
+		require.NoError(t, err)
+		require.NotEqual(t, common.Hash{}, acc)
+	})
+}
+
+func TestStateHash_ReturnsConsistentHash(t *testing.T) {
+	t.Parallel()
+	state := &State{
+		ParentChainBlockNumber: 42,
+		MsgCount:               10,
+		BatchCount:             3,
+	}
+	h1, err := state.Hash()
+	require.NoError(t, err)
+	require.NotEqual(t, common.Hash{}, h1)
+
+	// Same state should produce same hash
+	h2, err := state.Hash()
+	require.NoError(t, err)
+	require.Equal(t, h1, h2)
+
+	// Different state should produce different hash
+	state2 := &State{
+		ParentChainBlockNumber: 43,
+		MsgCount:               10,
+		BatchCount:             3,
+	}
+	h3, err := state2.Hash()
+	require.NoError(t, err)
+	require.NotEqual(t, h1, h3)
 }

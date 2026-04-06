@@ -4,10 +4,10 @@ package melreplay
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -33,7 +33,10 @@ func (d *DelayedMessageDatabase) ReadDelayedMessage(
 		return nil, fmt.Errorf("index %d out of range, total delayed messages seen: %d", msgIndex, state.DelayedMessagesSeen)
 	}
 	// Pour inbox to outbox if outbox is empty
-	if state.DelayedMessageOutboxAcc == (common.Hash{}) && state.DelayedMessageInboxAcc != (common.Hash{}) {
+	if state.DelayedMessageOutboxAcc == (common.Hash{}) {
+		if state.DelayedMessageInboxAcc == (common.Hash{}) {
+			return nil, fmt.Errorf("both inbox and outbox are empty at index %d, cannot read delayed message", msgIndex)
+		}
 		if err := d.pourInboxToOutbox(state); err != nil {
 			return nil, fmt.Errorf("error pouring delayed inbox to outbox: %w", err)
 		}
@@ -61,7 +64,12 @@ func (d *DelayedMessageDatabase) ReadDelayedMessage(
 }
 
 // pourInboxToOutbox pours all items from the inbox into the outbox using preimage resolution.
+// This is the replay-mode counterpart of State.PourDelayedInboxToOutbox (state.go);
+// both must produce identical accumulator state transitions for fraud proof correctness.
 func (d *DelayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
+	if state.DelayedMessageOutboxAcc != (common.Hash{}) {
+		return errors.New("pourInboxToOutbox: outbox must be empty before pouring")
+	}
 	inboxSize := state.DelayedMessagesSeen - state.DelayedMessagesRead
 	if inboxSize == 0 {
 		return nil
@@ -78,8 +86,11 @@ func (d *DelayedMessageDatabase) pourInboxToOutbox(state *mel.State) error {
 		if err != nil {
 			return fmt.Errorf("inbox preimage at position %d: %w", i, err)
 		}
-		preimage := append(state.DelayedMessageOutboxAcc.Bytes(), msgHash.Bytes()...)
-		state.DelayedMessageOutboxAcc = crypto.Keccak256Hash(preimage)
+		// Outbox accumulator preimages were already recorded by native-mode
+		// PourDelayedInboxToOutbox during the recording step and are available
+		// via the preimageResolver. We only recompute the hash here to advance
+		// the accumulator.
+		state.DelayedMessageOutboxAcc = mel.HashChainLinkHash(state.DelayedMessageOutboxAcc, msgHash)
 		curr = prevAcc
 	}
 	state.DelayedMessageInboxAcc = common.Hash{}

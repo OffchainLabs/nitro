@@ -578,7 +578,12 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					"haveBeforeAcc", havePrevAcc,
 					"readLastAcc", lazyHashLogging{func() common.Hash {
 						// Only compute this if we need to log it, as it's somewhat expensive
-						return delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						acc, err := delayedMessages[len(delayedMessages)-1].AfterInboxAcc()
+						if err != nil {
+							log.Warn("Failed to compute AfterInboxAcc for logging", "err", err)
+							return common.Hash{}
+						}
+						return acc
 					}},
 				)
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
@@ -809,8 +814,8 @@ func (b *batchDataProviderImpl) GetDelayedCount() (uint64, error) {
 	return b.r.tracker.GetDelayedCount()
 }
 
-func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) {
-	b.r.tracker.SetBlockValidator(validator)
+func (b *batchDataProviderImpl) SetBlockValidator(validator *staker.BlockValidator) error {
+	return b.r.tracker.SetBlockValidator(validator)
 }
 
 func (b *batchDataProviderImpl) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

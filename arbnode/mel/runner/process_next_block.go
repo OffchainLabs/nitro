@@ -33,7 +33,6 @@ func (f *txByLogFetcher) TransactionByLog(ctx context.Context, log *types.Log) (
 }
 
 func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
-	// Process the next block in the parent chain and extracts messages.
 	processAction, ok := current.SourceEvent.(processNextBlock)
 	if !ok {
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)
@@ -44,6 +43,9 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		return m.config.RetryInterval, nil
 	}
 	parentChainBlock, err := m.logsAndHeadersPreFetcher.getHeaderByNumber(ctx, preState.ParentChainBlockNumber+1)
+	if err == nil && parentChainBlock == nil {
+		return m.config.RetryInterval, fmt.Errorf("parent chain block %d returned nil without error", preState.ParentChainBlockNumber+1)
+	}
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			// If the block with the specified number is not found, it likely has not
@@ -52,35 +54,47 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			if !m.caughtUp && m.config.ReadMode == "latest" {
 				if latestBlk, err := m.parentChainReader.HeaderByNumber(ctx, big.NewInt(rpc.LatestBlockNumber.Int64())); err != nil {
 					log.Error("Error fetching LatestBlockNumber from parent chain to determine if mel has caught up", "err", err)
+				} else if latestBlk == nil {
+					log.Error("Parent chain returned nil header for latest block")
 				} else if latestBlk.Number.Uint64()-preState.ParentChainBlockNumber <= 5 { // tolerance of catching up i.e parent chain might have progressed in the time between the above two function calls
 					m.caughtUp = true
 					close(m.caughtUpChan)
+					m.consecutiveNotFound = 0
 				}
 			}
+			m.consecutiveNotFound++
+			if m.config.StallTolerance > 0 && m.consecutiveNotFound > m.config.StallTolerance {
+				// Return an error so the FSM's stuckCount increments and the
+				// arb/mel/stuck gauge fires, giving operators visibility into
+				// the stall. The Start() loop's own 2*StallTolerance threshold
+				// handles fatal error escalation.
+				return m.config.RetryInterval, fmt.Errorf("MEL block %d not found for %d consecutive attempts (tolerance %d), possible parent chain stall", preState.ParentChainBlockNumber+1, m.consecutiveNotFound, m.config.StallTolerance)
+			}
 			return m.config.RetryInterval, nil
-		} else {
-			return m.config.RetryInterval, err
 		}
+		// Reset on non-NotFound errors: a different error type suggests the parent
+		// chain is responding (not stalled), so the NotFound counter restarts.
+		m.consecutiveNotFound = 0
+		return m.config.RetryInterval, err
 	}
+	m.consecutiveNotFound = 0
 	if parentChainBlock.ParentHash != preState.ParentChainBlockHash {
 		log.Info("MEL detected L1 reorg", "block", preState.ParentChainBlockNumber) // Log level is Info because L1 reorgs are a common occurrence
 		return 0, m.fsm.Do(reorgToOldBlock{
 			melState: preState,
 		})
 	}
-	// Reorging of MEL states successfully completed, we can now rewind MEL validator and rebuild delayedMsgPreimages based on inbox and outbox accumulators
+	// Previous FSM step was a reorg. Rebuild delayed message preimage cache from
+	// the rewound state. Reorg notifications to the block validator and downstream
+	// consumers are sent in the reorg handler itself (immediately after the DB
+	// write) to avoid losing them on crash.
 	if processAction.prevStepWasReorg {
 		if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
 			return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages after reorg: %w", err)
 		}
-		if m.reorgEventsNotifier != nil {
-			m.reorgEventsNotifier <- preState.ParentChainBlockNumber
-		}
-		if m.blockValidator != nil {
-			m.blockValidator.ReorgToBatchCount(preState.BatchCount)
-		}
+		m.consecutivePreimageRebuilds = 0
+		m.consecutiveNotFound = 0
 	}
-	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {
 		return m.config.RetryInterval, err
 	}
@@ -96,13 +110,11 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 	)
 	if err != nil {
 		if errors.Is(err, mel.ErrDelayedMessagePreimageNotFound) {
-			if err := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); err != nil {
-				return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", err)
-			}
-			return 0, nil
+			return m.handlePreimageCacheMiss(preState)
 		}
 		return m.config.RetryInterval, err
 	}
+	m.consecutivePreimageRebuilds = 0
 	// Begin the next FSM state immediately.
 	return 0, m.fsm.Do(saveMessages{
 		preStateMsgCount: preState.MsgCount,
@@ -111,4 +123,21 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 		delayedMessages:  delayedMsgs,
 		batchMetas:       batchMetas,
 	})
+}
+
+// handlePreimageCacheMiss attempts to rebuild the delayed message preimage
+// cache. Returns (0, nil) on success for immediate retry, or an error if the
+// rebuild limit has been reached or the rebuild itself fails.
+func (m *MessageExtractor) handlePreimageCacheMiss(preState *mel.State) (time.Duration, error) {
+	m.consecutivePreimageRebuilds++
+	if m.consecutivePreimageRebuilds >= 3 {
+		return m.config.RetryInterval, fmt.Errorf("repeated preimage rebuild at block %d after %d attempts, possible systemic issue", preState.ParentChainBlockNumber, m.consecutivePreimageRebuilds)
+	}
+	log.Warn("Rebuilding delayed message preimages due to cache miss during extraction", "block", preState.ParentChainBlockNumber, "attempt", m.consecutivePreimageRebuilds)
+	if rebuildErr := preState.RebuildDelayedMsgPreimages(m.melDB.FetchDelayedMessage); rebuildErr != nil {
+		return m.config.RetryInterval, fmt.Errorf("error rebuilding delayed msg preimages when missing some preimages: %w", rebuildErr)
+	}
+	// Rebuild succeeded; retry immediately without incrementing the stall counter.
+	// The consecutivePreimageRebuilds counter limits repeated rebuilds independently.
+	return 0, nil
 }

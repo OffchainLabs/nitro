@@ -42,7 +42,6 @@ func TestRecordingMessagePreimagesAndReadingMessages(t *testing.T) {
 	require.NoError(t, state.RecordMsgPreimagesTo(preimages))
 	for i := range numMsgs {
 		require.NoError(t, state.AccumulateMessage(messages[i]))
-		state.MsgCount++
 	}
 
 	// Test reading in wasm mode
@@ -167,7 +166,6 @@ func TestCrossValidateBuildAccumulatorAndAccumulateMessage(t *testing.T) {
 	require.NoError(t, state.RecordMsgPreimagesTo(prodPreimages))
 	for _, msg := range messages {
 		require.NoError(t, state.AccumulateMessage(msg))
-		state.MsgCount++
 	}
 	prodAcc := state.LocalMsgAccumulator
 

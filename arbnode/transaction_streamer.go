@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -54,8 +54,9 @@ type BatchDataProvider interface {
 	FindParentChainBlockContainingDelayed(ctx context.Context, index uint64) (uint64, error)
 }
 
-// TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
-// The streamer is notified when there's new batches to process
+// TransactionStreamer produces blocks from L2 messages, storing the results in the
+// blockchain and recording their positions. It receives messages from either the MEL
+// message extractor or the legacy inbox reader/tracker.
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
@@ -174,14 +175,15 @@ func uint64ToKey(x uint64) []byte {
 	return data
 }
 
-func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
+func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) error {
 	if s.Started() {
-		panic("trying to set coordinator after start")
+		return errors.New("cannot set block validator after start")
 	}
 	if s.validator != nil {
-		panic("trying to set coordinator when already set")
+		return errors.New("block validator already set")
 	}
 	s.validator = validator
+	return nil
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) error {
@@ -223,8 +225,26 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 			return err
 		}
 	}
-	// TODO remove trailing messageCountToMessage and messageCountToBlockPrefix entries
-	return nil
+	// Remove any trailing entries beyond MessageCount that could be left
+	// after a crash between writing individual entries and updating the count.
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+	batch := s.db.NewBatch()
+	minKey := uint64ToKey(uint64(msgCount))
+	for _, prefix := range [][]byte{
+		schema.MessagePrefix,
+		schema.MessageResultPrefix,
+		schema.BlockHashInputFeedPrefix,
+		schema.BlockMetadataInputFeedPrefix,
+		schema.MissingBlockMetadataInputFeedPrefix,
+	} {
+		if err := deleteStartingAt(s.db, batch, prefix, minKey); err != nil {
+			return fmt.Errorf("cleaning up trailing %x entries: %w", prefix, err)
+		}
+	}
+	return batch.Write()
 }
 
 func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) error {
@@ -234,15 +254,10 @@ func (s *TransactionStreamer) ReorgAt(firstMsgIdxReorged arbutil.MessageIndex) e
 func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxReorged arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil)
-	if err != nil {
+	if err := s.addMessagesAndReorg(batch, firstMsgIdxReorged, nil); err != nil {
 		return err
 	}
-	err = batch.Write()
-	if err != nil {
-		return err
-	}
-	return nil
+	return batch.Write()
 }
 
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
@@ -344,9 +359,11 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 		header := oldMessage.Message.Header
 
 		if header.RequestId != nil {
-			// When using MEL:
-			// This is a delayed message and concerns delayedMessages 'Seen' and not 'Read' so not including any delayed messages in
-			// resequencing is fair- since they will anyway be re-added by MEL later and the corresponding merkle partials would have changed
+			// This is a delayed message. It is only resequenced if all three agree:
+			// the old message, the accumulator stored in the batch data provider, and the
+			// message re-read from L1. If any of these disagree, the message is skipped.
+			// The correct version will be re-added when the next batch referencing this
+			// delayed message is processed by MEL (or the inbox reader).
 			delayedMsgIdx := header.RequestId.Big().Uint64()
 			if delayedMsgIdx+1 != oldMessage.DelayedMessagesRead {
 				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
@@ -359,11 +376,9 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 			}
 
 			if s.batchDataProvider != nil && s.delayedBridge != nil {
-				// this is a delayed message. Should be resequenced if all 3 agree:
-				// oldMessage, accumulator stored in tracker, and the message re-read from l1
 				expectedAcc, err := s.batchDataProvider.GetDelayedAcc(delayedMsgIdx)
 				if err != nil {
-					if !strings.Contains(err.Error(), "not found") {
+					if !errors.Is(err, AccumulatorNotFoundErr) && !rawdb.IsDbErrNotFound(err) {
 						log.Error("reorg-resequence: failed to read expected accumulator", "err", err)
 					}
 					continue
@@ -380,7 +395,12 @@ func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, msgIdxOfFir
 					if delayedFound.Message.Header.RequestId.Big().Uint64() != delayedMsgIdx {
 						continue delayedInBlockLoop
 					}
-					if expectedAcc == delayedFound.AfterInboxAcc() && delayedFound.Message.Equals(oldMessage.Message) {
+					delayedFoundAcc, accErr := delayedFound.AfterInboxAcc()
+					if accErr != nil {
+						log.Error("reorg-resequence: failed to compute AfterInboxAcc", "err", accErr)
+						break delayedInBlockLoop
+					}
+					if expectedAcc == delayedFoundAcc && delayedFound.Message.Equals(oldMessage.Message) {
 						messageFound = true
 					}
 					break delayedInBlockLoop
@@ -487,44 +507,32 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		return nil, err
 	}
 
-	ctx, err := s.GetContextSafe()
-	if err != nil {
-		return nil, err
-	}
-
-	if message.Message.IsBatchGasFieldsMissing() {
+	if message.Message.IsBatchGasFieldsMissing() && s.batchDataProvider != nil {
+		ctx, err := s.GetContextSafe()
+		if err != nil {
+			return nil, err
+		}
 		var parentChainBlockNumber *uint64
-		if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
+		if message.DelayedMessagesRead != 0 {
 			localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
 			if err != nil {
-				log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1)
+				if !errors.Is(err, mel.ErrNotImplementedUnderMEL) {
+					log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)
+				}
 			} else {
 				parentChainBlockNumber = &localParentChainBlockNumber
 			}
 		}
-
-		if s.batchDataProvider != nil {
-			err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
-				ctx, err := s.GetContextSafe()
-				if err != nil {
-					return nil, err
-				}
-
-				var data []byte
-				if parentChainBlockNumber != nil {
-					data, _, err = s.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
-				} else {
-					data, _, err = s.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
-				}
-				if err != nil {
-					return nil, err
-				}
-
+		err = message.Message.FillInBatchGasFields(func(batchNum uint64) ([]byte, error) {
+			if parentChainBlockNumber != nil {
+				data, _, err := s.batchDataProvider.GetSequencerMessageBytesForParentBlock(ctx, batchNum, *parentChainBlockNumber)
 				return data, err
-			})
-			if err != nil {
-				return nil, err
 			}
+			data, _, err := s.batchDataProvider.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 	return &message, nil
@@ -1173,7 +1181,11 @@ func (s *TransactionStreamer) ResumeReorgs() {
 }
 
 func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
-	if s.broadcastServer == nil || s.batchDataProvider == nil {
+	if s.broadcastServer == nil {
+		return nil
+	}
+	if s.batchDataProvider == nil {
+		log.Info("Skipping feed backlog population: no batch data provider configured")
 		return nil
 	}
 	batchCount, err := s.batchDataProvider.GetBatchCount()
@@ -1204,7 +1216,9 @@ func (s *TransactionStreamer) PopulateFeedBacklog(ctx context.Context) error {
 
 		msgResult, err := s.ResultAtMessageIndex(seqNum)
 		var blockHash *common.Hash
-		if err == nil {
+		if err != nil {
+			log.Warn("Failed to get result for feed backlog message", "seqNum", seqNum, "err", err)
+		} else {
 			blockHash = &msgResult.BlockHash
 		}
 

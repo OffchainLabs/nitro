@@ -63,7 +63,6 @@ func TestDelayedMessageRecordingAndReplayRoundTrip(t *testing.T) {
 
 			for _, msg := range msgs {
 				require.NoError(t, nativeState.AccumulateDelayedMessage(msg))
-				nativeState.DelayedMessagesSeen++
 			}
 
 			// Snapshot state before pour — replay will start from here.
@@ -127,7 +126,6 @@ func TestDelayedMessageReplayWithMixedInboxOutbox(t *testing.T) {
 	// Accumulate batch1
 	for _, msg := range batch1 {
 		require.NoError(t, nativeState.AccumulateDelayedMessage(msg))
-		nativeState.DelayedMessagesSeen++
 	}
 
 	// Pour batch1 and read first message (partial pop)
@@ -139,7 +137,6 @@ func TestDelayedMessageReplayWithMixedInboxOutbox(t *testing.T) {
 	// Accumulate batch2 (now inbox has new messages, outbox has remaining from batch1)
 	for _, msg := range batch2 {
 		require.NoError(t, nativeState.AccumulateDelayedMessage(msg))
-		nativeState.DelayedMessagesSeen++
 	}
 
 	// Snapshot for replay — mixed state: outbox has 2 from batch1, inbox has 2 from batch2

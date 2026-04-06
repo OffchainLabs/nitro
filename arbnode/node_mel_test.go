@@ -14,7 +14,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	"github.com/offchainlabs/nitro/arbnode/mel/runner"
+	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 )
 
 func putRLPValue(t *testing.T, db interface{ Put([]byte, []byte) error }, key []byte, val uint64) {
@@ -62,4 +63,46 @@ func TestValidateAndInitializeDBForMEL_NonZeroMessageCount(t *testing.T) {
 
 	_, err := validateAndInitializeDBForMEL(context.Background(), nil, nil, db, false)
 	require.ErrorContains(t, err, "stale msgs")
+}
+
+func TestComputeMigrationStartBlock_ZeroBatches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("DeployedAt is zero returns error", func(t *testing.T) {
+		t.Parallel()
+		db := rawdb.NewMemoryDatabase()
+		putRLPValue(t, db, schema.SequencerBatchCountKey, 0)
+
+		_, err := computeMigrationStartBlock(
+			context.Background(), nil, db,
+			&chaininfo.RollupAddresses{DeployedAt: 0}, true,
+		)
+		require.ErrorContains(t, err, "DeployedAt is 0 and no batches exist")
+	})
+
+	t.Run("DeployedAt nonzero returns DeployedAt minus one", func(t *testing.T) {
+		t.Parallel()
+		db := rawdb.NewMemoryDatabase()
+		putRLPValue(t, db, schema.SequencerBatchCountKey, 0)
+
+		block, err := computeMigrationStartBlock(
+			context.Background(), nil, db,
+			&chaininfo.RollupAddresses{DeployedAt: 100}, true,
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(99), block)
+	})
+
+	t.Run("missing SequencerBatchCountKey treated as zero batches", func(t *testing.T) {
+		t.Parallel()
+		// DB has no SequencerBatchCountKey at all (only delayed data exists)
+		db := rawdb.NewMemoryDatabase()
+
+		block, err := computeMigrationStartBlock(
+			context.Background(), nil, db,
+			&chaininfo.RollupAddresses{DeployedAt: 100}, true,
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(99), block)
+	})
 }
