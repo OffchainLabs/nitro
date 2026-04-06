@@ -336,7 +336,10 @@ func CreateExecutionNode(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address filter service: %w", err)
 	}
-	addressChecker := addressFilterService.GetAddressChecker()
+	var addressChecker *addressfilter.HashedAddressChecker
+	if addressFilterService != nil {
+		addressChecker = addressFilterService.GetAddressChecker()
+	}
 
 	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker)
 	if config.EnablePrefetchBlock {
