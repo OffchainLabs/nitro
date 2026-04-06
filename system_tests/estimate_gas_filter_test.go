@@ -40,7 +40,7 @@ func TestEstimateGasFilterDirectAddress(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	normalAddr := builder.L2Info.GetAddress("NormalUser")
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// EstimateGas TO filtered address should fail
 	_, err := builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{
@@ -88,7 +88,7 @@ func TestEstimateGasFilterDisabled(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	normalAddr := builder.L2Info.GetAddress("NormalUser")
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// EstimateGas TO filtered address should succeed when RPC filter is disabled
 	_, err := builder.L2.Client.EstimateGas(ctx, ethereum.CallMsg{

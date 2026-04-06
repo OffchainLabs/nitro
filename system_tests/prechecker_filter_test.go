@@ -121,7 +121,7 @@ func TestPrecheckerFilterDirectAddress(t *testing.T) {
 
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// tx TO filtered address via forwarder should be rejected
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -167,7 +167,7 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	tx := builder.L2Info.PrepareTx("User1", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := forwarder.Client.SendTransaction(ctx, tx)
@@ -236,7 +236,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 	cleanAddr := builder.L2Info.GetAddress("CleanAddr")
 
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Transfer to filtered address via forwarder should be rejected
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -282,7 +282,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 
 	// Set filter on forwarder's prechecker targeting the contract
 	filter := newHashedChecker([]common.Address{contractAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Build redeem tx and send through forwarder -- prechecker should reject
 	arbRetryableOnForwarder, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), forwarder.Client)
@@ -331,7 +331,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 
 	// Set filter on forwarder's prechecker targeting contract A
 	filter := newHashedChecker([]common.Address{destAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Bind wrapper contract to forwarder client and send through forwarder
 	wrapperOnForwarder, err := localgen.NewAddressFilterTest(wrapperAddr, forwarder.Client)
@@ -448,7 +448,7 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 
 	// Set filter on forwarder's prechecker targeting filteredTarget
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(filter)
+	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Manual redeem of the top ticket through forwarder — prechecker must
 	// execute the full cascade including the deepest redeem to discover the

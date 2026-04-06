@@ -253,7 +253,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
 
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -309,7 +309,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -395,7 +395,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare and send delayed tx TO filtered address
 	transferAmount := big.NewInt(1e12)
@@ -478,7 +478,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send 3 delayed messages:
 	// 1. TO FilteredUser (will be filtered)
@@ -593,7 +593,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Create batch of 3 transactions within a single delayed message:
 	// tx1: Sender -> User1 (normal transfer, NOT filtered)
@@ -688,7 +688,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 
 	// Set up address filter to block FilteredUser (NOT NormalUser)
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare and send delayed tx TO normal (non-filtered) address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -789,7 +789,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare delayed tx that calls caller.callTarget(targetAddr)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -859,7 +859,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 
 	// Set up filter to block the target contract
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare delayed tx that calls caller.staticcallTargetInTx(targetAddr)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -930,7 +930,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 
 	// Set up filter to block the computed CREATE address
 	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare delayed tx that calls caller.createContract()
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -999,7 +999,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 
 	// Set up filter to block the computed CREATE2 address
 	filter := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare delayed tx that calls caller.create2Contract(salt)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1066,7 +1066,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 
 	// Set up filter to block the beneficiary address
 	filter := newHashedChecker([]common.Address{filteredBeneficiary})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Prepare delayed tx that calls contract.selfDestructTo(filteredBeneficiary)
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1130,7 +1130,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 
 	// Set up address filter to block both FilteredUser1 and FilteredUser2
 	filter := newHashedChecker([]common.Address{filteredAddr1, filteredAddr2})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Create batch of 2 transactions within a single delayed message:
 	// tx1: Sender -> FilteredUser1 (filtered)
@@ -1204,7 +1204,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 
 	// Set up address filter to block both User1 and User2
 	filter := newHashedChecker([]common.Address{user1Addr, user2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Create batch of 2 transactions within a single delayed message:
 	// tx1: Sender -> User1 (filtered)
@@ -1226,14 +1226,14 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 
 	// Change the address filter to only filter User2 (remove User1 from filter)
 	newFilter := newHashedChecker([]common.Address{user2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(newFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, newFilter)
 
 	// Wait for full retry to occur and verify TxHashes updated to only tx2
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 5*time.Second)
 
 	// Change the address filter to filter neither (remove User2 from filter)
 	noFilter := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(noFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, noFilter)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -1416,7 +1416,7 @@ func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Record initial balance of filtered address
 	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -1500,7 +1500,7 @@ func TestFilteredRetryableRedirectFallbackToNetworkFee(t *testing.T) {
 
 	// Set up address filter
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
@@ -1569,7 +1569,7 @@ func TestFilteredRetryableNoRedirectWhenNotFiltered(t *testing.T) {
 
 	// Set up address filter to block FilteredUser only (NOT NormalBeneficiary)
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Submit retryable with non-filtered beneficiary
 	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, normalBeneficiary, normalBeneficiary, nil)
@@ -1606,7 +1606,7 @@ func TestFilteredRetryableWithCallValue(t *testing.T) {
 
 	// Set up address filter
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callValue := big.NewInt(1e6)
 
@@ -1679,7 +1679,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 
 	// Set up address filter
 	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Record initial balance of normal recipient
 	normalInitialBalance, err := builder.L2.Client.BalanceAt(ctx, normalRecipientAddr, nil)
@@ -1765,7 +1765,7 @@ func TestRetryableAutoRedeemCallsFilteredAddress(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -1803,7 +1803,7 @@ func TestRetryableAutoRedeemCreatesAtFilteredAddress(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -1845,7 +1845,7 @@ func TestRetryableAutoRedeemSelfDestructsToFilteredAddress(t *testing.T) {
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{filteredBeneficiary})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredBeneficiary, nil)
 	require.NoError(t, err)
@@ -1890,7 +1890,7 @@ func TestRetryableAutoRedeemStaticCallsFilteredAddress(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -1935,7 +1935,7 @@ func TestRetryableAutoRedeemEmitsTransferToFilteredAddress(t *testing.T) {
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2025,7 +2025,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 
 	// NOW set address filter to include the target
 	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Send manual redeem via L2 tx (goes through FullSequencingHooks).
 	// The redeem's inner execution calls targetAddr which is now filtered.
@@ -2049,7 +2049,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 
 	// Clear filter and do a successful manual redeem to verify numTries was
 	// rolled back. If IncrementNumTries had leaked, SequenceNum would be 1.
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 	redeemOpts2 := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
 	redeemTx, err := arbRetryable.Redeem(&redeemOpts2, ticketId)
 	require.NoError(t, err)
@@ -2145,7 +2145,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 
 	// Phase 3: Enable filter and send delayed manual redeem
 	filter := newHashedChecker([]common.Address{filteredTargetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2186,7 +2186,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 		"filtered target should be untouched")
 
 	// Phase 6: Verify numTries rollback
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 
 	builder.L2Info.GenerateAccount("CleanRedeemer")
 	builder.L2.TransferBalance(t, "Owner", "CleanRedeemer", big.NewInt(1e18), builder.L2Info)
@@ -2238,7 +2238,7 @@ func TestRetryableGroupRevertDoesNotAffectCleanRetryable(t *testing.T) {
 	dirtyTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{dirtyTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2300,7 +2300,7 @@ func TestSequentialRetryableGroupReverts(t *testing.T) {
 	filteredTarget2, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{filteredTarget1, filteredTarget2})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2385,7 +2385,7 @@ func TestRetryableGroupRevertSkipFinaliseSafety(t *testing.T) {
 	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Record initial dummy counter value
 	dummyBefore, err := callerContract.Dummy(&bind.CallOpts{})
@@ -2447,7 +2447,7 @@ func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
 	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2523,7 +2523,7 @@ func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
 	// Verify B's numTries is still 0: the chained redeem called
 	// IncrementNumTries on B, but the group revert rolled it back.
 	// Clear filter and do a successful manual redeem of B to check.
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(nil)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
 	builder.L2Info.GenerateAccount("Redeemer")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
@@ -2601,7 +2601,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2667,7 +2667,7 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 
 	// Set up address filter to block the Faucet's address on L2
 	addrFilter := newHashedChecker([]common.Address{faucetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(addrFilter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	// Record initial balances
 	faucetL2BalanceBefore, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
@@ -2760,7 +2760,7 @@ func TestDelayedMessageFilterAliasedSender(t *testing.T) {
 	// Set up address filter to block the ORIGINAL L1 address (NOT the aliased one).
 	// Sanctions lists contain original addresses, not aliased derivatives.
 	filter := newHashedChecker([]common.Address{l1SenderAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// Get nonce for the aliased address on L2
 	nonce, err := builder.L2.Client.NonceAt(ctx, aliasedSenderAddr, nil)

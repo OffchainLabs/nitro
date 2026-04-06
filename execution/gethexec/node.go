@@ -326,7 +326,19 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter)
+	var err error
+
+	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
+	if err != nil {
+		return nil, err
+	}
+	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create address filter service: %w", err)
+	}
+	addressChecker := addressFilterService.GetAddressChecker()
+
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -338,7 +350,6 @@ func CreateExecutionNode(
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
-	var err error
 	var parentChainReader *headerreader.HeaderReader
 	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1client)
@@ -348,15 +359,6 @@ func CreateExecutionNode(
 		}
 	} else if config.Sequencer.Enable {
 		log.Warn("sequencer enabled without l1 client")
-	}
-
-	eventFilter, err := eventfilter.NewEventFilterFromConfig(config.TransactionFiltering.EventFilter)
-	if err != nil {
-		return nil, err
-	}
-	addressFilterService, err := addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create address filter service: %w", err)
 	}
 
 	if config.Sequencer.Enable {
@@ -555,6 +557,10 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		}
 	}
 
+	if n.AddressFilterService != nil {
+		n.AddressFilterService.Start(ctx)
+	}
+
 	err = n.ExecEngine.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting execution engine: %w", err)
@@ -571,11 +577,6 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 		n.ParentChain.Start(ctx)
 	}
 	n.bulkBlockMetadataFetcher.Start(ctx)
-	if n.AddressFilterService != nil {
-		n.AddressFilterService.Start(ctx)
-		checker := n.AddressFilterService.GetAddressChecker()
-		n.ExecEngine.SetAddressChecker(checker)
-	}
 	return nil
 }
 
