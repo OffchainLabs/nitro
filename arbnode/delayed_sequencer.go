@@ -108,7 +108,9 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, delayedMessageFetc
 		config:                config,
 	}
 	if coordinator != nil {
-		coordinator.SetDelayedSequencer(d)
+		if err := coordinator.SetDelayedSequencer(d); err != nil {
+			return nil, err
+		}
 	}
 	return d, nil
 }
