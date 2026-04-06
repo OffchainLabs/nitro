@@ -49,7 +49,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -265,7 +264,7 @@ func NewExecutionEngine(
 	syncTillBlock uint64,
 	exposeMultiGas bool,
 	disableDelayedSequencingFilter bool,
-	addressChecker *addressfilter.HashedAddressChecker,
+	addressChecker state.AddressChecker,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
