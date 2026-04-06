@@ -720,10 +720,8 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		}
 		conditionalTxAcceptedBySequencerCounter.Inc(1)
 	}
-	statedb.TouchAddress(sender)
-	if tx.To() != nil {
-		statedb.TouchAddress(*tx.To())
-	}
+
+	touchAddresses(statedb, tx, sender)
 	if statedb.IsTxFiltered() || statedb.IsAddressFiltered() {
 		return state.ErrArbTxFilter
 	}
