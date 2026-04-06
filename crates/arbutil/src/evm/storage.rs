@@ -1,11 +1,12 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::Bytes32;
-use fnv::FnvHashMap as HashMap;
 use std::ops::{Deref, DerefMut};
 
+use fnv::FnvHashMap as HashMap;
+
 use super::api::Gas;
+use crate::Bytes32;
 
 /// Represents the EVM word at a given key.
 #[derive(Debug)]

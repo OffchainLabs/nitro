@@ -118,7 +118,6 @@ func TestMessageExtractor(t *testing.T) {
 		require.True(t, extractor.CurrentFSMState() == ProcessingNextBlock)
 		processBlockAction, ok := extractor.fsm.Current().SourceEvent.(processNextBlock)
 		require.True(t, ok)
-		melState.SetDelayedMessageBacklog(processBlockAction.melState.GetDelayedMessageBacklog())
 		require.Equal(t, processBlockAction.melState, melState)
 	})
 	t.Run("ProcessingNextBlock", func(t *testing.T) {
@@ -194,7 +193,7 @@ func (m *mockParentChainReader) BlockByNumber(ctx context.Context, number *big.I
 		return nil, m.returnErr
 	}
 	if number == nil || number.Int64() == rpc.FinalizedBlockNumber.Int64() {
-		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized to prevent issues dealing with delayed message backlog, it is tested separately
+		return types.NewBlock(&types.Header{Number: big.NewInt(1e10)}, nil, nil, nil), nil // Assume all parent chain blocks are finalized
 	}
 	block, ok := m.blocks[common.BigToHash(number)]
 	if !ok {
@@ -295,7 +294,6 @@ func TestFinalizedDelayedMessageAtPosition(t *testing.T) {
 		ParentChainBlockNumber: 10,
 		ParentChainBlockHash:   common.HexToHash("0xaa"),
 	}
-	state.SetDelayedMessageBacklog(&mel.DelayedMessageBacklog{})
 	var prevAcc common.Hash
 	for i := range delayedMsgs {
 		requestID := common.BigToHash(big.NewInt(int64(i)))

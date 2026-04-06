@@ -1,14 +1,14 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+use std::{collections::HashMap, hash::RandomState, num::NonZeroUsize};
+
 use arbutil::Bytes32;
 use clru::{CLruCache, CLruCacheConfig, WeightScale};
 use eyre::Result;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
-use std::hash::RandomState;
-use std::{collections::HashMap, num::NonZeroUsize};
 use wasmer::{Engine, Module, Store};
 
 use crate::target_cache::target_native;

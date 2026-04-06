@@ -1,44 +1,45 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    cache::InitCache,
-    env::{MeterData, WasmEnv},
-    host,
+use std::{
+    collections::BTreeMap,
+    fmt::Debug,
+    ops::{Deref, DerefMut},
 };
+
 use arbutil::{
+    Bytes32, Color,
     evm::{
-        api::{DataReader, EvmApi, Ink},
         EvmData,
+        api::{DataReader, EvmApi, Ink},
     },
     operator::OperatorCode,
-    Bytes32, Color,
 };
-use eyre::{bail, eyre, ErrReport, Result};
+use eyre::{ErrReport, Result, bail, eyre};
 use prover::{
     machine::Module as ProverModule,
     programs::{
+        StylusData,
         config::PricingParams,
         counter::{Counter, CountingMachine, OP_OFFSETS},
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
         start::StartMover,
-        StylusData,
     },
 };
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
 use wasmer::{
-    imports, sys::Target, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages,
-    Store, TypedFunction, Value, WasmTypeList,
+    AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, TypedFunction,
+    Value, WasmTypeList, imports, sys::Target,
 };
 use wasmer_vm::VMExtern;
 
-use crate::target_cache::target_native;
+use crate::{
+    cache::InitCache,
+    env::{MeterData, WasmEnv},
+    host,
+    target_cache::target_native,
+};
 
 #[derive(Debug)]
 pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
@@ -162,7 +163,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
-            ($func:expr) => {
+            ($func:expr_2021) => {
                 Function::new_typed_with_env(&mut store, &func_env, $func)
             };
         }

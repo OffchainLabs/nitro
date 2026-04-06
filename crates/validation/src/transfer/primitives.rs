@@ -1,7 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
-use crate::transfer::IOResult;
 use std::io::{Read, Write};
+
+use crate::transfer::IOResult;
 
 pub fn read_u8(reader: &mut impl Read) -> IOResult<u8> {
     let mut buf = [0; 1];

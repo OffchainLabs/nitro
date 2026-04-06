@@ -1,29 +1,30 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
+use std::{collections::HashMap, path::Path, sync::Arc};
+
 use arbutil::{
+    Bytes20, Bytes32, Color,
     evm::{
         api::{Ink, VecReader},
         user::UserOutcome,
     },
-    Bytes20, Bytes32, Color,
 };
-use eyre::{bail, Result};
+use eyre::{Result, bail};
 use prover::{
+    Machine,
     machine::GlobalState,
     programs::{config::SigMap, prelude::*},
-    Machine,
 };
 use rand::prelude::*;
-use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
-    imports,
+    Function, FunctionEnv, Imports, Instance, Module, Store, imports,
     sys::{CompilerConfig, EngineBuilder, Target},
     wasmparser::Operator,
-    Function, FunctionEnv, Imports, Instance, Module, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
+
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 
 mod api;
 mod misc;

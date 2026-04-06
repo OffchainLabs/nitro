@@ -1,20 +1,14 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use crate::{
-    programs::{
-        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
-        StylusData, STYLUS_ENTRY_POINT,
-    },
-    value::{ArbValueType, FunctionType, IntegerValType, Value},
-};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
+
 use arbutil::{
+    Bytes32, Color, DebugColor,
     evm::{ARBOS_VERSION_STYLUS_CHARGING_FIXES, ARBOS_VERSION_STYLUS_NO_MULTI_VALUE},
     math::SaturatingSum,
-    Bytes32, Color, DebugColor,
 };
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -23,11 +17,19 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
+use wasmer_types::{ExportIndex, FunctionIndex, LocalFunctionIndex, entity::EntityRef};
 use wasmparser::{
     BinaryReader, Data, Element, ExternalKind, Imports, MemoryType, Name, NameSectionReader,
     Naming, Operator, Parser, Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
+};
+
+use crate::{
+    programs::{
+        FuncMiddleware, Middleware, ModuleMod, STYLUS_ENTRY_POINT, StylusData,
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -353,7 +355,7 @@ pub fn parse_with_version<'a>(
         use Payload::*;
 
         macro_rules! process {
-            ($dest:expr, $source:expr) => {{
+            ($dest:expr_2021, $source:expr_2021) => {{
                 for item in $source.into_iter() {
                     $dest.push(item?.into())
                 }
@@ -478,11 +480,11 @@ pub fn parse_with_version<'a>(
         let name = import.name;
 
         let key = (module, name);
-        if let Some(prior) = imports.insert(key, offset) {
-            if prior != offset {
-                let name = name.debug_red();
-                bail!("inconsistent imports for {} {name}", module.red());
-            }
+        if let Some(prior) = imports.insert(key, offset)
+            && prior != offset
+        {
+            let name = name.debug_red();
+            bail!("inconsistent imports for {} {name}", module.red());
         }
     }
 
@@ -570,7 +572,7 @@ impl<'a> WasmBinary<'a> {
 
             /// this macro exists since middlewares aren't sized (can't use a vec without boxes)
             macro_rules! apply {
-                ($middleware:expr) => {
+                ($middleware:expr_2021) => {
                     let mut mid = Middleware::<WasmBinary>::instrument(&$middleware, index)?;
                     mid.locals_info(&locals);
 
@@ -684,7 +686,7 @@ impl<'a> WasmBinary<'a> {
 
         // not strictly necessary, but anti-DoS limits and extra checks in case of bugs
         macro_rules! limit {
-            ($limit:expr, $count:expr, $name:expr) => {
+            ($limit:expr_2021, $count:expr_2021, $name:expr_2021) => {
                 if $count > $limit {
                     bail!("too many wasm {}: {} > {}", $name, $count, $limit);
                 }
@@ -713,7 +715,7 @@ impl<'a> WasmBinary<'a> {
 
         let max_len = 512;
         macro_rules! too_long {
-            ($name:expr, $len:expr) => {
+            ($name:expr_2021, $len:expr_2021) => {
                 bail!(
                     "wasm {} too long: {} > {}",
                     $name.red(),

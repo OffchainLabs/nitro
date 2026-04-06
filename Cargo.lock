@@ -2728,7 +2728,8 @@ dependencies = [
  "libc",
  "prover",
  "rand 0.8.5",
- "rand_pcg",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
  "sha3",
  "stylus",
@@ -3625,12 +3626,10 @@ dependencies = [
  "hex",
  "lazy_static",
  "libc",
- "lru",
  "nom",
  "num",
  "num-derive",
  "num-traits",
- "once_cell",
  "parking_lot",
  "rand 0.8.5",
  "rayon",
@@ -3641,7 +3640,6 @@ dependencies = [
  "sha2 0.10.9",
  "sha3",
  "smallvec",
- "static_assertions",
  "structopt",
  "validation",
  "wasmer",
@@ -3649,6 +3647,20 @@ dependencies = [
  "wasmer-types",
  "wasmparser 0.245.1",
  "wat",
+]
+
+[[package]]
+name = "prover-ffi"
+version = "0.1.0"
+dependencies = [
+ "arbutil",
+ "eyre",
+ "lazy_static",
+ "libc",
+ "lru",
+ "once_cell",
+ "prover",
+ "static_assertions",
 ]
 
 [[package]]
@@ -4774,6 +4786,7 @@ dependencies = [
  "num-bigint",
  "parking_lot",
  "prover",
+ "prover-ffi",
  "rand 0.8.5",
  "thiserror 1.0.63",
  "user-host-trait",
@@ -5574,7 +5587,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "bindgen",
  "bytes",
@@ -5606,7 +5619,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5640,7 +5653,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-cranelift"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -5660,11 +5673,12 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-llvm"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "byteorder",
  "cc",
  "crossbeam-channel",
+ "enum-iterator",
  "enumset",
  "inkwell",
  "itertools 0.14.0",
@@ -5685,7 +5699,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-singlepass"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "byteorder",
  "dynasm",
@@ -5704,7 +5718,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-derive"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -5714,7 +5728,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-types"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "bytecheck",
  "enum-iterator",
@@ -5731,7 +5745,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-vm"
-version = "7.1.0-rc.2"
+version = "7.1.0"
 dependencies = [
  "backtrace",
  "bytesize",
