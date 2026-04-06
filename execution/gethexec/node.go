@@ -124,7 +124,7 @@ func TxIndexerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type TransactionFilteringConfig struct {
 	DisableDelayedSequencingFilter bool                          `koanf:"disable-delayed-sequencing-filter"`
-	EnableRPCFilter                bool                          `koanf:"enable-rpc-filter"`
+	EnableETHCallFilter            bool                          `koanf:"enable-ethcall-filter"`
 	EventFilter                    eventfilter.EventFilterConfig `koanf:"event-filter"`
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
@@ -145,7 +145,7 @@ func (c *TransactionFilteringConfig) Validate() error {
 
 var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	DisableDelayedSequencingFilter: false,
-	EnableRPCFilter:                true,
+	EnableETHCallFilter:            true,
 	EventFilter:                    eventfilter.DefaultEventFilterConfig,
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
@@ -153,7 +153,7 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-delayed-sequencing-filter", DefaultTransactionFilteringConfig.DisableDelayedSequencingFilter, "disable delayed sequencing filter")
-	f.Bool(prefix+".enable-rpc-filter", DefaultTransactionFilteringConfig.EnableRPCFilter, "enable address filtering for eth_estimateGas and eth_call")
+	f.Bool(prefix+".enable-ethcall-filter", DefaultTransactionFilteringConfig.EnableETHCallFilter, "enable address filtering for eth_estimateGas and eth_call")
 	EventFilterAddOptions(prefix+".event-filter", f)
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
@@ -397,7 +397,7 @@ func CreateExecutionNode(
 		Timeout:      config.RPC.FilterTimeout,
 	}
 	var backendTxFilterer core.TxFilterer
-	if config.TransactionFiltering.EnableRPCFilter {
+	if config.TransactionFiltering.EnableETHCallFilter {
 		backendTxFilterer = &txFilterer{execEngine: execEngine, eventFilter: eventFilter}
 	}
 	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, executionDB, arbInterface, filterConfig, config.Caching.StateScheme, backendTxFilterer)
