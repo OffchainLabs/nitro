@@ -1886,6 +1886,31 @@ func (s *Sequencer) StopAndWait() {
 	}
 }
 
+// SequenceTransactionsForTest sequences the given transactions in a single block,
+// using the sequencer's real preTxFilter and postTxFilter. This bypasses the
+// txQueue, guaranteeing all transactions land in the same block.
+func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transactions) (*types.Block, []error) {
+	t.Helper()
+	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s.preTxFilter, s.postTxFilter, nil)
+
+	s.L1BlockAndTimeMutex.Lock()
+	l1Block := s.l1BlockNumber.Load()
+	s.L1BlockAndTimeMutex.Unlock()
+
+	header := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: l1Block,
+		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
+	}
+
+	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
+	if err != nil {
+		t.Fatalf("SequenceTransactionsForTest: %v", err)
+	}
+	return block, hooks.GetTxErrors()
+}
+
 func (s *Sequencer) StoreFilterRulesForTest(t *testing.T, salt uuid.UUID, hashes []common.Hash, digest string) {
 	t.Helper()
 	if s.addressFilterService == nil {
