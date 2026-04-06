@@ -321,7 +321,6 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 		Header:           header,
 		State:            statedb,
 		Backend:          c.backend,
-		EnableFiltering:  true,
 		RunScheduledTxes: retryables.RunScheduledTxes,
 	})
 	if errors.Is(err, state.ErrArbTxFilter) {
