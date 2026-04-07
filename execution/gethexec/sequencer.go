@@ -734,7 +734,7 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
 			for _, record := range s.eventFilter.AddressesForFiltering(l.Topics, l.Data, l.Address, sender) {
-				statedb.TouchAddress(record)
+				statedb.TouchAddress(&record)
 			}
 		}
 	}

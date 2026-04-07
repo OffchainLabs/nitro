@@ -175,7 +175,7 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 	logs := db.GetCurrentTxLogs()
 	for _, l := range logs {
 		for _, record := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address, common.Address{}) {
-			db.TouchAddress(record)
+			db.TouchAddress(&record)
 		}
 	}
 }
