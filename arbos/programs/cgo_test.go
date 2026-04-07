@@ -183,6 +183,13 @@ func TestSelectLocalAsm(t *testing.T) {
 	}
 }
 
+func TestActivateWithCraneliftTarget(t *testing.T) {
+	err := testActivateWithCraneliftTarget()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCraneliftFallbackTargetKeyMismatch(t *testing.T) {
 	err := testCraneliftFallbackTargetKeyMismatch()
 	if err != nil {

@@ -296,20 +296,36 @@ func activateProgramInternal(
 			if target == rawdb.TargetWasm {
 				results <- result{target: target, asm: wasm}
 			} else {
-				cranelift := false
+				cranelift := rawdb.IsCraneliftTarget(target)
+				// compileNative needs the base target name for the Rust target
+				// cache lookup (cranelift variant names are not registered there).
+				// The cranelift bool selects the compiler backend independently.
+				compileTarget := target
+				if cranelift {
+					if base, err := rawdb.BaseTarget(target); err == nil {
+						compileTarget = base
+					}
+				}
 				timeout := time.Second * 15
-				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+				asm, err := compileNative(wasm, stylusVersion, debug, compileTarget, cranelift, timeout)
 				if err != nil {
-					if craneliftTarget, ctErr := rawdb.CraneliftTarget(target); useFallback && ctErr == nil {
-						log.Warn("initial stylus compilation failed, falling back to cranelift", "address", addressForLogging, "cranelift", cranelift, "timeout", timeout, "err", err)
-						asm, err = compileNative(wasm, stylusVersion, debug, target, !cranelift, timeout)
-						results <- result{target: craneliftTarget, asm: asm, err: err}
+					var fallbackTarget rawdb.WasmTarget
+					var fallbackErr error
+					if cranelift {
+						fallbackTarget, fallbackErr = rawdb.BaseTarget(target)
+					} else {
+						fallbackTarget, fallbackErr = rawdb.CraneliftTarget(target)
+					}
+					if useFallback && fallbackErr == nil {
+						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
+						asm, err = compileNative(wasm, stylusVersion, debug, compileTarget, !cranelift, timeout)
+						results <- result{target: fallbackTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
 						log.Warn("stylus compilation failed and fallback is disabled", "address", addressForLogging, "target", target, "timeout", timeout, "err", err)
 					} else {
-						log.Error("stylus compilation failed and cranelift target lookup also failed",
-							"address", addressForLogging, "target", target, "compileErr", err, "craneliftTargetErr", ctErr)
+						log.Error("stylus compilation failed and fallback target lookup also failed",
+							"address", addressForLogging, "target", target, "compileErr", err, "fallbackTargetErr", fallbackErr)
 					}
 				}
 				results <- result{target: target, asm: asm, err: err}
@@ -439,6 +455,10 @@ func selectLocalAsm(asmMap map[rawdb.WasmTarget][]byte) ([]byte, bool) {
 	// in case cranelift is the only available ASM.
 	if ctErr == nil {
 		if asm, ok := asmMap[craneliftTarget]; ok && len(asm) > 0 {
+			if !GetAllowFallback() {
+				log.Warn("using cranelift ASM despite allow-fallback=false (singlepass unavailable)",
+					"localTarget", localTarget, "craneliftTarget", craneliftTarget)
+			}
 			return asm, true
 		}
 	}

@@ -919,6 +919,104 @@ func testRetryRestoresStylusPages() error {
 	return nil
 }
 
+// testActivateWithCraneliftTarget verifies activateProgramInternal handles
+// cranelift targets correctly:
+//  1. Cranelift target names are not in the Rust target cache — compileNative
+//     must resolve them to base target names before calling the FFI.
+//  2. A cranelift target compiles with cranelift=true and the result is stored
+//     under the cranelift target key.
+//  3. A base target still compiles with singlepass and is stored under the base key.
+//  4. Both targets can be activated together, producing distinct ASM.
+func testActivateWithCraneliftTarget() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("CraneliftTarget: %w", err)
+	}
+
+	// Verify invariant: cranelift target names are NOT in the Rust target cache.
+	// compileNative with a cranelift target name must fail. This proves that
+	// activateProgramInternal must resolve to the base target name before calling FFI.
+	_, err = compileNative(wasm, 1, true, craneliftTarget, true, time.Minute)
+	if err == nil {
+		return fmt.Errorf("compileNative should fail with cranelift target name %v (not in Rust cache), but succeeded", craneliftTarget)
+	}
+
+	gas := uint64(0xfffffffffffffff)
+
+	// Test 1: activate with only a cranelift target.
+	// moduleActivationMandatory=false so we skip WAVM activation entirely.
+	// This implicitly tests that activateProgramInternal resolves the cranelift
+	// target name to the base target name before calling compileNative.
+	_, asmMap, err := activateProgramInternal(
+		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
+		[]rawdb.WasmTarget{craneliftTarget},
+		false, false,
+	)
+	if err != nil {
+		return fmt.Errorf("activation with cranelift target failed: %w", err)
+	}
+	if _, ok := asmMap[craneliftTarget]; !ok {
+		return fmt.Errorf("expected ASM under cranelift target %v, got keys: %v", craneliftTarget, asmMapKeys(asmMap))
+	}
+
+	// Test 2: activate with both base and cranelift targets.
+	gas = uint64(0xfffffffffffffff)
+	_, asmMap, err = activateProgramInternal(
+		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
+		[]rawdb.WasmTarget{localTarget, craneliftTarget},
+		false, false,
+	)
+	if err != nil {
+		return fmt.Errorf("activation with both targets failed: %w", err)
+	}
+	if _, ok := asmMap[localTarget]; !ok {
+		return fmt.Errorf("expected ASM under base target %v, got keys: %v", localTarget, asmMapKeys(asmMap))
+	}
+	if _, ok := asmMap[craneliftTarget]; !ok {
+		return fmt.Errorf("expected ASM under cranelift target %v, got keys: %v", craneliftTarget, asmMapKeys(asmMap))
+	}
+
+	// Verify singlepass and cranelift produce different ASM.
+	baseAsm := asmMap[localTarget]
+	clAsm := asmMap[craneliftTarget]
+	if len(baseAsm) == 0 || len(clAsm) == 0 {
+		return fmt.Errorf("ASM should not be empty: base=%d bytes, cranelift=%d bytes", len(baseAsm), len(clAsm))
+	}
+	sameContent := len(baseAsm) == len(clAsm)
+	if sameContent {
+		for i := range baseAsm {
+			if baseAsm[i] != clAsm[i] {
+				sameContent = false
+				break
+			}
+		}
+	}
+	if sameContent {
+		return fmt.Errorf("singlepass and cranelift ASM should differ, but both are %d bytes with identical content", len(baseAsm))
+	}
+
+	fmt.Printf("testActivateWithCraneliftTarget: passed (base=%d bytes, cranelift=%d bytes)\n", len(baseAsm), len(clAsm))
+	return nil
+}
+
+func asmMapKeys(m map[rawdb.WasmTarget][]byte) []rawdb.WasmTarget {
+	keys := make([]rawdb.WasmTarget, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // testCraneliftFallbackTargetKeyMismatch reproduces a bug where
 // activateProgramInternal stores cranelift-fallback ASM under the cranelift
 // target key (e.g., TargetArm64Cranelift) instead of the base target key
