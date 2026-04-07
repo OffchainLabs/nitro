@@ -75,11 +75,10 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 	}
 }
 
-func (c *HashedAddressChecker) processAddress(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
+func (c *HashedAddressChecker) processRecord(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
+	// TODO(NIT-4688): assign record.FilterSetID here, IsRestricted will need to be changed
+	// to also return the value for FilterSetID.
 	restricted := c.store.IsRestricted(record.Address)
-	if restricted {
-		record.FilterSetId = c.store.Digest()
-	}
 	state.report(record, restricted)
 }
 
@@ -90,7 +89,7 @@ func (c *HashedAddressChecker) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case item := <-c.workChan:
-			c.processAddress(item.record, item.state)
+			c.processRecord(item.record, item.state)
 		}
 	}
 }

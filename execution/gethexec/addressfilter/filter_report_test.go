@@ -24,7 +24,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				Address:     common.HexToAddress("0xdead"),
-				FilterSetId: "filter-set-1",
+				FilterSetID: "filter-set-1",
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonFrom,
 				},
@@ -41,26 +41,24 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 	data, err := json.Marshal(report)
 	require.NoError(t, err)
 
-	var raw map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(data, &raw))
-
-	// isDelayed should be false
-	assert.JSONEq(t, `false`, string(raw["isDelayed"]))
-	// delayedInboxRequestId should not be present
-	_, hasDelayedField := raw["delayedInboxRequestId"]
-	assert.False(t, hasDelayedField, "delayedInboxRequestId should be absent when not delayed")
-
-	// Filtered address should have reason "from" and no event rule fields
-	var addrRecords []map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw["filteredAddresses"], &addrRecords))
-	require.Len(t, addrRecords, 1)
-	assert.JSONEq(t, `"from"`, string(addrRecords[0]["reason"]))
-	_, hasMatchedEvent := addrRecords[0]["matchedEvent"]
-	assert.False(t, hasMatchedEvent, "matchedEvent should be absent for non-event_rule reason")
-	_, hasMatchedTopicIndex := addrRecords[0]["matchedTopicIndex"]
-	assert.False(t, hasMatchedTopicIndex, "matchedTopicIndex should be absent for non-event_rule reason")
-	_, hasRawLog := addrRecords[0]["rawLog"]
-	assert.False(t, hasRawLog, "rawLog should be absent for non-event_rule reason")
+	expectedJSON := `{
+		"id": "019539b4-6b30-7e5a-8000-1a2b3c4d5e6f",
+		"txHash": "0x0000000000000000000000000000000000000000000000000000000000abc123",
+		"txRLP": "0xf86c",
+		"filteredAddresses": [
+			{
+				"address": "0x000000000000000000000000000000000000dead",
+				"filterSetId": "filter-set-1",
+				"reason": "from"
+			}
+		],
+		"blockNumber": 1042,
+		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000001234",
+		"positionInBlock": 3,
+		"filteredAt": "2026-02-27T14:30:00Z",
+		"isDelayed": false
+	}`
+	assert.JSONEq(t, expectedJSON, string(data))
 
 	// Round-trip
 	var decoded FilteredTxReport
@@ -77,7 +75,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				Address:     common.HexToAddress("0xdead"),
-				FilterSetId: "filter-set-1",
+				FilterSetID: "filter-set-1",
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonDealiasedFrom,
 				},
@@ -96,12 +94,25 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 	data, err := json.Marshal(report)
 	require.NoError(t, err)
 
-	var raw map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(data, &raw))
-
-	assert.JSONEq(t, `true`, string(raw["isDelayed"]))
-	_, hasDelayedField := raw["delayedInboxRequestId"]
-	assert.True(t, hasDelayedField, "delayedInboxRequestId should be present when delayed")
+	expectedJSON := `{
+		"id": "019539b4-9a10-7f3b-8000-5f6e7d8c9b0a",
+		"txHash": "0x0000000000000000000000000000000000000000000000000000000000def789",
+		"txRLP": "0xf86c",
+		"filteredAddresses": [
+			{
+				"address": "0x000000000000000000000000000000000000dead",
+				"filterSetId": "filter-set-1",
+				"reason": "dealiased_from"
+			}
+		],
+		"blockNumber": 1043,
+		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000abcdef",
+		"positionInBlock": 0,
+		"filteredAt": "2026-02-27T14:31:00Z",
+		"isDelayed": true,
+		"delayedInboxRequestId": "0x0000000000000000000000000000000000000000000000000000000000000001"
+	}`
+	assert.JSONEq(t, expectedJSON, string(data))
 
 	// Round-trip
 	var decoded FilteredTxReport
@@ -117,7 +128,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
 				Address:     common.HexToAddress("0xbeef"),
-				FilterSetId: "filter-set-2",
+				FilterSetID: "filter-set-2",
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonEventRule,
 					EventRuleMatch: &filter.EventRuleMatch{
@@ -147,18 +158,35 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 	data, err := json.Marshal(report)
 	require.NoError(t, err)
 
-	var raw map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(data, &raw))
-
-	var addrRecords []map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw["filteredAddresses"], &addrRecords))
-	require.Len(t, addrRecords, 1)
-
-	assert.JSONEq(t, `"event_rule"`, string(addrRecords[0]["reason"]))
-	assert.JSONEq(t, `"Transfer(address,address,uint256)"`, string(addrRecords[0]["matchedEvent"]))
-	assert.JSONEq(t, `2`, string(addrRecords[0]["matchedTopicIndex"]))
-	_, hasRawLog := addrRecords[0]["rawLog"]
-	assert.True(t, hasRawLog, "rawLog should be present for event_rule reason")
+	expectedJSON := `{
+		"id": "019539b4-6b30-7e5a-8000-aabbccddeeff",
+		"txHash": "0x0000000000000000000000000000000000000000000000000000000000aaa111",
+		"txRLP": "0xf8",
+		"filteredAddresses": [
+			{
+				"address": "0x000000000000000000000000000000000000beef",
+				"filterSetId": "filter-set-2",
+				"reason": "event_rule",
+				"matchedEvent": "Transfer(address,address,uint256)",
+				"matchedTopicIndex": 2,
+				"rawLog": {
+					"address": "0x000000000000000000000000000000000000dead",
+					"topics": [
+						"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+						"0x000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+						"0x000000000000000000000000beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"
+					],
+					"data": "0x0000"
+				}
+			}
+		],
+		"blockNumber": 1044,
+		"parentBlockHash": "0x0000000000000000000000000000000000000000000000000000000000005678",
+		"positionInBlock": 1,
+		"filteredAt": "2026-02-27T14:32:00Z",
+		"isDelayed": false
+	}`
+	assert.JSONEq(t, expectedJSON, string(data))
 
 	// Round-trip
 	var decoded FilteredTxReport
