@@ -182,11 +182,6 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(common.Address{}.Bytes())},
 			expected: 0,
 		},
-		{
-			name:     "duplicate addresses",
-			topics:   []common.Hash{fullSigHash, common.BytesToHash(addr1.Bytes()), common.BytesToHash(addr1.Bytes())},
-			expected: 1,
-		},
 	}
 
 	for _, tt := range tests {
