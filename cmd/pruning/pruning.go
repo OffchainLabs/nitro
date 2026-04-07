@@ -250,6 +250,16 @@ func PruneExecutionDBWithDistance(ctx context.Context, executionDB ethdb.Databas
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), executionDB, initConfig.PruneThreads)
 	}
+
+	log.Info("Pruning started",
+		"mode", initConfig.Prune,
+		"threads", initConfig.PruneThreads,
+		"bloomSizeMB", initConfig.PruneBloomSize,
+	)
+	log.Info("Pruning may take several days for large databases. Progress will be logged periodically. " +
+		"Tip: if this is taking too long, downloading a fresh pruned snapshot with --init.latest pruned may be faster. " +
+		"See https://docs.arbitrum.io/run-arbitrum-node/nitro/nitro-database-snapshots")
+
 	root, err := findImportantRoots(ctx, executionDB, initConfig, l1Client, rollupAddrs, validatorRequired, minRootDistance)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
