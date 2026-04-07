@@ -210,7 +210,7 @@ foreach(lib IN LISTS BROTLI_SHARED_LIBS BROTLI_STATIC_LIBS)
   set_property(TARGET ${lib} APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${BROTLI_INCLUDE_DIRS}")
 endforeach()
 
-if(NOT (BROTLI_EMSCRIPTEN AND BROTLI_RISCV))
+if(NOT (BROTLI_EMSCRIPTEN OR BROTLI_RISCV))
 target_link_libraries(brotlidec brotlicommon)
 target_link_libraries(brotlienc brotlicommon)
 endif()
@@ -244,7 +244,7 @@ if(NOT BROTLI_BUNDLED_MODE)
     )
   endif()
 
-  if(NOT (BROTLI_EMSCRIPTEN AND BROTLI_RISCV))
+  if(NOT (BROTLI_EMSCRIPTEN OR BROTLI_RISCV))
     install(
       TARGETS ${BROTLI_LIBRARIES_CORE}
       ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
