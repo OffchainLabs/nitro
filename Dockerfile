@@ -352,7 +352,6 @@ USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
 COPY --from=prover-export /bin/jit                                         /usr/local/bin/
-COPY --from=prover-export /bin/validator                                    /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/mockexternalsigner        /usr/local/bin/
@@ -363,7 +362,7 @@ COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
-    sudo curl && \
+    sudo && \
     chmod -R 555 /home/user/target/machines && \
     adduser user sudo && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
