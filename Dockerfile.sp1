@@ -1,0 +1,159 @@
+# Stage 0: Build WASM brotli using emsdk (runs in parallel via BuildKit)
+FROM debian:bookworm-slim AS brotli-wasm-builder
+WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
+
+FROM scratch AS brotli-wasm-export
+COPY --from=brotli-wasm-builder /workspace/install/ /
+
+# Stage 1: Full SP1 build environment and build
+FROM ubuntu:24.04 AS sp1-builder
+WORKDIR /workspace
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System packages
+RUN apt-get update && apt-get install -y \
+    build-essential cmake git curl wget pkg-config \
+    clang-14 lld-14 wabt protobuf-compiler \
+    libstdc++-12-dev zlib1g-dev \
+    software-properties-common gpg \
+    python3 xz-utils \
+    ca-certificates && \
+    ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld && \
+    rm -rf /var/lib/apt/lists/*
+
+# LLVM 15 (for prover)
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# LLVM 21 (for wasmer LLVM backend used by sp1-builder)
+RUN curl --retry 3 --proto '=https' --tlsv1.2 -sSfL \
+    https://github.com/wasmerio/llvm-custom-builds/releases/download/21.x/llvm-linux-amd64.tar.xz \
+    -o /tmp/llvm.tar.xz && \
+    mkdir -p /opt/llvm-21 && \
+    tar xf /tmp/llvm.tar.xz --strip-components=1 -C /opt/llvm-21 && \
+    rm /tmp/llvm.tar.xz
+ENV LLVM_SYS_211_PREFIX=/opt/llvm-21
+ENV PATH="/opt/llvm-21/bin:${PATH}"
+
+# Node.js 24 + yarn
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g yarn && \
+    rm -rf /var/lib/apt/lists/*
+
+# Foundry
+RUN curl -L https://foundry.paradigm.xyz | bash && \
+    /root/.foundry/bin/foundryup -i 1.0.0
+ENV PATH="/root/.foundry/bin:${PATH}"
+
+# Go 1.25
+RUN curl -L https://golang.org/dl/go1.25.8.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/root/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Rust 1.93.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain 1.93.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# cbindgen
+RUN cargo install --force cbindgen --version 0.29.2
+
+# SP1 toolchain (succinct Rust toolchain + RISC-V C compiler)
+RUN curl -L https://sp1up.succinct.xyz | bash && \
+    /root/.sp1/bin/sp1up -v v6.0.0-beta.1 && \
+    /root/.sp1/bin/sp1up -c
+ENV PATH="/root/.sp1/bin:${PATH}"
+ENV RISCV_GNU_TOOLCHAIN="/root/.sp1/riscv"
+
+# -- Dependency layers (for better caching) --
+
+# Go module download
+COPY go.mod go.sum ./
+COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
+RUN go mod download
+
+# Copy full repo
+COPY . ./
+
+# WASM brotli from stage 0
+COPY --from=brotli-wasm-export / target/
+
+# -- Build steps --
+
+# Build local brotli
+RUN ./scripts/build-brotli.sh -l
+
+# Build solidity contracts + go bindings
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+
+# Build replay environment and test dependencies
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env test-go-deps
+
+# Build SP1 brotli (cross-compile for RISC-V)
+RUN cp crates/sp1/brotli_cmake_patch.txt brotli/CMakeLists.txt && \
+    rm -rf target/build-sp1/brotli target/lib-sp1 && \
+    mkdir -p target/build-sp1/brotli && \
+    cd target/build-sp1/brotli && \
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+      -DCMAKE_SYSTEM_NAME=Generic \
+      -DCMAKE_C_COMPILER="$RISCV_GNU_TOOLCHAIN/bin/riscv64-unknown-elf-gcc" \
+      -DCMAKE_C_FLAGS="-march=rv64im -mabi=lp64 -DBROTLI_BUILD_PORTABLE -mcmodel=medany -ffunction-sections -fdata-sections -fPIC" \
+      -DCMAKE_AR="$RISCV_GNU_TOOLCHAIN/bin/riscv64-unknown-elf-ar" \
+      -DCMAKE_RANLIB="$RISCV_GNU_TOOLCHAIN/bin/riscv64-unknown-elf-ranlib" \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/workspace/target/lib-sp1 \
+      -DBROTLI_DISABLE_TESTS=ON \
+      /workspace/brotli && \
+    make && make install
+
+# Build SP1 replay.wasm
+RUN mkdir -p target/sp1 && \
+    GOOS=wasip1 GOARCH=wasm go build -tags sp1 -o target/sp1/replay.wasm ./cmd/replay/...
+
+# Record test block data
+RUN rm -rf system_tests/test-data && \
+    go test -run TestProgramStorage ./system_tests/ -- \
+      -recordBlockInputs.WithBaseDir="$(pwd)"/system_tests/test-data \
+      -recordBlockInputs.WithTimestampDirEnabled=false \
+      -recordBlockInputs.enable=true && \
+    cp system_tests/test-data/TestProgramStorage/*.json target/sp1/
+
+# Build SP1 program (bootloaded ELF) and SP1 runner
+ENV SP1_ZKVM_MAX_MEMORY=1099511627776
+RUN cd crates/sp1 && \
+    cargo run --release -p sp1-builder -- \
+      --replay-wasm /workspace/target/sp1/replay.wasm \
+      --output-folder /workspace/target/sp1
+
+RUN cargo build --release -p sp1-runner
+
+# Copy final artifacts
+RUN cp target/elf-compilation/riscv64im-succinct-zkvm-elf/release/stylus-compiler-program target/sp1/ && \
+    cp target/release/sp1-runner target/sp1/
+
+# Stage 2: Minimal runtime image
+FROM ubuntu:24.04 AS sp1-runner
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libstdc++6 && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=sp1-builder /workspace/target/sp1/ ./
+COPY --from=sp1-builder /workspace/target/bin/jit /usr/local/bin/jit
+COPY --from=sp1-builder /workspace/target/machines/latest/replay.wasm /app/machines/latest/replay.wasm
+ENTRYPOINT ["/app/sp1-runner"]

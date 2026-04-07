@@ -2,7 +2,7 @@ use std::{ops::Deref, sync::Arc, time::SystemTime};
 
 use clap::{ArgAction, Parser, ValueEnum};
 use sp1_core_executor::{MinimalExecutor, Program};
-use sp1_sdk::{Elf, Prover, ProverClient, SP1Stdin};
+use sp1_sdk::{Elf, Prover, ProverClient, ProvingKey, SP1Stdin};
 use validation::{ValidationInput, ValidationRequest};
 
 #[derive(Debug, Parser)]
@@ -43,6 +43,9 @@ enum Mode {
 
     /// Normal mode
     Normal,
+
+    /// Prove mode: generates and verifies a ZK proof
+    Prove,
 }
 
 #[tokio::main]
@@ -108,6 +111,37 @@ async fn main() {
             }
 
             report.exit_code as i32
+        }
+        Mode::Prove => {
+            let client = ProverClient::builder().cpu().build().await;
+
+            let a = SystemTime::now();
+            let pk = client.setup(program_elf).await.expect("failed to setup ELF");
+            let b = SystemTime::now();
+            tracing::info!(
+                "Setup completed, pk generation time: {:?}",
+                b.duration_since(a).unwrap(),
+            );
+
+            let a = SystemTime::now();
+            let proof = client.prove(&pk, stdin).await.expect("failed to generate proof");
+            let b = SystemTime::now();
+            tracing::info!(
+                "Proof generated, proving time: {:?}",
+                b.duration_since(a).unwrap(),
+            );
+
+            let a = SystemTime::now();
+            client
+                .verify(&proof, pk.verifying_key(), None)
+                .expect("failed to verify proof");
+            let b = SystemTime::now();
+            tracing::info!(
+                "Proof verified successfully, verification time: {:?}",
+                b.duration_since(a).unwrap(),
+            );
+
+            0
         }
     };
 

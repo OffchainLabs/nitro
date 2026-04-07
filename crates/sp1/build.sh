@@ -55,6 +55,7 @@ cp system_tests/test-data/TestProgramStorage/*.json target/sp1/
 cd "$SCRIPT_DIR"
 # Bump SP1's maximum heap memory size
 export SP1_ZKVM_MAX_MEMORY=1099511627776
+export RISCV_GNU_TOOLCHAIN="$HOME/.sp1/riscv"
 # Build SP1 program and run bootloading process
 cargo run --release -p sp1-builder -- --replay-wasm "$OUTPUT_DIR"/replay.wasm --output-folder "$OUTPUT_DIR"
 # Build the SP1 runner

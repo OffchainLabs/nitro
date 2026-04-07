@@ -56,6 +56,18 @@ stderr: WARNING: Using insecure random number generator.
 stdout: Validation succeeds with hash 624b2d504238ba9fe94ad3e19d1036a51894bc209b7f0ead1331d22005d40178
 ```
 
+To generate and verify a ZK proof for the block (for benchmarking), use `--mode prove`:
+
+```bash
+$ RUST_LOG=info ./target/sp1/sp1-runner \
+    --program target/sp1/dumped_replay_wasm.elf \
+    --stylus-compiler-program target/sp1/stylus-compiler-program \
+    --block-file target/sp1/block_inputs_7.json \
+    --mode prove
+```
+
+This will log the time spent on proving key generation, proof generation, and proof verification separately.
+
 You can tweak `RUST_LOG` for more logs(e.g., running cycles and running time):
 
 ```bash
