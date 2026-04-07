@@ -61,8 +61,9 @@ func (wrapper *DebugPrecompile) Name() string {
 
 // OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
-	precompile  ArbosPrecompile
-	emitSuccess func(mech, bytes4, addr, []byte) error
+	precompile     ArbosPrecompile
+	emitSuccess    func(mech, bytes4, addr, []byte) error
+	disableEthCall bool
 }
 
 func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr, []byte) error) (addr, ArbosPrecompile) {
@@ -70,6 +71,10 @@ func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr,
 		precompile:  impl,
 		emitSuccess: emit,
 	}
+}
+
+func (wrapper *OwnerPrecompile) SetDisableEthCall(disable bool) {
+	wrapper.disableEthCall = disable
 }
 
 func (wrapper *OwnerPrecompile) Address() common.Address {
@@ -85,6 +90,10 @@ func (wrapper *OwnerPrecompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) ([]byte, uint64, multigas.MultiGas, error) {
+	if wrapper.disableEthCall && evm.ProcessingHook.MsgIsNonMutating() {
+		return nil, gasSupplied, multigas.ZeroGas(), errors.New("ArbOwner precompile is disabled outside on-chain execution")
+	}
+
 	con := wrapper.precompile
 
 	burner := &Context{

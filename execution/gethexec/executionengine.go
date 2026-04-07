@@ -110,14 +110,7 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 	}
 }
 
-// PostTxFilter touches To/From addresses, applies event-based filtering, and
-// checks IsAddressFiltered. For user txs, collects tx hashes that touch filtered
-// addresses but are not in the onchain filter. For redeems, returns
-// ErrArbTxFilter so the block processor can trigger a group rollback.
-func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	if tx.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
+func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Address) {
 	db.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
 	if tx.To() != nil {
 		db.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
@@ -131,6 +124,16 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom}})
 	}
 	touchRetryableAddresses(db, tx)
+}
+
+// PostTxFilter touches To/From addresses and checks IsAddressFiltered.
+// Collects tx hashes that touch filtered addresses but are not in the onchain filter.
+// For redeems, returns ErrArbTxFilter to trigger group rollback.
+func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if tx.Type() == types.ArbitrumInternalTxType {
+		return nil
+	}
+	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 
 	if filtered, _ := db.IsAddressFiltered(); filtered {
@@ -262,6 +265,7 @@ func NewExecutionEngine(
 	syncTillBlock uint64,
 	exposeMultiGas bool,
 	disableDelayedSequencingFilter bool,
+	addressChecker state.AddressChecker,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
@@ -271,6 +275,7 @@ func NewExecutionEngine(
 		exposeMultiGas:                 exposeMultiGas,
 		syncTillBlock:                  syncTillBlock,
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
+		addressChecker:                 addressChecker,
 	}
 }
 
@@ -1346,7 +1351,7 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	}
 }
 
-func (s *ExecutionEngine) SetAddressChecker(checker state.AddressChecker) {
+func (s *ExecutionEngine) SetAddressChecker(_ *testing.T, checker state.AddressChecker) {
 	s.addressChecker = checker
 }
 

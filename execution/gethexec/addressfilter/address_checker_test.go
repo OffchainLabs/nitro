@@ -5,10 +5,10 @@ package addressfilter
 
 import (
 	"context"
-	"crypto/sha256"
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,17 +24,19 @@ func mustState(t *testing.T, s any) *HashedAddressCheckerState {
 }
 
 func TestHashedAddressCheckerSimple(t *testing.T) {
-	salt := []byte("test-salt")
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err, "failed to parse salt UUID")
 
-	addrFiltered := common.HexToAddress("0x000000000000000000000000000000000000dead")
-	addrFiltered2 := common.HexToAddress("0x000000000000000000000000000000000000bad1")
+	addrFiltered := common.HexToAddress("0xddfAbCdc4D8FfC6d5beaf154f18B778f892A0740")
+	addrFiltered2 := common.HexToAddress("0xdead000000000000000000000000000000000001")
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 
 	const cacheSize = 100
 	store := NewHashStore(cacheSize)
 
-	hash := sha256.Sum256(append(salt, addrFiltered.Bytes()...))
-	hash2 := sha256.Sum256(append(salt, addrFiltered2.Bytes()...))
+	// These values are test values from the provider, to cross-check the salting/hashing algorithm.
+	hash := common.HexToHash("0x8fb74f22f0aed996e7548101ae1cea812ccdf86e7ad8a781eebea00f797ce4a6")
+	hash2 := common.HexToHash("0xe4c758332a0fe49872f79ae15d2e1c0d76daeb5a9b33578e7f11d3e2571dad1a")
 	store.Store(salt, []common.Hash{hash, hash2}, "test")
 
 	checker := NewHashedAddressChecker(store, 4, 8192)
@@ -108,17 +110,19 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 }
 
 func TestHashedAddressCheckerHeavy(t *testing.T) {
-	salt := []byte("heavy-salt")
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err, "failed to parse salt UUID")
 
 	const filteredCount = 500
 	const cacheSize = 100
 	filteredAddrs := make([]common.Address, filteredCount)
 	filteredHashes := make([]common.Hash, filteredCount)
 
+	hashPrefix := GetHashInputPrefix(salt)
 	for i := range filteredAddrs {
 		addr := common.BytesToAddress([]byte{byte(i + 1)})
 		filteredAddrs[i] = addr
-		filteredHashes[i] = sha256.Sum256(append(salt, addr.Bytes()...))
+		filteredHashes[i] = HashWithPrefix(hashPrefix, addr)
 	}
 
 	store := NewHashStore(cacheSize)

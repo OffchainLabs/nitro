@@ -87,7 +87,8 @@ rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* 
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_dir = crates/prover/
-rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
+prover_ffi_dir = crates/prover-ffi/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(wildcard $(prover_ffi_dir)/src/*.rs $(prover_ffi_dir)/*.toml) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
 
 wasm_lib = crates/wasm-libraries
 wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
@@ -123,7 +124,7 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard crates/langs/bf/src/*.* crates/langs/bf/src/*.toml)
 
-get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_wasm = $(stylus_test_dir)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
 stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
@@ -292,7 +293,7 @@ clean:
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f crates/wasm-libraries/forward/*.wat
-	rm -rf crates/stylus/tests/*/target/ crates/stylus/tests/*/*.wasm
+	rm -rf crates/stylus/tests/target/ crates/stylus/tests/*/*.wasm
 	rm -rf brotli/buildfiles
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -rf contracts-legacy/build contracts-legacy/cache

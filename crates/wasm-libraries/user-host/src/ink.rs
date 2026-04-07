@@ -10,7 +10,7 @@ use prover::programs::{
 use crate::program::Program;
 
 #[link(wasm_import_module = "hostio")]
-extern "C" {
+unsafe extern "C" {
     fn user_ink_left() -> u64;
     fn user_ink_status() -> u32;
     fn user_set_ink(ink: u64, status: u32);
