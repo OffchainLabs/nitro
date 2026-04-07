@@ -594,7 +594,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Store hashes to the hashstore so FilteringReady returns true
 	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(),salt, nil, "test-digest")
+	filterService.GetHashStore().Store(uuid.New(), salt, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
