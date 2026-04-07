@@ -20,22 +20,17 @@ WORKDIR /workspace
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System packages
+# System packages (including LLVM 15 from Ubuntu's own repos)
 RUN apt-get update && apt-get install -y \
     build-essential cmake git curl wget pkg-config \
     clang-14 lld-14 wabt protobuf-compiler \
+    llvm-15-dev libclang-common-15-dev \
     libstdc++-12-dev zlib1g-dev \
+    libzstd-dev libxml2-dev libffi-dev \
     software-properties-common gpg \
     python3 xz-utils \
     ca-certificates && \
     ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld && \
-    rm -rf /var/lib/apt/lists/*
-
-# LLVM 15 (for prover)
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-15 main' && \
-    apt-get update && \
-    apt-get install -y llvm-15-dev libclang-common-15-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # LLVM 21 (for wasmer LLVM backend used by sp1-builder)
