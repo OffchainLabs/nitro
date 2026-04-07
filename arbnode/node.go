@@ -756,6 +756,7 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
+		log.Info("Inbox reader and tracker disabled")
 		return nil, nil, nil
 	}
 	inboxTracker, err := NewInboxTracker(consensusDB, txStreamer, dapReaders)
@@ -944,6 +945,7 @@ func getMessageExtractor(
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Message extractor enabled")
 	return msgExtractor, nil
 }
 
@@ -1021,6 +1023,7 @@ func getStaker(
 	statelessBlockValidator *staker.StatelessBlockValidator,
 	blockValidator *staker.BlockValidator,
 	dapRegistry *daprovider.DAProviderRegistry,
+	messageExtractor *melrunner.MessageExtractor,
 ) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
@@ -1072,11 +1075,26 @@ func getStaker(
 
 		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
+			if batchMetaFetcher == nil {
+				return nil, nil, common.Address{}, errors.New("MessagePruner requires either inbox tracker or message extractor")
+			}
 			messagePruner = NewMessagePruner(consensusDB, txStreamer, batchMetaFetcher, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, inboxTracker, inboxReader, dapRegistry, fatalErrChan)
+		var tracker staker.InboxTrackerInterface
+		var reader staker.InboxReaderInterface
+		if messageExtractor != nil {
+			tracker = messageExtractor
+			reader = messageExtractor
+		} else {
+			tracker = inboxTracker
+			reader = inboxReader
+		}
+		if tracker == nil || reader == nil {
+			return nil, nil, common.Address{}, errors.New("message pruner requires either message extractor or inbox tracker/reader")
+		}
+		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {
 			return nil, nil, common.Address{}, err
 		}
@@ -1464,7 +1482,7 @@ func createNodeImpl(
 		batchMetaFetcher = messageExtractor
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, validatorInboxReader, validatorInboxTracker, batchMetaFetcher, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry)
+	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, validatorInboxReader, validatorInboxTracker, batchMetaFetcher, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry, messageExtractor)
 	if err != nil {
 		return nil, err
 	}

@@ -266,7 +266,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	TransactionFiltering:         gethexec.DefaultSequencerConfig.TransactionFiltering,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -291,6 +290,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
+	config.TransactionFiltering.EnableETHCallFilter = false
 
 	Require(t, config.Validate())
 
@@ -611,7 +611,7 @@ func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeB
 		panic("execConfig must be initialised before setting event filter rules")
 	}
 
-	b.execConfig.Sequencer.TransactionFiltering.EventFilter.Rules = rules
+	b.execConfig.TransactionFiltering.EventFilter.Rules = rules
 
 	return b
 }
