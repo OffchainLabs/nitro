@@ -337,7 +337,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		}
 	}
 	if !compressionNegotiated && config.EnableCompression {
-		log.Info("Compression was not negotiated when connecting to feed server, non-critical: node will continue without compression")
+		log.Warn("Compression was not negotiated when connecting to feed server, non-critical: node will continue without compression")
 	}
 	if compressionNegotiated && !config.EnableCompression {
 		err := conn.Close()
