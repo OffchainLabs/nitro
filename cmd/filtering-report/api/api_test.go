@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 )
 
-func newTestStack(t *testing.T) (*node.Node, *FilteringReportAPI) {
+func newTestStack(t *testing.T) *node.Node {
 	t.Helper()
 
 	stackConfig := DefaultStackConfig
@@ -18,7 +18,7 @@ func newTestStack(t *testing.T) (*node.Node, *FilteringReportAPI) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, api, err := NewStack(&stackConfig)
+	stack, err := NewStack(&stackConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,11 +26,11 @@ func newTestStack(t *testing.T) (*node.Node, *FilteringReportAPI) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stack.Close() })
-	return stack, api
+	return stack
 }
 
 func TestLiveness(t *testing.T) {
-	stack, _ := newTestStack(t)
+	stack := newTestStack(t)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack, _ := newTestStack(t)
+	stack := newTestStack(t)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {

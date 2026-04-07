@@ -36,13 +36,11 @@ var DefaultStackConfig = node.Config{
 	},
 }
 
-func NewStack(stackConfig *node.Config) (*node.Node, *FilteringReportAPI, error) {
+func NewStack(stackConfig *node.Config) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	api := &FilteringReportAPI{}
 
 	stack.RegisterHandler("liveness", "/liveness", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -51,5 +49,5 @@ func NewStack(stackConfig *node.Config) (*node.Node, *FilteringReportAPI, error)
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	return stack, api, nil
+	return stack, nil
 }
