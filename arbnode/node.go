@@ -1835,7 +1835,10 @@ func (n *Node) GetParentChainDataSource() ParentChainDataSource {
 	if n.MessageExtractor != nil {
 		return n.MessageExtractor
 	}
-	return n.InboxReader.GetParentChainDataSource()
+	if n.InboxReader != nil {
+		return n.InboxReader.GetParentChainDataSource()
+	}
+	return nil
 }
 
 func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
