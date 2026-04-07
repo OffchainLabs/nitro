@@ -7,6 +7,9 @@ export TOP=$SCRIPT_DIR/../..
 
 cd "$TOP"
 
+# Restore brotli/CMakeLists.txt (overwritten below) on exit
+trap 'git -C "$TOP/brotli" checkout -- CMakeLists.txt' EXIT
+
 # Download RISC-V C toolchain if needed
 if [ ! -d "$HOME/.sp1/riscv" ]; then
     # Force reinstallation of sp1up, so we can pickup latest sp1up updates for rv64im toolchain
