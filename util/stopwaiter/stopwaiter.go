@@ -175,8 +175,9 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	case <-timer.C:
 		traces := getAllStackTraces()
 		st := s.RLock()
-		defer s.RUnlock()
-		log.Warn("taking too long to stop", "name", st.Name, "delay[s]", warningTimeout.Seconds())
+		name := st.Name
+		s.RUnlock()
+		log.Warn("taking too long to stop", "name", name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
 		timer.Stop()
@@ -220,7 +221,12 @@ func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
 	s.wg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("Thread crashed", "name", name, "message", r)
+				buf := make([]byte, 64*1024)
+				n := runtime.Stack(buf, false)
+				if n == len(buf) {
+					copy(buf[len(buf)-len("\n…truncated"):], "\n…truncated")
+				}
+				log.Error("Thread crashed", "name", name, "message", r, "stack", string(buf[:n]))
 			}
 		}()
 		foo(ctx)

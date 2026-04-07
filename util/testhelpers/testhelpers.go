@@ -136,6 +136,34 @@ func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
 	return false
 }
 
+// WasLoggedWithAttr checks whether a log record matching msgPattern has an
+// attribute whose key equals attrKey and whose string value matches attrPattern.
+func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrPattern string) bool {
+	msgRe, err := regexp.Compile(msgPattern)
+	RequireImpl(h.t, err)
+	attrRe, err := regexp.Compile(attrPattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if !msgRe.MatchString(record.Message) {
+			continue
+		}
+		found := false
+		record.Attrs(func(a slog.Attr) bool {
+			if a.Key == attrKey && attrRe.MatchString(a.Value.String()) {
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
 		t:               t,
