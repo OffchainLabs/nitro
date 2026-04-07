@@ -74,7 +74,7 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 
 	// --- Step 2: Set filter and prepare sandwich txns ---
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	sequencer := builder.L2.ExecNode.Sequencer
 
@@ -177,7 +177,7 @@ func TestRetryableFilteringStylusDelayedSandwichRollback(t *testing.T) {
 
 	// Set filter on B's address BEFORE submitting any retryables
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(filter)
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
 	// --- Submit 3 retryables via L1 (all with auto-redeem) ---
 
