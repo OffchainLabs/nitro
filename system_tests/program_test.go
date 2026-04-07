@@ -1901,7 +1901,7 @@ func assertStorageAt(
 }
 
 func rustFile(name string) string {
-	return fmt.Sprintf("../crates/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
+	return fmt.Sprintf("../crates/stylus/tests/target/wasm32-unknown-unknown/release/%v.wasm", name)
 }
 
 func watFile(name string) string {
