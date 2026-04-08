@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -221,12 +222,7 @@ func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
 	s.wg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				buf := make([]byte, 64*1024)
-				n := runtime.Stack(buf, false)
-				if n == len(buf) {
-					copy(buf[len(buf)-len("\n…truncated"):], "\n…truncated")
-				}
-				log.Error("Thread crashed", "name", name, "message", r, "stack", string(buf[:n]))
+				log.Error("Thread crashed", "name", name, "message", r, "stack", string(debug.Stack()))
 			}
 		}()
 		foo(ctx)

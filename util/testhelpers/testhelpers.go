@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"testing"
 
@@ -137,11 +138,9 @@ func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
 }
 
 // WasLoggedWithAttr checks whether a log record matching msgPattern has an
-// attribute whose key equals attrKey and whose string value matches attrPattern.
-func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrPattern string) bool {
+// attribute whose key equals attrKey and whose string value contains attrSubstr.
+func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrSubstr string) bool {
 	msgRe, err := regexp.Compile(msgPattern)
-	RequireImpl(h.t, err)
-	attrRe, err := regexp.Compile(attrPattern)
 	RequireImpl(h.t, err)
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -151,7 +150,7 @@ func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrPattern string) 
 		}
 		found := false
 		record.Attrs(func(a slog.Attr) bool {
-			if a.Key == attrKey && attrRe.MatchString(a.Value.String()) {
+			if a.Key == attrKey && strings.Contains(a.Value.String(), attrSubstr) {
 				found = true
 				return false
 			}
