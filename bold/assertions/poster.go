@@ -86,6 +86,22 @@ func (m *Manager) awaitPostingSignal(ctx context.Context) {
 	}
 }
 
+// advanceChainPointer reads the creation info for the given assertion and
+// updates the local chain tracking state so subsequent posting attempts
+// build on top of it.
+func (m *Manager) advanceChainPointer(ctx context.Context, assertionId protocol.AssertionHash) error {
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionId)
+	if err != nil {
+		return fmt.Errorf("could not read creation info for assertion %#x: %w", assertionId.Hash, err)
+	}
+	m.assertionChainData.Lock()
+	m.assertionChainData.latestAgreedAssertion = assertionId
+	m.assertionChainData.canonicalAssertions[assertionId] = creationInfo
+	m.assertionChainData.Unlock()
+	m.submittedAssertions.Insert(assertionId)
+	return nil
+}
+
 // PostAssertion differs depending on whether or not the validator is currently staked.
 // It advances through any assertions that already exist onchain before attempting
 // to post a genuinely new one, ensuring the chain tracking stays up to date.
@@ -96,6 +112,9 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 	none := option.None[protocol.Assertion]()
 
 	for {
+		if ctx.Err() != nil {
+			return none, ctx.Err()
+		}
 		// Ensure that we only build on a valid parent from this validator's perspective.
 		m.assertionChainData.Lock()
 		parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
@@ -128,19 +147,13 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 			if errors.Is(postErr, sol.ErrAlreadyExists) && assertionOpt.IsSome() {
 				// The assertion we tried to post already exists onchain.
 				// Advance our local chain pointer and loop to try the next assertion.
-				existingAssertion := assertionOpt.Unwrap()
-				creationInfo, readErr := m.chain.ReadAssertionCreationInfo(ctx, existingAssertion.Id())
-				if readErr != nil {
-					return none, fmt.Errorf("could not read creation info for existing assertion %#x: %w", existingAssertion.Id().Hash, readErr)
+				existingId := assertionOpt.Unwrap().Id()
+				if err := m.advanceChainPointer(ctx, existingId); err != nil {
+					return none, err
 				}
-				m.assertionChainData.Lock()
-				m.assertionChainData.latestAgreedAssertion = existingAssertion.Id()
-				m.assertionChainData.canonicalAssertions[existingAssertion.Id()] = creationInfo
-				m.assertionChainData.Unlock()
-				m.submittedAssertions.Insert(existingAssertion.Id())
-				m.sendToConfirmationQueue(existingAssertion.Id(), "PostAssertion-catchup")
+				m.sendToConfirmationQueue(existingId, "PostAssertion-catchup")
 				log.Info("Assertion already exists onchain, advancing chain tracking",
-					"assertionHash", existingAssertion.Id(),
+					"assertionHash", existingId,
 					"validatorName", m.validatorName,
 				)
 				continue
@@ -150,17 +163,12 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 
 		// Successfully posted a new assertion. Advance our local chain pointer
 		// so the next posting attempt uses this assertion as the parent.
+		// Note: sendToConfirmationQueue is already called inside PostAssertionBasedOnParent
+		// for newly posted assertions, so we don't call it again here.
 		if assertionOpt.IsSome() {
-			postedAssertion := assertionOpt.Unwrap()
-			creationInfo, readErr := m.chain.ReadAssertionCreationInfo(ctx, postedAssertion.Id())
-			if readErr != nil {
-				return none, fmt.Errorf("could not read creation info for posted assertion %#x: %w", postedAssertion.Id().Hash, readErr)
+			if err := m.advanceChainPointer(ctx, assertionOpt.Unwrap().Id()); err != nil {
+				return none, err
 			}
-			m.assertionChainData.Lock()
-			m.assertionChainData.latestAgreedAssertion = postedAssertion.Id()
-			m.assertionChainData.canonicalAssertions[postedAssertion.Id()] = creationInfo
-			m.assertionChainData.Unlock()
-			m.submittedAssertions.Insert(postedAssertion.Id())
 		}
 		return assertionOpt, nil
 	}

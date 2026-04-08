@@ -479,6 +479,12 @@ func (m *Manager) maybePostRivalAssertion(
 		}
 		// ErrAlreadyExists means the correct rival assertion already exists onchain.
 		// Treat this as success and fall through to return it.
+		if assertionOpt.IsSome() {
+			log.Info("Rival assertion already exists onchain",
+				"assertionHash", assertionOpt.Unwrap().Id(),
+				"validatorName", m.validatorName,
+			)
+		}
 	}
 	if assertionOpt.IsSome() {
 		creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionOpt.Unwrap().Id())
