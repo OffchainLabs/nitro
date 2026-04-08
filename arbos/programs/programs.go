@@ -793,7 +793,7 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
 	case userNativeStackOverflow:
-		// This should never be reached — callProgram returns an error
+		// This should never be reached — callProgram panics
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", ErrNativeStackOverflow

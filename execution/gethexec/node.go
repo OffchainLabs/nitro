@@ -109,7 +109,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
-	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB). On native stack overflow with allow-fallback, cranelift recompilation is tried first, then the stack size is doubled once (capped at 100MB)")
+	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB). On native stack overflow with allow-fallback, the stack size is doubled once (capped at 100MB) and the call is retried with cranelift-compiled code")
 }
 
 type TxIndexerConfig struct {

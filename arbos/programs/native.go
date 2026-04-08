@@ -580,8 +580,9 @@ func callProgram(
 
 // handleNativeStackOverflow handles a native stack overflow by doubling the
 // process-wide Wasmer coroutine stack size and retrying the call with cranelift.
-// The doubled size is kept permanently. The retry always uses cranelift ASM
-// (compiled on demand if needed) because cranelift is more stack-efficient.
+// The doubled size is kept permanently. The retry preferentially uses cranelift
+// ASM (compiled on demand if needed) because cranelift is more stack-efficient,
+// but falls back to the original ASM if cranelift is unavailable.
 // If the stack has already been doubled (from a previous overflow), or if
 // fallback/off-chain conditions prevent it, the overflow status is returned
 // immediately without doubling or retrying.
