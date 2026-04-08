@@ -21,9 +21,9 @@ import (
 )
 
 type ReportForwarderConfig struct {
-	Enable           bool                       `koanf:"enable"`
-	Workers          int                        `koanf:"workers"`
-	PollInterval     time.Duration              `koanf:"poll-interval"`
+	Enable           bool                         `koanf:"enable"`
+	Workers          int                          `koanf:"workers"`
+	PollInterval     time.Duration                `koanf:"poll-interval"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
@@ -89,7 +89,7 @@ func (r *ReportForwarder) pollAndForward(ctx context.Context) time.Duration {
 		}
 		if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
 			log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
-			continue
+			return r.config.PollInterval
 		}
 		_, err := r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 			QueueUrl:      &r.sqsQueueURL,

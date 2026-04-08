@@ -12,7 +12,6 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
-// MockClient is a test double for Client that stores messages in memory.
 type MockClient struct {
 	mu                    sync.Mutex
 	queue                 []sqstypes.Message
@@ -61,7 +60,6 @@ func (m *MockClient) DeleteMessage(_ context.Context, params *sqs.DeleteMessageI
 	return &sqs.DeleteMessageOutput{}, nil
 }
 
-// DeletedReceiptHandles returns a copy of the deleted receipt handles.
 func (m *MockClient) DeletedReceiptHandles() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
