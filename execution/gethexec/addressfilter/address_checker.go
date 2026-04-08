@@ -76,8 +76,6 @@ func (c *HashedAddressChecker) NewTxState() state.AddressCheckerState {
 }
 
 func (c *HashedAddressChecker) processRecord(record *filter.FilteredAddressRecord, state *HashedAddressCheckerState) {
-	// TODO(NIT-4688): assign record.FilterSetID here, IsRestricted will need to be changed
-	// to also return the value for FilterSetID.
 	restricted := c.store.IsRestricted(record.Address)
 	state.report(record, restricted)
 }
