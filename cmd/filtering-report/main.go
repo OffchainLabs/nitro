@@ -15,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -40,8 +41,8 @@ type FilteringReportConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	SQS             sqsclient.Config     `koanf:"sqs"`
-	ReportForwarder ReportForwarderConfig `koanf:"report-forwarder"`
+	SQS             sqsclient.Config `koanf:"sqs"`
+	ReportForwarder forwarder.Config `koanf:"report-forwarder"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -80,7 +81,7 @@ var DefaultFilteringReportConfig = FilteringReportConfig{
 	IPC:             IPCConfigDefault,
 	Auth:            genericconf.AuthRPCConfigDefault,
 	SQS:             sqsclient.DefaultConfig,
-	ReportForwarder: DefaultReportForwarderConfig,
+	ReportForwarder: forwarder.DefaultConfig,
 }
 
 func addFlags(f *pflag.FlagSet) {
@@ -102,7 +103,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.IPCConfigAddOptions("ipc", f)
 
 	sqsclient.ConfigAddOptions("sqs", f)
-	ReportForwarderConfigAddOptions("report-forwarder", f)
+	forwarder.ConfigAddOptions("report-forwarder", f)
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -196,9 +197,9 @@ func mainImpl() int {
 			fmt.Fprintf(os.Stderr, "error: report-forwarder requires SQS to be enabled\n")
 			return 1
 		}
-		forwarder := NewReportForwarder(&config.ReportForwarder, sqsClient, config.SQS.QueueURL)
-		forwarder.Start(ctx)
-		defer forwarder.StopAndWait()
+		fwd := forwarder.New(&config.ReportForwarder, sqsClient, config.SQS.QueueURL)
+		fwd.Start(ctx)
+		defer fwd.StopAndWait()
 	}
 
 	stack, _, err := api.NewStack(&stackConf, sqsClient, config.SQS.QueueURL)

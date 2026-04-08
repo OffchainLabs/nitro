@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package forwarder
 
 import (
 	"context"
@@ -24,19 +24,21 @@ import (
 
 const testQueueURL = "https://sqs.test/queue"
 
-func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *ReportForwarder {
-	config := &ReportForwarderConfig{
-		Workers:      1,
-		PollInterval: time.Second,
+func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *Forwarder {
+	config := &Config{
+		Workers: WorkersConfig{
+			Count:        1,
+			PollInterval: time.Second,
+		},
 		ExternalEndpoint: genericconf.HTTPClientConfig{
 			URL:     endpointURL,
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 	}
-	return NewReportForwarder(config, sqsMockClient, testQueueURL)
+	return New(config, sqsMockClient, testQueueURL)
 }
 
-func TestReportForwarder_ForwardsMessages(t *testing.T) {
+func TestForwarder_ForwardsMessages(t *testing.T) {
 	var mu sync.Mutex
 	var receivedBodiesByExternalEndpoint []string
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +102,7 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 	}
 }
 
-func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
+func TestForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -130,7 +132,7 @@ func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	}
 }
 
-func TestReportForwarder_EmptyQueue(t *testing.T) {
+func TestForwarder_EmptyQueue(t *testing.T) {
 	externalEndpointServerCalled := false
 	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		externalEndpointServerCalled = true
@@ -150,7 +152,7 @@ func TestReportForwarder_EmptyQueue(t *testing.T) {
 	if len(deleted) != 0 {
 		t.Fatalf("expected 0 deletes on empty queue, got %d", len(deleted))
 	}
-	if interval != forwarder.config.PollInterval {
-		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.PollInterval, interval)
+	if interval != forwarder.config.Workers.PollInterval {
+		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.Workers.PollInterval, interval)
 	}
 }

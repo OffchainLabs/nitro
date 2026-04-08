@@ -1,7 +1,7 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package main
+package forwarder
 
 import (
 	"bytes"
@@ -20,37 +20,49 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type ReportForwarderConfig struct {
+type WorkersConfig struct {
+	Count        int           `koanf:"count"`
+	PollInterval time.Duration `koanf:"poll-interval"`
+}
+
+var DefaultWorkersConfig = WorkersConfig{
+	Count:        1,
+	PollInterval: 5 * time.Second,
+}
+
+func WorkersConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Int(prefix+".count", DefaultWorkersConfig.Count, "number of workers")
+	f.Duration(prefix+".poll-interval", DefaultWorkersConfig.PollInterval, "interval between SQS polls when queue is empty")
+}
+
+type Config struct {
 	Enable           bool                         `koanf:"enable"`
-	Workers          int                          `koanf:"workers"`
-	PollInterval     time.Duration                `koanf:"poll-interval"`
+	Workers          WorkersConfig                `koanf:"workers"`
 	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
-var DefaultReportForwarderConfig = ReportForwarderConfig{
-	Workers:          1,
-	PollInterval:     5 * time.Second,
+var DefaultConfig = Config{
+	Workers:          DefaultWorkersConfig,
 	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
-func ReportForwarderConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultReportForwarderConfig.Enable, "enable SQS consumer workers")
-	f.Int(prefix+".workers", DefaultReportForwarderConfig.Workers, "number of workers")
-	f.Duration(prefix+".poll-interval", DefaultReportForwarderConfig.PollInterval, "interval between SQS polls when queue is empty")
+func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable SQS consumer workers")
+	WorkersConfigAddOptions(prefix+".workers", f)
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 }
 
-type ReportForwarder struct {
+type Forwarder struct {
 	stopwaiter.StopWaiter
-	config           *ReportForwarderConfig
+	config           *Config
 	sqsClient        sqsclient.Client
 	sqsQueueURL      string
 	httpClient       *http.Client
 	externalEndpoint string
 }
 
-func NewReportForwarder(config *ReportForwarderConfig, sqsClient sqsclient.Client, sqsQueueURL string) *ReportForwarder {
-	return &ReportForwarder{
+func New(config *Config, sqsClient sqsclient.Client, sqsQueueURL string) *Forwarder {
+	return &Forwarder{
 		config:           config,
 		sqsClient:        sqsClient,
 		sqsQueueURL:      sqsQueueURL,
@@ -59,16 +71,16 @@ func NewReportForwarder(config *ReportForwarderConfig, sqsClient sqsclient.Clien
 	}
 }
 
-func (r *ReportForwarder) Start(ctx context.Context) {
+func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
-	for i := 0; i < r.config.Workers; i++ {
+	for i := 0; i < r.config.Workers.Count; i++ {
 		r.LaunchThread(func(ctx context.Context) {
 			r.CallIteratively(r.pollAndForward)
 		})
 	}
 }
 
-func (r *ReportForwarder) pollAndForward(ctx context.Context) time.Duration {
+func (r *Forwarder) pollAndForward(ctx context.Context) time.Duration {
 	waitTime := int32(5)
 	maxMessages := int32(10)
 	out, err := r.sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
@@ -78,10 +90,10 @@ func (r *ReportForwarder) pollAndForward(ctx context.Context) time.Duration {
 	})
 	if err != nil {
 		log.Error("Failed to receive SQS messages", "err", err)
-		return r.config.PollInterval
+		return r.config.Workers.PollInterval
 	}
 	if len(out.Messages) == 0 {
-		return r.config.PollInterval
+		return r.config.Workers.PollInterval
 	}
 	for _, msg := range out.Messages {
 		if msg.Body == nil {
@@ -89,7 +101,7 @@ func (r *ReportForwarder) pollAndForward(ctx context.Context) time.Duration {
 		}
 		if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
 			log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId)
-			return r.config.PollInterval
+			continue
 		}
 		_, err := r.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 			QueueUrl:      &r.sqsQueueURL,
@@ -102,7 +114,7 @@ func (r *ReportForwarder) pollAndForward(ctx context.Context) time.Duration {
 	return 0
 }
 
-func (r *ReportForwarder) forwardToEndpoint(ctx context.Context, body string) error {
+func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.externalEndpoint, bytes.NewBufferString(body))
 	if err != nil {
 		return err
