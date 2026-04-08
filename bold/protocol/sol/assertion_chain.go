@@ -7,7 +7,6 @@
 package sol
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
