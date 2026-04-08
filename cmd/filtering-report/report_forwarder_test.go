@@ -18,7 +18,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
@@ -97,7 +97,7 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 	sqsClient := &mockSQSClient{}
 
 	stackConfig := api.DefaultStackConfig
-	_, txAPI, err := api.NewStack(&stackConfig, nil, nil, sqsClient, testQueueURL)
+	_, reportAPI, err := api.NewStack(&stackConfig, sqsClient, testQueueURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 		{TxHash: common.HexToHash("0x01")},
 		{TxHash: common.HexToHash("0x02")},
 	}
-	if err := txAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
+	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
 		t.Fatal(err)
 	}
 
@@ -135,7 +135,7 @@ func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	sqsClient := &mockSQSClient{}
 
 	stackConfig := api.DefaultStackConfig
-	_, txAPI, err := api.NewStack(&stackConfig, nil, nil, sqsClient, testQueueURL)
+	_, reportAPI, err := api.NewStack(&stackConfig, sqsClient, testQueueURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 	reports := []gethexec.FilteredTxReport{
 		{TxHash: common.HexToHash("0x01")},
 	}
-	if err := txAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
+	if err := reportAPI.ReportFilteredTransactions(context.Background(), reports); err != nil {
 		t.Fatal(err)
 	}
 

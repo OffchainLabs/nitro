@@ -4,16 +4,56 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-type FilteringReportAPI struct{}
+type FilteringReportAPI struct {
+	sqsClient   sqsclient.Client
+	sqsQueueURL string
+}
+
+func NewFilteringReportAPI(sqsClient sqsclient.Client, sqsQueueURL string) *FilteringReportAPI {
+	return &FilteringReportAPI{
+		sqsClient:   sqsClient,
+		sqsQueueURL: sqsQueueURL,
+	}
+}
+
+func (a *FilteringReportAPI) ReportFilteredTransactions(ctx context.Context, reports []gethexec.FilteredTxReport) error {
+	if a.sqsClient == nil {
+		return errors.New("SQS client not configured")
+	}
+	for _, report := range reports {
+		body, err := json.Marshal(report)
+		if err != nil {
+			return err
+		}
+		bodyStr := string(body)
+		_, err = a.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+			QueueUrl:    &a.sqsQueueURL,
+			MessageBody: &bodyStr,
+		})
+		if err != nil {
+			log.Error("Failed to send filtered transaction report to SQS", "txHash", report.TxHash.Hex(), "err", err)
+			return err
+		}
+		log.Info("Sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
+	}
+	return nil
+}
 
 var DefaultStackConfig = node.Config{
 	DataDir:             "", // ephemeral
@@ -36,16 +76,22 @@ var DefaultStackConfig = node.Config{
 	},
 }
 
-func NewStack(stackConfig *node.Config) (*node.Node, error) {
+func NewStack(
+	stackConfig *node.Config,
+	sqsClient sqsclient.Client,
+	sqsQueueURL string,
+) (*node.Node, *FilteringReportAPI, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	api := NewFilteringReportAPI(sqsClient, sqsQueueURL)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,
 		Version:   "1.0",
-		Service:   &FilteringReportAPI{},
+		Service:   api,
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
@@ -57,5 +103,5 @@ func NewStack(stackConfig *node.Config) (*node.Node, error) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	return stack, nil
+	return stack, api, nil
 }

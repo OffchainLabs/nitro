@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -59,10 +58,3 @@ func (c *TransactionFiltererRPCClient) Filter(txHashToFilter common.Hash) contai
 	})
 }
 
-func (c *TransactionFiltererRPCClient) ReportFilteredTransactions(reports []FilteredTxReport) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		log.Info("Sending filtered transaction reports", "count", len(reports))
-		err := c.client.CallContext(ctx, nil, TransactionFiltererNamespace+"_reportFilteredTransactions", reports)
-		return struct{}{}, err
-	})
-}

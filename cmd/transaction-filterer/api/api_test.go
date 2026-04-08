@@ -19,7 +19,7 @@ import (
 
 func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 	t.Helper()
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil, "")
+	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	if err := api.Start(ctx); err != nil {
@@ -30,7 +30,7 @@ func startTestAPI(t *testing.T) *TransactionFiltererAPI {
 }
 
 func TestFilterContextCancelledWhenQueueFull(t *testing.T) {
-	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{}, nil, "")
+	api := NewTransactionFiltererAPI(nil, &bind.TransactOpts{})
 
 	for range filterQueueSize {
 		api.queue <- common.Hash{}
@@ -80,7 +80,7 @@ func newTestStack(t *testing.T) (*node.Node, *TransactionFiltererAPI) {
 	stackConfig := DefaultStackConfig
 	stackConfig.HTTPHost = "127.0.0.1"
 	stackConfig.HTTPPort = 0
-	stack, api, err := NewStack(&stackConfig, txOpts, nil, nil, "")
+	stack, api, err := NewStack(&stackConfig, txOpts, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

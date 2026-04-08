@@ -137,7 +137,7 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	transactionFiltererStackConf.HTTPPort = 0
 	transactionFiltererStackConf.WSPort = 0
 	transactionFiltererStackConf.AuthPort = 0
-	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil, nil, "")
+	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
 	require.NoError(t, err)
 
 	err = transactionFiltererAPI.Start(ctx)
