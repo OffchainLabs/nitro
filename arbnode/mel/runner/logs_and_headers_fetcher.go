@@ -24,15 +24,17 @@ type logsAndHeadersFetcher struct {
 	toBlock           uint64
 	blocksToFetch     uint64
 	chainHeight       uint64
+	rollupAddr        common.Address
 	headers           []*types.Header
 	logsByTxIndex     map[common.Hash]map[uint][]*types.Log
 	logsByBlockHash   map[common.Hash][]*types.Log
 }
 
-func newLogsAndHeadersFetcher(parentChainReader ParentChainReader, blocksToFetch uint64) *logsAndHeadersFetcher {
+func newLogsAndHeadersFetcher(parentChainReader ParentChainReader, blocksToFetch uint64, rollupAddr common.Address) *logsAndHeadersFetcher {
 	return &logsAndHeadersFetcher{
 		parentChainReader: parentChainReader,
 		blocksToFetch:     blocksToFetch,
+		rollupAddr:        rollupAddr,
 		logsByTxIndex:     make(map[common.Hash]map[uint][]*types.Log),
 		logsByBlockHash:   make(map[common.Hash][]*types.Log),
 	}
@@ -80,6 +82,9 @@ func (f *logsAndHeadersFetcher) fetch(ctx context.Context, preState *mel.State) 
 		fetchLogsErr = f.fetchSequencerBatchLogs(ctx, parentChainBlockNumber, toBlock)
 		if fetchLogsErr == nil {
 			fetchLogsErr = f.fetchDelayedMessageLogs(ctx, parentChainBlockNumber, toBlock, preState.DelayedMessagePostingTargetAddress)
+		}
+		if fetchLogsErr == nil && f.rollupAddr != (common.Address{}) {
+			fetchLogsErr = f.fetchRollupLogs(ctx, parentChainBlockNumber, toBlock)
 		}
 		wg.Done()
 	}()
@@ -163,6 +168,27 @@ func (f *logsAndHeadersFetcher) fetchDelayedMessageLogs(ctx context.Context, fro
 		return err
 	}
 	return conditionalFetch(nil, [][]common.Hash{{melextraction.InboxMessageDeliveredID, melextraction.InboxMessageFromOriginID}})
+}
+
+func (f *logsAndHeadersFetcher) fetchRollupLogs(ctx context.Context, from, to uint64) error {
+	query := ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(from),
+		ToBlock:   new(big.Int).SetUint64(to),
+		Addresses: []common.Address{f.rollupAddr},
+		Topics:    [][]common.Hash{{melextraction.MELConfigEventID}},
+	}
+	logs, err := f.parentChainReader.FilterLogs(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, log := range logs {
+		f.logsByBlockHash[log.BlockHash] = append(f.logsByBlockHash[log.BlockHash], &log)
+		if _, ok := f.logsByTxIndex[log.BlockHash]; !ok {
+			f.logsByTxIndex[log.BlockHash] = make(map[uint][]*types.Log)
+		}
+		f.logsByTxIndex[log.BlockHash][log.TxIndex] = append(f.logsByTxIndex[log.BlockHash][log.TxIndex], &log)
+	}
+	return nil
 }
 
 func (f *logsAndHeadersFetcher) getHeaderByNumber(ctx context.Context, number uint64) (*types.Header, error) {

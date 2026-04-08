@@ -5,6 +5,7 @@ package melextraction
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -12,6 +13,7 @@ import (
 var BatchDeliveredID common.Hash
 var InboxMessageDeliveredID common.Hash
 var InboxMessageFromOriginID common.Hash
+var MELConfigEventID common.Hash
 var SeqInboxABI *abi.ABI
 var IBridgeABI *abi.ABI
 var iInboxABI *abi.ABI
@@ -45,4 +47,7 @@ func init() {
 		panic(err)
 	}
 	iInboxABI = parsedIInboxABI
+
+	// MELConfigEvent(address inbox, address sequencerInbox, uint256 melVersionActivationBlock)
+	MELConfigEventID = crypto.Keccak256Hash([]byte("MELConfigEvent(address,address,uint256)"))
 }

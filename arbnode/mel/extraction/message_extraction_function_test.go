@@ -24,6 +24,11 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 )
 
+// noopMELConfigLookup is a no-op MEL config lookup used in tests that don't need config event handling.
+func noopMELConfigLookup(_ context.Context, _ *types.Header, _ LogsFetcher, _ EventUnpacker) (*mel.MELConfig, error) {
+	return nil, nil
+}
+
 func TestExtractMessages(t *testing.T) {
 	ctx := context.Background()
 	prevParentBlockHash := common.HexToHash("0x1234")
@@ -203,6 +208,7 @@ func TestExtractMessages(t *testing.T) {
 					tt.extractBatchMessages,
 					tt.parseSequencerMsg,
 					tt.parseReport,
+					noopMELConfigLookup,
 				)
 			}
 

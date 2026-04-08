@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -762,6 +765,105 @@ func TestMessageExtractionLayer_UseArbDBForStoringDelayedMessages(t *testing.T) 
 	}
 }
 
+func TestMessageExtractionLayer_MELConfigEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).
+		DefaultConfig(t, true).
+		WithDelayBuffer(0)
+	builder.nodeConfig.MessageExtraction.Enable = true
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.nodeConfig.BatchPoster.PollInterval = time.Hour
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	msgExtractor := builder.L2.ConsensusNode.MessageExtractor
+
+	// Wait for MEL to catch up
+	select {
+	case <-msgExtractor.CaughtUp():
+	case <-time.After(time.Minute):
+		t.Fatal("timed out waiting for MEL to catch up")
+	}
+
+	preConfigState, err := msgExtractor.GetHeadState()
+	Require(t, err)
+	if preConfigState.Version != 0 {
+		t.Fatalf("Expected initial version 0, got %d", preConfigState.Version)
+	}
+
+	// Call setMELConfig on the rollup contract via the UpgradeExecutor.
+	// The new inbox/sequencerInbox addresses are dummy addresses for this test —
+	// what we're testing is that MEL detects the event and applies the config change.
+	newInbox := common.HexToAddress("0x0000000000000000000000000000000000001111")
+	newSequencerInbox := common.HexToAddress("0x0000000000000000000000000000000000002222")
+
+	// Determine an activation block in the future
+	currentL1Block, err := builder.L1.Client.BlockNumber(ctx)
+	Require(t, err)
+	activationBlock := currentL1Block + 20
+
+	// Pack the setMELConfig calldata using the generated rollup ABI
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	Require(t, err)
+	calldata, err := rollupABI.Pack("setMELConfig", newInbox, newSequencerInbox, new(big.Int).SetUint64(activationBlock))
+	Require(t, err)
+
+	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.addresses.UpgradeExecutor, builder.L1.Client)
+	Require(t, err)
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, builder.addresses.Rollup, calldata)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L1.Client, tx)
+	Require(t, err)
+
+	// Advance L1 past the activation block
+	// #nosec G115
+	blocksToAdvance := int(activationBlock - currentL1Block + 5)
+	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, blocksToAdvance)
+
+	// Wait for MEL to process past the activation block
+	timeout := time.NewTimer(time.Minute)
+	defer timeout.Stop()
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		headState, err := msgExtractor.GetHeadState()
+		Require(t, err)
+		if headState.ParentChainBlockNumber >= activationBlock {
+			break
+		}
+		select {
+		case <-tick.C:
+		case <-timeout.C:
+			t.Fatal("timed out waiting for MEL to process past activation block")
+		}
+	}
+
+	// Verify the config was applied
+	postConfigState, err := msgExtractor.GetHeadState()
+	Require(t, err)
+	if postConfigState.Version != 1 {
+		t.Fatalf("Expected version 1 after config activation, got %d", postConfigState.Version)
+	}
+	if postConfigState.VersionActivationBlock != activationBlock {
+		t.Fatalf("Expected VersionActivationBlock %d, got %d", activationBlock, postConfigState.VersionActivationBlock)
+	}
+	if postConfigState.BatchPostingTargetAddress != newSequencerInbox {
+		t.Fatalf("Expected BatchPostingTargetAddress %s, got %s", newSequencerInbox.Hex(), postConfigState.BatchPostingTargetAddress.Hex())
+	}
+	if postConfigState.DelayedMessagePostingTargetAddress != newInbox {
+		t.Fatalf("Expected DelayedMessagePostingTargetAddress %s, got %s", newInbox.Hex(), postConfigState.DelayedMessagePostingTargetAddress.Hex())
+	}
+	if postConfigState.PendingInbox != (common.Address{}) {
+		t.Fatalf("Expected PendingInbox to be zero after activation, got %s", postConfigState.PendingInbox.Hex())
+	}
+	if postConfigState.PendingSequencerInbox != (common.Address{}) {
+		t.Fatalf("Expected PendingSequencerInbox to be zero after activation, got %s", postConfigState.PendingSequencerInbox.Hex())
+	}
+}
+
 // TestMELMigrationFromLegacyNode verifies that a node previously running with
 // the legacy inbox reader/tracker can be seamlessly migrated to MEL.
 //
@@ -885,8 +987,8 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	}
 
 	// Verify migration state
-	melExtractor := builder.L2.ConsensusNode.MessageExtractor
-	headState, err := melExtractor.GetHeadState()
+	msgExtractor := builder.L2.ConsensusNode.MessageExtractor
+	headState, err := msgExtractor.GetHeadState()
 	Require(t, err)
 	t.Logf("Post-migration MEL state: delayedSeen=%d, delayedRead=%d, batchCount=%d, msgCount=%d, parentChainBlock=%d",
 		headState.DelayedMessagesSeen, headState.DelayedMessagesRead, headState.BatchCount, headState.MsgCount, headState.ParentChainBlockNumber)
@@ -951,7 +1053,7 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	forceBatchPost(t, ctx, builder)
 
 	// Wait for MEL to process the new batch
-	postBatchState, err := melExtractor.GetHeadState()
+	postBatchState, err := msgExtractor.GetHeadState()
 	Require(t, err)
 	timeout := time.NewTimer(2 * time.Minute)
 	defer timeout.Stop()
@@ -960,7 +1062,7 @@ func TestMELMigrationFromLegacyNode(t *testing.T) {
 	for postBatchState.BatchCount <= headState.BatchCount {
 		select {
 		case <-tick.C:
-			postBatchState, err = melExtractor.GetHeadState()
+			postBatchState, err = msgExtractor.GetHeadState()
 			Require(t, err)
 		case <-timeout.C:
 			t.Fatalf("timed out waiting for MEL to process new batch. current batch count: %d, expected > %d",
