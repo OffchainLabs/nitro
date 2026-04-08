@@ -1,0 +1,71 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package sqsclient
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+)
+
+// MockClient is a test double for Client that stores messages in memory.
+type MockClient struct {
+	mu                    sync.Mutex
+	queue                 []sqstypes.Message
+	msgCounter            int
+	deletedReceiptHandles []string
+}
+
+func (m *MockClient) SendMessage(_ context.Context, params *sqs.SendMessageInput, _ ...func(*sqs.Options)) (*sqs.SendMessageOutput, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.msgCounter++
+	msgId := fmt.Sprintf("msg-%d", m.msgCounter)
+	rh := fmt.Sprintf("rh-%d", m.msgCounter)
+	m.queue = append(m.queue, sqstypes.Message{
+		MessageId:     &msgId,
+		Body:          params.MessageBody,
+		ReceiptHandle: &rh,
+	})
+	return &sqs.SendMessageOutput{}, nil
+}
+
+func (m *MockClient) ReceiveMessage(_ context.Context, params *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	max := int(params.MaxNumberOfMessages)
+	if max == 0 {
+		max = 1
+	}
+	if len(m.queue) == 0 {
+		return &sqs.ReceiveMessageOutput{}, nil
+	}
+	n := len(m.queue)
+	if n > max {
+		n = max
+	}
+	msgs := make([]sqstypes.Message, n)
+	copy(msgs, m.queue[:n])
+	m.queue = m.queue[n:]
+	return &sqs.ReceiveMessageOutput{Messages: msgs}, nil
+}
+
+func (m *MockClient) DeleteMessage(_ context.Context, params *sqs.DeleteMessageInput, _ ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedReceiptHandles = append(m.deletedReceiptHandles, *params.ReceiptHandle)
+	return &sqs.DeleteMessageOutput{}, nil
+}
+
+// DeletedReceiptHandles returns a copy of the deleted receipt handles.
+func (m *MockClient) DeletedReceiptHandles() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.deletedReceiptHandles))
+	copy(result, m.deletedReceiptHandles)
+	return result
+}
