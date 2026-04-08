@@ -6,6 +6,44 @@ coverage:
 github_checks:
   annotations: false
 comment:
-  layout: "diff"
+  layout: "header, diff, components"
   behavior: once
   after_n_builds: 2
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project # in this case every component that doens't have a status defined will have a project type one
+  individual_components:
+    - component_id: module_startup
+      name: Startup
+      paths:
+        # Configuration and CLI
+        - cmd/nitro/config/**
+        - cmd/util/**
+        - cmd/chaininfo/**
+        - cmd/genericconf/**
+        - cmd/conf/**
+        # Parent Chain connection
+        - util/rpcclient/**
+        - util/headerreader/**
+        - solgen/go/**
+        # Validator setup
+        - staker/legacy/**
+        - staker/validatorwallet/**
+        - validator/valnode/**
+        - arbnode/resourcemanager/**
+        # Execution Layer
+        - cmd/nitro/init/**
+        - execution/gethexec/**
+        - execution/nodeinterface/**
+        #Consensus Layer
+        - arbnode/**
+        - daprovider/**
+        # Startup Orchestration
+        - execution_consensus/**
+        - blocks_reexecutor/**
+        - util/signature/**
+        - util/iostat/**
+
+
