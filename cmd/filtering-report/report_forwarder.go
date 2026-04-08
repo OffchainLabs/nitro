@@ -15,27 +15,29 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type ReportForwarderConfig struct {
-	Enable           bool          `koanf:"enable"`
-	Workers          int           `koanf:"workers"`
-	PollInterval     time.Duration `koanf:"poll-interval"`
-	ExternalEndpoint string        `koanf:"external-endpoint"`
+	Enable           bool                       `koanf:"enable"`
+	Workers          int                        `koanf:"workers"`
+	PollInterval     time.Duration              `koanf:"poll-interval"`
+	ExternalEndpoint genericconf.HTTPClientConfig `koanf:"external-endpoint"`
 }
 
 var DefaultReportForwarderConfig = ReportForwarderConfig{
-	Workers:      1,
-	PollInterval: 5 * time.Second,
+	Workers:          1,
+	PollInterval:     5 * time.Second,
+	ExternalEndpoint: genericconf.HTTPClientConfigDefault,
 }
 
 func ReportForwarderConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultReportForwarderConfig.Enable, "enable SQS consumer workers")
 	f.Int(prefix+".workers", DefaultReportForwarderConfig.Workers, "number of workers")
 	f.Duration(prefix+".poll-interval", DefaultReportForwarderConfig.PollInterval, "interval between SQS polls when queue is empty")
-	f.String(prefix+".external-endpoint", DefaultReportForwarderConfig.ExternalEndpoint, "HTTP endpoint to forward filtered transaction reports to")
+	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 }
 
 type ReportForwarder struct {
@@ -52,8 +54,8 @@ func NewReportForwarder(config *ReportForwarderConfig, sqsClient sqsclient.Clien
 		config:           config,
 		sqsClient:        sqsClient,
 		sqsQueueURL:      sqsQueueURL,
-		httpClient:       &http.Client{Timeout: 30 * time.Second},
-		externalEndpoint: config.ExternalEndpoint,
+		httpClient:       &http.Client{Timeout: config.ExternalEndpoint.Timeout},
+		externalEndpoint: config.ExternalEndpoint.URL,
 	}
 }
 

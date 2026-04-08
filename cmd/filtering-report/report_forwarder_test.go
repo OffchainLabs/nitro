@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
@@ -23,9 +24,12 @@ const testQueueURL = "https://sqs.test/queue"
 
 func newTestForwarder(sqsMockClient *sqsclient.MockClient, endpointURL string) *ReportForwarder {
 	config := &ReportForwarderConfig{
-		Workers:          1,
-		PollInterval:     time.Second,
-		ExternalEndpoint: endpointURL,
+		Workers:      1,
+		PollInterval: time.Second,
+		ExternalEndpoint: genericconf.HTTPClientConfig{
+			URL:     endpointURL,
+			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
+		},
 	}
 	return NewReportForwarder(config, sqsMockClient, testQueueURL)
 }
