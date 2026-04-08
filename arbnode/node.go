@@ -1007,7 +1007,7 @@ func getStaker(
 			reader = inboxReader
 		}
 		if tracker == nil || reader == nil {
-			return nil, nil, common.Address{}, errors.New("message pruner requires either message extractor or inbox tracker/reader")
+			return nil, nil, common.Address{}, errors.New("staker requires either message extractor or inbox tracker/reader")
 		}
 		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {
@@ -1848,6 +1848,9 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 
 	// batches not yet posted have 0 confirmations but no error
 	pcds := n.GetParentChainDataSource()
+	if pcds == nil {
+		return containers.NewReadyPromise(uint64(0), errors.New("no parent chain data source available"))
+	}
 	batchNum, found, err := pcds.FindInboxBatchContainingMessage(msgIdx)
 	if err != nil {
 		return containers.NewReadyPromise(uint64(0), err)
@@ -1908,7 +1911,11 @@ func (n *Node) GetL1Confirmations(msgIdx arbutil.MessageIndex) containers.Promis
 }
 
 func (n *Node) FindBatchContainingMessage(msgIdx arbutil.MessageIndex) containers.PromiseInterface[uint64] {
-	batchNum, found, err := n.GetParentChainDataSource().FindInboxBatchContainingMessage(msgIdx)
+	pcds := n.GetParentChainDataSource()
+	if pcds == nil {
+		return containers.NewReadyPromise(uint64(0), errors.New("no parent chain data source available"))
+	}
+	batchNum, found, err := pcds.FindInboxBatchContainingMessage(msgIdx)
 	if err == nil && !found {
 		return containers.NewReadyPromise(uint64(0), errors.New("block not yet found on any batch"))
 	}

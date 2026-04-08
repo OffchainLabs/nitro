@@ -259,6 +259,9 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 }
 
 func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
+	if m.Started() {
+		panic("cannot set block validator after start")
+	}
 	m.blockValidator = blockValidator
 }
 
@@ -392,10 +395,10 @@ func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 // batchpostingreport- but this should never be possible as ExtractMessages function would fill in the cost data during extraction.
 // Returns an error so the caller falls back to BatchMetadata lookup. This error is expected when MEL is active.
 func (m *MessageExtractor) FindParentChainBlockContainingDelayed(context.Context, uint64) (uint64, error) {
-	return 0, errFindDelayedNotImplementedByMEL
+	return 0, ErrFindDelayedNotImplementedByMEL
 }
 
-var errFindDelayedNotImplementedByMEL = errors.New("FindParentChainBlockContainingDelayed is not implemented by MEL as batch gas cost data is already filled in during extraction")
+var ErrFindDelayedNotImplementedByMEL = errors.New("FindParentChainBlockContainingDelayed is not implemented by MEL as batch gas cost data is already filled in during extraction")
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
 	headState, err := m.melDB.GetHeadMelState()
