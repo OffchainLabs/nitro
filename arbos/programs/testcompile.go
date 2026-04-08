@@ -968,16 +968,25 @@ func testCraneliftCompilationAndCache() error {
 
 // testActivateWithCraneliftTarget verifies activateProgramInternal handles
 // cranelift targets correctly:
-//  1. Cranelift target names are not in the Rust target cache — compileNative
-//     must resolve them to base target names before calling the FFI.
-//  2. A cranelift target compiles with cranelift=true and the result is stored
+//  1. A cranelift target compiles with cranelift=true and the result is stored
 //     under the cranelift target key.
-//  3. A base target still compiles with singlepass and is stored under the base key.
-//  4. Both targets can be activated together, producing distinct ASM.
+//  2. A base target still compiles with singlepass and is stored under the base key.
+//  3. Both targets can be activated together, producing distinct ASM.
 func testActivateWithCraneliftTarget() error {
 	localTarget := rawdb.LocalTarget()
 	if err := SetTarget(localTarget, "", true); err != nil {
 		return fmt.Errorf("failed setting target: %w", err)
+	}
+
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("CraneliftTarget: %w", err)
+	}
+	// Both base and cranelift targets are registered in the Rust target cache
+	// at startup (via PopulateStylusTargetCache). Register the cranelift variant
+	// here since tests bypass that startup path.
+	if err := SetTarget(craneliftTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting cranelift target: %w", err)
 	}
 
 	wasm, err := Wat2Wasm(recursiveStackOverflowWat)
@@ -985,25 +994,9 @@ func testActivateWithCraneliftTarget() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
-	if err != nil {
-		return fmt.Errorf("CraneliftTarget: %w", err)
-	}
-
-	// Verify invariant: cranelift target names are NOT in the Rust target cache.
-	// compileNative with a cranelift target name must fail. This proves that
-	// activateProgramInternal must resolve to the base target name before calling FFI.
-	_, err = compileNative(wasm, 1, true, craneliftTarget, true, time.Minute)
-	if err == nil {
-		return fmt.Errorf("compileNative should fail with cranelift target name %v (not in Rust cache), but succeeded", craneliftTarget)
-	}
-
 	gas := uint64(0xfffffffffffffff)
 
 	// Test 1: activate with only a cranelift target.
-	// moduleActivationMandatory=false so we skip WAVM activation entirely.
-	// This implicitly tests that activateProgramInternal resolves the cranelift
-	// target name to the base target name before calling compileNative.
 	_, asmMap, err := activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{craneliftTarget},

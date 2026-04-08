@@ -255,6 +255,53 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 	t.Logf("node survived both txs, current block: %d", blockNum)
 }
 
+// TestProgramCraneliftTargetCacheRegistration verifies that
+// PopulateStylusTargetCache (called during normal node startup) registers
+// cranelift target variants in the Rust target cache. This enables
+// getCraneliftAsm to call compileNative with the cranelift target name
+// directly (e.g., "host-cranelift") rather than resolving to the base name.
+//
+// If the cranelift target is NOT registered, target_cache_get on the Rust
+// side fails with "arch not set", cranelift compilation fails, and the
+// overflow cannot be recovered — causing a panic.
+func TestProgramCraneliftTargetCacheRegistration(t *testing.T) {
+	saveAndRestoreNativeStackGlobals(t)
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise()                                   // mutates process-wide native stack size
+		b.execConfig.StylusTarget.NativeStackSize = 64 * 1024 // small stack to trigger overflow
+		b.execConfig.StylusTarget.AllowFallback = true
+		b.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+	})
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
+
+	// Verify no cranelift ASM exists before the overflow.
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	if asm := readCraneliftAsm(t, wasmDB); len(asm) > 0 {
+		t.Fatalf("expected no cranelift ASM before overflow, found %d bytes", len(asm))
+	}
+
+	// On-chain tx overflows → getCraneliftAsm compiles using the cranelift
+	// target name (registered by PopulateStylusTargetCache at startup) → succeeds.
+	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
+	err := l2client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("tx failed (status=%d) — cranelift target may not be registered in Rust cache", receipt.Status)
+	}
+
+	// Cranelift ASM must have been compiled and persisted under the cranelift
+	// target key, proving the target was in the Rust cache.
+	if asm := readCraneliftAsm(t, wasmDB); len(asm) == 0 {
+		t.Fatal("cranelift ASM not found in wasm store — PopulateStylusTargetCache may not have registered the cranelift target")
+	}
+}
+
 // readCraneliftAsm reads the first cranelift-compiled ASM entry from the
 // wasm store by iterating over the {0x00, 'c'} key prefix.
 func readCraneliftAsm(t *testing.T, wasmDB ethdb.KeyValueStore) []byte {

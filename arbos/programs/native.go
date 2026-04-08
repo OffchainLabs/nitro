@@ -329,17 +329,8 @@ func activateProgramInternal(
 				results <- result{target: target, asm: wasm}
 			} else {
 				cranelift := rawdb.IsCraneliftTarget(target)
-				// compileNative needs the base target name for the Rust target
-				// cache lookup (cranelift variant names are not registered there).
-				// The cranelift bool selects the compiler backend independently.
-				compileTarget := target
-				if cranelift {
-					if base, err := rawdb.BaseTarget(target); err == nil {
-						compileTarget = base
-					}
-				}
 				timeout := time.Second * 15
-				asm, err := compileNative(wasm, stylusVersion, debug, compileTarget, cranelift, timeout)
+				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
 				if err != nil {
 					var fallbackTarget rawdb.WasmTarget
 					var fallbackErr error
@@ -350,7 +341,7 @@ func activateProgramInternal(
 					}
 					if useFallback && fallbackErr == nil {
 						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
-						asm, err = compileNative(wasm, stylusVersion, debug, compileTarget, !cranelift, timeout)
+						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, timeout)
 						results <- result{target: fallbackTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
@@ -711,7 +702,7 @@ func getCraneliftAsm(
 		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
 
-	asm, err := compileNative(wasm, version, debug, rawdb.LocalTarget(), true, 15*time.Second)
+	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
 	}
