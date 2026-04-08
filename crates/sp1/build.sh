@@ -40,5 +40,8 @@ make
 make install
 cd "$TOP"
 
+# Build nitro dependencies
+make build-replay-env test-go-deps
+
 # Later on, there will be much more to do. For now it's enough to build just the stylus compiler runner.
 cargo build --release -p stylus-compiler-runner
