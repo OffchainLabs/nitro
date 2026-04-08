@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/api"
 	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/bold/protocol/sol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -473,7 +474,11 @@ func (m *Manager) maybePostRivalAssertion(
 		)
 	}
 	if postErr != nil {
-		return none, postErr
+		if !errors.Is(postErr, sol.ErrAlreadyExists) {
+			return none, postErr
+		}
+		// ErrAlreadyExists means the correct rival assertion already exists onchain.
+		// Treat this as success and fall through to return it.
 	}
 	if assertionOpt.IsSome() {
 		creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionOpt.Unwrap().Id())

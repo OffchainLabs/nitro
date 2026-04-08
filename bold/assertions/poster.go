@@ -87,47 +87,83 @@ func (m *Manager) awaitPostingSignal(ctx context.Context) {
 }
 
 // PostAssertion differs depending on whether or not the validator is currently staked.
+// It advances through any assertions that already exist onchain before attempting
+// to post a genuinely new one, ensuring the chain tracking stays up to date.
 func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
 	if !m.isReadyToPost {
 		m.awaitPostingSignal(ctx)
 	}
-	// Ensure that we only build on a valid parent from this validator's perspective.
-	// the validator should also have ready access to historical commitments to make sure it can select
-	// the valid parent based on its commitment state root.
-	m.assertionChainData.Lock()
-	parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
-	m.assertionChainData.Unlock()
 	none := option.None[protocol.Assertion]()
-	if !ok {
-		return none, fmt.Errorf(
-			"latest agreed assertion %#x not part of canonical mapping, something is wrong",
-			m.assertionChainData.latestAgreedAssertion.Hash,
-		)
+
+	for {
+		// Ensure that we only build on a valid parent from this validator's perspective.
+		m.assertionChainData.Lock()
+		parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
+		m.assertionChainData.Unlock()
+		if !ok {
+			return none, fmt.Errorf(
+				"latest agreed assertion %#x not part of canonical mapping, something is wrong",
+				m.assertionChainData.latestAgreedAssertion.Hash,
+			)
+		}
+
+		staked, err := m.chain.IsStaked(ctx)
+		if err != nil {
+			return none, err
+		}
+		// If the validator is already staked, we post an assertion and move existing stake to it.
+		var assertionOpt option.Option[protocol.Assertion]
+		var postErr error
+		if staked {
+			assertionOpt, postErr = m.PostAssertionBasedOnParent(
+				ctx, parentAssertionCreationInfo, m.chain.StakeOnNewAssertion,
+			)
+		} else {
+			// Otherwise, we post a new assertion and place a new stake on it.
+			assertionOpt, postErr = m.PostAssertionBasedOnParent(
+				ctx, parentAssertionCreationInfo, m.chain.NewStakeOnNewAssertion,
+			)
+		}
+		if postErr != nil {
+			if errors.Is(postErr, sol.ErrAlreadyExists) && assertionOpt.IsSome() {
+				// The assertion we tried to post already exists onchain.
+				// Advance our local chain pointer and loop to try the next assertion.
+				existingAssertion := assertionOpt.Unwrap()
+				creationInfo, readErr := m.chain.ReadAssertionCreationInfo(ctx, existingAssertion.Id())
+				if readErr != nil {
+					return none, fmt.Errorf("could not read creation info for existing assertion %#x: %w", existingAssertion.Id().Hash, readErr)
+				}
+				m.assertionChainData.Lock()
+				m.assertionChainData.latestAgreedAssertion = existingAssertion.Id()
+				m.assertionChainData.canonicalAssertions[existingAssertion.Id()] = creationInfo
+				m.assertionChainData.Unlock()
+				m.submittedAssertions.Insert(existingAssertion.Id())
+				m.sendToConfirmationQueue(existingAssertion.Id(), "PostAssertion-catchup")
+				log.Info("Assertion already exists onchain, advancing chain tracking",
+					"assertionHash", existingAssertion.Id(),
+					"validatorName", m.validatorName,
+				)
+				continue
+			}
+			return none, postErr
+		}
+
+		// Successfully posted a new assertion. Advance our local chain pointer
+		// so the next posting attempt uses this assertion as the parent.
+		if assertionOpt.IsSome() {
+			postedAssertion := assertionOpt.Unwrap()
+			creationInfo, readErr := m.chain.ReadAssertionCreationInfo(ctx, postedAssertion.Id())
+			if readErr != nil {
+				return none, fmt.Errorf("could not read creation info for posted assertion %#x: %w", postedAssertion.Id().Hash, readErr)
+			}
+			m.assertionChainData.Lock()
+			m.assertionChainData.latestAgreedAssertion = postedAssertion.Id()
+			m.assertionChainData.canonicalAssertions[postedAssertion.Id()] = creationInfo
+			m.assertionChainData.Unlock()
+			m.submittedAssertions.Insert(postedAssertion.Id())
+		}
+		return assertionOpt, nil
 	}
-	staked, err := m.chain.IsStaked(ctx)
-	if err != nil {
-		return none, err
-	}
-	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
-	var postErr error
-	if staked {
-		assertionOpt, postErr = m.PostAssertionBasedOnParent(
-			ctx, parentAssertionCreationInfo, m.chain.StakeOnNewAssertion,
-		)
-	} else {
-		// Otherwise, we post a new assertion and place a new stake on it.
-		assertionOpt, postErr = m.PostAssertionBasedOnParent(
-			ctx, parentAssertionCreationInfo, m.chain.NewStakeOnNewAssertion,
-		)
-	}
-	if postErr != nil {
-		return none, postErr
-	}
-	if assertionOpt.IsSome() {
-		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id())
-	}
-	return assertionOpt, nil
 }
 
 // Posts a new assertion onchain based on a parent assertion we agree with.
@@ -186,6 +222,11 @@ func (m *Manager) PostAssertionBasedOnParent(
 		newState,
 	)
 	if err != nil {
+		if errors.Is(err, sol.ErrAlreadyExists) {
+			// The assertion already exists on-chain. Return it with the error
+			// so the caller can advance the chain pointer.
+			return option.Some(assertion), err
+		}
 		return none, err
 	}
 	assertionPostedCounter.Inc(1)
