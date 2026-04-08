@@ -195,11 +195,13 @@ func LegacyCostForStats(stats *BatchDataStats) uint64 {
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFields(batchFetcher FallibleBatchFetcher) error {
-	var fetcher FallibleBatchFetcherWithParentBlock
-	if batchFetcher != nil {
-		fetcher = FromFallibleBatchFetcher(batchFetcher)
+	if batchFetcher == nil {
+		if msg.Header.Kind == L1MessageType_BatchPostingReport {
+			return fmt.Errorf("%w: cannot fill in batch gas fields for BatchPostingReport", ErrNilBatchFetcher)
+		}
+		return nil
 	}
-	return msg.FillInBatchGasFieldsWithParentBlock(fetcher, msg.Header.BlockNumber)
+	return msg.FillInBatchGasFieldsWithParentBlock(FromFallibleBatchFetcher(batchFetcher), msg.Header.BlockNumber)
 }
 
 func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher FallibleBatchFetcherWithParentBlock, parentChainBlockNumber uint64) error {
@@ -207,7 +209,7 @@ func (msg *L1IncomingMessage) FillInBatchGasFieldsWithParentBlock(batchFetcher F
 		return nil
 	}
 	if batchFetcher == nil {
-		return fmt.Errorf("%w: cannot fill in batch gas fields for batch posting report (parentChainBlockNumber %d)", ErrNilBatchFetcher, parentChainBlockNumber)
+		return nil
 	}
 	if msg.BatchDataStats != nil && msg.LegacyBatchGasCost != nil {
 		return nil

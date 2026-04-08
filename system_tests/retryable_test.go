@@ -43,10 +43,7 @@ import (
 
 func getLookupL2Tx(t *testing.T, ctx context.Context, delayedBridge *arbnode.DelayedBridge) func(*types.Receipt) *types.Transaction {
 	return func(l1Receipt *types.Receipt) *types.Transaction {
-		batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
-			return nil, fmt.Errorf("batch data not available in test (batch %d)", batchNum)
-		}
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, batchFetcher)
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
 			Fatal(t, "didn't find message for submission")

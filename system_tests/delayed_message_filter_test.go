@@ -5,7 +5,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -1292,10 +1291,7 @@ func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipie
 	require.NoError(t, err)
 
 	lookupL2Tx := func(l1Receipt *types.Receipt) *types.Transaction {
-		batchFetcher := func(batchNum uint64, parentChainBlockNumber uint64) ([]byte, error) {
-			return nil, fmt.Errorf("batch data not available in test (batch %d)", batchNum)
-		}
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, batchFetcher)
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, messages, "no delayed messages found")
 		var submissionTxs []*types.Transaction

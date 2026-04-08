@@ -22,7 +22,10 @@ func TestNilFetcherBehavior(t *testing.T) {
 	}{
 		{"FillInBatchGasFields/BatchPostingReport", L1MessageType_BatchPostingReport, false, ErrNilBatchFetcher},
 		{"FillInBatchGasFields/L2Message", L1MessageType_L2Message, false, nil},
-		{"WithParentBlock/BatchPostingReport", L1MessageType_BatchPostingReport, true, ErrNilBatchFetcher},
+		// FillInBatchGasFieldsWithParentBlock silently skips when batchFetcher is nil,
+		// regardless of message kind, to allow LookupMessagesInRange callers that do
+		// not need batch gas fields (e.g. lookup-only paths) to pass nil safely.
+		{"WithParentBlock/BatchPostingReport", L1MessageType_BatchPostingReport, true, nil},
 		{"WithParentBlock/L2Message", L1MessageType_L2Message, true, nil},
 	}
 	for _, tc := range tests {
