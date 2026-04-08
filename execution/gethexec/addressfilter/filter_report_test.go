@@ -25,7 +25,8 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 			{
 				Address: common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
-					Reason: filter.ReasonFrom,
+					Reason:         filter.ReasonFrom,
+					EventRuleMatch: nil,
 				},
 			},
 		},
@@ -74,7 +75,8 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 			{
 				Address: common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
-					Reason: filter.ReasonDealiasedFrom,
+					Reason:         filter.ReasonDealiasedFrom,
+					EventRuleMatch: nil,
 				},
 			},
 		},

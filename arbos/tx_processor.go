@@ -84,11 +84,11 @@ func (p *TxProcessor) PushContract(contract *vm.Contract) {
 	// Record touched addresses for tx filtering
 	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
 		Address:      contract.Address(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress},
+		FilterReason: filter.FilterReason{Reason: filter.ReasonContractAddress, EventRuleMatch: nil},
 	})
 	p.evm.StateDB.TouchAddress(&filter.FilteredAddressRecord{
 		Address:      contract.Caller(),
-		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller},
+		FilterReason: filter.FilterReason{Reason: filter.ReasonContractCaller, EventRuleMatch: nil},
 	})
 }
 

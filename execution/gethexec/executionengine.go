@@ -111,9 +111,9 @@ func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter
 }
 
 func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Address) {
-	db.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom}})
+	db.TouchAddress(&filter.FilteredAddressRecord{Address: sender, FilterReason: filter.FilterReason{Reason: filter.ReasonFrom, EventRuleMatch: nil}})
 	if tx.To() != nil {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
 	// For tx types that alias the sender (unsigned contract txs, retryables),
 	// also check the original L1 address. The sender in the tx is already
@@ -121,7 +121,7 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	// original (non-aliased) addresses.
 	txType := tx.Type()
 	if arbosutil.DoesTxTypeAlias(&txType) {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
 	touchRetryableAddresses(db, tx)
 }
@@ -186,13 +186,13 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 // aliased by the Inbox contract.
 func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
 	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary}})
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
 		if inner.RetryTo != nil {
-			db.TouchAddress(&filter.FilteredAddressRecord{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo}})
+			db.TouchAddress(&filter.FilteredAddressRecord{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
 		}
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary}})
-		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
+		db.TouchAddress(&filter.FilteredAddressRecord{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
 	}
 }
 
