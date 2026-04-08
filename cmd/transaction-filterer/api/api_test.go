@@ -6,12 +6,14 @@ package api
 import (
 	"context"
 	"errors"
+	"math/big"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 )
 
@@ -66,7 +68,19 @@ func TestFilterConsumesFromQueue(t *testing.T) {
 
 func newTestStack(t *testing.T) (*node.Node, *TransactionFiltererAPI) {
 	t.Helper()
-	stack, api, err := NewTestStack(t, nil, "")
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	txOpts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stackConfig := DefaultStackConfig
+	stackConfig.HTTPHost = "127.0.0.1"
+	stackConfig.HTTPPort = 0
+	stack, api, err := NewStack(&stackConfig, txOpts, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

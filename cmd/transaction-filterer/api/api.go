@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math/big"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -16,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -115,21 +113,6 @@ func (t *TransactionFiltererAPI) ReportFilteredTransactions(ctx context.Context,
 		log.Info("Sent filtered transaction report to SQS", "txHash", report.TxHash.Hex())
 	}
 	return nil
-}
-
-func NewTestStack(t *testing.T, sqsClient sqsclient.Client, sqsQueueURL string) (*node.Node, *TransactionFiltererAPI, error) {
-	key, err := crypto.GenerateKey()
-	if err != nil {
-		return nil, nil, err
-	}
-	txOpts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1))
-	if err != nil {
-		return nil, nil, err
-	}
-	stackConfig := DefaultStackConfig
-	stackConfig.HTTPHost = "127.0.0.1"
-	stackConfig.HTTPPort = 0
-	return NewStack(&stackConfig, txOpts, nil, sqsClient, sqsQueueURL)
 }
 
 // Only used for testing.

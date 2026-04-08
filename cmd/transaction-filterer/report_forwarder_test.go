@@ -72,15 +72,6 @@ func (m *mockSQSClient) DeleteMessage(_ context.Context, params *sqs.DeleteMessa
 
 const testQueueURL = "https://sqs.test/queue"
 
-func newTestAPI(t *testing.T, mock *mockSQSClient) *api.TransactionFiltererAPI {
-	t.Helper()
-	_, txAPI, err := api.NewTestStack(t, mock, testQueueURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return txAPI
-}
-
 func newTestForwarder(mock *mockSQSClient, endpointURL string) *ReportForwarder {
 	config := &ReportForwarderConfig{
 		Workers:          1,
@@ -92,18 +83,24 @@ func newTestForwarder(mock *mockSQSClient, endpointURL string) *ReportForwarder 
 
 func TestReportForwarder_ForwardsMessages(t *testing.T) {
 	var mu sync.Mutex
-	var receivedBodies []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var receivedBodiesByExternalEndpoint []string
+	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		// TODO: handle error
 		mu.Lock()
-		receivedBodies = append(receivedBodies, string(body))
+		receivedBodiesByExternalEndpoint = append(receivedBodiesByExternalEndpoint, string(body))
 		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
+	defer externalEndpointServer.Close()
 
-	mock := &mockSQSClient{}
-	txAPI := newTestAPI(t, mock)
+	sqsClient := &mockSQSClient{}
+
+	stackConfig := api.DefaultStackConfig
+	_, txAPI, err := api.NewStack(&stackConfig, nil, nil, sqsClient, testQueueURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	reports := []gethexec.FilteredTxReport{
 		{TxHash: common.HexToHash("0x01")},
@@ -113,30 +110,35 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := newTestForwarder(mock, server.URL)
+	forwarder := newTestForwarder(sqsClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(receivedBodies) != 2 {
-		t.Fatalf("expected 2 forwarded messages, got %d", len(receivedBodies))
+	if len(receivedBodiesByExternalEndpoint) != 2 {
+		t.Fatalf("expected 2 forwarded messages, got %d", len(receivedBodiesByExternalEndpoint))
 	}
 
-	mock.mu.Lock()
-	defer mock.mu.Unlock()
-	if len(mock.deletedReceiptHandles) != 2 {
-		t.Fatalf("expected 2 deletes, got %d", len(mock.deletedReceiptHandles))
+	sqsClient.mu.Lock()
+	defer sqsClient.mu.Unlock()
+	if len(sqsClient.deletedReceiptHandles) != 2 {
+		t.Fatalf("expected 2 deletes, got %d", len(sqsClient.deletedReceiptHandles))
 	}
 }
 
 func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer externalEndpointServer.Close()
 
-	mock := &mockSQSClient{}
-	txAPI := newTestAPI(t, mock)
+	sqsClient := &mockSQSClient{}
+
+	stackConfig := api.DefaultStackConfig
+	_, txAPI, err := api.NewStack(&stackConfig, nil, nil, sqsClient, testQueueURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	reports := []gethexec.FilteredTxReport{
 		{TxHash: common.HexToHash("0x01")},
@@ -145,35 +147,36 @@ func TestReportForwarder_EndpointFailure_DoesNotDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	forwarder := newTestForwarder(mock, server.URL)
+	forwarder := newTestForwarder(sqsClient, externalEndpointServer.URL)
 	forwarder.pollAndForward(context.Background())
 
-	mock.mu.Lock()
-	defer mock.mu.Unlock()
-	if len(mock.deletedReceiptHandles) != 0 {
-		t.Fatalf("expected 0 deletes on endpoint failure, got %d", len(mock.deletedReceiptHandles))
+	sqsClient.mu.Lock()
+	defer sqsClient.mu.Unlock()
+	if len(sqsClient.deletedReceiptHandles) != 0 {
+		t.Fatalf("expected 0 deletes on endpoint failure, got %d", len(sqsClient.deletedReceiptHandles))
 	}
 }
 
 func TestReportForwarder_EmptyQueue(t *testing.T) {
-	httpCalled := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		httpCalled = true
+	externalEndpointServerCalled := false
+	externalEndpointServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		externalEndpointServerCalled = true
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
+	defer externalEndpointServer.Close()
 
-	mock := &mockSQSClient{}
-	forwarder := newTestForwarder(mock, server.URL)
+	sqsClient := &mockSQSClient{}
+
+	forwarder := newTestForwarder(sqsClient, externalEndpointServer.URL)
 	interval := forwarder.pollAndForward(context.Background())
 
-	if httpCalled {
+	if externalEndpointServerCalled {
 		t.Fatal("expected no HTTP calls on empty queue")
 	}
-	mock.mu.Lock()
-	defer mock.mu.Unlock()
-	if len(mock.deletedReceiptHandles) != 0 {
-		t.Fatalf("expected 0 deletes on empty queue, got %d", len(mock.deletedReceiptHandles))
+	sqsClient.mu.Lock()
+	defer sqsClient.mu.Unlock()
+	if len(sqsClient.deletedReceiptHandles) != 0 {
+		t.Fatalf("expected 0 deletes on empty queue, got %d", len(sqsClient.deletedReceiptHandles))
 	}
 	if interval != forwarder.config.PollInterval {
 		t.Fatalf("expected poll interval %v on empty queue, got %v", forwarder.config.PollInterval, interval)
