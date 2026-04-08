@@ -45,16 +45,49 @@ func (m *mockStreamer) GetMessage(idx arbutil.MessageIndex) (*arbostypes.Message
 	return nil, fmt.Errorf("no message at index %d", idx)
 }
 
+// Compile-time check that mockInboxTracker satisfies InboxTrackerInterface.
+var _ InboxTrackerInterface = (*mockInboxTracker)(nil)
+
+// mockInboxTracker is a minimal mock of InboxTrackerInterface for unit tests.
+// batchMsgCounts maps batch number → cumulative message count at end of that batch.
+type mockInboxTracker struct {
+	batchMsgCounts map[uint64]arbutil.MessageIndex
+}
+
+func (m *mockInboxTracker) SetBlockValidator(*BlockValidator) {}
+func (m *mockInboxTracker) GetBatchCount() (uint64, error) {
+	return uint64(len(m.batchMsgCounts)), nil
+}
+func (m *mockInboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
+	if c, ok := m.batchMsgCounts[seqNum]; ok {
+		return c, nil
+	}
+	return 0, fmt.Errorf("no batch %d", seqNum)
+}
+func (m *mockInboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	for batch := uint64(0); batch < uint64(len(m.batchMsgCounts)); batch++ {
+		if m.batchMsgCounts[batch] > pos {
+			return batch, true, nil
+		}
+	}
+	return 0, false, nil
+}
+func (m *mockInboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	return common.Hash{}, nil
+}
+func (m *mockInboxTracker) GetDelayedMessageBytes(_ context.Context, seqNum uint64) ([]byte, error) {
+	return nil, nil
+}
+
 // newTestValidator creates a BlockValidator with a buffered fatalErr channel
-// and the given config values. Returns the validator and the fatal error channel.
-func newTestValidator(failureIsFatal bool, validationPoll time.Duration) (*BlockValidator, chan error) {
+// and the given config value. Returns the validator and the fatal error channel.
+func newTestValidator(failureIsFatal bool) (*BlockValidator, chan error) {
 	fatalCh := make(chan error, 1)
 	v := &BlockValidator{
 		fatalErr: fatalCh,
 	}
 	v.config = func() *BlockValidatorConfig {
 		return &BlockValidatorConfig{
-			ValidationPoll: validationPoll,
 			FailureIsFatal: failureIsFatal,
 		}
 	}
@@ -86,7 +119,7 @@ func requireFatalError(t *testing.T, fatalCh chan error, target error) {
 }
 
 func TestReorgGuardRejectsZero(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	err := v.Reorg(context.Background(), 0)
 	if err == nil {
 		t.Fatal("expected error for count == 0")
@@ -118,7 +151,7 @@ func TestReorgToGenesisWithCaughtUpValidator(t *testing.T) {
 			0: {DelayedMessagesRead: 1},
 		},
 	}
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
 	v.chainCaughtUp = true
 	v.createNodesChan = make(chan struct{}, 1)
@@ -150,13 +183,13 @@ func TestReorgToGenesisWithCaughtUpValidator(t *testing.T) {
 }
 
 func TestPossiblyFatalSendsAllErrorsWhenNotStopped(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	v.StopWaiter.Start(ctx, v)
 
-	// possiblyFatal does not suppress any error types — context errors are
-	// handled upstream in advanceValidations/handleValidationResult instead.
+	// possiblyFatal does not distinguish error types — callers that need to
+	// filter shutdown/transient errors use classifyValidationError first.
 	v.possiblyFatal(context.Canceled)
 	requireFatalError(t, fatalCh, context.Canceled)
 
@@ -230,7 +263,7 @@ func TestHandleValidationResult(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			v, fatalCh := newTestValidator(true, 0)
+			v, fatalCh := newTestValidator(true)
 
 			if tc.setupReorgFailure {
 				streamer := &mockStreamer{
@@ -277,7 +310,7 @@ func TestHandleValidationResultDoesNotSkipReorgOnDeadlineExceeded(t *testing.T) 
 			0: {DelayedMessagesRead: 1},
 		},
 	}
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
 	v.chainCaughtUp = true
 	v.createNodesChan = make(chan struct{}, 1)
@@ -296,18 +329,11 @@ func TestHandleValidationResultDoesNotSkipReorgOnDeadlineExceeded(t *testing.T) 
 	requireNoFatalError(t, fatalCh)
 }
 
-func TestPossiblyFatalTreatsCanceledAsFatalWithUnstartedStopWaiter(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 0)
-
-	v.possiblyFatal(context.Canceled)
-	requireFatalError(t, fatalCh, context.Canceled)
-}
-
 func TestPossiblyFatalChannelFull(t *testing.T) {
 	// When fatalErr already has an error, the second error is dropped
 	// (with a log) rather than blocking. Verify the first error is
 	// preserved and the second doesn't panic or block.
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 
 	first := errors.New("first error")
 	second := errors.New("second error")
@@ -320,17 +346,16 @@ func TestPossiblyFatalChannelFull(t *testing.T) {
 }
 
 func TestPossiblyFatalNilIsNoop(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 
 	v.possiblyFatal(nil)
 	requireNoFatalError(t, fatalCh)
 }
 
 func TestPossiblyFatalSuppressesAllErrorsWhenStopped(t *testing.T) {
-	// After StopAndWait, possiblyFatal should silently return for any error,
-	// including real (non-context) errors. This is the primary shutdown
-	// suppression mechanism in possiblyFatal itself.
-	v, fatalCh := newTestValidator(true, 0)
+	// After StopAndWait, possiblyFatal should log but not escalate any error
+	// to fatalErr. This is the primary shutdown suppression mechanism.
+	v, fatalCh := newTestValidator(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	v.StopWaiter.Start(ctx, v)
 	cancel()
@@ -344,38 +369,6 @@ func TestPossiblyFatalSuppressesAllErrorsWhenStopped(t *testing.T) {
 
 	v.possiblyFatal(context.DeadlineExceeded)
 	requireNoFatalError(t, fatalCh)
-}
-
-func TestIsShutdownCancellation(t *testing.T) {
-	canceledCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer deadlineCancel()
-	liveCtx := context.Background()
-
-	tests := []struct {
-		name string
-		ctx  context.Context
-		err  error
-		want bool
-	}{
-		{"canceled ctx + canceled err", canceledCtx, context.Canceled, true},
-		{"canceled ctx + wrapped canceled err", canceledCtx, fmt.Errorf("spawner died: %w", context.Canceled), true},
-		{"canceled ctx + deadline exceeded err", canceledCtx, context.DeadlineExceeded, false},
-		{"canceled ctx + other err", canceledCtx, errors.New("disk full"), false},
-		{"canceled ctx + nil err", canceledCtx, nil, false},
-		{"deadline exceeded ctx + canceled err", deadlineCtx, context.Canceled, false},
-		{"live ctx + canceled err", liveCtx, context.Canceled, false},
-		{"live ctx + other err", liveCtx, errors.New("some error"), false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := isShutdownCancellation(tc.ctx, tc.err)
-			if got != tc.want {
-				t.Fatalf("isShutdownCancellation() = %v, want %v", got, tc.want)
-			}
-		})
-	}
 }
 
 func TestAdvanceValidationsFailedEntry(t *testing.T) {
@@ -444,18 +437,16 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 			fatalTarget: nil,
 		},
 		{
-			// Exercises the case validationShutdown: branch with a live
-			// ctx.  This is the core shutdown-resilience path: sendValidations
-			// classified the error as shutdown (ctx was canceled at error time),
-			// but by the time advanceValidations reads it the main loop hasn't
-			// noticed the cancellation yet.  Must return (nil, err) with no
-			// reorg and no possiblyFatal.
-			name:      "shutdown severity with live context returns error without possiblyFatal",
+			// Exercises the validationShutdown branch with a live ctx.
+			// The error was already classified and logged at the source;
+			// advanceValidations returns (nil, nil) so the caller does not
+			// re-classify or log duplicates.
+			name:      "shutdown severity with live context returns nil without possiblyFatal",
 			cancelCtx: false,
 			validErr:  context.Canceled,
 			severity:  validationShutdown,
 			wantReorg: false,
-			wantErr:   context.Canceled,
+			wantErr:   nil,
 			wantFatal: false,
 		},
 		{
@@ -474,7 +465,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			v, fatalCh := newTestValidator(true, 0)
+			v, fatalCh := newTestValidator(true)
 			v.chainCaughtUp = true
 			v.validatedA.Store(0)
 			v.recordSentA.Store(1)
@@ -527,7 +518,7 @@ func TestAdvanceValidationsFailedEntry(t *testing.T) {
 }
 
 func TestAdvanceValidationsStartStateMismatchTriggersReorg(t *testing.T) {
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	v.chainCaughtUp = true
 	v.validatedA.Store(0)
 	v.recordSentA.Store(1)
@@ -569,6 +560,8 @@ func TestAdvanceValidationsStartStateMismatchTriggersReorg(t *testing.T) {
 func TestClassifyValidationErrorSpawnerShutdownRace(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
+	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer deadlineCancel()
 	liveCtx := context.Background()
 
 	tests := []struct {
@@ -614,6 +607,18 @@ func TestClassifyValidationErrorSpawnerShutdownRace(t *testing.T) {
 			want: validationFatal,
 		},
 		{
+			name: "canceled ctx + deadline exceeded err = fatal",
+			ctx:  canceledCtx,
+			err:  context.DeadlineExceeded,
+			want: validationFatal,
+		},
+		{
+			name: "deadline ctx + canceled err = transient",
+			ctx:  deadlineCtx,
+			err:  context.Canceled,
+			want: validationTransient,
+		},
+		{
 			name: "live ctx + deadline exceeded = fatal",
 			ctx:  liveCtx,
 			err:  context.DeadlineExceeded,
@@ -631,7 +636,7 @@ func TestClassifyValidationErrorSpawnerShutdownRace(t *testing.T) {
 }
 
 func TestPossiblyFatalNonFatalConfig(t *testing.T) {
-	v, fatalCh := newTestValidator(false, 0)
+	v, fatalCh := newTestValidator(false)
 
 	// With FailureIsFatal=false, a real error should be logged but not sent to fatalErr.
 	v.possiblyFatal(errors.New("non-fatal validation error"))
@@ -650,7 +655,7 @@ func (f *failingDB) Put(key []byte, value []byte) error {
 
 func newTestValidatorWithDB(t *testing.T, failureIsFatal bool, db ethdb.Database) (*BlockValidator, chan error) {
 	t.Helper()
-	v, fatalCh := newTestValidator(failureIsFatal, 0)
+	v, fatalCh := newTestValidator(failureIsFatal)
 	v.StatelessBlockValidator = &StatelessBlockValidator{db: db}
 	return v, fatalCh
 }
@@ -786,9 +791,12 @@ func TestReorgDBWriteFailureEscalates(t *testing.T) {
 	if !errors.Is(err, dbErr) {
 		t.Fatalf("expected error wrapping dbErr, got: %v", err)
 	}
-	// lastValidGS must NOT have been updated since the DB write failed.
+	// lastValidGS and validatedA must NOT have been updated since the DB write failed.
 	if v.lastValidGS != originalGS {
 		t.Fatalf("lastValidGS was updated despite DB failure: expected %v, got %v", originalGS, v.lastValidGS)
+	}
+	if v.validatedA.Load() != 2 {
+		t.Fatalf("validatedA was changed despite DB failure: expected 2, got %d", v.validatedA.Load())
 	}
 	requireFatalError(t, fatalCh, dbErr)
 }
@@ -961,7 +969,7 @@ func TestUpdateLatestStakedGetMessageFailureCaughtUp(t *testing.T) {
 		// No messages — GetMessage will fail for any index.
 		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{},
 	}
-	v, fatalCh := newTestValidator(true, 0)
+	v, fatalCh := newTestValidator(true)
 	v.StatelessBlockValidator = &StatelessBlockValidator{streamer: streamer}
 	v.chainCaughtUp = true
 	v.validatedA.Store(0)
@@ -973,9 +981,9 @@ func TestUpdateLatestStakedGetMessageFailureCaughtUp(t *testing.T) {
 }
 
 func TestUpdateLatestStakedDBWriteFailureCaughtUp(t *testing.T) {
-	// When chainCaughtUp=true, UpdateLatestStaked advances in-memory state
-	// before calling writeLastValidated. On DB failure it must call
-	// possiblyFatal to shut down (since in-memory state is already ahead).
+	// When chainCaughtUp=true, UpdateLatestStaked calls writeLastValidated
+	// before storing validatedA. On DB failure it must call possiblyFatal
+	// and return early without advancing validatedA.
 	dbErr := errors.New("disk full")
 	db := &failingDB{Database: rawdb.NewMemoryDatabase(), putErr: dbErr}
 
@@ -997,8 +1005,347 @@ func TestUpdateLatestStakedDBWriteFailureCaughtUp(t *testing.T) {
 	v.UpdateLatestStaked(1, gs)
 
 	requireFatalError(t, fatalCh, dbErr)
-	// In-memory state was already advanced before the DB write.
-	if v.validatedA.Load() != 1 {
-		t.Fatalf("expected validatedA=1 (advanced before DB write), got %d", v.validatedA.Load())
+	// validatedA is stored after writeLastValidated; DB failure returns early.
+	if v.validatedA.Load() != 0 {
+		t.Fatalf("expected validatedA=0 (DB write failed before store), got %d", v.validatedA.Load())
+	}
+}
+
+func TestReorgWithMultiplePipelineStages(t *testing.T) {
+	// Realistic reorg scenario: validator has 5 entries at different pipeline
+	// stages, then reorgs to keep only the first 3 (positions 0-2).
+	//
+	// Pipeline state before reorg:
+	//   pos 0, 1: already validated and removed from map (validatedA=2)
+	//   pos 2:    SendingValidation (in-flight)
+	//   pos 3:    Prepared (ready to send)
+	//   pos 4:    Created (just created)
+	//
+	// After Reorg(ctx, 3):
+	//   - Entries at positions 3 and 4 deleted, Cancel called
+	//   - Entry at position 2 preserved (below reorg point)
+	//   - Counters capped: createdA=3, recordSentA=3, lastValidationSentA=3
+	//   - validatedA=2 unchanged (already below count)
+	//   - nextCreateStartGS rebuilt from streamer data at position 2
+	db := rawdb.NewMemoryDatabase()
+
+	// Batch 0 contains messages 0-4 (5 messages total).
+	tracker := &mockInboxTracker{
+		batchMsgCounts: map[uint64]arbutil.MessageIndex{0: 5},
+	}
+	streamer := &mockStreamer{
+		results: map[arbutil.MessageIndex]*execution.MessageResult{
+			0: {BlockHash: common.HexToHash("0x10"), SendRoot: common.HexToHash("0x11")},
+			1: {BlockHash: common.HexToHash("0x20"), SendRoot: common.HexToHash("0x21")},
+			2: {BlockHash: common.HexToHash("0x30"), SendRoot: common.HexToHash("0x31")},
+		},
+		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{
+			0: {DelayedMessagesRead: 0},
+			1: {DelayedMessagesRead: 0},
+			2: {DelayedMessagesRead: 2},
+		},
+	}
+
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.StatelessBlockValidator = &StatelessBlockValidator{
+		db:           db,
+		streamer:     streamer,
+		inboxTracker: tracker,
+	}
+	v.chainCaughtUp = true
+	v.createNodesChan = make(chan struct{}, 1)
+
+	// Set pipeline counters: 5 created, 4 recorded, 3 sent, 2 validated.
+	v.createdA.Store(5)
+	v.recordSentA.Store(4)
+	v.lastValidationSentA.Store(3)
+	v.validatedA.Store(2)
+	v.lastValidGS = validator.GoGlobalState{Batch: 0, PosInBatch: 2}
+
+	// Populate entries at positions 2-4 (0 and 1 already advanced past).
+	canceled := map[arbutil.MessageIndex]bool{}
+
+	status2 := &validationStatus{}
+	status2.Status.Store(uint32(SendingValidation))
+	status2.Cancel = func() { canceled[2] = true }
+	v.validations.Store(arbutil.MessageIndex(2), status2)
+
+	status3 := &validationStatus{}
+	status3.Status.Store(uint32(Prepared))
+	status3.Cancel = func() { canceled[3] = true }
+	v.validations.Store(arbutil.MessageIndex(3), status3)
+
+	status4 := &validationStatus{}
+	status4.Status.Store(uint32(Created))
+	status4.Cancel = func() { canceled[4] = true }
+	v.validations.Store(arbutil.MessageIndex(4), status4)
+
+	// Reorg to keep positions 0-2.
+	err := v.Reorg(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("Reorg(ctx, 3) failed: %v", err)
+	}
+
+	// Entries at positions 3 and 4 should be deleted and canceled.
+	if !canceled[3] {
+		t.Error("expected Cancel called on position 3")
+	}
+	if !canceled[4] {
+		t.Error("expected Cancel called on position 4")
+	}
+	// Entry at position 2 should NOT be canceled (below reorg point).
+	if canceled[2] {
+		t.Error("position 2 should not have been canceled")
+	}
+
+	// Verify map: positions 3 and 4 deleted, position 2 preserved.
+	if _, found := v.validations.Load(arbutil.MessageIndex(2)); !found {
+		t.Error("position 2 should be preserved (below reorg point)")
+	}
+	if _, found := v.validations.Load(arbutil.MessageIndex(3)); found {
+		t.Error("position 3 should have been deleted")
+	}
+	if _, found := v.validations.Load(arbutil.MessageIndex(4)); found {
+		t.Error("position 4 should have been deleted")
+	}
+
+	// Verify counters are capped to count=3.
+	if v.createdA.Load() != 3 {
+		t.Errorf("expected createdA=3, got %d", v.createdA.Load())
+	}
+	if v.recordSentA.Load() != 3 {
+		t.Errorf("expected recordSentA=3 (capped from 4), got %d", v.recordSentA.Load())
+	}
+	if v.lastValidationSentA.Load() != 3 {
+		t.Errorf("expected lastValidationSentA=3 (unchanged), got %d", v.lastValidationSentA.Load())
+	}
+	// validatedA was 2, below count=3, so it stays at 2.
+	if v.validatedA.Load() != 2 {
+		t.Errorf("expected validatedA=2 (unchanged, below count), got %d", v.validatedA.Load())
+	}
+
+	// Verify nextCreateStartGS is rebuilt from result at position 2.
+	// count=3, batch 0 has 5 msgs, so endPosition = {batch=0, posInBatch=3}.
+	expectedGS := BuildGlobalState(
+		execution.MessageResult{BlockHash: common.HexToHash("0x30"), SendRoot: common.HexToHash("0x31")},
+		GlobalStatePosition{BatchNumber: 0, PosInBatch: 3},
+	)
+	if v.nextCreateStartGS != expectedGS {
+		t.Errorf("expected nextCreateStartGS=%v, got %v", expectedGS, v.nextCreateStartGS)
+	}
+	if v.nextCreatePrevDelayed != 2 {
+		t.Errorf("expected nextCreatePrevDelayed=2, got %d", v.nextCreatePrevDelayed)
+	}
+	if !v.nextCreateBatchReread {
+		t.Error("expected nextCreateBatchReread=true")
+	}
+
+	requireNoFatalError(t, fatalCh)
+}
+
+func TestReorgPastValidatedRollsBackPersistedState(t *testing.T) {
+	// Deep reorg where validatedA > count: the validator has validated through
+	// position 4, but a reorg rolls back to count=2 (keep only positions 0-1).
+	// This triggers writeLastValidated to persist the rolled-back state and
+	// resets validatedA. Verifies the DB roundtrip and in-memory consistency.
+	db := rawdb.NewMemoryDatabase()
+
+	tracker := &mockInboxTracker{
+		batchMsgCounts: map[uint64]arbutil.MessageIndex{0: 5},
+	}
+	streamer := &mockStreamer{
+		results: map[arbutil.MessageIndex]*execution.MessageResult{
+			1: {BlockHash: common.HexToHash("0x20"), SendRoot: common.HexToHash("0x21")},
+		},
+		messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{
+			1: {DelayedMessagesRead: 1},
+		},
+	}
+
+	v, fatalCh := newTestValidatorWithDB(t, true, db)
+	v.StatelessBlockValidator = &StatelessBlockValidator{
+		db:           db,
+		streamer:     streamer,
+		inboxTracker: tracker,
+	}
+	v.chainCaughtUp = true
+	v.createNodesChan = make(chan struct{}, 1)
+
+	// All 5 entries validated and advanced past.
+	v.createdA.Store(5)
+	v.recordSentA.Store(5)
+	v.lastValidationSentA.Store(5)
+	v.validatedA.Store(5)
+	v.lastValidGS = validator.GoGlobalState{Batch: 0, PosInBatch: 5}
+
+	// Reorg to count=2: keep only positions 0 and 1.
+	err := v.Reorg(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("Reorg(ctx, 2) failed: %v", err)
+	}
+
+	// validatedA was 5 > count=2, so writeLastValidated was called.
+	if v.validatedA.Load() != 2 {
+		t.Errorf("expected validatedA=2, got %d", v.validatedA.Load())
+	}
+
+	// lastValidGS should be rebuilt from result at position 1 (count-1).
+	// count=2, batch 0, posInBatch = 2-0-1 = 1, endPos = {0, 2}.
+	expectedGS := BuildGlobalState(
+		execution.MessageResult{BlockHash: common.HexToHash("0x20"), SendRoot: common.HexToHash("0x21")},
+		GlobalStatePosition{BatchNumber: 0, PosInBatch: 2},
+	)
+	if v.lastValidGS != expectedGS {
+		t.Errorf("expected lastValidGS=%v, got %v", expectedGS, v.lastValidGS)
+	}
+
+	// Verify DB was updated: read back and compare.
+	info, err := ReadLastValidatedInfo(db)
+	if err != nil {
+		t.Fatalf("ReadLastValidatedInfo failed: %v", err)
+	}
+	if info.GlobalState != expectedGS {
+		t.Errorf("persisted GlobalState=%v, want %v", info.GlobalState, expectedGS)
+	}
+
+	requireNoFatalError(t, fatalCh)
+}
+
+func TestReorgDepthScaling(t *testing.T) {
+	// Verify Reorg correctly cleans up entries, resets counters, persists
+	// rolled-back state, and preserves entries below the reorg point at
+	// varying depths across batch boundaries.
+	for _, depth := range []uint64{10, 100, 500} {
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
+			db := rawdb.NewMemoryDatabase()
+			total := depth + 5        // entries before reorg
+			var keep uint64 = 5       // entries to keep
+			var batchSize uint64 = 50 // messages per batch
+
+			// Spread messages across multiple batches.
+			// This exercises GlobalStatePositionsAtCount across batch boundaries.
+			batchMsgCounts := map[uint64]arbutil.MessageIndex{}
+			for b := uint64(0); b*batchSize < total; b++ {
+				end := (b + 1) * batchSize
+				if end > total {
+					end = total
+				}
+				batchMsgCounts[b] = arbutil.MessageIndex(end)
+			}
+
+			tracker := &mockInboxTracker{batchMsgCounts: batchMsgCounts}
+			keepResult := &execution.MessageResult{
+				BlockHash: common.HexToHash("0xaa"),
+				SendRoot:  common.HexToHash("0xbb"),
+			}
+			keepIdx := arbutil.MessageIndex(keep - 1)
+			streamer := &mockStreamer{
+				results: map[arbutil.MessageIndex]*execution.MessageResult{
+					keepIdx: keepResult,
+				},
+				messages: map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata{
+					keepIdx: {DelayedMessagesRead: 3},
+				},
+			}
+
+			v, fatalCh := newTestValidatorWithDB(t, true, db)
+			v.StatelessBlockValidator = &StatelessBlockValidator{
+				db:           db,
+				streamer:     streamer,
+				inboxTracker: tracker,
+			}
+			v.chainCaughtUp = true
+			v.createNodesChan = make(chan struct{}, 1)
+			v.prevBatchCache = map[uint64][]byte{99: {1, 2, 3}} // should be cleared
+
+			v.createdA.Store(total)
+			v.recordSentA.Store(total)
+			v.lastValidationSentA.Store(total)
+			v.validatedA.Store(total)
+			v.lastValidGS = validator.GoGlobalState{Batch: 99, PosInBatch: 99}
+
+			// Populate entries below keep (should survive).
+			for i := arbutil.MessageIndex(0); i < arbutil.MessageIndex(keep); i++ {
+				s := &validationStatus{}
+				s.Status.Store(uint32(ValidationDone))
+				v.validations.Store(i, s)
+			}
+
+			// Populate entries from keep to total-1 with Cancel tracking.
+			cancelCount := uint64(0)
+			for i := arbutil.MessageIndex(keep); i < arbutil.MessageIndex(total); i++ {
+				s := &validationStatus{}
+				s.Status.Store(uint32(Prepared))
+				s.Cancel = func() { cancelCount++ }
+				v.validations.Store(i, s)
+			}
+
+			err := v.Reorg(context.Background(), arbutil.MessageIndex(keep))
+			if err != nil {
+				t.Fatalf("Reorg failed: %v", err)
+			}
+
+			// All entries above keep canceled and deleted.
+			if cancelCount != depth {
+				t.Errorf("expected %d cancels, got %d", depth, cancelCount)
+			}
+			for i := arbutil.MessageIndex(keep); i < arbutil.MessageIndex(total); i++ {
+				if _, found := v.validations.Load(i); found {
+					t.Fatalf("entry at position %d should have been deleted", i)
+				}
+			}
+
+			// Entries below keep survive.
+			for i := arbutil.MessageIndex(0); i < arbutil.MessageIndex(keep); i++ {
+				if _, found := v.validations.Load(i); !found {
+					t.Fatalf("entry at position %d should have survived", i)
+				}
+			}
+
+			// Counters reset.
+			if v.createdA.Load() != keep {
+				t.Errorf("expected createdA=%d, got %d", keep, v.createdA.Load())
+			}
+			if v.validatedA.Load() != keep {
+				t.Errorf("expected validatedA=%d, got %d", keep, v.validatedA.Load())
+			}
+			if v.recordSentA.Load() != keep {
+				t.Errorf("expected recordSentA=%d, got %d", keep, v.recordSentA.Load())
+			}
+			if v.lastValidationSentA.Load() != keep {
+				t.Errorf("expected lastValidationSentA=%d, got %d", keep, v.lastValidationSentA.Load())
+			}
+
+			// lastValidGS rebuilt correctly from chain data.
+			// keep=5, batch 0 has 50 msgs, so posInBatch = 5-0-1 = 4, endPos = {0, 5}.
+			expectedGS := BuildGlobalState(*keepResult, GlobalStatePosition{BatchNumber: 0, PosInBatch: uint64(keep)})
+			if v.lastValidGS != expectedGS {
+				t.Errorf("expected lastValidGS=%v, got %v", expectedGS, v.lastValidGS)
+			}
+
+			// DB persisted correctly — roundtrip check.
+			info, err := ReadLastValidatedInfo(db)
+			if err != nil {
+				t.Fatalf("ReadLastValidatedInfo failed: %v", err)
+			}
+			if info.GlobalState != expectedGS {
+				t.Errorf("persisted GlobalState=%v, want %v", info.GlobalState, expectedGS)
+			}
+
+			// nextCreatePrevDelayed set from chain data.
+			if v.nextCreatePrevDelayed != 3 {
+				t.Errorf("expected nextCreatePrevDelayed=3, got %d", v.nextCreatePrevDelayed)
+			}
+
+			// prevBatchCache cleared.
+			if len(v.prevBatchCache) != 0 {
+				t.Errorf("expected prevBatchCache cleared, got %d entries", len(v.prevBatchCache))
+			}
+			if !v.nextCreateBatchReread {
+				t.Error("expected nextCreateBatchReread=true")
+			}
+
+			requireNoFatalError(t, fatalCh)
+		})
 	}
 }

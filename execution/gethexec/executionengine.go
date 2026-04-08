@@ -71,9 +71,7 @@ var (
 
 var (
 	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	// Deprecated: use execution.ErrResultNotFound.
-	ResultNotFound        = execution.ErrResultNotFound
-	BlockNumBeforeGenesis = errors.New("block number is before genesis")
+	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
 )
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
@@ -1015,7 +1013,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, ResultNotFound
+		return nil, execution.ErrResultNotFound
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{
