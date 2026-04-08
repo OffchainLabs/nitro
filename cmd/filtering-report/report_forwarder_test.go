@@ -5,9 +5,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -74,6 +76,22 @@ func TestReportForwarder_ForwardsMessages(t *testing.T) {
 	defer mu.Unlock()
 	if len(receivedBodiesByExternalEndpoint) != 2 {
 		t.Fatalf("expected 2 forwarded messages, got %d", len(receivedBodiesByExternalEndpoint))
+	}
+
+	var expectedBodies []string
+	for _, report := range reports {
+		b, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectedBodies = append(expectedBodies, string(b))
+	}
+	sort.Strings(expectedBodies)
+	sort.Strings(receivedBodiesByExternalEndpoint)
+	for i := range expectedBodies {
+		if receivedBodiesByExternalEndpoint[i] != expectedBodies[i] {
+			t.Fatalf("body mismatch at index %d: expected %q, got %q", i, expectedBodies[i], receivedBodiesByExternalEndpoint[i])
+		}
 	}
 
 	deleted := sqsMockClient.DeletedReceiptHandles()
