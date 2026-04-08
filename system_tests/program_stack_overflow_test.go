@@ -89,10 +89,10 @@ func saveAndRestoreNativeStackGlobals(t *testing.T) {
 }
 
 // TestProgramNativeStackOverflowRecovery exercises the on-chain stack overflow
-// doubling + retry path and verifies that:
-//  1. Off-chain calls (eth_call) do NOT trigger stack doubling.
-//  2. The first on-chain tx succeeds (overflow → stack doubled → retry succeeds).
-//  3. The stack stays doubled for subsequent calls.
+// recovery path and verifies that:
+//  1. Off-chain calls (eth_call) do NOT trigger any retry.
+//  2. The first on-chain tx succeeds (overflow → cranelift retry, possibly
+//     with stack doubling if cranelift also overflows at the original size).
 //
 // It deploys a WAT program that recurses 1,000 times and configures a small
 // initial native stack size (64KB) so the first call overflows.
@@ -110,8 +110,8 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 
 	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
-	// eth_call (off-chain): handleNativeStackOverflow skips doubling for
-	// off-chain execution, so the call should fail.
+	// eth_call (off-chain): handleNativeStackOverflow skips all retries
+	// for off-chain execution, so the call should fail.
 	msg := ethereum.CallMsg{
 		To:    &programAddress,
 		Value: big.NewInt(0),
@@ -124,7 +124,7 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	}
 	t.Logf("eth_call failed as expected (off-chain): %v", err)
 
-	// On-chain tx: overflows → stack is doubled → retry with doubled stack succeeds.
+	// On-chain tx: overflows → cranelift retry (may also double stack) → succeeds.
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -132,9 +132,9 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		t.Fatalf("expected on-chain tx to succeed after stack doubling + retry, got status=%d", receipt.Status)
+		t.Fatalf("expected on-chain tx to succeed after cranelift retry, got status=%d", receipt.Status)
 	}
-	t.Logf("tx succeeded after stack doubling + retry, block=%d", receipt.BlockNumber)
+	t.Logf("tx succeeded after cranelift retry, block=%d", receipt.BlockNumber)
 
 	blockNum, err := l2client.BlockNumber(ctx)
 	Require(t, err)
@@ -142,8 +142,8 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 }
 
 // TestProgramNativeStackOverflowNoFallback tests the behavior when
-// fallback is disabled. No stack doubling is attempted and the call
-// panics with a native stack overflow error.
+// fallback is disabled. No cranelift retry or stack doubling is attempted
+// and the call panics with a native stack overflow error.
 func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 	saveAndRestoreNativeStackGlobals(t)
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
@@ -191,7 +191,7 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 // TestProgramCraneliftPersistenceIntegration verifies the full cranelift
 // overflow recovery flow end-to-end:
 //  1. Stylus call fails with native stack overflow (small stack)
-//  2. allowFallback=true → stack doubled + cranelift compilation + retry succeeds
+//  2. allowFallback=true → cranelift retry (possibly with stack doubling) succeeds
 //  3. Cranelift ASM is persisted to the wasm store
 //  4. A second on-chain tx reuses the persisted cranelift ASM (no recompilation)
 func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
@@ -215,16 +215,16 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 		t.Fatalf("expected no cranelift ASM before overflow trigger, found %d bytes", len(asmBefore))
 	}
 
-	// Send an on-chain tx that triggers overflow → stack doubling + cranelift retry.
+	// Send an on-chain tx that triggers overflow → cranelift retry (may also double stack).
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 60*time.Second)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		t.Fatalf("expected first tx to succeed after stack doubling + cranelift retry, got status=%d", receipt.Status)
+		t.Fatalf("expected first tx to succeed after cranelift retry, got status=%d", receipt.Status)
 	}
-	t.Logf("first tx: block=%d, succeeded after cranelift recovery", receipt.BlockNumber)
+	t.Logf("first tx: block=%d, succeeded after cranelift retry", receipt.BlockNumber)
 
 	// Verify cranelift ASM was persisted to the wasm store.
 	asmAfterFirst := readCraneliftAsm(t, wasmDB)

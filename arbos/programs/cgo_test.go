@@ -57,7 +57,7 @@ func TestCompileArch(t *testing.T) {
 }
 
 func TestNativeStackSize(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024) // restore default even on panic
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSize()
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestNativeStackSize(t *testing.T) {
 }
 
 func TestNativeStackSizeMaxCap(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024) // restore default even on panic
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSizeMaxCap()
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestNativeStackSizeMaxCap(t *testing.T) {
 }
 
 func TestHandleNativeStackOverflow(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testHandleNativeStackOverflow()
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestHandleNativeStackOverflow(t *testing.T) {
 }
 
 func TestRetryRestoresStylusPages(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testRetryRestoresStylusPages()
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestGetCraneliftAsmErrors(t *testing.T) {
 }
 
 func TestCraneliftCompilationAndCache(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testCraneliftCompilationAndCache()
 	if err != nil {
 		t.Fatal(err)
@@ -104,8 +104,16 @@ func TestCraneliftCompilationAndCache(t *testing.T) {
 }
 
 func TestHandleNativeStackOverflowAtMax(t *testing.T) {
-	defer SetNativeStackSize(1024 * 1024)
+	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testHandleNativeStackOverflowAtMax()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDoubleNativeStackSize(t *testing.T) {
+	defer SetInitialNativeStackSize(1024 * 1024)
+	err := testDoubleNativeStackSize()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -79,29 +79,50 @@ func GetAllowFallback() bool {
 	return allowFallback.Load()
 }
 
-// configuredNativeStackSize stores the stack size set at startup so that
-// handleNativeStackOverflow can double from a known baseline.
-// Only written by SetInitialNativeStackSize (called once at node startup; may be called multiple times in tests).
-var configuredNativeStackSize atomic.Uint64
-
-// hasDoubledNativeStack tracks whether the stack has already been doubled
-// due to a native stack overflow. Once true, no further doubling is attempted.
-var hasDoubledNativeStack atomic.Bool
+// nativeStackBaseline stores the stack size set at startup so that
+// doubleNativeStackSize can double from a known baseline. A non-zero value
+// means doubling is available; doubleNativeStackSize atomically CAS's it to 0
+// to claim the one-time doubling. Zero means either not yet initialized or
+// already doubled.
+var nativeStackBaseline atomic.Uint64
 
 // SetInitialNativeStackSize configures the Wasmer coroutine stack size and
 // records it as the baseline for overflow recovery. Call once at node startup.
+// Storing a non-zero baseline re-enables doubleNativeStackSize.
 func SetInitialNativeStackSize(size uint64) {
 	SetNativeStackSize(size)
 	// Always capture the true Wasmer stack size (whether newly set or the
-	// existing default when size == 0) so handleNativeStackOverflow can
+	// existing default when size == 0) so doubleNativeStackSize can
 	// double from a real baseline.
-	configuredNativeStackSize.Store(GetNativeStackSize())
-	hasDoubledNativeStack.Store(false)
+	nativeStackBaseline.Store(GetNativeStackSize())
 }
 
-// HasDoubledNativeStack returns whether the stack has already been doubled due to overflow.
-func HasDoubledNativeStack() bool {
-	return hasDoubledNativeStack.Load()
+// doubleNativeStackSize doubles the process-wide Wasmer coroutine stack size
+// from the configured baseline, capped at MaxNativeStackSize. Returns true if
+// the stack was successfully doubled. The baseline is atomically set to 0 on
+// success, so subsequent calls return false (one-time doubling).
+func doubleNativeStackSize() bool {
+	baseStackSize := nativeStackBaseline.Load()
+	if baseStackSize == 0 {
+		// Zero means either not yet initialized (SetInitialNativeStackSize
+		// was never called) or already doubled. Both cases correctly mean
+		// "don't double": uninitialized has no baseline to double from,
+		// and already-doubled must not double again.
+		return false
+	}
+	newStackSize := baseStackSize * 2
+	if newStackSize > MaxNativeStackSize {
+		newStackSize = MaxNativeStackSize
+	}
+	if newStackSize <= baseStackSize {
+		return false
+	}
+	if !nativeStackBaseline.CompareAndSwap(baseStackSize, 0) {
+		return false // another goroutine doubled first
+	}
+	SetNativeStackSize(newStackSize)
+	DrainStackPool()
+	return true
 }
 
 // SetNativeStackSize configures the Wasmer coroutine stack size for Stylus execution.
@@ -556,7 +577,7 @@ func callProgram(
 
 	if status == userNativeStackOverflow {
 		status, output = handleNativeStackOverflow(
-			address, moduleHash, localAsm,
+			address, moduleHash,
 			scope, evm, tracingInfo, calldata, evmData, stylusParams,
 			memoryModel, runCtx, saved, debug, db, snapshot,
 			code, params, program,
@@ -578,18 +599,17 @@ func callProgram(
 	return data, err
 }
 
-// handleNativeStackOverflow handles a native stack overflow by doubling the
-// process-wide Wasmer coroutine stack size and retrying the call with cranelift.
-// The doubled size is kept permanently. The retry preferentially uses cranelift
-// ASM (compiled on demand if needed) because cranelift is more stack-efficient,
-// but falls back to the original ASM if cranelift is unavailable.
-// If the stack has already been doubled (from a previous overflow), or if
-// fallback/off-chain conditions prevent it, the overflow status is returned
-// immediately without doubling or retrying.
+// handleNativeStackOverflow handles a native stack overflow in two steps:
+//  1. Retry with cranelift ASM at the current stack size
+//  2. If cranelift also overflows, double the process-wide Wasmer coroutine
+//     stack size (kept permanently) and retry once more with cranelift.
+//
+// If cranelift ASM is unavailable, the overflow is returned immediately.
+// If the stack has already been doubled, or if fallback/off-chain conditions
+// prevent it, the overflow status is returned without retrying.
 func handleNativeStackOverflow(
 	address common.Address,
 	moduleHash common.Hash,
-	localAsm []byte,
 	scope *vm.ScopeContext,
 	evm *vm.EVM,
 	tracingInfo *util.TracingInfo,
@@ -612,55 +632,51 @@ func handleNativeStackOverflow(
 		return userNativeStackOverflow, nil
 	}
 	if !runCtx.IsExecutedOnChain() {
-		log.Warn("native stack overflow, no stack doubling for off-chain execution",
+		log.Info("native stack overflow, no stack doubling for off-chain execution",
 			"program", address, "module", moduleHash)
 		return userNativeStackOverflow, nil
 	}
-	if hasDoubledNativeStack.Load() {
-		log.Warn("native stack overflow after stack was already doubled, not doubling again",
-			"program", address, "module", moduleHash, "stackSize", GetNativeStackSize())
-		return userNativeStackOverflow, nil
-	}
 
-	baseStackSize := configuredNativeStackSize.Load()
-	newStackSize := baseStackSize * 2
-	if newStackSize > MaxNativeStackSize {
-		newStackSize = MaxNativeStackSize
-	}
-	if newStackSize <= baseStackSize {
-		log.Error("native stack overflow at max stack size, cannot double further",
-			"program", address, "module", moduleHash, "stackSize", baseStackSize)
-		return userNativeStackOverflow, nil
-	}
-
-	log.Warn("native stack overflow, doubling stack size and retrying with cranelift",
-		"program", address, "module", moduleHash, "oldSize", baseStackSize, "newSize", newStackSize)
-	SetNativeStackSize(newStackSize)
-	DrainStackPool()
-	hasDoubledNativeStack.Store(true)
-
-	// Get cranelift ASM for the retry. Cranelift is more stack-efficient than
-	// singlepass, so we always retry with cranelift regardless of what target
-	// overflowed. If cranelift ASM is unavailable, fall back to the original ASM.
-	retryAsm := localAsm
+	// Get cranelift ASM. Cranelift is more stack-efficient than singlepass,
+	// so we try it first at the current stack size before resorting to doubling.
 	craneliftAsm, err := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
 	if err != nil || len(craneliftAsm) == 0 {
-		log.Warn("cranelift ASM unavailable for retry, using original ASM",
+		log.Error("native stack overflow, cranelift ASM unavailable",
 			"program", address, "module", moduleHash, "err", err)
-	} else {
-		retryAsm = craneliftAsm
+		return userNativeStackOverflow, nil
 	}
 
 	// Revert any partial state changes the previous attempt may have made via
-	// host I/O before the overflow.
+	// host I/O before the overflow. After reverting, take a fresh snapshot so
+	// we can revert again if cranelift also overflows.
 	// Note: openWasmPages/everWasmPages are not journaled, so RevertToSnapshot
 	// does not restore them — we must do it manually.
 	db.RevertToSnapshot(snapshot)
 	scope.Contract.Gas = saved.gas
 	scope.Contract.UsedMultiGas = saved.usedMultiGas
 	db.SetStylusPages(saved.openPages, saved.everPages)
+	snapshot = db.Snapshot()
+	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	if status != userNativeStackOverflow {
+		return status, output
+	}
 
-	return doStylusCall(retryAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
+	// Double the stack and retry.
+	if !doubleNativeStackSize() {
+		log.Warn("native stack overflow, cannot double stack size (already doubled or at max)",
+			"program", address, "module", moduleHash, "stackSize", GetNativeStackSize())
+		return userNativeStackOverflow, nil
+	}
+	log.Warn("native stack overflow, doubled stack size and retrying",
+		"program", address, "module", moduleHash, "newSize", GetNativeStackSize())
+
+	// Revert state before the doubling retry.
+	db.RevertToSnapshot(snapshot)
+	scope.Contract.Gas = saved.gas
+	scope.Contract.UsedMultiGas = saved.usedMultiGas
+	db.SetStylusPages(saved.openPages, saved.everPages)
+
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
 }
 
 // getCraneliftAsm returns cranelift-compiled ASM for the given module.
@@ -685,7 +701,11 @@ func getCraneliftAsm(
 		return asm, nil
 	}
 
-	// Compile with cranelift.
+	// Compile with cranelift from the contract code.
+	if len(code) == 0 || params == nil {
+		return nil, fmt.Errorf("cranelift ASM not cached and contract code/params unavailable for compilation")
+	}
+
 	log.Warn("native stack overflow, compiling with cranelift",
 		"program", address, "module", moduleHash)
 
