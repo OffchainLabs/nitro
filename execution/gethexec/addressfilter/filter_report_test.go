@@ -23,8 +23,7 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address:     common.HexToAddress("0xdead"),
-				FilterSetID: "filter-set-1",
+				Address: common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonFrom,
 				},
@@ -48,7 +47,6 @@ func TestFilteredTxReportJSON_NotDelayed(t *testing.T) {
 		"filteredAddresses": [
 			{
 				"address": "0x000000000000000000000000000000000000dead",
-				"filterSetId": "filter-set-1",
 				"reason": "from"
 			}
 		],
@@ -74,8 +72,7 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8, 0x6c},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address:     common.HexToAddress("0xdead"),
-				FilterSetID: "filter-set-1",
+				Address: common.HexToAddress("0xdead"),
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonDealiasedFrom,
 				},
@@ -101,7 +98,6 @@ func TestFilteredTxReportJSON_Delayed(t *testing.T) {
 		"filteredAddresses": [
 			{
 				"address": "0x000000000000000000000000000000000000dead",
-				"filterSetId": "filter-set-1",
 				"reason": "dealiased_from"
 			}
 		],
@@ -127,8 +123,7 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		TxRLP:  hexutil.Bytes{0xf8},
 		FilteredAddresses: []filter.FilteredAddressRecord{
 			{
-				Address:     common.HexToAddress("0xbeef"),
-				FilterSetID: "filter-set-2",
+				Address: common.HexToAddress("0xbeef"),
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonEventRule,
 					EventRuleMatch: &filter.EventRuleMatch{
@@ -165,7 +160,6 @@ func TestFilteredTxReportJSON_EventRule(t *testing.T) {
 		"filteredAddresses": [
 			{
 				"address": "0x000000000000000000000000000000000000beef",
-				"filterSetId": "filter-set-2",
 				"reason": "event_rule",
 				"matchedEvent": "Transfer(address,address,uint256)",
 				"matchedTopicIndex": 2,
