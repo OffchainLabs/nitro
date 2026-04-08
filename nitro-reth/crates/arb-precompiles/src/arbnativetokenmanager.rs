@@ -14,8 +14,8 @@ pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([
 ]);
 
 // Function selectors.
-const MINT_NATIVE_TOKEN: [u8; 4] = [0xf2, 0xe2, 0x34, 0x70];
-const BURN_NATIVE_TOKEN: [u8; 4] = [0xa7, 0x54, 0x40, 0x2b];
+const MINT_NATIVE_TOKEN: [u8; 4] = [0xa6, 0xf0, 0xf7, 0xc7]; // mintNativeToken(uint256)
+const BURN_NATIVE_TOKEN: [u8; 4] = [0x1c, 0x67, 0x9a, 0x3c]; // burnNativeToken(uint256)
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;

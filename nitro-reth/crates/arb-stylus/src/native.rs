@@ -179,8 +179,13 @@ impl<E: EvmApi> NativeInstance<E> {
         let instance = Instance::new(&mut store, &module, &import_object)?;
         let memory = instance.exports.get_memory("memory")?.clone();
 
+        let ink_global = instance.exports.get_global(STYLUS_INK_LEFT).ok().cloned();
+        let ink_status_global = instance.exports.get_global(STYLUS_INK_STATUS).ok().cloned();
+
         let env = func_env.as_mut(&mut store);
         env.memory = Some(memory);
+        env.ink_global = ink_global;
+        env.ink_status_global = ink_status_global;
 
         let mut native = Self::new(instance, store, func_env);
         native.set_meter_data();

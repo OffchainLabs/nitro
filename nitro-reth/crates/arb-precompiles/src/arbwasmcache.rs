@@ -13,13 +13,13 @@ pub const ARBWASMCACHE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x72,
 ]);
 
-// Function selectors.
-const IS_CACHE_MANAGER: [u8; 4] = [0xf1, 0x37, 0xfc, 0xda];
-const ALL_CACHE_MANAGERS: [u8; 4] = [0x35, 0x17, 0x3c, 0x26];
-const CACHE_CODEHASH: [u8; 4] = [0x0e, 0xa0, 0x7a, 0x7a];
-const CACHE_PROGRAM: [u8; 4] = [0xb6, 0xf4, 0xfb, 0x22];
-const EVICT_CODEHASH: [u8; 4] = [0xd4, 0x56, 0xcd, 0x34];
-const CODEHASH_IS_CACHED: [u8; 4] = [0x47, 0x97, 0x00, 0xf6];
+// Function selectors (keccak256 of Solidity signatures).
+const IS_CACHE_MANAGER: [u8; 4] = [0x85, 0xe2, 0xde, 0x85]; // isCacheManager(address)
+const ALL_CACHE_MANAGERS: [u8; 4] = [0x0e, 0xc1, 0xd7, 0x73]; // allCacheManagers()
+const CACHE_CODEHASH: [u8; 4] = [0x4c, 0xea, 0xc8, 0x17]; // cacheCodehash(bytes32)
+const CACHE_PROGRAM: [u8; 4] = [0xe7, 0x3a, 0xc9, 0xf2]; // cacheProgram(address)
+const EVICT_CODEHASH: [u8; 4] = [0xce, 0x97, 0x20, 0x13]; // evictCodehash(bytes32)
+const CODEHASH_IS_CACHED: [u8; 4] = [0xa7, 0x2f, 0x17, 0x9b]; // codehashIsCached(bytes32)
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;
@@ -83,6 +83,10 @@ fn handler(mut input: PrecompileInput<'_>) -> PrecompileResult {
     crate::gas_check(input.gas, result)
 }
 
+fn words_for_bytes(n: u64) -> u64 {
+    n.div_ceil(32)
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 fn load_arbos(input: &mut PrecompileInput<'_>) -> Result<(), PrecompileError> {
@@ -133,8 +137,11 @@ fn handle_is_cache_manager(input: &mut PrecompileInput<'_>) -> PrecompileResult 
     } else {
         U256::ZERO
     };
+    // Gas: OpenArbosState(800) + sload(800) + argsCost(3) + resultCost(3)
+    let args_cost = COPY_GAS * words_for_bytes(data.len().saturating_sub(4) as u64);
+    let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        SLOAD_GAS + COPY_GAS,
+        SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }
@@ -163,8 +170,12 @@ fn handle_all_cache_managers(input: &mut PrecompileInput<'_>) -> PrecompileResul
         sloads += 1;
     }
 
+    // Gas: OpenArbosState(800) + sloads * SLOAD(800) + argsCost + resultCost
+    let args_cost = COPY_GAS * words_for_bytes(input.data.len().saturating_sub(4) as u64);
+    let result_cost = COPY_GAS * words_for_bytes(out.len() as u64);
+    let total = SLOAD_GAS + sloads * SLOAD_GAS + args_cost + result_cost;
     Ok(PrecompileOutput::new(
-        (sloads * SLOAD_GAS + COPY_GAS).min(input.gas),
+        total.min(input.gas),
         out.into(),
     ))
 }
@@ -195,8 +206,11 @@ fn handle_codehash_is_cached(input: &mut PrecompileInput<'_>) -> PrecompileResul
     } else {
         U256::ZERO
     };
+    // Gas: OpenArbosState(800) + sload(800) + argsCost + resultCost
+    let args_cost = COPY_GAS * words_for_bytes(data.len().saturating_sub(4) as u64);
+    let result_cost = COPY_GAS * words_for_bytes(32);
     Ok(PrecompileOutput::new(
-        SLOAD_GAS + COPY_GAS,
+        SLOAD_GAS + SLOAD_GAS + args_cost + result_cost,
         result.to_be_bytes::<32>().to_vec().into(),
     ))
 }

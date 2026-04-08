@@ -14,9 +14,9 @@ pub const ARBFILTEREDTXMANAGER_ADDRESS: Address = Address::new([
 ]);
 
 // Function selectors.
-const ADD_FILTERED_TX: [u8; 4] = [0xbf, 0xc1, 0xd5, 0x0e];
-const DELETE_FILTERED_TX: [u8; 4] = [0x0b, 0x23, 0x48, 0x5a];
-const IS_TX_FILTERED: [u8; 4] = [0x37, 0x94, 0x6f, 0x6a];
+const ADD_FILTERED_TX: [u8; 4] = [0xcb, 0x47, 0x04, 0x91]; // addFilteredTransaction(bytes32)
+const DELETE_FILTERED_TX: [u8; 4] = [0xd2, 0x63, 0x74, 0xb1]; // deleteFilteredTransaction(bytes32)
+const IS_TX_FILTERED: [u8; 4] = [0x85, 0xc7, 0x33, 0xa4]; // isTransactionFiltered(bytes32)
 
 const SLOAD_GAS: u64 = 800;
 const SSTORE_GAS: u64 = 20_000;

@@ -932,6 +932,14 @@ where
     let upfront_cost = stylus_call_gas_cost(&params, &program, pages_open);
     let total_gas = inputs.gas_limit;
 
+    tracing::warn!(target: "stylus",
+        %code_hash, total_gas, upfront_cost, gas_for_wasm = total_gas.saturating_sub(upfront_cost),
+        footprint = program.footprint, init_cost = program.init_cost, cached_cost = program.cached_cost,
+        cached = program.cached, version = program.version, pages_open,
+        ink_price = params.ink_price, free_pages = params.free_pages, page_gas = params.page_gas,
+        min_init_gas = params.min_init_gas, init_cost_scalar = params.init_cost_scalar,
+        "STYLUS_CALL gas breakdown");
+
     if total_gas < upfront_cost {
         return InterpreterResult::new(InstructionResult::OutOfGas, Bytes::new(), zero_gas());
     }
@@ -1080,6 +1088,11 @@ where
     } else {
         gas_left
     };
+
+    tracing::warn!(target: "stylus",
+        %code_hash, ink_left = ?ink_left, gas_left, total_gas, upfront_cost,
+        output_len = output.len(), outcome = ?outcome,
+        "STYLUS_CALL result");
 
     let gas_result = EvmGas::new(gas_left);
 

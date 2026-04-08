@@ -8,7 +8,7 @@ pub const ARBSTATISTICS_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x6f,
 ]);
 
-const GET_STATS: [u8; 4] = [0xe1, 0x1b, 0x84, 0xd8]; // getStats()
+const GET_STATS: [u8; 4] = [0xc5, 0x9d, 0x48, 0x47]; // getStats()
 
 const COPY_GAS: u64 = 3;
 const SLOAD_GAS: u64 = 800;

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use alloy_primitives::{Address, Log, B256, U256};
 use arbos::programs::memory::MemoryModel;
 use revm::Database;
@@ -162,6 +164,71 @@ pub type DoCallFn = fn(*mut (), u8, Address, Address, &[u8], u64, U256) -> SubCa
 /// salt=None for CREATE, Some for CREATE2.
 pub type DoCreateFn = fn(*mut (), Address, &[u8], u64, U256, Option<B256>) -> SubCreateResult;
 
+/// Per-call storage cache entry, mirroring Nitro's `StorageWord`.
+struct StorageCacheEntry {
+    /// Current value (may be dirty from a write).
+    value: B256,
+    /// Original value from the journal (None = written before first read).
+    known: Option<B256>,
+}
+
+impl StorageCacheEntry {
+    fn known(value: B256) -> Self {
+        Self {
+            value,
+            known: Some(value),
+        }
+    }
+
+    fn unknown(value: B256) -> Self {
+        Self {
+            value,
+            known: None,
+        }
+    }
+
+    fn dirty(&self) -> bool {
+        self.known.map_or(true, |k| k != self.value)
+    }
+}
+
+/// Per-call storage cache matching Nitro's Rust-side cache.
+/// Provides O(1) lookups to avoid redundant journal accesses and
+/// correctly mirrors Nitro's gas charging (only charge evm_api_gas on miss).
+struct StorageCache {
+    slots: HashMap<B256, StorageCacheEntry>,
+    reads: u32,
+    writes: u32,
+}
+
+impl StorageCache {
+    fn new() -> Self {
+        Self {
+            slots: HashMap::new(),
+            reads: 0,
+            writes: 0,
+        }
+    }
+
+    fn read_gas(&mut self) -> Gas {
+        self.reads += 1;
+        match self.reads {
+            0..=32 => Gas(0),
+            33..=128 => Gas(2),
+            _ => Gas(10),
+        }
+    }
+
+    fn write_gas(&mut self) -> Gas {
+        self.writes += 1;
+        match self.writes {
+            0..=8 => Gas(0),
+            9..=64 => Gas(7),
+            _ => Gas(10),
+        }
+    }
+}
+
 /// Concrete [`EvmApi`] bridging WASM host function calls to revm's journaled state.
 ///
 /// Uses a type-erased raw pointer to [`JournalAccess`] so that the `DB` generic
@@ -182,8 +249,8 @@ pub struct StylusEvmApi {
     caller: Address,
     /// Value of the current call (needed for DELEGATECALL forwarding).
     call_value: U256,
-    /// Cached storage writes (key, value pairs), flushed on demand.
-    storage_cache: Vec<(B256, B256)>,
+    /// Per-call storage cache matching Nitro's Rust-side cache.
+    storage_cache: StorageCache,
     /// Return data from the last sub-call.
     return_data: Vec<u8>,
     /// Whether the current execution context is read-only (STATICCALL).
@@ -236,7 +303,7 @@ impl StylusEvmApi {
             address,
             caller,
             call_value,
-            storage_cache: Vec::new(),
+            storage_cache: StorageCache::new(),
             return_data: Vec::new(),
             read_only,
             free_pages,
@@ -258,28 +325,52 @@ impl std::fmt::Debug for StylusEvmApi {
         f.debug_struct("StylusEvmApi")
             .field("address", &self.address)
             .field("read_only", &self.read_only)
-            .field("cache_size", &self.storage_cache.len())
+            .field("cache_size", &self.storage_cache.slots.len())
             .finish()
     }
 }
 
 impl EvmApi for StylusEvmApi {
-    fn get_bytes32(&mut self, key: B256, _evm_api_gas_to_use: Gas) -> eyre::Result<(B256, Gas)> {
-        let storage_key = U256::from_be_bytes(key.0);
-        let addr = self.address;
-        let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
-        let value = B256::from(value_u256.to_be_bytes());
-        let gas_cost = if is_cold {
-            COLD_SLOAD_COST
+    fn get_bytes32(&mut self, key: B256, evm_api_gas_to_use: Gas) -> eyre::Result<(B256, Gas)> {
+        let mut cost = self.storage_cache.read_gas();
+
+        let value = if let Some(entry) = self.storage_cache.slots.get(&key) {
+            // Cache hit: no journal access, no evm_api_gas
+            entry.value
         } else {
-            WARM_STORAGE_READ_COST
+            // Cache miss: read from journal, charge full cost
+            let storage_key = U256::from_be_bytes(key.0);
+            let addr = self.address;
+            let (value_u256, is_cold) = self.journal().sload(addr, storage_key)?;
+            let value = B256::from(value_u256.to_be_bytes());
+
+            let sload_cost = if is_cold {
+                COLD_SLOAD_COST
+            } else {
+                WARM_STORAGE_READ_COST
+            };
+            cost = Gas(cost.0.saturating_add(sload_cost).saturating_add(evm_api_gas_to_use.0));
+
+            self.storage_cache
+                .slots
+                .insert(key, StorageCacheEntry::known(value));
+            value
         };
-        Ok((value, Gas(gas_cost)))
+
+        Ok((value, cost))
     }
 
     fn cache_bytes32(&mut self, key: B256, value: B256) -> eyre::Result<Gas> {
-        self.storage_cache.push((key, value));
-        Ok(Gas(0))
+        let cost = self.storage_cache.write_gas();
+        match self.storage_cache.slots.get_mut(&key) {
+            Some(entry) => entry.value = value,
+            None => {
+                self.storage_cache
+                    .slots
+                    .insert(key, StorageCacheEntry::unknown(value));
+            }
+        }
+        Ok(cost)
     }
 
     fn flush_storage_cache(
@@ -287,20 +378,36 @@ impl EvmApi for StylusEvmApi {
         clear: bool,
         gas_left: Gas,
     ) -> eyre::Result<(Gas, UserOutcomeKind)> {
-        let entries: Vec<(B256, B256)> = if clear {
-            std::mem::take(&mut self.storage_cache)
-        } else {
-            self.storage_cache.clone()
-        };
+        // Collect dirty entries
+        let dirty: Vec<(B256, B256)> = self
+            .storage_cache
+            .slots
+            .iter()
+            .filter(|(_, v)| v.dirty())
+            .map(|(k, v)| (*k, v.value))
+            .collect();
 
-        if self.read_only && !entries.is_empty() {
+        if clear {
+            self.storage_cache.slots.clear();
+        } else {
+            // Mark all entries as known (clean)
+            for entry in self.storage_cache.slots.values_mut() {
+                entry.known = Some(entry.value);
+            }
+        }
+
+        if dirty.is_empty() {
+            return Ok((Gas(0), UserOutcomeKind::Success));
+        }
+
+        if self.read_only {
             return Ok((Gas(0), UserOutcomeKind::Failure));
         }
 
         let mut total_gas = 0u64;
         let mut remaining = gas_left.0;
 
-        for (key, value) in &entries {
+        for (key, value) in &dirty {
             let storage_key = U256::from_be_bytes(key.0);
             let storage_value = U256::from_be_bytes(value.0);
 
