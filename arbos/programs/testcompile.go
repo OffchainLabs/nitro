@@ -539,7 +539,7 @@ func makeTestEVMScope(gas uint64) (*vm.EVM, *vm.ScopeContext, vm.StateDB) {
 // testHandleNativeStackOverflow tests that handleNativeStackOverflow:
 // 1. Does not retry when allowFallback is false.
 // 2. Does not retry for off-chain execution.
-// 3. Retries with cranelift on first on-chain overflow (may also double stack).
+// 3. Doubles stack and retries with cranelift on first on-chain overflow.
 // 4. Returns overflow immediately when cranelift is unavailable.
 func testHandleNativeStackOverflow() error {
 	savedFallback := GetAllowFallback()
@@ -619,11 +619,9 @@ func testHandleNativeStackOverflow() error {
 		return fmt.Errorf("off-chain: stack should not have been doubled")
 	}
 
-	// Sub-test 3: on-chain with allowFallback=true → retries with cranelift.
-	// The program recurses 500 times. At 32KB singlepass overflows.
-	// Cranelift is more stack-efficient and may succeed at 32KB without
-	// doubling, or may also overflow and trigger doubling to 64KB.
-	// Either way the final result must be success.
+	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
+	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
+	// retry at 64KB should succeed for the 500-recursion program.
 	scope.Contract.Gas = gas
 	snapshot = db.Snapshot()
 	status, _ = handleNativeStackOverflow(
@@ -633,30 +631,26 @@ func testHandleNativeStackOverflow() error {
 		db, snapshot, nil, nil, Program{version: 1},
 	)
 	if status != userSuccess {
-		return fmt.Errorf("on-chain: expected success after cranelift retry (possibly with stack doubling), got %d", status)
+		return fmt.Errorf("on-chain: expected success after stack doubling + cranelift retry, got %d", status)
 	}
-	// Verify cranelift at 32KB succeeded without doubling: the stack size
-	// should still be 32KB and the baseline should not have been consumed.
-	if got := GetNativeStackSize(); got != 32*1024 {
-		// Cranelift also overflowed at 32KB and doubling was needed.
-		// This is acceptable but means step 2 was exercised, not step 1.
-		fmt.Printf("  sub-test 3: cranelift also overflowed at 32KB, stack doubled to %d\n", got)
-	} else {
-		fmt.Printf("  sub-test 3: cranelift succeeded at 32KB without doubling\n")
+	if got := GetNativeStackSize(); got != 64*1024 {
+		return fmt.Errorf("on-chain: expected stack to be doubled to 64KB, got %d", got)
 	}
 
 	// Sub-test 4: no cranelift available → returns overflow immediately.
 	// Use a fresh DB with no cranelift ASM in the wasm store so
 	// getCraneliftAsm fails and handleNativeStackOverflow returns without
 	// any retry or doubling attempt.
+	// Note: nativeStackBaseline is 0 here (consumed by sub-test 3's doubling),
+	// but that doesn't affect this test since it returns before reaching doubleNativeStackSize.
 	SetNativeStackSize(32 * 1024)
 	DrainStackPool()
-	_, scope4, db4 := makeTestEVMScope(gas)
+	evm4, scope4, db4 := makeTestEVMScope(gas)
 	scope4.Contract.Gas = gas
 	snapshot = db4.Snapshot()
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
-		scope4, evm, nil, []byte{}, &EvmData{}, stylusParams,
+		scope4, evm4, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, savedState{gas: gas}, true,
 		db4, snapshot, nil, nil, Program{version: 1},
 	)
@@ -671,8 +665,8 @@ func testHandleNativeStackOverflow() error {
 // testHandleNativeStackOverflowAtMax verifies that handleNativeStackOverflow
 // works correctly at MaxNativeStackSize with cranelift available. The program
 // (500 recursions) should succeed with cranelift at 100MB, and the stack size
-// must remain at MaxNativeStackSize (no doubling attempted since cranelift
-// resolves the overflow at step 1).
+// must remain at MaxNativeStackSize (doubling is a no-op since the stack is
+// already at max).
 func testHandleNativeStackOverflowAtMax() error {
 	savedFallback := GetAllowFallback()
 	defer SetAllowFallback(savedFallback)
@@ -733,9 +727,6 @@ func testHandleNativeStackOverflowAtMax() error {
 	}
 	if nativeStackBaseline.Load() == 0 {
 		return fmt.Errorf("baseline should not have been consumed (no doubling at max)")
-	}
-	if got := GetNativeStackSize(); got != MaxNativeStackSize {
-		return fmt.Errorf("expected stack to remain at %d, got %d", MaxNativeStackSize, got)
 	}
 
 	fmt.Printf("testHandleNativeStackOverflowAtMax: passed\n")

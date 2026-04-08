@@ -617,14 +617,13 @@ func restoreState(scope *vm.ScopeContext, saved savedState, db vm.StateDB, snaps
 	db.SetStylusPages(saved.openPages, saved.everPages)
 }
 
-// handleNativeStackOverflow handles a native stack overflow in two steps:
-//  1. Retry with cranelift ASM at the current stack size
-//  2. If cranelift also overflows, double the process-wide Wasmer coroutine
-//     stack size (kept permanently) and retry once more with cranelift.
+// handleNativeStackOverflow handles a native stack overflow by compiling
+// cranelift ASM and retrying. On the first overflow it also doubles the
+// process-wide Wasmer coroutine stack size (kept permanently); subsequent
+// overflows retry with cranelift at the already-doubled size.
 //
-// If cranelift ASM is unavailable, the overflow is returned immediately.
-// If the stack has already been doubled, or if fallback/off-chain conditions
-// prevent it, the overflow status is returned without retrying.
+// Returns userNativeStackOverflow without retrying when fallback is disabled,
+// off-chain, or cranelift ASM is unavailable — the caller panics in that case.
 func handleNativeStackOverflow(
 	address common.Address,
 	moduleHash common.Hash,
@@ -655,8 +654,6 @@ func handleNativeStackOverflow(
 		return userNativeStackOverflow, nil
 	}
 
-	// Get cranelift ASM. Cranelift is more stack-efficient than singlepass,
-	// so we try it first at the current stack size before resorting to doubling.
 	craneliftAsm, err := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
 	if err != nil || len(craneliftAsm) == 0 {
 		log.Error("native stack overflow, cranelift ASM unavailable",
@@ -664,26 +661,16 @@ func handleNativeStackOverflow(
 		return userNativeStackOverflow, nil
 	}
 
+	// On the first overflow, double the process-wide Wasmer coroutine stack size.
+	// On subsequent overflows doubleNativeStackSize is a no-op (baseline already
+	// consumed via CAS) — we still retry with cranelift at the already-doubled size.
+	if doubleNativeStackSize() {
+		log.Warn("native stack overflow, doubled stack size",
+			"program", address, "module", moduleHash, "newSize", GetNativeStackSize())
+	}
+
 	// Revert any partial state changes the previous attempt may have made via
-	// host I/O before the overflow. After reverting, take a fresh snapshot so
-	// we can revert again if cranelift also overflows.
-	restoreState(scope, saved, db, snapshot)
-	snapshot = db.Snapshot()
-	status, output := doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)
-	if status != userNativeStackOverflow {
-		return status, output
-	}
-
-	// Double the stack and retry.
-	if !doubleNativeStackSize() {
-		log.Warn("native stack overflow, cannot double stack size (already doubled or at max)",
-			"program", address, "module", moduleHash, "stackSize", GetNativeStackSize())
-		return userNativeStackOverflow, nil
-	}
-	log.Warn("native stack overflow, doubled stack size and retrying",
-		"program", address, "module", moduleHash, "newSize", GetNativeStackSize())
-
-	// Revert state before the doubling retry.
+	// host I/O before the overflow, then retry with cranelift.
 	restoreState(scope, saved, db, snapshot)
 
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx)

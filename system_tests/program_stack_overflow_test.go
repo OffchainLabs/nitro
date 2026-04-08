@@ -91,8 +91,7 @@ func saveAndRestoreNativeStackGlobals(t *testing.T) {
 // TestProgramNativeStackOverflowRecovery exercises the on-chain stack overflow
 // recovery path and verifies that:
 //  1. Off-chain calls (eth_call) do NOT trigger any retry.
-//  2. The first on-chain tx succeeds (overflow → cranelift retry, possibly
-//     with stack doubling if cranelift also overflows at the original size).
+//  2. The first on-chain tx succeeds (overflow → stack doubling + cranelift retry).
 //
 // It deploys a WAT program that recurses 1,000 times and configures a small
 // initial native stack size (64KB) so the first call overflows.
@@ -124,7 +123,7 @@ func TestProgramNativeStackOverflowRecovery(t *testing.T) {
 	}
 	t.Logf("eth_call failed as expected (off-chain): %v", err)
 
-	// On-chain tx: overflows → cranelift retry (may also double stack) → succeeds.
+	// On-chain tx: overflows → stack doubling + cranelift retry → succeeds.
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -191,7 +190,7 @@ func TestProgramNativeStackOverflowNoFallback(t *testing.T) {
 // TestProgramCraneliftPersistenceIntegration verifies the full cranelift
 // overflow recovery flow end-to-end:
 //  1. Stylus call fails with native stack overflow (small stack)
-//  2. allowFallback=true → cranelift retry (possibly with stack doubling) succeeds
+//  2. allowFallback=true → stack doubling + cranelift retry succeeds
 //  3. Cranelift ASM is persisted to the wasm store
 //  4. A second on-chain tx reuses the persisted cranelift ASM (no recompilation)
 func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
@@ -215,7 +214,7 @@ func TestProgramCraneliftPersistenceIntegration(t *testing.T) {
 		t.Fatalf("expected no cranelift ASM before overflow trigger, found %d bytes", len(asmBefore))
 	}
 
-	// Send an on-chain tx that triggers overflow → cranelift retry (may also double stack).
+	// Send an on-chain tx that triggers overflow → stack doubling + cranelift retry.
 	tx := builder.L2Info.PrepareTxTo("Owner", &programAddress, builder.L2Info.TransferGas*10, nil, []byte{})
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
