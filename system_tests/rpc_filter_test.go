@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// buildEstimateGasFilterNode creates a single sequencer node with RPC filtering
-// enabled. The txFilterer is wired into the backend at construction time.
-func buildEstimateGasFilterNode(t *testing.T, ctx context.Context, enableETHCallFilter bool) (builder *NodeBuilder, cleanup func()) {
+// buildRPCFilterNode creates a single sequencer node with RPC filtering
+// enabled or disabled. The txFilterer is wired into the backend at construction time.
+func buildRPCFilterNode(t *testing.T, ctx context.Context, enableETHCallFilter bool) (builder *NodeBuilder, cleanup func()) {
 	t.Helper()
 	builder = NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
@@ -29,7 +29,7 @@ func TestEstimateGasFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildEstimateGasFilterNode(t, ctx, true)
+	builder, cleanup := buildRPCFilterNode(t, ctx, true)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -77,7 +77,7 @@ func TestEstimateGasFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, cleanup := buildEstimateGasFilterNode(t, ctx, false)
+	builder, cleanup := buildRPCFilterNode(t, ctx, false)
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -96,5 +96,81 @@ func TestEstimateGasFilterDisabled(t *testing.T) {
 		To:    &filteredAddr,
 		Value: big.NewInt(1e12),
 	})
+	Require(t, err)
+}
+
+// TestEthCallFilterDirectAddress verifies that eth_call rejects
+// calls involving a filtered address when EnableETHCallFilter is true.
+func TestEthCallFilterDirectAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, cleanup := buildRPCFilterNode(t, ctx, true)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	normalAddr := builder.L2Info.GetAddress("NormalUser")
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	// eth_call TO filtered address should fail
+	_, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		From:  normalAddr,
+		To:    &filteredAddr,
+		Value: big.NewInt(1e12),
+	}, nil)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error for eth_call TO filtered address, got: %v", err)
+	}
+
+	// eth_call FROM filtered address should fail
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		From:  filteredAddr,
+		To:    &normalAddr,
+		Value: big.NewInt(1e12),
+	}, nil)
+	if !isFilteredError(err) {
+		t.Fatalf("expected filtered error for eth_call FROM filtered address, got: %v", err)
+	}
+
+	// eth_call between clean addresses should succeed
+	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		From:  normalAddr,
+		To:    &normalAddr,
+		Value: big.NewInt(1e12),
+	}, nil)
+	Require(t, err)
+}
+
+// TestEthCallFilterDisabled verifies that eth_call does not reject
+// calls to filtered addresses when EnableETHCallFilter is false.
+func TestEthCallFilterDisabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, cleanup := buildRPCFilterNode(t, ctx, false)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+	builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	normalAddr := builder.L2Info.GetAddress("NormalUser")
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	// eth_call TO filtered address should succeed when RPC filter is disabled
+	_, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		From:  normalAddr,
+		To:    &filteredAddr,
+		Value: big.NewInt(1e12),
+	}, nil)
 	Require(t, err)
 }
